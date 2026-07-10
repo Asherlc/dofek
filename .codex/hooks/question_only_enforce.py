@@ -38,6 +38,18 @@ READ_ONLY_GIT_SUBCOMMANDS = {
     "status",
 }
 READ_ONLY_COMMAND_UTILITY_OPTIONS = {"--help", "-V", "-v"}
+FIND_MUTATING_OPTIONS = {
+    "-delete",
+    "-exec",
+    "-execdir",
+    "-fls",
+    "-fprint",
+    "-fprint0",
+    "-fprintf",
+    "-ok",
+    "-okdir",
+}
+RG_MUTATING_OPTIONS = {"--pre"}
 MUTATING_SHELL_PATTERN = re.compile(
     r"(^|[;&|]\s*)("
     r"apply_patch|build|chmod|chown|commit|cp|curl|deploy|docker|gh|install|"
@@ -98,6 +110,32 @@ def is_read_only_command_utility(tokens: list[str]) -> bool:
     return False
 
 
+def has_option(tokens: list[str], option_names: set[str]) -> bool:
+    return any(
+        token in option_names or any(token.startswith(f"{option}=") for option in option_names)
+        for token in tokens
+    )
+
+
+def is_read_only_find(tokens: list[str]) -> bool:
+    return not has_option(tokens[1:], FIND_MUTATING_OPTIONS)
+
+
+def is_read_only_rg(tokens: list[str]) -> bool:
+    return not has_option(tokens[1:], RG_MUTATING_OPTIONS)
+
+
+def is_read_only_sed(tokens: list[str]) -> bool:
+    for token in tokens[1:]:
+        if token in {"-i", "--in-place"} or token.startswith(("-i", "--in-place=")):
+            return False
+        if token == "w" or re.search(r"(^|[;{}\n])\s*w($|\s+\S)", token):
+            return False
+        if re.search(r"^s(.).*?\1.*?\1[gp0-9]*w", token):
+            return False
+    return True
+
+
 def is_read_only_segment(segment: str) -> bool:
     tokens = unwrap_rtk(command_tokens(segment))
     if not tokens:
@@ -108,6 +146,12 @@ def is_read_only_segment(segment: str) -> bool:
         return len(tokens) > 1 and tokens[1] in READ_ONLY_GIT_SUBCOMMANDS
     if command == "command":
         return is_read_only_command_utility(tokens)
+    if command == "find":
+        return is_read_only_find(tokens)
+    if command == "rg":
+        return is_read_only_rg(tokens)
+    if command == "sed":
+        return is_read_only_sed(tokens)
     return command in READ_ONLY_COMMANDS
 
 
