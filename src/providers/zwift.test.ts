@@ -70,6 +70,7 @@ const { MockZwiftClient } = vi.hoisted(() => {
     static stopReturningActivitiesAtOffset: number | null = null;
     static activityOffsets: number[] = [];
     static activityDetail: Record<string, unknown> = {};
+    static activityDetailError: Error | null = null;
     static fitnessData: Record<string, unknown> = {};
     static powerCurve: Record<string, unknown> = {};
     static authenticatedProfile: Record<string, unknown> = {
@@ -106,7 +107,12 @@ const { MockZwiftClient } = vi.hoisted(() => {
         ? MockZwiftClient.activities
         : [];
     });
-    getActivityDetail = vi.fn().mockImplementation(async () => MockZwiftClient.activityDetail);
+    getActivityDetail = vi.fn().mockImplementation(async () => {
+      if (MockZwiftClient.activityDetailError) {
+        throw MockZwiftClient.activityDetailError;
+      }
+      return MockZwiftClient.activityDetail;
+    });
     getFitnessData = vi.fn().mockImplementation(async () => MockZwiftClient.fitnessData);
     getPowerCurve = vi.fn().mockImplementation(async () => MockZwiftClient.powerCurve);
     getAuthenticatedProfile = vi.fn().mockImplementation(async () => {
@@ -428,6 +434,7 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     MockZwiftClient.repeatActivitiesForEveryOffset = false;
     MockZwiftClient.stopReturningActivitiesAtOffset = null;
     MockZwiftClient.activityOffsets = [];
+    MockZwiftClient.activityDetailError = null;
   });
 
   it("syncs activities and metric streams", async () => {
@@ -457,16 +464,16 @@ describe("ZwiftProvider.sync() — activity sync", () => {
   it("handles stream fetch error gracefully (non-fatal)", async () => {
     MockZwiftClient.activities = [
       {
+        ...sampleActivity,
         id: 456,
+        id_str: "456",
         name: "Error Ride",
         startDate: "2026-03-15T18:00:00Z",
         endDate: "2026-03-15T19:00:00Z",
       },
     ];
 
-    // Make getActivityDetail throw
-    const mockClient = new MockZwiftClient();
-    mockClient.getActivityDetail = vi.fn().mockRejectedValue(new Error("stream fetch failed"));
+    MockZwiftClient.activityDetailError = new Error("stream fetch failed");
 
     MockZwiftClient.powerCurve = {};
 
@@ -485,6 +492,17 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     );
     // The activity itself still counted even if streams fail
     expect(result.provider).toBe("zwift");
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toEqual([
+      {
+        message: "streams 456: stream fetch failed",
+        externalId: "456",
+        cause: expect.any(Error),
+        context: {
+          activityId: "456",
+        },
+      },
+    ]);
   });
 
   it("stops syncing when activity is before since date", async () => {
@@ -512,7 +530,8 @@ describe("ZwiftProvider.sync() — activity sync", () => {
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
     expect(result.provider).toBe("zwift");
-    // Old activity skipped
+    expect(result.recordsSynced).toBe(0);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalled();
   });
 
   it("skips activities after the sync window end", async () => {

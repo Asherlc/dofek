@@ -266,6 +266,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           if (!authFailureReasonFromError(err.cause)) {
             Sentry.captureException(err.cause ?? new Error(err.message), {
               tags: { provider: provider.id },
+              ...(err.context ? { extra: err.context } : {}),
             });
           }
         }
