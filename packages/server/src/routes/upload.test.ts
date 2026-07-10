@@ -1188,7 +1188,7 @@ describe("createUploadRouter", () => {
       );
       expect(queue.add).toHaveBeenCalledWith(
         "garmin-dump",
-        expect.objectContaining({ importType: "garmin-dump" }),
+        expect.objectContaining({ importType: "garmin-dump", userId: "user-1" }),
         undefined,
       );
     });
