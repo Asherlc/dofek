@@ -60,8 +60,10 @@ def main() -> int:
             "hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": (
-                    "This prompt is question-only. Answer directly. Do not run tools "
-                    "or make changes unless the user explicitly asks for it."
+                    "This prompt is question-only. Answer directly. Research tools, "
+                    "web research, and local read-only file inspection are allowed "
+                    "when useful for answering. Do not make changes unless the user "
+                    "explicitly asks for them."
                 ),
             }
         }
