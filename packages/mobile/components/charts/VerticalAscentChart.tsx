@@ -26,7 +26,23 @@ const PADDING = { top: 20, right: 16, bottom: 28, left: 48 };
 const CHART_HEIGHT = 200;
 const MIN_BUBBLE_RADIUS = 4;
 const MAX_BUBBLE_RADIUS = 16;
-const SERIES_COLORS = [colors.teal, colors.purple, colors.orange, colors.blue, colors.green];
+const ACTIVITY_TYPE_COLORS: Record<string, string> = {
+  road_cycling: colors.teal,
+  mountain_biking: colors.purple,
+  gravel_cycling: colors.orange,
+  cycling: colors.blue,
+  indoor_cycling: colors.green,
+  virtual_cycling: colors.green,
+  e_bike_cycling: colors.green,
+  cyclocross: colors.orange,
+  track_cycling: colors.blue,
+  bmx: colors.purple,
+  hand_cycling: colors.green,
+};
+
+function colorForActivityType(activityType: string): string {
+  return ACTIVITY_TYPE_COLORS[activityType] ?? colors.blue;
+}
 
 export function VerticalAscentChart({ data, units, width: fixedWidth }: VerticalAscentChartProps) {
   const [measuredWidth, setMeasuredWidth] = useState(0);
@@ -93,12 +109,6 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
   const lastPoint = points[points.length - 1] ?? firstPoint;
   const xTicks = firstPoint === lastPoint ? [firstPoint] : [firstPoint, lastPoint];
   const activityTypes = [...new Set(points.map((point) => point.activityType))];
-  const colorByActivityType = new Map(
-    activityTypes.map((activityType, index) => [
-      activityType,
-      SERIES_COLORS[index % SERIES_COLORS.length],
-    ]),
-  );
 
   const svgHeight = CHART_HEIGHT + PADDING.top + PADDING.bottom;
 
@@ -180,7 +190,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
               cx={scaleX(point.timestamp)}
               cy={scaleY(point.displayVam)}
               r={radius}
-              fill={colorByActivityType.get(point.activityType) ?? colors.purple}
+              fill={colorForActivityType(point.activityType)}
               opacity={0.7}
             />
           );
@@ -194,7 +204,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
               <View
                 style={[
                   styles.legendSwatch,
-                  { backgroundColor: colorByActivityType.get(activityType) ?? colors.purple },
+                  { backgroundColor: colorForActivityType(activityType) },
                 ]}
               />
               <Text style={styles.legendText}>{formatActivityTypeLabel(activityType)}</Text>
@@ -213,7 +223,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
 }
 
 function formatDateLabel(dateText: string): string {
-  const date = new Date(`${dateText}T00:00:00`);
+  const date = new Date(dateText.includes("T") ? dateText : `${dateText}T00:00:00`);
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 

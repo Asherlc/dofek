@@ -140,7 +140,7 @@ describe("VerticalAscentModel", () => {
       activityName: "Hill Climb",
       activityType: "mountain_biking",
       elevationGainMeters: 500,
-      climbingSeconds: 1800, // 30 minutes
+      elapsedSeconds: 1800, // 30 minutes
     });
     // 500m / (1800/3600 h) = 1000 m/h
     expect(model.verticalAscentRate).toBe(1000);
@@ -152,18 +152,18 @@ describe("VerticalAscentModel", () => {
       activityName: "Hill Climb",
       activityType: "mountain_biking",
       elevationGainMeters: 500,
-      climbingSeconds: 1800,
+      elapsedSeconds: 1800,
     });
     expect(model.climbingMinutes).toBe(30);
   });
 
-  it("returns 0 VAM when no climbing seconds", () => {
+  it("returns 0 VAM when no elapsed seconds", () => {
     const model = new VerticalAscentModel({
       date: "2024-03-15",
       activityName: "Flat Ride",
       activityType: "road_cycling",
       elevationGainMeters: 0,
-      climbingSeconds: 0,
+      elapsedSeconds: 0,
     });
     expect(model.verticalAscentRate).toBe(0);
   });
@@ -174,7 +174,7 @@ describe("VerticalAscentModel", () => {
       activityName: "Hill Climb",
       activityType: "mountain_biking",
       elevationGainMeters: 500,
-      climbingSeconds: 1800,
+      elapsedSeconds: 1800,
     });
     const detail = model.toDetail();
     expect(detail.date).toBe("2024-03-15");
@@ -663,7 +663,7 @@ describe("CyclingAdvancedRepository", () => {
           name: "Hill Climb",
           activity_type: "mountain_biking",
           elevation_gain: 500,
-          climbing_seconds: 1800,
+          elapsed_seconds: 1800,
         },
       ]);
       const result = await repo.getVerticalAscentRates(90);
@@ -683,7 +683,7 @@ describe("CyclingAdvancedRepository", () => {
             name: "Garmin Ride",
             activity_type: "road_cycling",
             elevation_gain: 800,
-            climbing_seconds: 2400,
+            elapsed_seconds: 2400,
           },
         ],
         1,
@@ -703,7 +703,7 @@ describe("CyclingAdvancedRepository", () => {
       expect(query).toContain("asum.activity_type AS activity_type");
       expect(query).toContain("round(asum.elevation_gain_m, 1)");
       expect(query).toContain(
-        "greatest(toInt32(dateDiff('second', asum.started_at, asum.ended_at)), 0)",
+        "greatest(toInt32(dateDiff('second', asum.started_at, asum.ended_at)), 0) AS elapsed_seconds",
       );
       expect(query).toContain("asum.elevation_gain_m > 0");
       expect(query).not.toContain("asum.climbing_seconds > 60");
@@ -722,7 +722,7 @@ describe("CyclingAdvancedRepository", () => {
           name: "Rolling Gravel",
           activity_type: "gravel_cycling",
           elevation_gain: 300,
-          climbing_seconds: 45,
+          elapsed_seconds: 45,
         },
       ]);
 

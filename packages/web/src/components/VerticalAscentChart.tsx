@@ -10,6 +10,24 @@ interface VerticalAscentChartProps {
   loading?: boolean;
 }
 
+const ACTIVITY_TYPE_COLORS: Record<string, string> = {
+  road_cycling: chartColors.teal,
+  mountain_biking: chartColors.purple,
+  gravel_cycling: chartColors.orange,
+  cycling: chartColors.blue,
+  indoor_cycling: chartColors.green,
+  virtual_cycling: chartColors.green,
+  e_bike_cycling: chartColors.emerald,
+  cyclocross: chartColors.amber,
+  track_cycling: chartColors.pink,
+  bmx: chartColors.pink,
+  hand_cycling: chartColors.emerald,
+};
+
+function colorForActivityType(activityType: string): string {
+  return ACTIVITY_TYPE_COLORS[activityType] ?? chartColors.blue;
+}
+
 export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps) {
   const units = useUnitConverter();
 
@@ -43,13 +61,6 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
       maxGain > 0 ? minSize + (d.elevationGainMeters / maxGain) * (maxSize - minSize) : minSize,
   }));
   const activityTypes = [...new Set(scatterData.map((point) => point.activityType))];
-  const palette = [
-    chartColors.teal,
-    chartColors.purple,
-    chartColors.orange,
-    chartColors.blue,
-    chartColors.green,
-  ];
 
   const option = {
     grid: dofekGrid("single", { top: activityTypes.length > 1 ? 64 : 40, bottom: 46 }),
@@ -86,7 +97,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
     }),
     xAxis: { ...dofekAxis.time(), name: "Date" },
     yAxis: dofekAxis.value({ name: `VAM (${eLabel}/h)` }),
-    series: activityTypes.map((activityType, index) => ({
+    series: activityTypes.map((activityType) => ({
       name: formatActivityTypeLabel(activityType),
       type: "scatter",
       data: scatterData
@@ -111,7 +122,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
         return minSize;
       },
       itemStyle: {
-        color: palette[index % palette.length],
+        color: colorForActivityType(activityType),
         opacity: 0.7,
       },
     })),

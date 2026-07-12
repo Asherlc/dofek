@@ -64,7 +64,7 @@ const vamRowSchema = z.object({
   name: z.string(),
   activity_type: z.string(),
   elevation_gain: z.coerce.number(),
-  climbing_seconds: z.coerce.number(),
+  elapsed_seconds: z.coerce.number(),
 });
 
 const pedalRowSchema = z.object({
@@ -443,8 +443,7 @@ export class CyclingAdvancedRepository {
     };
   }
 
-  /** Vertical ascent rate (VAM) for climbing segments. Uses grade samples when
-   *  available, falling back to altitude-only diffs otherwise. */
+  /** Whole-activity vertical ascent rate (VAM) from elevation gain over elapsed duration. */
   async getVerticalAscentRates(days: RangeDays): Promise<VerticalAscentModel[]> {
     if ((await this.#loadRawActivityCount(days)) === 0) {
       return [];
@@ -458,7 +457,7 @@ export class CyclingAdvancedRepository {
         coalesce(nullIf(asum.name, ''), asum.activity_type) AS name,
         asum.activity_type AS activity_type,
         round(asum.elevation_gain_m, 1) AS elevation_gain,
-        greatest(toInt32(dateDiff('second', asum.started_at, asum.ended_at)), 0) AS climbing_seconds
+        greatest(toInt32(dateDiff('second', asum.started_at, asum.ended_at)), 0) AS elapsed_seconds
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
         AND has({activityTypes:Array(String)}, asum.activity_type)
@@ -480,7 +479,7 @@ export class CyclingAdvancedRepository {
           activityName: row.name,
           activityType: row.activity_type,
           elevationGainMeters: row.elevation_gain,
-          climbingSeconds: row.climbing_seconds,
+          elapsedSeconds: row.elapsed_seconds,
         }),
     );
   }

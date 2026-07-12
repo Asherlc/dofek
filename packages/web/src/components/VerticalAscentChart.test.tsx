@@ -27,10 +27,18 @@ vi.mock("./LoadingSkeleton.tsx", () => ({
 const { VerticalAscentChart } = await import("./VerticalAscentChart.tsx");
 
 describe("VerticalAscentChart", () => {
-  it("renders separate scatter series by cycling type", () => {
+  it("renders separate scatter series by cycling type with stable colors", () => {
     render(
       <VerticalAscentChart
         data={[
+          {
+            date: "2026-04-03",
+            activityName: "Gravel Ride",
+            activityType: "gravel_cycling",
+            verticalAscentRate: 700,
+            elevationGainMeters: 350,
+            climbingMinutes: 30,
+          },
           {
             date: "2026-04-01",
             activityName: "Road Ride",
@@ -47,14 +55,6 @@ describe("VerticalAscentChart", () => {
             elevationGainMeters: 250,
             climbingMinutes: 30,
           },
-          {
-            date: "2026-04-03",
-            activityName: "Gravel Ride",
-            activityType: "gravel_cycling",
-            verticalAscentRate: 700,
-            elevationGainMeters: 350,
-            climbingMinutes: 30,
-          },
         ]}
       />,
     );
@@ -64,10 +64,13 @@ describe("VerticalAscentChart", () => {
 
     expect(option.legend.show).toBe(true);
     expect(option.series.map((series: { name: string }) => series.name)).toEqual([
+      "Gravel Cycling",
       "Road Cycling",
       "Mountain Biking",
-      "Gravel Cycling",
     ]);
+    expect(
+      option.series.map((series: { itemStyle: { color: string } }) => series.itemStyle.color),
+    ).toEqual(["#ea580c", "#0ea5e9", "#5E35B1"]);
     expect(option.series.every((series: { type: string }) => series.type === "scatter")).toBe(true);
     expect(option.xAxis.name).toBe("Date");
   });

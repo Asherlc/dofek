@@ -133,7 +133,7 @@ describe("cyclingAdvancedRouter", () => {
   });
 
   describe("verticalAscentRate", () => {
-    it("computes VAM (m/h) from elevation gain over climbing seconds", async () => {
+    it("computes VAM (m/h) from elevation gain over elapsed seconds", async () => {
       const caller = makeCaller([
         [
           {
@@ -141,7 +141,7 @@ describe("cyclingAdvancedRouter", () => {
             name: "Mountain Ride",
             activity_type: "mountain_biking",
             elevation_gain: 500,
-            climbing_seconds: 3600,
+            elapsed_seconds: 3600,
           },
         ],
       ]);
