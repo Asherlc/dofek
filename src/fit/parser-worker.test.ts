@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { WorkerOptions } from "node:worker_threads";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ParsedFitActivity } from "./parser.ts";
+import { parsedFitActivityFixture } from "./test-helpers.ts";
 
 const fixturesPath = resolve(import.meta.dirname, "fixtures");
 const originalExecArgv = [...process.execArgv];
@@ -25,23 +25,6 @@ class MockWorker extends EventEmitter {
     this.options = options;
     MockWorker.instances.push(this);
   }
-}
-
-function parsedFitActivityFixture(): ParsedFitActivity {
-  return {
-    session: {
-      sport: "cycling",
-      startTime: new Date("2025-01-01T00:00:00.000Z"),
-      totalElapsedTime: 1,
-      totalTimerTime: 1,
-      totalDistance: 1,
-      totalCalories: 1,
-      raw: {},
-    },
-    records: [],
-    laps: [],
-    events: [],
-  };
 }
 
 async function importParserWorkerWithMockWorker(): Promise<typeof import("./parser-worker.ts")> {
