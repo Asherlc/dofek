@@ -55,6 +55,22 @@ describe("VerticalAscentChart", () => {
             elevationGainMeters: 250,
             climbingMinutes: 30,
           },
+          {
+            date: "2026-04-04",
+            activityName: "Trainer Ride",
+            activityType: "indoor_cycling",
+            verticalAscentRate: 400,
+            elevationGainMeters: 200,
+            climbingMinutes: 30,
+          },
+          {
+            date: "2026-04-05",
+            activityName: "Virtual Ride",
+            activityType: "virtual_cycling",
+            verticalAscentRate: 300,
+            elevationGainMeters: 150,
+            climbingMinutes: 30,
+          },
         ]}
       />,
     );
@@ -67,10 +83,15 @@ describe("VerticalAscentChart", () => {
       "Gravel Cycling",
       "Road Cycling",
       "Mountain Biking",
+      "Other Cycling",
     ]);
     expect(
       option.series.map((series: { itemStyle: { color: string } }) => series.itemStyle.color),
-    ).toEqual(["#ea580c", "#0ea5e9", "#5E35B1"]);
+    ).toEqual(["#ea580c", "#0ea5e9", "#5E35B1", "#2563eb"]);
+    const otherSeries = option.series.find(
+      (series: { name: string }) => series.name === "Other Cycling",
+    );
+    expect(otherSeries.data).toHaveLength(2);
     expect(option.series.every((series: { type: string }) => series.type === "scatter")).toBe(true);
     expect(option.xAxis.name).toBe("Date");
   });

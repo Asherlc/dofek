@@ -10,22 +10,35 @@ interface VerticalAscentChartProps {
   loading?: boolean;
 }
 
-const ACTIVITY_TYPE_COLORS: Record<string, string> = {
+type ActivityTypeGroup = "road_cycling" | "mountain_biking" | "gravel_cycling" | "other_cycling";
+
+const ACTIVITY_TYPE_GROUP_LABELS: Record<ActivityTypeGroup, string> = {
+  road_cycling: "Road Cycling",
+  mountain_biking: "Mountain Biking",
+  gravel_cycling: "Gravel Cycling",
+  other_cycling: "Other Cycling",
+};
+
+const ACTIVITY_TYPE_GROUP_COLORS: Record<ActivityTypeGroup, string> = {
   road_cycling: chartColors.teal,
   mountain_biking: chartColors.purple,
   gravel_cycling: chartColors.orange,
-  cycling: chartColors.blue,
-  indoor_cycling: chartColors.green,
-  virtual_cycling: chartColors.green,
-  e_bike_cycling: chartColors.emerald,
-  cyclocross: chartColors.amber,
-  track_cycling: chartColors.pink,
-  bmx: chartColors.pink,
-  hand_cycling: chartColors.emerald,
+  other_cycling: chartColors.blue,
 };
 
-function colorForActivityType(activityType: string): string {
-  return ACTIVITY_TYPE_COLORS[activityType] ?? chartColors.blue;
+function groupForActivityType(activityType: string): ActivityTypeGroup {
+  if (activityType === "road_cycling") return "road_cycling";
+  if (activityType === "mountain_biking") return "mountain_biking";
+  if (activityType === "gravel_cycling") return "gravel_cycling";
+  return "other_cycling";
+}
+
+function labelForActivityTypeGroup(activityTypeGroup: ActivityTypeGroup): string {
+  return ACTIVITY_TYPE_GROUP_LABELS[activityTypeGroup];
+}
+
+function colorForActivityTypeGroup(activityTypeGroup: ActivityTypeGroup): string {
+  return ACTIVITY_TYPE_GROUP_COLORS[activityTypeGroup];
 }
 
 export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps) {
@@ -56,16 +69,19 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
     value: [d.date, units.convertElevation(d.verticalAscentRate)],
     name: d.activityName,
     activityType: d.activityType,
+    activityTypeGroup: groupForActivityType(d.activityType),
     elevationGain: units.convertElevation(d.elevationGainMeters),
     symbolSize:
       maxGain > 0 ? minSize + (d.elevationGainMeters / maxGain) * (maxSize - minSize) : minSize,
   }));
-  const activityTypes = [...new Set(scatterData.map((point) => point.activityType))];
+  const activityTypeGroups = [...new Set(scatterData.map((point) => point.activityTypeGroup))];
 
   const option = {
-    grid: dofekGrid("single", { top: activityTypes.length > 1 ? 64 : 40, bottom: 46 }),
-    legend: dofekLegend(activityTypes.length > 1, {
-      data: activityTypes.map((activityType) => formatActivityTypeLabel(activityType)),
+    grid: dofekGrid("single", { top: activityTypeGroups.length > 1 ? 64 : 40, bottom: 46 }),
+    legend: dofekLegend(activityTypeGroups.length > 1, {
+      data: activityTypeGroups.map((activityTypeGroup) =>
+        labelForActivityTypeGroup(activityTypeGroup),
+      ),
     }),
     tooltip: dofekTooltip({
       trigger: "item",
@@ -97,15 +113,16 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
     }),
     xAxis: { ...dofekAxis.time(), name: "Date" },
     yAxis: dofekAxis.value({ name: `VAM (${eLabel}/h)` }),
-    series: activityTypes.map((activityType) => ({
-      name: formatActivityTypeLabel(activityType),
+    series: activityTypeGroups.map((activityTypeGroup) => ({
+      name: labelForActivityTypeGroup(activityTypeGroup),
       type: "scatter",
       data: scatterData
-        .filter((point) => point.activityType === activityType)
+        .filter((point) => point.activityTypeGroup === activityTypeGroup)
         .map((d) => ({
           value: d.value,
           name: d.name,
           activityType: d.activityType,
+          activityTypeGroup: d.activityTypeGroup,
           elevationGain: d.elevationGain,
           symbolSize: d.symbolSize,
         })),
@@ -122,7 +139,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
         return minSize;
       },
       itemStyle: {
-        color: colorForActivityType(activityType),
+        color: colorForActivityTypeGroup(activityTypeGroup),
         opacity: 0.7,
       },
     })),

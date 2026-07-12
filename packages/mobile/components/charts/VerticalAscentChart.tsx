@@ -1,6 +1,5 @@
 import { formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
@@ -26,22 +25,35 @@ const PADDING = { top: 20, right: 16, bottom: 28, left: 48 };
 const CHART_HEIGHT = 200;
 const MIN_BUBBLE_RADIUS = 4;
 const MAX_BUBBLE_RADIUS = 16;
-const ACTIVITY_TYPE_COLORS: Record<string, string> = {
+type ActivityTypeGroup = "road_cycling" | "mountain_biking" | "gravel_cycling" | "other_cycling";
+
+const ACTIVITY_TYPE_GROUP_LABELS: Record<ActivityTypeGroup, string> = {
+  road_cycling: "Road Cycling",
+  mountain_biking: "Mountain Biking",
+  gravel_cycling: "Gravel Cycling",
+  other_cycling: "Other Cycling",
+};
+
+const ACTIVITY_TYPE_GROUP_COLORS: Record<ActivityTypeGroup, string> = {
   road_cycling: colors.teal,
   mountain_biking: colors.purple,
   gravel_cycling: colors.orange,
-  cycling: colors.blue,
-  indoor_cycling: colors.green,
-  virtual_cycling: colors.green,
-  e_bike_cycling: colors.green,
-  cyclocross: colors.orange,
-  track_cycling: colors.blue,
-  bmx: colors.purple,
-  hand_cycling: colors.green,
+  other_cycling: colors.blue,
 };
 
-function colorForActivityType(activityType: string): string {
-  return ACTIVITY_TYPE_COLORS[activityType] ?? colors.blue;
+function groupForActivityType(activityType: string): ActivityTypeGroup {
+  if (activityType === "road_cycling") return "road_cycling";
+  if (activityType === "mountain_biking") return "mountain_biking";
+  if (activityType === "gravel_cycling") return "gravel_cycling";
+  return "other_cycling";
+}
+
+function labelForActivityTypeGroup(activityTypeGroup: ActivityTypeGroup): string {
+  return ACTIVITY_TYPE_GROUP_LABELS[activityTypeGroup];
+}
+
+function colorForActivityTypeGroup(activityTypeGroup: ActivityTypeGroup): string {
+  return ACTIVITY_TYPE_GROUP_COLORS[activityTypeGroup];
 }
 
 export function VerticalAscentChart({ data, units, width: fixedWidth }: VerticalAscentChartProps) {
@@ -74,6 +86,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
   // Convert to display units
   const points = data.map((point) => ({
     ...point,
+    activityTypeGroup: groupForActivityType(point.activityType),
     displayVam: units.convertElevation(point.verticalAscentRate),
     displayGain: units.convertElevation(point.elevationGainMeters),
     timestamp: new Date(point.date).getTime(),
@@ -108,7 +121,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
   }
   const lastPoint = points[points.length - 1] ?? firstPoint;
   const xTicks = firstPoint === lastPoint ? [firstPoint] : [firstPoint, lastPoint];
-  const activityTypes = [...new Set(points.map((point) => point.activityType))];
+  const activityTypeGroups = [...new Set(points.map((point) => point.activityTypeGroup))];
 
   const svgHeight = CHART_HEIGHT + PADDING.top + PADDING.bottom;
 
@@ -190,24 +203,24 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
               cx={scaleX(point.timestamp)}
               cy={scaleY(point.displayVam)}
               r={radius}
-              fill={colorForActivityType(point.activityType)}
+              fill={colorForActivityTypeGroup(point.activityTypeGroup)}
               opacity={0.7}
             />
           );
         })}
       </Svg>
 
-      {activityTypes.length > 1 && (
+      {activityTypeGroups.length > 1 && (
         <View style={styles.legend}>
-          {activityTypes.map((activityType) => (
-            <View key={activityType} style={styles.legendItem}>
+          {activityTypeGroups.map((activityTypeGroup) => (
+            <View key={activityTypeGroup} style={styles.legendItem}>
               <View
                 style={[
                   styles.legendSwatch,
-                  { backgroundColor: colorForActivityType(activityType) },
+                  { backgroundColor: colorForActivityTypeGroup(activityTypeGroup) },
                 ]}
               />
-              <Text style={styles.legendText}>{formatActivityTypeLabel(activityType)}</Text>
+              <Text style={styles.legendText}>{labelForActivityTypeGroup(activityTypeGroup)}</Text>
             </View>
           ))}
         </View>
