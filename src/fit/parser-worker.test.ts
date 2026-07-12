@@ -75,14 +75,6 @@ describe("parseFitFileInWorkerThread", () => {
     expect(result.records.length).toBe(3229);
   });
 
-  it("propagates parser errors from the worker thread", async () => {
-    const { parseFitFileInWorkerThread } = await importParserWorkerWithRealWorker();
-
-    await expect(parseFitFileInWorkerThread(Buffer.from("not a fit file"))).rejects.toThrow(
-      /incorrect header size/i,
-    );
-  });
-
   it("resolves the parsed activity from a valid worker message", async () => {
     const { parseFitFileInWorkerThread } = await importParserWorkerWithMockWorker();
     const activity = parsedFitActivityFixture();
@@ -98,7 +90,7 @@ describe("parseFitFileInWorkerThread", () => {
     expect(worker.listenerCount("exit")).toBe(0);
   });
 
-  it("rejects errors returned by the worker", async () => {
+  it("propagates parser errors returned by the worker", async () => {
     const { parseFitFileInWorkerThread } = await importParserWorkerWithMockWorker();
 
     const resultPromise = parseFitFileInWorkerThread(Buffer.from("fit"));

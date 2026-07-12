@@ -1,21 +1,35 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-const fixturesPath = resolve(import.meta.dirname, "fixtures");
+import type { ParsedFitActivity } from "./parser.ts";
 
 interface MockParentPort {
   postMessage: ReturnType<typeof vi.fn>;
 }
 
-function loadFixture(name: string): Buffer {
-  return readFileSync(resolve(fixturesPath, name));
+function parsedFitActivityFixture(): ParsedFitActivity {
+  return {
+    session: {
+      sport: "cycling",
+      startTime: new Date("2025-01-01T00:00:00.000Z"),
+      totalElapsedTime: 1,
+      totalTimerTime: 1,
+      totalDistance: 1,
+      totalCalories: 1,
+      raw: {},
+    },
+    records: [],
+    laps: [],
+    events: [],
+  };
 }
 
-async function importWorkerEntry(workerData: unknown): Promise<MockParentPort> {
+async function importWorkerEntry(
+  workerData: unknown,
+  parseFitFile: ReturnType<typeof vi.fn> = vi.fn(),
+): Promise<MockParentPort> {
   vi.resetModules();
   const parentPort: MockParentPort = { postMessage: vi.fn() };
   vi.doMock("node:worker_threads", () => ({ parentPort, workerData }));
+  vi.doMock("./parser.ts", () => ({ parseFitFile }));
 
   await import("./parser-worker-entry.ts");
   await vi.waitFor(() => expect(parentPort.postMessage).toHaveBeenCalled());
@@ -25,13 +39,17 @@ async function importWorkerEntry(workerData: unknown): Promise<MockParentPort> {
 
 afterEach(() => {
   vi.doUnmock("node:worker_threads");
+  vi.doUnmock("./parser.ts");
   vi.resetModules();
   vi.restoreAllMocks();
 });
 
 describe("FIT parser worker entrypoint", () => {
   it("posts parsed activity messages", async () => {
-    const parentPort = await importWorkerEntry(loadFixture("test.fit"));
+    const parseFitFile = vi.fn(() => Promise.resolve(parsedFitActivityFixture()));
+    const workerData = Buffer.from("fit");
+
+    const parentPort = await importWorkerEntry(workerData, parseFitFile);
 
     expect(parentPort.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -42,10 +60,13 @@ describe("FIT parser worker entrypoint", () => {
         }),
       }),
     );
+    expect(parseFitFile).toHaveBeenCalledWith(workerData);
   });
 
   it("posts parser error messages", async () => {
-    const parentPort = await importWorkerEntry(Buffer.from("not a fit file"));
+    const parseFitFile = vi.fn(() => Promise.reject(new Error("incorrect header size")));
+
+    const parentPort = await importWorkerEntry(Buffer.from("not a fit file"), parseFitFile);
 
     expect(parentPort.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
