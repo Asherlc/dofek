@@ -12654,3 +12654,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   URLs miss cache and pick up the CORS policy. Add a deploy preflight that fails
   if the production HTML references `assets.dofek.fit` but the R2 custom domain,
   DNS, or CORS policy is missing.
+
+## 2026-07-11 — Mobile Food Initial Load Reported Parse Failure
+
+- **Symptoms:** Sentry issue
+  `https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-17` reported one
+  handled production mobile error at `2026-07-11T14:48:45.972Z`:
+  `food:byDate: Zod parse failed` with `Invalid input: expected array, received
+  undefined`.
+- **User impact:** One iOS user triggered error reporting while opening the
+  nutrition screen. The screen rendered the normal loading state, but Sentry was
+  polluted with a non-actionable parse error for the initial query state.
+- **Evidence:** The Sentry stack pointed at `FoodScreen` and `safeParseRows`,
+  with context `food:byDate`. A focused mobile test reproduced the exact signal
+  by rendering `FoodScreen` with `food.byDate` data `undefined`, `isLoading:
+  true`, and `isFetching: true`; before the fix, `captureException` received the
+  same `food:byDate` Zod error.
+- **Root cause:** `FoodScreen` passed `foodQuery.data` directly into
+  `safeParseRows`. React Query exposes `data` as `undefined` before the first
+  request resolves, but `safeParseRows` is intentionally strict and reports
+  non-array inputs as malformed server data.
+- **Fix / mitigation:** Normalize only the active loading/fetching
+  `undefined` state to `[]` at the `FoodScreen` call site before invoking
+  `safeParseRows`. Settled malformed responses still reach the strict parser
+  and continue to report to Sentry.
+- **Validation:** `pnpm --filter dofek-mobile exec vitest run
+  'app/(tabs)/food.test.tsx'`, `pnpm --filter dofek-mobile exec vitest run
+  lib/safe-parse.test.ts`, `pnpm --filter dofek-mobile typecheck`, and
+  `pnpm --filter dofek-mobile lint` passed locally.
+- **Remaining risk / follow-up:** Monitor Sentry after the next mobile OTA or
+  binary release for new `food:byDate` parse errors. Any future occurrence where
+  `isLoading` and `isFetching` are false should be treated as a real API shape
+  mismatch rather than a loading-state artifact.

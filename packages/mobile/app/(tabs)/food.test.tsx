@@ -9,6 +9,7 @@ const analyzeItemsMutateAsyncMock = vi.fn();
 const createAiEntryMutateAsyncMock = vi.fn();
 const deleteMutateMock = vi.fn();
 const loggerInfoMock = vi.fn();
+const captureExceptionMock = vi.fn();
 const openExternalUrlMock = vi.fn(() => Promise.resolve(true));
 const invalidateFoodByDateMock = vi.fn(() => Promise.resolve());
 const invalidateSettingsGetMock = vi.fn(() => Promise.resolve());
@@ -17,7 +18,7 @@ const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | u
   onRefresh: vi.fn(),
 }));
 let foodByDateQuery: {
-  data: unknown[];
+  data: unknown[] | undefined;
   isError: boolean;
   isFetching?: boolean;
   isLoading: boolean;
@@ -69,7 +70,7 @@ vi.mock("../../lib/useRefresh", () => ({
 }));
 
 vi.mock("../../lib/telemetry", () => ({
-  captureException: vi.fn(),
+  captureException: captureExceptionMock,
   logger: {
     info: loggerInfoMock,
   },
@@ -230,5 +231,20 @@ describe("FoodScreen AI meal confirmation", () => {
 
     expect(screen.getByText("Greek yogurt")).toBeTruthy();
     expect(screen.queryByText("Loading...")).toBeNull();
+  });
+
+  it("does not report missing food data while the first request is loading", async () => {
+    foodByDateQuery = {
+      data: undefined,
+      isError: false,
+      isFetching: true,
+      isLoading: true,
+    };
+    const { default: FoodScreen } = await import("./food");
+
+    render(<FoodScreen />);
+
+    expect(screen.getByText("Loading...")).toBeTruthy();
+    expect(captureExceptionMock).not.toHaveBeenCalled();
   });
 });
