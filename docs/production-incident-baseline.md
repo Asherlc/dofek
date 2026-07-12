@@ -12560,3 +12560,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   URLs miss cache and pick up the CORS policy. Add a deploy preflight that fails
   if the production HTML references `assets.dofek.fit` but the R2 custom domain,
   DNS, or CORS policy is missing.
+
+## 2026-07-12 — FIT Worker Unit and Mutation CI Flake
+
+- **Symptoms:** PR CI failed `Test / Unit Tests`, `Test / Stryker (0)`,
+  `Test / Mutation Testing`, and aggregate gate jobs after adding the parent-side
+  FIT parser worker timeout.
+- **User impact:** The Garmin dump stalled-job fix could not merge because CI
+  blocked the PR.
+- **Evidence:** The first fatal unit-test assertion was
+  `expected [Function] to throw error matching /incorrect header size/i but got
+  'FIT parser worker timed out after 10000ms'` in
+  `src/fit/parser-worker.test.ts`. The Stryker dry run failed on the same test
+  before mutation execution.
+- **Root cause:** Worker wrapper tests exercised the real FIT parser with
+  malformed bytes. On GitHub Actions the malformed parse path could exceed the
+  new parent-side 10 second timeout, so the test asserted a parser-specific
+  error while the correct wrapper behavior was now a timeout.
+- **Fix / mitigation:** Replaced the timing-sensitive malformed real-worker test
+  with mocked worker-message coverage for parser error propagation. Mocked
+  `parseFitFile()` in `parser-worker-entry.test.ts` so entrypoint tests verify
+  message handling without depending on malformed FIT parser runtime.
+- **Validation:** `pnpm test:unit`, `pnpm lint`,
+  `pnpm -r --if-present typecheck`, and both affected Stryker shards passed
+  locally. GitHub CI for commit `3e4dc4f19` reported `Test / Unit Tests`,
+  `Test / Stryker (0)`, `Test / Stryker (1)`, `Test / Stryker (2)`, and
+  `Test / Mutation Testing` as successful.
+- **Remaining risk / follow-up:** Low. Keep worker wrapper tests focused on the
+  wrapper contract and parser tests focused on parser behavior so timeout policy
+  and parser implementation timing do not race each other.
