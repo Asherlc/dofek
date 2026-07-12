@@ -11,7 +11,7 @@ import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ParsedFitSession } from "../fit/parser.ts";
-import { parseFitFile } from "../fit/parser.ts";
+import { parseFitFileInWorkerThread } from "../fit/parser-worker.ts";
 import { fitRecordsToSensorSamples } from "../fit/records.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
@@ -398,10 +398,9 @@ export async function importGarminDumpFile(
     if (processedFitExternalIds.has(externalId)) {
       continue;
     }
-    processedFitExternalIds.add(externalId);
 
     try {
-      const fitActivity = await parseFitFile(fitFile.data);
+      const fitActivity = await parseFitFileInWorkerThread(fitFile.data);
       const summary = summaryByExternalId.get(externalId);
       const activityType = summary
         ? mapGarminDumpActivityType(summary.activityType, summary.sportType)
@@ -449,6 +448,7 @@ export async function importGarminDumpFile(
         await replaceMetricStreamBatch(db, { activityId: activity.id }, rows, SOURCE_TYPE_FILE);
       }
 
+      processedFitExternalIds.add(externalId);
       if (!summary) recordsSynced++;
     } catch (error) {
       errors.push({
