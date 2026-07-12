@@ -86,8 +86,12 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
   // Y-axis tick labels (3 values: min, mid, max)
   const yMid = (yPaddedMin + yPaddedMax) / 2;
   const yTicks = [yPaddedMin, yMid, yPaddedMax];
-  const xTicks =
-    points.length === 1 ? [points[0]] : [points[0], points[points.length - 1]].filter(Boolean);
+  const firstPoint = points[0];
+  if (!firstPoint) {
+    return null;
+  }
+  const lastPoint = points[points.length - 1] ?? firstPoint;
+  const xTicks = firstPoint === lastPoint ? [firstPoint] : [firstPoint, lastPoint];
   const activityTypes = [...new Set(points.map((point) => point.activityType))];
   const colorByActivityType = new Map(
     activityTypes.map((activityType, index) => [
