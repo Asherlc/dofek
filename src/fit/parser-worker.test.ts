@@ -168,9 +168,9 @@ describe("parseFitFileInWorkerThread", () => {
 
     const resultPromise = parseFitFileInWorkerThread(Buffer.from("fit"));
     const worker = expectWorkerInstance();
-    vi.advanceTimersByTime(10_000);
+    vi.advanceTimersByTime(120_000);
 
-    await expect(resultPromise).rejects.toThrow("FIT parser worker timed out after 10000ms");
+    await expect(resultPromise).rejects.toThrow("FIT parser worker timed out after 120000ms");
     expect(worker.terminate).toHaveBeenCalledOnce();
     expect(worker.listenerCount("message")).toBe(0);
     expect(worker.listenerCount("error")).toBe(0);

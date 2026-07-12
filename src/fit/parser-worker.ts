@@ -2,7 +2,7 @@ import { Worker } from "node:worker_threads";
 import { z } from "zod";
 import type { ParsedFitActivity } from "./parser.ts";
 
-const FIT_PARSER_WORKER_TIMEOUT_MS = 10_000;
+const FIT_PARSER_WORKER_TIMEOUT_MS = 120_000;
 
 const parsedFitRawRecordSchema = z.record(z.string(), z.unknown());
 
