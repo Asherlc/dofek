@@ -62,6 +62,7 @@ const variabilityCountSchema = z.object({ total: z.coerce.number() });
 const vamRowSchema = z.object({
   date: dateStringSchema,
   name: z.string(),
+  activity_type: z.string(),
   elevation_gain: z.coerce.number(),
   climbing_seconds: z.coerce.number(),
 });
@@ -454,14 +455,15 @@ export class CyclingAdvancedRepository {
       vamRowSchema,
       `SELECT
         toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
-        asum.name AS name,
-        round(asum.climbing_elevation_gain_m, 1) AS elevation_gain,
-        toInt32(asum.climbing_seconds) AS climbing_seconds
+        coalesce(nullIf(asum.name, ''), asum.activity_type) AS name,
+        asum.activity_type AS activity_type,
+        round(asum.elevation_gain_m, 1) AS elevation_gain,
+        greatest(toInt32(dateDiff('second', asum.started_at, asum.ended_at)), 0) AS climbing_seconds
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
         AND has({activityTypes:Array(String)}, asum.activity_type)
         ${rangeFilter}
-        AND asum.climbing_seconds > 60
+        AND asum.elevation_gain_m > 0
       ORDER BY asum.started_at`,
       {
         userId: this.#userId,
@@ -476,6 +478,7 @@ export class CyclingAdvancedRepository {
         new VerticalAscentModel({
           date: row.date,
           activityName: row.name,
+          activityType: row.activity_type,
           elevationGainMeters: row.elevation_gain,
           climbingSeconds: row.climbing_seconds,
         }),

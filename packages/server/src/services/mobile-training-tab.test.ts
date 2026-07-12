@@ -149,6 +149,7 @@ describe("loadMobileTrainingTab", () => {
         new VerticalAscentModel({
           date: "2026-03-28",
           activityName: "Hill Climb",
+          activityType: "road_cycling",
           elevationGainMeters: 500,
           climbingSeconds: 1800,
         }),

@@ -1,5 +1,6 @@
 import { formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
@@ -8,6 +9,7 @@ import { colors } from "../../theme";
 export interface VerticalAscentDataPoint {
   date: string;
   activityName: string;
+  activityType: string;
   verticalAscentRate: number;
   elevationGainMeters: number;
   climbingMinutes: number;
@@ -24,6 +26,7 @@ const PADDING = { top: 20, right: 16, bottom: 28, left: 48 };
 const CHART_HEIGHT = 200;
 const MIN_BUBBLE_RADIUS = 4;
 const MAX_BUBBLE_RADIUS = 16;
+const SERIES_COLORS = [colors.teal, colors.purple, colors.orange, colors.blue, colors.green];
 
 export function VerticalAscentChart({ data, units, width: fixedWidth }: VerticalAscentChartProps) {
   const [measuredWidth, setMeasuredWidth] = useState(0);
@@ -83,6 +86,15 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
   // Y-axis tick labels (3 values: min, mid, max)
   const yMid = (yPaddedMin + yPaddedMax) / 2;
   const yTicks = [yPaddedMin, yMid, yPaddedMax];
+  const xTicks =
+    points.length === 1 ? [points[0]] : [points[0], points[points.length - 1]].filter(Boolean);
+  const activityTypes = [...new Set(points.map((point) => point.activityType))];
+  const colorByActivityType = new Map(
+    activityTypes.map((activityType, index) => [
+      activityType,
+      SERIES_COLORS[index % SERIES_COLORS.length],
+    ]),
+  );
 
   const svgHeight = CHART_HEIGHT + PADDING.top + PADDING.bottom;
 
@@ -122,6 +134,19 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
           </SvgText>
         ))}
 
+        {xTicks.map((point) => (
+          <SvgText
+            key={`x-${point.date}`}
+            x={scaleX(point.timestamp)}
+            y={PADDING.top + CHART_HEIGHT + 18}
+            textAnchor="middle"
+            fontSize={10}
+            fill={colors.textTertiary}
+          >
+            {formatDateLabel(point.date)}
+          </SvgText>
+        ))}
+
         {/* Grid lines */}
         {yTicks.map((tick) => (
           <Line
@@ -151,12 +176,28 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
               cx={scaleX(point.timestamp)}
               cy={scaleY(point.displayVam)}
               r={radius}
-              fill={colors.purple}
+              fill={colorByActivityType.get(point.activityType) ?? colors.purple}
               opacity={0.7}
             />
           );
         })}
       </Svg>
+
+      {activityTypes.length > 1 && (
+        <View style={styles.legend}>
+          {activityTypes.map((activityType) => (
+            <View key={activityType} style={styles.legendItem}>
+              <View
+                style={[
+                  styles.legendSwatch,
+                  { backgroundColor: colorByActivityType.get(activityType) ?? colors.purple },
+                ]}
+              />
+              <Text style={styles.legendText}>{formatActivityTypeLabel(activityType)}</Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Axis label */}
       <Text style={styles.axisLabel}>Vertical Ascent Rate ({elevationLabel}/h)</Text>
@@ -165,6 +206,11 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
       </Text>
     </View>
   );
+}
+
+function formatDateLabel(dateText: string): string {
+  const date = new Date(`${dateText}T00:00:00`);
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 const styles = StyleSheet.create({
@@ -189,5 +235,26 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: "center",
     marginTop: 4,
+  },
+  legend: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 2,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  legendSwatch: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontSize: 10,
+    color: colors.textTertiary,
   },
 });

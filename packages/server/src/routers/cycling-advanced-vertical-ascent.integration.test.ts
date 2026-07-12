@@ -162,6 +162,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
       {
         date: string;
         activityName: string;
+        activityType: string;
         verticalAscentRate: number;
         elevationGainMeters: number;
         climbingMinutes: number;

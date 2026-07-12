@@ -138,6 +138,7 @@ describe("VerticalAscentModel", () => {
     const model = new VerticalAscentModel({
       date: "2024-03-15",
       activityName: "Hill Climb",
+      activityType: "mountain_biking",
       elevationGainMeters: 500,
       climbingSeconds: 1800, // 30 minutes
     });
@@ -149,6 +150,7 @@ describe("VerticalAscentModel", () => {
     const model = new VerticalAscentModel({
       date: "2024-03-15",
       activityName: "Hill Climb",
+      activityType: "mountain_biking",
       elevationGainMeters: 500,
       climbingSeconds: 1800,
     });
@@ -159,6 +161,7 @@ describe("VerticalAscentModel", () => {
     const model = new VerticalAscentModel({
       date: "2024-03-15",
       activityName: "Flat Ride",
+      activityType: "road_cycling",
       elevationGainMeters: 0,
       climbingSeconds: 0,
     });
@@ -169,12 +172,14 @@ describe("VerticalAscentModel", () => {
     const model = new VerticalAscentModel({
       date: "2024-03-15",
       activityName: "Hill Climb",
+      activityType: "mountain_biking",
       elevationGainMeters: 500,
       climbingSeconds: 1800,
     });
     const detail = model.toDetail();
     expect(detail.date).toBe("2024-03-15");
     expect(detail.activityName).toBe("Hill Climb");
+    expect(detail.activityType).toBe("mountain_biking");
     expect(detail.verticalAscentRate).toBe(1000);
     expect(detail.elevationGainMeters).toBe(500);
     expect(detail.climbingMinutes).toBe(30);
@@ -656,6 +661,7 @@ describe("CyclingAdvancedRepository", () => {
         {
           date: "2024-03-15",
           name: "Hill Climb",
+          activity_type: "mountain_biking",
           elevation_gain: 500,
           climbing_seconds: 1800,
         },
@@ -675,6 +681,7 @@ describe("CyclingAdvancedRepository", () => {
           {
             date: "2024-04-01",
             name: "Garmin Ride",
+            activity_type: "road_cycling",
             elevation_gain: 800,
             climbing_seconds: 2400,
           },
@@ -687,20 +694,46 @@ describe("CyclingAdvancedRepository", () => {
       expect(sensorStore.query).toHaveBeenCalledTimes(1);
     });
 
-    it("queries vertical ascent from precomputed climbing columns with minimum climb duration", async () => {
+    it("queries vertical ascent from elevation gain and includes activity type", async () => {
       const { repo, sensorStore } = makeRepository([], 1);
       await repo.getVerticalAscentRates(90);
       const [, query, params] = sensorStore.query.mock.calls[0];
       expect(query).toContain("analytics.activity_summary");
-      expect(query).toContain("round(asum.climbing_elevation_gain_m, 1)");
-      expect(query).toContain("toInt32(asum.climbing_seconds)");
-      expect(query).toContain("asum.climbing_seconds > 60");
+      expect(query).toContain("coalesce(nullIf(asum.name, ''), asum.activity_type) AS name");
+      expect(query).toContain("asum.activity_type AS activity_type");
+      expect(query).toContain("round(asum.elevation_gain_m, 1)");
+      expect(query).toContain(
+        "greatest(toInt32(dateDiff('second', asum.started_at, asum.ended_at)), 0)",
+      );
+      expect(query).toContain("asum.elevation_gain_m > 0");
+      expect(query).not.toContain("asum.climbing_seconds > 60");
       expect(params).toMatchObject({
         userId: "user-1",
         timezone: "UTC",
         days: 90,
       });
       expectCyclingOnlyActivityTypes(params.activityTypes);
+    });
+
+    it("includes rides with elevation gain when climb seconds are short", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2026-04-20",
+          name: "Rolling Gravel",
+          activity_type: "gravel_cycling",
+          elevation_gain: 300,
+          climbing_seconds: 45,
+        },
+      ]);
+
+      const result = await repo.getVerticalAscentRates(90);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.toDetail()).toMatchObject({
+        activityName: "Rolling Gravel",
+        activityType: "gravel_cycling",
+        elevationGainMeters: 300,
+      });
     });
 
     it("applies finite selected-range lower-bound filters", async () => {

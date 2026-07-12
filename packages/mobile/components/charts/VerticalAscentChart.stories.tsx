@@ -7,6 +7,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
   {
     date: "2024-05-01",
     activityName: "Alpe d'Huez",
+    activityType: "road_cycling",
     verticalAscentRate: 1100,
     elevationGainMeters: 1120,
     climbingMinutes: 61,
@@ -14,6 +15,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
   {
     date: "2024-05-08",
     activityName: "Col du Galibier",
+    activityType: "road_cycling",
     verticalAscentRate: 950,
     elevationGainMeters: 1230,
     climbingMinutes: 78,
@@ -21,6 +23,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
   {
     date: "2024-05-15",
     activityName: "Hill Repeats",
+    activityType: "mountain_biking",
     verticalAscentRate: 1350,
     elevationGainMeters: 320,
     climbingMinutes: 14,
@@ -28,6 +31,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
   {
     date: "2024-05-22",
     activityName: "Mont Ventoux",
+    activityType: "gravel_cycling",
     verticalAscentRate: 880,
     elevationGainMeters: 1610,
     climbingMinutes: 110,
@@ -35,6 +39,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
   {
     date: "2024-06-01",
     activityName: "Local Climb",
+    activityType: "gravel_cycling",
     verticalAscentRate: 1050,
     elevationGainMeters: 450,
     climbingMinutes: 26,

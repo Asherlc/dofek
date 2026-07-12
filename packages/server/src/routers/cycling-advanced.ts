@@ -67,6 +67,7 @@ export interface ActivityVariabilityResult {
 export interface VerticalAscentRow {
   date: string;
   activityName: string;
+  activityType: string;
   verticalAscentRate: number;
   elevationGainMeters: number;
   climbingMinutes: number;

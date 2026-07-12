@@ -344,6 +344,7 @@ export const mobileTrainingTabOutputSchema = z.object({
     z.object({
       date: z.string(),
       activityName: z.string(),
+      activityType: z.string(),
       verticalAscentRate: z.number(),
       elevationGainMeters: z.number(),
       climbingMinutes: z.number(),

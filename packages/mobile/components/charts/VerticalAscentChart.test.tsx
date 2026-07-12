@@ -10,6 +10,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
   {
     date: "2024-06-01",
     activityName: "Mountain Ride",
+    activityType: "mountain_biking",
     verticalAscentRate: 800,
     elevationGainMeters: 600,
     climbingMinutes: 45,
@@ -17,6 +18,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
   {
     date: "2024-06-08",
     activityName: "Hill Repeats",
+    activityType: "road_cycling",
     verticalAscentRate: 1200,
     elevationGainMeters: 400,
     climbingMinutes: 20,
@@ -35,6 +37,12 @@ describe("VerticalAscentChart", () => {
     );
     const circles = container.querySelectorAll("circle");
     expect(circles).toHaveLength(SAMPLE_DATA.length);
+  });
+
+  it("renders x-axis date labels", () => {
+    render(<VerticalAscentChart data={SAMPLE_DATA} units={METRIC} width={360} />);
+    expect(screen.getByText("Jun 1")).toBeTruthy();
+    expect(screen.getByText("Jun 8")).toBeTruthy();
   });
 
   it("shows metric axis label", () => {

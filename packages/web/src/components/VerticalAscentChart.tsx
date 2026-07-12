@@ -1,6 +1,7 @@
 import { formatDateShort, formatNumber } from "@dofek/format/format";
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { VerticalAscentRow } from "dofek-server/types";
-import { chartColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
+import { chartColors, dofekAxis, dofekGrid, dofekLegend, dofekTooltip } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -36,13 +37,25 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
   const scatterData = data.map((d) => ({
     value: [d.date, units.convertElevation(d.verticalAscentRate)],
     name: d.activityName,
+    activityType: d.activityType,
     elevationGain: units.convertElevation(d.elevationGainMeters),
     symbolSize:
       maxGain > 0 ? minSize + (d.elevationGainMeters / maxGain) * (maxSize - minSize) : minSize,
   }));
+  const activityTypes = [...new Set(scatterData.map((point) => point.activityType))];
+  const palette = [
+    chartColors.teal,
+    chartColors.purple,
+    chartColors.orange,
+    chartColors.blue,
+    chartColors.green,
+  ];
 
   const option = {
-    grid: dofekGrid("single", { top: 40, bottom: 30 }),
+    grid: dofekGrid("single", { top: activityTypes.length > 1 ? 64 : 40, bottom: 46 }),
+    legend: dofekLegend(activityTypes.length > 1, {
+      data: activityTypes.map((activityType) => formatActivityTypeLabel(activityType)),
+    }),
     tooltip: dofekTooltip({
       trigger: "item",
       formatter: (params: Record<string, unknown>) => {
@@ -55,47 +68,53 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
             "elevationGain" in rawData && typeof rawData.elevationGain === "number"
               ? rawData.elevationGain
               : 0,
+          activityType:
+            "activityType" in rawData && typeof rawData.activityType === "string"
+              ? rawData.activityType
+              : "",
         };
         if (!itemData.name) return "";
         const [date, vam] = itemData.value;
         return [
           `<strong>${itemData.name}</strong>`,
+          `Type: ${formatActivityTypeLabel(itemData.activityType)}`,
           `Date: ${formatDateShort(date)}`,
           `VAM: ${formatNumber(vam, 0)} ${eLabel}/h`,
           `Elevation Gain: ${formatNumber(itemData.elevationGain, 0)} ${eLabel}`,
         ].join("<br/>");
       },
     }),
-    xAxis: dofekAxis.time(),
+    xAxis: { ...dofekAxis.time(), name: "Date" },
     yAxis: dofekAxis.value({ name: `VAM (${eLabel}/h)` }),
-    series: [
-      {
-        name: "Vertical Ascent Rate",
-        type: "scatter",
-        data: scatterData.map((d) => ({
+    series: activityTypes.map((activityType, index) => ({
+      name: formatActivityTypeLabel(activityType),
+      type: "scatter",
+      data: scatterData
+        .filter((point) => point.activityType === activityType)
+        .map((d) => ({
           value: d.value,
           name: d.name,
+          activityType: d.activityType,
           elevationGain: d.elevationGain,
           symbolSize: d.symbolSize,
         })),
-        symbolSize: (_val: unknown, params: Record<string, unknown>) => {
-          const rawData = params.data;
-          if (
-            rawData &&
-            typeof rawData === "object" &&
-            "symbolSize" in rawData &&
-            typeof rawData.symbolSize === "number"
-          ) {
-            return rawData.symbolSize;
-          }
-          return minSize;
-        },
-        itemStyle: {
-          color: chartColors.purple,
-          opacity: 0.7,
-        },
+      symbolSize: (_val: unknown, params: Record<string, unknown>) => {
+        const rawData = params.data;
+        if (
+          rawData &&
+          typeof rawData === "object" &&
+          "symbolSize" in rawData &&
+          typeof rawData.symbolSize === "number"
+        ) {
+          return rawData.symbolSize;
+        }
+        return minSize;
       },
-    ],
+      itemStyle: {
+        color: palette[index % palette.length],
+        opacity: 0.7,
+      },
+    })),
   };
 
   return (

@@ -139,6 +139,7 @@ describe("cyclingAdvancedRouter", () => {
           {
             date: "2024-01-15",
             name: "Mountain Ride",
+            activity_type: "mountain_biking",
             elevation_gain: 500,
             climbing_seconds: 3600,
           },
@@ -150,6 +151,7 @@ describe("cyclingAdvancedRouter", () => {
       expect(result[0]?.verticalAscentRate).toBe(500);
       expect(result[0]?.elevationGainMeters).toBe(500);
       expect(result[0]?.activityName).toBe("Mountain Ride");
+      expect(result[0]?.activityType).toBe("mountain_biking");
     });
 
     it("returns empty when no climbing data", async () => {
