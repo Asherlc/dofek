@@ -163,6 +163,8 @@ jobs:
       DERIVED_DATA_PATH: ${{ github.workspace }}/WatchDerivedData
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/setup-ccache
         with:
@@ -185,6 +187,7 @@ jobs:
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
       - name: Build Watch target for simulator
+        timeout-minutes: 25
         run: |
           set -o pipefail
           BUILD_DIR="$(pwd)/packages/mobile/ios/build"
@@ -198,8 +201,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
             CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
-            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
-            2>&1 | tail -20
+            CXX=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
+            2>&1 | tee /tmp/watchos-build.log | tail -20
           xcodebuild build \
             -project packages/mobile/ios/Dofek.xcodeproj \
             -target DofekWatch \
@@ -211,7 +214,7 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
             CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
-            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
+            CXX=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
             2>&1 | tee /tmp/watchos-build.log | tail -80
       - name: Show watchOS build errors
         if: failure()
