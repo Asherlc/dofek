@@ -255,8 +255,6 @@ export function getFitFileImportQueueEvents(): QueueEvents {
 export async function closeFitFileImportQueueResources(): Promise<void> {
   const queue = cachedFitFileImportQueue;
   const queueEvents = cachedFitFileImportQueueEvents;
-  cachedFitFileImportQueue = null;
-  cachedFitFileImportQueueEvents = null;
 
   const closeOperations: Array<Promise<unknown>> = [];
   if (queue) {
@@ -266,6 +264,9 @@ export async function closeFitFileImportQueueResources(): Promise<void> {
     closeOperations.push(queueEvents.close());
   }
   await Promise.all(closeOperations);
+
+  cachedFitFileImportQueue = null;
+  cachedFitFileImportQueueEvents = null;
 }
 
 export function getPostSyncQueue(): Queue<PostSyncJobData> {

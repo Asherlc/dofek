@@ -588,7 +588,7 @@ describe("Garmin dump provider", () => {
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
   });
 
-  it("bounds concurrent child FIT job fan-out in batches", async () => {
+  it("queues every child FIT job before waiting for child completion", async () => {
     const fitEntries = Object.fromEntries(
       Array.from({ length: 17 }, (_, activityIndex) => [
         `DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_${activityIndex + 1}.fit`,
@@ -609,15 +609,14 @@ describe("Garmin dump provider", () => {
 
     const importPromise = importGarminDumpFile(mockDb, filePath, "user-1");
 
-    await waitUntil(() => expect(fitQueueMock.add).toHaveBeenCalledTimes(16));
+    await waitUntil(() => expect(fitQueueMock.add).toHaveBeenCalledTimes(17));
     expect(pendingResolutions).toHaveLength(16);
 
     for (const resolvePending of pendingResolutions.splice(0)) {
       resolvePending({ recordsSynced: 1, errors: [] });
     }
 
-    await waitUntil(() => expect(fitQueueMock.add).toHaveBeenCalledTimes(17));
-    expect(pendingResolutions).toHaveLength(1);
+    await waitUntil(() => expect(pendingResolutions).toHaveLength(1));
     pendingResolutions[0]?.({ recordsSynced: 1, errors: [] });
 
     const result = await importPromise;

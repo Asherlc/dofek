@@ -388,36 +388,45 @@ async function enqueueFitFileImportJobs(
   const queueEvents = getFitFileImportQueueEvents();
 
   try {
-    const results: FitFileImportJobResult[] = [];
+    const jobs: Array<{
+      entry: GarminDumpEntry;
+      job: Awaited<ReturnType<typeof queue.add>>;
+    }> = [];
     for (
       let startIndex = 0;
       startIndex < entries.length;
       startIndex += FIT_FILE_IMPORT_BATCH_SIZE
     ) {
       const batch = entries.slice(startIndex, startIndex + FIT_FILE_IMPORT_BATCH_SIZE);
-      const jobs = await Promise.all(
-        batch.map(async ({ entry, data }, entryIndex) => {
-          const absoluteEntryIndex = startIndex + entryIndex;
-          const filePath = join(
-            tempDirectory,
-            `${absoluteEntryIndex}-${createHash("sha256").update(entry.path).digest("hex")}.fit`,
-          );
-          await writeFile(filePath, entry.data);
-          const job = await queue.add(
-            "fit-file-import",
-            { ...data, filePath },
-            {
-              removeOnComplete: { age: 86_400, count: 1_000 },
-              removeOnFail: { age: 604_800, count: 1_000 },
-            },
-          );
-          return { entry, job };
-        }),
+      jobs.push(
+        ...(await Promise.all(
+          batch.map(async ({ entry, data }, entryIndex) => {
+            const absoluteEntryIndex = startIndex + entryIndex;
+            const filePath = join(
+              tempDirectory,
+              `${absoluteEntryIndex}-${createHash("sha256").update(entry.path).digest("hex")}.fit`,
+            );
+            await writeFile(filePath, entry.data);
+            const job = await queue.add(
+              "fit-file-import",
+              { ...data, filePath },
+              {
+                removeOnComplete: { age: 86_400, count: 1_000 },
+                removeOnFail: { age: 604_800, count: 1_000 },
+              },
+            );
+            return { entry, job };
+          }),
+        )),
       );
+    }
 
+    const results: FitFileImportJobResult[] = [];
+    for (let startIndex = 0; startIndex < jobs.length; startIndex += FIT_FILE_IMPORT_BATCH_SIZE) {
+      const batch = jobs.slice(startIndex, startIndex + FIT_FILE_IMPORT_BATCH_SIZE);
       results.push(
         ...(await Promise.all(
-          jobs.map(async ({ entry, job }) => {
+          batch.map(async ({ entry, job }) => {
             try {
               return fitFileImportJobResultSchema.parse(await job.waitUntilFinished(queueEvents));
             } catch (error) {
