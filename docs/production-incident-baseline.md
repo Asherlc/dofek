@@ -12821,6 +12821,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   and `pnpm typecheck` passed locally on the first attempt. `pnpm lint` initially
   failed because local ClickHouse was not running; after starting ClickHouse and
   refreshing `.env.local`, the same command passed without code changes.
-- **Remaining risk / follow-up:** CI has not been rerun on these uncommitted
-  changes yet. The next deploy should confirm the `web` service reaches the new
-  image without rollback.
+- **Remaining risk / follow-up:** CI passed for the PR fix. The next deploy
+  should confirm the `web` service reaches the new image without rollback.
+
+## 2026-07-13 — Public URL Consolidation PR Failed Mutation Testing
+
+- **Symptoms:** PR `1595` failed `Test / Stryker (0)`, which caused the
+  aggregate `Test / Mutation Testing` job to fail.
+- **User impact:** The public URL consolidation fix could not merge while
+  mutation coverage was below the required threshold.
+- **Evidence:** GitHub job `86902763087` reported
+  `Final mutation score 70.00 under breaking threshold 75`. The surviving
+  mutants were in `packages/server/src/auth/password-reset.ts`: removing
+  `.trim()`, narrowing trailing-slash replacement from `/\/+$/` to `/\/$/`,
+  and forcing the protocol condition to reject `http:`.
+- **Root cause:** Password reset integration coverage asserted invalid schemes
+  were rejected but did not prove that valid HTTP app URLs were trimmed and had
+  repeated trailing slashes normalized before reset emails were sent.
+- **Fix / mitigation:** Added a password reset integration test that configures
+  `PUBLIC_URL` as ` http://app.example.test/// `, sends a reset email, extracts
+  the email URL, and asserts the generated link starts with
+  `http://app.example.test/reset-password?token=` without a double slash before
+  the path.
+- **Validation:** Locally, `pnpm lint`, `pnpm typecheck`, root
+  `pnpm tsc --noEmit`, server and web `pnpm tsc --noEmit`, and
+  `pnpm exec vitest run
+  packages/server/src/auth/password-reset.integration.test.ts` passed. GitHub
+  Actions reran for commit `fdef77764` and reported `92` checks passed with
+  `0` failed.
+- **Remaining risk / follow-up:** Low. Local Stryker could not complete because
+  unrelated ClickHouse analytics tests exceeded the local 3 GiB ClickHouse
+  memory limit during Stryker's initial discovery run, but the hosted CI
+  mutation shard passed on the pushed fix.
