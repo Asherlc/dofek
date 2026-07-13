@@ -20,6 +20,7 @@ const sharedTestEnv = {
   CREDENTIAL_ENCRYPTION_KEY_BASE64: testCredentialEncryptionKey,
   CREDENTIAL_ENCRYPTION_KEY_NAMESPACE: "dofek-test",
   CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
+  PUBLIC_APP_URL: "https://app.example.test",
 };
 
 const configuredClickHouseUrl = process.env.CLICKHOUSE_URL?.trim();
