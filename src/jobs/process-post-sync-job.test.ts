@@ -241,17 +241,17 @@ describe("processPostSyncJob", () => {
 
   it("reports errors to Sentry when user cache invalidation fails", async () => {
     const cacheError = new Error("cache failed");
+    const job = makeUserRefitJob("user-13");
     mockInvalidateByPrefix.mockRejectedValueOnce(cacheError);
 
-    await processPostSyncJob(
-      makeUserRefitJob("user-13"),
-      fakeDb,
-      getFakeSensorStore,
-      refreshBodyMeasurements,
-    );
+    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
 
     expect(mockCaptureException).toHaveBeenCalledWith(cacheError, {
       tags: { postSyncStep: "invalidateUserCache" },
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Post-sync refit completed with errors.",
     });
   });
 });
