@@ -141,6 +141,28 @@ describe("VerticalAscentChart", () => {
     expect(screen.getByText("Jun 8")).toBeTruthy();
   });
 
+  it("renders one x-axis label when all activities are on the same date", () => {
+    render(
+      <VerticalAscentChart
+        data={[
+          {
+            ...SAMPLE_DATA[0],
+            activityName: "Morning Ride",
+            date: "2024-06-01",
+          },
+          {
+            ...SAMPLE_DATA[1],
+            activityName: "Evening Ride",
+            date: "2024-06-01",
+          },
+        ]}
+        units={METRIC}
+        width={360}
+      />,
+    );
+    expect(screen.getAllByText("Jun 1")).toHaveLength(1);
+  });
+
   it("shows metric axis label", () => {
     render(<VerticalAscentChart data={SAMPLE_DATA} units={METRIC} width={360} />);
     expect(screen.getByText("Vertical Ascent Rate (m/h)")).toBeTruthy();

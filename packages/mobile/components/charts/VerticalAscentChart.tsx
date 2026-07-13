@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateShort, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
@@ -120,7 +120,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
     return null;
   }
   const lastPoint = points[points.length - 1] ?? firstPoint;
-  const xTicks = firstPoint === lastPoint ? [firstPoint] : [firstPoint, lastPoint];
+  const xTicks = firstPoint.date === lastPoint.date ? [firstPoint] : [firstPoint, lastPoint];
   const activityTypeGroups = [...new Set(points.map((point) => point.activityTypeGroup))];
 
   const svgHeight = CHART_HEIGHT + PADDING.top + PADDING.bottom;
@@ -170,7 +170,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
             fontSize={10}
             fill={colors.textTertiary}
           >
-            {formatDateLabel(point.date)}
+            {formatDateShort(point.date)}
           </SvgText>
         ))}
 
@@ -233,11 +233,6 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
       </Text>
     </View>
   );
-}
-
-function formatDateLabel(dateText: string): string {
-  const date = new Date(dateText.includes("T") ? dateText : `${dateText}T00:00:00`);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 const styles = StyleSheet.create({
