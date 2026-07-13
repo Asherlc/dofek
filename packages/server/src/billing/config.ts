@@ -16,6 +16,6 @@ export function getStripeBillingConfig(): StripeBillingConfig {
     secretKey: requiredEnv("STRIPE_SECRET_KEY"),
     webhookSecret: requiredEnv("STRIPE_WEBHOOK_SECRET"),
     priceId: requiredEnv("STRIPE_PRICE_ID"),
-    appBaseUrl: requiredEnv("APP_BASE_URL"),
+    appBaseUrl: requiredEnv("PUBLIC_URL"),
   };
 }

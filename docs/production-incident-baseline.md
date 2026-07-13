@@ -12794,3 +12794,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `DOFEK-SERVER-2K` stays quiet for new Garmin dump attempts. If stalls continue,
   instrument per-phase Garmin dump timing and tune generic FIT child-job
   concurrency from measured queue/runtime data.
+
+## 2026-07-13 — Web Deploy Rolled Back on Missing Public URL Env
+
+- **Symptoms:** GitHub Actions run `29270830970`, job `86887915192`, failed
+  during `Deploy stack without ClickHouse consumers`.
+- **User impact:** Production stayed on the previous web image because Docker
+  Swarm rolled the `web` service update back.
+- **Evidence:** The deploy poller reported
+  `dofek_web did not finish deployment cleanly; update_state=rollback_started`.
+  The failed `dofek_web` task exited with `task: non-zero exit (1)`. Service
+  logs for the failed image reported
+  `[web] Failed to start: Error: PUBLIC_APP_URL environment variable is required`.
+- **Root cause:** The Zepp pairing/password reset code introduced
+  `PUBLIC_APP_URL`, but production only supplied the existing app-origin
+  variable `PUBLIC_URL`, so new web tasks failed during route initialization.
+- **Fix / mitigation:** Consolidated password reset, Zepp companion pairing,
+  Stripe billing, tests, e2e config, deploy validation, and docs onto
+  `PUBLIC_URL`. Removed the duplicate `APP_BASE_URL` and `PUBLIC_APP_URL`
+  names from active config and documentation.
+- **Validation:** Active code, config, and docs no longer reference the removed
+  env names outside this incident record. `pnpm exec vitest run
+  packages/server/src/billing/config.test.ts
+  packages/server/src/routes/companion-pairing.test.ts
+  packages/server/src/auth/password-reset.integration.test.ts`,
+  `pnpm typecheck`, and `pnpm lint` passed locally. `pnpm lint` initially failed
+  because local ClickHouse was not running; after starting ClickHouse and
+  refreshing `.env.local`, the same command passed without code changes.
+- **Remaining risk / follow-up:** CI has not been rerun on these uncommitted
+  changes yet. The next deploy should confirm the `web` service reaches the new
+  image without rollback.

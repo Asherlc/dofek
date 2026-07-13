@@ -67,14 +67,14 @@ function generateResetToken(): string {
 }
 
 function readPublicAppBaseUrl(): string {
-  const baseUrl = requiredEnv("PUBLIC_APP_URL").trim().replace(/\/+$/, "");
+  const baseUrl = requiredEnv("PUBLIC_URL").trim().replace(/\/+$/, "");
   if (!baseUrl) {
-    throw new Error("PUBLIC_APP_URL environment variable is required");
+    throw new Error("PUBLIC_URL environment variable is required");
   }
   try {
     new URL(baseUrl);
   } catch {
-    throw new Error("PUBLIC_APP_URL environment variable must be a valid URL");
+    throw new Error("PUBLIC_URL environment variable must be a valid URL");
   }
   return baseUrl;
 }

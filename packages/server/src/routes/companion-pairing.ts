@@ -16,18 +16,18 @@ function sendJson(res: import("express").Response, status: number, body: unknown
 }
 
 function getPublicOrigin(): string {
-  const envOrigin = process.env.PUBLIC_APP_URL?.trim();
+  const envOrigin = process.env.PUBLIC_URL?.trim();
   if (!envOrigin) {
-    throw new Error("PUBLIC_APP_URL environment variable is required");
+    throw new Error("PUBLIC_URL environment variable is required");
   }
   let url: URL;
   try {
     url = new URL(envOrigin);
   } catch {
-    throw new Error("PUBLIC_APP_URL environment variable must be a valid URL");
+    throw new Error("PUBLIC_URL environment variable must be a valid URL");
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("PUBLIC_APP_URL environment variable must use http or https");
+    throw new Error("PUBLIC_URL environment variable must use http or https");
   }
   return url.origin;
 }

@@ -7,7 +7,7 @@ function setBillingEnv(overrides: Partial<NodeJS.ProcessEnv> = {}) {
   process.env.STRIPE_SECRET_KEY = "sk_test_123";
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_123";
   process.env.STRIPE_PRICE_ID = "price_123";
-  process.env.APP_BASE_URL = "https://app.example.com";
+  process.env.PUBLIC_URL = "https://app.example.com";
   Object.assign(process.env, overrides);
 }
 

@@ -56,7 +56,7 @@ describe("password reset service", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    process.env.PUBLIC_APP_URL = "https://app.example.test";
+    process.env.PUBLIC_URL = "https://app.example.test";
     await ctx.db.execute(sql`DELETE FROM fitness.session`);
     await ctx.db.execute(sql`DELETE FROM fitness.password_reset_token`);
     await ctx.db.execute(sql`DELETE FROM fitness.user_password_credential`);
@@ -104,10 +104,10 @@ describe("password reset service", () => {
   });
 
   it("fails loudly for missing app URL before checking whether the email exists", async () => {
-    delete process.env.PUBLIC_APP_URL;
+    delete process.env.PUBLIC_URL;
 
     await expect(createPasswordResetToken(ctx.db, "missing@example.com")).rejects.toThrow(
-      "PUBLIC_APP_URL",
+      "PUBLIC_URL",
     );
 
     const rows = await executeWithSchema(
