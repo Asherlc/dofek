@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { Encoder, Profile, Utils } from "@garmin/fitsdk";
 import archiver from "archiver";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
@@ -46,9 +47,26 @@ vi.mock("../db/provider-activity-sync.ts", () => ({
   upsertProviderActivity: (...args: unknown[]) => mockUpsertProviderActivity(...args),
 }));
 
+const fitQueueMock = vi.hoisted(() => {
+  const waitUntilFinished = vi.fn();
+  const queueEvents = {};
+  const add = vi.fn(async (_name: string, data: unknown) => ({
+    id: "fit-job-1",
+    waitUntilFinished: () => waitUntilFinished(data),
+  }));
+  return { add, queueEvents, waitUntilFinished };
+});
+
+vi.mock("../jobs/queues.ts", () => ({
+  getFitFileImportQueue: () => ({ add: fitQueueMock.add }),
+  getFitFileImportQueueEvents: () => fitQueueMock.queueEvents,
+}));
+
 const mockReplaceMetricStreamBatch = vi.fn().mockResolvedValue(undefined);
+const mockWriteMetricStreamBatch = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/metric-stream-writer.ts", () => ({
   replaceMetricStreamBatch: (...args: unknown[]) => mockReplaceMetricStreamBatch(...args),
+  writeMetricStreamBatch: (...args: unknown[]) => mockWriteMetricStreamBatch(...args),
 }));
 
 const mockParseFitFile = vi.fn().mockResolvedValue({
@@ -139,7 +157,7 @@ async function createZip(entries: Record<string, Buffer | string>): Promise<Buff
 async function createGarminDumpZip(): Promise<string> {
   const nestedFitZip = await createZip({
     "asher@example.com_12345.fit": Buffer.from("fit-bytes"),
-    "asher@example.com_999_weight.fit": Buffer.from("weight-fit"),
+    "asher@example.com_999_weight.fit": createWeightFit(),
   });
   const topLevelZip = await createZip({
     "DI_CONNECT/DI-Connect-Fitness/asher_0_summarizedActivities.json": JSON.stringify([
@@ -166,13 +184,54 @@ async function createGarminDumpZip(): Promise<string> {
   return filePath;
 }
 
+async function waitUntil(assertion: () => void): Promise<void> {
+  let lastError: unknown;
+  for (let attemptIndex = 0; attemptIndex < 50; attemptIndex++) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  throw lastError;
+}
+
+function createWeightFit(): Buffer {
+  const timestamp = Utils.convertDateToDateTime(new Date("2026-07-01T12:00:00.000Z"));
+  const encoder = new Encoder();
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.FILE_ID,
+    type: "weight",
+    timeCreated: timestamp,
+  });
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.WEIGHT_SCALE,
+    timestamp,
+    weight: 72,
+    percentFat: 18.5,
+    percentHydration: 55.2,
+    boneMass: 3.1,
+    muscleMass: 31.2,
+    bmi: 24.1,
+  });
+  return Buffer.from(encoder.close());
+}
+
 describe("Garmin dump provider", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fsPromisesMock.statOverride = null;
     mockUpsertProviderActivity.mockResolvedValue({ id: "activity-row-1" });
     mockReplaceMetricStreamBatch.mockResolvedValue(undefined);
+    mockWriteMetricStreamBatch.mockResolvedValue(undefined);
     mockEnsureProvider.mockResolvedValue(undefined);
+    fitQueueMock.add.mockImplementation(async (_name: string, data: unknown) => ({
+      id: "fit-job-1",
+      waitUntilFinished: () => fitQueueMock.waitUntilFinished(data),
+    }));
+    fitQueueMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 0, errors: [] });
     mockParseFitFile.mockResolvedValue({
       session: {
         sport: "cycling",
@@ -255,6 +314,9 @@ describe("Garmin dump provider", () => {
     expect(parsed.fitFiles.map((entry) => entry.path)).toEqual([
       "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_12345.fit",
     ]);
+    expect(parsed.weightFitFiles.map((entry) => entry.path)).toEqual([
+      "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_999_weight.fit",
+    ]);
   });
 
   it("parses extracted Garmin dump directories recursively", async () => {
@@ -334,7 +396,7 @@ describe("Garmin dump provider", () => {
     );
   });
 
-  it("imports summaries and replaces metric stream samples from matching FIT files", async () => {
+  it("imports summaries and fans out matching FIT files", async () => {
     const filePath = await createGarminDumpZip();
 
     const result = await importGarminDumpFile(mockDb, filePath, "user-1");
@@ -363,22 +425,40 @@ describe("Garmin dump provider", () => {
         name: "Morning Ride",
       }),
     );
-    expect(mockParseFitFileInWorkerThread).toHaveBeenCalledWith(Buffer.from("fit-bytes"));
-    expect(mockParseFitFile).not.toHaveBeenCalled();
-    expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
-      mockDb,
-      { activityId: "activity-row-1" },
-      [
-        expect.objectContaining({
-          providerId: GARMIN_DUMP_PROVIDER_ID,
-          activityId: "activity-row-1",
-          userId: "user-1",
-          heartRate: 130,
-          power: 180,
-        }),
-      ],
-      "file",
+    expect(fitQueueMock.add).toHaveBeenCalledTimes(2);
+    expect(fitQueueMock.add).toHaveBeenCalledWith(
+      "fit-file-import",
+      expect.objectContaining({
+        originalPath:
+          "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_999_weight.fit",
+        userId: "user-1",
+        providerId: GARMIN_DUMP_PROVIDER_ID,
+        sourceName: "Garmin Dump",
+      }),
+      expect.objectContaining({
+        removeOnComplete: { age: 86_400, count: 1_000 },
+        removeOnFail: { age: 604_800, count: 1_000 },
+      }),
     );
+    expect(fitQueueMock.add).toHaveBeenCalledWith(
+      "fit-file-import",
+      expect.objectContaining({
+        originalPath:
+          "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_12345.fit",
+        userId: "user-1",
+        providerId: GARMIN_DUMP_PROVIDER_ID,
+        sourceName: "Garmin Dump",
+        activitySummary: expect.objectContaining({
+          externalId: "12345",
+          activityType: "cycling",
+          name: "Morning Ride",
+          raw: expect.objectContaining({ activityId: 12345 }),
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    expect(mockParseFitFile).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
         endedAt: new Date("2026-07-01T12:30:00.000Z"),
@@ -388,7 +468,48 @@ describe("Garmin dump provider", () => {
     expect(result.duration).toBeGreaterThanOrEqual(0);
   });
 
+  it("fans out Garmin weight FIT files to child FIT import jobs", async () => {
+    fitQueueMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 1, errors: [] });
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_20260701_weight.fit":
+        createWeightFit(),
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toEqual([]);
+    expect(fitQueueMock.add).toHaveBeenCalledWith(
+      "fit-file-import",
+      expect.objectContaining({
+        originalPath: "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_20260701_weight.fit",
+        userId: "user-1",
+        providerId: GARMIN_DUMP_PROVIDER_ID,
+        sourceName: "Garmin Dump",
+      }),
+      expect.any(Object),
+    );
+    expect(mockWriteMetricStreamBatch).not.toHaveBeenCalled();
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+  });
+
+  it("extends the import job lock before parsing FIT files", async () => {
+    const filePath = await createGarminDumpZip();
+    const extendLock = vi.fn().mockResolvedValue(undefined);
+
+    await importGarminDumpFile(mockDb, filePath, "user-1", { extendLock });
+
+    expect(extendLock).toHaveBeenCalledWith(600_000);
+    expect(extendLock.mock.invocationCallOrder[0]).toBeLessThan(
+      fitQueueMock.add.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER,
+    );
+  });
+
   it("keeps parse errors in import results and imports FIT-only activities", async () => {
+    fitQueueMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 1, errors: [] });
     const zip = await createZip({
       "DI_CONNECT/DI-Connect-Fitness/asher_0_summarizedActivities.json": "{broken",
       "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_activity.fit": "fit-bytes",
@@ -401,25 +522,14 @@ describe("Garmin dump provider", () => {
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors[0]?.message).toContain("Failed to parse Garmin summarized activities");
-    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
-      mockDb,
+    expect(fitQueueMock.add).toHaveBeenCalledWith(
+      "fit-file-import",
       expect.objectContaining({
-        externalId: expect.stringMatching(/^fit:[a-f0-9]{32}$/),
-        activityType: "cycling",
-        name: "Garmin cycling",
-        raw: {
-          fitPath: "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_activity.fit",
-          session: { sport: "cycling" },
-        },
+        originalPath: "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_activity.fit",
       }),
-      expect.objectContaining({
-        name: "Garmin cycling",
-        raw: {
-          fitPath: "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_activity.fit",
-          session: { sport: "cycling" },
-        },
-      }),
+      expect.any(Object),
     );
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
   });
 
   it("records summary validation errors and skips unmatched FIT files when summaries exist", async () => {
@@ -447,10 +557,12 @@ describe("Garmin dump provider", () => {
       { message: "Garmin activity 12345 is missing a valid start time" },
     ]);
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(fitQueueMock.add).not.toHaveBeenCalled();
     expect(mockParseFitFile).not.toHaveBeenCalled();
   });
 
-  it("deduplicates repeated FIT files by extracted Garmin activity id", async () => {
+  it("fans out repeated FIT files to one child job per file", async () => {
+    fitQueueMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 1, errors: [] });
     const zip = await createZip({
       "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
       "DI_CONNECT/DI-Connect-Uploaded-Files/copy/asher@example.com_12345_extra.fit": "fit-bytes",
@@ -461,33 +573,62 @@ describe("Garmin dump provider", () => {
 
     const result = await importGarminDumpFile(mockDb, filePath, "user-1");
 
-    expect(result.recordsSynced).toBe(1);
-    expect(mockParseFitFileInWorkerThread).toHaveBeenCalledTimes(1);
+    expect(result.recordsSynced).toBe(2);
+    expect(fitQueueMock.add).toHaveBeenCalledTimes(2);
+    expect(fitQueueMock.add.mock.calls.map((call) => call[1])).toEqual([
+      expect.objectContaining({
+        originalPath: "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit",
+      }),
+      expect.objectContaining({
+        originalPath: "DI_CONNECT/DI-Connect-Uploaded-Files/copy/asher@example.com_12345_extra.fit",
+      }),
+    ]);
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     expect(mockParseFitFile).not.toHaveBeenCalled();
-    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
-      mockDb,
-      expect.objectContaining({ externalId: "12345" }),
-      expect.any(Object),
-    );
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
   });
 
-  it("retries duplicate FIT external ids when the first copy fails", async () => {
-    mockParseFitFileInWorkerThread
+  it("queues every child FIT job before waiting for child completion", async () => {
+    const fitEntries = Object.fromEntries(
+      Array.from({ length: 17 }, (_, activityIndex) => [
+        `DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_${activityIndex + 1}.fit`,
+        "fit-bytes",
+      ]),
+    );
+    const zip = await createZip(fitEntries);
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+    const pendingResolutions: Array<(result: { recordsSynced: number; errors: [] }) => void> = [];
+    fitQueueMock.waitUntilFinished.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          pendingResolutions.push(resolve);
+        }),
+    );
+
+    const importPromise = importGarminDumpFile(mockDb, filePath, "user-1");
+
+    await waitUntil(() => expect(fitQueueMock.add).toHaveBeenCalledTimes(17));
+    expect(pendingResolutions).toHaveLength(16);
+
+    for (const resolvePending of pendingResolutions.splice(0)) {
+      resolvePending({ recordsSynced: 1, errors: [] });
+    }
+
+    await waitUntil(() => expect(pendingResolutions).toHaveLength(1));
+    pendingResolutions[0]?.({ recordsSynced: 1, errors: [] });
+
+    const result = await importPromise;
+
+    expect(result.recordsSynced).toBe(17);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("aggregates child FIT errors without dropping successful child results", async () => {
+    fitQueueMock.waitUntilFinished
       .mockRejectedValueOnce(new Error("bad first copy"))
-      .mockResolvedValueOnce({
-        session: {
-          sport: "cycling",
-          startTime: new Date("2026-07-01T12:00:00.000Z"),
-          totalElapsedTime: 1800,
-          totalTimerTime: 1800,
-          totalDistance: 5000,
-          totalCalories: 200,
-          raw: { sport: "cycling" },
-        },
-        records: [],
-        laps: [],
-        events: [],
-      });
+      .mockResolvedValueOnce({ recordsSynced: 1, errors: [] });
     const zip = await createZip({
       "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
       "DI_CONNECT/DI-Connect-Uploaded-Files/copy/asher@example.com_12345_extra.fit": "fit-bytes",
@@ -501,21 +642,15 @@ describe("Garmin dump provider", () => {
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toEqual([
       expect.objectContaining({
-        externalId: "12345",
         message:
           "Failed to import Garmin FIT file DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit: bad first copy",
       }),
     ]);
-    expect(mockParseFitFileInWorkerThread).toHaveBeenCalledTimes(2);
-    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
-      mockDb,
-      expect.objectContaining({ externalId: "12345" }),
-      expect.any(Object),
-    );
+    expect(fitQueueMock.add).toHaveBeenCalledTimes(2);
   });
 
-  it("reports FIT parse failures with the extracted external id", async () => {
-    mockParseFitFileInWorkerThread.mockRejectedValue(new Error("bad fit"));
+  it("reports FIT child job failures with the extracted file path", async () => {
+    fitQueueMock.waitUntilFinished.mockRejectedValue(new Error("bad fit"));
     const zip = await createZip({
       "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
     });
@@ -528,7 +663,6 @@ describe("Garmin dump provider", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toEqual([
       expect.objectContaining({
-        externalId: "12345",
         message:
           "Failed to import Garmin FIT file DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit: bad fit",
       }),

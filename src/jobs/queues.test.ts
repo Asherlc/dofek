@@ -2,11 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportJobData } from "./queues.ts";
 
 const mockQueueAdd = vi.fn();
-const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd };
+const mockQueueClose = vi.fn().mockResolvedValue(undefined);
+const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd, close: mockQueueClose };
 const MockQueue = vi.fn(() => mockQueueInstance);
+const mockQueueEventsClose = vi.fn().mockResolvedValue(undefined);
+const mockQueueEventsInstance = { name: "mock-queue-events", close: mockQueueEventsClose };
+const MockQueueEvents = vi.fn(() => mockQueueEventsInstance);
 
 vi.mock("bullmq", () => ({
   Queue: MockQueue,
+  QueueEvents: MockQueueEvents,
 }));
 
 describe("queues", () => {
@@ -14,6 +19,8 @@ describe("queues", () => {
     vi.clearAllMocks();
     delete process.env.REDIS_URL;
     mockQueueAdd.mockResolvedValue(undefined);
+    mockQueueClose.mockResolvedValue(undefined);
+    mockQueueEventsClose.mockResolvedValue(undefined);
   });
 
   describe("constants", () => {
@@ -21,6 +28,7 @@ describe("queues", () => {
       const {
         ACTIVITY_DELETE_ANALYTICS_QUEUE,
         EXPORT_QUEUE,
+        FIT_FILE_IMPORT_QUEUE,
         IMPORT_QUEUE,
         POST_SYNC_QUEUE,
         SCHEDULED_SYNC_QUEUE,
@@ -28,6 +36,7 @@ describe("queues", () => {
       } = await import("./queues.ts");
       expect(SYNC_QUEUE).toBe("sync");
       expect(IMPORT_QUEUE).toBe("import");
+      expect(FIT_FILE_IMPORT_QUEUE).toBe("fit-file-import");
       expect(EXPORT_QUEUE).toBe("export");
       expect(SCHEDULED_SYNC_QUEUE).toBe("scheduled-sync");
       expect(POST_SYNC_QUEUE).toBe("post-sync");
@@ -138,6 +147,30 @@ describe("queues", () => {
     });
   });
 
+  describe("createFitFileImportQueue", () => {
+    it("creates a Queue with the FIT file import queue name", async () => {
+      const { createFitFileImportQueue, FIT_FILE_IMPORT_QUEUE } = await import("./queues.ts");
+
+      createFitFileImportQueue({ host: "test", port: 2468 });
+
+      expect(MockQueue).toHaveBeenCalledWith(FIT_FILE_IMPORT_QUEUE, {
+        connection: { host: "test", port: 2468 },
+      });
+    });
+  });
+
+  describe("createFitFileImportQueueEvents", () => {
+    it("creates QueueEvents with the FIT file import queue name", async () => {
+      const { createFitFileImportQueueEvents, FIT_FILE_IMPORT_QUEUE } = await import("./queues.ts");
+
+      createFitFileImportQueueEvents({ host: "test", port: 1357 });
+
+      expect(MockQueueEvents).toHaveBeenCalledWith(FIT_FILE_IMPORT_QUEUE, {
+        connection: { host: "test", port: 1357 },
+      });
+    });
+  });
+
   describe("ImportJobData", () => {
     it("allows kaya-export as an import job type", () => {
       const jobData = {
@@ -164,6 +197,65 @@ describe("queues", () => {
       expect(MockQueue).toHaveBeenCalledWith(IMPORT_QUEUE, {
         connection: expect.objectContaining({ host: "localhost", port: 6379 }),
       });
+    });
+  });
+
+  describe("getFitFileImportQueue", () => {
+    it("reuses one FIT file import queue instance", async () => {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      const { getFitFileImportQueue, FIT_FILE_IMPORT_QUEUE } = await import("./queues.ts");
+
+      const first = getFitFileImportQueue();
+      const second = getFitFileImportQueue();
+
+      expect(first).toBe(second);
+      expect(MockQueue).toHaveBeenCalledTimes(1);
+      expect(MockQueue).toHaveBeenCalledWith(FIT_FILE_IMPORT_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+    });
+  });
+
+  describe("getFitFileImportQueueEvents", () => {
+    it("reuses one FIT file import queue events instance", async () => {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      const { getFitFileImportQueueEvents, FIT_FILE_IMPORT_QUEUE } = await import("./queues.ts");
+
+      const first = getFitFileImportQueueEvents();
+      const second = getFitFileImportQueueEvents();
+
+      expect(first).toBe(second);
+      expect(MockQueueEvents).toHaveBeenCalledTimes(1);
+      expect(MockQueueEvents).toHaveBeenCalledWith(FIT_FILE_IMPORT_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+    });
+  });
+
+  describe("closeFitFileImportQueueResources", () => {
+    it("closes cached FIT file import queue resources and clears the cache", async () => {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      const {
+        closeFitFileImportQueueResources,
+        getFitFileImportQueue,
+        getFitFileImportQueueEvents,
+      } = await import("./queues.ts");
+
+      getFitFileImportQueue();
+      getFitFileImportQueueEvents();
+      const queueConstructorCallsBeforeClose = MockQueue.mock.calls.length;
+      const queueEventsConstructorCallsBeforeClose = MockQueueEvents.mock.calls.length;
+
+      await closeFitFileImportQueueResources();
+
+      expect(mockQueueClose).toHaveBeenCalledOnce();
+      expect(mockQueueEventsClose).toHaveBeenCalledOnce();
+
+      getFitFileImportQueue();
+      getFitFileImportQueueEvents();
+
+      expect(MockQueue).toHaveBeenCalledTimes(queueConstructorCallsBeforeClose + 1);
+      expect(MockQueueEvents).toHaveBeenCalledTimes(queueEventsConstructorCallsBeforeClose + 1);
     });
   });
 

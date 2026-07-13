@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/node";
-import { Worker } from "bullmq";
+import { type Job, Worker } from "bullmq";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
@@ -7,6 +7,7 @@ import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { jobContext, logger } from "../logger.ts";
 import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
 import { processExportJob } from "./process-export-job.ts";
+import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
 import { processImportJob } from "./process-import-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
@@ -17,6 +18,8 @@ import {
   type ActivityAnalyticsJobData,
   EXPORT_QUEUE,
   type ExportJobData,
+  FIT_FILE_IMPORT_QUEUE,
+  type FitFileImportJobData,
   getRedisConnection,
   IMPORT_QUEUE,
   type ImportJobData,
@@ -99,13 +102,19 @@ const legacySyncWorker = new Worker<SyncJobData>(
 
 const importWorker = new Worker<ImportJobData>(
   IMPORT_QUEUE,
-  (job) => jobContext.run(job, () => processImportJob(job, db)),
+  (job, token) =>
+    jobContext.run(job, () => processImportJob(importJobWithLockExtender(job, token), db)),
   { autorun: false, connection },
 );
 const exportWorker = new Worker<ExportJobData>(
   EXPORT_QUEUE,
   (job) => jobContext.run(job, () => processExportJob(job, db)),
   { autorun: false, connection },
+);
+const fitFileImportWorker = new Worker<FitFileImportJobData>(
+  FIT_FILE_IMPORT_QUEUE,
+  (job) => jobContext.run(job, () => processFitFileImportJob(job, db)),
+  { autorun: false, connection, concurrency: 2 },
 );
 const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
   SCHEDULED_SYNC_QUEUE,
@@ -183,10 +192,24 @@ const allWorkers: Worker[] = [
   legacySyncWorker,
   importWorker,
   exportWorker,
+  fitFileImportWorker,
   scheduledSyncWorker,
   postSyncWorker,
   activityDeleteAnalyticsWorker,
 ];
+
+function importJobWithLockExtender(job: Job<ImportJobData>, token?: string) {
+  return {
+    data: job.data,
+    updateProgress: (data: object) => job.updateProgress(data),
+    extendLock: async (durationMs: number) => {
+      if (!token) {
+        throw new Error("BullMQ import job lock token missing");
+      }
+      await job.extendLock(token, durationMs);
+    },
+  };
+}
 
 for (const worker of allWorkers) {
   worker.on("active", (job) => {

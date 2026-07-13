@@ -110,6 +110,7 @@ const mockDb: KayaImportDatabase = {
 interface MockJob {
   data: ImportJobData;
   updateProgress: ReturnType<typeof vi.fn>;
+  extendLock: ReturnType<typeof vi.fn>;
 }
 
 function createMockJob(overrides: Partial<ImportJobData> = {}): MockJob {
@@ -122,6 +123,7 @@ function createMockJob(overrides: Partial<ImportJobData> = {}): MockJob {
       ...overrides,
     },
     updateProgress: vi.fn().mockResolvedValue(undefined),
+    extendLock: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -577,7 +579,9 @@ describe("processImportJob", () => {
 
       await runImportJob(job, mockDb);
 
-      expect(mockImportGarminDumpFile).toHaveBeenCalledWith(mockDb, tempFilePath, "user-1");
+      expect(mockImportGarminDumpFile).toHaveBeenCalledWith(mockDb, tempFilePath, "user-1", {
+        extendLock: job.extendLock,
+      });
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({
@@ -598,6 +602,25 @@ describe("processImportJob", () => {
       await runImportJob(job, mockDb);
 
       expect(mockImportGarminDumpFile).not.toHaveBeenCalled();
+    });
+
+    it("passes a BullMQ lock extender to Garmin dump imports", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
+      mockImportGarminDumpFile.mockImplementationOnce(
+        async (
+          _db: unknown,
+          _filePath: unknown,
+          _userId: unknown,
+          options: { extendLock: (durationMs: number) => Promise<void> },
+        ) => {
+          await options.extendLock(600_000);
+          return { recordsSynced: 1, errors: [] };
+        },
+      );
+
+      await runImportJob(job, mockDb);
+
+      expect(job.extendLock).toHaveBeenCalledWith(600_000);
     });
   });
 

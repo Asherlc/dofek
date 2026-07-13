@@ -33,6 +33,10 @@ vi.mock("./process-import-job.ts", () => ({
   processImportJob: vi.fn(),
 }));
 
+vi.mock("./process-fit-file-import-job.ts", () => ({
+  processFitFileImportJob: vi.fn(),
+}));
+
 vi.mock("./process-sync-job.ts", () => ({
   processSyncJob: vi.fn(),
 }));
@@ -70,6 +74,7 @@ vi.mock("./queues.ts", () => ({
   getRedisConnection: vi.fn(() => ({})),
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
   IMPORT_QUEUE: "import-queue",
+  FIT_FILE_IMPORT_QUEUE: "fit-file-import-queue",
   SYNC_QUEUE: "sync-queue",
   EXPORT_QUEUE: "export-queue",
   SCHEDULED_SYNC_QUEUE: "scheduled-sync-queue",
@@ -110,9 +115,9 @@ describe("worker module", () => {
     await import("./worker.ts");
   });
 
-  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 export + 1 scheduled-sync + 1 post-sync + 1 activity-delete-analytics = 8
+  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import + 1 export + 1 scheduled-sync + 1 post-sync + 1 activity-delete-analytics = 9
   // Training export is handled by the standalone Python BullMQ worker (packages/ml).
-  const EXPECTED_WORKER_COUNT = 8;
+  const EXPECTED_WORKER_COUNT = 9;
 
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");
@@ -124,6 +129,11 @@ describe("worker module", () => {
     expect(Worker).toHaveBeenCalledWith("sync-queue", expect.any(Function), expect.any(Object));
     // Standard workers
     expect(Worker).toHaveBeenCalledWith("import-queue", expect.any(Function), expect.any(Object));
+    expect(Worker).toHaveBeenCalledWith(
+      "fit-file-import-queue",
+      expect.any(Function),
+      expect.objectContaining({ concurrency: 2 }),
+    );
     expect(Worker).toHaveBeenCalledWith("export-queue", expect.any(Function), expect.any(Object));
     expect(Worker).toHaveBeenCalledWith(
       "scheduled-sync-queue",
@@ -377,6 +387,63 @@ describe("worker module", () => {
     expect(processImportJob).toHaveBeenCalled();
   });
 
+  it("import processor passes a token-backed lock extender to processImportJob", async () => {
+    const { processImportJob } = await import("./process-import-job.ts");
+    vi.mocked(processImportJob).mockClear();
+    const extendLock = vi.fn().mockResolvedValue(1);
+
+    await invokeProcessor(
+      "import-queue",
+      {
+        filePath: "/tmp/f",
+        since: "2026-01-01",
+        userId: "u",
+        importType: "garmin-dump",
+      },
+      "token-1",
+      { extendLock },
+    );
+
+    const processCall = vi.mocked(processImportJob).mock.calls[0];
+    const job = processCall?.[0];
+    expect(job).toBeDefined();
+    if (!job) {
+      throw new Error("processImportJob was not called");
+    }
+
+    await job.extendLock(600_000);
+
+    expect(extendLock).toHaveBeenCalledWith("token-1", 600_000);
+  });
+
+  it("import processor lock extender fails loudly when BullMQ omits the token", async () => {
+    const { processImportJob } = await import("./process-import-job.ts");
+    vi.mocked(processImportJob).mockClear();
+    const extendLock = vi.fn().mockResolvedValue(1);
+
+    await invokeProcessor(
+      "import-queue",
+      {
+        filePath: "/tmp/f",
+        since: "2026-01-01",
+        userId: "u",
+        importType: "garmin-dump",
+      },
+      undefined,
+      { extendLock },
+    );
+
+    const processCall = vi.mocked(processImportJob).mock.calls[0];
+    const job = processCall?.[0];
+    expect(job).toBeDefined();
+    if (!job) {
+      throw new Error("processImportJob was not called");
+    }
+
+    await expect(job.extendLock(600_000)).rejects.toThrow("BullMQ import job lock token missing");
+    expect(extendLock).not.toHaveBeenCalled();
+  });
+
   it("export processor delegates to processExportJob", async () => {
     const { processExportJob } = await import("./process-export-job.ts");
     vi.mocked(processExportJob).mockClear();
@@ -384,6 +451,21 @@ describe("worker module", () => {
     await invokeProcessor("export-queue", { userId: "u", outputPath: "/tmp/out.zip" });
 
     expect(processExportJob).toHaveBeenCalled();
+  });
+
+  it("FIT file import processor delegates to processFitFileImportJob", async () => {
+    const { processFitFileImportJob } = await import("./process-fit-file-import-job.ts");
+    vi.mocked(processFitFileImportJob).mockClear();
+
+    await invokeProcessor("fit-file-import-queue", {
+      filePath: "/tmp/activity.fit",
+      originalPath: "activity.fit",
+      userId: "u",
+      providerId: "garmin-dump",
+      sourceName: "Garmin Dump",
+    });
+
+    expect(processFitFileImportJob).toHaveBeenCalled();
   });
 
   it("scheduled-sync processor delegates to processScheduledSyncJob", async () => {
