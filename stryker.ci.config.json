@@ -3,10 +3,12 @@
   "testRunner": "vitest",
   "plugins": ["@stryker-mutator/vitest-runner"],
   "vitest": {
-    "configFile": "vitest.config.mutation.ts"
+    "configFile": "vitest.config.mutation.ts",
+    "related": true
   },
   "ignoreStatic": true,
   "incremental": false,
+  "concurrency": 2,
   "mutate": [
     "src/**/*.ts",
     "packages/format/src/**/*.ts",
@@ -78,5 +80,8 @@
     "low": 90,
     "break": 75
   },
-  "reporters": ["clear-text", "progress"]
+  "reporters": ["clear-text", "progress", "json"],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  }
 }

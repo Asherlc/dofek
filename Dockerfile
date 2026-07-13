@@ -19,11 +19,11 @@ FROM base AS source
 WORKDIR /app
 COPY . .
 
-# ── Client build: full install + Vite build (assets copied into server stage)
-FROM base AS client-build
+# ── Workspace manifests: package graph without source files ──────────────
+FROM base AS workspace-manifests
 WORKDIR /app
 ENV CYPRESS_INSTALL_BINARY=0
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
@@ -46,10 +46,22 @@ COPY packages/onboarding/package.json ./packages/onboarding/
 COPY packages/providers-meta/package.json ./packages/providers-meta/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/heart-rate-variability/package.json ./packages/heart-rate-variability/
+COPY packages/imu/package.json ./packages/imu/
 COPY packages/recovery/package.json ./packages/recovery/
 COPY packages/zones/package.json ./packages/zones/
+
+# ── Workspace dependencies: full install for web build tooling ───────────
+FROM workspace-manifests AS workspace-deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
+
+# ── Server production dependencies: stays cached across source-only changes ──
+FROM workspace-manifests AS server-deps
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --prod --frozen-lockfile --filter dofek-server...
+
+# ── Client build: full source + Vite build (assets copied into server stage)
+FROM workspace-deps AS client-build
 COPY . .
 ARG COMMIT_HASH
 ENV COMMIT_HASH=${COMMIT_HASH}
@@ -61,7 +73,6 @@ RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,required=false \
     && REQUIRE_SENTRY_AUTH_TOKEN="$REQUIRE_SENTRY_RELEASE_UPLOAD" \
     && export SENTRY_AUTH_TOKEN REQUIRE_SENTRY_AUTH_TOKEN \
     && cd packages/web && pnpm run build
-RUN pnpm --filter dofek-server deploy --legacy --prod /prod/server
 
 # ── Server image (Express API + sync runner) ────────────────────────────
 FROM base AS server
@@ -86,6 +97,8 @@ COPY --from=source --chown=node:node /app/analytics ./analytics
 COPY --from=source --chown=node:node /app/drizzle ./drizzle
 COPY --from=source --chown=node:node /app/package.json .
 COPY --from=source --chown=node:node /app/pnpm-workspace.yaml .
+COPY --from=server-deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=server-deps --chown=node:node /app/packages ./packages
 COPY --from=source --chown=node:node /app/packages/server/src ./packages/server/src
 COPY --from=source --chown=node:node /app/packages/server/package.json ./packages/server/
 COPY --from=source --chown=node:node /app/packages/whoop-whoop/src ./packages/whoop-whoop/src
@@ -122,16 +135,16 @@ COPY --from=source --chown=node:node /app/packages/training/src ./packages/train
 COPY --from=source --chown=node:node /app/packages/training/package.json ./packages/training/
 COPY --from=source --chown=node:node /app/packages/heart-rate-variability/src ./packages/heart-rate-variability/src
 COPY --from=source --chown=node:node /app/packages/heart-rate-variability/package.json ./packages/heart-rate-variability/
+COPY --from=source --chown=node:node /app/packages/imu/src ./packages/imu/src
+COPY --from=source --chown=node:node /app/packages/imu/package.json ./packages/imu/
 COPY --from=source --chown=node:node /app/packages/recovery/src ./packages/recovery/src
 COPY --from=source --chown=node:node /app/packages/recovery/package.json ./packages/recovery/
 COPY --from=source --chown=node:node /app/packages/zones/src ./packages/zones/src
 COPY --from=source --chown=node:node /app/packages/zones/package.json ./packages/zones/
 COPY --from=source --chown=node:node /app/packages/providers-meta/src ./packages/providers-meta/src
 COPY --from=source --chown=node:node /app/packages/providers-meta/package.json ./packages/providers-meta/
-COPY --from=client-build --chown=node:node /prod/server/node_modules ./node_modules
 RUN corepack disable && rm -rf /pnpm /root/.cache/node/corepack /root/.local/share/pnpm
 # Link workspace packages so bare-specifier imports resolve
-# Use ln -sfn to overwrite any links pnpm deploy may have created
 RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/eight-sleep node_modules/eight-sleep-client && \
     ln -sfn /app/packages/zwift-client node_modules/zwift-client && \
@@ -150,6 +163,7 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/training node_modules/@dofek/training && \
     ln -sfn /app/packages/auth node_modules/@dofek/auth && \
     ln -sfn /app/packages/heart-rate-variability node_modules/@dofek/heart-rate-variability && \
+    ln -sfn /app/packages/imu node_modules/@dofek/imu && \
     ln -sfn /app/packages/providers-meta node_modules/@dofek/providers && \
     ln -sfn /app/packages/provider-http node_modules/@dofek/provider-http && \
     ln -sfn /app/packages/recovery node_modules/@dofek/recovery && \

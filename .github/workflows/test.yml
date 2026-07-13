@@ -91,6 +91,9 @@ jobs:
     name: Image Vulnerability Scan
     if: inputs.run_image_scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -102,16 +105,22 @@ jobs:
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
-      - name: Build server image with cache
-        uses: docker/bake-action@6614cfa25eff9a0b2b2697efb0b6159e7680d584 # v7.2.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
-          files: docker-compose.e2e.yml
-          targets: |
-            server
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build server image with cache
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          target: server
           load: true
-          set: |
-            *.cache-from=type=gha,scope=e2e
-            *.cache-to=type=gha,mode=max,scope=e2e
+          tags: e2e-server:latest
+          cache-from: |
+            type=gha,scope=e2e
+            type=registry,ref=ghcr.io/${{ github.repository }}:e2e-buildcache
+          cache-to: type=gha,mode=max,scope=e2e
       - name: Scan server image (Grype)
         env:
           GRYPE_IMAGE: anchore/grype:v0.111.1@sha256:3c1cd2ff38196e753751fb1619b3b6787a6e3e79149f2a2aec57946d2c154cd2
@@ -696,6 +705,9 @@ jobs:
     name: E2E Tests (Web)
     if: inputs.run_e2e_web
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -710,6 +722,11 @@ jobs:
             /usr/share/dotnet /usr/share/swift /opt/hostedtoolcache/CodeQL
           df -h /
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: cypress-${{ runner.os }}-
       - run: pnpm exec cypress install
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
         with:
@@ -718,18 +735,24 @@ jobs:
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
-      - name: Build E2E images with cache
-        uses: docker/bake-action@6614cfa25eff9a0b2b2697efb0b6159e7680d584 # v7.2.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
-          files: docker-compose.e2e.yml
-          targets: |
-            server
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build E2E images with cache
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          target: server
           load: true
-          set: |
-            *.cache-from=type=gha,scope=e2e
-            *.cache-to=type=gha,mode=max,scope=e2e
+          tags: e2e-server:latest
+          cache-from: |
+            type=gha,scope=e2e
+            type=registry,ref=ghcr.io/${{ github.repository }}:e2e-buildcache
+          cache-to: type=gha,mode=max,scope=e2e
       - name: Start e2e dependencies
-        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis
       - name: Run e2e migrations
         run: |
           docker compose -f docker-compose.e2e.yml up -d --no-build migrate
@@ -745,7 +768,7 @@ jobs:
             exit "$exit_code"
           fi
       - name: Start e2e server
-        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build server
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build --no-deps server
       - run: pnpm e2e:web:run
       - name: Dump e2e service logs
         if: failure()
@@ -1025,7 +1048,7 @@ jobs:
           MUTATE_FILES: ${{ matrix.files }}
         run: pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: failure()
+        if: always()
         with:
           name: mutation-report-${{ strategy.job-index }}
           path: reports/mutation/
