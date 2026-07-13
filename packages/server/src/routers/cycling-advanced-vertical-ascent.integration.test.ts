@@ -183,7 +183,9 @@ describe("cyclingAdvanced vertical ascent integration", () => {
     expect(altitudeOnlyRow?.elevationGainMeters).toBeGreaterThan(0);
     expect(altitudeOnlyRow?.verticalAscentRate).toBeGreaterThan(0);
 
-    expect(lowGradeRow).toBeUndefined();
+    expect(lowGradeRow).toBeDefined();
+    expect(lowGradeRow?.elevationGainMeters).toBeGreaterThan(0);
+    expect(lowGradeRow?.verticalAscentRate).toBeGreaterThan(0);
     expect(walkingRow).toBeUndefined();
   });
 
@@ -197,7 +199,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, external_id, activity_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${TEST_USER_ID}, ${`vertical-ascent-${name}`}, ${activityType},
+            'test_provider', ${TEST_USER_ID}, ${`vertical-ascent-${name}-${startedAt.toISOString()}`}, ${activityType},
             ${startedAt.toISOString()},
             ${endedAt.toISOString()}, ${name}
           )
