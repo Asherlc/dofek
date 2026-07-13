@@ -99,7 +99,7 @@ jobs:
           cache-key-prefix: ccache-ios
       - name: Generate native project
         working-directory: packages/mobile
-        run: pnpm expo prebuild --clean --platform ios
+        run: pnpm expo prebuild --clean --platform ios --no-install
       - name: Cache CocoaPods
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -159,12 +159,31 @@ jobs:
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-26
+    env:
+      DERIVED_DATA_PATH: ${{ github.workspace }}/WatchDerivedData
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/setup-ccache
+        with:
+          cache-key-prefix: ccache-watchos
       - name: Generate native project
         working-directory: packages/mobile
-        run: pnpm expo prebuild --clean --platform ios
+        run: pnpm expo prebuild --clean --platform ios --no-install
+      - name: Cache CocoaPods
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: packages/mobile/ios/Pods
+          key: pods-v10-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'pnpm-lock.yaml') }}
+          restore-keys: pods-v10-
+      - name: Cache DerivedData
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.DERIVED_DATA_PATH }}
+          key: watch-deriveddata-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'pnpm-lock.yaml', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
+          restore-keys: watch-deriveddata-v1-
+      - name: Install CocoaPods dependencies
+        run: cd packages/mobile/ios && pod install
       - name: Build Watch target for simulator
         run: |
           set -o pipefail
@@ -174,17 +193,25 @@ jobs:
             -target Pods-DofekWatch \
             -sdk watchsimulator \
             -configuration Debug \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
             SYMROOT="$BUILD_DIR" \
             CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
+            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
             2>&1 | tail -20
           xcodebuild build \
             -project packages/mobile/ios/Dofek.xcodeproj \
             -target DofekWatch \
             -sdk watchsimulator \
             -configuration Debug \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
             SYMROOT="$BUILD_DIR" \
             CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
             EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
+            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
+            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
             2>&1 | tee /tmp/watchos-build.log | tail -80
       - name: Show watchOS build errors
         if: failure()
@@ -205,6 +232,9 @@ jobs:
           name: watchos-build-log
           path: /tmp/watchos-build.log
           retention-days: 3
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
 
   lint-ios-podspecs:
     name: iOS Podspec Lint
