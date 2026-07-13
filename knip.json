@@ -101,10 +101,10 @@
         "page/index.ts",
         "app-side/index.ts",
         "setting/index.ts",
-        "app-service/imu_service.ts"
+        "app-service/imu_service.ts",
+        "tools/zeus.ts"
       ],
       "ignoreDependencies": ["@zeppos/device-types", "@zos/ui"],
-      "ignoreBinaries": ["zeus"],
       "vitest": {
         "config": ["vitest.config.ts"],
         "entry": ["src/**/*.test.ts"]

@@ -24,6 +24,15 @@ function toggle(
   storage.setItem(key, current === "1" ? "0" : "1");
 }
 
+function buildPairingQrImage(sourceUrl: string): HTMLImageElement {
+  const image = new Image(220, 220);
+  image.src = sourceUrl;
+  image.alt = "Dofek pairing QR code";
+  image.style.margin = "0 auto 1em";
+  image.style.display = "block";
+  return image;
+}
+
 const PG_STATE: {
   enableGyro: boolean;
   freqModeIndex: number;
@@ -193,13 +202,7 @@ AppSettingsPage({
           ]),
 
       this.state.pairingQrImageUrl
-        ? Image({
-            src: this.state.pairingQrImageUrl,
-            alt: "Dofek pairing QR code",
-            width: 220,
-            height: 220,
-            style: { margin: "0 auto 1em", display: "block" },
-          })
+        ? buildPairingQrImage(this.state.pairingQrImageUrl)
         : View({}, []),
 
       TextInput({

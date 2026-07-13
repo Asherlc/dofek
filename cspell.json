@@ -17,6 +17,7 @@
   ],
   "dictionaries": ["typescript", "node", "npm", "html", "css", "en_US"],
   "words": [
+    "ABCDEFGHJKLMNPQRSTUVWXYZ",
     "Invalidatable",
     "refetches",
     "CPLUSPLUSFLAGS",
@@ -88,6 +89,7 @@
     "ZEPP",
     "zepp",
     "trackid",
+    "qrcode",
     "apptoken",
     "appname",
     "appplatform",
