@@ -216,7 +216,7 @@ describe("processFitFileImportJob", () => {
           userId: "user-1",
           heartRate: 130,
           power: 180,
-          speed: 8.5,
+          recordedAt: new Date("2026-07-01T12:01:00.000Z"),
         }),
       ],
       "file",
@@ -256,6 +256,21 @@ describe("processFitFileImportJob", () => {
       }),
       expect.objectContaining({ name: "FIT indoor cycling" }),
     );
+    expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
+      mockDb,
+      { activityId: "activity-row-1" },
+      [
+        expect.objectContaining({
+          providerId: "garmin-dump",
+          activityId: "activity-row-1",
+          userId: "user-1",
+          heartRate: 130,
+          power: 180,
+          recordedAt: new Date("2026-07-01T12:01:00.000Z"),
+        }),
+      ],
+      "file",
+    );
   });
 
   it("extracts numeric activity IDs from FIT file names", async () => {
@@ -286,6 +301,48 @@ describe("processFitFileImportJob", () => {
   });
 
   it("normalizes FIT sport text and falls back to other for unknown sports", async () => {
+    const virtualRideFilePath = await writeTempFit(createActivityFit());
+    mockParseFitFileInWorkerThread.mockResolvedValueOnce({
+      session: {
+        sport: "cycling",
+        subSport: "virtualActivity",
+        startTime: new Date("2026-07-01T11:00:00.000Z"),
+        totalElapsedTime: 1200,
+        totalTimerTime: 1200,
+        totalDistance: 4000,
+        totalCalories: 150,
+        raw: { sport: "cycling", sub_sport: "virtualActivity" },
+      },
+      records: [],
+      laps: [],
+      events: [],
+    });
+
+    await processFitFileImportJob(
+      {
+        data: {
+          filePath: virtualRideFilePath,
+          originalPath: "DI_CONNECT/virtual.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        },
+      },
+      mockDb,
+    );
+
+    expect(mockUpsertProviderActivity).toHaveBeenLastCalledWith(
+      mockDb,
+      expect.objectContaining({
+        activityType: "indoor_cycling",
+        name: "FIT indoor cycling",
+      }),
+      expect.objectContaining({
+        activityType: "indoor_cycling",
+        name: "FIT indoor cycling",
+      }),
+    );
+
     const trailRunFilePath = await writeTempFit(createActivityFit());
     mockParseFitFileInWorkerThread.mockResolvedValueOnce({
       session: {

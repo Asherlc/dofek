@@ -69,6 +69,7 @@ function normalizedFitSport(value: string | undefined): string {
   return (
     value
       ?.trim()
+      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
       .toLowerCase()
       .replace(/[\s-]+/g, "_") ?? ""
   );
@@ -81,12 +82,17 @@ function activityTypeFromFitSession(
   const subSport = normalizedFitSport(session.subSport);
   const typeBySport: Record<string, CanonicalActivityType> = {
     cycling: "cycling",
+    road: "cycling",
     road_biking: "cycling",
+    mountain: "cycling",
     mountain_biking: "cycling",
+    virtual_activity: "indoor_cycling",
     virtual_ride: "indoor_cycling",
     indoor_cycling: "indoor_cycling",
     running: "running",
+    treadmill: "running",
     treadmill_running: "running",
+    trail: "trail_running",
     trail_running: "trail_running",
     walking: "walking",
     hiking: "hiking",
@@ -106,7 +112,7 @@ function activityTypeFromFitSession(
 }
 
 function decodeFitMessages(buffer: Buffer) {
-  const decoder = new Decoder(Stream.fromByteArray([...buffer]));
+  const decoder = new Decoder(Stream.fromBuffer(buffer));
   const decoded: unknown = decoder.read();
   const parsed = decodedFitSchema.parse(decoded);
   const decodedErrors = parsed.errors ?? [];

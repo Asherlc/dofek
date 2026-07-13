@@ -184,6 +184,20 @@ async function createGarminDumpZip(): Promise<string> {
   return filePath;
 }
 
+async function waitUntil(assertion: () => void): Promise<void> {
+  let lastError: unknown;
+  for (let attemptIndex = 0; attemptIndex < 50; attemptIndex++) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  throw lastError;
+}
+
 function createWeightFit(): Buffer {
   const timestamp = Utils.convertDateToDateTime(new Date("2026-07-01T12:00:00.000Z"));
   const encoder = new Encoder();
@@ -572,6 +586,44 @@ describe("Garmin dump provider", () => {
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     expect(mockParseFitFile).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+  });
+
+  it("bounds concurrent child FIT job fan-out in batches", async () => {
+    const fitEntries = Object.fromEntries(
+      Array.from({ length: 17 }, (_, activityIndex) => [
+        `DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_${activityIndex + 1}.fit`,
+        "fit-bytes",
+      ]),
+    );
+    const zip = await createZip(fitEntries);
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+    const pendingResolutions: Array<(result: { recordsSynced: number; errors: [] }) => void> = [];
+    fitQueueMock.waitUntilFinished.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          pendingResolutions.push(resolve);
+        }),
+    );
+
+    const importPromise = importGarminDumpFile(mockDb, filePath, "user-1");
+
+    await waitUntil(() => expect(fitQueueMock.add).toHaveBeenCalledTimes(16));
+    expect(pendingResolutions).toHaveLength(16);
+
+    for (const resolvePending of pendingResolutions.splice(0)) {
+      resolvePending({ recordsSynced: 1, errors: [] });
+    }
+
+    await waitUntil(() => expect(fitQueueMock.add).toHaveBeenCalledTimes(17));
+    expect(pendingResolutions).toHaveLength(1);
+    pendingResolutions[0]?.({ recordsSynced: 1, errors: [] });
+
+    const result = await importPromise;
+
+    expect(result.recordsSynced).toBe(17);
+    expect(result.errors).toEqual([]);
   });
 
   it("aggregates child FIT errors without dropping successful child results", async () => {

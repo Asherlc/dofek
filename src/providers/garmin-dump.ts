@@ -25,6 +25,7 @@ const MAX_GARMIN_DUMP_ENTRY_BYTES = 128 * 1024 * 1024;
 const MAX_GARMIN_DUMP_NESTED_ZIP_BYTES = 1024 * 1024 * 1024;
 const MAX_GARMIN_DUMP_EXTRACTED_BYTES = 4 * 1024 * 1024 * 1024;
 const GARMIN_DUMP_IMPORT_LOCK_EXTENSION_MS = 10 * 60 * 1000;
+const FIT_FILE_IMPORT_BATCH_SIZE = 16;
 
 const summarizedActivitySchema = z
   .object({
@@ -387,43 +388,55 @@ async function enqueueFitFileImportJobs(
   const queueEvents = getFitFileImportQueueEvents();
 
   try {
-    const jobs = await Promise.all(
-      entries.map(async ({ entry, data }, entryIndex) => {
-        const filePath = join(
-          tempDirectory,
-          `${entryIndex}-${createHash("sha256").update(entry.path).digest("hex")}.fit`,
-        );
-        await writeFile(filePath, entry.data);
-        const job = await queue.add(
-          "fit-file-import",
-          { ...data, filePath },
-          {
-            removeOnComplete: { age: 86_400, count: 1_000 },
-            removeOnFail: { age: 604_800, count: 1_000 },
-          },
-        );
-        return { entry, job };
-      }),
-    );
+    const results: FitFileImportJobResult[] = [];
+    for (
+      let startIndex = 0;
+      startIndex < entries.length;
+      startIndex += FIT_FILE_IMPORT_BATCH_SIZE
+    ) {
+      const batch = entries.slice(startIndex, startIndex + FIT_FILE_IMPORT_BATCH_SIZE);
+      const jobs = await Promise.all(
+        batch.map(async ({ entry, data }, entryIndex) => {
+          const absoluteEntryIndex = startIndex + entryIndex;
+          const filePath = join(
+            tempDirectory,
+            `${absoluteEntryIndex}-${createHash("sha256").update(entry.path).digest("hex")}.fit`,
+          );
+          await writeFile(filePath, entry.data);
+          const job = await queue.add(
+            "fit-file-import",
+            { ...data, filePath },
+            {
+              removeOnComplete: { age: 86_400, count: 1_000 },
+              removeOnFail: { age: 604_800, count: 1_000 },
+            },
+          );
+          return { entry, job };
+        }),
+      );
 
-    return await Promise.all(
-      jobs.map(async ({ entry, job }) => {
-        try {
-          return fitFileImportJobResultSchema.parse(await job.waitUntilFinished(queueEvents));
-        } catch (error) {
-          return {
-            recordsSynced: 0,
-            errors: [
-              {
-                message: `Failed to import Garmin FIT file ${entry.path}: ${
-                  error instanceof Error ? error.message : String(error)
-                }`,
-              },
-            ],
-          };
-        }
-      }),
-    );
+      results.push(
+        ...(await Promise.all(
+          jobs.map(async ({ entry, job }) => {
+            try {
+              return fitFileImportJobResultSchema.parse(await job.waitUntilFinished(queueEvents));
+            } catch (error) {
+              return {
+                recordsSynced: 0,
+                errors: [
+                  {
+                    message: `Failed to import Garmin FIT file ${entry.path}: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`,
+                  },
+                ],
+              };
+            }
+          }),
+        )),
+      );
+    }
+    return results;
   } finally {
     await rm(tempDirectory, { recursive: true, force: true });
   }

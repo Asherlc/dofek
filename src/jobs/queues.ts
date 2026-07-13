@@ -252,6 +252,22 @@ export function getFitFileImportQueueEvents(): QueueEvents {
   return cachedFitFileImportQueueEvents;
 }
 
+export async function closeFitFileImportQueueResources(): Promise<void> {
+  const queue = cachedFitFileImportQueue;
+  const queueEvents = cachedFitFileImportQueueEvents;
+  cachedFitFileImportQueue = null;
+  cachedFitFileImportQueueEvents = null;
+
+  const closeOperations: Array<Promise<unknown>> = [];
+  if (queue) {
+    closeOperations.push(queue.close());
+  }
+  if (queueEvents) {
+    closeOperations.push(queueEvents.close());
+  }
+  await Promise.all(closeOperations);
+}
+
 export function getPostSyncQueue(): Queue<PostSyncJobData> {
   if (!cachedPostSyncQueue) {
     cachedPostSyncQueue = createPostSyncQueue();
