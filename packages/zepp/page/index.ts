@@ -60,6 +60,24 @@ BasePage.use(pagePlugin);
 const logger = Logger.getLogger("imu-page");
 const { width: DEVICE_WIDTH } = getDeviceInfo();
 const BG_PERMISSION = "device:os.bg_service";
+const IS_COMPACT_SQUARE_DISPLAY = DEVICE_WIDTH <= 320;
+const CONTENT_INSET = px(IS_COMPACT_SQUARE_DISPLAY ? 20 : 40);
+const CONTENT_WIDTH = DEVICE_WIDTH - CONTENT_INSET * 2;
+const TITLE_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 24 : 36);
+const TITLE_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 44 : 52);
+const TITLE_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 32 : 40);
+const STATUS_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 86 : 106);
+const STATUS_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 64 : 48);
+const STATUS_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 22 : 32);
+const SENSOR_INFO_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 156 : 162);
+const SENSOR_INFO_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 40 : 36);
+const SENSOR_INFO_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 18 : 20);
+const SAMPLE_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 208 : 214);
+const SAMPLE_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 72 : 80);
+const SAMPLE_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 22 : 24);
+const HINT_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 294 : 310);
+const HINT_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 56 : 72);
+const HINT_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 18 : 20);
 
 let statusText: ReturnType<typeof createWidget> | null = null;
 let sensorInfoText: ReturnType<typeof createWidget> | null = null;
@@ -116,59 +134,59 @@ Page(
     build() {
       createWidget(widget.TEXT, {
         x: px(0),
-        y: px(36),
+        y: TITLE_Y,
         w: DEVICE_WIDTH,
-        h: px(52),
+        h: TITLE_HEIGHT,
         color: 0xffffff,
-        text_size: px(40),
+        text_size: TITLE_TEXT_SIZE,
         align_h: align.CENTER_H,
         text_style: text_style.NONE,
         text: "Dofek",
       });
 
       statusText = createWidget(widget.TEXT, {
-        x: px(40),
-        y: px(106),
-        w: DEVICE_WIDTH - px(80),
-        h: px(48),
+        x: CONTENT_INSET,
+        y: STATUS_Y,
+        w: CONTENT_WIDTH,
+        h: STATUS_HEIGHT,
         color: 0x2ecc71,
-        text_size: px(32),
+        text_size: STATUS_TEXT_SIZE,
         align_h: align.CENTER_H,
-        text_style: text_style.NONE,
+        text_style: IS_COMPACT_SQUARE_DISPLAY ? text_style.WRAP : text_style.NONE,
         text: "Starting...",
       });
 
       sensorInfoText = createWidget(widget.TEXT, {
-        x: px(40),
-        y: px(162),
-        w: DEVICE_WIDTH - px(80),
-        h: px(36),
+        x: CONTENT_INSET,
+        y: SENSOR_INFO_Y,
+        w: CONTENT_WIDTH,
+        h: SENSOR_INFO_HEIGHT,
         color: 0x888888,
-        text_size: px(20),
+        text_size: SENSOR_INFO_TEXT_SIZE,
         align_h: align.CENTER_H,
-        text_style: text_style.NONE,
+        text_style: IS_COMPACT_SQUARE_DISPLAY ? text_style.WRAP : text_style.NONE,
         text: "",
       });
 
       sampleText = createWidget(widget.TEXT, {
-        x: px(40),
-        y: px(214),
-        w: DEVICE_WIDTH - px(80),
-        h: px(80),
+        x: CONTENT_INSET,
+        y: SAMPLE_Y,
+        w: CONTENT_WIDTH,
+        h: SAMPLE_HEIGHT,
         color: 0x7fb3d3,
-        text_size: px(24),
+        text_size: SAMPLE_TEXT_SIZE,
         align_h: align.CENTER_H,
         text_style: text_style.WRAP,
         text: "0 samples\n— Hz",
       });
 
       hintText = createWidget(widget.TEXT, {
-        x: px(40),
-        y: px(310),
-        w: DEVICE_WIDTH - px(80),
-        h: px(72),
+        x: CONTENT_INSET,
+        y: HINT_Y,
+        w: CONTENT_WIDTH,
+        h: HINT_HEIGHT,
         color: 0xe67e22,
-        text_size: px(20),
+        text_size: HINT_TEXT_SIZE,
         align_h: align.CENTER_H,
         text_style: text_style.WRAP,
         text: "",
