@@ -47,6 +47,7 @@ vi.mock("../components/ProviderLogo", () => ({
 const mockRouterPush = vi.fn();
 const mockCheckoutSession = vi.fn();
 const mockPortalSession = vi.fn();
+let mockSessionToken: string | null = "test-token";
 const defaultBillingStatus = {
   hasFullAccess: false,
   access: {
@@ -72,7 +73,7 @@ vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
     logout: vi.fn(),
     serverUrl: "https://test.example.com",
-    sessionToken: "test-token",
+    sessionToken: mockSessionToken,
   }),
 }));
 
@@ -201,6 +202,7 @@ vi.mock("../lib/trpc", () => ({
 }));
 
 beforeEach(() => {
+  mockSessionToken = "test-token";
   mockBillingStatus = {
     ...defaultBillingStatus,
     access: { ...defaultBillingStatus.access },
@@ -456,6 +458,19 @@ describe("SettingsScreen export flow", () => {
       expect(screen.getByText("Export in progress")).toBeTruthy();
     });
     expect(screen.getByText("We'll email you when it finishes.")).toBeTruthy();
+  });
+
+  it("does not request exports when the session token is blank", async () => {
+    mockSessionToken = "   ";
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    await screen.findByText("Sign in again to load exports.");
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("queues an export and refreshes the export list", async () => {

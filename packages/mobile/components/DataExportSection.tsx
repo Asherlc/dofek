@@ -60,6 +60,11 @@ function getAuthHeaders(sessionToken: string): { Authorization: string } {
   return { Authorization: `Bearer ${sessionToken}` };
 }
 
+function getUsableSessionToken(sessionToken: string | null): string | null {
+  const trimmedSessionToken = sessionToken?.trim();
+  return trimmedSessionToken ? trimmedSessionToken : null;
+}
+
 async function getResponseErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const parsed = ErrorResponseSchema.safeParse(await response.json());
@@ -85,7 +90,8 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
   const [downloadingExportId, setDownloadingExportId] = useState<string | null>(null);
 
   const loadExports = useCallback(async () => {
-    if (!sessionToken) {
+    const usableSessionToken = getUsableSessionToken(sessionToken);
+    if (!usableSessionToken) {
       setExportState("error");
       setExportMessage("Sign in again to load exports.");
       setExportsLoading(false);
@@ -94,7 +100,7 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
 
     try {
       const response = await fetch(`${serverUrl}/api/export`, {
-        headers: getAuthHeaders(sessionToken),
+        headers: getAuthHeaders(usableSessionToken),
       });
       if (!response.ok) {
         throw new Error(await getResponseErrorMessage(response, "Failed to load exports"));
@@ -116,7 +122,8 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
   }, [loadExports]);
 
   async function handleExport() {
-    if (!sessionToken) {
+    const usableSessionToken = getUsableSessionToken(sessionToken);
+    if (!usableSessionToken) {
       setExportState("error");
       setExportMessage("Sign in again to start an export.");
       return;
@@ -128,7 +135,7 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
     try {
       const triggerRes = await fetch(`${serverUrl}/api/export`, {
         method: "POST",
-        headers: getAuthHeaders(sessionToken),
+        headers: getAuthHeaders(usableSessionToken),
       });
 
       if (!triggerRes.ok) {
@@ -148,7 +155,8 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
   }
 
   async function handleDownloadExport(dataExport: DataExport) {
-    if (!sessionToken) {
+    const usableSessionToken = getUsableSessionToken(sessionToken);
+    if (!usableSessionToken) {
       setExportState("error");
       setExportMessage("Sign in again to download exports.");
       return;
@@ -159,7 +167,7 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
     try {
       const file = new ExpoFile(Paths.cache, getExportCacheFilename(dataExport));
       await ExpoFile.downloadFileAsync(`${serverUrl}/api/export/download/${dataExport.id}`, file, {
-        headers: getAuthHeaders(sessionToken),
+        headers: getAuthHeaders(usableSessionToken),
       });
       setExportState("done");
       setExportMessage("Export ready");
