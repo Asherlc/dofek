@@ -3,6 +3,7 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { sendPlainTextEmail } from "../../../../src/email.ts";
+import { getPublicUrlBase } from "../lib/public-url.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { hashPassword, normalizeEmail, validatePassword } from "./password.ts";
 
@@ -50,37 +51,12 @@ export interface CreatePasswordResetTokenResult {
   sent: boolean;
 }
 
-function requiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`${name} environment variable is required`);
-  }
-  return value;
-}
-
 function hashResetToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
 function generateResetToken(): string {
   return randomBytes(RESET_TOKEN_BYTES).toString("base64url");
-}
-
-function readPublicAppBaseUrl(): string {
-  const baseUrl = requiredEnv("PUBLIC_URL").trim().replace(/\/+$/, "");
-  if (!baseUrl) {
-    throw new Error("PUBLIC_URL environment variable is required");
-  }
-  let url: URL;
-  try {
-    url = new URL(baseUrl);
-  } catch {
-    throw new Error("PUBLIC_URL environment variable must be a valid URL");
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("PUBLIC_URL environment variable must use http or https");
-  }
-  return baseUrl;
 }
 
 function buildResetUrl(baseUrl: string, token: string): string {
@@ -92,7 +68,7 @@ export async function createPasswordResetToken(
   emailInput: string,
 ): Promise<CreatePasswordResetTokenResult> {
   const email = normalizeEmail(emailInput);
-  const baseUrl = readPublicAppBaseUrl();
+  const baseUrl = getPublicUrlBase();
   const credentials = await executeWithSchema(
     db,
     credentialRowSchema,

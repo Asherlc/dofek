@@ -7,29 +7,13 @@ import {
   type CompanionPairingStore,
   getCompanionPairingStore,
 } from "../lib/companion-pairing-store.ts";
+import { getPublicUrlOrigin } from "../lib/public-url.ts";
 import { logger } from "../logger.ts";
 
 const pairingStartSchema = z.object({});
 
 function sendJson(res: import("express").Response, status: number, body: unknown): void {
   res.status(status).json(body);
-}
-
-function getPublicOrigin(): string {
-  const envOrigin = process.env.PUBLIC_URL?.trim();
-  if (!envOrigin) {
-    throw new Error("PUBLIC_URL environment variable is required");
-  }
-  let url: URL;
-  try {
-    url = new URL(envOrigin);
-  } catch {
-    throw new Error("PUBLIC_URL environment variable must be a valid URL");
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("PUBLIC_URL environment variable must use http or https");
-  }
-  return url.origin;
 }
 
 function buildVerificationUrl(origin: string, shortCode: string): string {
@@ -49,7 +33,7 @@ export function createCompanionPairingRouter(deps: {
 }): Router {
   const router = Router();
   const store = deps.store ?? getCompanionPairingStore();
-  const publicOrigin = getPublicOrigin();
+  const publicOrigin = getPublicUrlOrigin();
 
   router.post("/start", express.json(), async (req, res) => {
     const parsed = pairingStartSchema.safeParse(req.body ?? {});
