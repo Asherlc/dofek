@@ -183,6 +183,37 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[1]?.[2]?.activityTypes);
   });
 
+  it("matches Zone 2 heart rate samples to power without requiring identical timestamps", async () => {
+    const { repo, sensorStore } = makeRepository([{ max_hr: 190 }]);
+    vi.mocked(sensorStore.query)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          max_hr: 190,
+          date: "2025-06-01",
+          activity_type: "cycling",
+          name: "Morning Ride",
+          avg_power_z2: 180,
+          avg_hr_z2: 135,
+          efficiency_factor: 1.333,
+          z2_samples: 1800,
+        },
+      ]);
+
+    await repo.getAerobicEfficiency(ChartRange.fromDays(90));
+
+    const fallbackQuery = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
+    expect(fallbackQuery).toContain("ASOF JOIN");
+    expect(fallbackQuery).toContain("power.recorded_at >= am.started_at");
+    expect(fallbackQuery).toContain(`ON hr.user_id = pwr.user_id
+       AND hr.id = pwr.id
+       AND hr.recorded_at >= pwr.recorded_at`);
+    expect(fallbackQuery).toContain("AND power.scalar > 0");
+    expect(fallbackQuery).not.toContain("WHERE pwr.scalar > 0");
+    expect(fallbackQuery).toContain("power.recorded_at > now() - INTERVAL {days:Int32} DAY");
+    expect(fallbackQuery).not.toContain("pwr.recorded_at = hr.recorded_at");
+  });
+
   it("keeps lower-bound filters for finite day ranges", async () => {
     const { repo, execute, sensorStore } = makeRepository([]);
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
@@ -225,6 +256,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     const activityDiagnosticQuery = compiledSql(execute.mock.calls[0]?.[0]);
     expect(readModelCall?.[1]).not.toContain("started_at > now() - INTERVAL");
     expect(fallbackCall?.[1]).not.toContain("asum.started_at > now() - INTERVAL");
+    expect(fallbackCall?.[1]).not.toContain("recorded_at > now() - INTERVAL");
     expect(fallbackCall?.[1]).not.toContain("toDate({rhrWindowStart:String})");
     expect(sampleDiagnosticCall?.[1]).not.toContain("asum.started_at > now() - INTERVAL");
     expect(activityDiagnosticQuery).not.toContain("CURRENT_TIMESTAMP");

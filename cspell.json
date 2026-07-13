@@ -41,6 +41,7 @@
     "ClickHouse",
     "CLICKHOUSE",
     "clickhouse",
+    "ASOF",
     "kafkajs",
     "REDPANDA",
     "Redpanda",

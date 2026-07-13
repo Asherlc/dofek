@@ -78,43 +78,75 @@ activity_meta AS (
     WHERE user_profile.max_hr IS NOT NULL
 ),
 
-z2_samples AS (
+z2_heart_rate_samples AS (
     SELECT
         am.activity_id AS activity_id,
         am.user_id AS user_id,
-        any(am.activity_type) AS activity_type,
-        any(am.name) AS name,
-        any(am.started_at) AS started_at,
-        any(am.ended_at) AS ended_at,
-        any(am.max_hr) AS max_hr,
-        any(am.resting_hr) AS resting_hr,
-        round(avg(pwr.scalar), 1) AS avg_power_z2,
-        round(avg(hr.scalar), 1) AS avg_hr_z2,
-        CASE
-            WHEN avg(hr.scalar) > 0
-                THEN round(avg(pwr.scalar) / avg(hr.scalar), 3)
-        END AS efficiency_factor,
-        toInt32(count()) AS z2_samples
+        am.activity_type AS activity_type,
+        am.name AS name,
+        am.started_at AS started_at,
+        am.ended_at AS ended_at,
+        am.max_hr AS max_hr,
+        am.resting_hr AS resting_hr,
+        hr.recorded_at AS recorded_at,
+        hr.scalar AS heart_rate
     FROM activity_meta AS am
     INNER JOIN {{ ref('activity_sensor_sample') }} AS hr
         ON hr.activity_id = am.activity_id
         AND hr.user_id = am.user_id
         AND hr.channel = 'heart_rate'
         AND hr.is_deleted = 0
-    INNER JOIN {{ ref('activity_sensor_sample') }} AS pwr
-        ON pwr.activity_id = am.activity_id
-        AND pwr.user_id = am.user_id
-        AND pwr.channel = 'power'
-        AND pwr.recorded_at = hr.recorded_at
-        AND pwr.scalar > 0
-        AND pwr.is_deleted = 0
     WHERE hr.scalar >= am.resting_hr
             + (am.max_hr - am.resting_hr) * 0.6
         AND hr.scalar < am.resting_hr
             + (am.max_hr - am.resting_hr) * 0.7
-    GROUP BY
+    ORDER BY
+        am.user_id,
         am.activity_id,
-        am.user_id
+        hr.recorded_at
+),
+
+z2_power_samples AS (
+    SELECT
+        activity_id,
+        user_id,
+        recorded_at,
+        scalar
+    FROM {{ ref('activity_sensor_sample') }}
+    WHERE channel = 'power'
+        AND scalar > 0
+        AND is_deleted = 0
+    ORDER BY
+        user_id,
+        activity_id,
+        recorded_at
+),
+
+z2_samples AS (
+    SELECT
+        hr.activity_id AS activity_id,
+        hr.user_id AS user_id,
+        any(hr.activity_type) AS activity_type,
+        any(hr.name) AS name,
+        any(hr.started_at) AS started_at,
+        any(hr.ended_at) AS ended_at,
+        any(hr.max_hr) AS max_hr,
+        any(hr.resting_hr) AS resting_hr,
+        round(avg(pwr.scalar), 1) AS avg_power_z2,
+        round(avg(hr.heart_rate), 1) AS avg_hr_z2,
+        CASE
+            WHEN avg(hr.heart_rate) > 0
+                THEN round(avg(pwr.scalar) / avg(hr.heart_rate), 3)
+        END AS efficiency_factor,
+        toInt32(count()) AS z2_samples
+    FROM z2_heart_rate_samples AS hr
+    ASOF JOIN z2_power_samples AS pwr
+        ON hr.user_id = pwr.user_id
+        AND hr.activity_id = pwr.activity_id
+        AND hr.recorded_at >= pwr.recorded_at
+    GROUP BY
+        hr.activity_id,
+        hr.user_id
     HAVING count() >= 300
 ),
 
