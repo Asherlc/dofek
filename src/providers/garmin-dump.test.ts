@@ -508,6 +508,45 @@ describe("Garmin dump provider", () => {
     );
   });
 
+  it("reports progress while importing Garmin dump FIT child jobs", async () => {
+    fitQueueMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 1, errors: [] });
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_67890.fit": "fit-bytes",
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+    const onProgress = vi.fn();
+
+    await importGarminDumpFile(mockDb, filePath, "user-1", { onProgress });
+
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting Garmin dump import...",
+    });
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 5,
+      message: "Reading Garmin dump...",
+    });
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 25,
+      message: "Found 0 activity summaries and 2 FIT files.",
+    });
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 45,
+      message: "Importing Garmin FIT files (0/2)...",
+    });
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 70,
+      message: "Importing Garmin FIT files (1/2)...",
+    });
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 95,
+      message: "Garmin dump import complete.",
+    });
+  });
+
   it("keeps parse errors in import results and imports FIT-only activities", async () => {
     fitQueueMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 1, errors: [] });
     const zip = await createZip({

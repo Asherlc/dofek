@@ -59,6 +59,13 @@ const mockDb: SyncDatabase = {
 
 const createdDirectories: string[] = [];
 
+function createFitFileImportJob(data: unknown) {
+  return {
+    data,
+    updateProgress: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 async function writeTempFit(buffer: Buffer): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "fit-file-import-test-"));
   createdDirectories.push(directory);
@@ -152,14 +159,12 @@ describe("processFitFileImportJob", () => {
   it("rejects invalid queue payloads before reading a file", async () => {
     await expect(
       processFitFileImportJob(
-        {
-          data: {
-            originalPath: "DI_CONNECT/activity.fit",
-            userId: "user-1",
-            providerId: "garmin-dump",
-            sourceName: "Garmin Dump",
-          },
-        },
+        createFitFileImportJob({
+          originalPath: "DI_CONNECT/activity.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        }),
         mockDb,
       ),
     ).rejects.toThrow();
@@ -173,14 +178,12 @@ describe("processFitFileImportJob", () => {
 
     await expect(
       processFitFileImportJob(
-        {
-          data: {
-            filePath,
-            originalPath: "DI_CONNECT/activity.fit",
-            userId: "user-1",
-            providerId: "garmin-dump",
-          },
-        },
+        createFitFileImportJob({
+          filePath,
+          originalPath: "DI_CONNECT/activity.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+        }),
         mockDb,
       ),
     ).rejects.toThrow();
@@ -192,26 +195,22 @@ describe("processFitFileImportJob", () => {
   it("imports an activity FIT file with a parent summary and replaces sensor samples", async () => {
     const filePath = await writeTempFit(createActivityFit());
 
-    const result = await processFitFileImportJob(
-      {
-        data: {
-          filePath,
-          originalPath: "DI_CONNECT/activity_12345.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-          activitySummary: {
-            externalId: "12345",
-            activityType: "cycling",
-            startedAtIso: "2026-07-01T12:00:00.000Z",
-            endedAtIso: "2026-07-01T12:30:00.000Z",
-            name: "Morning Ride",
-            raw: { activityId: 12345 },
-          },
-        },
+    const job = createFitFileImportJob({
+      filePath,
+      originalPath: "DI_CONNECT/activity_12345.fit",
+      userId: "user-1",
+      providerId: "garmin-dump",
+      sourceName: "Garmin Dump",
+      activitySummary: {
+        externalId: "12345",
+        activityType: "cycling",
+        startedAtIso: "2026-07-01T12:00:00.000Z",
+        endedAtIso: "2026-07-01T12:30:00.000Z",
+        name: "Morning Ride",
+        raw: { activityId: 12345 },
       },
-      mockDb,
-    );
+    });
+    const result = await processFitFileImportJob(job, mockDb);
 
     expect(result).toEqual({ recordsSynced: 0, errors: [] });
     expect(mockParseFitFileInWorkerThread).toHaveBeenCalledWith(createActivityFit());
@@ -243,21 +242,39 @@ describe("processFitFileImportJob", () => {
       "file",
     );
     await expect(readFile(filePath)).rejects.toThrow();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting FIT file import...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 25,
+      message: "Decoding FIT file...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 50,
+      message: "Importing FIT activity...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 80,
+      message: "Writing FIT activity data...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "FIT file import complete.",
+    });
   });
 
   it("imports a FIT-only activity when no parent summary exists", async () => {
     const filePath = await writeTempFit(createActivityFit());
 
     const result = await processFitFileImportJob(
-      {
-        data: {
-          filePath,
-          originalPath: "DI_CONNECT/asher@example.com_activity.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        },
-      },
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/asher@example.com_activity.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
       mockDb,
     );
 
@@ -298,15 +315,13 @@ describe("processFitFileImportJob", () => {
     const filePath = await writeTempFit(createActivityFit());
 
     await processFitFileImportJob(
-      {
-        data: {
-          filePath,
-          originalPath: "DI_CONNECT/asher@example.com_98765_extra.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        },
-      },
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/asher@example.com_98765_extra.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
       mockDb,
     );
 
@@ -340,15 +355,13 @@ describe("processFitFileImportJob", () => {
     });
 
     await processFitFileImportJob(
-      {
-        data: {
-          filePath: virtualRideFilePath,
-          originalPath: "DI_CONNECT/virtual.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        },
-      },
+      createFitFileImportJob({
+        filePath: virtualRideFilePath,
+        originalPath: "DI_CONNECT/virtual.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
       mockDb,
     );
 
@@ -381,15 +394,13 @@ describe("processFitFileImportJob", () => {
     });
 
     await processFitFileImportJob(
-      {
-        data: {
-          filePath: trailRunFilePath,
-          originalPath: "DI_CONNECT/trail.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        },
-      },
+      createFitFileImportJob({
+        filePath: trailRunFilePath,
+        originalPath: "DI_CONNECT/trail.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
       mockDb,
     );
 
@@ -422,15 +433,13 @@ describe("processFitFileImportJob", () => {
     });
 
     await processFitFileImportJob(
-      {
-        data: {
-          filePath: unknownSportFilePath,
-          originalPath: "DI_CONNECT/unknown.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        },
-      },
+      createFitFileImportJob({
+        filePath: unknownSportFilePath,
+        originalPath: "DI_CONNECT/unknown.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
       mockDb,
     );
 
@@ -465,15 +474,13 @@ describe("processFitFileImportJob", () => {
     });
 
     const result = await processFitFileImportJob(
-      {
-        data: {
-          filePath,
-          originalPath: "DI_CONNECT/missing-start.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        },
-      },
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/missing-start.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
       mockDb,
     );
 
@@ -490,15 +497,13 @@ describe("processFitFileImportJob", () => {
     mockUpsertProviderActivity.mockResolvedValueOnce({});
 
     const result = await processFitFileImportJob(
-      {
-        data: {
-          filePath,
-          originalPath: "DI_CONNECT/no-row-id.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        },
-      },
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/no-row-id.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
       mockDb,
     );
 
@@ -509,19 +514,15 @@ describe("processFitFileImportJob", () => {
 
   it("imports Garmin weight FIT files as body measurement metric stream rows", async () => {
     const filePath = await writeTempFit(createWeightFit());
+    const job = createFitFileImportJob({
+      filePath,
+      originalPath: "DI_CONNECT/asher@example.com_20260701_weight.fit",
+      userId: "user-1",
+      providerId: "garmin-dump",
+      sourceName: "Garmin Dump",
+    });
 
-    const result = await processFitFileImportJob(
-      {
-        data: {
-          filePath,
-          originalPath: "DI_CONNECT/asher@example.com_20260701_weight.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        },
-      },
-      mockDb,
-    );
+    const result = await processFitFileImportJob(job, mockDb);
 
     expect(result).toEqual({ recordsSynced: 1, errors: [] });
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
@@ -546,21 +547,27 @@ describe("processFitFileImportJob", () => {
       "file",
     );
     await expect(readFile(filePath)).rejects.toThrow();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 50,
+      message: "Importing FIT weight data...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "FIT file import complete.",
+    });
   });
 
   it("returns zero records for weight FIT files without scale rows", async () => {
     const filePath = await writeTempFit(createWeightFileOnlyFit());
 
     const result = await processFitFileImportJob(
-      {
-        data: {
-          filePath,
-          originalPath: "DI_CONNECT/empty_weight.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        },
-      },
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/empty_weight.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
       mockDb,
     );
 
@@ -574,15 +581,13 @@ describe("processFitFileImportJob", () => {
 
     await expect(
       processFitFileImportJob(
-        {
-          data: {
-            filePath,
-            originalPath: "DI_CONNECT/broken.fit",
-            userId: "user-1",
-            providerId: "garmin-dump",
-            sourceName: "Garmin Dump",
-          },
-        },
+        createFitFileImportJob({
+          filePath,
+          originalPath: "DI_CONNECT/broken.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        }),
         mockDb,
       ),
     ).rejects.toThrow("FIT decoder reported");

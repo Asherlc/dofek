@@ -71,6 +71,13 @@ vi.mock("./provider-rate-limit-cooldown.ts", () => ({
 
 const { processScheduledSyncJob } = await import("./process-scheduled-sync-job.ts");
 
+function createScheduledSyncJob() {
+  return {
+    data: { type: "scheduled-sync-all" as const },
+    updateProgress: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe("processScheduledSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -89,7 +96,7 @@ describe("processScheduledSyncJob", () => {
       ]),
     };
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
+    await Reflect.apply(processScheduledSyncJob, undefined, [createScheduledSyncJob(), db]);
 
     // Each provider gets its own queue
     const stravaQueue = getMockQueue("strava");
@@ -148,7 +155,7 @@ describe("processScheduledSyncJob", () => {
       ]),
     };
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
+    await Reflect.apply(processScheduledSyncJob, undefined, [createScheduledSyncJob(), db]);
 
     const stravaQueue = getMockQueue("strava");
     expect(stravaQueue.add).toHaveBeenCalledTimes(2);
@@ -161,7 +168,7 @@ describe("processScheduledSyncJob", () => {
       execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "unknown-provider" }]),
     };
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
+    await Reflect.apply(processScheduledSyncJob, undefined, [createScheduledSyncJob(), db]);
 
     const unknownQueue = getMockQueue("unknown-provider");
     expect(unknownQueue.add).toHaveBeenCalledWith(
@@ -187,7 +194,7 @@ describe("processScheduledSyncJob", () => {
       execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "garmin" }]),
     };
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
+    await Reflect.apply(processScheduledSyncJob, undefined, [createScheduledSyncJob(), db]);
 
     const garminQueue = getMockQueue("garmin");
     expect(garminQueue.add).not.toHaveBeenCalled();
@@ -215,7 +222,7 @@ describe("processScheduledSyncJob", () => {
       execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "garmin" }]),
     };
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
+    await Reflect.apply(processScheduledSyncJob, undefined, [createScheduledSyncJob(), db]);
 
     expect(garminQueue.add).not.toHaveBeenCalled();
     expect(mockLoggerInfo).toHaveBeenCalledWith(
@@ -224,5 +231,42 @@ describe("processScheduledSyncJob", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Enqueued 0 sync jobs for 1 users (1 skipped due to in-flight sync)",
     );
+  });
+
+  it("reports progress while faning out scheduled sync jobs", async () => {
+    const db = {
+      execute: vi.fn().mockResolvedValue([
+        { user_id: "user-1", provider_id: "strava" },
+        { user_id: "user-2", provider_id: "wahoo" },
+      ]),
+    };
+    const job = createScheduledSyncJob();
+
+    await Reflect.apply(processScheduledSyncJob, undefined, [job, db]);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting scheduled sync fanout...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 10,
+      message: "Loading connected providers...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 25,
+      message: "Found 2 provider connections for 2 users.",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 60,
+      message: "Scheduled 1 sync jobs, skipped 0.",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 95,
+      message: "Scheduled 2 sync jobs, skipped 0.",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Scheduled 2 sync jobs for 2 users.",
+    });
   });
 });

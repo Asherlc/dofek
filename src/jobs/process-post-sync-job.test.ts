@@ -27,11 +27,17 @@ vi.mock("../logger.ts", () => ({
 const { processPostSyncJob } = await import("./process-post-sync-job.ts");
 
 function makeGlobalMaintenanceJob(): PostSyncJob {
-  return { data: { type: "global-maintenance" } };
+  return {
+    data: { type: "global-maintenance" },
+    updateProgress: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 function makeUserRefitJob(userId: string): PostSyncJob {
-  return { data: { type: "user-refit", userId } };
+  return {
+    data: { type: "user-refit", userId },
+    updateProgress: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 // All DB calls are mocked via vi.mock above, so an empty object satisfies the contract at runtime.
@@ -76,6 +82,21 @@ describe("processPostSyncJob", () => {
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
+  it("reports global maintenance progress", async () => {
+    const job = makeGlobalMaintenanceJob();
+
+    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting global post-sync maintenance...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Global post-sync maintenance complete.",
+    });
+  });
+
   it("runs only per-user refit for a user refit job", async () => {
     await processPostSyncJob(
       makeUserRefitJob("user-1"),
@@ -85,6 +106,33 @@ describe("processPostSyncJob", () => {
     );
 
     expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1", fakeSensorStore);
+  });
+
+  it("reports per-user refit progress", async () => {
+    const job = makeUserRefitJob("user-1");
+
+    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting post-sync refit...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 20,
+      message: "Refreshing body measurements...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 45,
+      message: "Refitting personalized parameters...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 75,
+      message: "Invalidating user cache...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Post-sync refit complete.",
+    });
   });
 
   it("refreshes body measurements before refitting and invalidating user caches", async () => {

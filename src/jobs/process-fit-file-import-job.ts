@@ -16,11 +16,17 @@ import { type FitFileImportJobData, fitFileImportJobDataSchema } from "./queues.
 
 interface FitFileImportJob {
   data: unknown;
+  updateProgress: (data: object) => Promise<void>;
 }
 
 export interface FitFileImportJobResult {
   recordsSynced: number;
   errors: Array<{ message: string }>;
+}
+
+interface FitFileImportProgressInfo {
+  percentage: number;
+  message: string;
 }
 
 const fitDateSchema = z.union([z.string(), z.date()]).transform((value, context) => {
@@ -72,6 +78,15 @@ const fitFileImportCleanupPathSchema = z.object({
 function cleanupPathFromJobData(data: unknown): string | null {
   const parsed = fitFileImportCleanupPathSchema.safeParse(data);
   return parsed.success ? parsed.data.filePath : null;
+}
+
+async function updateFitFileImportProgress(
+  job: FitFileImportJob,
+  info: FitFileImportProgressInfo,
+): Promise<void> {
+  await job.updateProgress(info).catch((error: unknown) => {
+    logger.warn("Failed to update FIT import progress: %s", error);
+  });
 }
 
 function normalizedFitSport(value: string | undefined): string {
@@ -171,6 +186,7 @@ async function importActivityFit(
   db: SyncDatabase,
   data: FitFileImportJobData,
   buffer: Buffer,
+  onProgress: (info: FitFileImportProgressInfo) => Promise<void>,
 ): Promise<FitFileImportJobResult> {
   const fitActivity = await parseFitFileInWorkerThread(buffer);
   const summary = data.activitySummary;
@@ -188,6 +204,7 @@ async function importActivityFit(
     : new Date(startedAt.getTime() + fitActivity.session.totalElapsedTime * 1000);
   const name = summary?.name ?? `FIT ${activityType.replace(/_/g, " ")}`;
 
+  await onProgress({ percentage: 80, message: "Writing FIT activity data..." });
   const activity = await upsertProviderActivity(
     db,
     {
@@ -230,13 +247,36 @@ export async function processFitFileImportJob(
 ): Promise<FitFileImportJobResult> {
   const cleanupFilePath = cleanupPathFromJobData(job.data);
   try {
+    await updateFitFileImportProgress(job, {
+      percentage: 0,
+      message: "Starting FIT file import...",
+    });
     const data = fitFileImportJobDataSchema.parse(job.data);
+    await updateFitFileImportProgress(job, { percentage: 10, message: "Reading FIT file..." });
     const buffer = await readFile(data.filePath);
+    await updateFitFileImportProgress(job, { percentage: 25, message: "Decoding FIT file..." });
     const messages = decodeFitMessages(buffer);
+    let result: FitFileImportJobResult;
     if (isWeightFit(messages)) {
-      return await importWeightFit(db, data, messages);
+      await updateFitFileImportProgress(job, {
+        percentage: 50,
+        message: "Importing FIT weight data...",
+      });
+      result = await importWeightFit(db, data, messages);
+    } else {
+      await updateFitFileImportProgress(job, {
+        percentage: 50,
+        message: "Importing FIT activity...",
+      });
+      result = await importActivityFit(db, data, buffer, (info) =>
+        updateFitFileImportProgress(job, info),
+      );
     }
-    return await importActivityFit(db, data, buffer);
+    await updateFitFileImportProgress(job, {
+      percentage: 100,
+      message: "FIT file import complete.",
+    });
+    return result;
   } finally {
     if (cleanupFilePath) {
       await unlink(cleanupFilePath).catch((error: unknown) => {

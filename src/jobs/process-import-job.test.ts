@@ -367,6 +367,30 @@ describe("processImportJob", () => {
       );
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("10 workouts imported"));
     });
+
+    it("reports progress", async () => {
+      await writeFile(tempFilePath, "csv data");
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
+      await runImportJob(job, mockDb);
+
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 0,
+        message: "Starting Strong CSV import...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 10,
+        message: "Reading Strong CSV file...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 25,
+        message: "Importing Strong CSV workouts...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 90,
+        message: "Strong CSV import complete.",
+      });
+    });
   });
 
   describe("cronometer-csv import", () => {
@@ -404,6 +428,30 @@ describe("processImportJob", () => {
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining("7 food entries imported"),
       );
+    });
+
+    it("reports progress", async () => {
+      await writeFile(tempFilePath, "csv data");
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
+      await runImportJob(job, mockDb);
+
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 0,
+        message: "Starting Cronometer CSV import...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 10,
+        message: "Reading Cronometer CSV file...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 25,
+        message: "Importing Cronometer food entries...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 90,
+        message: "Cronometer CSV import complete.",
+      });
     });
   });
 
@@ -493,6 +541,30 @@ describe("processImportJob", () => {
 
       dateNowSpy.mockRestore();
     });
+
+    it("reports progress", async () => {
+      await writeFile(tempFilePath, "csv data");
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
+      await runImportJob(job, mockDb);
+
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 0,
+        message: "Starting Kaya export import...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 10,
+        message: "Reading Kaya export file...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 25,
+        message: "Importing Kaya climbing entries...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 90,
+        message: "Kaya export import complete.",
+      });
+    });
   });
 
   describe("zos-app import", () => {
@@ -571,6 +643,30 @@ describe("processImportJob", () => {
 
       await expect(runImportJob(job, mockDb)).resolves.toBeUndefined();
     });
+
+    it("reports progress", async () => {
+      await writeFile(tempFilePath, Buffer.from([0x00]));
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
+      await runImportJob(job, mockDb);
+
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 0,
+        message: "Starting ZOS App import...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 10,
+        message: "Reading ZOS App file...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 25,
+        message: "Importing ZOS App sessions...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 90,
+        message: "ZOS App import complete.",
+      });
+    });
   });
 
   describe("garmin-dump import", () => {
@@ -581,6 +677,7 @@ describe("processImportJob", () => {
 
       expect(mockImportGarminDumpFile).toHaveBeenCalledWith(mockDb, tempFilePath, "user-1", {
         extendLock: job.extendLock,
+        onProgress: expect.any(Function),
       });
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
@@ -621,6 +718,28 @@ describe("processImportJob", () => {
       await runImportJob(job, mockDb);
 
       expect(job.extendLock).toHaveBeenCalledWith(600_000);
+    });
+
+    it("passes Garmin dump import progress to BullMQ", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
+      mockImportGarminDumpFile.mockImplementationOnce(
+        async (
+          _db: unknown,
+          _filePath: unknown,
+          _userId: unknown,
+          options: { onProgress: (info: { percentage: number; message: string }) => void },
+        ) => {
+          options.onProgress({ percentage: 35, message: "Reading Garmin dump..." });
+          return { recordsSynced: 1, errors: [] };
+        },
+      );
+
+      await runImportJob(job, mockDb);
+
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 35,
+        message: "Reading Garmin dump...",
+      });
     });
   });
 

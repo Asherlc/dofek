@@ -8,16 +8,31 @@ import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
 import { enqueueSyncJob } from "./enqueue-sync-job.ts";
 import type { ScheduledSyncJobData } from "./queues.ts";
 
+interface ScheduledSyncJob {
+  data: ScheduledSyncJobData;
+  updateProgress: (data: object) => Promise<void>;
+}
+
+async function updateScheduledSyncProgress(
+  job: ScheduledSyncJob,
+  percentage: number,
+  message: string,
+): Promise<void> {
+  await job.updateProgress({ percentage, message });
+}
+
 /**
  * Process a scheduled sync job: query all users with connected providers
  * and enqueue per-user sync jobs into per-provider queues so different
  * providers sync in parallel (while the same provider stays serialized).
  */
-export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, db: SyncDatabase) {
+export async function processScheduledSyncJob(job: Job<ScheduledSyncJobData>, db: SyncDatabase) {
+  await updateScheduledSyncProgress(job, 0, "Starting scheduled sync fanout...");
   // Ensure provider registry is populated so provider metadata (type, auth) is available.
   const { ensureProvidersRegistered } = await import("./provider-registration.ts");
   await ensureProvidersRegistered();
 
+  await updateScheduledSyncProgress(job, 10, "Loading connected providers...");
   // Find all users who have at least one connected (non-import-only) provider
   const rows = await db.execute(
     sql`
@@ -36,15 +51,38 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
     userProviders.set(userId, providers);
   }
 
+  const totalProviderConnections = Array.from(userProviders.values()).reduce(
+    (totalConnections, providerIds) => totalConnections + providerIds.length,
+    0,
+  );
+  await updateScheduledSyncProgress(
+    job,
+    25,
+    `Found ${totalProviderConnections} provider connections for ${userProviders.size} users.`,
+  );
+
   let jobCount = 0;
   let skippedDueToCooldown = 0;
   let skippedDueToInFlight = 0;
+  let processedConnections = 0;
+
+  async function reportFanoutProgress(): Promise<void> {
+    if (totalProviderConnections === 0) return;
+    const skippedCount = skippedDueToCooldown + skippedDueToInFlight;
+    await updateScheduledSyncProgress(
+      job,
+      Math.round(25 + (processedConnections / totalProviderConnections) * 70),
+      `Scheduled ${jobCount} sync jobs, skipped ${skippedCount}.`,
+    );
+  }
 
   for (const [userId, providerIds] of userProviders) {
     for (const providerId of providerIds) {
       const provider = getProvider(providerId);
       if (provider && !isSyncEligibleProvider(provider)) {
         logger.info(`[scheduled-sync] Skipping CSV provider ${providerId}`);
+        processedConnections++;
+        await reportFanoutProgress();
         continue;
       }
 
@@ -55,6 +93,8 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
           logger.info(
             `[scheduled-sync] Skipping ${providerId} for ${userId}: ${pendingJobs.length} sync job(s) already queued`,
           );
+          processedConnections++;
+          await reportFanoutProgress();
           continue;
         }
       }
@@ -71,11 +111,21 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
         logger.info(
           `[scheduled-sync] Skipping ${providerId} for ${userId}: rate-limit cooldown active`,
         );
+        processedConnections++;
+        await reportFanoutProgress();
         continue;
       }
       jobCount++;
+      processedConnections++;
+      await reportFanoutProgress();
     }
   }
+
+  await updateScheduledSyncProgress(
+    job,
+    100,
+    `Scheduled ${jobCount} sync jobs for ${userProviders.size} users.`,
+  );
 
   logger.info(
     `[scheduled-sync] Enqueued ${jobCount} sync jobs for ${userProviders.size} users` +

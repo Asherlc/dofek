@@ -27,13 +27,22 @@ vi.mock("../lib/cache.ts", () => ({
 
 import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
 
-const job = {
-  data: {
-    type: "activity-delete-analytics-refresh" as const,
-    userId: "user-1",
-    activityIds: ["00000000-0000-0000-0000-000000000001"],
-  },
-};
+function createActivityAnalyticsJob(
+  type:
+    | "activity-delete-analytics-refresh"
+    | "activity-restore-analytics-refresh"
+    | "activity-recompute-analytics-refresh",
+  activityIds = ["00000000-0000-0000-0000-000000000001"],
+) {
+  return {
+    data: {
+      type,
+      userId: "user-1",
+      activityIds,
+    },
+    updateProgress: vi.fn().mockResolvedValue(undefined),
+  };
+}
 
 describe("processActivityDeleteAnalyticsJob", () => {
   beforeEach(() => {
@@ -48,6 +57,8 @@ describe("processActivityDeleteAnalyticsJob", () => {
   });
 
   it("waits for PeerDB, rebuilds activity read models, and invalidates user caches", async () => {
+    const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
+
     await processActivityDeleteAnalyticsJob(job);
 
     expect(mockWaitForPeerDbActivityDeletes).toHaveBeenCalledWith(expect.anything(), [
@@ -60,19 +71,18 @@ describe("processActivityDeleteAnalyticsJob", () => {
 
   it("closes the ClickHouse client even when refresh fails", async () => {
     mockRunActivityReadModelBuild.mockRejectedValueOnce(new Error("dbt failed"));
+    const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
 
     await expect(processActivityDeleteAnalyticsJob(job)).rejects.toThrow("dbt failed");
     expect(mockClose).toHaveBeenCalledOnce();
   });
 
   it("waits for restored activities before rebuilding read models", async () => {
-    await processActivityDeleteAnalyticsJob({
-      data: {
-        type: "activity-restore-analytics-refresh",
-        userId: "user-1",
-        activityIds: ["00000000-0000-0000-0000-000000000002"],
-      },
-    });
+    await processActivityDeleteAnalyticsJob(
+      createActivityAnalyticsJob("activity-restore-analytics-refresh", [
+        "00000000-0000-0000-0000-000000000002",
+      ]),
+    );
 
     expect(mockWaitForPeerDbActivityRestores).toHaveBeenCalledWith(expect.anything(), [
       "00000000-0000-0000-0000-000000000002",
@@ -84,18 +94,73 @@ describe("processActivityDeleteAnalyticsJob", () => {
   });
 
   it("rebuilds read models for recompute without waiting for PeerDB delete or restore state", async () => {
-    await processActivityDeleteAnalyticsJob({
-      data: {
-        type: "activity-recompute-analytics-refresh",
-        userId: "user-1",
-        activityIds: ["00000000-0000-0000-0000-000000000003"],
-      },
-    });
+    await processActivityDeleteAnalyticsJob(
+      createActivityAnalyticsJob("activity-recompute-analytics-refresh", [
+        "00000000-0000-0000-0000-000000000003",
+      ]),
+    );
 
     expect(mockWaitForPeerDbActivityDeletes).not.toHaveBeenCalled();
     expect(mockWaitForPeerDbActivityRestores).not.toHaveBeenCalled();
     expect(mockRunActivityReadModelBuild).toHaveBeenCalledOnce();
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
     expect(mockClose).toHaveBeenCalledOnce();
+  });
+
+  it("reports delete analytics progress", async () => {
+    const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
+
+    await processActivityDeleteAnalyticsJob(job);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting activity analytics refresh...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 20,
+      message: "Waiting for activity deletes to reach analytics...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 60,
+      message: "Rebuilding activity analytics...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 90,
+      message: "Invalidating activity analytics cache...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Activity analytics refresh complete.",
+    });
+  });
+
+  it("reports restore analytics progress", async () => {
+    const job = createActivityAnalyticsJob("activity-restore-analytics-refresh");
+
+    await processActivityDeleteAnalyticsJob(job);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 20,
+      message: "Waiting for activity restores to reach analytics...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Activity analytics refresh complete.",
+    });
+  });
+
+  it("reports recompute analytics progress", async () => {
+    const job = createActivityAnalyticsJob("activity-recompute-analytics-refresh");
+
+    await processActivityDeleteAnalyticsJob(job);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 60,
+      message: "Rebuilding activity analytics...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Activity analytics refresh complete.",
+    });
   });
 });

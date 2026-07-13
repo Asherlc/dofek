@@ -8,6 +8,15 @@ import type { PostSyncJobData } from "./queues.ts";
 /** Minimal Job interface — only the subset processPostSyncJob actually uses. */
 export interface PostSyncJob {
   data: PostSyncJobData;
+  updateProgress: (data: object) => Promise<void>;
+}
+
+async function updatePostSyncProgress(
+  job: PostSyncJob,
+  percentage: number,
+  message: string,
+): Promise<void> {
+  await job.updateProgress({ percentage, message });
 }
 
 /**
@@ -22,15 +31,19 @@ export async function processPostSyncJob(
   refreshBodyMeasurements: () => Promise<void>,
 ) {
   if (job.data.type === "global-maintenance") {
+    await updatePostSyncProgress(job, 0, "Starting global post-sync maintenance...");
     logger.info("[post-sync] Running global post-sync maintenance");
 
     logger.info("[post-sync] Global post-sync maintenance complete");
+    await updatePostSyncProgress(job, 100, "Global post-sync maintenance complete.");
     return;
   }
 
+  await updatePostSyncProgress(job, 0, "Starting post-sync refit...");
   logger.info(`[post-sync] Running post-sync refit for user ${job.data.userId}`);
 
   try {
+    await updatePostSyncProgress(job, 20, "Refreshing body measurements...");
     await refreshBodyMeasurements();
     logger.info("[post-sync] Body measurement read model refreshed.");
   } catch (err) {
@@ -41,6 +54,7 @@ export async function processPostSyncJob(
 
   try {
     const { refitAllParams } = await import("../personalization/refit.ts");
+    await updatePostSyncProgress(job, 45, "Refitting personalized parameters...");
     logger.info("[post-sync] Refitting personalized parameters...");
     const sensorStore = getSensorStore();
     await refitAllParams(db, job.data.userId, sensorStore);
@@ -52,6 +66,7 @@ export async function processPostSyncJob(
 
   // Invalidate user-specific cache after personalized parameters are refitted.
   try {
+    await updatePostSyncProgress(job, 75, "Invalidating user cache...");
     await queryCache.invalidateByPrefix(`${job.data.userId}:`);
     logger.info(`[post-sync] Cache invalidated for user ${job.data.userId}`);
   } catch (err) {
@@ -60,4 +75,5 @@ export async function processPostSyncJob(
   }
 
   logger.info(`[post-sync] Post-sync refit complete for user ${job.data.userId}`);
+  await updatePostSyncProgress(job, 100, "Post-sync refit complete.");
 }
