@@ -24,23 +24,31 @@ describe("summarizeZeppFetchResponse", () => {
     expect(
       summarizeZeppFetchResponse({
         status: 401,
-        body: '{"error":"Invalid or revoked companion token."}',
+        body: '{"error":"Invalid or revoked Dofek connection."}',
       }),
     ).toMatchObject({
-      errorMessage: "Invalid or revoked companion token.",
+      errorMessage: "Invalid or revoked Dofek connection.",
       ok: false,
       status: 401,
+    });
+  });
+
+  it("treats redirects as failed responses", () => {
+    expect(summarizeZeppFetchResponse({ status: 302 })).toMatchObject({
+      errorMessage: "HTTP 302",
+      ok: false,
+      status: 302,
     });
   });
 
   it("treats an error body as failed even when Zepp omits the status", () => {
     expect(
       summarizeZeppFetchResponse({
-        body: { error: "Companion token is required." },
+        body: { error: "Dofek connection is required." },
       }),
     ).toEqual({
-      body: { error: "Companion token is required." },
-      errorMessage: "Companion token is required.",
+      body: { error: "Dofek connection is required." },
+      errorMessage: "Dofek connection is required.",
       ok: false,
       status: null,
     });

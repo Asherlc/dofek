@@ -30,7 +30,13 @@ async function request(
   method: "GET" | "POST",
   path: string,
   body?: Record<string, unknown>,
-): Promise<{ status: number; text: string; json: () => Promise<unknown>; contentType: string }> {
+): Promise<{
+  status: number;
+  text: string;
+  json: () => Promise<unknown>;
+  contentType: string;
+  cacheControl: string;
+}> {
   return new Promise((resolve, reject) => {
     const server = app.listen(0, async () => {
       const address = server.address();
@@ -51,6 +57,7 @@ async function request(
           text,
           json: async () => JSON.parse(text),
           contentType: response.headers.get("content-type") ?? "",
+          cacheControl: response.headers.get("cache-control") ?? "",
         });
       } catch (error) {
         reject(error);
@@ -87,6 +94,16 @@ describe("createCompanionPairingRouter", () => {
     });
   });
 
+  it("fails loudly when PUBLIC_APP_URL is missing", async () => {
+    delete process.env.PUBLIC_APP_URL;
+    const app = createTestApp(new InMemoryCompanionPairingStore());
+
+    const response = await request(app, "POST", "/api/companion-pairing/start", {});
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "Failed to start companion pairing." });
+  });
+
   it("returns pending status before the code is claimed", async () => {
     const store = new InMemoryCompanionPairingStore();
     const app = createTestApp(store);
@@ -100,6 +117,7 @@ describe("createCompanionPairingRouter", () => {
     );
 
     expect(statusResponse.status).toBe(200);
+    expect(statusResponse.cacheControl).toBe("no-store");
     expect(await statusResponse.json()).toMatchObject({
       state: "pending",
       shortCode: startBody.shortCode,
@@ -123,6 +141,7 @@ describe("createCompanionPairingRouter", () => {
     );
 
     expect(statusResponse.status).toBe(200);
+    expect(statusResponse.cacheControl).toBe("no-store");
     expect(await statusResponse.json()).toMatchObject({
       state: "claimed",
       companionToken: "dofek_companion_test",

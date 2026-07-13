@@ -29,6 +29,11 @@ function getString(value: Record<string, unknown>, key: string): string {
   return typeof raw === "string" ? raw.trim() : "";
 }
 
+function getRawString(value: Record<string, unknown>, key: string): string {
+  const raw = value[key];
+  return typeof raw === "string" ? raw : "";
+}
+
 function getStoredServerUrl(): string {
   const storedServerUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL)?.trim();
   return storedServerUrl || DEFAULT_DOFEK_SERVER_URL;
@@ -122,6 +127,18 @@ AppSideService(
       );
     },
 
+    clearPairingInfo() {
+      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_ID, "");
+      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_SHORT_CODE, "");
+      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_VERIFICATION_URL, "");
+      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL, "");
+      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_EXPIRES_AT, "");
+    },
+
+    isCurrentPairing(pairingId: string) {
+      return settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_ID)?.trim() === pairingId;
+    },
+
     savePairingInfo(payload: Record<string, unknown>) {
       const pairingId = getString(payload, "pairingId");
       const shortCode = getString(payload, "shortCode");
@@ -179,6 +196,9 @@ AppSideService(
     },
 
     async pollPairing(pairingId: string, serverUrl: string) {
+      if (!this.isCurrentPairing(pairingId)) {
+        return;
+      }
       const expiresAt = settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_EXPIRES_AT);
       if (expiresAt && Date.now() >= new Date(expiresAt).getTime()) {
         this.setConnectionStatus({ state: "error", reason: "Pairing code expired." });
@@ -201,14 +221,18 @@ AppSideService(
       if (!isRecord(summary.body)) {
         throw new Error("Dofek pairing status response was invalid.");
       }
+      if (!this.isCurrentPairing(pairingId)) {
+        return;
+      }
 
       const state = getString(summary.body, "state");
       if (state === "claimed") {
         const companionToken = getString(summary.body, "companionToken");
         if (!companionToken) {
-          throw new Error("Dofek pairing completed without a companion token.");
+          throw new Error("Dofek pairing completed without connection credentials.");
         }
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, companionToken);
+        this.clearPairingInfo();
         this.setConnectionStatus({ state: "connected" });
         return;
       }
@@ -229,7 +253,8 @@ AppSideService(
       const payload = readJson(rawPayload, {});
       const serverUrl = getStoredServerUrl();
       const email = getString(payload, "email");
-      const password = getString(payload, "password");
+      const password = getRawString(payload, "password");
+      settings.settingsStorage.setItem(STORAGE_KEYS.CMD_LOGIN_PASSWORD, "");
 
       try {
         if (!serverUrl || !email || !password) {
@@ -249,18 +274,17 @@ AppSideService(
         }
 
         if (!isRecord(summary.body) || typeof summary.body.token !== "string") {
-          throw new Error("Dofek login did not return a companion token.");
+          throw new Error("Dofek login did not return connection credentials.");
         }
 
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_EMAIL, email);
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, summary.body.token);
+        this.clearPairingInfo();
         this.setConnectionStatus({ state: "connected" });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek login failed.";
         this.setConnectionStatus({ state: "error", reason: message });
         throw error;
-      } finally {
-        settings.settingsStorage.setItem(STORAGE_KEYS.CMD_LOGIN_PASSWORD, "");
       }
     },
 
@@ -269,7 +293,7 @@ AppSideService(
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
 
       if (!apiToken) {
-        const message = "Configure the Dofek companion token first.";
+        const message = "Connect Dofek from Zepp settings first.";
         logger.error(message);
         settings.settingsStorage.setItem(
           STORAGE_KEYS.HEALTH_SYNC_STATUS,

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import * as Sentry from "@sentry/node";
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
@@ -10,6 +10,46 @@ const SHORT_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const SHORT_CODE_LENGTH = 6;
 const PAIRING_KEY_PREFIX = "companion-pairing:";
 const PAIRING_CODE_KEY_PREFIX = "companion-pairing-code:";
+const CREATE_CHALLENGE_SCRIPT = `
+if redis.call("EXISTS", KEYS[1]) == 1 then
+  return 0
+end
+redis.call("PSETEX", KEYS[1], ARGV[3], ARGV[1])
+redis.call("PSETEX", KEYS[2], ARGV[3], ARGV[2])
+return 1
+`;
+const CLAIM_CHALLENGE_SCRIPT = `
+local id = redis.call("GET", KEYS[1])
+if not id then
+  return nil
+end
+
+local challengeKey = ARGV[1] .. id
+local payload = redis.call("GET", challengeKey)
+if not payload then
+  redis.call("DEL", KEYS[1])
+  return nil
+end
+
+local remainingTtlMs = redis.call("PTTL", challengeKey)
+if remainingTtlMs <= 0 then
+  redis.call("DEL", KEYS[1], challengeKey)
+  return nil
+end
+
+local challenge = cjson.decode(payload)
+if challenge["claimedAt"] ~= nil then
+  return nil
+end
+
+challenge["claimedAt"] = ARGV[2]
+challenge["userId"] = ARGV[3]
+challenge["companionToken"] = ARGV[4]
+local updatedPayload = cjson.encode(challenge)
+redis.call("PSETEX", challengeKey, remainingTtlMs, updatedPayload)
+redis.call("PEXPIRE", KEYS[1], remainingTtlMs)
+return updatedPayload
+`;
 
 const companionPairingChallengeSchema = z.object({
   id: z.string(),
@@ -24,9 +64,28 @@ const companionPairingChallengeSchema = z.object({
 export type CompanionPairingChallenge = z.infer<typeof companionPairingChallengeSchema>;
 
 interface RedisClient {
-  set(key: string, value: string, options: { PX: number }): Promise<string | null>;
+  set(key: string, value: string, mode: "PX", millisecondsToExpire: number): Promise<"OK" | null>;
   get(key: string): Promise<string | null>;
   del(...keys: string[]): Promise<number>;
+  eval(script: string, keyCount: number, ...args: string[]): Promise<unknown>;
+}
+
+type RuntimeRedisClient = RedisClient;
+
+function isRuntimeRedisClient(value: unknown): value is RuntimeRedisClient {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  return (
+    "set" in value &&
+    typeof value.set === "function" &&
+    "get" in value &&
+    typeof value.get === "function" &&
+    "del" in value &&
+    typeof value.del === "function" &&
+    "eval" in value &&
+    typeof value.eval === "function"
+  );
 }
 
 export interface CompanionPairingStore {
@@ -57,17 +116,23 @@ export function normalizePairingCode(code: string): string {
   return code.replace(/[\s-]/g, "").trim().toUpperCase();
 }
 
+export const PAIRING_SHORT_CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
+
 export function generatePairingId(): string {
   return randomBytes(24).toString("base64url");
 }
 
 export function generateShortCode(): string {
-  const bytes = randomBytes(SHORT_CODE_LENGTH);
   let code = "";
-  for (const byte of bytes) {
-    code += SHORT_CODE_ALPHABET[byte % SHORT_CODE_ALPHABET.length];
+  for (let characterIndex = 0; characterIndex < SHORT_CODE_LENGTH; characterIndex += 1) {
+    code += SHORT_CODE_ALPHABET.charAt(randomInt(SHORT_CODE_ALPHABET.length));
   }
   return code;
+}
+
+export function parsePairingCodeInput(code: string): string | null {
+  const normalizedCode = normalizePairingCode(code);
+  return PAIRING_SHORT_CODE_PATTERN.test(normalizedCode) ? normalizedCode : null;
 }
 
 function newChallenge(now = new Date()): CompanionPairingChallenge {
@@ -126,7 +191,13 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
     companionToken: string;
     now?: Date;
   }): Promise<CompanionPairingChallenge | null> {
-    const challenge = await this.getByShortCode(shortCode, now);
+    const normalizedShortCode = normalizePairingCode(shortCode);
+    const id = this.#idByShortCode.get(normalizedShortCode);
+    const challenge = id ? this.#byId.get(id) : null;
+    if (challenge && ttlMs(challenge, now) <= 0) {
+      this.#delete(challenge);
+      return null;
+    }
     if (!challenge || challenge.claimedAt) return null;
     const claimedChallenge = {
       ...challenge,
@@ -160,9 +231,17 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
     let challenge = newChallenge(now);
     const client = await this.#getRedisClient();
     for (let attempt = 0; attempt < 5; attempt++) {
-      const existingId = await client.get(pairingCodeKey(challenge.shortCode));
-      if (!existingId) {
-        await this.#save(challenge, now);
+      const remainingTtlMs = Math.max(1, ttlMs(challenge, now));
+      const created = await client.eval(
+        CREATE_CHALLENGE_SCRIPT,
+        2,
+        pairingCodeKey(challenge.shortCode),
+        pairingKey(challenge.id),
+        challenge.id,
+        JSON.stringify(challenge),
+        String(remainingTtlMs),
+      );
+      if (created === 1) {
         return challenge;
       }
       challenge = newChallenge(now);
@@ -211,23 +290,22 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
     companionToken: string;
     now?: Date;
   }): Promise<CompanionPairingChallenge | null> {
-    const challenge = await this.getByShortCode(shortCode, now);
-    if (!challenge || challenge.claimedAt) return null;
-    const claimedChallenge = {
-      ...challenge,
-      claimedAt: now.toISOString(),
+    const normalizedShortCode = normalizePairingCode(shortCode);
+    const client = await this.#getRedisClient();
+    const payload = await client.eval(
+      CLAIM_CHALLENGE_SCRIPT,
+      1,
+      pairingCodeKey(normalizedShortCode),
+      PAIRING_KEY_PREFIX,
+      now.toISOString(),
       userId,
       companionToken,
-    };
-    await this.#save(claimedChallenge, now);
-    return claimedChallenge;
-  }
-
-  async #save(challenge: CompanionPairingChallenge, now = new Date()): Promise<void> {
-    const client = await this.#getRedisClient();
-    const remainingTtlMs = Math.max(1, ttlMs(challenge, now));
-    await client.set(pairingKey(challenge.id), JSON.stringify(challenge), { PX: remainingTtlMs });
-    await client.set(pairingCodeKey(challenge.shortCode), challenge.id, { PX: remainingTtlMs });
+    );
+    if (typeof payload !== "string") {
+      return null;
+    }
+    const parsed = companionPairingChallengeSchema.safeParse(JSON.parse(payload));
+    return parsed.success ? parsed.data : null;
   }
 }
 
@@ -241,11 +319,16 @@ async function getSharedRedisClient(): Promise<RedisClient> {
       skipVersionCheck: true,
     });
   }
-  const redisClient = await sharedRedisConnection.client;
+  const redisClient: unknown = await sharedRedisConnection.client;
+  if (!isRuntimeRedisClient(redisClient)) {
+    throw new Error("Redis companion pairing client is missing required commands");
+  }
   return {
-    set: async (key, value, options) => redisClient.set(key, value, options),
+    set: async (key, value, mode, millisecondsToExpire) =>
+      redisClient.set(key, value, mode, millisecondsToExpire),
     get: async (key) => redisClient.get(key),
     del: async (...keys) => redisClient.del(...keys),
+    eval: async (script, keyCount, ...args) => redisClient.eval(script, keyCount, ...args),
   };
 }
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { formatDateTime } from "@dofek/format/format";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -73,6 +73,12 @@ vi.mock("../lib/auth-context", () => ({
 
 const mockLinkedAccountsRefetch = vi.fn();
 const mockZeppPairingClaim = vi.fn();
+type ZeppPairingMutationOptions = {
+  onError?: (error: { message: string }) => void;
+  onMutate?: () => void;
+  onSuccess?: () => void;
+};
+let mockZeppPairingMutationOptions: ZeppPairingMutationOptions | null = null;
 const mockPasswordCredentialStatusQuery = vi.fn(() => ({
   data: { hasPassword: false },
   isLoading: false,
@@ -148,12 +154,18 @@ vi.mock("../lib/trpc", () => ({
     },
     companionPairing: {
       claim: {
-        useMutation: () => ({
-          mutate: mockZeppPairingClaim,
-          isPending: false,
-          isError: false,
-          error: null,
-        }),
+        useMutation: (options: ZeppPairingMutationOptions) => {
+          mockZeppPairingMutationOptions = options;
+          return {
+            mutate: (input: { code: string }) => {
+              options.onMutate?.();
+              mockZeppPairingClaim(input);
+            },
+            isPending: false,
+            isError: false,
+            error: null,
+          };
+        },
       },
     },
     medicationDoseEvents: {
@@ -188,6 +200,7 @@ beforeEach(() => {
     ...defaultBillingStatus,
     access: { ...defaultBillingStatus.access },
   };
+  mockZeppPairingMutationOptions = null;
   vi.clearAllMocks();
 });
 
@@ -261,11 +274,27 @@ describe("SettingsScreen Zepp pairing", () => {
     render(<SettingsScreen />);
 
     fireEvent.change(screen.getByPlaceholderText("Short code"), {
-      target: { value: "ABCD12" },
+      target: { value: "ABCD23" },
     });
     fireEvent.click(screen.getByText("Connect Zepp App"));
 
-    expect(mockZeppPairingClaim).toHaveBeenCalledWith({ code: "ABCD12" });
+    expect(mockZeppPairingClaim).toHaveBeenCalledWith({ code: "ABCD23" });
+  });
+
+  it("clears stale pairing messages when the code changes", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+    await act(async () => {
+      mockZeppPairingMutationOptions?.onError?.({ message: "Old pairing error" });
+    });
+    expect(await screen.findByText("Old pairing error")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("Short code"), {
+      target: { value: "WXYZ34" },
+    });
+
+    expect(screen.queryByText("Old pairing error")).toBeNull();
   });
 });
 

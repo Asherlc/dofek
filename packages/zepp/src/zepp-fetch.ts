@@ -54,7 +54,7 @@ export function summarizeZeppFetchResponse(response: ZeppFetchResponse): ZeppFet
   const status = getStatus(response);
   const body = parseBody(response.body);
   const bodyError = getBodyErrorMessage(body);
-  const failedStatus = status !== null && status >= 400;
+  const failedStatus = status !== null && (status < 200 || status >= 300);
   const errorMessage = failedStatus ? (bodyError ?? `HTTP ${status}`) : bodyError;
 
   return {

@@ -108,6 +108,9 @@ export default function SettingsScreen() {
   const [zeppPairingCode, setZeppPairingCode] = useState("");
   const [zeppPairingMessage, setZeppPairingMessage] = useState("");
   const zeppPairingMutation = trpc.companionPairing.claim.useMutation({
+    onMutate: () => {
+      setZeppPairingMessage("");
+    },
     onSuccess: () => {
       setZeppPairingCode("");
       setZeppPairingMessage("Zepp app connected. Return to Zepp to sync.");
@@ -189,6 +192,7 @@ export default function SettingsScreen() {
   }
 
   function handleClaimZeppPairing() {
+    setZeppPairingMessage("");
     zeppPairingMutation.mutate({ code: zeppPairingCode });
   }
 
@@ -419,7 +423,10 @@ export default function SettingsScreen() {
           <TextInput
             style={styles.passwordInput}
             value={zeppPairingCode}
-            onChangeText={setZeppPairingCode}
+            onChangeText={(value) => {
+              setZeppPairingCode(value);
+              setZeppPairingMessage("");
+            }}
             placeholder="Short code"
             placeholderTextColor={colors.textSecondary}
             autoCapitalize="characters"

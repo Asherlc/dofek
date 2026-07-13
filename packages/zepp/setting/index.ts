@@ -247,20 +247,6 @@ AppSettingsPage({
         connectionStatus.reason ? `Reason: ${String(connectionStatus.reason)}` : "",
       ]),
 
-      View({ style: { margin: "1em", fontSize: "1.1rem", color: "#888" } }, [
-        "Or paste a companion token manually.",
-      ]),
-
-      TextInput({
-        title: "Dofek API Token",
-        bold: false,
-        placeholder: this.state.dofekApiToken ? "••••••••" : "Paste your companion token",
-        onChange: (value: string) => {
-          this.state.dofekApiToken = value;
-          props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, value);
-        },
-      }),
-
       Button({
         label: "Sync health data now",
         color: "primary",

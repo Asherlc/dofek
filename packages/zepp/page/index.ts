@@ -22,7 +22,16 @@ import {
   Step,
   Stress,
 } from "@zos/sensor";
-import { align, createKeyboard, createWidget, inputType, prop, text_style, widget } from "@zos/ui";
+import {
+  align,
+  createKeyboard,
+  createWidget,
+  deleteWidget,
+  inputType,
+  prop,
+  text_style,
+  widget,
+} from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
 
 import { collectHealthData } from "../src/health-collector.ts";
@@ -66,6 +75,7 @@ let sensorInfoText: ReturnType<typeof createWidget> | null = null;
 let sampleText: ReturnType<typeof createWidget> | null = null;
 let hintText: ReturnType<typeof createWidget> | null = null;
 let pairingQrContent: string | null = null;
+let pairingQrWidget: ReturnType<typeof createWidget> | null = null;
 
 function renderStatus(text: string) {
   if (statusText) {
@@ -89,6 +99,18 @@ function renderHint(text: string) {
   if (hintText) {
     hintText.setProperty(prop.TEXT, text);
   }
+}
+
+function resetPairingQrReference() {
+  pairingQrContent = null;
+  pairingQrWidget = null;
+}
+
+function clearPairingQrWidget() {
+  if (pairingQrWidget) {
+    deleteWidget(pairingQrWidget);
+  }
+  resetPairingQrReference();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -117,17 +139,18 @@ Page(
       activeFile: "A" as ActiveFileSlot,
       hasCredentials: false,
       dofekEmail: "",
-      dofekPassword: "",
       pairingVerificationUrl: "",
       pairingShortCode: "",
     },
 
     onInit() {
+      resetPairingQrReference();
       setWakeUpRelaunch(true);
       this.refreshPreferences();
     },
 
     build() {
+      resetPairingQrReference();
       createWidget(widget.TEXT, {
         x: px(0),
         y: px(36),
@@ -335,6 +358,7 @@ Page(
 
     renderPairing(pairing: Record<string, unknown> | null) {
       if (!pairing || this.state.hasCredentials) {
+        clearPairingQrWidget();
         return;
       }
 
@@ -346,16 +370,18 @@ Page(
 
       this.state.pairingVerificationUrl = verificationUrl;
       this.state.pairingShortCode = shortCode;
-      renderHint(`Pair Dofek\nCode ${shortCode}`);
+      renderSamples("");
+      renderHint(`Code ${shortCode}\nScan QR`);
 
-      if (pairingQrContent === verificationUrl) {
+      if (pairingQrContent === verificationUrl && pairingQrWidget) {
         return;
       }
 
+      clearPairingQrWidget();
       pairingQrContent = verificationUrl;
-      const qrSize = DEVICE_WIDTH <= 360 ? px(92) : px(128);
-      const qrY = DEVICE_WIDTH <= 360 ? px(242) : px(298);
-      createWidget(widget.QRCODE, {
+      const qrSize = DEVICE_WIDTH <= 360 ? px(84) : px(96);
+      const qrY = DEVICE_WIDTH <= 360 ? px(218) : px(206);
+      pairingQrWidget = createWidget(widget.QRCODE, {
         content: verificationUrl,
         x: Math.floor((DEVICE_WIDTH - qrSize) / 2),
         y: qrY,
@@ -406,13 +432,13 @@ Page(
           this.openKeyboard({
             initialText: "",
             onComplete: (password: string) => {
-              this.state.dofekPassword = password;
               this.request({
                 method: "dofek.loginWithPassword",
                 params: { email: this.state.dofekEmail, password },
               })
                 .then(() => {
                   this.state.hasCredentials = true;
+                  clearPairingQrWidget();
                   renderHint("Connected");
                 })
                 .catch((error: unknown) => {

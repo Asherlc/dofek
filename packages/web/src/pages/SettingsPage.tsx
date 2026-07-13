@@ -52,9 +52,16 @@ export function SettingsPage() {
   });
 
   useEffect(() => {
-    const pairingCode = new URLSearchParams(window.location.search).get("zeppPair");
+    const currentUrl = new URL(window.location.href);
+    const pairingCode = currentUrl.searchParams.get("zeppPair");
     if (pairingCode) {
       setZeppPairingCode(pairingCode);
+      currentUrl.searchParams.delete("zeppPair");
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`,
+      );
     }
   }, []);
 
@@ -151,7 +158,7 @@ export function SettingsPage() {
               value={zeppPairingCode}
               onChange={(event) => setZeppPairingCode(event.target.value)}
               className="w-full rounded border border-border bg-surface-solid px-3 py-2 text-sm text-foreground"
-              placeholder="ABC123"
+              placeholder="ABC234"
               autoCapitalize="characters"
             />
           </label>

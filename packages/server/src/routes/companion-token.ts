@@ -47,7 +47,7 @@ export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
       }
       Sentry.captureException(error);
       logger.error(`[companion-token] Password login failed: ${error}`);
-      sendJson(res, 500, { error: "Failed to create companion token." });
+      sendJson(res, 500, { error: "Failed to create Dofek connection." });
     }
   });
 

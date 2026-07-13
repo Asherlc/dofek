@@ -17,31 +17,16 @@ function sendJson(res: import("express").Response, status: number, body: unknown
   res.status(status).json(body);
 }
 
-function getFirstHeaderValue(value: string | string[] | undefined): string | undefined {
-  if (typeof value === "string") {
-    return value.split(",")[0]?.trim();
-  }
-  return value?.[0]?.trim();
-}
-
-function getPublicOrigin(req: import("express").Request): string {
+function getPublicOrigin(): string {
   const envOrigin = process.env.PUBLIC_APP_URL?.trim().replace(/\/+$/, "");
-  if (envOrigin) {
-    try {
-      return new URL(envOrigin).origin;
-    } catch {
-      throw new Error("PUBLIC_APP_URL environment variable must be a valid URL");
-    }
+  if (!envOrigin) {
+    throw new Error("PUBLIC_APP_URL environment variable is required");
   }
-
-  const forwardedProto = getFirstHeaderValue(req.headers["x-forwarded-proto"]);
-  const forwardedHost = getFirstHeaderValue(req.headers["x-forwarded-host"]);
-  const proto = forwardedProto ?? req.protocol;
-  const host = forwardedHost ?? req.headers.host;
-  if (host) {
-    return `${proto}://${host}`;
+  try {
+    return new URL(envOrigin).origin;
+  } catch {
+    throw new Error("PUBLIC_APP_URL environment variable must be a valid URL");
   }
-  return "http://localhost:3000";
 }
 
 function buildVerificationUrl(origin: string, shortCode: string): string {
@@ -71,7 +56,7 @@ export function createCompanionPairingRouter(deps: {
 
     try {
       const challenge = await store.createChallenge();
-      const origin = getPublicOrigin(req);
+      const origin = getPublicOrigin();
       sendJson(res, 200, {
         pairingId: challenge.id,
         shortCode: challenge.shortCode,
@@ -90,11 +75,13 @@ export function createCompanionPairingRouter(deps: {
     const pairingId =
       typeof req.params.pairingId === "string" ? req.params.pairingId.trim() : undefined;
     if (!pairingId) {
+      res.set("Cache-Control", "no-store");
       sendJson(res, 400, { error: "Pairing ID is required." });
       return;
     }
 
     try {
+      res.set("Cache-Control", "no-store");
       const challenge = await store.getById(pairingId);
       if (!challenge) {
         sendJson(res, 404, { state: "expired" });
@@ -119,6 +106,7 @@ export function createCompanionPairingRouter(deps: {
     } catch (error) {
       Sentry.captureException(error);
       logger.error(`[companion-pairing] Failed to read pairing status: ${error}`);
+      res.set("Cache-Control", "no-store");
       sendJson(res, 500, { error: "Failed to read companion pairing status." });
     }
   });
@@ -137,7 +125,7 @@ export function createCompanionPairingRouter(deps: {
         res.status(404).type("text/plain").send("Pairing code expired.");
         return;
       }
-      const origin = getPublicOrigin(req);
+      const origin = getPublicOrigin();
       const svg = await QRCode.toString(buildVerificationUrl(origin, challenge.shortCode), {
         type: "svg",
         errorCorrectionLevel: "M",

@@ -1,6 +1,6 @@
 # Dofek Zepp
 
-Zepp OS mini program that captures raw accelerometer (and optional gyroscope) samples on the watch, buffers them to a watch-side binary file, and exports the file to the phone over BLE. It can also collect supported Zepp health summaries on the watch and upload them from the phone-side Side Service to Dofek using a companion token. Zepp documents Side Service as the phone-side runtime that can communicate with both the watch app and external servers through Fetch API ([Side Service intro](https://docs.zepp.com/docs/guides/framework/side-service/intro/), [Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/)).
+Zepp OS mini program that captures raw accelerometer (and optional gyroscope) samples on the watch, buffers them to a watch-side binary file, and exports the file to the phone over BLE. It can also collect supported Zepp health summaries on the watch and upload them from the phone-side Side Service to Dofek using the stored connection credential. Zepp documents Side Service as the phone-side runtime; this app uses `@zeppos/zml` messaging between the watch app and Side Service, and the Side Service uses Fetch API for Dofek server calls ([Side Service intro](https://docs.zepp.com/docs/guides/framework/side-service/intro/), [Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/)).
 
 ## Target devices
 
@@ -57,14 +57,14 @@ Bulk IMU logs are megabytes, while BLE messaging is oriented toward small binary
 
 ## Dofek pairing and login
 
-The Zepp app supports multiple ways to create the companion token used by the phone-side Side Service:
+The Zepp app supports multiple ways to connect Dofek to the phone-side Side Service:
 
 | Flow | Where it starts | Where it finishes | Notes |
 |---|---|---|---|
 | QR from watch | Watch app | Dofek web/mobile settings | The watch renders a Zepp `QRCODE` widget with the Dofek verification URL. Zepp documents this widget for API_LEVEL 2.0+ ([QRCODE](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/QRCODE/)). |
-| QR from Zepp iOS app | Zepp mini program Settings | Dofek web/mobile settings | The Settings App displays the server-generated QR SVG with Zepp's `Image` component, which accepts remote image URLs ([Image](https://docs.zepp.com/docs/reference/app-settings-api/ui/image/)). |
-| Short code | Watch or Zepp Settings | Dofek web/mobile settings | Enter the six-character code in Dofek Settings. The server claim endpoint issues a companion token back to the polling Side Service. |
-| Dofek email/password | Zepp mini program Settings | Zepp Side Service | The Side Service exchanges credentials for a companion token through Dofek's password-login endpoint. |
+| QR from Zepp iOS app | Zepp mini program Settings | Dofek web/mobile settings | The Settings App displays the server-generated QR SVG URL as an image. |
+| Short code | Watch or Zepp Settings | Dofek web/mobile settings | Enter the six-character code in Dofek Settings. The server claim endpoint completes the connection for the polling Side Service. |
+| Dofek email/password | Zepp mini program Settings | Zepp Side Service | The Side Service exchanges credentials through Dofek's password-login endpoint. |
 | Dofek email/password | Watch app | Zepp Side Service | The watch asks the Side Service to log in after collecting text with Zepp's system keyboard. `SYSTEM_KEYBOARD` starts at API_LEVEL 4.0, so older watches keep the other pairing flows ([SYSTEM_KEYBOARD](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/SYSTEM_KEYBOARD/)). |
 
 Pairing challenges expire after ten minutes. The Zepp Side Service uses Zepp's object-form Fetch API to call Dofek and poll for completion ([Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/)).
@@ -110,7 +110,7 @@ There's no Zepp Store submission API — the final upload is manual.
 
 ### Automatic builds (every main push)
 
-Every push to `main` triggers `release-zepp.yml`: patches an auto-generated version into `app.json` and `package.json`, runs `zeus build`, and uploads the `.zab` artifact (retained 90 days). The built artifact is always available at:
+Every push to `main` triggers `release-zepp.yml`: patches an auto-generated version into `app.json` and `package.json`, runs `pnpm build` with the local Zeus wrapper, and uploads the `.zab` artifact (retained 90 days). The built artifact is always available at:
 
 > GitHub → Actions → Release Dofek Zepp (Zepp Store) → latest run → Artifacts → `zepp-zab`
 

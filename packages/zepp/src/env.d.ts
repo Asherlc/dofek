@@ -169,12 +169,13 @@ declare module "@zos/ui" {
     QRCODE: number;
     [key: string]: number;
   };
-  export const prop: { TEXT: number; [key: string]: number };
+  export const prop: { TEXT: number; VISIBLE: number; [key: string]: number };
   export const align: { CENTER_H: number; LEFT: number; [key: string]: number };
   export const text_style: { NONE: number; WRAP: number; [key: string]: number };
   export const inputType: { CHAR: number; NUM: number; EMOJI: number; VOICE: number };
 
   export function createWidget(type: WidgetType, options: Record<string, unknown>): WidgetInstance;
+  export function deleteWidget(widget: WidgetInstance): void;
   export function createKeyboard(options: {
     inputType: number;
     text?: string;

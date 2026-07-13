@@ -23,6 +23,10 @@ vi.mock("../lib/companion-pairing-store.ts", () => ({
     getByShortCode: (...args: unknown[]) => mockGetByShortCode(...args),
     claimChallenge: (...args: unknown[]) => mockClaimChallenge(...args),
   }),
+  parsePairingCodeInput: (code: string) => {
+    const normalizedCode = code.replace(/[\s-]/g, "").trim().toUpperCase();
+    return /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(normalizedCode) ? normalizedCode : null;
+  },
 }));
 
 vi.mock("../companion/token-repository.ts", () => ({
@@ -41,7 +45,7 @@ describe("companionPairingRouter", () => {
   it("claims an active pairing code", async () => {
     mockGetByShortCode.mockResolvedValue({
       id: "pairing-1",
-      shortCode: "ABC123",
+      shortCode: "ABC234",
       createdAt: "2026-07-12T00:00:00.000Z",
       expiresAt: "2026-07-12T00:10:00.000Z",
     });
@@ -53,7 +57,7 @@ describe("companionPairingRouter", () => {
     });
     mockClaimChallenge.mockResolvedValue({
       id: "pairing-1",
-      shortCode: "ABC123",
+      shortCode: "ABC234",
       createdAt: "2026-07-12T00:00:00.000Z",
       expiresAt: "2026-07-12T00:10:00.000Z",
       claimedAt: "2026-07-12T00:01:00.000Z",
@@ -63,13 +67,13 @@ describe("companionPairingRouter", () => {
 
     const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
 
-    await expect(caller.claim({ code: "ABC123" })).resolves.toEqual({
+    await expect(caller.claim({ code: "ABC234" })).resolves.toEqual({
       state: "claimed",
       expiresAt: "2026-07-12T00:10:00.000Z",
     });
     expect(mockRegenerateCompanionToken).toHaveBeenCalledWith({}, "user-1");
     expect(mockClaimChallenge).toHaveBeenCalledWith({
-      shortCode: "ABC123",
+      shortCode: "ABC234",
       userId: "user-1",
       companionToken: "dofek_companion_test",
     });
@@ -79,23 +83,46 @@ describe("companionPairingRouter", () => {
     mockGetByShortCode.mockResolvedValue(null);
     const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
 
-    await expect(caller.claim({ code: "MISSING" })).rejects.toThrow(
+    await expect(caller.claim({ code: "MSS234" })).rejects.toThrow(
       "Pairing code was not found or has expired.",
     );
+  });
+
+  it("rejects invalid code formats before probing the store", async () => {
+    const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.claim({ code: "I0O1AA" })).rejects.toThrow(
+      "Enter a valid six-character Zepp pairing code.",
+    );
+    expect(mockGetByShortCode).not.toHaveBeenCalled();
   });
 
   it("rejects already claimed codes", async () => {
     mockGetByShortCode.mockResolvedValue({
       id: "pairing-1",
-      shortCode: "ABC123",
+      shortCode: "ABC234",
       createdAt: "2026-07-12T00:00:00.000Z",
       expiresAt: "2026-07-12T00:10:00.000Z",
       claimedAt: "2026-07-12T00:01:00.000Z",
     });
     const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
 
-    await expect(caller.claim({ code: "ABC123" })).rejects.toThrow(
+    await expect(caller.claim({ code: "ABC234" })).rejects.toThrow(
       "Pairing code has already been used.",
+    );
+  });
+
+  it("throttles repeated pairing code guesses per user", async () => {
+    mockGetByShortCode.mockResolvedValue(null);
+    const caller = createCaller({ db: {}, userId: "rate-limited-user", timezone: "UTC" });
+
+    for (let attemptNumber = 0; attemptNumber < 20; attemptNumber += 1) {
+      await expect(caller.claim({ code: "ABC234" })).rejects.toThrow(
+        "Pairing code was not found or has expired.",
+      );
+    }
+    await expect(caller.claim({ code: "ABC234" })).rejects.toThrow(
+      "Too many pairing attempts. Please wait a few minutes and try again.",
     );
   });
 });

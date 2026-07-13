@@ -178,7 +178,7 @@ describe("createCompanionTokenHttpRouter", () => {
     expect(mockCaptureException).toHaveBeenCalled();
     expect(response).toEqual({
       status: 500,
-      body: { error: "Failed to create companion token." },
+      body: { error: "Failed to create Dofek connection." },
     });
   });
 });
