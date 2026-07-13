@@ -67,7 +67,6 @@ export async function processScheduledSyncJob(job: Job<ScheduledSyncJobData>, db
   let processedConnections = 0;
 
   async function reportDispatchProgress(): Promise<void> {
-    if (totalProviderConnections === 0) return;
     const skippedCount = skippedDueToCooldown + skippedDueToInFlight;
     await updateScheduledSyncProgress(
       job,

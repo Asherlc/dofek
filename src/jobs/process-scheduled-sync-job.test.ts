@@ -96,7 +96,9 @@ describe("processScheduledSyncJob", () => {
       ]),
     };
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [createScheduledSyncJob(), db]);
+    const job = createScheduledSyncJob();
+
+    await Reflect.apply(processScheduledSyncJob, undefined, [job, db]);
 
     // Each provider gets its own queue
     const stravaQueue = getMockQueue("strava");
@@ -145,6 +147,10 @@ describe("processScheduledSyncJob", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Enqueued 3 sync jobs for 3 users",
     );
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 60,
+      message: "Scheduled 1 sync jobs, skipped 0.",
+    });
   });
 
   it("reuses the same queue instance for multiple users of the same provider", async () => {
@@ -194,10 +200,16 @@ describe("processScheduledSyncJob", () => {
       execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "garmin" }]),
     };
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [createScheduledSyncJob(), db]);
+    const job = createScheduledSyncJob();
+
+    await Reflect.apply(processScheduledSyncJob, undefined, [job, db]);
 
     const garminQueue = getMockQueue("garmin");
     expect(garminQueue.add).not.toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 95,
+      message: "Scheduled 0 sync jobs, skipped 1.",
+    });
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Skipping garmin for user-1: rate-limit cooldown active",
     );
@@ -222,15 +234,57 @@ describe("processScheduledSyncJob", () => {
       execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "garmin" }]),
     };
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [createScheduledSyncJob(), db]);
+    const job = createScheduledSyncJob();
+
+    await Reflect.apply(processScheduledSyncJob, undefined, [job, db]);
 
     expect(garminQueue.add).not.toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 95,
+      message: "Scheduled 0 sync jobs, skipped 1.",
+    });
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Skipping garmin for user-1: 1 sync job(s) already queued",
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Enqueued 0 sync jobs for 1 users (1 skipped due to in-flight sync)",
     );
+  });
+
+  it("reports combined skipped provider counts during scheduled sync dispatch", async () => {
+    const cooldown = {
+      providerId: "strava",
+      scope: "provider" as const,
+      userId: null,
+      expiresAt: new Date("2026-06-02T12:10:00Z"),
+    };
+    mockGetActiveCooldown.mockImplementation((providerId: string) =>
+      providerId === "strava" ? Promise.resolve(cooldown) : Promise.resolve(null),
+    );
+    const garminQueue = getMockQueue("garmin");
+    garminQueue.getActive = vi.fn().mockResolvedValue([
+      {
+        data: {
+          userId: "user-1",
+          providerId: "garmin",
+          checkpoint: { phase: "api", stepIndex: 2 },
+        },
+      },
+    ]);
+    const db = {
+      execute: vi.fn().mockResolvedValue([
+        { user_id: "user-1", provider_id: "garmin" },
+        { user_id: "user-2", provider_id: "strava" },
+      ]),
+    };
+    const job = createScheduledSyncJob();
+
+    await Reflect.apply(processScheduledSyncJob, undefined, [job, db]);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 95,
+      message: "Scheduled 0 sync jobs, skipped 2.",
+    });
   });
 
   it("reports progress while dispatching scheduled sync jobs", async () => {

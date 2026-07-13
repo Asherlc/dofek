@@ -471,17 +471,23 @@ describe("Garmin dump provider", () => {
   it("fans out Garmin weight FIT files to child FIT import jobs", async () => {
     fitQueueMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 1, errors: [] });
     const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
       "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_20260701_weight.fit":
         createWeightFit(),
     });
     const directory = await createTempDirectory();
     const filePath = join(directory, "garmin-export.zip");
     await writeFile(filePath, zip);
+    const onProgress = vi.fn();
 
-    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1", { onProgress });
 
-    expect(result.recordsSynced).toBe(1);
+    expect(result.recordsSynced).toBe(2);
     expect(result.errors).toEqual([]);
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 25,
+      message: "Found 0 activity summaries and 2 FIT files.",
+    });
     expect(fitQueueMock.add).toHaveBeenCalledWith(
       "fit-file-import",
       expect.objectContaining({
@@ -556,8 +562,9 @@ describe("Garmin dump provider", () => {
     const directory = await createTempDirectory();
     const filePath = join(directory, "garmin-export.zip");
     await writeFile(filePath, zip);
+    const onProgress = vi.fn();
 
-    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1", { onProgress });
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors[0]?.message).toContain("Failed to parse Garmin summarized activities");
@@ -588,8 +595,9 @@ describe("Garmin dump provider", () => {
     const directory = await createTempDirectory();
     const filePath = join(directory, "garmin-export.zip");
     await writeFile(filePath, zip);
+    const onProgress = vi.fn();
 
-    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1", { onProgress });
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toEqual([
@@ -678,8 +686,9 @@ describe("Garmin dump provider", () => {
     const directory = await createTempDirectory();
     const filePath = join(directory, "garmin-export.zip");
     await writeFile(filePath, zip);
+    const onProgress = vi.fn();
 
-    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1", { onProgress });
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toEqual([
@@ -689,6 +698,14 @@ describe("Garmin dump provider", () => {
       }),
     ]);
     expect(fitQueueMock.add).toHaveBeenCalledTimes(2);
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 70,
+      message: "Importing Garmin FIT files (1/2)...",
+    });
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 95,
+      message: "Importing Garmin FIT files (2/2)...",
+    });
   });
 
   it("reports FIT child job failures with the extracted file path", async () => {

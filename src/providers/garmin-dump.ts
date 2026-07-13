@@ -394,7 +394,7 @@ function garminSummaryToFitJobSummary(
 async function enqueueFitFileImportJobs(
   entries: Array<{ entry: GarminDumpEntry; data: Omit<FitFileImportJobData, "filePath"> }>,
   uploadPath: string,
-  onJobFinished?: (completedCount: number, totalCount: number) => void | Promise<void>,
+  onJobFinished: (completedCount: number, totalCount: number) => void | Promise<void>,
 ): Promise<FitFileImportJobResult[]> {
   if (entries.length === 0) return [];
 
@@ -448,11 +448,11 @@ async function enqueueFitFileImportJobs(
                 await job.waitUntilFinished(queueEvents),
               );
               completedCount++;
-              await onJobFinished?.(completedCount, jobs.length);
+              await onJobFinished(completedCount, jobs.length);
               return result;
             } catch (error) {
               completedCount++;
-              await onJobFinished?.(completedCount, jobs.length);
+              await onJobFinished(completedCount, jobs.length);
               return {
                 recordsSynced: 0,
                 errors: [
