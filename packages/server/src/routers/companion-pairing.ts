@@ -57,18 +57,9 @@ export const companionPairingRouter = router({
         });
       }
 
-      const companionToken = await regenerateCompanionToken(ctx.db, ctx.userId);
-      if (!companionToken.token) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to create Dofek connection.",
-        });
-      }
-
       const claimedChallenge = await store.claimChallenge({
         shortCode: challenge.shortCode,
         userId: ctx.userId,
-        companionToken: companionToken.token,
       });
       if (!claimedChallenge) {
         throw new TRPCError({
@@ -77,9 +68,29 @@ export const companionPairingRouter = router({
         });
       }
 
+      const companionToken = await regenerateCompanionToken(ctx.db, ctx.userId);
+      if (!companionToken.token) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create Dofek connection.",
+        });
+      }
+
+      const tokenAttachedChallenge = await store.attachCompanionToken({
+        pairingId: claimedChallenge.id,
+        userId: ctx.userId,
+        companionToken: companionToken.token,
+      });
+      if (!tokenAttachedChallenge) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Pairing code has already been used.",
+        });
+      }
+
       return {
         state: "claimed",
-        expiresAt: claimedChallenge.expiresAt,
+        expiresAt: tokenAttachedChallenge.expiresAt,
       };
     }),
 });

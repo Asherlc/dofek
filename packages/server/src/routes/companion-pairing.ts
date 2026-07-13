@@ -9,9 +9,7 @@ import {
 } from "../lib/companion-pairing-store.ts";
 import { logger } from "../logger.ts";
 
-const pairingStartSchema = z.object({
-  deviceName: z.string().trim().min(1).optional(),
-});
+const pairingStartSchema = z.object({});
 
 function sendJson(res: import("express").Response, status: number, body: unknown): void {
   res.status(status).json(body);
@@ -46,6 +44,7 @@ export function createCompanionPairingRouter(deps: {
 }): Router {
   const router = Router();
   const store = deps.store ?? getCompanionPairingStore();
+  const publicOrigin = getPublicOrigin();
 
   router.post("/start", express.json(), async (req, res) => {
     const parsed = pairingStartSchema.safeParse(req.body ?? {});
@@ -56,12 +55,11 @@ export function createCompanionPairingRouter(deps: {
 
     try {
       const challenge = await store.createChallenge();
-      const origin = getPublicOrigin();
       sendJson(res, 200, {
         pairingId: challenge.id,
         shortCode: challenge.shortCode,
-        verificationUrl: buildVerificationUrl(origin, challenge.shortCode),
-        qrImageUrl: buildQrImageUrl(origin, challenge.id),
+        verificationUrl: buildVerificationUrl(publicOrigin, challenge.shortCode),
+        qrImageUrl: buildQrImageUrl(publicOrigin, challenge.id),
         expiresAt: challenge.expiresAt,
       });
     } catch (error) {
@@ -114,6 +112,7 @@ export function createCompanionPairingRouter(deps: {
   router.get("/qr/:pairingId.svg", async (req, res) => {
     const pairingId =
       typeof req.params.pairingId === "string" ? req.params.pairingId.trim() : undefined;
+    res.set("Cache-Control", "no-store");
     if (!pairingId) {
       res.status(400).type("text/plain").send("Pairing ID is required.");
       return;
@@ -125,14 +124,12 @@ export function createCompanionPairingRouter(deps: {
         res.status(404).type("text/plain").send("Pairing code expired.");
         return;
       }
-      const origin = getPublicOrigin();
-      const svg = await QRCode.toString(buildVerificationUrl(origin, challenge.shortCode), {
+      const svg = await QRCode.toString(buildVerificationUrl(publicOrigin, challenge.shortCode), {
         type: "svg",
         errorCorrectionLevel: "M",
         margin: 2,
         width: 320,
       });
-      res.set("Cache-Control", "no-store");
       res.type("image/svg+xml").send(svg);
     } catch (error) {
       Sentry.captureException(error);

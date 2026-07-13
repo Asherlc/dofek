@@ -96,12 +96,10 @@ describe("createCompanionPairingRouter", () => {
 
   it("fails loudly when PUBLIC_APP_URL is missing", async () => {
     delete process.env.PUBLIC_APP_URL;
-    const app = createTestApp(new InMemoryCompanionPairingStore());
 
-    const response = await request(app, "POST", "/api/companion-pairing/start", {});
-
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ error: "Failed to start companion pairing." });
+    expect(() => createTestApp(new InMemoryCompanionPairingStore())).toThrow(
+      "PUBLIC_APP_URL environment variable is required",
+    );
   });
 
   it("returns pending status before the code is claimed", async () => {
@@ -156,7 +154,19 @@ describe("createCompanionPairingRouter", () => {
     const response = await request(app, "GET", `/api/companion-pairing/qr/${challenge.id}.svg`);
 
     expect(response.status).toBe(200);
+    expect(response.cacheControl).toBe("no-store");
     expect(response.contentType).toContain("image/svg+xml");
     expect(response.text).toContain("<svg");
+  });
+
+  it("sets no-store on QR errors", async () => {
+    const store = new InMemoryCompanionPairingStore();
+    const app = createTestApp(store);
+
+    const response = await request(app, "GET", "/api/companion-pairing/qr/missing.svg");
+
+    expect(response.status).toBe(404);
+    expect(response.cacheControl).toBe("no-store");
+    expect(response.text).toBe("Pairing code expired.");
   });
 });

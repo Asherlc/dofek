@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COMPANION_PAIRING_TTL_MS,
+  getCompanionPairingStore,
   InMemoryCompanionPairingStore,
   normalizePairingCode,
   PAIRING_SHORT_CODE_PATTERN,
@@ -35,6 +36,9 @@ function parseMilliseconds(value: string): number {
 
 class FakeRedisClient {
   #entries = new Map<string, FakeRedisEntry>();
+  evalResults: unknown[] = [];
+  evalCallCount = 0;
+  nextEvalResult: unknown | undefined;
 
   async set(
     key: string,
@@ -72,6 +76,15 @@ class FakeRedisClient {
   }
 
   async eval(script: string, _keyCount: number, ...args: string[]): Promise<unknown> {
+    this.evalCallCount += 1;
+    if (this.evalResults.length > 0) {
+      return this.evalResults.shift();
+    }
+    if (this.nextEvalResult !== undefined) {
+      const result = this.nextEvalResult;
+      this.nextEvalResult = undefined;
+      return result;
+    }
     if (script.includes("INCR")) {
       return this.#consumeClaimAttempt(args);
     }
@@ -82,10 +95,27 @@ class FakeRedisClient {
   }
 
   corruptPairingPayload(pairingId: string): void {
+    this.writePairingPayload(pairingId, "{");
+  }
+
+  writePairingPayload(pairingId: string, value: string): void {
     this.#entries.set(`companion-pairing:${pairingId}`, {
-      value: "{",
+      value,
       expiresAtMs: Date.now() + COMPANION_PAIRING_TTL_MS,
     });
+  }
+
+  async deletePairingPayload(pairingId: string): Promise<void> {
+    await this.del(`companion-pairing:${pairingId}`);
+  }
+
+  async readPairingPayload(pairingId: string): Promise<Record<string, unknown> | null> {
+    const payload = await this.get(`companion-pairing:${pairingId}`);
+    return payload ? JSON.parse(payload) : null;
+  }
+
+  pairingPayloadExpiresAtMs(pairingId: string): number | null {
+    return this.#entries.get(`companion-pairing:${pairingId}`)?.expiresAtMs ?? null;
   }
 
   async #createChallenge(args: string[]): Promise<number> {
@@ -108,7 +138,7 @@ class FakeRedisClient {
     const pairingKeyPrefix = requireArg(args, 1);
     const claimedAt = requireArg(args, 2);
     const userId = requireArg(args, 3);
-    const companionToken = requireArg(args, 4);
+    const companionToken = args[4] ?? "";
 
     const pairingId = await this.get(codeKey);
     if (!pairingId) {
@@ -145,7 +175,7 @@ class FakeRedisClient {
       ...parsedPayload,
       claimedAt,
       userId,
-      companionToken,
+      ...(companionToken ? { companionToken } : {}),
     });
     this.#entries.set(challengeKey, {
       value: updatedPayload,
@@ -190,6 +220,7 @@ describe("InMemoryCompanionPairingStore", () => {
 
   it("normalizes codes entered with spaces or dashes", () => {
     expect(normalizePairingCode("ab c-123")).toBe("ABC123");
+    expect(normalizePairingCode(" ab c-123 ")).toBe("ABC123");
   });
 
   it("rejects short codes outside the generated alphabet", () => {
@@ -228,14 +259,56 @@ describe("InMemoryCompanionPairingStore", () => {
   it("limits claim attempts per user inside the pairing window", async () => {
     const store = new InMemoryCompanionPairingStore();
     const now = new Date("2026-07-12T12:00:00.000Z");
+    // Matches companion-pairing-store.ts's CLAIM_ATTEMPT_WINDOW_MS, which is not exported.
+    const claimAttemptWindowMs = 10 * 60 * 1000;
 
     for (let attemptNumber = 0; attemptNumber < 20; attemptNumber += 1) {
       await expect(store.consumeClaimAttempt("user-1", now)).resolves.toBe(true);
     }
     await expect(store.consumeClaimAttempt("user-1", now)).resolves.toBe(false);
     await expect(
-      store.consumeClaimAttempt("user-1", new Date(now.getTime() + COMPANION_PAIRING_TTL_MS + 1)),
+      store.consumeClaimAttempt("user-1", new Date(now.getTime() + claimAttemptWindowMs + 1)),
     ).resolves.toBe(true);
+  });
+
+  it("attaches a token only to a claimed challenge owned by the user", async () => {
+    const store = new InMemoryCompanionPairingStore();
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+
+    await expect(
+      store.attachCompanionToken({
+        pairingId: challenge.id,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+        now,
+      }),
+    ).resolves.toBeNull();
+
+    const claimed = await store.claimChallenge({
+      shortCode: challenge.shortCode,
+      userId: "user-1",
+      now,
+    });
+    expect(claimed?.companionToken).toBeUndefined();
+
+    await expect(
+      store.attachCompanionToken({
+        pairingId: challenge.id,
+        userId: "user-2",
+        companionToken: "dofek_companion_wrong",
+        now,
+      }),
+    ).resolves.toBeNull();
+
+    await expect(
+      store.attachCompanionToken({
+        pairingId: challenge.id,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+        now,
+      }),
+    ).resolves.toMatchObject({ companionToken: "dofek_companion_test" });
   });
 
   it("expires stale challenges", async () => {
@@ -243,13 +316,78 @@ describe("InMemoryCompanionPairingStore", () => {
     const now = new Date("2026-07-12T12:00:00.000Z");
     const challenge = await store.createChallenge(now);
     const expiredAt = new Date(now.getTime() + COMPANION_PAIRING_TTL_MS + 1);
+    const exactExpiry = new Date(now.getTime() + COMPANION_PAIRING_TTL_MS);
 
+    expect(await store.getById(challenge.id, exactExpiry)).toBeNull();
     expect(await store.getById(challenge.id, expiredAt)).toBeNull();
     expect(await store.getByShortCode(challenge.shortCode, expiredAt)).toBeNull();
+  });
+
+  it("rejects expired claims and token attachment", async () => {
+    const store = new InMemoryCompanionPairingStore();
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+    const expiredAt = new Date(now.getTime() + COMPANION_PAIRING_TTL_MS);
+
+    await expect(
+      store.claimChallenge({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+        now: expiredAt,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      store.attachCompanionToken({
+        pairingId: challenge.id,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+        now: expiredAt,
+      }),
+    ).resolves.toBeNull();
+    await expect(store.getByShortCode(challenge.shortCode, now)).resolves.toBeNull();
+  });
+
+  it("returns null for missing in-memory challenge lookups", async () => {
+    const store = new InMemoryCompanionPairingStore();
+
+    await expect(store.getById("missing")).resolves.toBeNull();
+    await expect(store.getByShortCode("ABC234")).resolves.toBeNull();
   });
 });
 
 describe("RedisCompanionPairingStore", () => {
+  it("creates retrievable Redis pairing challenges", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const now = new Date("2026-07-12T12:00:00.000Z");
+
+    const challenge = await store.createChallenge(now);
+
+    await expect(store.getById(challenge.id, now)).resolves.toEqual(challenge);
+    await expect(store.getByShortCode(` ${challenge.shortCode} `, now)).resolves.toEqual(challenge);
+  });
+
+  it("retries Redis pairing code collisions and fails after repeated collisions", async () => {
+    const collisionClient = new FakeRedisClient();
+    const retryingStore = new RedisCompanionPairingStore(async () => collisionClient);
+    collisionClient.evalResults = [0];
+
+    await expect(retryingStore.createChallenge()).resolves.toMatchObject({
+      shortCode: expect.stringMatching(PAIRING_SHORT_CODE_PATTERN),
+    });
+    expect(collisionClient.evalCallCount).toBe(2);
+
+    const exhaustedClient = new FakeRedisClient();
+    const exhaustedStore = new RedisCompanionPairingStore(async () => exhaustedClient);
+    exhaustedClient.evalResults = [0, 0, 0, 0, 0];
+
+    await expect(exhaustedStore.createChallenge()).rejects.toThrow(
+      "Failed to allocate unique companion pairing code",
+    );
+    expect(exhaustedClient.evalCallCount).toBe(5);
+  });
+
   it("uses Redis to limit claim attempts per user", async () => {
     const redisClient = new FakeRedisClient();
     const store = new RedisCompanionPairingStore(async () => redisClient);
@@ -260,6 +398,148 @@ describe("RedisCompanionPairingStore", () => {
 
     await expect(store.consumeClaimAttempt("user-1")).resolves.toBe(false);
     await expect(store.consumeClaimAttempt("user-2")).resolves.toBe(true);
+  });
+
+  it("fails loudly when Redis claim attempts return a non-numeric value", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    redisClient.nextEvalResult = "1";
+
+    await expect(store.consumeClaimAttempt("user-1")).rejects.toThrow(
+      "Redis companion pairing claim attempt limiter returned a non-numeric count",
+    );
+  });
+
+  it("claims first and attaches a Redis companion token later", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+
+    const claimed = await store.claimChallenge({
+      shortCode: challenge.shortCode,
+      userId: "user-1",
+      now,
+    });
+    expect(claimed).toMatchObject({ id: challenge.id, userId: "user-1" });
+    expect(claimed?.companionToken).toBeUndefined();
+    expect(await redisClient.readPairingPayload(challenge.id)).not.toHaveProperty("companionToken");
+
+    await expect(
+      store.attachCompanionToken({
+        pairingId: challenge.id,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+        now,
+      }),
+    ).resolves.toMatchObject({ companionToken: "dofek_companion_test" });
+  });
+
+  it("can claim a Redis challenge with a companion token in one step", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+
+    await expect(
+      store.claimChallenge({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+        now,
+      }),
+    ).resolves.toMatchObject({ companionToken: "dofek_companion_test" });
+  });
+
+  it("rejects Redis token attachment unless the claimed challenge belongs to the user", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+
+    await expect(
+      store.attachCompanionToken({
+        pairingId: challenge.id,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+        now,
+      }),
+    ).resolves.toBeNull();
+
+    await store.claimChallenge({
+      shortCode: challenge.shortCode,
+      userId: "user-1",
+      now,
+    });
+
+    await expect(
+      store.attachCompanionToken({
+        pairingId: challenge.id,
+        userId: "user-2",
+        companionToken: "dofek_companion_wrong",
+        now,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("expires stale Redis challenges", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+    const expiredAt = new Date(now.getTime() + COMPANION_PAIRING_TTL_MS);
+
+    await expect(store.getById(challenge.id, expiredAt)).resolves.toBeNull();
+    await expect(store.getByShortCode(challenge.shortCode, now)).resolves.toBeNull();
+  });
+
+  it("returns null for missing Redis short-code and challenge records", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+
+    await expect(store.getByShortCode("ABC234", now)).resolves.toBeNull();
+    await expect(store.getById("missing", now)).resolves.toBeNull();
+
+    await redisClient.deletePairingPayload(challenge.id);
+    await expect(
+      store.claimChallenge({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+        now,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("returns null and deletes malformed Redis challenge records", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+
+    redisClient.writePairingPayload(challenge.id, JSON.stringify({ id: 123 }));
+
+    await expect(store.getById(challenge.id, now)).resolves.toBeNull();
+    await expect(redisClient.readPairingPayload(challenge.id)).resolves.toBeNull();
+  });
+
+  it("returns null when Redis claim scripts do not return a payload", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+    redisClient.nextEvalResult = 1;
+
+    await expect(
+      store.claimChallenge({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+        now,
+      }),
+    ).resolves.toBeNull();
   });
 
   it("returns null for corrupted Redis claim payloads", async () => {
@@ -279,5 +559,52 @@ describe("RedisCompanionPairingStore", () => {
       }),
     ).resolves.toBeNull();
     await expect(store.getByShortCode(challenge.shortCode, now)).resolves.toBeNull();
+  });
+
+  it("returns null when Redis returns a malformed claimed payload", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+    redisClient.nextEvalResult = "{";
+
+    await expect(
+      store.claimChallenge({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+        now,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("preserves remaining Redis TTL when attaching a token", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    const challenge = await store.createChallenge(now);
+    await store.claimChallenge({
+      shortCode: challenge.shortCode,
+      userId: "user-1",
+      now,
+    });
+    const attachTime = new Date(now.getTime() + 30_000);
+
+    await store.attachCompanionToken({
+      pairingId: challenge.id,
+      userId: "user-1",
+      companionToken: "dofek_companion_test",
+      now: attachTime,
+    });
+
+    const expiresAtMs = redisClient.pairingPayloadExpiresAtMs(challenge.id);
+    expect(expiresAtMs).not.toBeNull();
+    expect(expiresAtMs).toBeGreaterThan(Date.now() + COMPANION_PAIRING_TTL_MS - 60_000);
+  });
+});
+
+describe("getCompanionPairingStore", () => {
+  it("uses the in-memory store in tests", () => {
+    expect(getCompanionPairingStore()).toBeInstanceOf(InMemoryCompanionPairingStore);
   });
 });

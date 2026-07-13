@@ -207,7 +207,8 @@ function setupRoutes(
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
   app.use("/api/mcp", createMcpRouter({ db, sensorStore }));
   app.use("/api/ingest", createIngestZosHealthRouter({ db }));
-  app.use("/api/companion-pairing", authRateLimiter, createCompanionPairingRouter({ db }));
+  app.use("/api/companion-pairing/start", authRateLimiter);
+  app.use("/api/companion-pairing", createCompanionPairingRouter({ db }));
   app.use("/api/companion-token", authRateLimiter, createCompanionTokenHttpRouter({ db }));
   // ── Seeded-login helper for local dev and preview environments ──
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "true") {

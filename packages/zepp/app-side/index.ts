@@ -128,11 +128,11 @@ AppSideService(
     },
 
     clearPairingInfo() {
-      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_ID, "");
-      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_SHORT_CODE, "");
-      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_VERIFICATION_URL, "");
-      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL, "");
-      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_EXPIRES_AT, "");
+      settings.settingsStorage.removeItem(STORAGE_KEYS.PAIRING_ID);
+      settings.settingsStorage.removeItem(STORAGE_KEYS.PAIRING_SHORT_CODE);
+      settings.settingsStorage.removeItem(STORAGE_KEYS.PAIRING_VERIFICATION_URL);
+      settings.settingsStorage.removeItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL);
+      settings.settingsStorage.removeItem(STORAGE_KEYS.PAIRING_EXPIRES_AT);
     },
 
     isCurrentPairing(pairingId: string) {
@@ -168,7 +168,7 @@ AppSideService(
           url: `${serverUrl.replace(/\/$/, "")}/api/companion-pairing/start`,
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceName: "Zepp OS" }),
+          body: JSON.stringify({}),
         });
         const summary = summarizeZeppFetchResponse(response);
         if (!summary.ok) {

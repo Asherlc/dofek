@@ -290,6 +290,7 @@ declare const settings: {
   settingsStorage: {
     getItem(key: string): string | null;
     setItem(key: string, value: string): void;
+    removeItem(key: string): void;
     addListener(event: string, callback: (event: { key: string; newValue: string }) => void): void;
   };
 };

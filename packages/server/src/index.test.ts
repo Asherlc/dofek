@@ -107,6 +107,12 @@ vi.mock("../routes/export.ts", () => ({ createExportRouter: vi.fn(() => express.
 vi.mock("./routes/ingest-zos-health.ts", () => ({
   createIngestZosHealthRouter: vi.fn(() => express.Router()),
 }));
+vi.mock("./routes/companion-pairing.ts", () => ({
+  createCompanionPairingRouter: vi.fn(() => express.Router()),
+}));
+vi.mock("./routes/companion-token.ts", () => ({
+  createCompanionTokenHttpRouter: vi.fn(() => express.Router()),
+}));
 vi.mock("../routes/stripe-webhook.ts", () => ({
   createStripeWebhookRouter: vi.fn(() => express.Router()),
 }));
@@ -209,6 +215,18 @@ describe("createApp", () => {
     const fakeDb = createDatabaseFromEnv();
     createApp(fakeDb, makeMockSensorStore());
     expect(createIngestZosHealthRouter).toHaveBeenCalledWith({ db: fakeDb });
+  });
+
+  it("passes db to companion route modules", async () => {
+    const { createCompanionPairingRouter } = await import("./routes/companion-pairing.ts");
+    const { createCompanionTokenHttpRouter } = await import("./routes/companion-token.ts");
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+
+    createApp(fakeDb, makeMockSensorStore());
+
+    expect(createCompanionPairingRouter).toHaveBeenCalledWith({ db: fakeDb });
+    expect(createCompanionTokenHttpRouter).toHaveBeenCalledWith({ db: fakeDb });
   });
 
   it("returns ready when Postgres, ClickHouse, and queues are reachable", async () => {
