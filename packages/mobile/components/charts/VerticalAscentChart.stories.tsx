@@ -10,7 +10,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     activityType: "road_cycling",
     verticalAscentRate: 1100,
     elevationGainMeters: 1120,
-    climbingMinutes: 61,
+    elapsedMinutes: 61,
   },
   {
     date: "2024-05-08",
@@ -18,7 +18,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     activityType: "road_cycling",
     verticalAscentRate: 950,
     elevationGainMeters: 1230,
-    climbingMinutes: 78,
+    elapsedMinutes: 78,
   },
   {
     date: "2024-05-15",
@@ -26,7 +26,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     activityType: "mountain_biking",
     verticalAscentRate: 1350,
     elevationGainMeters: 320,
-    climbingMinutes: 14,
+    elapsedMinutes: 14,
   },
   {
     date: "2024-05-22",
@@ -34,7 +34,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     activityType: "gravel_cycling",
     verticalAscentRate: 880,
     elevationGainMeters: 1610,
-    climbingMinutes: 110,
+    elapsedMinutes: 110,
   },
   {
     date: "2024-06-01",
@@ -42,7 +42,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     activityType: "gravel_cycling",
     verticalAscentRate: 1050,
     elevationGainMeters: 450,
-    climbingMinutes: 26,
+    elapsedMinutes: 26,
   },
 ];
 

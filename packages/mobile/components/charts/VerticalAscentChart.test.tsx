@@ -13,7 +13,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     activityType: "mountain_biking",
     verticalAscentRate: 800,
     elevationGainMeters: 600,
-    climbingMinutes: 45,
+    elapsedMinutes: 45,
   },
   {
     date: "2024-06-08",
@@ -21,7 +21,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     activityType: "road_cycling",
     verticalAscentRate: 1200,
     elevationGainMeters: 400,
-    climbingMinutes: 20,
+    elapsedMinutes: 20,
   },
 ];
 
@@ -49,7 +49,7 @@ describe("VerticalAscentChart", () => {
             activityType: "road_cycling",
             verticalAscentRate: 1200,
             elevationGainMeters: 400,
-            climbingMinutes: 20,
+            elapsedMinutes: 20,
           },
           {
             date: "2024-06-01",
@@ -57,7 +57,7 @@ describe("VerticalAscentChart", () => {
             activityType: "mountain_biking",
             verticalAscentRate: 800,
             elevationGainMeters: 600,
-            climbingMinutes: 45,
+            elapsedMinutes: 45,
           },
         ]}
         units={METRIC}
@@ -78,7 +78,7 @@ describe("VerticalAscentChart", () => {
             activityType: "indoor_cycling",
             verticalAscentRate: 800,
             elevationGainMeters: 600,
-            climbingMinutes: 45,
+            elapsedMinutes: 45,
           },
           {
             date: "2024-06-08",
@@ -86,7 +86,7 @@ describe("VerticalAscentChart", () => {
             activityType: "virtual_cycling",
             verticalAscentRate: 1200,
             elevationGainMeters: 400,
-            climbingMinutes: 20,
+            elapsedMinutes: 20,
           },
           {
             date: "2024-06-15",
@@ -94,7 +94,7 @@ describe("VerticalAscentChart", () => {
             activityType: "gravel_cycling",
             verticalAscentRate: 1000,
             elevationGainMeters: 500,
-            climbingMinutes: 30,
+            elapsedMinutes: 30,
           },
         ]}
         units={METRIC}

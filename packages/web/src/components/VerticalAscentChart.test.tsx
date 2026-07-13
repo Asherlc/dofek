@@ -37,7 +37,7 @@ describe("VerticalAscentChart", () => {
             activityType: "gravel_cycling",
             verticalAscentRate: 700,
             elevationGainMeters: 350,
-            climbingMinutes: 30,
+            elapsedMinutes: 30,
           },
           {
             date: "2026-04-01",
@@ -45,7 +45,7 @@ describe("VerticalAscentChart", () => {
             activityType: "road_cycling",
             verticalAscentRate: 600,
             elevationGainMeters: 300,
-            climbingMinutes: 30,
+            elapsedMinutes: 30,
           },
           {
             date: "2026-04-02",
@@ -53,7 +53,7 @@ describe("VerticalAscentChart", () => {
             activityType: "mountain_biking",
             verticalAscentRate: 500,
             elevationGainMeters: 250,
-            climbingMinutes: 30,
+            elapsedMinutes: 30,
           },
           {
             date: "2026-04-04",
@@ -61,7 +61,7 @@ describe("VerticalAscentChart", () => {
             activityType: "indoor_cycling",
             verticalAscentRate: 400,
             elevationGainMeters: 200,
-            climbingMinutes: 30,
+            elapsedMinutes: 30,
           },
           {
             date: "2026-04-05",
@@ -69,7 +69,7 @@ describe("VerticalAscentChart", () => {
             activityType: "virtual_cycling",
             verticalAscentRate: 300,
             elevationGainMeters: 150,
-            climbingMinutes: 30,
+            elapsedMinutes: 30,
           },
         ]}
       />,

@@ -659,7 +659,7 @@ describe("Router data coverage", () => {
           activityType: string;
           verticalAscentRate: number;
           elevationGainMeters: number;
-          climbingMinutes: number;
+          elapsedMinutes: number;
         }[]
       >("cyclingAdvanced.verticalAscentRate", { days: 90 });
 
@@ -671,8 +671,8 @@ describe("Router data coverage", () => {
         expect(typeof row.verticalAscentRate).toBe("number");
         expect(row.verticalAscentRate).toBeGreaterThanOrEqual(0);
         expect(typeof row.elevationGainMeters).toBe("number");
-        expect(typeof row.climbingMinutes).toBe("number");
-        expect(row.climbingMinutes).toBeGreaterThan(0);
+        expect(typeof row.elapsedMinutes).toBe("number");
+        expect(row.elapsedMinutes).toBeGreaterThan(0);
       }
     });
 

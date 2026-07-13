@@ -161,7 +161,7 @@ export class VerticalAscentModel {
     return this.#row.elevationGainMeters;
   }
 
-  get climbingMinutes(): number {
+  get elapsedMinutes(): number {
     return Math.round((this.#row.elapsedSeconds / 60) * 10) / 10;
   }
 
@@ -178,7 +178,7 @@ export class VerticalAscentModel {
       activityType: this.activityType,
       verticalAscentRate: this.verticalAscentRate,
       elevationGainMeters: this.elevationGainMeters,
-      climbingMinutes: this.climbingMinutes,
+      elapsedMinutes: this.elapsedMinutes,
     };
   }
 }

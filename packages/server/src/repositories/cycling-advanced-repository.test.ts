@@ -154,7 +154,7 @@ describe("VerticalAscentModel", () => {
       elevationGainMeters: 500,
       elapsedSeconds: 1800,
     });
-    expect(model.climbingMinutes).toBe(30);
+    expect(model.elapsedMinutes).toBe(30);
   });
 
   it("returns 0 VAM when no elapsed seconds", () => {
@@ -182,7 +182,7 @@ describe("VerticalAscentModel", () => {
     expect(detail.activityType).toBe("mountain_biking");
     expect(detail.verticalAscentRate).toBe(1000);
     expect(detail.elevationGainMeters).toBe(500);
-    expect(detail.climbingMinutes).toBe(30);
+    expect(detail.elapsedMinutes).toBe(30);
   });
 });
 

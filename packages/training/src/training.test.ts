@@ -8,7 +8,9 @@ import {
   collapseWeeklyVolumeActivityTypes,
   createActivityTypeMapper,
   formatActivityTypeLabel,
+  formatVerticalAscentActivityTypeGroupLabel,
   GARMIN_ACTIVITY_TYPE_MAP,
+  getVerticalAscentActivityTypeGroup,
   isCyclingActivity,
   OTHER_ACTIVITY_TYPE,
   OURA_ACTIVITY_TYPE_MAP,
@@ -348,6 +350,29 @@ describe("formatActivityTypeLabel", () => {
     // This is an equivalent mutant when filter(Boolean) is present.
     // Instead, test that filter(Boolean) removal is caught:
     expect(formatActivityTypeLabel("a_b")).toBe("A B");
+  });
+});
+
+describe("getVerticalAscentActivityTypeGroup", () => {
+  it("keeps road, mountain, and gravel cycling in dedicated vertical ascent groups", () => {
+    expect(getVerticalAscentActivityTypeGroup("road_cycling")).toBe("road_cycling");
+    expect(getVerticalAscentActivityTypeGroup("mountain_biking")).toBe("mountain_biking");
+    expect(getVerticalAscentActivityTypeGroup("gravel_cycling")).toBe("gravel_cycling");
+  });
+
+  it("groups other cycling variants into other cycling", () => {
+    expect(getVerticalAscentActivityTypeGroup("indoor_cycling")).toBe("other_cycling");
+    expect(getVerticalAscentActivityTypeGroup("virtual_cycling")).toBe("other_cycling");
+    expect(getVerticalAscentActivityTypeGroup("  E_BIKE_CYCLING  ")).toBe("other_cycling");
+  });
+});
+
+describe("formatVerticalAscentActivityTypeGroupLabel", () => {
+  it("formats vertical ascent activity type group labels", () => {
+    expect(formatVerticalAscentActivityTypeGroupLabel("road_cycling")).toBe("Road Cycling");
+    expect(formatVerticalAscentActivityTypeGroupLabel("mountain_biking")).toBe("Mountain Biking");
+    expect(formatVerticalAscentActivityTypeGroupLabel("gravel_cycling")).toBe("Gravel Cycling");
+    expect(formatVerticalAscentActivityTypeGroupLabel("other_cycling")).toBe("Other Cycling");
   });
 });
 

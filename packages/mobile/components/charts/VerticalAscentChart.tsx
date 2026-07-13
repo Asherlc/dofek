@@ -1,5 +1,10 @@
 import { formatDateShort, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import {
+  formatVerticalAscentActivityTypeGroupLabel,
+  getVerticalAscentActivityTypeGroup,
+  type VerticalAscentActivityTypeGroup,
+} from "@dofek/training/training";
 import { useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
@@ -11,7 +16,7 @@ export interface VerticalAscentDataPoint {
   activityType: string;
   verticalAscentRate: number;
   elevationGainMeters: number;
-  climbingMinutes: number;
+  elapsedMinutes: number;
 }
 
 interface VerticalAscentChartProps {
@@ -25,34 +30,15 @@ const PADDING = { top: 20, right: 16, bottom: 28, left: 48 };
 const CHART_HEIGHT = 200;
 const MIN_BUBBLE_RADIUS = 4;
 const MAX_BUBBLE_RADIUS = 16;
-type ActivityTypeGroup = "road_cycling" | "mountain_biking" | "gravel_cycling" | "other_cycling";
 
-const ACTIVITY_TYPE_GROUP_LABELS: Record<ActivityTypeGroup, string> = {
-  road_cycling: "Road Cycling",
-  mountain_biking: "Mountain Biking",
-  gravel_cycling: "Gravel Cycling",
-  other_cycling: "Other Cycling",
-};
-
-const ACTIVITY_TYPE_GROUP_COLORS: Record<ActivityTypeGroup, string> = {
+const ACTIVITY_TYPE_GROUP_COLORS: Record<VerticalAscentActivityTypeGroup, string> = {
   road_cycling: colors.teal,
   mountain_biking: colors.purple,
   gravel_cycling: colors.orange,
   other_cycling: colors.blue,
 };
 
-function groupForActivityType(activityType: string): ActivityTypeGroup {
-  if (activityType === "road_cycling") return "road_cycling";
-  if (activityType === "mountain_biking") return "mountain_biking";
-  if (activityType === "gravel_cycling") return "gravel_cycling";
-  return "other_cycling";
-}
-
-function labelForActivityTypeGroup(activityTypeGroup: ActivityTypeGroup): string {
-  return ACTIVITY_TYPE_GROUP_LABELS[activityTypeGroup];
-}
-
-function colorForActivityTypeGroup(activityTypeGroup: ActivityTypeGroup): string {
+function colorForActivityTypeGroup(activityTypeGroup: VerticalAscentActivityTypeGroup): string {
   return ACTIVITY_TYPE_GROUP_COLORS[activityTypeGroup];
 }
 
@@ -86,7 +72,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
   // Convert to display units
   const points = data.map((point) => ({
     ...point,
-    activityTypeGroup: groupForActivityType(point.activityType),
+    activityTypeGroup: getVerticalAscentActivityTypeGroup(point.activityType),
     displayVam: units.convertElevation(point.verticalAscentRate),
     displayGain: units.convertElevation(point.elevationGainMeters),
     timestamp: new Date(point.date).getTime(),
@@ -220,7 +206,9 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
                   { backgroundColor: colorForActivityTypeGroup(activityTypeGroup) },
                 ]}
               />
-              <Text style={styles.legendText}>{labelForActivityTypeGroup(activityTypeGroup)}</Text>
+              <Text style={styles.legendText}>
+                {formatVerticalAscentActivityTypeGroupLabel(activityTypeGroup)}
+              </Text>
             </View>
           ))}
         </View>

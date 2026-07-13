@@ -70,7 +70,7 @@ export interface VerticalAscentRow {
   activityType: string;
   verticalAscentRate: number;
   elevationGainMeters: number;
-  climbingMinutes: number;
+  elapsedMinutes: number;
 }
 
 export interface PedalDynamicsRow {

@@ -165,7 +165,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
         activityType: string;
         verticalAscentRate: number;
         elevationGainMeters: number;
-        climbingMinutes: number;
+        elapsedMinutes: number;
       }[]
     >("cyclingAdvanced.verticalAscentRate", { days: 3 });
 
@@ -176,7 +176,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
 
     expect(offsetRow).toBeDefined();
     expect(offsetRow?.elevationGainMeters).toBeGreaterThan(0);
-    expect(offsetRow?.climbingMinutes).toBeGreaterThan(5);
+    expect(offsetRow?.elapsedMinutes).toBeGreaterThan(5);
     expect(offsetRow?.verticalAscentRate).toBeGreaterThan(0);
 
     expect(altitudeOnlyRow).toBeDefined();
