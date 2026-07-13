@@ -1,0 +1,271 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Encoder, Profile, Utils } from "@garmin/fitsdk";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SyncDatabase } from "../db/index.ts";
+import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
+
+const mockReplaceMetricStreamBatch = vi.fn().mockResolvedValue(undefined);
+const mockWriteMetricStreamBatch = vi.fn().mockResolvedValue(undefined);
+vi.mock("../db/metric-stream-writer.ts", () => ({
+  replaceMetricStreamBatch: (...args: unknown[]) => mockReplaceMetricStreamBatch(...args),
+  writeMetricStreamBatch: (...args: unknown[]) => mockWriteMetricStreamBatch(...args),
+}));
+
+const mockUpsertProviderActivity = vi.fn().mockResolvedValue({ id: "activity-row-1" });
+vi.mock("../db/provider-activity-sync.ts", () => ({
+  upsertProviderActivity: (...args: unknown[]) => mockUpsertProviderActivity(...args),
+}));
+
+const mockParseFitFileInWorkerThread = vi.fn().mockResolvedValue({
+  session: {
+    sport: "cycling",
+    subSport: "indoor_cycling",
+    startTime: new Date("2026-07-01T12:00:00.000Z"),
+    totalElapsedTime: 1800,
+    totalTimerTime: 1800,
+    totalDistance: 5000,
+    totalCalories: 200,
+    raw: { sport: "cycling", sub_sport: "indoor_cycling" },
+  },
+  records: [
+    {
+      recordedAt: new Date("2026-07-01T12:01:00.000Z"),
+      heartRate: 130,
+      power: 180,
+      speed: 8.5,
+      raw: { heart_rate: 130, power: 180, enhanced_speed: 8.5 },
+    },
+  ],
+  laps: [],
+  events: [],
+});
+vi.mock("../fit/parser-worker.ts", () => ({
+  parseFitFileInWorkerThread: (...args: unknown[]) => mockParseFitFileInWorkerThread(...args),
+}));
+
+const mockLoggerWarn = vi.fn();
+vi.mock("../logger.ts", () => ({
+  logger: { warn: (...args: unknown[]) => mockLoggerWarn(...args) },
+}));
+
+const mockDb: SyncDatabase = {
+  select: vi.fn(),
+  insert: vi.fn(),
+  delete: vi.fn(),
+  execute: vi.fn(),
+};
+
+const createdDirectories: string[] = [];
+
+async function writeTempFit(buffer: Buffer): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "fit-file-import-test-"));
+  createdDirectories.push(directory);
+  const filePath = join(directory, "input.fit");
+  await writeFile(filePath, buffer);
+  return filePath;
+}
+
+function createActivityFit(): Buffer {
+  const timestamp = Utils.convertDateToDateTime(new Date("2026-07-01T12:00:00.000Z"));
+  const encoder = new Encoder();
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.FILE_ID,
+    type: "activity",
+    timeCreated: timestamp,
+  });
+  return Buffer.from(encoder.close());
+}
+
+function createWeightFit(): Buffer {
+  const timestamp = Utils.convertDateToDateTime(new Date("2026-07-01T12:00:00.000Z"));
+  const encoder = new Encoder();
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.FILE_ID,
+    type: "weight",
+    timeCreated: timestamp,
+  });
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.WEIGHT_SCALE,
+    timestamp,
+    weight: 72,
+    percentFat: 18.5,
+    percentHydration: 55.2,
+    boneMass: 3.1,
+    muscleMass: 31.2,
+    bmi: 24.1,
+  });
+  return Buffer.from(encoder.close());
+}
+
+describe("processFitFileImportJob", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUpsertProviderActivity.mockResolvedValue({ id: "activity-row-1" });
+    mockReplaceMetricStreamBatch.mockResolvedValue(undefined);
+    mockWriteMetricStreamBatch.mockResolvedValue(undefined);
+    mockParseFitFileInWorkerThread.mockResolvedValue({
+      session: {
+        sport: "cycling",
+        subSport: "indoor_cycling",
+        startTime: new Date("2026-07-01T12:00:00.000Z"),
+        totalElapsedTime: 1800,
+        totalTimerTime: 1800,
+        totalDistance: 5000,
+        totalCalories: 200,
+        raw: { sport: "cycling", sub_sport: "indoor_cycling" },
+      },
+      records: [
+        {
+          recordedAt: new Date("2026-07-01T12:01:00.000Z"),
+          heartRate: 130,
+          power: 180,
+          speed: 8.5,
+          raw: { heart_rate: 130, power: 180, enhanced_speed: 8.5 },
+        },
+      ],
+      laps: [],
+      events: [],
+    });
+  });
+
+  afterEach(async () => {
+    await Promise.all(
+      createdDirectories
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  it("imports an activity FIT file with a parent summary and replaces sensor samples", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+
+    const result = await processFitFileImportJob(
+      {
+        data: {
+          filePath,
+          originalPath: "DI_CONNECT/activity_12345.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+          activitySummary: {
+            externalId: "12345",
+            activityType: "cycling",
+            startedAtIso: "2026-07-01T12:00:00.000Z",
+            endedAtIso: "2026-07-01T12:30:00.000Z",
+            name: "Morning Ride",
+            raw: { activityId: 12345 },
+          },
+        },
+      },
+      mockDb,
+    );
+
+    expect(result).toEqual({ recordsSynced: 0, errors: [] });
+    expect(mockParseFitFileInWorkerThread).toHaveBeenCalledWith(createActivityFit());
+    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        externalId: "12345",
+        activityType: "cycling",
+        startedAt: new Date("2026-07-01T12:00:00.000Z"),
+        endedAt: new Date("2026-07-01T12:30:00.000Z"),
+        name: "Morning Ride",
+        raw: { activityId: 12345 },
+      }),
+      expect.objectContaining({ name: "Morning Ride", raw: { activityId: 12345 } }),
+    );
+    expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
+      mockDb,
+      { activityId: "activity-row-1" },
+      [
+        expect.objectContaining({
+          providerId: "garmin-dump",
+          activityId: "activity-row-1",
+          userId: "user-1",
+          heartRate: 130,
+          power: 180,
+          speed: 8.5,
+        }),
+      ],
+      "file",
+    );
+    await expect(readFile(filePath)).rejects.toThrow();
+  });
+
+  it("imports a FIT-only activity when no parent summary exists", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+
+    const result = await processFitFileImportJob(
+      {
+        data: {
+          filePath,
+          originalPath: "DI_CONNECT/asher@example.com_activity.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        },
+      },
+      mockDb,
+    );
+
+    expect(result).toEqual({ recordsSynced: 1, errors: [] });
+    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        externalId: expect.stringMatching(/^fit:[a-f0-9]{32}$/),
+        activityType: "indoor_cycling",
+        startedAt: new Date("2026-07-01T12:00:00.000Z"),
+        endedAt: new Date("2026-07-01T12:30:00.000Z"),
+        name: "FIT indoor cycling",
+        raw: {
+          fitPath: "DI_CONNECT/asher@example.com_activity.fit",
+          session: { sport: "cycling", sub_sport: "indoor_cycling" },
+        },
+      }),
+      expect.objectContaining({ name: "FIT indoor cycling" }),
+    );
+  });
+
+  it("imports Garmin weight FIT files as body measurement metric stream rows", async () => {
+    const filePath = await writeTempFit(createWeightFit());
+
+    const result = await processFitFileImportJob(
+      {
+        data: {
+          filePath,
+          originalPath: "DI_CONNECT/asher@example.com_20260701_weight.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        },
+      },
+      mockDb,
+    );
+
+    expect(result).toEqual({ recordsSynced: 1, errors: [] });
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    expect(mockWriteMetricStreamBatch).toHaveBeenCalledWith(
+      mockDb,
+      [
+        expect.objectContaining({
+          providerId: "garmin-dump",
+          userId: "user-1",
+          externalId:
+            "weight:DI_CONNECT/asher@example.com_20260701_weight.fit:2026-07-01T12:00:00.000Z",
+          recordedAt: new Date("2026-07-01T12:00:00.000Z"),
+          sourceName: "Garmin Dump",
+          weightKg: 72,
+          bodyFatPct: 18.5,
+          waterPct: 55.2,
+          boneMassKg: 3.1,
+          muscleMassKg: 31.2,
+          bmi: 24.1,
+        }),
+      ],
+      "file",
+    );
+    await expect(readFile(filePath)).rejects.toThrow();
+  });
+});

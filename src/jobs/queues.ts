@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import type { CanonicalActivityType } from "@dofek/training/training";
 import type { ConnectionOptions, JobsOptions } from "bullmq";
-import { Queue } from "bullmq";
+import { Queue, QueueEvents } from "bullmq";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
 // ── Job payload types ──
@@ -31,6 +32,24 @@ export interface ImportJobData {
     | "garmin-dump";
   /** Weight unit for Strong CSV imports */
   weightUnit?: "kg" | "lbs";
+}
+
+export interface FitFileImportActivitySummary {
+  externalId: string;
+  activityType: CanonicalActivityType;
+  startedAtIso: string;
+  endedAtIso: string;
+  name: string;
+  raw: unknown;
+}
+
+export interface FitFileImportJobData {
+  filePath: string;
+  originalPath: string;
+  userId: string;
+  providerId: string;
+  sourceName: string;
+  activitySummary?: FitFileImportActivitySummary;
 }
 
 export interface ExportJobData {
@@ -88,6 +107,7 @@ export type ActivityAnalyticsJobData =
 export const SYNC_QUEUE = "sync";
 export const SYNC_QUEUE_PREFIX = "sync";
 export const IMPORT_QUEUE = "import";
+export const FIT_FILE_IMPORT_QUEUE = "fit-file-import";
 export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 export const POST_SYNC_QUEUE = "post-sync";
@@ -169,6 +189,16 @@ export function createImportQueue(connection?: ConnectionOptions): Queue<ImportJ
   return new Queue(IMPORT_QUEUE, { connection: connection ?? getRedisConnection() });
 }
 
+export function createFitFileImportQueue(
+  connection?: ConnectionOptions,
+): Queue<FitFileImportJobData> {
+  return new Queue(FIT_FILE_IMPORT_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+export function createFitFileImportQueueEvents(connection?: ConnectionOptions): QueueEvents {
+  return new QueueEvents(FIT_FILE_IMPORT_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
 export function createExportQueue(connection?: ConnectionOptions): Queue<ExportJobData> {
   return new Queue(EXPORT_QUEUE, { connection: connection ?? getRedisConnection() });
 }
@@ -194,12 +224,28 @@ export function createActivityDeleteAnalyticsQueue(
 let cachedPostSyncQueue: Queue<PostSyncJobData> | null = null;
 let cachedActivityDeleteAnalyticsQueue: Queue<ActivityAnalyticsJobData> | null = null;
 let cachedImportQueue: Queue<ImportJobData> | null = null;
+let cachedFitFileImportQueue: Queue<FitFileImportJobData> | null = null;
+let cachedFitFileImportQueueEvents: QueueEvents | null = null;
 
 export function getImportQueue(): Queue<ImportJobData> {
   if (!cachedImportQueue) {
     cachedImportQueue = createImportQueue();
   }
   return cachedImportQueue;
+}
+
+export function getFitFileImportQueue(): Queue<FitFileImportJobData> {
+  if (!cachedFitFileImportQueue) {
+    cachedFitFileImportQueue = createFitFileImportQueue();
+  }
+  return cachedFitFileImportQueue;
+}
+
+export function getFitFileImportQueueEvents(): QueueEvents {
+  if (!cachedFitFileImportQueueEvents) {
+    cachedFitFileImportQueueEvents = createFitFileImportQueueEvents();
+  }
+  return cachedFitFileImportQueueEvents;
 }
 
 export function getPostSyncQueue(): Queue<PostSyncJobData> {

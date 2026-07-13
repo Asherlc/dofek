@@ -12749,3 +12749,48 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Low. Keep worker wrapper tests focused on the
   wrapper contract and parser tests focused on parser behavior so timeout policy
   and parser implementation timing do not race each other.
+
+## 2026-07-13 — Garmin Dump Imports Still Stalled BullMQ Locks
+
+- **Symptoms:** Sentry issue
+  [`DOFEK-SERVER-2K`](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-2K)
+  reported fresh production `UnrecoverableError: job stalled more than
+  allowable limit` events at `2026-07-13T00:42:18Z` and
+  `2026-07-13T03:04:35Z`.
+- **User impact:** Garmin dump uploads retried and then failed as stalled jobs,
+  so the account export data did not finish importing.
+- **Evidence:** Redis BullMQ state showed failed `import` queue jobs `3` and
+  `4` named `garmin-dump`, both with `failedReason: "job stalled more than
+  allowable limit"`. The queue event stream showed each job becoming active,
+  stalling once, reactivating, then stalling again and failing. The failed
+  upload files remained under `/app/job-files/` and were each 48.1 MiB.
+- **Root cause:** The July 10 fix moved FIT decoding off the main worker thread,
+  but the Garmin dump import still ran as one long BullMQ import job with no
+  explicit lock extension around dump extraction, FIT worker handoff, parser
+  result cloning, and sensor-row conversion. Those phases can still keep the
+  import job from renewing its BullMQ lock before stalled-job detection observes
+  the missing lock. BullMQ documents stalled jobs as active jobs whose lock was
+  not renewed in time:
+  https://docs.bullmq.io/guide/jobs/stalled.
+- **Fix / mitigation:** The import worker now wraps import jobs with a
+  token-backed `extendLock()` helper and passes it to Garmin dump imports.
+  Garmin dump imports extend the lock for 10 minutes at import start, before
+  queueing extracted FIT files. Extracted Garmin activity and weight FIT files
+  are now fanned out to a generic `fit-file-import` BullMQ queue so individual
+  FIT files are parsed and written as smaller child jobs. Garmin `_weight.fit`
+  files are imported as raw body measurement metric-stream rows instead of
+  being skipped.
+- **Validation:** Added regression coverage for the worker token wrapper,
+  `processImportJob` passing the lock extender to Garmin dump imports, and
+  Garmin dump imports extending the lock before FIT fanout. Added coverage for
+  the generic FIT file import job, weight FIT body measurement rows, the new
+  queue factory/cache, worker registration, and parent aggregation of child FIT
+  results. Focused tests passed with `pnpm vitest run
+  src/jobs/process-fit-file-import-job.test.ts src/jobs/queues.test.ts
+  src/jobs/worker.test.ts src/jobs/process-import-job.test.ts
+  src/providers/garmin-dump.test.ts`; root `pnpm tsc --noEmit` and targeted
+  `pnpm biome check` passed.
+- **Remaining risk / follow-up:** Medium-low until this fix is deployed and
+  `DOFEK-SERVER-2K` stays quiet for new Garmin dump attempts. If stalls continue,
+  instrument per-phase Garmin dump timing and tune generic FIT child-job
+  concurrency from measured queue/runtime data.

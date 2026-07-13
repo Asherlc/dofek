@@ -10,6 +10,7 @@ import type { ImportJobData } from "./queues.ts";
 interface ImportJob {
   data: ImportJobData;
   updateProgress: (data: object) => Promise<void>;
+  extendLock: (durationMs: number) => Promise<void>;
 }
 
 function isKayaImportDatabase(db: SyncDatabase): db is KayaImportDatabase {
@@ -163,7 +164,9 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         }
       } else if (importType === "garmin-dump") {
         const { importGarminDumpFile } = await import("../providers/garmin-dump.ts");
-        const result = await importGarminDumpFile(db, filePath, userId);
+        const result = await importGarminDumpFile(db, filePath, userId, {
+          extendLock: job.extendLock,
+        });
 
         await logImportCompletion(
           db,
