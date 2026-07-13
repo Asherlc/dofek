@@ -43,6 +43,15 @@ function extractResetTokenFromLastEmail(): string {
   return decodeURIComponent(match[1]);
 }
 
+function extractResetUrlFromLastEmail(): string {
+  const input = plainTextEmailInputSchema.parse(mockSendPlainTextEmail.mock.calls.at(-1)?.[0]);
+  const resetUrl = input.text.split("\n").find((line) => line.includes("/reset-password?token="));
+  if (!resetUrl) {
+    throw new Error("Reset URL missing from email");
+  }
+  return resetUrl;
+}
+
 describe("password reset service", () => {
   let ctx: TestContext;
 
@@ -127,6 +136,21 @@ describe("password reset service", () => {
     );
 
     expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
+  });
+
+  it("normalizes HTTP app URLs before sending reset emails", async () => {
+    process.env.PUBLIC_URL = " http://app.example.test/// ";
+    await registerPasswordUser(ctx.db, {
+      email: "reset@example.com",
+      password: "password123",
+      name: "Reset User",
+    });
+
+    await createPasswordResetToken(ctx.db, "reset@example.com");
+
+    const resetUrl = extractResetUrlFromLastEmail();
+    expect(resetUrl).toMatch(/^http:\/\/app\.example\.test\/reset-password\?token=/);
+    expect(resetUrl).not.toContain("//reset-password");
   });
 
   it("resets the password and consumes the token", async () => {
