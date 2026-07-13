@@ -68,7 +68,7 @@ describe("VerticalAscentChart", () => {
     expect(circles.map((circle) => circle.getAttribute("fill"))).toEqual(["#0ea5e9", "#5E35B1"]);
   });
 
-  it("groups non-road mountain and gravel cycling types as other cycling", () => {
+  it("groups indoor and virtual cycling types as other cycling with gravel separate", () => {
     const { container } = render(
       <VerticalAscentChart
         data={[
