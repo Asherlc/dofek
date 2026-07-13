@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -121,6 +121,92 @@ describe("processZipEntryExtractJob", () => {
     await expect(readFile(result.filePath, "utf8")).resolves.toBe("fit");
   });
 
+  it("rejects final entries larger than the configured maxBytes and removes partial files", async () => {
+    const directory = await createTempDirectory();
+    const archivePath = join(directory, "export.zip");
+    await writeFile(
+      archivePath,
+      await createZip({
+        "DI_CONNECT/activity.fit": "fit-bytes",
+      }),
+    );
+
+    await expect(
+      processZipEntryExtractJob({
+        data: {
+          archivePath,
+          entryPath: ["DI_CONNECT/activity.fit"],
+          outputExtension: "fit",
+          maxBytes: 3,
+        },
+      }),
+    ).rejects.toThrow("ZIP entry DI_CONNECT/activity.fit exceeds maximum size of 3 bytes");
+
+    const directoryEntries = await readdir(directory);
+    expect(directoryEntries.filter((entryName) => entryName.endsWith(".fit"))).toEqual([]);
+    expect(
+      directoryEntries.filter((entryName) => entryName.startsWith(".zip-entry-extract-")),
+    ).toEqual([]);
+  });
+
+  it("rejects nested ZIP archives larger than the configured nested archive limit", async () => {
+    const directory = await createTempDirectory();
+    const archivePath = join(directory, "export.zip");
+    const nestedZip = await createZip({
+      "asher@example.com_12345.fit": "nested-fit-bytes",
+    });
+    await writeFile(
+      archivePath,
+      await createZip({
+        "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip": nestedZip,
+      }),
+    );
+
+    await expect(
+      processZipEntryExtractJob({
+        data: {
+          archivePath,
+          entryPath: [
+            "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip",
+            "asher@example.com_12345.fit",
+          ],
+          outputExtension: "fit",
+          maxBytes: 1024,
+          nestedArchiveMaxBytes: 3,
+        },
+      }),
+    ).rejects.toThrow(
+      "ZIP entry DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip exceeds maximum size of 3 bytes",
+    );
+
+    const directoryEntries = await readdir(directory);
+    expect(directoryEntries.filter((entryName) => entryName.endsWith(".fit"))).toEqual([]);
+    expect(
+      directoryEntries.filter((entryName) => entryName.startsWith(".zip-entry-extract-")),
+    ).toEqual([]);
+  });
+
+  it("rejects malformed ZIP archives and removes the extraction temp directory", async () => {
+    const directory = await createTempDirectory();
+    const archivePath = join(directory, "export.zip");
+    await writeFile(archivePath, "not a zip");
+
+    await expect(
+      processZipEntryExtractJob({
+        data: {
+          archivePath,
+          entryPath: ["DI_CONNECT/activity.fit"],
+          outputExtension: "fit",
+        },
+      }),
+    ).rejects.toThrow();
+
+    const directoryEntries = await readdir(directory);
+    expect(
+      directoryEntries.filter((entryName) => entryName.startsWith(".zip-entry-extract-")),
+    ).toEqual([]);
+  });
+
   it("rejects missing entries", async () => {
     const directory = await createTempDirectory();
     const archivePath = join(directory, "export.zip");
@@ -135,5 +221,10 @@ describe("processZipEntryExtractJob", () => {
         },
       }),
     ).rejects.toThrow("ZIP entry not found: missing.fit");
+
+    const directoryEntries = await readdir(directory);
+    expect(
+      directoryEntries.filter((entryName) => entryName.startsWith(".zip-entry-extract-")),
+    ).toEqual([]);
   });
 });
