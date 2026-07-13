@@ -668,6 +668,7 @@ describe("Router data coverage", () => {
 
       for (const row of result) {
         expect(row.date).toBeTruthy();
+        expect(row.activityType).toBeTruthy();
         expect(typeof row.verticalAscentRate).toBe("number");
         expect(row.verticalAscentRate).toBeGreaterThanOrEqual(0);
         expect(typeof row.elevationGainMeters).toBe("number");
