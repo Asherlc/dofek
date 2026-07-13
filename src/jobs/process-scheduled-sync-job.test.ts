@@ -233,7 +233,7 @@ describe("processScheduledSyncJob", () => {
     );
   });
 
-  it("reports progress while faning out scheduled sync jobs", async () => {
+  it("reports progress while dispatching scheduled sync jobs", async () => {
     const db = {
       execute: vi.fn().mockResolvedValue([
         { user_id: "user-1", provider_id: "strava" },
@@ -246,7 +246,7 @@ describe("processScheduledSyncJob", () => {
 
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 0,
-      message: "Starting scheduled sync fanout...",
+      message: "Starting scheduled sync dispatch...",
     });
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 10,

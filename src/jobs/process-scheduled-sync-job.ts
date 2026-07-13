@@ -27,7 +27,7 @@ async function updateScheduledSyncProgress(
  * providers sync in parallel (while the same provider stays serialized).
  */
 export async function processScheduledSyncJob(job: Job<ScheduledSyncJobData>, db: SyncDatabase) {
-  await updateScheduledSyncProgress(job, 0, "Starting scheduled sync fanout...");
+  await updateScheduledSyncProgress(job, 0, "Starting scheduled sync dispatch...");
   // Ensure provider registry is populated so provider metadata (type, auth) is available.
   const { ensureProvidersRegistered } = await import("./provider-registration.ts");
   await ensureProvidersRegistered();
@@ -66,7 +66,7 @@ export async function processScheduledSyncJob(job: Job<ScheduledSyncJobData>, db
   let skippedDueToInFlight = 0;
   let processedConnections = 0;
 
-  async function reportFanoutProgress(): Promise<void> {
+  async function reportDispatchProgress(): Promise<void> {
     if (totalProviderConnections === 0) return;
     const skippedCount = skippedDueToCooldown + skippedDueToInFlight;
     await updateScheduledSyncProgress(
@@ -82,7 +82,7 @@ export async function processScheduledSyncJob(job: Job<ScheduledSyncJobData>, db
       if (provider && !isSyncEligibleProvider(provider)) {
         logger.info(`[scheduled-sync] Skipping CSV provider ${providerId}`);
         processedConnections++;
-        await reportFanoutProgress();
+        await reportDispatchProgress();
         continue;
       }
 
@@ -94,7 +94,7 @@ export async function processScheduledSyncJob(job: Job<ScheduledSyncJobData>, db
             `[scheduled-sync] Skipping ${providerId} for ${userId}: ${pendingJobs.length} sync job(s) already queued`,
           );
           processedConnections++;
-          await reportFanoutProgress();
+          await reportDispatchProgress();
           continue;
         }
       }
@@ -112,12 +112,12 @@ export async function processScheduledSyncJob(job: Job<ScheduledSyncJobData>, db
           `[scheduled-sync] Skipping ${providerId} for ${userId}: rate-limit cooldown active`,
         );
         processedConnections++;
-        await reportFanoutProgress();
+        await reportDispatchProgress();
         continue;
       }
       jobCount++;
       processedConnections++;
-      await reportFanoutProgress();
+      await reportDispatchProgress();
     }
   }
 
