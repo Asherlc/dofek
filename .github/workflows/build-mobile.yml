@@ -215,7 +215,7 @@ jobs:
             EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
             CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
             CXX=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
-            2>&1 | tee /tmp/watchos-build.log | tail -80
+            2>&1 | tee -a /tmp/watchos-build.log | tail -80
       - name: Show watchOS build errors
         if: failure()
         run: |
