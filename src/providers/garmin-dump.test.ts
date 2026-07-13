@@ -751,9 +751,8 @@ describe("Garmin dump provider", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toEqual([
       expect.objectContaining({
-        message: expect.stringContaining(
-          "Failed to import Garmin FIT file DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit",
-        ),
+        message:
+          "Failed to import Garmin FIT file DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit: unexpected result shape from FIT import job",
       }),
     ]);
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {

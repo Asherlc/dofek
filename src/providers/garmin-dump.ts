@@ -465,7 +465,7 @@ async function enqueueFitFileImportJobs(
                   recordsSynced: 0,
                   errors: [
                     {
-                      message: `Failed to import Garmin FIT file ${entry.path}: ${parsedResult.error.message}`,
+                      message: `Failed to import Garmin FIT file ${entry.path}: unexpected result shape from FIT import job`,
                     },
                   ],
                 };

@@ -3,6 +3,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import type { RefitSensorStore } from "../personalization/refit.ts";
+import { reportJobProgress } from "./job-progress.ts";
 import type { PostSyncJobData } from "./queues.ts";
 
 /** Minimal Job interface — only the subset processPostSyncJob actually uses. */
@@ -16,10 +17,13 @@ async function updatePostSyncProgress(
   percentage: number,
   message: string,
 ): Promise<void> {
-  await job.updateProgress({ percentage, message }).catch((error: unknown) => {
-    logger.warn("Failed to update post-sync progress: %s", error);
-    Sentry.captureException(error, { tags: { postSyncStep: "updateProgress" } });
-  });
+  await reportJobProgress(
+    job,
+    percentage,
+    message,
+    "Failed to update post-sync progress: %s",
+    "postSyncStep",
+  );
 }
 
 /**

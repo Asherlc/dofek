@@ -1,11 +1,11 @@
 import { isStepChainSyncProvider } from "@dofek/provider-http/adaptive-rate-limit";
-import * as Sentry from "@sentry/node";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { listProviderSyncJobsForUser } from "../lib/sync-request-queue.ts";
 import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
 import { enqueueSyncJob } from "./enqueue-sync-job.ts";
+import { reportJobProgress } from "./job-progress.ts";
 import type { ScheduledSyncJobData } from "./queues.ts";
 
 interface ScheduledSyncJob {
@@ -18,10 +18,13 @@ async function updateScheduledSyncProgress(
   percentage: number,
   message: string,
 ): Promise<void> {
-  await job.updateProgress({ percentage, message }).catch((error: unknown) => {
-    logger.warn("Failed to update scheduled sync progress: %s", error);
-    Sentry.captureException(error, { tags: { scheduledSyncStep: "updateProgress" } });
-  });
+  await reportJobProgress(
+    job,
+    percentage,
+    message,
+    "Failed to update scheduled sync progress: %s",
+    "scheduledSyncStep",
+  );
 }
 
 /**
