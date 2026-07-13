@@ -12609,6 +12609,40 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   continue, inspect other upload entry points such as foreground sync and
   background refresh separately.
 
+## 2026-07-10 — Garmin Dump Import Stalled BullMQ Worker
+
+- **Symptoms:** Production Sentry issue
+  [DOFEK-SERVER-2K](https://east-bay-software.sentry.io/issues/7495560735/)
+  reported fresh `UnrecoverableError: job stalled more than allowable limit`
+  events. The latest inspected event occurred at `2026-07-10T18:57:11Z`.
+- **User impact:** Garmin dump import work could be retried and eventually fail
+  as stalled instead of completing normally.
+- **Evidence:** Sentry grouped the failure under BullMQ worker internals only,
+  without an application stack. The Garmin dump importer parsed every extracted
+  FIT file in the Node BullMQ worker process via `parseFitFile()`, and
+  `fit-file-parser` performs CPU-heavy decoding on the same event loop BullMQ
+  uses for lock renewal. BullMQ documents stalled jobs as jobs whose lock is not
+  renewed before the stalled check sees it as missing:
+  https://docs.bullmq.io/guide/jobs/stalled.
+- **Root cause:** Large Garmin dump FIT decoding could monopolize the worker
+  event loop long enough for BullMQ lock renewal to miss its Redis lock window,
+  so BullMQ classified the still-running import as stalled.
+- **Fix / mitigation:** Garmin dump imports now parse FIT files in a Node worker
+  thread through `parseFitFileInWorkerThread()`. The BullMQ worker process stays
+  responsive while FIT decoding runs off-thread, allowing BullMQ lock renewal and
+  worker events to continue.
+- **Validation:** Added focused coverage that Garmin dump imports use the
+  off-thread FIT parser and that the new parser worker can parse a real FIT
+  fixture and propagate parse errors. `pnpm vitest run
+  src/fit/parser-worker.test.ts src/providers/garmin-dump.test.ts`,
+  `pnpm tsc --noEmit`, and focused Biome checks on the touched files passed
+  locally.
+- **Remaining risk / follow-up:** Medium until deployed and
+  [DOFEK-SERVER-2K](https://east-bay-software.sentry.io/issues/7495560735/)
+  stays quiet. Other providers still call `parseFitFile()` in-process; if the
+  same issue appears for Wahoo, Suunto, or Coros FIT imports, move those call
+  sites to the same worker-thread parser.
+
 ## 2026-07-10 — R2 Web Asset Domain and CORS Missing
 
 - **Symptoms:** `https://dofek.asherlc.com/` returned an HTML shell that pointed
@@ -12654,3 +12688,64 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   URLs miss cache and pick up the CORS policy. Add a deploy preflight that fails
   if the production HTML references `assets.dofek.fit` but the R2 custom domain,
   DNS, or CORS policy is missing.
+
+## 2026-07-11 — Mobile Food Initial Load Reported Parse Failure
+
+- **Symptoms:** Sentry issue
+  `https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-17` reported one
+  handled production mobile error at `2026-07-11T14:48:45.972Z`:
+  `food:byDate: Zod parse failed` with `Invalid input: expected array, received
+  undefined`.
+- **User impact:** One iOS user triggered error reporting while opening the
+  nutrition screen. The screen rendered the normal loading state, but Sentry was
+  polluted with a non-actionable parse error for the initial query state.
+- **Evidence:** The Sentry stack pointed at `FoodScreen` and `safeParseRows`,
+  with context `food:byDate`. A focused mobile test reproduced the exact signal
+  by rendering `FoodScreen` with `food.byDate` data `undefined`, `isLoading:
+  true`, and `isFetching: true`; before the fix, `captureException` received the
+  same `food:byDate` Zod error.
+- **Root cause:** `FoodScreen` passed `foodQuery.data` directly into
+  `safeParseRows`. React Query exposes `data` as `undefined` before the first
+  request resolves, but `safeParseRows` is intentionally strict and reports
+  non-array inputs as malformed server data.
+- **Fix / mitigation:** Normalize only the active loading/fetching
+  `undefined` state to `[]` at the `FoodScreen` call site before invoking
+  `safeParseRows`. Settled malformed responses still reach the strict parser
+  and continue to report to Sentry.
+- **Validation:** `pnpm --filter dofek-mobile exec vitest run
+  'app/(tabs)/food.test.tsx'`, `pnpm --filter dofek-mobile exec vitest run
+  lib/safe-parse.test.ts`, `pnpm --filter dofek-mobile typecheck`, and
+  `pnpm --filter dofek-mobile lint` passed locally.
+- **Remaining risk / follow-up:** Monitor Sentry after the next mobile OTA or
+  binary release for new `food:byDate` parse errors. Any future occurrence where
+  `isLoading` and `isFetching` are false should be treated as a real API shape
+  mismatch rather than a loading-state artifact.
+
+## 2026-07-12 — FIT Worker Unit and Mutation CI Flake
+
+- **Symptoms:** PR CI failed `Test / Unit Tests`, `Test / Stryker (0)`,
+  `Test / Mutation Testing`, and aggregate gate jobs after adding the parent-side
+  FIT parser worker timeout.
+- **User impact:** The Garmin dump stalled-job fix could not merge because CI
+  blocked the PR.
+- **Evidence:** The first fatal unit-test assertion was
+  `expected [Function] to throw error matching /incorrect header size/i but got
+  'FIT parser worker timed out after 10000ms'` in
+  `src/fit/parser-worker.test.ts`. The Stryker dry run failed on the same test
+  before mutation execution.
+- **Root cause:** Worker wrapper tests exercised the real FIT parser with
+  malformed bytes. On GitHub Actions the malformed parse path could exceed the
+  new parent-side 10 second timeout, so the test asserted a parser-specific
+  error while the correct wrapper behavior was now a timeout.
+- **Fix / mitigation:** Replaced the timing-sensitive malformed real-worker test
+  with mocked worker-message coverage for parser error propagation. Mocked
+  `parseFitFile()` in `parser-worker-entry.test.ts` so entrypoint tests verify
+  message handling without depending on malformed FIT parser runtime.
+- **Validation:** `pnpm test:unit`, `pnpm lint`,
+  `pnpm -r --if-present typecheck`, and both affected Stryker shards passed
+  locally. GitHub CI for commit `3e4dc4f19` reported `Test / Unit Tests`,
+  `Test / Stryker (0)`, `Test / Stryker (1)`, `Test / Stryker (2)`, and
+  `Test / Mutation Testing` as successful.
+- **Remaining risk / follow-up:** Low. Keep worker wrapper tests focused on the
+  wrapper contract and parser tests focused on parser behavior so timeout policy
+  and parser implementation timing do not race each other.

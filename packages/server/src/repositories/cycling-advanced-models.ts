@@ -132,11 +132,12 @@ export class ActivityVariabilityModel {
 export interface VerticalAscentRowData {
   date: string;
   activityName: string;
+  activityType: string;
   elevationGainMeters: number;
-  climbingSeconds: number;
+  elapsedSeconds: number;
 }
 
-/** An activity with vertical ascent rate (VAM) for climbing segments. */
+/** An activity with whole-activity vertical ascent rate (VAM). */
 export class VerticalAscentModel {
   readonly #row: VerticalAscentRowData;
 
@@ -152,17 +153,21 @@ export class VerticalAscentModel {
     return this.#row.activityName;
   }
 
+  get activityType(): string {
+    return this.#row.activityType;
+  }
+
   get elevationGainMeters(): number {
     return this.#row.elevationGainMeters;
   }
 
-  get climbingMinutes(): number {
-    return Math.round((this.#row.climbingSeconds / 60) * 10) / 10;
+  get elapsedMinutes(): number {
+    return Math.round((this.#row.elapsedSeconds / 60) * 10) / 10;
   }
 
   get verticalAscentRate(): number {
-    return this.#row.climbingSeconds > 0
-      ? Math.round((this.#row.elevationGainMeters / (this.#row.climbingSeconds / 3600)) * 10) / 10
+    return this.#row.elapsedSeconds > 0
+      ? Math.round((this.#row.elevationGainMeters / (this.#row.elapsedSeconds / 3600)) * 10) / 10
       : 0;
   }
 
@@ -170,9 +175,10 @@ export class VerticalAscentModel {
     return {
       date: this.date,
       activityName: this.activityName,
+      activityType: this.activityType,
       verticalAscentRate: this.verticalAscentRate,
       elevationGainMeters: this.elevationGainMeters,
-      climbingMinutes: this.climbingMinutes,
+      elapsedMinutes: this.elapsedMinutes,
     };
   }
 }

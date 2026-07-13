@@ -149,8 +149,9 @@ describe("loadMobileTrainingTab", () => {
         new VerticalAscentModel({
           date: "2026-03-28",
           activityName: "Hill Climb",
+          activityType: "road_cycling",
           elevationGainMeters: 500,
-          climbingSeconds: 1800,
+          elapsedSeconds: 1800,
         }),
       ],
     );
@@ -167,6 +168,7 @@ describe("loadMobileTrainingTab", () => {
     expect(result.activities).toHaveLength(1);
     expect(result.weeklyVolume).toHaveLength(1);
     expect(result.verticalAscent[0]?.verticalAscentRate).toBe(1000);
+    expect(result.verticalAscent[0]?.activityType).toBe("road_cycling");
     expect(result.climbing).toEqual({
       gradeProgression: [
         {

@@ -79,7 +79,11 @@ export default function FoodScreen() {
     onSuccess: () => foodQuery.refetch(),
   });
 
-  const entriesParsed = safeParseRows(FoodEntrySchema, foodQuery.data, "food:byDate");
+  const foodRows =
+    foodQuery.data === undefined && (foodQuery.isLoading || foodQuery.isFetching)
+      ? []
+      : foodQuery.data;
+  const entriesParsed = safeParseRows(FoodEntrySchema, foodRows, "food:byDate");
   const entries = entriesParsed.data;
   const isFoodBlockingLoading = shouldShowBlockingLoading({
     data: entries,

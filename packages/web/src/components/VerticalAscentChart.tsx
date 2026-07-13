@@ -1,12 +1,29 @@
 import { formatDateShort, formatNumber } from "@dofek/format/format";
+import {
+  formatActivityTypeLabel,
+  formatVerticalAscentActivityTypeGroupLabel,
+  getVerticalAscentActivityTypeGroup,
+  type VerticalAscentActivityTypeGroup,
+} from "@dofek/training/training";
 import type { VerticalAscentRow } from "dofek-server/types";
-import { chartColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
+import { chartColors, dofekAxis, dofekGrid, dofekLegend, dofekTooltip } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface VerticalAscentChartProps {
   data: VerticalAscentRow[];
   loading?: boolean;
+}
+
+const ACTIVITY_TYPE_GROUP_COLORS: Record<VerticalAscentActivityTypeGroup, string> = {
+  road_cycling: chartColors.teal,
+  mountain_biking: chartColors.purple,
+  gravel_cycling: chartColors.orange,
+  other_cycling: chartColors.blue,
+};
+
+function colorForActivityTypeGroup(activityTypeGroup: VerticalAscentActivityTypeGroup): string {
+  return ACTIVITY_TYPE_GROUP_COLORS[activityTypeGroup];
 }
 
 export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps) {
@@ -36,13 +53,21 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
   const scatterData = data.map((d) => ({
     value: [d.date, units.convertElevation(d.verticalAscentRate)],
     name: d.activityName,
+    activityType: d.activityType,
+    activityTypeGroup: getVerticalAscentActivityTypeGroup(d.activityType),
     elevationGain: units.convertElevation(d.elevationGainMeters),
     symbolSize:
       maxGain > 0 ? minSize + (d.elevationGainMeters / maxGain) * (maxSize - minSize) : minSize,
   }));
+  const activityTypeGroups = [...new Set(scatterData.map((point) => point.activityTypeGroup))];
 
   const option = {
-    grid: dofekGrid("single", { top: 40, bottom: 30 }),
+    grid: dofekGrid("single", { top: activityTypeGroups.length > 1 ? 64 : 40, bottom: 46 }),
+    legend: dofekLegend(activityTypeGroups.length > 1, {
+      data: activityTypeGroups.map((activityTypeGroup) =>
+        formatVerticalAscentActivityTypeGroupLabel(activityTypeGroup),
+      ),
+    }),
     tooltip: dofekTooltip({
       trigger: "item",
       formatter: (params: Record<string, unknown>) => {
@@ -55,54 +80,62 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
             "elevationGain" in rawData && typeof rawData.elevationGain === "number"
               ? rawData.elevationGain
               : 0,
+          activityType:
+            "activityType" in rawData && typeof rawData.activityType === "string"
+              ? rawData.activityType
+              : undefined,
         };
         if (!itemData.name) return "";
         const [date, vam] = itemData.value;
         return [
           `<strong>${itemData.name}</strong>`,
+          `Type: ${itemData.activityType ? formatActivityTypeLabel(itemData.activityType) : "Other"}`,
           `Date: ${formatDateShort(date)}`,
-          `VAM: ${formatNumber(vam, 0)} ${eLabel}/h`,
+          `Vertical Ascent Rate: ${formatNumber(vam, 0)} ${eLabel}/h`,
           `Elevation Gain: ${formatNumber(itemData.elevationGain, 0)} ${eLabel}`,
         ].join("<br/>");
       },
     }),
-    xAxis: dofekAxis.time(),
-    yAxis: dofekAxis.value({ name: `VAM (${eLabel}/h)` }),
-    series: [
-      {
-        name: "Vertical Ascent Rate",
-        type: "scatter",
-        data: scatterData.map((d) => ({
+    xAxis: { ...dofekAxis.time(), name: "Date" },
+    yAxis: dofekAxis.value({ name: `Vertical Ascent Rate (${eLabel}/h)` }),
+    series: activityTypeGroups.map((activityTypeGroup) => ({
+      name: formatVerticalAscentActivityTypeGroupLabel(activityTypeGroup),
+      type: "scatter",
+      data: scatterData
+        .filter((point) => point.activityTypeGroup === activityTypeGroup)
+        .map((d) => ({
           value: d.value,
           name: d.name,
+          activityType: d.activityType,
+          activityTypeGroup: d.activityTypeGroup,
           elevationGain: d.elevationGain,
           symbolSize: d.symbolSize,
         })),
-        symbolSize: (_val: unknown, params: Record<string, unknown>) => {
-          const rawData = params.data;
-          if (
-            rawData &&
-            typeof rawData === "object" &&
-            "symbolSize" in rawData &&
-            typeof rawData.symbolSize === "number"
-          ) {
-            return rawData.symbolSize;
-          }
-          return minSize;
-        },
-        itemStyle: {
-          color: chartColors.purple,
-          opacity: 0.7,
-        },
+      symbolSize: (_val: unknown, params: Record<string, unknown>) => {
+        const rawData = params.data;
+        if (
+          rawData &&
+          typeof rawData === "object" &&
+          "symbolSize" in rawData &&
+          typeof rawData.symbolSize === "number"
+        ) {
+          return rawData.symbolSize;
+        }
+        return minSize;
       },
-    ],
+      itemStyle: {
+        color: colorForActivityTypeGroup(activityTypeGroup),
+        opacity: 0.7,
+      },
+    })),
   };
 
   return (
     <div>
       <DofekChart option={option} height={300} />
       <p className="text-xs text-dim mt-1">
-        Bubble size indicates elevation gain. Higher VAM = stronger climbing performance.
+        Bubble size indicates elevation gain. Higher vertical ascent rate = stronger climbing
+        performance.
       </p>
     </div>
   );
