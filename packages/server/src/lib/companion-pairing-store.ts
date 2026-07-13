@@ -88,6 +88,20 @@ export interface RedisClient {
   eval(script: string, keyCount: number, ...args: string[]): Promise<unknown>;
 }
 
+function isRedisClient(client: unknown): client is RedisClient {
+  if (typeof client !== "object" || client === null) return false;
+  return (
+    "set" in client &&
+    typeof client.set === "function" &&
+    "get" in client &&
+    typeof client.get === "function" &&
+    "del" in client &&
+    typeof client.del === "function" &&
+    "eval" in client &&
+    typeof client.eval === "function"
+  );
+}
+
 export interface CompanionPairingStore {
   createChallenge(now?: Date): Promise<CompanionPairingChallenge>;
   getById(id: string, now?: Date): Promise<CompanionPairingChallenge | null>;
@@ -367,7 +381,11 @@ async function getSharedRedisClient(): Promise<RedisClient> {
       skipVersionCheck: true,
     });
   }
-  return sharedRedisConnection.client;
+  const client: unknown = sharedRedisConnection.client;
+  if (!isRedisClient(client)) {
+    throw new Error("Redis companion pairing store requires a Redis client with Lua eval support");
+  }
+  return client;
 }
 
 const defaultCompanionPairingStore: CompanionPairingStore =
