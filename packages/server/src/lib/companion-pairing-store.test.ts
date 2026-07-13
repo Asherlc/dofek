@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   COMPANION_PAIRING_TTL_MS,
   getCompanionPairingStore,
@@ -8,6 +8,33 @@ import {
   parsePairingCodeInput,
   RedisCompanionPairingStore,
 } from "./companion-pairing-store.ts";
+
+const companionPairingStoreMocks = vi.hoisted(() => {
+  let sharedRedisClient: unknown = null;
+  const queueConnection = { connectionName: "test-queue-connection" };
+  return {
+    mockGetRedisConnection: vi.fn(() => queueConnection),
+    mockRedisConnectionConstructor: vi.fn(function RedisConnection() {
+      return {
+        get client(): Promise<unknown> {
+          return Promise.resolve(sharedRedisClient);
+        },
+      };
+    }),
+    queueConnection,
+    setSharedRedisClient(value: unknown): void {
+      sharedRedisClient = value;
+    },
+  };
+});
+
+vi.mock("bullmq", () => ({
+  RedisConnection: companionPairingStoreMocks.mockRedisConnectionConstructor,
+}));
+
+vi.mock("dofek/jobs/queues", () => ({
+  getRedisConnection: companionPairingStoreMocks.mockGetRedisConnection,
+}));
 
 interface FakeRedisEntry {
   value: string;
@@ -507,6 +534,54 @@ describe("RedisCompanionPairingStore", () => {
         now,
       }),
     ).resolves.toBeNull();
+  });
+
+  it("creates challenges through the shared Redis connection with Lua-capable clients", async () => {
+    const redisClient = new FakeRedisClient();
+    companionPairingStoreMocks.setSharedRedisClient(redisClient);
+    companionPairingStoreMocks.mockRedisConnectionConstructor.mockClear();
+    companionPairingStoreMocks.mockGetRedisConnection.mockClear();
+    const store = new RedisCompanionPairingStore();
+    const now = new Date("2026-07-12T12:00:00.000Z");
+
+    await expect(store.createChallenge(now)).resolves.toMatchObject({
+      shortCode: expect.stringMatching(PAIRING_SHORT_CODE_PATTERN),
+    });
+
+    expect(companionPairingStoreMocks.mockGetRedisConnection).toHaveBeenCalledOnce();
+    expect(companionPairingStoreMocks.mockRedisConnectionConstructor).toHaveBeenCalledWith(
+      companionPairingStoreMocks.queueConnection,
+      {
+        shared: true,
+        blocking: false,
+        skipVersionCheck: true,
+      },
+    );
+  });
+
+  it("fails loudly when the shared Redis connection lacks Lua eval support", async () => {
+    const redisMethod = async (): Promise<null> => null;
+    const invalidClients: unknown[] = [
+      null,
+      "redis",
+      {},
+      { get: redisMethod, del: redisMethod, eval: redisMethod },
+      { set: redisMethod, del: redisMethod, eval: redisMethod },
+      { set: redisMethod, get: redisMethod, eval: redisMethod },
+      { set: redisMethod, get: redisMethod, del: redisMethod },
+      { set: "set", get: redisMethod, del: redisMethod, eval: redisMethod },
+      { set: redisMethod, get: "get", del: redisMethod, eval: redisMethod },
+      { set: redisMethod, get: redisMethod, del: "del", eval: redisMethod },
+      { set: redisMethod, get: redisMethod, del: redisMethod, eval: "eval" },
+    ];
+    const store = new RedisCompanionPairingStore();
+
+    for (const invalidClient of invalidClients) {
+      companionPairingStoreMocks.setSharedRedisClient(invalidClient);
+      await expect(store.createChallenge()).rejects.toThrow(
+        "Redis companion pairing store requires a Redis client with Lua eval support",
+      );
+    }
   });
 });
 

@@ -172,18 +172,10 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
       });
       setExportState("done");
       setExportMessage("Export ready");
-      try {
-        await Sharing.shareAsync(file.uri, {
-          mimeType: "application/zip",
-          dialogTitle: "Save Health Data Export",
-        });
-      } finally {
-        try {
-          file.delete();
-        } catch (error: unknown) {
-          captureException(error, { context: "data-export-download-cleanup" });
-        }
-      }
+      await Sharing.shareAsync(file.uri, {
+        mimeType: "application/zip",
+        dialogTitle: "Save Health Data Export",
+      });
     } catch (error: unknown) {
       captureException(error, { context: "data-export-download" });
       setExportState("error");
