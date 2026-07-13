@@ -6,13 +6,18 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFileWrite = vi.fn();
-vi.mock("expo-file-system", () => ({
-  Paths: { cache: { uri: "file:///tmp/cache" } },
-  File: vi.fn().mockImplementation(() => ({
-    uri: "file:///tmp/cache/health-export.zip",
+const mockDownloadFileAsync = vi.fn();
+vi.mock("expo-file-system", () => {
+  const MockFile = vi.fn().mockImplementation((_cache, filename: string) => ({
+    uri: `file:///tmp/cache/${filename}`,
     write: mockFileWrite,
-  })),
-}));
+  }));
+  MockFile.downloadFileAsync = mockDownloadFileAsync;
+  return {
+    Paths: { cache: { uri: "file:///tmp/cache" } },
+    File: MockFile,
+  };
+});
 
 vi.mock("expo-sharing", () => ({
   shareAsync: vi.fn(),
@@ -366,13 +371,20 @@ describe("SettingsScreen export UI rendering", () => {
   it("shows Starting... and disables the button while processing", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(() => new Promise(() => {})),
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ exports: [] }),
+        })
+        .mockImplementation(() => new Promise(() => {})),
     );
 
     const { default: SettingsScreen } = await import("./settings");
 
     render(<SettingsScreen />);
 
+    await screen.findByText("No exports available.");
     const button = screen.getByText("Start Export");
     fireEvent.click(button);
 
@@ -521,6 +533,7 @@ describe("SettingsScreen export flow", () => {
   it("downloads a completed export from the available export list", async () => {
     const { shareAsync } = await import("expo-sharing");
     const { File: ExpoFile } = await import("expo-file-system");
+    mockDownloadFileAsync.mockResolvedValue(undefined);
 
     const mockFetch = vi.fn().mockImplementation((url: string) => {
       if (url === "https://test.example.com/api/export") {
@@ -544,14 +557,6 @@ describe("SettingsScreen export flow", () => {
             }),
         });
       }
-      if (url === "https://test.example.com/api/export/download/export-789") {
-        const fakeBytes = new Uint8Array([1, 2, 3]);
-        const blob = new Blob([fakeBytes], { type: "application/zip" });
-        return Promise.resolve({
-          ok: true,
-          blob: () => Promise.resolve(blob),
-        });
-      }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
 
@@ -566,9 +571,13 @@ describe("SettingsScreen export flow", () => {
 
     await waitFor(() => {
       expect(ExpoFile).toHaveBeenCalled();
-      expect(mockFileWrite).toHaveBeenCalled();
+      expect(mockDownloadFileAsync).toHaveBeenCalledWith(
+        "https://test.example.com/api/export/download/export-789",
+        expect.objectContaining({ uri: "file:///tmp/cache/export-789-dofek-export.zip" }),
+        expect.objectContaining({ headers: { Authorization: "Bearer test-token" } }),
+      );
       expect(shareAsync).toHaveBeenCalledWith(
-        "file:///tmp/cache/health-export.zip",
+        "file:///tmp/cache/export-789-dofek-export.zip",
         expect.objectContaining({ mimeType: "application/zip" }),
       );
     });

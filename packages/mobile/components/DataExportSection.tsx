@@ -28,6 +28,17 @@ const DataExportSchema = z.object({
 
 const ExportListSchema = z.object({ exports: z.array(DataExportSchema) });
 type DataExport = z.infer<typeof DataExportSchema>;
+const ErrorResponseSchema = z.object({
+  error: z
+    .union([
+      z.string(),
+      z.object({
+        message: z.string(),
+      }),
+    ])
+    .optional(),
+  message: z.string().optional(),
+});
 
 interface DataExportSectionProps {
   serverUrl: string;
@@ -45,6 +56,27 @@ function formatExportDate(value: string): string {
   return formatDateMedium(value);
 }
 
+function getAuthHeaders(sessionToken: string): { Authorization: string } {
+  return { Authorization: `Bearer ${sessionToken}` };
+}
+
+async function getResponseErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const parsed = ErrorResponseSchema.safeParse(await response.json());
+    if (!parsed.success) return fallback;
+    if (typeof parsed.data.error === "string") return parsed.data.error;
+    if (parsed.data.error?.message) return parsed.data.error.message;
+    return parsed.data.message ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function getExportCacheFilename(dataExport: DataExport): string {
+  const safeFilename = dataExport.filename.replace(/[^A-Za-z0-9._-]+/g, "_");
+  return `${dataExport.id}-${safeFilename || "health-export.zip"}`;
+}
+
 export function DataExportSection({ serverUrl, sessionToken }: DataExportSectionProps) {
   const [exportState, setExportState] = useState<ExportState>("idle");
   const [exportMessage, setExportMessage] = useState("");
@@ -53,18 +85,26 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
   const [downloadingExportId, setDownloadingExportId] = useState<string | null>(null);
 
   const loadExports = useCallback(async () => {
+    if (!sessionToken) {
+      setExportState("error");
+      setExportMessage("Sign in again to load exports.");
+      setExportsLoading(false);
+      return;
+    }
+
     try {
       const response = await fetch(`${serverUrl}/api/export`, {
-        headers: { Authorization: `Bearer ${sessionToken}` },
+        headers: getAuthHeaders(sessionToken),
       });
       if (!response.ok) {
-        throw new Error("Failed to load exports");
+        throw new Error(await getResponseErrorMessage(response, "Failed to load exports"));
       }
       const parsed = ExportListSchema.parse(await response.json());
       setDataExports(parsed.exports);
       setExportMessage("");
     } catch (error: unknown) {
       captureException(error, { context: "data-export-list" });
+      setExportState("error");
       setExportMessage(error instanceof Error ? error.message : "Failed to load exports");
     } finally {
       setExportsLoading(false);
@@ -76,18 +116,24 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
   }, [loadExports]);
 
   async function handleExport() {
+    if (!sessionToken) {
+      setExportState("error");
+      setExportMessage("Sign in again to start an export.");
+      return;
+    }
+
     setExportState("processing");
     setExportMessage("Starting export...");
 
     try {
       const triggerRes = await fetch(`${serverUrl}/api/export`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${sessionToken}` },
+        headers: getAuthHeaders(sessionToken),
       });
 
       if (!triggerRes.ok) {
         setExportState("error");
-        setExportMessage("Failed to start export");
+        setExportMessage(await getResponseErrorMessage(triggerRes, "Failed to start export"));
         return;
       }
 
@@ -102,20 +148,19 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
   }
 
   async function handleDownloadExport(dataExport: DataExport) {
+    if (!sessionToken) {
+      setExportState("error");
+      setExportMessage("Sign in again to download exports.");
+      return;
+    }
+
     setDownloadingExportId(dataExport.id);
     setExportMessage("Downloading...");
     try {
-      const downloadRes = await fetch(`${serverUrl}/api/export/download/${dataExport.id}`, {
-        headers: { Authorization: `Bearer ${sessionToken}` },
+      const file = new ExpoFile(Paths.cache, getExportCacheFilename(dataExport));
+      await ExpoFile.downloadFileAsync(`${serverUrl}/api/export/download/${dataExport.id}`, file, {
+        headers: getAuthHeaders(sessionToken),
       });
-      if (!downloadRes.ok) {
-        throw new Error("Failed to download export");
-      }
-      const blob = await downloadRes.blob();
-      const file = new ExpoFile(Paths.cache, "health-export.zip");
-      const arrayBuffer = await blob.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      file.write(bytes);
       setExportState("done");
       setExportMessage("Export ready");
       await Sharing.shareAsync(file.uri, {
@@ -136,6 +181,7 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
   );
   const completedExports = dataExports.filter((dataExport) => dataExport.status === "completed");
   const hasActiveExport = activeExports.length > 0;
+  const exportBlocked = exportState === "processing" || exportsLoading || hasActiveExport;
 
   return (
     <View style={styles.section}>
@@ -155,13 +201,10 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
         )}
         {exportState === "error" && <Text style={styles.exportErrorText}>{exportMessage}</Text>}
         <TouchableOpacity
-          style={[
-            styles.exportButton,
-            (exportState === "processing" || hasActiveExport) && styles.exportButtonDisabled,
-          ]}
+          style={[styles.exportButton, exportBlocked && styles.exportButtonDisabled]}
           onPress={handleExport}
           activeOpacity={0.7}
-          disabled={exportState === "processing" || hasActiveExport}
+          disabled={exportBlocked}
         >
           <Text style={styles.exportButtonText}>
             {exportState === "processing"
@@ -190,7 +233,7 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
                 <TouchableOpacity
                   onPress={() => handleDownloadExport(dataExport)}
                   activeOpacity={0.7}
-                  disabled={downloadingExportId === dataExport.id}
+                  disabled={downloadingExportId !== null}
                 >
                   <Text style={styles.exportDownloadText}>
                     {downloadingExportId === dataExport.id

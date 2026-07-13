@@ -16,15 +16,20 @@ function sendJson(res: import("express").Response, status: number, body: unknown
 }
 
 function getPublicOrigin(): string {
-  const envOrigin = process.env.PUBLIC_APP_URL?.trim().replace(/\/+$/, "");
+  const envOrigin = process.env.PUBLIC_APP_URL?.trim();
   if (!envOrigin) {
     throw new Error("PUBLIC_APP_URL environment variable is required");
   }
+  let url: URL;
   try {
-    return new URL(envOrigin).origin;
+    url = new URL(envOrigin);
   } catch {
     throw new Error("PUBLIC_APP_URL environment variable must be a valid URL");
   }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("PUBLIC_APP_URL environment variable must use http or https");
+  }
+  return url.origin;
 }
 
 function buildVerificationUrl(origin: string, shortCode: string): string {

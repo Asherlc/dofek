@@ -5,13 +5,11 @@ const {
   mockGetByShortCode,
   mockConsumeClaimAttempt,
   mockClaimChallenge,
-  mockAttachCompanionToken,
   mockRegenerateCompanionToken,
 } = vi.hoisted(() => ({
   mockGetByShortCode: vi.fn(),
   mockConsumeClaimAttempt: vi.fn(),
   mockClaimChallenge: vi.fn(),
-  mockAttachCompanionToken: vi.fn(),
   mockRegenerateCompanionToken: vi.fn(),
 }));
 
@@ -31,7 +29,6 @@ vi.mock("../lib/companion-pairing-store.ts", () => ({
     getByShortCode: (...args: unknown[]) => mockGetByShortCode(...args),
     consumeClaimAttempt: (...args: unknown[]) => mockConsumeClaimAttempt(...args),
     claimChallenge: (...args: unknown[]) => mockClaimChallenge(...args),
-    attachCompanionToken: (...args: unknown[]) => mockAttachCompanionToken(...args),
   }),
   parsePairingCodeInput: (code: string) => {
     const normalizedCode = code.replace(/[\s-]/g, "").trim().toUpperCase();
@@ -73,14 +70,6 @@ describe("companionPairingRouter", () => {
       expiresAt: "2026-07-12T00:10:00.000Z",
       claimedAt: "2026-07-12T00:01:00.000Z",
       userId: "user-1",
-    });
-    mockAttachCompanionToken.mockResolvedValue({
-      id: "pairing-1",
-      shortCode: "ABC234",
-      createdAt: "2026-07-12T00:00:00.000Z",
-      expiresAt: "2026-07-12T00:10:00.000Z",
-      claimedAt: "2026-07-12T00:01:00.000Z",
-      userId: "user-1",
       companionToken: "dofek_companion_test",
     });
 
@@ -90,15 +79,11 @@ describe("companionPairingRouter", () => {
       state: "claimed",
       expiresAt: "2026-07-12T00:10:00.000Z",
     });
-    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith({}, "user-1");
     expect(mockConsumeClaimAttempt).toHaveBeenCalledWith("user-1");
+    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith({}, "user-1");
+    expect(mockRegenerateCompanionToken).toHaveBeenCalledTimes(1);
     expect(mockClaimChallenge).toHaveBeenCalledWith({
       shortCode: "ABC234",
-      userId: "user-1",
-    });
-    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith({}, "user-1");
-    expect(mockAttachCompanionToken).toHaveBeenCalledWith({
-      pairingId: "pairing-1",
       userId: "user-1",
       companionToken: "dofek_companion_test",
     });
@@ -148,20 +133,12 @@ describe("companionPairingRouter", () => {
     expect(mockGetByShortCode).not.toHaveBeenCalled();
   });
 
-  it("rejects when token regeneration fails to return a token after claiming the code", async () => {
+  it("rejects without claiming when token regeneration fails to return a token", async () => {
     mockGetByShortCode.mockResolvedValue({
       id: "pairing-1",
       shortCode: "ABC234",
       createdAt: "2026-07-12T00:00:00.000Z",
       expiresAt: "2026-07-12T00:10:00.000Z",
-    });
-    mockClaimChallenge.mockResolvedValue({
-      id: "pairing-1",
-      shortCode: "ABC234",
-      createdAt: "2026-07-12T00:00:00.000Z",
-      expiresAt: "2026-07-12T00:10:00.000Z",
-      claimedAt: "2026-07-12T00:01:00.000Z",
-      userId: "user-1",
     });
     mockRegenerateCompanionToken.mockResolvedValue({
       id: "token-1",
@@ -174,19 +151,21 @@ describe("companionPairingRouter", () => {
     await expect(caller.claim({ code: "ABC234" })).rejects.toThrow(
       "Failed to create Dofek connection.",
     );
-    expect(mockClaimChallenge).toHaveBeenCalledWith({
-      shortCode: "ABC234",
-      userId: "user-1",
-    });
-    expect(mockAttachCompanionToken).not.toHaveBeenCalled();
+    expect(mockClaimChallenge).not.toHaveBeenCalled();
   });
 
-  it("rejects when the code is claimed by another request before token rotation", async () => {
+  it("rejects when the code is claimed by another request before token commit", async () => {
     mockGetByShortCode.mockResolvedValue({
       id: "pairing-1",
       shortCode: "ABC234",
       createdAt: "2026-07-12T00:00:00.000Z",
       expiresAt: "2026-07-12T00:10:00.000Z",
+    });
+    mockRegenerateCompanionToken.mockResolvedValue({
+      id: "token-1",
+      token: "dofek_companion_test",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      revokedAt: null,
     });
     mockClaimChallenge.mockResolvedValue(null);
     const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
@@ -194,6 +173,10 @@ describe("companionPairingRouter", () => {
     await expect(caller.claim({ code: "ABC234" })).rejects.toThrow(
       "Pairing code has already been used.",
     );
-    expect(mockRegenerateCompanionToken).not.toHaveBeenCalled();
+    expect(mockClaimChallenge).toHaveBeenCalledWith({
+      shortCode: "ABC234",
+      userId: "user-1",
+      companionToken: "dofek_companion_test",
+    });
   });
 });

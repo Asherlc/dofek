@@ -29,7 +29,7 @@ async function request(
   app: express.Express,
   method: "GET" | "POST",
   path: string,
-  body?: Record<string, unknown>,
+  body?: unknown,
 ): Promise<{
   status: number;
   text: string;
@@ -94,11 +94,31 @@ describe("createCompanionPairingRouter", () => {
     });
   });
 
+  it("starts pairing from an HTTP public app URL", async () => {
+    process.env.PUBLIC_APP_URL = "http://app.example.test";
+    const app = createTestApp(new InMemoryCompanionPairingStore());
+
+    const response = await request(app, "POST", "/api/companion-pairing/start", {});
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      verificationUrl: expect.stringContaining("http://app.example.test/settings?zeppPair="),
+    });
+  });
+
   it("fails loudly when PUBLIC_APP_URL is missing", async () => {
     delete process.env.PUBLIC_APP_URL;
 
     expect(() => createTestApp(new InMemoryCompanionPairingStore())).toThrow(
       "PUBLIC_APP_URL environment variable is required",
+    );
+  });
+
+  it("fails loudly when PUBLIC_APP_URL does not use HTTP", async () => {
+    process.env.PUBLIC_APP_URL = "file:///tmp/dofek";
+
+    expect(() => createTestApp(new InMemoryCompanionPairingStore())).toThrow(
+      "PUBLIC_APP_URL environment variable must use http or https",
     );
   });
 
@@ -120,6 +140,25 @@ describe("createCompanionPairingRouter", () => {
       state: "pending",
       shortCode: startBody.shortCode,
     });
+  });
+
+  it("rejects invalid start request bodies", async () => {
+    const app = createTestApp(new InMemoryCompanionPairingStore());
+
+    const response = await request(app, "POST", "/api/companion-pairing/start", []);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "Invalid pairing request" });
+  });
+
+  it("rejects blank status pairing IDs", async () => {
+    const app = createTestApp(new InMemoryCompanionPairingStore());
+
+    const response = await request(app, "GET", "/api/companion-pairing/status/%20");
+
+    expect(response.status).toBe(400);
+    expect(response.cacheControl).toBe("no-store");
+    expect(await response.json()).toMatchObject({ error: "Pairing ID is required." });
   });
 
   it("returns the companion token after the code is claimed", async () => {

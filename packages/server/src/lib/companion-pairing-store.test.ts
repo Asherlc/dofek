@@ -114,10 +114,6 @@ class FakeRedisClient {
     return payload ? JSON.parse(payload) : null;
   }
 
-  pairingPayloadExpiresAtMs(pairingId: string): number | null {
-    return this.#entries.get(`companion-pairing:${pairingId}`)?.expiresAtMs ?? null;
-  }
-
   async #createChallenge(args: string[]): Promise<number> {
     const codeKey = requireArg(args, 0);
     const challengeKey = requireArg(args, 1);
@@ -271,46 +267,6 @@ describe("InMemoryCompanionPairingStore", () => {
     ).resolves.toBe(true);
   });
 
-  it("attaches a token only to a claimed challenge owned by the user", async () => {
-    const store = new InMemoryCompanionPairingStore();
-    const now = new Date("2026-07-12T12:00:00.000Z");
-    const challenge = await store.createChallenge(now);
-
-    await expect(
-      store.attachCompanionToken({
-        pairingId: challenge.id,
-        userId: "user-1",
-        companionToken: "dofek_companion_test",
-        now,
-      }),
-    ).resolves.toBeNull();
-
-    const claimed = await store.claimChallenge({
-      shortCode: challenge.shortCode,
-      userId: "user-1",
-      now,
-    });
-    expect(claimed?.companionToken).toBeUndefined();
-
-    await expect(
-      store.attachCompanionToken({
-        pairingId: challenge.id,
-        userId: "user-2",
-        companionToken: "dofek_companion_wrong",
-        now,
-      }),
-    ).resolves.toBeNull();
-
-    await expect(
-      store.attachCompanionToken({
-        pairingId: challenge.id,
-        userId: "user-1",
-        companionToken: "dofek_companion_test",
-        now,
-      }),
-    ).resolves.toMatchObject({ companionToken: "dofek_companion_test" });
-  });
-
   it("expires stale challenges", async () => {
     const store = new InMemoryCompanionPairingStore();
     const now = new Date("2026-07-12T12:00:00.000Z");
@@ -323,7 +279,7 @@ describe("InMemoryCompanionPairingStore", () => {
     expect(await store.getByShortCode(challenge.shortCode, expiredAt)).toBeNull();
   });
 
-  it("rejects expired claims and token attachment", async () => {
+  it("rejects expired claims", async () => {
     const store = new InMemoryCompanionPairingStore();
     const now = new Date("2026-07-12T12:00:00.000Z");
     const challenge = await store.createChallenge(now);
@@ -332,14 +288,6 @@ describe("InMemoryCompanionPairingStore", () => {
     await expect(
       store.claimChallenge({
         shortCode: challenge.shortCode,
-        userId: "user-1",
-        companionToken: "dofek_companion_test",
-        now: expiredAt,
-      }),
-    ).resolves.toBeNull();
-    await expect(
-      store.attachCompanionToken({
-        pairingId: challenge.id,
         userId: "user-1",
         companionToken: "dofek_companion_test",
         now: expiredAt,
@@ -410,7 +358,7 @@ describe("RedisCompanionPairingStore", () => {
     );
   });
 
-  it("claims first and attaches a Redis companion token later", async () => {
+  it("can claim a Redis challenge without a companion token", async () => {
     const redisClient = new FakeRedisClient();
     const store = new RedisCompanionPairingStore(async () => redisClient);
     const now = new Date("2026-07-12T12:00:00.000Z");
@@ -424,15 +372,6 @@ describe("RedisCompanionPairingStore", () => {
     expect(claimed).toMatchObject({ id: challenge.id, userId: "user-1" });
     expect(claimed?.companionToken).toBeUndefined();
     expect(await redisClient.readPairingPayload(challenge.id)).not.toHaveProperty("companionToken");
-
-    await expect(
-      store.attachCompanionToken({
-        pairingId: challenge.id,
-        userId: "user-1",
-        companionToken: "dofek_companion_test",
-        now,
-      }),
-    ).resolves.toMatchObject({ companionToken: "dofek_companion_test" });
   });
 
   it("can claim a Redis challenge with a companion token in one step", async () => {
@@ -449,37 +388,6 @@ describe("RedisCompanionPairingStore", () => {
         now,
       }),
     ).resolves.toMatchObject({ companionToken: "dofek_companion_test" });
-  });
-
-  it("rejects Redis token attachment unless the claimed challenge belongs to the user", async () => {
-    const redisClient = new FakeRedisClient();
-    const store = new RedisCompanionPairingStore(async () => redisClient);
-    const now = new Date("2026-07-12T12:00:00.000Z");
-    const challenge = await store.createChallenge(now);
-
-    await expect(
-      store.attachCompanionToken({
-        pairingId: challenge.id,
-        userId: "user-1",
-        companionToken: "dofek_companion_test",
-        now,
-      }),
-    ).resolves.toBeNull();
-
-    await store.claimChallenge({
-      shortCode: challenge.shortCode,
-      userId: "user-1",
-      now,
-    });
-
-    await expect(
-      store.attachCompanionToken({
-        pairingId: challenge.id,
-        userId: "user-2",
-        companionToken: "dofek_companion_wrong",
-        now,
-      }),
-    ).resolves.toBeNull();
   });
 
   it("expires stale Redis challenges", async () => {
@@ -576,30 +484,6 @@ describe("RedisCompanionPairingStore", () => {
         now,
       }),
     ).resolves.toBeNull();
-  });
-
-  it("preserves remaining Redis TTL when attaching a token", async () => {
-    const redisClient = new FakeRedisClient();
-    const store = new RedisCompanionPairingStore(async () => redisClient);
-    const now = new Date("2026-07-12T12:00:00.000Z");
-    const challenge = await store.createChallenge(now);
-    await store.claimChallenge({
-      shortCode: challenge.shortCode,
-      userId: "user-1",
-      now,
-    });
-    const attachTime = new Date(now.getTime() + 30_000);
-
-    await store.attachCompanionToken({
-      pairingId: challenge.id,
-      userId: "user-1",
-      companionToken: "dofek_companion_test",
-      now: attachTime,
-    });
-
-    const expiresAtMs = redisClient.pairingPayloadExpiresAtMs(challenge.id);
-    expect(expiresAtMs).not.toBeNull();
-    expect(expiresAtMs).toBeGreaterThan(Date.now() + COMPANION_PAIRING_TTL_MS - 60_000);
   });
 });
 

@@ -219,7 +219,11 @@ AppSideService(
         return;
       }
       if (!isRecord(summary.body)) {
-        throw new Error("Dofek pairing status response was invalid.");
+        this.setConnectionStatus({
+          state: "error",
+          reason: "Dofek pairing status response was invalid.",
+        });
+        return;
       }
       if (!this.isCurrentPairing(pairingId)) {
         return;
@@ -254,7 +258,7 @@ AppSideService(
       const serverUrl = getStoredServerUrl();
       const email = getString(payload, "email");
       const password = getRawString(payload, "password");
-      settings.settingsStorage.setItem(STORAGE_KEYS.CMD_LOGIN_PASSWORD, "");
+      settings.settingsStorage.removeItem(STORAGE_KEYS.CMD_LOGIN_PASSWORD);
 
       try {
         if (!serverUrl || !email || !password) {

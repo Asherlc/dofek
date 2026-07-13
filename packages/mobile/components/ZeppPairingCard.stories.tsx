@@ -2,10 +2,11 @@ import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
+import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../lib/trpc";
-import { ZeppPairingCard } from "./ZeppPairingCard";
+import { ZeppPairingCard, ZeppPairingCardBody } from "./ZeppPairingCard";
 
 function createMockLink(): TRPCLink<AppRouter> {
   return () => () => createMockObservable();
@@ -32,13 +33,19 @@ function ZeppPairingCardStoryFrame() {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <View style={{ width: 360, padding: 16 }}>
+        <StoryFrame>
           <ZeppPairingCard />
-        </View>
+        </StoryFrame>
       </QueryClientProvider>
     </trpc.Provider>
   );
 }
+
+function StoryFrame({ children }: { children: ReactNode }) {
+  return <View style={{ width: 360, padding: 16 }}>{children}</View>;
+}
+
+const noop = () => {};
 
 const meta = {
   title: "Settings/ZeppPairingCard",
@@ -51,4 +58,64 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
   render: () => <ZeppPairingCardStoryFrame />,
+};
+
+export const Empty: Story = {
+  render: () => (
+    <StoryFrame>
+      <ZeppPairingCardBody
+        pairingCode=""
+        pairingMessage=""
+        isError={false}
+        isPending={false}
+        onPairingCodeChange={noop}
+        onClaimPairing={noop}
+      />
+    </StoryFrame>
+  ),
+};
+
+export const Loading: Story = {
+  render: () => (
+    <StoryFrame>
+      <ZeppPairingCardBody
+        pairingCode="ABC234"
+        pairingMessage=""
+        isError={false}
+        isPending
+        onPairingCodeChange={noop}
+        onClaimPairing={noop}
+      />
+    </StoryFrame>
+  ),
+};
+
+export const Success: Story = {
+  render: () => (
+    <StoryFrame>
+      <ZeppPairingCardBody
+        pairingCode=""
+        pairingMessage="Zepp app connected. Return to Zepp to sync."
+        isError={false}
+        isPending={false}
+        onPairingCodeChange={noop}
+        onClaimPairing={noop}
+      />
+    </StoryFrame>
+  ),
+};
+
+export const ErrorState: Story = {
+  render: () => (
+    <StoryFrame>
+      <ZeppPairingCardBody
+        pairingCode="ABC234"
+        pairingMessage="Pairing code has already been used."
+        isError
+        isPending={false}
+        onPairingCodeChange={noop}
+        onClaimPairing={noop}
+      />
+    </StoryFrame>
+  ),
 };

@@ -3,6 +3,15 @@ import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-nativ
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 
+interface ZeppPairingCardBodyProps {
+  pairingCode: string;
+  pairingMessage: string;
+  isError: boolean;
+  isPending: boolean;
+  onPairingCodeChange: (value: string) => void;
+  onClaimPairing: () => void;
+}
+
 export function ZeppPairingCard() {
   const [pairingCode, setPairingCode] = useState("");
   const [pairingMessage, setPairingMessage] = useState("");
@@ -18,12 +27,36 @@ export function ZeppPairingCard() {
       setPairingMessage(error.message);
     },
   });
-  const normalizedPairingCode = pairingCode.trim();
 
   function handleClaimPairing() {
     setPairingMessage("");
     pairingMutation.mutate({ code: pairingCode });
   }
+
+  return (
+    <ZeppPairingCardBody
+      pairingCode={pairingCode}
+      pairingMessage={pairingMessage}
+      isError={pairingMutation.isError}
+      isPending={pairingMutation.isPending}
+      onPairingCodeChange={(value) => {
+        setPairingCode(value);
+        setPairingMessage("");
+      }}
+      onClaimPairing={handleClaimPairing}
+    />
+  );
+}
+
+export function ZeppPairingCardBody({
+  pairingCode,
+  pairingMessage,
+  isError,
+  isPending,
+  onPairingCodeChange,
+  onClaimPairing,
+}: ZeppPairingCardBodyProps) {
+  const normalizedPairingCode = pairingCode.trim();
 
   return (
     <View style={styles.section}>
@@ -33,30 +66,20 @@ export function ZeppPairingCard() {
         <TextInput
           style={styles.input}
           value={pairingCode}
-          onChangeText={(value) => {
-            setPairingCode(value);
-            setPairingMessage("");
-          }}
+          onChangeText={onPairingCodeChange}
           placeholder="Short code"
           placeholderTextColor={colors.textSecondary}
           autoCapitalize="characters"
         />
         <TouchableOpacity
-          style={[
-            styles.button,
-            (pairingMutation.isPending || !normalizedPairingCode) && styles.buttonDisabled,
-          ]}
-          onPress={handleClaimPairing}
-          disabled={pairingMutation.isPending || !normalizedPairingCode}
+          style={[styles.button, (isPending || !normalizedPairingCode) && styles.buttonDisabled]}
+          onPress={onClaimPairing}
+          disabled={isPending || !normalizedPairingCode}
         >
-          <Text style={styles.buttonText}>
-            {pairingMutation.isPending ? "Connecting..." : "Connect Zepp App"}
-          </Text>
+          <Text style={styles.buttonText}>{isPending ? "Connecting..." : "Connect Zepp App"}</Text>
         </TouchableOpacity>
         {pairingMessage ? (
-          <Text style={pairingMutation.isError ? styles.errorText : styles.successText}>
-            {pairingMessage}
-          </Text>
+          <Text style={isError ? styles.errorText : styles.successText}>{pairingMessage}</Text>
         ) : null}
       </View>
     </View>

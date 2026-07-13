@@ -99,12 +99,6 @@ export interface CompanionPairingStore {
     companionToken?: string;
     now?: Date;
   }): Promise<CompanionPairingChallenge | null>;
-  attachCompanionToken(params: {
-    pairingId: string;
-    userId: string;
-    companionToken: string;
-    now?: Date;
-  }): Promise<CompanionPairingChallenge | null>;
 }
 
 function pairingKey(id: string): string {
@@ -235,30 +229,6 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
     return claimedChallenge;
   }
 
-  async attachCompanionToken({
-    pairingId,
-    userId,
-    companionToken,
-    now = new Date(),
-  }: {
-    pairingId: string;
-    userId: string;
-    companionToken: string;
-    now?: Date;
-  }): Promise<CompanionPairingChallenge | null> {
-    const challenge = this.#byId.get(pairingId);
-    if (challenge && ttlMs(challenge, now) <= 0) {
-      this.#delete(challenge);
-      return null;
-    }
-    if (!challenge || challenge.userId !== userId || !challenge.claimedAt) {
-      return null;
-    }
-    const updatedChallenge = { ...challenge, companionToken };
-    this.#save(updatedChallenge);
-    return updatedChallenge;
-  }
-
   #save(challenge: CompanionPairingChallenge): void {
     this.#byId.set(challenge.id, challenge);
     this.#idByShortCode.set(challenge.shortCode, challenge.id);
@@ -360,7 +330,7 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
   }: {
     shortCode: string;
     userId: string;
-    companionToken: string;
+    companionToken?: string;
     now?: Date;
   }): Promise<CompanionPairingChallenge | null> {
     const normalizedShortCode = normalizePairingCode(shortCode);
@@ -384,33 +354,6 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       Sentry.captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
       return null;
     }
-  }
-
-  async attachCompanionToken({
-    pairingId,
-    userId,
-    companionToken,
-    now = new Date(),
-  }: {
-    pairingId: string;
-    userId: string;
-    companionToken: string;
-    now?: Date;
-  }): Promise<CompanionPairingChallenge | null> {
-    const existingChallenge = await this.getById(pairingId, now);
-    if (!existingChallenge || existingChallenge.userId !== userId || !existingChallenge.claimedAt) {
-      return null;
-    }
-    const updatedChallenge = { ...existingChallenge, companionToken };
-    const remainingTtlMs = Math.max(1, ttlMs(updatedChallenge, now));
-    const client = await this.#getRedisClient();
-    await client.set(
-      pairingKey(updatedChallenge.id),
-      JSON.stringify(updatedChallenge),
-      "PX",
-      remainingTtlMs,
-    );
-    return updatedChallenge;
   }
 }
 

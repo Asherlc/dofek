@@ -57,17 +57,6 @@ export const companionPairingRouter = router({
         });
       }
 
-      const claimedChallenge = await store.claimChallenge({
-        shortCode: challenge.shortCode,
-        userId: ctx.userId,
-      });
-      if (!claimedChallenge) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "Pairing code has already been used.",
-        });
-      }
-
       const companionToken = await regenerateCompanionToken(ctx.db, ctx.userId);
       if (!companionToken.token) {
         throw new TRPCError({
@@ -76,12 +65,12 @@ export const companionPairingRouter = router({
         });
       }
 
-      const tokenAttachedChallenge = await store.attachCompanionToken({
-        pairingId: claimedChallenge.id,
+      const claimedChallenge = await store.claimChallenge({
+        shortCode: challenge.shortCode,
         userId: ctx.userId,
         companionToken: companionToken.token,
       });
-      if (!tokenAttachedChallenge) {
+      if (!claimedChallenge) {
         throw new TRPCError({
           code: "CONFLICT",
           message: "Pairing code has already been used.",
@@ -90,7 +79,7 @@ export const companionPairingRouter = router({
 
       return {
         state: "claimed",
-        expiresAt: tokenAttachedChallenge.expiresAt,
+        expiresAt: claimedChallenge.expiresAt,
       };
     }),
 });
