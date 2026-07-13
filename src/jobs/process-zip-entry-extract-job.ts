@@ -131,6 +131,7 @@ async function extractEntryChain(
   entryPath: string[],
   outputPath: string,
   maxBytes: number,
+  nestedArchiveMaxBytes: number,
   tempDirectory: string,
 ): Promise<void> {
   const [headEntryPath, ...tailEntryPath] = entryPath;
@@ -150,8 +151,15 @@ async function extractEntryChain(
       tempDirectory,
       `${createHash("sha256").update(entryPath.join("\n")).digest("hex")}.zip`,
     );
-    await streamToFile(stream, nestedZipPath, maxBytes, `ZIP entry ${headEntryPath}`);
-    await extractEntryChain(nestedZipPath, tailEntryPath, outputPath, maxBytes, tempDirectory);
+    await streamToFile(stream, nestedZipPath, nestedArchiveMaxBytes, `ZIP entry ${headEntryPath}`);
+    await extractEntryChain(
+      nestedZipPath,
+      tailEntryPath,
+      outputPath,
+      maxBytes,
+      nestedArchiveMaxBytes,
+      tempDirectory,
+    );
   } finally {
     zipFile.close();
   }
@@ -176,6 +184,7 @@ export async function processZipEntryExtractJob(
       data.entryPath,
       outputPath,
       data.maxBytes ?? DEFAULT_MAX_EXTRACTED_BYTES,
+      data.nestedArchiveMaxBytes ?? DEFAULT_MAX_EXTRACTED_BYTES,
       tempDirectory,
     );
     extracted = true;

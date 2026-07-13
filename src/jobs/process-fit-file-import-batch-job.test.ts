@@ -19,6 +19,14 @@ describe("processFitFileImportBatchJob", () => {
     });
   });
 
+  it("returns an empty result when the batch has no child values", async () => {
+    const result = await processFitFileImportBatchJob({
+      getChildrenValues: async () => ({}),
+    });
+
+    expect(result).toEqual({ recordsSynced: 0, errors: [] });
+  });
+
   it("rejects malformed child results", async () => {
     await expect(
       processFitFileImportBatchJob({

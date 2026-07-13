@@ -91,6 +91,36 @@ describe("processZipEntryExtractJob", () => {
     await expect(readFile(result.filePath, "utf8")).resolves.toBe("nested-fit-bytes");
   });
 
+  it("allows nested ZIP archives to be larger than the final extracted entry limit", async () => {
+    const directory = await createTempDirectory();
+    const archivePath = join(directory, "export.zip");
+    const nestedZip = await createZip({
+      "padding.txt": "padding that makes the nested archive larger than the final FIT limit",
+      "asher@example.com_12345.fit": "fit",
+    });
+    await writeFile(
+      archivePath,
+      await createZip({
+        "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip": nestedZip,
+      }),
+    );
+
+    const result = await processZipEntryExtractJob({
+      data: {
+        archivePath,
+        entryPath: [
+          "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip",
+          "asher@example.com_12345.fit",
+        ],
+        outputExtension: "fit",
+        maxBytes: 3,
+        nestedArchiveMaxBytes: nestedZip.length,
+      },
+    });
+
+    await expect(readFile(result.filePath, "utf8")).resolves.toBe("fit");
+  });
+
   it("rejects missing entries", async () => {
     const directory = await createTempDirectory();
     const archivePath = join(directory, "export.zip");

@@ -432,56 +432,63 @@ export async function parseGarminDumpFile(filePath: string): Promise<ParsedGarmi
   }
   const tempDirectories: string[] = [];
   let entries: GarminDumpEntry[];
-  if (fileStats.isDirectory()) {
-    const directoryResult = await collectDirectoryEntries(filePath);
-    tempDirectories.push(...directoryResult.tempDirectories);
-    entries = directoryResult.entries;
-  } else {
-    const extractionDirectory = await mkdtemp(
-      join(dirname(filePath), `${basename(filePath)}-extract-`),
+  try {
+    if (fileStats.isDirectory()) {
+      const directoryResult = await collectDirectoryEntries(filePath);
+      tempDirectories.push(...directoryResult.tempDirectories);
+      entries = directoryResult.entries;
+    } else {
+      const extractionDirectory = await mkdtemp(
+        join(dirname(filePath), `${basename(filePath)}-extract-`),
+      );
+      tempDirectories.push(extractionDirectory);
+      entries = await collectZipEntries(filePath, filePath, extractionDirectory);
+    }
+    const errors: SyncError[] = [];
+    const summaries: GarminSummarizedActivity[] = [];
+    const fitFiles: GarminDumpEntry[] = [];
+    const weightFitFiles: GarminDumpEntry[] = [];
+
+    for (const entry of entries) {
+      const lowerPath = entry.path.toLowerCase();
+      if (lowerPath.endsWith(".fit")) {
+        // Garmin account exports store scale/body composition readings in FIT weight files.
+        if (isGarminWeightFitPath(entry.path)) {
+          weightFitFiles.push(entry);
+        } else {
+          fitFiles.push(entry);
+        }
+        continue;
+      }
+
+      if (!lowerPath.endsWith(summarizedActivitiesSuffix)) continue;
+
+      try {
+        if (!entry.filePath) {
+          throw new Error(`Garmin summarized activities ${entry.path} was not extracted`);
+        }
+        const parsedJson: unknown = JSON.parse(await readFile(entry.filePath, "utf8"));
+        const parsedFile = summarizedActivitiesFileSchema.parse(parsedJson);
+        for (const group of parsedFile) {
+          summaries.push(...(group.summarizedActivitiesExport ?? []));
+        }
+      } catch (error) {
+        errors.push({
+          message: `Failed to parse Garmin summarized activities ${entry.path}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          cause: error,
+        });
+      }
+    }
+
+    return { summaries, fitFiles, weightFitFiles, errors, tempDirectories };
+  } catch (error) {
+    await Promise.all(
+      tempDirectories.map((directory) => rm(directory, { recursive: true, force: true })),
     );
-    tempDirectories.push(extractionDirectory);
-    entries = await collectZipEntries(filePath, filePath, extractionDirectory);
+    throw error;
   }
-  const errors: SyncError[] = [];
-  const summaries: GarminSummarizedActivity[] = [];
-  const fitFiles: GarminDumpEntry[] = [];
-  const weightFitFiles: GarminDumpEntry[] = [];
-
-  for (const entry of entries) {
-    const lowerPath = entry.path.toLowerCase();
-    if (lowerPath.endsWith(".fit")) {
-      // Garmin account exports store scale/body composition readings in FIT weight files.
-      if (isGarminWeightFitPath(entry.path)) {
-        weightFitFiles.push(entry);
-      } else {
-        fitFiles.push(entry);
-      }
-      continue;
-    }
-
-    if (!lowerPath.endsWith(summarizedActivitiesSuffix)) continue;
-
-    try {
-      if (!entry.filePath) {
-        throw new Error(`Garmin summarized activities ${entry.path} was not extracted`);
-      }
-      const parsedJson: unknown = JSON.parse(await readFile(entry.filePath, "utf8"));
-      const parsedFile = summarizedActivitiesFileSchema.parse(parsedJson);
-      for (const group of parsedFile) {
-        summaries.push(...(group.summarizedActivitiesExport ?? []));
-      }
-    } catch (error) {
-      errors.push({
-        message: `Failed to parse Garmin summarized activities ${entry.path}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        cause: error,
-      });
-    }
-  }
-
-  return { summaries, fitFiles, weightFitFiles, errors, tempDirectories };
 }
 
 function garminSummaryToFitJobSummary(
@@ -504,6 +511,7 @@ function garminSummaryToFitJobSummary(
 
 function fitFileImportFlowChild(
   uploadPath: string,
+  userId: string,
   entry: GarminDumpEntry,
   data: Omit<FitFileImportJobData, "filePath">,
 ): FlowChildJob {
@@ -521,6 +529,7 @@ function fitFileImportFlowChild(
               entryPath: entry.entryPath,
               outputExtension: "fit",
               maxBytes: MAX_GARMIN_DUMP_ENTRY_BYTES,
+              nestedArchiveMaxBytes: MAX_GARMIN_DUMP_NESTED_ZIP_BYTES,
             },
             opts: {
               failParentOnFailure: true,
@@ -537,7 +546,9 @@ function fitFileImportFlowChild(
     data: fitImportData,
     opts: {
       failParentOnFailure: true,
-      jobId: `${basename(uploadPath)}:${createHash("sha256").update(entry.path).digest("hex")}`,
+      jobId: `garmin-dump-fit:${createHash("sha256")
+        .update(`${userId}\n${uploadPath}\n${entry.path}`)
+        .digest("hex")}`,
       removeOnComplete: { age: 86_400, count: 1_000 },
       removeOnFail: { age: 604_800, count: 1_000 },
     },
@@ -548,6 +559,7 @@ function fitFileImportFlowChild(
 async function enqueueFitFileImportFlow(
   entries: Array<{ entry: GarminDumpEntry; data: Omit<FitFileImportJobData, "filePath"> }>,
   uploadPath: string,
+  userId: string,
 ): Promise<FitFileImportJobResult> {
   if (entries.length === 0) return { recordsSynced: 0, errors: [] };
 
@@ -557,12 +569,14 @@ async function enqueueFitFileImportFlow(
     data: { type: "fit-file-import-batch" },
     opts: {
       jobId: `garmin-dump-fit-batch:${basename(uploadPath)}:${createHash("sha256")
-        .update(entries.map(({ entry }) => entry.path).join("\n"))
+        .update(`${userId}\n${uploadPath}\n${entries.map(({ entry }) => entry.path).join("\n")}`)
         .digest("hex")}`,
       removeOnComplete: { age: 86_400, count: 1_000 },
       removeOnFail: { age: 604_800, count: 1_000 },
     },
-    children: entries.map(({ entry, data }) => fitFileImportFlowChild(uploadPath, entry, data)),
+    children: entries.map(({ entry, data }) =>
+      fitFileImportFlowChild(uploadPath, userId, entry, data),
+    ),
   });
 
   return fitFileImportJobResultSchema.parse(
@@ -693,7 +707,8 @@ export async function importGarminDumpFile(
 
     try {
       await extendGarminDumpImportLock(options);
-      const fitResults = await enqueueFitFileImportFlow(fitJobEntries, filePath);
+      const fitResults = await enqueueFitFileImportFlow(fitJobEntries, filePath, userId);
+      lockRenewal.throwIfFailed();
       recordsSynced += fitResults.recordsSynced;
       for (const error of fitResults.errors) {
         errors.push(error);

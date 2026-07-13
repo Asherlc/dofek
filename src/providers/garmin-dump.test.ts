@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -310,6 +311,10 @@ describe("Garmin dump provider", () => {
     return latestFlow().children ?? [];
   }
 
+  function expectedFlowHash(input: string): string {
+    return createHash("sha256").update(input).digest("hex");
+  }
+
   it("is an import-only provider", () => {
     const provider = new GarminDumpProvider();
 
@@ -342,6 +347,22 @@ describe("Garmin dump provider", () => {
     expect(parsed.weightFitFiles.map((entry) => entry.path)).toEqual([
       "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_999_weight.fit",
     ]);
+    expect(parsed.fitFiles[0]).toEqual({
+      path: "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_12345.fit",
+      archivePath: filePath,
+      entryPath: [
+        "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip",
+        "asher@example.com_12345.fit",
+      ],
+    });
+    expect(parsed.weightFitFiles[0]).toEqual({
+      path: "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_999_weight.fit",
+      archivePath: filePath,
+      entryPath: [
+        "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip",
+        "asher@example.com_999_weight.fit",
+      ],
+    });
   });
 
   it("parses extracted Garmin dump directories recursively", async () => {
@@ -372,6 +393,33 @@ describe("Garmin dump provider", () => {
     expect(parsed.fitFiles.map((entry) => entry.path)).toEqual([
       "DI_CONNECT/DI-Connect-Fitness/asher@example.com_dir-activity.fit",
     ]);
+  });
+
+  it("parses nested uploaded ZIP files inside extracted Garmin dump directories", async () => {
+    const directory = await createTempDirectory();
+    const nestedDirectory = join(directory, "DI_CONNECT", "DI-Connect-Uploaded-Files");
+    await mkdir(nestedDirectory, { recursive: true });
+    const nestedZipPath = join(nestedDirectory, "UploadedFiles_0-_Part1.zip");
+    await writeFile(
+      nestedZipPath,
+      await createZip({
+        "asher@example.com_12345.fit": "fit-bytes",
+        "ignored.txt": "ignored",
+      }),
+    );
+
+    const parsed = await parseGarminDumpFile(directory);
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.fitFiles).toEqual([
+      {
+        path: "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_12345.fit",
+        archivePath: nestedZipPath,
+        entryPath: ["asher@example.com_12345.fit"],
+      },
+    ]);
+    expect(parsed.weightFitFiles).toEqual([]);
+    expect(parsed.tempDirectories).toHaveLength(1);
   });
 
   it("reports malformed summarized activity files without dropping valid FIT files", async () => {
@@ -449,6 +497,19 @@ describe("Garmin dump provider", () => {
     );
   });
 
+  it("removes temporary extraction directories when ZIP parsing fails", async () => {
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, "not a zip");
+
+    await expect(parseGarminDumpFile(filePath)).rejects.toThrow();
+
+    const remainingEntries = await readdir(directory);
+    expect(
+      remainingEntries.filter((entryName) => entryName.startsWith("garmin-export.zip-extract-")),
+    ).toEqual([]);
+  });
+
   it("imports summaries and fans out matching FIT files", async () => {
     const filePath = await createGarminDumpZip();
 
@@ -483,6 +544,21 @@ describe("Garmin dump provider", () => {
       expect.objectContaining({
         name: "fit-file-import-batch",
         queueName: "fit-file-import-batch",
+        data: { type: "fit-file-import-batch" },
+        opts: {
+          jobId: `garmin-dump-fit-batch:garmin-export.zip:${expectedFlowHash(
+            [
+              "user-1",
+              filePath,
+              [
+                "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_999_weight.fit",
+                "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_12345.fit",
+              ].join("\n"),
+            ].join("\n"),
+          )}`,
+          removeOnComplete: { age: 86_400, count: 1_000 },
+          removeOnFail: { age: 604_800, count: 1_000 },
+        },
       }),
     );
     const fitChildren = latestFitFlowChildren();
@@ -499,6 +575,14 @@ describe("Garmin dump provider", () => {
           sourceName: "Garmin Dump",
         }),
         opts: expect.objectContaining({
+          failParentOnFailure: true,
+          jobId: `garmin-dump-fit:${expectedFlowHash(
+            [
+              "user-1",
+              filePath,
+              "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_999_weight.fit",
+            ].join("\n"),
+          )}`,
           removeOnComplete: { age: 86_400, count: 1_000 },
           removeOnFail: { age: 604_800, count: 1_000 },
         }),
@@ -512,7 +596,15 @@ describe("Garmin dump provider", () => {
                 "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip",
                 "asher@example.com_999_weight.fit",
               ],
+              outputExtension: "fit",
+              maxBytes: 128 * 1024 * 1024,
+              nestedArchiveMaxBytes: 1024 * 1024 * 1024,
             }),
+            opts: {
+              failParentOnFailure: true,
+              removeOnComplete: { age: 86_400, count: 1_000 },
+              removeOnFail: { age: 604_800, count: 1_000 },
+            },
           }),
         ],
       }),
@@ -533,6 +625,18 @@ describe("Garmin dump provider", () => {
             name: "Morning Ride",
             raw: expect.objectContaining({ activityId: 12345 }),
           }),
+        }),
+        opts: expect.objectContaining({
+          failParentOnFailure: true,
+          jobId: `garmin-dump-fit:${expectedFlowHash(
+            [
+              "user-1",
+              filePath,
+              "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_12345.fit",
+            ].join("\n"),
+          )}`,
+          removeOnComplete: { age: 86_400, count: 1_000 },
+          removeOnFail: { age: 604_800, count: 1_000 },
         }),
       }),
     );
@@ -589,6 +693,26 @@ describe("Garmin dump provider", () => {
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
   });
 
+  it("uses distinct flow job IDs for uploads with the same archive basename", async () => {
+    const firstDirectory = await createTempDirectory();
+    const secondDirectory = await createTempDirectory();
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
+    });
+    const firstFilePath = join(firstDirectory, "garmin-export.zip");
+    const secondFilePath = join(secondDirectory, "garmin-export.zip");
+    await writeFile(firstFilePath, zip);
+    await writeFile(secondFilePath, zip);
+
+    await importGarminDumpFile(mockDb, firstFilePath, "user-1");
+    const firstFlow = latestFlow();
+    await importGarminDumpFile(mockDb, secondFilePath, "user-1");
+    const secondFlow = latestFlow();
+
+    expect(firstFlow.opts).not.toEqual(secondFlow.opts);
+    expect(firstFlow.children?.[0]?.opts).not.toEqual(secondFlow.children?.[0]?.opts);
+  });
+
   it("passes extracted directory FIT files directly to child FIT import jobs", async () => {
     flowMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 1, errors: [] });
     const directory = await createTempDirectory();
@@ -621,6 +745,47 @@ describe("Garmin dump provider", () => {
     expect(extendLock.mock.invocationCallOrder[0]).toBeLessThan(
       flowMock.add.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER,
     );
+  });
+
+  it("reports a lock renewal failure that happens while waiting for the FIT flow", async () => {
+    const filePath = await createGarminDumpZip();
+    const extendLock = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("lost lock"));
+    let renewalCallback: (() => void) | undefined;
+    const intervalHandle = setInterval(() => undefined, 60_000);
+    intervalHandle.unref?.();
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval").mockImplementation((callback) => {
+      if (typeof callback !== "function") {
+        throw new Error("Expected lock renewal interval callback to be a function");
+      }
+      renewalCallback = () => callback();
+      return intervalHandle;
+    });
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => {});
+    flowMock.waitUntilFinished.mockImplementation(async () => {
+      renewalCallback?.();
+      await Promise.resolve();
+      return { recordsSynced: 1, errors: [] };
+    });
+
+    try {
+      const result = await importGarminDumpFile(mockDb, filePath, "user-1", { extendLock });
+
+      expect(result.recordsSynced).toBe(1);
+      expect(result.errors).toEqual([
+        expect.objectContaining({
+          message: "Failed to process Garmin FIT import jobs: lost lock",
+        }),
+      ]);
+      expect(clearIntervalSpy).toHaveBeenCalledWith(intervalHandle);
+    } finally {
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
+      clearInterval(intervalHandle);
+    }
   });
 
   it("keeps parse errors in import results and imports FIT-only activities", async () => {
@@ -674,6 +839,72 @@ describe("Garmin dump provider", () => {
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
     expect(flowMock.add).not.toHaveBeenCalled();
     expect(mockParseFitFile).not.toHaveBeenCalled();
+  });
+
+  it("records invalid activity summaries again when matching FIT files cannot receive metadata", async () => {
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Fitness/asher_0_summarizedActivities.json": JSON.stringify([
+        {
+          summarizedActivitiesExport: [
+            {
+              activityId: 12345,
+              activityType: "cycling",
+            },
+          ],
+        },
+      ]),
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toEqual([
+      { message: "Garmin activity 12345 is missing a valid start time" },
+      { message: "Garmin activity 12345 is missing a valid start time" },
+    ]);
+    expect(flowMock.add).not.toHaveBeenCalled();
+  });
+
+  it("matches summarized activities to FIT files with Garmin suffixes after the activity ID", async () => {
+    flowMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 1, errors: [] });
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Fitness/asher_0_summarizedActivities.json": JSON.stringify([
+        {
+          summarizedActivitiesExport: [
+            {
+              activityId: 12345,
+              name: "Suffix Ride",
+              activityType: "cycling",
+              startTimeGmt: Date.parse("2026-07-01T12:00:00.000Z"),
+              duration: 1800000,
+            },
+          ],
+        },
+      ]),
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345_extra.fit": "fit-bytes",
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+
+    expect(result.recordsSynced).toBe(2);
+    expect(latestFitFlowChildren()).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          originalPath: "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345_extra.fit",
+          activitySummary: expect.objectContaining({
+            externalId: "12345",
+            name: "Suffix Ride",
+          }),
+        }),
+      }),
+    ]);
   });
 
   it("fans out repeated FIT files to one child job per file", async () => {
@@ -778,5 +1009,23 @@ describe("Garmin dump provider", () => {
         message: "Failed to process Garmin FIT import jobs: bad fit",
       }),
     ]);
+  });
+
+  it("removes temporary extraction directories after importing a ZIP dump", async () => {
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(
+      filePath,
+      await createZip({
+        "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
+      }),
+    );
+
+    await importGarminDumpFile(mockDb, filePath, "user-1");
+
+    const remainingEntries = await readdir(directory);
+    expect(
+      remainingEntries.filter((entryName) => entryName.startsWith("garmin-export.zip-extract-")),
+    ).toEqual([]);
   });
 });

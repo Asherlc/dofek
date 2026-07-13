@@ -61,6 +61,7 @@ export const zipEntryExtractJobDataSchema = z.object({
   entryPath: z.array(z.string()).min(1),
   outputExtension: z.string().regex(/^[A-Za-z0-9]+$/),
   maxBytes: z.number().int().positive().optional(),
+  nestedArchiveMaxBytes: z.number().int().positive().optional(),
 });
 
 export type ZipEntryExtractJobData = z.infer<typeof zipEntryExtractJobDataSchema>;
