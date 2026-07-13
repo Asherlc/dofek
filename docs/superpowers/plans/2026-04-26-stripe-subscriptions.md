@@ -462,7 +462,7 @@ export function getStripeBillingConfig(): StripeBillingConfig {
     secretKey: requiredEnv("STRIPE_SECRET_KEY"),
     webhookSecret: requiredEnv("STRIPE_WEBHOOK_SECRET"),
     priceId: requiredEnv("STRIPE_PRICE_ID"),
-    appBaseUrl: requiredEnv("APP_BASE_URL"),
+    appBaseUrl: requiredEnv("PUBLIC_URL"),
   };
 }
 ```
@@ -1536,7 +1536,7 @@ Required server environment variables:
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PRICE_ID`
-- `APP_BASE_URL`
+- `PUBLIC_URL`
 
 Webhook endpoint:
 
@@ -1564,7 +1564,7 @@ Run the project’s Infisical command for each deployed environment and confirm 
 infisical secrets get STRIPE_SECRET_KEY --env=prod
 infisical secrets get STRIPE_WEBHOOK_SECRET --env=prod
 infisical secrets get STRIPE_PRICE_ID --env=prod
-infisical secrets get APP_BASE_URL --env=prod
+infisical secrets get PUBLIC_URL --env=prod
 ```
 
 Expected: each command returns a configured value.

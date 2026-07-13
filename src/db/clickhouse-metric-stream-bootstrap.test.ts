@@ -5,6 +5,11 @@ describe("buildActivitySummaryReadModelStatements", () => {
   const sql = buildActivitySummaryReadModelStatements().join("\n");
 
   describe("best_twenty_minute_power_per_activity window-sample-count clamp", () => {
+    it("keeps power sample rate safe before ClickHouse applies HAVING", () => {
+      expect(sql).toContain("/ greatest(count() - 1, 1)");
+      expect(sql).not.toContain("/ nullIf(count() - 1, 0)");
+    });
+
     it("clamps the divisor to at least 1 so slow power cadences cannot divide by zero", () => {
       // Three call sites must use the same guarded expression, so a slow power
       // cadence (interval_seconds > 1200) cannot round the 20-minute window

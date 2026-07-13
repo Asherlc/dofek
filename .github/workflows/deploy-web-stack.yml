@@ -189,7 +189,6 @@ jobs:
             STRIPE_SECRET_KEY
             STRIPE_WEBHOOK_SECRET
             STRIPE_PRICE_ID
-            APP_BASE_URL
             R2_ENDPOINT
             R2_ACCESS_KEY_ID
             R2_SECRET_ACCESS_KEY

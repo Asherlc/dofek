@@ -21,7 +21,7 @@
 - Modify `packages/server/src/routes/auth/password-auth.ts`: add reset request/confirm route handlers.
 - Modify `packages/server/src/routes/auth/index.ts`: register reset routes.
 - Modify `packages/server/src/routers/auth.ts`: expose `passwordCredentialStatus` and `setPassword`.
-- Modify `.env.example`: document `PUBLIC_APP_URL`.
+- Modify `.env.example`: document `PUBLIC_URL`.
 - Create tests beside changed server files.
 - Modify `packages/web/src/lib/auth.ts`: add reset request/confirm helpers.
 - Modify `packages/web/src/routes/login.tsx`: add forgot-password request flow.
@@ -317,7 +317,7 @@ describe("password reset service", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    process.env.PUBLIC_APP_URL = "https://app.example.test";
+    process.env.PUBLIC_URL = "https://app.example.test";
     await ctx.db.execute(sql`DELETE FROM fitness.session`);
     await ctx.db.execute(sql`DELETE FROM fitness.password_reset_token`);
     await ctx.db.execute(sql`DELETE FROM fitness.user_password_credential`);
@@ -433,7 +433,7 @@ Add to `.env.example`:
 
 ```dotenv
 # Public app URL used in emails such as password reset links
-# PUBLIC_APP_URL=https://health.yourdomain.com
+# PUBLIC_URL=https://health.yourdomain.com
 ```
 
 Add to `packages/auth/src/auth.ts`:
@@ -515,7 +515,7 @@ function generateResetToken(): string {
 }
 
 function buildResetUrl(token: string): string {
-  const baseUrl = requiredEnv("PUBLIC_APP_URL").replace(/\/+$/, "");
+  const baseUrl = requiredEnv("PUBLIC_URL").replace(/\/+$/, "");
   return `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
 }
 

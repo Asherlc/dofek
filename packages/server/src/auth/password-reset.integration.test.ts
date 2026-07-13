@@ -43,6 +43,15 @@ function extractResetTokenFromLastEmail(): string {
   return decodeURIComponent(match[1]);
 }
 
+function extractResetUrlFromLastEmail(): string {
+  const input = plainTextEmailInputSchema.parse(mockSendPlainTextEmail.mock.calls.at(-1)?.[0]);
+  const resetUrl = input.text.split("\n").find((line) => line.includes("/reset-password?token="));
+  if (!resetUrl) {
+    throw new Error("Reset URL missing from email");
+  }
+  return resetUrl;
+}
+
 describe("password reset service", () => {
   let ctx: TestContext;
 
@@ -56,7 +65,7 @@ describe("password reset service", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    process.env.PUBLIC_APP_URL = "https://app.example.test";
+    process.env.PUBLIC_URL = "https://app.example.test";
     await ctx.db.execute(sql`DELETE FROM fitness.session`);
     await ctx.db.execute(sql`DELETE FROM fitness.password_reset_token`);
     await ctx.db.execute(sql`DELETE FROM fitness.user_password_credential`);
@@ -104,10 +113,10 @@ describe("password reset service", () => {
   });
 
   it("fails loudly for missing app URL before checking whether the email exists", async () => {
-    delete process.env.PUBLIC_APP_URL;
+    delete process.env.PUBLIC_URL;
 
     await expect(createPasswordResetToken(ctx.db, "missing@example.com")).rejects.toThrow(
-      "PUBLIC_APP_URL",
+      "PUBLIC_URL",
     );
 
     const rows = await executeWithSchema(
@@ -117,6 +126,31 @@ describe("password reset service", () => {
     );
     expect(Number(rows[0]?.token_count)).toBe(0);
     expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
+  });
+
+  it("fails loudly when the app URL does not use HTTP", async () => {
+    process.env.PUBLIC_URL = "file:///tmp/dofek";
+
+    await expect(createPasswordResetToken(ctx.db, "missing@example.com")).rejects.toThrow(
+      "PUBLIC_URL environment variable must use http or https",
+    );
+
+    expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
+  });
+
+  it("normalizes HTTP app URLs before sending reset emails", async () => {
+    process.env.PUBLIC_URL = " http://app.example.test/// ";
+    await registerPasswordUser(ctx.db, {
+      email: "reset@example.com",
+      password: "password123",
+      name: "Reset User",
+    });
+
+    await createPasswordResetToken(ctx.db, "reset@example.com");
+
+    const resetUrl = extractResetUrlFromLastEmail();
+    expect(resetUrl).toMatch(/^http:\/\/app\.example\.test\/reset-password\?token=/);
+    expect(resetUrl).not.toContain("//reset-password");
   });
 
   it("resets the password and consumes the token", async () => {

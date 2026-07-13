@@ -529,7 +529,8 @@ Stripe config before the billing path can run. Store these values in Infisical:
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PRICE_ID`
-- `APP_BASE_URL`
+
+Billing return URLs use `PUBLIC_URL`, which is set by the production deploy workflow.
 
 Set `STRIPE_WEBHOOK_SECRET` to the webhook endpoint secret from Stripe for
 `/api/webhooks/stripe`; it is the `whsec_...` value, not the API secret key.

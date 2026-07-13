@@ -87,7 +87,7 @@ Password reset email content:
 - Include the expiry window.
 - State that the email can be ignored if the user did not request it.
 
-The reset URL should be built from `PUBLIC_APP_URL`, an explicit public app base URL environment variable. This variable is a new runtime prerequisite for password reset email delivery and must be added to `.env.example` and Infisical before deployment.
+The reset URL should be built from `PUBLIC_URL`, the canonical public app base URL environment variable.
 
 ## Web UX
 

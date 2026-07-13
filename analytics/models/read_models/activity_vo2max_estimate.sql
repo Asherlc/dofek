@@ -300,7 +300,7 @@ power_sample_rate AS (
         greatest(
             toInt32(round(
                 dateDiff('second', min(recorded_at), max(recorded_at))
-                / nullIf(count() - 1, 0)
+                / greatest(count() - 1, 1)
             )),
             1
         ) AS interval_s

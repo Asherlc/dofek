@@ -12794,3 +12794,89 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `DOFEK-SERVER-2K` stays quiet for new Garmin dump attempts. If stalls continue,
   instrument per-phase Garmin dump timing and tune generic FIT child-job
   concurrency from measured queue/runtime data.
+
+## 2026-07-13 — Web Deploy Rolled Back on Missing Public URL Env
+
+- **Symptoms:** GitHub Actions run `29270830970`, job `86887915192`, failed
+  during `Deploy stack without ClickHouse consumers`.
+- **User impact:** Production stayed on the previous web image because Docker
+  Swarm rolled the `web` service update back.
+- **Evidence:** The deploy poller reported
+  `dofek_web did not finish deployment cleanly; update_state=rollback_started`.
+  The failed `dofek_web` task exited with `task: non-zero exit (1)`. Service
+  logs for the failed image reported
+  `[web] Failed to start: Error: PUBLIC_APP_URL environment variable is required`.
+- **Root cause:** The Zepp pairing/password reset code introduced
+  `PUBLIC_APP_URL`, but production only supplied the existing app-origin
+  variable `PUBLIC_URL`, so new web tasks failed during route initialization.
+- **Fix / mitigation:** Consolidated password reset, Zepp companion pairing,
+  Stripe billing, tests, e2e config, deploy validation, and docs onto
+  `PUBLIC_URL`. Removed the duplicate `APP_BASE_URL` and `PUBLIC_APP_URL`
+  names from active config and documentation.
+- **Validation:** Active code, config, and docs no longer reference the removed
+  env names outside this incident record. `pnpm exec vitest run
+  packages/server/src/billing/config.test.ts
+  packages/server/src/routes/companion-pairing.test.ts
+  packages/server/src/auth/password-reset.integration.test.ts`,
+  and `pnpm typecheck` passed locally on the first attempt. `pnpm lint` initially
+  failed because local ClickHouse was not running; after starting ClickHouse and
+  refreshing `.env.local`, the same command passed without code changes.
+- **Remaining risk / follow-up:** CI passed for the PR fix. The next deploy
+  should confirm the `web` service reaches the new image without rollback.
+
+## 2026-07-13 — Public URL Consolidation PR Failed Mutation Testing
+
+- **Symptoms:** PR `1595` failed `Test / Stryker (0)`, which caused the
+  aggregate `Test / Mutation Testing` job to fail.
+- **User impact:** The public URL consolidation fix could not merge while
+  mutation coverage was below the required threshold.
+- **Evidence:** GitHub job `86902763087` reported
+  `Final mutation score 70.00 under breaking threshold 75`. The surviving
+  mutants were in `packages/server/src/auth/password-reset.ts`: removing
+  `.trim()`, narrowing trailing-slash replacement from `/\/+$/` to `/\/$/`,
+  and forcing the protocol condition to reject `http:`.
+- **Root cause:** Password reset integration coverage asserted invalid schemes
+  were rejected but did not prove that valid HTTP app URLs were trimmed and had
+  repeated trailing slashes normalized before reset emails were sent.
+- **Fix / mitigation:** Added a password reset integration test that configures
+  `PUBLIC_URL` as ` http://app.example.test/// `, sends a reset email, extracts
+  the email URL, and asserts the generated link starts with
+  `http://app.example.test/reset-password?token=` without a double slash before
+  the path.
+- **Validation:** Locally, `pnpm lint`, `pnpm typecheck`, root
+  `pnpm tsc --noEmit`, server and web `pnpm tsc --noEmit`, and
+  `pnpm exec vitest run
+  packages/server/src/auth/password-reset.integration.test.ts` passed. GitHub
+  Actions reran for commit `fdef77764` and reported `92` checks passed with
+  `0` failed.
+- **Remaining risk / follow-up:** Low. Local Stryker could not complete because
+  unrelated ClickHouse analytics tests exceeded the local 3 GiB ClickHouse
+  memory limit during Stryker's initial discovery run, but the hosted CI
+  mutation shard passed on the pushed fix.
+
+## 2026-07-13 — Activity Summary Power Sample Rate Broke Stryker Discovery
+
+- **Symptoms:** PR `1595` failed `Test / Stryker (0)`, `Test / Stryker (2)`,
+  and `Test / Stryker (3)`, which caused `Test / Mutation Testing`,
+  `Test / Test Gate`, and `CI Gate` to fail.
+- **User impact:** The PR could not merge while Stryker's initial test run
+  failed before mutation testing could start.
+- **Evidence:** The first fatal log line in each failed Stryker shard was
+  `Unexpected inf or nan to integer conversion` while inserting into
+  `analytics_test_*.activity_summary`. Stryker then reported
+  `There were failed tests in the initial test run.`
+- **Root cause:** ClickHouse evaluates the grouped power sample-rate expression
+  before applying `HAVING count() > 1`; single-power-sample activities therefore
+  evaluated `dateDiff(...) / nullIf(count() - 1, 0)` as an infinite or NaN
+  value before the group was filtered out.
+- **Fix / mitigation:** Replaced the sample-rate denominator with
+  `greatest(count() - 1, 1)` in the activity summary dbt model, bootstrap SQL,
+  VO2 max model, and server power-query copies. Added unit assertions and a
+  lightweight executable ClickHouse regression for a single-sample group.
+- **Validation:** Locally, the focused model/bootstrap tests, the executable
+  ClickHouse regression, repository unit tests, `pnpm lint`, `pnpm typecheck`,
+  and root `pnpm tsc --noEmit` passed.
+- **Remaining risk / follow-up:** Low. The full local router-level activity
+  summary rebuild still exceeds the local ClickHouse 3 GiB memory limit on the
+  recursive activity de-duplication CTE, so hosted CI remains the source of
+  truth for the full Stryker matrix.

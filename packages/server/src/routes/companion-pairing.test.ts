@@ -12,7 +12,7 @@ vi.mock("../logger.ts", () => ({
   logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
 }));
 
-const originalPublicAppUrl = process.env.PUBLIC_APP_URL;
+const originalPublicUrl = process.env.PUBLIC_URL;
 const pairingStartResponseSchema = z.object({
   pairingId: z.string(),
   shortCode: z.string(),
@@ -70,14 +70,14 @@ async function request(
 
 describe("createCompanionPairingRouter", () => {
   beforeEach(() => {
-    process.env.PUBLIC_APP_URL = "https://app.example.test";
+    process.env.PUBLIC_URL = "https://app.example.test";
   });
 
   afterEach(() => {
-    if (originalPublicAppUrl === undefined) {
-      delete process.env.PUBLIC_APP_URL;
+    if (originalPublicUrl === undefined) {
+      delete process.env.PUBLIC_URL;
     } else {
-      process.env.PUBLIC_APP_URL = originalPublicAppUrl;
+      process.env.PUBLIC_URL = originalPublicUrl;
     }
   });
 
@@ -95,7 +95,7 @@ describe("createCompanionPairingRouter", () => {
   });
 
   it("starts pairing from an HTTP public app URL", async () => {
-    process.env.PUBLIC_APP_URL = "http://app.example.test";
+    process.env.PUBLIC_URL = "http://app.example.test";
     const app = createTestApp(new InMemoryCompanionPairingStore());
 
     const response = await request(app, "POST", "/api/companion-pairing/start", {});
@@ -106,19 +106,27 @@ describe("createCompanionPairingRouter", () => {
     });
   });
 
-  it("fails loudly when PUBLIC_APP_URL is missing", async () => {
-    delete process.env.PUBLIC_APP_URL;
+  it("fails loudly when PUBLIC_URL is missing", async () => {
+    delete process.env.PUBLIC_URL;
 
     expect(() => createTestApp(new InMemoryCompanionPairingStore())).toThrow(
-      "PUBLIC_APP_URL environment variable is required",
+      "PUBLIC_URL environment variable is required",
     );
   });
 
-  it("fails loudly when PUBLIC_APP_URL does not use HTTP", async () => {
-    process.env.PUBLIC_APP_URL = "file:///tmp/dofek";
+  it("fails loudly when PUBLIC_URL is blank", async () => {
+    process.env.PUBLIC_URL = "   ";
 
     expect(() => createTestApp(new InMemoryCompanionPairingStore())).toThrow(
-      "PUBLIC_APP_URL environment variable must use http or https",
+      "PUBLIC_URL environment variable is required",
+    );
+  });
+
+  it("fails loudly when PUBLIC_URL does not use HTTP", async () => {
+    process.env.PUBLIC_URL = "file:///tmp/dofek";
+
+    expect(() => createTestApp(new InMemoryCompanionPairingStore())).toThrow(
+      "PUBLIC_URL environment variable must use http or https",
     );
   });
 

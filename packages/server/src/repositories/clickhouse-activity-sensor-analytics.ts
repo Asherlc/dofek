@@ -52,7 +52,7 @@ export async function getClickHousePowerCurveSamples(
             greatest(
               toInt32(round(
                 dateDiff('second', min(deduped_samples.recorded_at), max(deduped_samples.recorded_at))
-                / nullIf(count() - 1, 0)
+                / greatest(count() - 1, 1)
               )),
               1
             ) AS interval_s
@@ -110,7 +110,7 @@ export async function getClickHouseNormalizedPowerSamples(
             greatest(
               toInt32(round(
                 dateDiff('second', min(deduped_samples.recorded_at), max(deduped_samples.recorded_at))
-                / nullIf(count() - 1, 0)
+                / greatest(count() - 1, 1)
               )),
               1
             ) AS interval_s
