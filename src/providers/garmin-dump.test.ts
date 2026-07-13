@@ -734,8 +734,30 @@ describe("Garmin dump provider", () => {
       percentage: 95,
       message: "Importing Garmin FIT files (2/2)...",
     });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("reports malformed child FIT results to Sentry", async () => {
+    fitQueueMock.waitUntilFinished.mockResolvedValueOnce({ recordsSynced: "one", errors: [] });
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining(
+          "Failed to import Garmin FIT file DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit",
+        ),
+      }),
+    ]);
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
-      tags: { garminDumpStep: "fit-child-import" },
+      tags: { garminDumpStep: "fit-child-import-result" },
     });
   });
 

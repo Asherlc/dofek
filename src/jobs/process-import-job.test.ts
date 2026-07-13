@@ -639,6 +639,15 @@ describe("processImportJob", () => {
       await expect(runImportJob(job, mockDb)).rejects.toThrow(
         "ZOS App import failed: invalid magic",
       );
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "zos-app",
+          status: "error",
+          recordCount: 0,
+          errorMessage: "invalid magic",
+        }),
+      );
     });
 
     it("does not throw when zero records but no errors", async () => {

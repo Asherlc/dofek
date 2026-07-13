@@ -453,9 +453,24 @@ async function enqueueFitFileImportJobs(
           batch.map(async ({ entry, job }) => {
             let result: FitFileImportJobResult;
             try {
-              result = fitFileImportJobResultSchema.parse(await job.waitUntilFinished(queueEvents));
+              const jobResult = await job.waitUntilFinished(queueEvents);
+              const parsedResult = fitFileImportJobResultSchema.safeParse(jobResult);
+              if (parsedResult.success) {
+                result = parsedResult.data;
+              } else {
+                Sentry.captureException(parsedResult.error, {
+                  tags: { garminDumpStep: "fit-child-import-result" },
+                });
+                result = {
+                  recordsSynced: 0,
+                  errors: [
+                    {
+                      message: `Failed to import Garmin FIT file ${entry.path}: ${parsedResult.error.message}`,
+                    },
+                  ],
+                };
+              }
             } catch (error) {
-              Sentry.captureException(error, { tags: { garminDumpStep: "fit-child-import" } });
               result = {
                 recordsSynced: 0,
                 errors: [

@@ -185,6 +185,15 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         const result = await importZosAppBin(db, binData, userId);
 
         if (result.recordsSynced === 0 && result.errors.length > 0) {
+          await logImportCompletion(
+            db,
+            "zos-app",
+            "ZOS App",
+            "sessions",
+            result,
+            importStart,
+            userId,
+          );
           throw new Error(
             `ZOS App import failed: ${result.errors.map((error: { message: string }) => error.message).join("; ")}`,
           );
