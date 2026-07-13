@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   errorText: {
     color: colors.danger,
     fontSize: 12,
-    marginBottom: 8,
+    marginTop: 8,
   },
   successText: {
     color: colors.accent,

@@ -263,6 +263,7 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
 }
 
 export class RedisCompanionPairingStore implements CompanionPairingStore {
+  // Pairing scripts assume a single-node Redis deployment; Redis Cluster would need hash-tagged keys.
   readonly #getRedisClient: () => Promise<RedisClient>;
 
   constructor(getRedisClient: () => Promise<RedisClient> = getSharedRedisClient) {

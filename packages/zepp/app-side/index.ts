@@ -1,8 +1,8 @@
 import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
-
+import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
-import { summarizeZeppFetchResponse } from "../src/zepp-fetch.ts";
+import { summarizeZeppFetchResponse, type ZeppFetchResponse } from "../src/zepp-fetch.ts";
 
 BaseSideService.use(messagingPlugin);
 
@@ -205,16 +205,28 @@ AppSideService(
         return;
       }
 
-      const response = await fetch({
-        url: `${serverUrl.replace(/\/$/, "")}/api/companion-pairing/status/${encodeURIComponent(
-          pairingId,
-        )}`,
-      });
+      let response: ZeppFetchResponse;
+      try {
+        response = await fetch({
+          url: `${serverUrl.replace(/\/$/, "")}/api/companion-pairing/status/${encodeURIComponent(
+            pairingId,
+          )}`,
+        });
+      } catch (error) {
+        logger.error("pairing poll request failed %j", error);
+        this.schedulePairingPoll(pairingId, serverUrl);
+        return;
+      }
       const summary = summarizeZeppFetchResponse(response);
       if (!summary.ok) {
+        if (shouldRetryPairingPollFailure(summary)) {
+          logger.error("pairing poll transient response failed %j", summary.errorMessage);
+          this.schedulePairingPoll(pairingId, serverUrl);
+          return;
+        }
         this.setConnectionStatus({
           state: "error",
-          reason: summary.errorMessage ?? "Pairing failed.",
+          reason: "Pairing code expired.",
         });
         return;
       }
