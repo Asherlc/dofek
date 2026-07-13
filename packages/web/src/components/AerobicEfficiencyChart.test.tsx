@@ -85,6 +85,30 @@ describe("AerobicEfficiencyChart", () => {
     ]);
   });
 
+  it("shows a visible date x-axis", () => {
+    const activities = [
+      {
+        date: "2026-03-10",
+        activityType: "cycling",
+        name: "Morning Ride",
+        avgPowerZ2: 180,
+        avgHrZ2: 135,
+        efficiencyFactor: 1.333,
+        z2Samples: 600,
+      },
+    ];
+
+    render(<AerobicEfficiencyChart activities={activities} maxHr={190} />);
+    const chartElement = screen.getByTestId("echarts-mock");
+    const option = JSON.parse(chartElement.dataset.option ?? "{}");
+
+    expect(option.xAxis.type).toBe("time");
+    expect(option.xAxis.show).toBe(true);
+    expect(option.xAxis.name).toBe("Date");
+    expect(option.xAxis.axisLine.show).toBe(true);
+    expect(option.xAxis.axisTick.show).toBe(true);
+  });
+
   it("uses original date strings for line points to avoid timezone drift", () => {
     const activities = [
       {

@@ -159,6 +159,7 @@ export class EfficiencyRepository extends BaseRepository {
     const today = new Date().toISOString().slice(0, 10);
     const lowerBoundPredicate = range.clickHouseTimestampAfter("started_at");
     const activitySummaryLowerBoundPredicate = range.clickHouseTimestampAfter("asum.started_at");
+    const powerSampleLowerBoundPredicate = range.clickHouseTimestampAfter("power.recorded_at");
     const rangeParams = range.clickHouseParams();
 
     // Try pre-computed read model first (avoids expensive deduped_sensor scan)
@@ -243,32 +244,67 @@ export class EfficiencyRepository extends BaseRepository {
           AND up.max_hr IS NOT NULL
       )
       SELECT
-        any(am.max_hr) AS max_hr,
-        any(am.date) AS date,
-        any(am.activity_type) AS activity_type,
-        any(am.name) AS name,
+        any(hr.max_hr) AS max_hr,
+        any(hr.date) AS date,
+        any(hr.activity_type) AS activity_type,
+        any(hr.name) AS name,
         round(avg(pwr.scalar), 1) AS avg_power_z2,
-        round(avg(hr.scalar), 1) AS avg_hr_z2,
-        round(avg(pwr.scalar) / nullIf(avg(hr.scalar), 0), 3) AS efficiency_factor,
+        round(avg(hr.heart_rate), 1) AS avg_hr_z2,
+        round(avg(pwr.scalar) / nullIf(avg(hr.heart_rate), 0), 3) AS efficiency_factor,
         toInt32(count()) AS z2_samples
-      FROM activity_meta am
-      INNER JOIN analytics.deduped_sensor hr
-        ON hr.user_id = am.user_id
-       AND hr.recorded_at >= am.started_at
-       AND hr.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
-       AND hr.channel = 'heart_rate'
-       AND hr.is_deleted = 0
-      INNER JOIN analytics.deduped_sensor pwr
-        ON pwr.user_id = hr.user_id
-       AND pwr.channel = 'power'
-       AND pwr.recorded_at = hr.recorded_at
-       AND pwr.is_deleted = 0
-      WHERE hr.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b1:Float64}
-        AND hr.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b2:Float64}
-        AND pwr.scalar > 0
-      GROUP BY am.id
+      FROM (
+        SELECT
+          am.id AS id,
+          am.user_id AS user_id,
+          am.started_at AS started_at,
+          am.ended_at AS ended_at,
+          am.date AS date,
+          am.activity_type AS activity_type,
+          am.name AS name,
+          am.max_hr AS max_hr,
+          hr.recorded_at AS recorded_at,
+          hr.scalar AS heart_rate
+        FROM activity_meta am
+        INNER JOIN analytics.deduped_sensor hr
+          ON hr.user_id = am.user_id
+         AND hr.recorded_at >= am.started_at
+         AND hr.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
+         AND hr.channel = 'heart_rate'
+         AND hr.is_deleted = 0
+        WHERE hr.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b1:Float64}
+          AND hr.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b2:Float64}
+        ORDER BY
+          am.user_id,
+          am.id,
+          hr.recorded_at
+      ) hr
+      ASOF JOIN (
+        SELECT
+          am.id AS id,
+          am.user_id AS user_id,
+          power.recorded_at AS recorded_at,
+          power.scalar AS scalar
+        FROM activity_meta am
+        INNER JOIN analytics.deduped_sensor power
+          ON power.user_id = am.user_id
+         AND power.recorded_at >= am.started_at
+         AND power.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
+         AND power.channel = 'power'
+         AND power.scalar > 0
+         AND power.is_deleted = 0
+        WHERE 1 = 1
+          ${powerSampleLowerBoundPredicate}
+        ORDER BY
+          user_id,
+          id,
+          recorded_at
+      ) pwr
+        ON hr.id = pwr.id
+       AND hr.user_id = pwr.user_id
+       AND hr.recorded_at >= pwr.recorded_at
+      GROUP BY hr.id
       HAVING count() >= 300
-      ORDER BY any(am.started_at)`,
+      ORDER BY any(hr.started_at)`,
       {
         userId: this.userId,
         timezone: this.timezone,

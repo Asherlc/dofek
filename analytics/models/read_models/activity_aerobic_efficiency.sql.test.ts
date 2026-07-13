@@ -20,12 +20,16 @@ describe("activity_aerobic_efficiency model", () => {
     expect(restingByActivitySql).toContain("toDate(resting.ended_at) <= toDate(activity_bounds.started_at)");
   });
 
-  it("joins heart rate and power samples at matching timestamps for Z2 efficiency", () => {
+  it("uses an ASOF join so Zone 2 efficiency does not require identical sample timestamps", () => {
     const z2SamplesSql = extractCteSql(modelSql, "z2_samples");
+    const heartRateSamplesSql = extractCteSql(modelSql, "z2_heart_rate_samples");
+    const powerSamplesSql = extractCteSql(modelSql, "z2_power_samples");
 
-    expect(z2SamplesSql).toContain("channel = 'heart_rate'");
-    expect(z2SamplesSql).toContain("channel = 'power'");
-    expect(z2SamplesSql).toContain("pwr.recorded_at = hr.recorded_at");
+    expect(heartRateSamplesSql).toContain("channel = 'heart_rate'");
+    expect(powerSamplesSql).toContain("channel = 'power'");
+    expect(z2SamplesSql).toContain("ASOF JOIN");
+    expect(z2SamplesSql).toContain("hr.recorded_at >= pwr.recorded_at");
+    expect(z2SamplesSql).not.toContain("pwr.recorded_at = hr.recorded_at");
     expect(z2SamplesSql).toContain("HAVING count() >= 300");
   });
 

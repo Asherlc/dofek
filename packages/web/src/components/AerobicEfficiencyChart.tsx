@@ -49,7 +49,14 @@ export function AerobicEfficiencyChart({
   const option = {
     grid: dofekGrid("dualAxis", { top: 40, left: 55 }),
     tooltip: dofekTooltip(),
-    xAxis: dofekAxis.time(),
+    xAxis: {
+      ...dofekAxis.time({ show: true }),
+      name: "Date",
+      nameLocation: "middle",
+      nameGap: 28,
+      axisLine: { show: true, lineStyle: { color: chartThemeColors.axisLine } },
+      axisTick: { show: true },
+    },
     yAxis: [
       dofekAxis.value({ name: "Power (W)" }),
       dofekAxis.value({
