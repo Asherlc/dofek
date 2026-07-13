@@ -163,7 +163,7 @@ describe("createIngestZosHealthRouter", () => {
     const response = await post(createTestApp(db), {});
 
     expect(response.status).toBe(401);
-    expect(response.body).toEqual({ error: "Companion token is required." });
+    expect(response.body).toEqual({ error: "Dofek connection is required." });
     expect(routeMocks.validateCompanionToken).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
@@ -176,7 +176,7 @@ describe("createIngestZosHealthRouter", () => {
     const response = await post(createTestApp(db), {}, { authorization: "Bearer invalid-token" });
 
     expect(response.status).toBe(401);
-    expect(response.body).toEqual({ error: "Invalid or revoked companion token." });
+    expect(response.body).toEqual({ error: "Invalid or revoked Dofek connection." });
     expect(routeMocks.validateCompanionToken).toHaveBeenCalledWith(db, "invalid-token");
     expect(execute).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
@@ -190,7 +190,7 @@ describe("createIngestZosHealthRouter", () => {
     const response = await post(createTestApp(db), {}, { authorization: "Bearer token-123" });
 
     expect(response.status).toBe(500);
-    expect(response.body).toEqual({ error: "Failed to validate companion token." });
+    expect(response.body).toEqual({ error: "Failed to validate Dofek connection." });
     expect(routeMocks.captureException).toHaveBeenCalledWith(validationError);
     expect(routeMocks.loggerError).toHaveBeenCalledWith(
       `[ingest-zos] Token validation failed: ${validationError}`,

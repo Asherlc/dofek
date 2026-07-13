@@ -81,7 +81,7 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
   router.post("/zos-health", express.json(), async (req, res) => {
     const token = bearerTokenFromHeader(req.headers.authorization);
     if (token === null) {
-      sendJson(res, 401, { error: "Companion token is required." });
+      sendJson(res, 401, { error: "Dofek connection is required." });
       return;
     }
 
@@ -89,14 +89,14 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
     try {
       const validatedUserId = await validateCompanionToken(deps.db, token);
       if (!validatedUserId) {
-        sendJson(res, 401, { error: "Invalid or revoked companion token." });
+        sendJson(res, 401, { error: "Invalid or revoked Dofek connection." });
         return;
       }
       userId = validatedUserId;
     } catch (error) {
       Sentry.captureException(error);
       logger.error(`[ingest-zos] Token validation failed: ${error}`);
-      sendJson(res, 500, { error: "Failed to validate companion token." });
+      sendJson(res, 500, { error: "Failed to validate Dofek connection." });
       return;
     }
 

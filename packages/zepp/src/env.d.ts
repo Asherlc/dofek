@@ -162,12 +162,26 @@ declare module "@zos/ui" {
     setProperty(prop: number, value: string | number): void;
   }
 
-  export const widget: { TEXT: number; BUTTON: number; IMAGE: number; [key: string]: number };
-  export const prop: { TEXT: number; [key: string]: number };
+  export const widget: {
+    TEXT: number;
+    BUTTON: number;
+    IMAGE: number;
+    QRCODE: number;
+    [key: string]: number;
+  };
+  export const prop: { TEXT: number; VISIBLE: number; [key: string]: number };
   export const align: { CENTER_H: number; LEFT: number; [key: string]: number };
   export const text_style: { NONE: number; WRAP: number; [key: string]: number };
+  export const inputType: { CHAR: number; NUM: number; EMOJI: number; VOICE: number };
 
   export function createWidget(type: WidgetType, options: Record<string, unknown>): WidgetInstance;
+  export function deleteWidget(widget: WidgetInstance): void;
+  export function createKeyboard(options: {
+    inputType: number;
+    text?: string;
+    onComplete: (keyboardWidget: unknown, result: string) => void;
+    onCancel: (keyboardWidget: unknown, result?: string) => void;
+  }): unknown;
 }
 
 type PageHelpers = {
@@ -236,10 +250,31 @@ interface PageContext {
 
 interface SideServiceContext {
   call(options: { method: string; params: Record<string, unknown> }): void;
-  getPreferences(): { enableGyro: boolean; freqModeIndex: number };
+  getPreferences(): {
+    enableGyro: boolean;
+    freqModeIndex: number;
+    hasCredentials: boolean;
+    serverUrl: string;
+    pairing: Record<string, unknown> | null;
+  };
   setSessionStatus(payload: Record<string, unknown>): void;
   [key: string]: unknown;
 }
+
+interface ZeppFetchRequest {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+interface ZeppFetchResponse {
+  status?: number;
+  statusCode?: number;
+  body?: unknown;
+}
+
+declare function fetch(options: ZeppFetchRequest): Promise<ZeppFetchResponse>;
 
 interface AppServiceContext {
   scheduleTransferPoll(): void;
@@ -255,6 +290,7 @@ declare const settings: {
   settingsStorage: {
     getItem(key: string): string | null;
     setItem(key: string, value: string): void;
+    removeItem(key: string): void;
     addListener(event: string, callback: (event: { key: string; newValue: string }) => void): void;
   };
 };

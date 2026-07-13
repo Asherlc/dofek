@@ -1,4 +1,4 @@
-import { FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
+import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 
 const EMPTY_RECORD: Record<string, unknown> = {};
 
@@ -24,6 +24,15 @@ function toggle(
   storage.setItem(key, current === "1" ? "0" : "1");
 }
 
+function buildPairingQrImage(sourceUrl: string): HTMLImageElement {
+  const image = new Image(220, 220);
+  image.src = sourceUrl;
+  image.alt = "Dofek pairing QR code";
+  image.style.margin = "0 auto 1em";
+  image.style.display = "block";
+  return image;
+}
+
 const PG_STATE: {
   enableGyro: boolean;
   freqModeIndex: number;
@@ -31,7 +40,14 @@ const PG_STATE: {
   lastExportPath: string | null;
   transferProgress: Record<string, unknown>;
   dofekServerUrl: string;
+  dofekEmail: string;
+  dofekPassword: string;
   dofekApiToken: string;
+  connectionStatus: Record<string, unknown>;
+  pairingShortCode: string | null;
+  pairingVerificationUrl: string | null;
+  pairingQrImageUrl: string | null;
+  pairingExpiresAt: string | null;
   healthSyncStatus: Record<string, unknown>;
   lastHealthSync: string | null;
 } = {
@@ -41,7 +57,14 @@ const PG_STATE: {
   lastExportPath: null,
   transferProgress: EMPTY_RECORD,
   dofekServerUrl: "",
+  dofekEmail: "",
+  dofekPassword: "",
   dofekApiToken: "",
+  connectionStatus: EMPTY_RECORD,
+  pairingShortCode: null,
+  pairingVerificationUrl: null,
+  pairingQrImageUrl: null,
+  pairingExpiresAt: null,
   healthSyncStatus: EMPTY_RECORD,
   lastHealthSync: null,
 };
@@ -64,6 +87,10 @@ AppSettingsPage({
         : "n/a";
 
     const healthStatus = this.state.healthSyncStatus;
+    const connectionStatus = this.state.connectionStatus;
+    const hasPairingCode = Boolean(
+      this.state.pairingShortCode && this.state.pairingVerificationUrl,
+    );
 
     const blocks: Array<unknown> = [
       View({ style: { margin: "1em", fontSize: "1.3rem", fontWeight: "bold" } }, ["IMU Logger"]),
@@ -153,15 +180,72 @@ AppSettingsPage({
         },
       }),
 
-      TextInput({
-        title: "Dofek API Token",
-        bold: false,
-        placeholder: this.state.dofekApiToken ? "••••••••" : "Paste your companion token",
-        onChange: (value: string) => {
-          this.state.dofekApiToken = value;
-          props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, value);
+      Button({
+        label: "Create QR / short code",
+        color: "primary",
+        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
+        onClick: () => {
+          toggle(props.settingsStorage, STORAGE_KEYS.CMD_START_PAIRING);
         },
       }),
+
+      hasPairingCode
+        ? View({ style: { margin: "1em", fontSize: "1.1rem", lineHeight: "1.5rem" } }, [
+            `Short code: ${this.state.pairingShortCode}`,
+            this.state.pairingVerificationUrl ? `Open: ${this.state.pairingVerificationUrl}` : "",
+            this.state.pairingExpiresAt
+              ? `Expires: ${new Date(this.state.pairingExpiresAt).toLocaleTimeString()}`
+              : "",
+          ])
+        : View({ style: { margin: "0 1em 1em", fontSize: "1.1rem", color: "#888" } }, [
+            "Create a code, then scan the QR or enter the code in Dofek.",
+          ]),
+
+      this.state.pairingQrImageUrl
+        ? buildPairingQrImage(this.state.pairingQrImageUrl)
+        : View({}, []),
+
+      TextInput({
+        title: "Dofek Email",
+        bold: false,
+        value: this.state.dofekEmail,
+        onChange: (value: string) => {
+          this.state.dofekEmail = value;
+          props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_EMAIL, value);
+        },
+      }),
+
+      TextInput({
+        title: "Dofek Password",
+        bold: false,
+        placeholder: "Enter your Dofek password",
+        onChange: (value: string) => {
+          this.state.dofekPassword = value;
+        },
+      }),
+
+      Button({
+        label: "Log in and connect",
+        color: "primary",
+        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
+        onClick: () => {
+          props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_EMAIL, this.state.dofekEmail);
+          props.settingsStorage.setItem(
+            STORAGE_KEYS.CMD_LOGIN_PASSWORD,
+            JSON.stringify({
+              email: this.state.dofekEmail,
+              password: this.state.dofekPassword,
+              nonce: Date.now(),
+            }),
+          );
+          this.state.dofekPassword = "";
+        },
+      }),
+
+      View({ style: { margin: "0 1em 1em", fontSize: "1.1rem", lineHeight: "1.5rem" } }, [
+        `Connection: ${String(connectionStatus.state ?? "not connected")}`,
+        connectionStatus.reason ? `Reason: ${String(connectionStatus.reason)}` : "",
+      ]),
 
       Button({
         label: "Sync health data now",
@@ -204,8 +288,22 @@ AppSettingsPage({
       props.settingsStorage.getItem(STORAGE_KEYS.TRANSFER_PROGRESS),
       {},
     );
-    this.state.dofekServerUrl = props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL) ?? "";
+    this.state.dofekServerUrl =
+      props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL) ?? DEFAULT_DOFEK_SERVER_URL;
+    this.state.dofekEmail = props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_EMAIL) ?? "";
     this.state.dofekApiToken = props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN) ?? "";
+    this.state.connectionStatus = readJson(
+      props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_CONNECTION_STATUS),
+      {},
+    );
+    this.state.pairingShortCode =
+      props.settingsStorage.getItem(STORAGE_KEYS.PAIRING_SHORT_CODE) ?? null;
+    this.state.pairingVerificationUrl =
+      props.settingsStorage.getItem(STORAGE_KEYS.PAIRING_VERIFICATION_URL) ?? null;
+    this.state.pairingQrImageUrl =
+      props.settingsStorage.getItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL) ?? null;
+    this.state.pairingExpiresAt =
+      props.settingsStorage.getItem(STORAGE_KEYS.PAIRING_EXPIRES_AT) ?? null;
     this.state.healthSyncStatus = readJson(
       props.settingsStorage.getItem(STORAGE_KEYS.HEALTH_SYNC_STATUS),
       {},

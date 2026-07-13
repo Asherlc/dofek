@@ -1,6 +1,6 @@
 # Dofek Zepp
 
-Zepp OS mini program that captures raw accelerometer (and optional gyroscope) samples on the watch, buffers them to a watch-side binary file, and exports the file to the phone over BLE. No vendor cloud — data path is **watch → phone Zepp app → local file**.
+Zepp OS mini program that captures raw accelerometer (and optional gyroscope) samples on the watch, buffers them to a watch-side binary file, and exports the file to the phone over BLE. It can also collect supported Zepp health summaries on the watch and upload them from the phone-side Side Service to Dofek using the stored connection credential. Zepp documents Side Service as the phone-side runtime; this app uses `@zeppos/zml` messaging between the watch app and Side Service, and the Side Service uses Fetch API for Dofek server calls ([Side Service intro](https://docs.zepp.com/docs/guides/framework/side-service/intro/), [Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/)).
 
 ## Target devices
 
@@ -32,8 +32,11 @@ Configured in `app.json` as screen-width target groups.
 ┌──────────────────── Phone ────────────────────┐
 │ Side Service (app-side/index.ts)              │
 │  • onReceivedFile → saves export path         │
+│  • uploads health summaries to Dofek          │
+│  • pairs QR/short code or password login      │
 │ Settings App (setting/index.ts)               │
 │  • start/stop, freq mode, gyro flag, export   │
+│  • Dofek URL, QR/short code, login, token     │
 └───────────────────────────────────────────────┘
 ```
 
@@ -52,20 +55,35 @@ Bulk IMU logs are megabytes, while BLE messaging is oriented toward small binary
 
 `configVersion` is **v3** because `app-service` module registration requires v3 schema, while APIs used are Zepp OS 2.0+ `@zos/*` modules.
 
+## Dofek pairing and login
+
+The Zepp app supports multiple ways to connect Dofek to the phone-side Side Service:
+
+| Flow | Where it starts | Where it finishes | Notes |
+|---|---|---|---|
+| QR from watch | Watch app | Dofek web/mobile settings | The watch renders a Zepp `QRCODE` widget with the Dofek verification URL. Zepp documents this widget for API_LEVEL 2.0+ ([QRCODE](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/QRCODE/)). |
+| QR from Zepp iOS app | Zepp mini program Settings | Dofek web/mobile settings | The Settings App displays the server-generated QR SVG URL as an image. |
+| Short code | Watch or Zepp Settings | Dofek web/mobile settings | Enter the six-character code in Dofek Settings. The server claim endpoint completes the connection for the polling Side Service. |
+| Dofek email/password | Zepp mini program Settings | Zepp Side Service | The Side Service exchanges credentials through Dofek's password-login endpoint. |
+| Dofek email/password | Watch app | Zepp Side Service | The watch asks the Side Service to log in after collecting text with Zepp's system keyboard. `SYSTEM_KEYBOARD` starts at API_LEVEL 4.0, so older watches keep the other pairing flows ([SYSTEM_KEYBOARD](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/SYSTEM_KEYBOARD/)). |
+
+Pairing challenges expire after ten minutes. The Zepp Side Service uses Zepp's object-form Fetch API to call Dofek and poll for completion ([Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/)).
+
 ## Build & install
 
-Requires Node ≥ 14 and the Zeus CLI:
+Requires Node ≥ 26. The Zeus CLI is installed from this package's dev dependencies:
 
 ```bash
-npm i -g @zeppos/zeus-cli
-cd zepp
+cd packages/zepp
 pnpm install
 ```
+
+The package scripts invoke the local `@zeppos/zeus-cli` dependency through `tools/zeus.ts`; no global Zeus install is required.
 
 ### Simulator
 
 ```bash
-zeus dev
+pnpm dev
 ```
 
 Choose a simulator profile matching one of the supported target widths. Simulator sensor values are synthetic; delivered Hz will not match hardware.
@@ -77,9 +95,9 @@ Choose a simulator profile matching one of the supported target widths. Simulato
 3. Build and install:
 
 ```bash
-zeus preview
+pnpm preview
 # or
-zeus build
+pnpm build
 ```
 
 4. Open **Dofek Zepp** on the watch, grant accelerometer + background service permissions when prompted.
@@ -92,7 +110,7 @@ There's no Zepp Store submission API — the final upload is manual.
 
 ### Automatic builds (every main push)
 
-Every push to `main` triggers `release-zepp.yml`: patches an auto-generated version into `app.json` and `package.json`, runs `zeus build`, and uploads the `.zab` artifact (retained 90 days). The built artifact is always available at:
+Every push to `main` triggers `release-zepp.yml`: patches an auto-generated version into `app.json` and `package.json`, runs `pnpm build` with the local Zeus wrapper, and uploads the `.zab` artifact (retained 90 days). The built artifact is always available at:
 
 > GitHub → Actions → Release Dofek Zepp (Zepp Store) → latest run → Artifacts → `zepp-zab`
 

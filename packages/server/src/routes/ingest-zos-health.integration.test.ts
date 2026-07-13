@@ -77,7 +77,7 @@ describe("POST /api/ingest/zos-health", () => {
   it("returns 401 when no auth header is provided", async () => {
     const res = await post(app, "/api/ingest/zos-health", { body: {} });
     expect(res.status).toBe(401);
-    expect(JSON.parse(res.body)).toEqual({ error: "Companion token is required." });
+    expect(JSON.parse(res.body)).toEqual({ error: "Dofek connection is required." });
   });
 
   it("returns 401 when auth header has no Bearer token", async () => {
@@ -86,7 +86,7 @@ describe("POST /api/ingest/zos-health", () => {
       body: {},
     });
     expect(res.status).toBe(401);
-    expect(JSON.parse(res.body)).toEqual({ error: "Companion token is required." });
+    expect(JSON.parse(res.body)).toEqual({ error: "Dofek connection is required." });
   });
 
   it("returns 401 when auth header has empty Bearer token", async () => {
@@ -95,7 +95,7 @@ describe("POST /api/ingest/zos-health", () => {
       body: {},
     });
     expect(res.status).toBe(401);
-    expect(JSON.parse(res.body)).toEqual({ error: "Companion token is required." });
+    expect(JSON.parse(res.body)).toEqual({ error: "Dofek connection is required." });
   });
 
   it("returns 401 when companion token is invalid", async () => {
@@ -104,7 +104,7 @@ describe("POST /api/ingest/zos-health", () => {
       body: {},
     });
     expect(res.status).toBe(401);
-    expect(JSON.parse(res.body)).toEqual({ error: "Invalid or revoked companion token." });
+    expect(JSON.parse(res.body)).toEqual({ error: "Invalid or revoked Dofek connection." });
   });
 
   // ── Payload validation tests ──

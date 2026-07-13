@@ -1,18 +1,23 @@
 // @vitest-environment jsdom
 
 import { formatDateTime } from "@dofek/format/format";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFileWrite = vi.fn();
-vi.mock("expo-file-system", () => ({
-  Paths: { cache: { uri: "file:///tmp/cache" } },
-  File: vi.fn().mockImplementation(() => ({
-    uri: "file:///tmp/cache/health-export.zip",
+const mockDownloadFileAsync = vi.fn();
+vi.mock("expo-file-system", () => {
+  const MockFile = vi.fn().mockImplementation((_cache, filename: string) => ({
+    uri: `file:///tmp/cache/${filename}`,
     write: mockFileWrite,
-  })),
-}));
+  }));
+  MockFile.downloadFileAsync = mockDownloadFileAsync;
+  return {
+    Paths: { cache: { uri: "file:///tmp/cache" } },
+    File: MockFile,
+  };
+});
 
 vi.mock("expo-sharing", () => ({
   shareAsync: vi.fn(),
@@ -42,6 +47,7 @@ vi.mock("../components/ProviderLogo", () => ({
 const mockRouterPush = vi.fn();
 const mockCheckoutSession = vi.fn();
 const mockPortalSession = vi.fn();
+let mockSessionToken: string | null = "test-token";
 const defaultBillingStatus = {
   hasFullAccess: false,
   access: {
@@ -67,11 +73,18 @@ vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
     logout: vi.fn(),
     serverUrl: "https://test.example.com",
-    sessionToken: "test-token",
+    sessionToken: mockSessionToken,
   }),
 }));
 
 const mockLinkedAccountsRefetch = vi.fn();
+const mockZeppPairingClaim = vi.fn();
+type ZeppPairingMutationOptions = {
+  onError?: (error: { message: string }) => void;
+  onMutate?: () => void;
+  onSuccess?: () => void;
+};
+let mockZeppPairingMutationOptions: ZeppPairingMutationOptions | null = null;
 const mockPasswordCredentialStatusQuery = vi.fn(() => ({
   data: { hasPassword: false },
   isLoading: false,
@@ -145,6 +158,22 @@ vi.mock("../lib/trpc", () => ({
         }),
       },
     },
+    companionPairing: {
+      claim: {
+        useMutation: (options: ZeppPairingMutationOptions) => {
+          mockZeppPairingMutationOptions = options;
+          return {
+            mutate: (input: { code: string }) => {
+              options.onMutate?.();
+              mockZeppPairingClaim(input);
+            },
+            isPending: false,
+            isError: false,
+            error: null,
+          };
+        },
+      },
+    },
     medicationDoseEvents: {
       list: {
         useQuery: () => ({ data: { events: [] }, isLoading: false, error: null }),
@@ -173,10 +202,12 @@ vi.mock("../lib/trpc", () => ({
 }));
 
 beforeEach(() => {
+  mockSessionToken = "test-token";
   mockBillingStatus = {
     ...defaultBillingStatus,
     access: { ...defaultBillingStatus.access },
   };
+  mockZeppPairingMutationOptions = null;
   vi.clearAllMocks();
 });
 
@@ -240,6 +271,37 @@ describe("SettingsScreen password", () => {
 
     expect(await screen.findByPlaceholderText("Current password")).toBeTruthy();
     expect(await screen.findByText("Change Password")).toBeTruthy();
+  });
+});
+
+describe("SettingsScreen Zepp pairing", () => {
+  it("claims a short code from settings", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    fireEvent.change(screen.getByPlaceholderText("Short code"), {
+      target: { value: "ABCD23" },
+    });
+    fireEvent.click(screen.getByText("Connect Zepp App"));
+
+    expect(mockZeppPairingClaim).toHaveBeenCalledWith({ code: "ABCD23" });
+  });
+
+  it("clears stale pairing messages when the code changes", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+    await act(async () => {
+      mockZeppPairingMutationOptions?.onError?.({ message: "Old pairing error" });
+    });
+    expect(await screen.findByText("Old pairing error")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("Short code"), {
+      target: { value: "WXYZ34" },
+    });
+
+    expect(screen.queryByText("Old pairing error")).toBeNull();
   });
 });
 
@@ -311,13 +373,20 @@ describe("SettingsScreen export UI rendering", () => {
   it("shows Starting... and disables the button while processing", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(() => new Promise(() => {})),
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ exports: [] }),
+        })
+        .mockImplementation(() => new Promise(() => {})),
     );
 
     const { default: SettingsScreen } = await import("./settings");
 
     render(<SettingsScreen />);
 
+    await screen.findByText("No exports available.");
     const button = screen.getByText("Start Export");
     fireEvent.click(button);
 
@@ -389,6 +458,19 @@ describe("SettingsScreen export flow", () => {
       expect(screen.getByText("Export in progress")).toBeTruthy();
     });
     expect(screen.getByText("We'll email you when it finishes.")).toBeTruthy();
+  });
+
+  it("does not request exports when the session token is blank", async () => {
+    mockSessionToken = "   ";
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    await screen.findByText("Sign in again to load exports.");
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("queues an export and refreshes the export list", async () => {
@@ -466,6 +548,7 @@ describe("SettingsScreen export flow", () => {
   it("downloads a completed export from the available export list", async () => {
     const { shareAsync } = await import("expo-sharing");
     const { File: ExpoFile } = await import("expo-file-system");
+    mockDownloadFileAsync.mockResolvedValue(undefined);
 
     const mockFetch = vi.fn().mockImplementation((url: string) => {
       if (url === "https://test.example.com/api/export") {
@@ -489,14 +572,6 @@ describe("SettingsScreen export flow", () => {
             }),
         });
       }
-      if (url === "https://test.example.com/api/export/download/export-789") {
-        const fakeBytes = new Uint8Array([1, 2, 3]);
-        const blob = new Blob([fakeBytes], { type: "application/zip" });
-        return Promise.resolve({
-          ok: true,
-          blob: () => Promise.resolve(blob),
-        });
-      }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
 
@@ -511,9 +586,16 @@ describe("SettingsScreen export flow", () => {
 
     await waitFor(() => {
       expect(ExpoFile).toHaveBeenCalled();
-      expect(mockFileWrite).toHaveBeenCalled();
+      expect(mockDownloadFileAsync).toHaveBeenCalledWith(
+        "https://test.example.com/api/export/download/export-789",
+        expect.objectContaining({ uri: "file:///tmp/cache/export-789-dofek-export.zip" }),
+        expect.objectContaining({
+          headers: { Authorization: "Bearer test-token" },
+          idempotent: true,
+        }),
+      );
       expect(shareAsync).toHaveBeenCalledWith(
-        "file:///tmp/cache/health-export.zip",
+        "file:///tmp/cache/export-789-dofek-export.zip",
         expect.objectContaining({ mimeType: "application/zip" }),
       );
     });

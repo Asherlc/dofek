@@ -1,0 +1,55 @@
+import { PasswordLoginRequestSchema } from "@dofek/auth/auth";
+import * as Sentry from "@sentry/node";
+import type { Database } from "dofek/db";
+import express, { Router } from "express";
+import {
+  authenticatePasswordUser,
+  InvalidCredentialsError,
+  isPasswordAuthEnabled,
+} from "../auth/password-credential.ts";
+import { regenerateCompanionToken } from "../companion/token-repository.ts";
+import { logger } from "../logger.ts";
+
+function sendJson(res: import("express").Response, status: number, body: unknown): void {
+  res.status(status).json(body);
+}
+
+export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
+  const router = Router();
+
+  router.post("/password-login", express.json(), async (req, res) => {
+    if (!isPasswordAuthEnabled()) {
+      sendJson(res, 404, { error: "Password authentication is not enabled" });
+      return;
+    }
+
+    const parsed = PasswordLoginRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendJson(res, 400, { error: "Invalid login details" });
+      return;
+    }
+
+    try {
+      const { userId } = await authenticatePasswordUser(
+        deps.db,
+        parsed.data.email,
+        parsed.data.password,
+      );
+      const companionToken = await regenerateCompanionToken(deps.db, userId);
+      if (!companionToken.token) {
+        throw new Error("Companion token was regenerated without returning a token");
+      }
+      sendJson(res, 200, companionToken);
+    } catch (error: unknown) {
+      if (error instanceof InvalidCredentialsError) {
+        sendJson(res, 401, { error: error.message });
+        return;
+      }
+      Sentry.captureException(error);
+      logger.error(`[companion-token] Password login failed: ${error}`);
+      sendJson(res, 500, { error: "Failed to create Dofek connection." });
+    }
+  });
+
+  return router;
+}
