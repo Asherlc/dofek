@@ -268,14 +268,20 @@ describe("processImportJob", () => {
       job.updateProgress.mockRejectedValue(progressError);
       await runImportJob(job, mockDb);
 
-      // The catch block should log a warning with the error
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        "Failed to update import progress: %s",
-        progressError,
+      const importProgressWarnings = mockLoggerWarn.mock.calls.filter(
+        ([message]) => message === "Failed to update import progress: %s",
       );
-      expect(mockCaptureException).toHaveBeenCalledWith(progressError, {
+      expect(importProgressWarnings).toEqual([
+        ["Failed to update import progress: %s", progressError],
+        ["Failed to update import progress: %s", progressError],
+      ]);
+      expect(mockCaptureException).toHaveBeenNthCalledWith(1, progressError, {
         tags: { phase: "import-progress-update" },
       });
+      expect(mockCaptureException).toHaveBeenNthCalledWith(2, progressError, {
+        tags: { phase: "import-progress-update" },
+      });
+      expect(mockCaptureException).toHaveBeenCalledTimes(2);
     });
 
     it("only logs progress at 10% increments", async () => {
