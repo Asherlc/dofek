@@ -12818,8 +12818,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   packages/server/src/billing/config.test.ts
   packages/server/src/routes/companion-pairing.test.ts
   packages/server/src/auth/password-reset.integration.test.ts`,
-  `pnpm typecheck`, and `pnpm lint` passed locally. `pnpm lint` initially failed
-  because local ClickHouse was not running; after starting ClickHouse and
+  and `pnpm typecheck` passed locally on the first attempt. `pnpm lint` initially
+  failed because local ClickHouse was not running; after starting ClickHouse and
   refreshing `.env.local`, the same command passed without code changes.
 - **Remaining risk / follow-up:** CI has not been rerun on these uncommitted
   changes yet. The next deploy should confirm the `web` service reaches the new

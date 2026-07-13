@@ -119,6 +119,16 @@ describe("password reset service", () => {
     expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
   });
 
+  it("fails loudly when the app URL does not use HTTP", async () => {
+    process.env.PUBLIC_URL = "file:///tmp/dofek";
+
+    await expect(createPasswordResetToken(ctx.db, "missing@example.com")).rejects.toThrow(
+      "PUBLIC_URL environment variable must use http or https",
+    );
+
+    expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
+  });
+
   it("resets the password and consumes the token", async () => {
     await registerPasswordUser(ctx.db, {
       email: "reset@example.com",

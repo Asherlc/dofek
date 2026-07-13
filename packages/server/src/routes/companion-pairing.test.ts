@@ -114,6 +114,14 @@ describe("createCompanionPairingRouter", () => {
     );
   });
 
+  it("fails loudly when PUBLIC_URL is blank", async () => {
+    process.env.PUBLIC_URL = "   ";
+
+    expect(() => createTestApp(new InMemoryCompanionPairingStore())).toThrow(
+      "PUBLIC_URL environment variable is required",
+    );
+  });
+
   it("fails loudly when PUBLIC_URL does not use HTTP", async () => {
     process.env.PUBLIC_URL = "file:///tmp/dofek";
 

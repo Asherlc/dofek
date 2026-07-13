@@ -27,6 +27,12 @@ describe("getStripeBillingConfig", () => {
     });
   });
 
+  it("normalizes the public app URL for return URL composition", () => {
+    setBillingEnv({ PUBLIC_URL: " https://app.example.com/ " });
+
+    expect(getStripeBillingConfig().appBaseUrl).toBe("https://app.example.com");
+  });
+
   it("fails fast when a required key is missing", () => {
     setBillingEnv({ STRIPE_PRICE_ID: "" });
 
