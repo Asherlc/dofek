@@ -12853,3 +12853,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   unrelated ClickHouse analytics tests exceeded the local 3 GiB ClickHouse
   memory limit during Stryker's initial discovery run, but the hosted CI
   mutation shard passed on the pushed fix.
+
+## 2026-07-13 — Activity Summary Power Sample Rate Broke Stryker Discovery
+
+- **Symptoms:** PR `1595` failed `Test / Stryker (0)`, `Test / Stryker (2)`,
+  and `Test / Stryker (3)`, which caused `Test / Mutation Testing`,
+  `Test / Test Gate`, and `CI Gate` to fail.
+- **User impact:** The PR could not merge while Stryker's initial test run
+  failed before mutation testing could start.
+- **Evidence:** The first fatal log line in each failed Stryker shard was
+  `Unexpected inf or nan to integer conversion` while inserting into
+  `analytics_test_*.activity_summary`. Stryker then reported
+  `There were failed tests in the initial test run.`
+- **Root cause:** ClickHouse evaluates the grouped power sample-rate expression
+  before applying `HAVING count() > 1`; single-power-sample activities therefore
+  evaluated `dateDiff(...) / nullIf(count() - 1, 0)` as an infinite or NaN
+  value before the group was filtered out.
+- **Fix / mitigation:** Replaced the sample-rate denominator with
+  `greatest(count() - 1, 1)` in the activity summary dbt model, bootstrap SQL,
+  VO2 max model, and server power-query copies. Added unit assertions and a
+  lightweight executable ClickHouse regression for a single-sample group.
+- **Validation:** Locally, the focused model/bootstrap tests, the executable
+  ClickHouse regression, repository unit tests, `pnpm lint`, `pnpm typecheck`,
+  and root `pnpm tsc --noEmit` passed.
+- **Remaining risk / follow-up:** Low. The full local router-level activity
+  summary rebuild still exceeds the local ClickHouse 3 GiB memory limit on the
+  recursive activity de-duplication CTE, so hosted CI remains the source of
+  truth for the full Stryker matrix.

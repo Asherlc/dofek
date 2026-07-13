@@ -260,7 +260,7 @@ power_sample_rate AS (
   SELECT
     activity_id,
     greatest(toInt32(round(
-      dateDiff('second', min(recorded_at), max(recorded_at)) / nullIf(count() - 1, 0)
+      dateDiff('second', min(recorded_at), max(recorded_at)) / greatest(count() - 1, 1)
     )), 1) AS interval_seconds
   FROM power_cumulative
   GROUP BY activity_id

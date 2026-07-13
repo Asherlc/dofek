@@ -238,7 +238,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             greatest(
               toInt32(round(
                 dateDiff('second', min(recorded_at), max(recorded_at))
-                / nullIf(count() - 1, 0)
+                / greatest(count() - 1, 1)
               )),
               1
             ) AS interval_s
@@ -326,7 +326,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             greatest(
               toInt32(round(
                 dateDiff('second', min(recorded_at), max(recorded_at))
-                / nullIf(count() - 1, 0)
+                / greatest(count() - 1, 1)
               )),
               1
             ) AS interval_s
