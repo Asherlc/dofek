@@ -71,13 +71,14 @@ Pairing challenges expire after ten minutes. The Zepp Side Service uses Zepp's o
 
 ## Build & install
 
-Requires Node ≥ 14 and the Zeus CLI:
+Requires Node ≥ 26. The Zeus CLI is installed from this package's dev dependencies:
 
 ```bash
-npm i -g @zeppos/zeus-cli
 cd packages/zepp
 pnpm install
 ```
+
+The package scripts invoke the local `@zeppos/zeus-cli` dependency through `tools/zeus.ts`; no global Zeus install is required.
 
 ### Simulator
 
