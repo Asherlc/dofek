@@ -105,6 +105,17 @@ export default function SettingsScreen() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [zeppPairingCode, setZeppPairingCode] = useState("");
+  const [zeppPairingMessage, setZeppPairingMessage] = useState("");
+  const zeppPairingMutation = trpc.companionPairing.claim.useMutation({
+    onSuccess: () => {
+      setZeppPairingCode("");
+      setZeppPairingMessage("Zepp app connected. Return to Zepp to sync.");
+    },
+    onError: (error) => {
+      setZeppPairingMessage(error.message);
+    },
+  });
 
   // ── Data Export ──
   const [exportState, setExportState] = useState<ExportState>("idle");
@@ -175,6 +186,10 @@ export default function SettingsScreen() {
       currentPassword: passwordStatus.data?.hasPassword ? currentPassword : undefined,
       newPassword,
     });
+  }
+
+  function handleClaimZeppPairing() {
+    zeppPairingMutation.mutate({ code: zeppPairingCode });
   }
 
   function handleLogout() {
@@ -394,6 +409,45 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
         )}
+      </View>
+
+      {/* ── Zepp App Pairing ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Zepp App Pairing</Text>
+        <Text style={styles.sectionDescription}>Connect the Zepp watch app to this account</Text>
+        <View style={styles.card}>
+          <TextInput
+            style={styles.passwordInput}
+            value={zeppPairingCode}
+            onChangeText={setZeppPairingCode}
+            placeholder="Short code"
+            placeholderTextColor={colors.textSecondary}
+            autoCapitalize="characters"
+          />
+          <TouchableOpacity
+            style={[
+              styles.passwordButton,
+              (zeppPairingMutation.isPending || !zeppPairingCode.trim()) && styles.buttonDisabled,
+            ]}
+            onPress={handleClaimZeppPairing}
+            disabled={zeppPairingMutation.isPending || !zeppPairingCode.trim()}
+          >
+            <Text style={styles.passwordButtonText}>
+              {zeppPairingMutation.isPending ? "Connecting..." : "Connect Zepp App"}
+            </Text>
+          </TouchableOpacity>
+          {zeppPairingMessage ? (
+            <Text
+              style={
+                zeppPairingMutation.isError
+                  ? styles.passwordErrorText
+                  : styles.zeppPairingSuccessText
+              }
+            >
+              {zeppPairingMessage}
+            </Text>
+          ) : null}
+        </View>
       </View>
 
       {/* ── Units ── */}
@@ -1114,6 +1168,11 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 12,
     marginBottom: 8,
+  },
+  zeppPairingSuccessText: {
+    color: colors.accent,
+    fontSize: 12,
+    marginTop: 8,
   },
   passwordButton: {
     alignItems: "center",

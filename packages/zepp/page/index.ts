@@ -22,7 +22,7 @@ import {
   Step,
   Stress,
 } from "@zos/sensor";
-import { align, createWidget, prop, text_style, widget } from "@zos/ui";
+import { align, createKeyboard, createWidget, inputType, prop, text_style, widget } from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
 
 import { collectHealthData } from "../src/health-collector.ts";
@@ -65,6 +65,7 @@ let statusText: ReturnType<typeof createWidget> | null = null;
 let sensorInfoText: ReturnType<typeof createWidget> | null = null;
 let sampleText: ReturnType<typeof createWidget> | null = null;
 let hintText: ReturnType<typeof createWidget> | null = null;
+let pairingQrContent: string | null = null;
 
 function renderStatus(text: string) {
   if (statusText) {
@@ -90,6 +91,15 @@ function renderHint(text: string) {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getString(value: Record<string, unknown>, key: string): string {
+  const raw = value[key];
+  return typeof raw === "string" ? raw.trim() : "";
+}
+
 Page(
   BasePage({
     state: {
@@ -106,6 +116,10 @@ Page(
       // biome-ignore lint/plugin/no-as-type-assertion: widens literal "A" to "A" | "B" for state field inference
       activeFile: "A" as ActiveFileSlot,
       hasCredentials: false,
+      dofekEmail: "",
+      dofekPassword: "",
+      pairingVerificationUrl: "",
+      pairingShortCode: "",
     },
 
     onInit() {
@@ -173,6 +187,22 @@ Page(
         text_style: text_style.WRAP,
         text: "",
       });
+
+      createWidget(widget.BUTTON, {
+        x: px(40),
+        y: DEVICE_WIDTH <= 360 ? px(338) : px(438),
+        w: DEVICE_WIDTH - px(80),
+        h: px(44),
+        text: "Login on watch",
+        color: 0xffffff,
+        text_size: px(22),
+        normal_color: 0x1976d2,
+        press_color: 0x64a8f0,
+        radius: px(10),
+        click_func: () => {
+          this.loginFromWatch();
+        },
+      });
     },
 
     refreshPreferences() {
@@ -184,6 +214,11 @@ Page(
           this.state.enableGyro = result?.enableGyro === true;
           this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
           this.state.hasCredentials = result?.hasCredentials === true;
+          const pairing = isRecord(result?.pairing) ? result.pairing : null;
+          this.renderPairing(pairing);
+          if (!this.state.hasCredentials && !pairing) {
+            this.startPairingFromWatch();
+          }
           this.startLogging();
         })
         .catch((error) => {
@@ -287,10 +322,106 @@ Page(
         renderSensorInfo(
           collector.hasGyroscope ? `Accel · Gyro · ${modeLabel}` : `Accel · ${modeLabel}`,
         );
-        renderHint(this.state.hasCredentials ? "" : "Not connected\nOpen Zepp app → Settings");
+        if (this.state.hasCredentials) {
+          renderHint("");
+        } else if (!this.state.pairingShortCode) {
+          renderHint("Not connected\nCreating pairing code...");
+        }
         renderStatus("● Recording");
 
         this.publishSessionStatus("logging");
+      });
+    },
+
+    renderPairing(pairing: Record<string, unknown> | null) {
+      if (!pairing || this.state.hasCredentials) {
+        return;
+      }
+
+      const verificationUrl = getString(pairing, "verificationUrl");
+      const shortCode = getString(pairing, "shortCode");
+      if (!verificationUrl || !shortCode) {
+        return;
+      }
+
+      this.state.pairingVerificationUrl = verificationUrl;
+      this.state.pairingShortCode = shortCode;
+      renderHint(`Pair Dofek\nCode ${shortCode}`);
+
+      if (pairingQrContent === verificationUrl) {
+        return;
+      }
+
+      pairingQrContent = verificationUrl;
+      const qrSize = DEVICE_WIDTH <= 360 ? px(92) : px(128);
+      const qrY = DEVICE_WIDTH <= 360 ? px(242) : px(298);
+      createWidget(widget.QRCODE, {
+        content: verificationUrl,
+        x: Math.floor((DEVICE_WIDTH - qrSize) / 2),
+        y: qrY,
+        w: qrSize,
+        h: qrSize,
+        bg_x: Math.floor((DEVICE_WIDTH - qrSize - px(10)) / 2),
+        bg_y: qrY - px(5),
+        bg_w: qrSize + px(10),
+        bg_h: qrSize + px(10),
+      });
+    },
+
+    startPairingFromWatch() {
+      this.request({
+        method: "dofek.startPairing",
+        params: {},
+      })
+        .then((result) => {
+          this.renderPairing(isRecord(result) ? result : null);
+        })
+        .catch((error: unknown) => {
+          logger.error("watch pairing start failed %j", error);
+          renderHint("Pairing failed\nOpen Zepp settings");
+        });
+    },
+
+    openKeyboard(options: { initialText: string; onComplete: (value: string) => void }) {
+      try {
+        createKeyboard({
+          inputType: inputType.CHAR,
+          text: options.initialText,
+          onComplete: (_keyboardWidget: unknown, result: string) => {
+            options.onComplete(result);
+          },
+          onCancel: () => undefined,
+        });
+      } catch (error) {
+        logger.error("keyboard open failed %j", error);
+        showToast({ content: "Keyboard requires Zepp OS 4" });
+      }
+    },
+
+    loginFromWatch() {
+      this.openKeyboard({
+        initialText: this.state.dofekEmail,
+        onComplete: (email: string) => {
+          this.state.dofekEmail = email;
+          this.openKeyboard({
+            initialText: "",
+            onComplete: (password: string) => {
+              this.state.dofekPassword = password;
+              this.request({
+                method: "dofek.loginWithPassword",
+                params: { email: this.state.dofekEmail, password },
+              })
+                .then(() => {
+                  this.state.hasCredentials = true;
+                  renderHint("Connected");
+                })
+                .catch((error: unknown) => {
+                  logger.error("watch login failed %j", error);
+                  renderHint("Login failed\nCheck password");
+                });
+            },
+          });
+        },
       });
     },
 

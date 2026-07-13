@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "pnpm tsx build.ts && zeus dev",
     "build": "pnpm tsx build.ts && zeus build",
-    "preview": "zeus preview",
+    "preview": "pnpm tsx build.ts && zeus preview",
     "test": "vitest run",
     "test:watch": "vitest --watch",
     "lint": "biome check .",

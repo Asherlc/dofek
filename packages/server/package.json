@@ -42,6 +42,7 @@
     "entities": "6.0.1",
     "express": "5.2.1",
     "express-rate-limit": "8.5.2",
+    "qrcode": "1.5.4",
     "simple-statistics": "7.8.9",
     "stripe": "22.1.0",
     "whoop-whoop": "workspace:*",
@@ -51,6 +52,7 @@
     "@types/compression": "1.8.1",
     "@types/cookie-parser": "1.4.10",
     "@types/express": "5.0.6",
+    "@types/qrcode": "1.5.6",
     "tsx": "4.21.0",
     "typescript": "6.0.3"
   }

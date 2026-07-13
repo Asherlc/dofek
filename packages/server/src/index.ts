@@ -36,6 +36,9 @@ import { LimitedActivitySensorStore } from "./repositories/limited-activity-sens
 import { appRouter } from "./router.ts";
 import { createActivityExportRouter } from "./routes/activity-export.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
+import { authRateLimiter } from "./routes/auth/shared.ts";
+import { createCompanionPairingRouter } from "./routes/companion-pairing.ts";
+import { createCompanionTokenHttpRouter } from "./routes/companion-token.ts";
 import { createExportRouter } from "./routes/export.ts";
 import { createIngestZosHealthRouter } from "./routes/ingest-zos-health.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
@@ -204,6 +207,8 @@ function setupRoutes(
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
   app.use("/api/mcp", createMcpRouter({ db, sensorStore }));
   app.use("/api/ingest", createIngestZosHealthRouter({ db }));
+  app.use("/api/companion-pairing", authRateLimiter, createCompanionPairingRouter({ db }));
+  app.use("/api/companion-token", authRateLimiter, createCompanionTokenHttpRouter({ db }));
   // ── Seeded-login helper for local dev and preview environments ──
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "true") {
     app.get("/auth/dev-login", async (_req, res) => {

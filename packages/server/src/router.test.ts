@@ -23,6 +23,7 @@ vi.mock("./routers/body.ts", () => ({ bodyRouter: mockRouter }));
 vi.mock("./routers/body-analytics.ts", () => ({ bodyAnalyticsRouter: mockRouter }));
 vi.mock("./routers/calendar.ts", () => ({ calendarRouter: mockRouter }));
 vi.mock("./routers/climbing.ts", () => ({ climbingRouter: mockRouter }));
+vi.mock("./routers/companion-pairing.ts", () => ({ companionPairingRouter: mockRouter }));
 vi.mock("./routers/correlation.ts", () => ({ correlationRouter: mockRouter }));
 vi.mock("./routers/credential-auth.ts", () => ({ credentialAuthRouter: mockRouter }));
 vi.mock("./routers/cycling-advanced.ts", () => ({ cyclingAdvancedRouter: mockRouter }));
@@ -120,6 +121,7 @@ describe("appRouter", () => {
       "billing",
       "bleHeartRateSync",
       "breathwork",
+      "companionPairing",
       "companionToken",
       "sleep",
       "sleepNeed",

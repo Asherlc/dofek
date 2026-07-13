@@ -1,6 +1,6 @@
 import { formatDateMedium, parseValidDate } from "@dofek/format/format";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
@@ -27,6 +27,7 @@ export function SettingsPage() {
   const { layout, toggleHidden, resetLayout } = useDashboardLayout();
   const trpcUtils = trpc.useUtils();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [zeppPairingCode, setZeppPairingCode] = useState("");
   const deleteAllDataMutation = trpc.settings.deleteAllUserData.useMutation({
     onSuccess: async () => {
       setShowDeleteConfirm(false);
@@ -44,6 +45,22 @@ export function SettingsPage() {
       window.location.assign(url);
     },
   });
+  const zeppPairingMutation = trpc.companionPairing.claim.useMutation({
+    onSuccess: () => {
+      setZeppPairingCode("");
+    },
+  });
+
+  useEffect(() => {
+    const pairingCode = new URLSearchParams(window.location.search).get("zeppPair");
+    if (pairingCode) {
+      setZeppPairingCode(pairingCode);
+    }
+  }, []);
+
+  function handleClaimZeppPairing() {
+    zeppPairingMutation.mutate({ code: zeppPairingCode });
+  }
 
   const hiddenSections = layout.hidden;
 
@@ -123,6 +140,36 @@ export function SettingsPage() {
 
       <PageSection title="Password" subtitle="Set or change your email login password">
         <PasswordSettingsPanel />
+      </PageSection>
+
+      <PageSection title="Zepp App Pairing" subtitle="Connect the Zepp watch app to this account">
+        <div className="space-y-3">
+          <label className="block space-y-1">
+            <span className="text-xs text-subtle">Short code</span>
+            <input
+              type="text"
+              value={zeppPairingCode}
+              onChange={(event) => setZeppPairingCode(event.target.value)}
+              className="w-full rounded border border-border bg-surface-solid px-3 py-2 text-sm text-foreground"
+              placeholder="ABC123"
+              autoCapitalize="characters"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={handleClaimZeppPairing}
+            disabled={zeppPairingMutation.isPending || !zeppPairingCode.trim()}
+            className="rounded bg-accent px-3 py-2 text-sm text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
+          >
+            {zeppPairingMutation.isPending ? "Connecting..." : "Connect Zepp App"}
+          </button>
+          {zeppPairingMutation.isSuccess ? (
+            <p className="text-xs text-accent">Zepp app connected. Return to Zepp to sync.</p>
+          ) : null}
+          {zeppPairingMutation.error ? (
+            <p className="text-xs text-red-400">{zeppPairingMutation.error.message}</p>
+          ) : null}
+        </div>
       </PageSection>
 
       <PageSection title="MCP Tokens" subtitle="Create and revoke remote MCP access tokens">

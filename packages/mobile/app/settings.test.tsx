@@ -72,6 +72,7 @@ vi.mock("../lib/auth-context", () => ({
 }));
 
 const mockLinkedAccountsRefetch = vi.fn();
+const mockZeppPairingClaim = vi.fn();
 const mockPasswordCredentialStatusQuery = vi.fn(() => ({
   data: { hasPassword: false },
   isLoading: false,
@@ -142,6 +143,16 @@ vi.mock("../lib/trpc", () => ({
         useMutation: () => ({
           mutate: mockPortalSession,
           isPending: false,
+        }),
+      },
+    },
+    companionPairing: {
+      claim: {
+        useMutation: () => ({
+          mutate: mockZeppPairingClaim,
+          isPending: false,
+          isError: false,
+          error: null,
         }),
       },
     },
@@ -240,6 +251,21 @@ describe("SettingsScreen password", () => {
 
     expect(await screen.findByPlaceholderText("Current password")).toBeTruthy();
     expect(await screen.findByText("Change Password")).toBeTruthy();
+  });
+});
+
+describe("SettingsScreen Zepp pairing", () => {
+  it("claims a short code from settings", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    fireEvent.change(screen.getByPlaceholderText("Short code"), {
+      target: { value: "ABCD12" },
+    });
+    fireEvent.click(screen.getByText("Connect Zepp App"));
+
+    expect(mockZeppPairingClaim).toHaveBeenCalledWith({ code: "ABCD12" });
   });
 });
 
