@@ -12,7 +12,20 @@ function requiredEnv(name: string): string {
 }
 
 function normalizeAppBaseUrl(value: string): string {
-  return value.trim().replace(/\/+$/, "");
+  const baseUrl = value.trim().replace(/\/+$/, "");
+  if (!baseUrl) {
+    throw new Error("PUBLIC_URL environment variable is required");
+  }
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new Error("PUBLIC_URL environment variable must be a valid URL");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("PUBLIC_URL environment variable must use http or https");
+  }
+  return baseUrl;
 }
 
 export function getStripeBillingConfig(): StripeBillingConfig {

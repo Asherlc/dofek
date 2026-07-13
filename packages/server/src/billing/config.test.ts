@@ -33,6 +33,28 @@ describe("getStripeBillingConfig", () => {
     expect(getStripeBillingConfig().appBaseUrl).toBe("https://app.example.com");
   });
 
+  it("fails fast when the public app URL is blank after trimming", () => {
+    setBillingEnv({ PUBLIC_URL: "   " });
+
+    expect(() => getStripeBillingConfig()).toThrow("PUBLIC_URL environment variable is required");
+  });
+
+  it("fails fast when the public app URL is invalid", () => {
+    setBillingEnv({ PUBLIC_URL: "not a url" });
+
+    expect(() => getStripeBillingConfig()).toThrow(
+      "PUBLIC_URL environment variable must be a valid URL",
+    );
+  });
+
+  it("fails fast when the public app URL does not use HTTP", () => {
+    setBillingEnv({ PUBLIC_URL: "file:///tmp/dofek" });
+
+    expect(() => getStripeBillingConfig()).toThrow(
+      "PUBLIC_URL environment variable must use http or https",
+    );
+  });
+
   it("fails fast when a required key is missing", () => {
     setBillingEnv({ STRIPE_PRICE_ID: "" });
 
