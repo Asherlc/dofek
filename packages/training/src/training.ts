@@ -499,6 +499,20 @@ const ACTIVITY_TYPE_LABELS: Record<string, string> = {
   other: "Other",
 };
 
+export type VerticalAscentActivityTypeGroup =
+  | "road_cycling"
+  | "mountain_biking"
+  | "gravel_cycling"
+  | "other_cycling";
+
+const VERTICAL_ASCENT_ACTIVITY_TYPE_GROUP_LABELS: Record<VerticalAscentActivityTypeGroup, string> =
+  {
+    road_cycling: "Road Cycling",
+    mountain_biking: "Mountain Biking",
+    gravel_cycling: "Gravel Cycling",
+    other_cycling: "Other Cycling",
+  };
+
 function toTitleCase(value: string): string {
   return value
     .split(/[_\-\s]+/)
@@ -525,6 +539,22 @@ export function formatActivityTypeLabel(activityType: string): string {
     return "Other";
   }
   return ACTIVITY_TYPE_LABELS[normalized] ?? toTitleCase(normalized);
+}
+
+export function getVerticalAscentActivityTypeGroup(
+  activityType: string,
+): VerticalAscentActivityTypeGroup {
+  const normalized = normalizeActivityType(activityType);
+  if (normalized === "road_cycling") return "road_cycling";
+  if (normalized === "mountain_biking") return "mountain_biking";
+  if (normalized === "gravel_cycling") return "gravel_cycling";
+  return "other_cycling";
+}
+
+export function formatVerticalAscentActivityTypeGroupLabel(
+  activityTypeGroup: VerticalAscentActivityTypeGroup,
+): string {
+  return VERTICAL_ASCENT_ACTIVITY_TYPE_GROUP_LABELS[activityTypeGroup];
 }
 
 export function collapseWeeklyVolumeActivityTypes(
