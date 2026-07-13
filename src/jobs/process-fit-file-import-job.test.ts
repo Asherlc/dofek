@@ -99,6 +99,17 @@ function createWeightFit(): Buffer {
   return Buffer.from(encoder.close());
 }
 
+function createWeightFileOnlyFit(): Buffer {
+  const timestamp = Utils.convertDateToDateTime(new Date("2026-07-01T12:00:00.000Z"));
+  const encoder = new Encoder();
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.FILE_ID,
+    type: "weight",
+    timeCreated: timestamp,
+  });
+  return Buffer.from(encoder.close());
+}
+
 describe("processFitFileImportJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -136,6 +147,25 @@ describe("processFitFileImportJob", () => {
         .splice(0)
         .map((directory) => rm(directory, { recursive: true, force: true })),
     );
+  });
+
+  it("rejects invalid queue payloads before reading a file", async () => {
+    await expect(
+      processFitFileImportJob(
+        {
+          data: {
+            originalPath: "DI_CONNECT/activity.fit",
+            userId: "user-1",
+            providerId: "garmin-dump",
+            sourceName: "Garmin Dump",
+          },
+        },
+        mockDb,
+      ),
+    ).rejects.toThrow();
+
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
   });
 
   it("imports an activity FIT file with a parent summary and replaces sensor samples", async () => {
@@ -228,6 +258,177 @@ describe("processFitFileImportJob", () => {
     );
   });
 
+  it("extracts numeric activity IDs from FIT file names", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+
+    await processFitFileImportJob(
+      {
+        data: {
+          filePath,
+          originalPath: "DI_CONNECT/asher@example.com_98765_extra.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        },
+      },
+      mockDb,
+    );
+
+    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        externalId: "98765",
+      }),
+      expect.objectContaining({
+        activityType: "indoor_cycling",
+      }),
+    );
+  });
+
+  it("normalizes FIT sport text and falls back to other for unknown sports", async () => {
+    const trailRunFilePath = await writeTempFit(createActivityFit());
+    mockParseFitFileInWorkerThread.mockResolvedValueOnce({
+      session: {
+        sport: "Trail  Running",
+        startTime: new Date("2026-07-01T12:00:00.000Z"),
+        totalElapsedTime: 900,
+        totalTimerTime: 900,
+        totalDistance: 3000,
+        totalCalories: 100,
+        raw: { sport: "Trail  Running" },
+      },
+      records: [],
+      laps: [],
+      events: [],
+    });
+
+    await processFitFileImportJob(
+      {
+        data: {
+          filePath: trailRunFilePath,
+          originalPath: "DI_CONNECT/trail.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        },
+      },
+      mockDb,
+    );
+
+    expect(mockUpsertProviderActivity).toHaveBeenLastCalledWith(
+      mockDb,
+      expect.objectContaining({
+        activityType: "trail_running",
+        name: "FIT trail running",
+      }),
+      expect.objectContaining({
+        activityType: "trail_running",
+        name: "FIT trail running",
+      }),
+    );
+
+    const unknownSportFilePath = await writeTempFit(createActivityFit());
+    mockParseFitFileInWorkerThread.mockResolvedValueOnce({
+      session: {
+        sport: "pickleball",
+        startTime: new Date("2026-07-01T13:00:00.000Z"),
+        totalElapsedTime: 600,
+        totalTimerTime: 600,
+        totalDistance: 0,
+        totalCalories: 50,
+        raw: { sport: "pickleball" },
+      },
+      records: [],
+      laps: [],
+      events: [],
+    });
+
+    await processFitFileImportJob(
+      {
+        data: {
+          filePath: unknownSportFilePath,
+          originalPath: "DI_CONNECT/unknown.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        },
+      },
+      mockDb,
+    );
+
+    expect(mockUpsertProviderActivity).toHaveBeenLastCalledWith(
+      mockDb,
+      expect.objectContaining({
+        activityType: "other",
+        name: "FIT other",
+      }),
+      expect.objectContaining({
+        activityType: "other",
+        name: "FIT other",
+      }),
+    );
+  });
+
+  it("reports activity FIT files missing a valid start time", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockParseFitFileInWorkerThread.mockResolvedValueOnce({
+      session: {
+        sport: "cycling",
+        startTime: new Date("invalid"),
+        totalElapsedTime: 1800,
+        totalTimerTime: 1800,
+        totalDistance: 5000,
+        totalCalories: 200,
+        raw: { sport: "cycling" },
+      },
+      records: [],
+      laps: [],
+      events: [],
+    });
+
+    const result = await processFitFileImportJob(
+      {
+        data: {
+          filePath,
+          originalPath: "DI_CONNECT/missing-start.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        },
+      },
+      mockDb,
+    );
+
+    expect(result).toEqual({
+      recordsSynced: 0,
+      errors: [{ message: "FIT file DI_CONNECT/missing-start.fit is missing a valid start time" }],
+    });
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
+  });
+
+  it("skips sensor replacement when the activity upsert returns no row ID", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockUpsertProviderActivity.mockResolvedValueOnce({});
+
+    const result = await processFitFileImportJob(
+      {
+        data: {
+          filePath,
+          originalPath: "DI_CONNECT/no-row-id.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        },
+      },
+      mockDb,
+    );
+
+    expect(result).toEqual({ recordsSynced: 1, errors: [] });
+    expect(mockUpsertProviderActivity).toHaveBeenCalledOnce();
+    expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
+  });
+
   it("imports Garmin weight FIT files as body measurement metric stream rows", async () => {
     const filePath = await writeTempFit(createWeightFit());
 
@@ -266,6 +467,49 @@ describe("processFitFileImportJob", () => {
       ],
       "file",
     );
+    await expect(readFile(filePath)).rejects.toThrow();
+  });
+
+  it("returns zero records for weight FIT files without scale rows", async () => {
+    const filePath = await writeTempFit(createWeightFileOnlyFit());
+
+    const result = await processFitFileImportJob(
+      {
+        data: {
+          filePath,
+          originalPath: "DI_CONNECT/empty_weight.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        },
+      },
+      mockDb,
+    );
+
+    expect(result).toEqual({ recordsSynced: 0, errors: [] });
+    expect(mockWriteMetricStreamBatch).not.toHaveBeenCalled();
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+  });
+
+  it("fails invalid FIT files before attempting activity parsing", async () => {
+    const filePath = await writeTempFit(Buffer.from("not a fit file"));
+
+    await expect(
+      processFitFileImportJob(
+        {
+          data: {
+            filePath,
+            originalPath: "DI_CONNECT/broken.fit",
+            userId: "user-1",
+            providerId: "garmin-dump",
+            sourceName: "Garmin Dump",
+          },
+        },
+        mockDb,
+      ),
+    ).rejects.toThrow("FIT decoder reported");
+
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     await expect(readFile(filePath)).rejects.toThrow();
   });
 });

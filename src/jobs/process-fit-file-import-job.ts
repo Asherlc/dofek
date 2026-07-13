@@ -1,6 +1,5 @@
 /// <reference path="../activity-export/garmin-fitsdk.d.ts" />
 
-import { createHash } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { Decoder, Stream } from "@garmin/fitsdk";
@@ -9,13 +8,14 @@ import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch, writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
+import { fitExternalId } from "../fit/external-id.ts";
 import { parseFitFileInWorkerThread } from "../fit/parser-worker.ts";
 import { fitRecordsToSensorSamples } from "../fit/records.ts";
 import { logger } from "../logger.ts";
-import type { FitFileImportJobData } from "./queues.ts";
+import { type FitFileImportJobData, fitFileImportJobDataSchema } from "./queues.ts";
 
 interface FitFileImportJob {
-  data: FitFileImportJobData;
+  data: unknown;
 }
 
 export interface FitFileImportJobResult {
@@ -64,13 +64,6 @@ const decodedFitSchema = z.object({
   errors: z.array(z.unknown()).optional(),
   messages: fitMessagesSchema.optional(),
 });
-
-function fitExternalId(path: string, data: Buffer): string {
-  const fileName = path.split("/").pop() ?? path;
-  const match = fileName.match(/_(\d+)(?:_[^/]*)?\.fit$/i);
-  if (match?.[1]) return match[1];
-  return `fit:${createHash("sha256").update(data).digest("hex").slice(0, 32)}`;
-}
 
 function normalizedFitSport(value: string | undefined): string {
   return (
@@ -220,16 +213,17 @@ export async function processFitFileImportJob(
   job: FitFileImportJob,
   db: SyncDatabase,
 ): Promise<FitFileImportJobResult> {
-  const buffer = await readFile(job.data.filePath);
+  const data = fitFileImportJobDataSchema.parse(job.data);
+  const buffer = await readFile(data.filePath);
   try {
     const messages = decodeFitMessages(buffer);
     if (isWeightFit(messages)) {
-      return await importWeightFit(db, job.data, messages);
+      return await importWeightFit(db, data, messages);
     }
-    return await importActivityFit(db, job.data, buffer);
+    return await importActivityFit(db, data, buffer);
   } finally {
-    await unlink(job.data.filePath).catch((error: unknown) => {
-      logger.warn("Failed to clean up FIT import file %s: %s", job.data.filePath, error);
+    await unlink(data.filePath).catch((error: unknown) => {
+      logger.warn("Failed to clean up FIT import file %s: %s", data.filePath, error);
     });
   }
 }

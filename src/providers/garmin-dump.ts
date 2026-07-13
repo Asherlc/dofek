@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { fitExternalId } from "../fit/external-id.ts";
 import type { ParsedFitSession } from "../fit/parser.ts";
 import type { FitFileImportJobResult } from "../jobs/process-fit-file-import-job.ts";
 import {
@@ -132,13 +133,6 @@ function timestampFromSummary(summary: GarminSummarizedActivity): Date | null {
 
 function durationMilliseconds(summary: GarminSummarizedActivity): number {
   return summary.elapsedDuration ?? summary.duration ?? 0;
-}
-
-function fitExternalId(path: string, data: Buffer): string {
-  const fileName = path.split("/").pop() ?? path;
-  const match = fileName.match(/_(\d+)(?:_[^/]*)?\.fit$/i);
-  if (match?.[1]) return match[1];
-  return `fit:${createHash("sha256").update(data).digest("hex").slice(0, 32)}`;
 }
 
 function isGarminWeightFitPath(path: string): boolean {

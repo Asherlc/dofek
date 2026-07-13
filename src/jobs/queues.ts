@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import type { CanonicalActivityType } from "@dofek/training/training";
+import { CANONICAL_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { ConnectionOptions, JobsOptions } from "bullmq";
 import { Queue, QueueEvents } from "bullmq";
+import { z } from "zod";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
 // ── Job payload types ──
@@ -34,23 +35,26 @@ export interface ImportJobData {
   weightUnit?: "kg" | "lbs";
 }
 
-export interface FitFileImportActivitySummary {
-  externalId: string;
-  activityType: CanonicalActivityType;
-  startedAtIso: string;
-  endedAtIso: string;
-  name: string;
-  raw: unknown;
-}
+export const fitFileImportActivitySummarySchema = z.object({
+  externalId: z.string(),
+  activityType: z.enum(CANONICAL_ACTIVITY_TYPES),
+  startedAtIso: z.string(),
+  endedAtIso: z.string(),
+  name: z.string(),
+  raw: z.unknown(),
+});
 
-export interface FitFileImportJobData {
-  filePath: string;
-  originalPath: string;
-  userId: string;
-  providerId: string;
-  sourceName: string;
-  activitySummary?: FitFileImportActivitySummary;
-}
+export const fitFileImportJobDataSchema = z.object({
+  filePath: z.string(),
+  originalPath: z.string(),
+  userId: z.string(),
+  providerId: z.string(),
+  sourceName: z.string(),
+  activitySummary: fitFileImportActivitySummarySchema.optional(),
+});
+
+export type FitFileImportActivitySummary = z.infer<typeof fitFileImportActivitySummarySchema>;
+export type FitFileImportJobData = z.infer<typeof fitFileImportJobDataSchema>;
 
 export interface ExportJobData {
   exportId: string;

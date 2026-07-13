@@ -416,6 +416,34 @@ describe("worker module", () => {
     expect(extendLock).toHaveBeenCalledWith("token-1", 600_000);
   });
 
+  it("import processor lock extender fails loudly when BullMQ omits the token", async () => {
+    const { processImportJob } = await import("./process-import-job.ts");
+    vi.mocked(processImportJob).mockClear();
+    const extendLock = vi.fn().mockResolvedValue(1);
+
+    await invokeProcessor(
+      "import-queue",
+      {
+        filePath: "/tmp/f",
+        since: "2026-01-01",
+        userId: "u",
+        importType: "garmin-dump",
+      },
+      undefined,
+      { extendLock },
+    );
+
+    const processCall = vi.mocked(processImportJob).mock.calls[0];
+    const job = processCall?.[0];
+    expect(job).toBeDefined();
+    if (!job) {
+      throw new Error("processImportJob was not called");
+    }
+
+    await expect(job.extendLock(600_000)).rejects.toThrow("BullMQ import job lock token missing");
+    expect(extendLock).not.toHaveBeenCalled();
+  });
+
   it("export processor delegates to processExportJob", async () => {
     const { processExportJob } = await import("./process-export-job.ts");
     vi.mocked(processExportJob).mockClear();
