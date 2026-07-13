@@ -114,7 +114,6 @@ z2_power_samples AS (
         scalar
     FROM {{ ref('activity_sensor_sample') }}
     WHERE channel = 'power'
-        AND scalar > 0
         AND is_deleted = 0
     ORDER BY
         user_id,
@@ -141,9 +140,10 @@ z2_samples AS (
         toInt32(count()) AS z2_samples
     FROM z2_heart_rate_samples AS hr
     ASOF JOIN z2_power_samples AS pwr
-        ON hr.activity_id = pwr.activity_id
-        AND hr.user_id = pwr.user_id
+        ON hr.user_id = pwr.user_id
+        AND hr.activity_id = pwr.activity_id
         AND hr.recorded_at >= pwr.recorded_at
+    WHERE pwr.scalar > 0
     GROUP BY
         hr.activity_id,
         hr.user_id

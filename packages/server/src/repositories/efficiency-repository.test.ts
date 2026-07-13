@@ -205,8 +205,11 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     const fallbackQuery = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
     expect(fallbackQuery).toContain("ASOF JOIN");
     expect(fallbackQuery).toContain("power.recorded_at >= am.started_at");
-    expect(fallbackQuery).toContain("hr.id = pwr.id");
-    expect(fallbackQuery).toContain("hr.recorded_at >= pwr.recorded_at");
+    expect(fallbackQuery).toContain(`ON hr.user_id = pwr.user_id
+       AND hr.id = pwr.id
+       AND hr.recorded_at >= pwr.recorded_at`);
+    expect(fallbackQuery).not.toContain("AND power.scalar > 0");
+    expect(fallbackQuery).toContain("WHERE pwr.scalar > 0");
     expect(fallbackQuery).toContain("power.recorded_at > now() - INTERVAL {days:Int32} DAY");
     expect(fallbackQuery).not.toContain("pwr.recorded_at = hr.recorded_at");
   });

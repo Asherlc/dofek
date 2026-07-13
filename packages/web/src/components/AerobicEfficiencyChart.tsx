@@ -45,16 +45,17 @@ export function AerobicEfficiencyChart({
 
   const powerData = activities.map((activity) => [activity.date, activity.avgPowerZ2]);
   const heartRateData = activities.map((activity) => [activity.date, activity.avgHrZ2]);
+  const timeAxis = dofekAxis.time({ show: true });
 
   const option = {
     grid: dofekGrid("dualAxis", { top: 40, left: 55 }),
     tooltip: dofekTooltip(),
     xAxis: {
-      ...dofekAxis.time({ show: true }),
+      ...timeAxis,
       name: "Date",
       nameLocation: "middle",
       nameGap: 28,
-      axisLine: { show: true, lineStyle: { color: chartThemeColors.axisLine } },
+      axisLine: { ...timeAxis.axisLine, show: true },
       axisTick: { show: true },
     },
     yAxis: [

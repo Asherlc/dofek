@@ -25,6 +25,7 @@ vi.mock("./LoadingSkeleton.tsx", () => ({
 }));
 
 const { AerobicEfficiencyChart } = await import("./AerobicEfficiencyChart.tsx");
+const { chartThemeColors } = await import("../lib/chartTheme.ts");
 
 describe("AerobicEfficiencyChart", () => {
   it("renders empty state without crashing when activities is empty", () => {
@@ -106,6 +107,7 @@ describe("AerobicEfficiencyChart", () => {
     expect(option.xAxis.show).toBe(true);
     expect(option.xAxis.name).toBe("Date");
     expect(option.xAxis.axisLine.show).toBe(true);
+    expect(option.xAxis.axisLine.lineStyle.color).toBe(chartThemeColors.axisLine);
     expect(option.xAxis.axisTick.show).toBe(true);
   });
 
