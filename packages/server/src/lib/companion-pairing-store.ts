@@ -24,7 +24,7 @@ const companionPairingChallengeSchema = z.object({
 export type CompanionPairingChallenge = z.infer<typeof companionPairingChallengeSchema>;
 
 interface RedisClient {
-  set(key: string, value: string, mode: "PX", millisecondsToExpire: number): Promise<"OK" | null>;
+  set(key: string, value: string, options: { PX: number }): Promise<string | null>;
   get(key: string): Promise<string | null>;
   del(...keys: string[]): Promise<number>;
 }
@@ -226,8 +226,8 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
   async #save(challenge: CompanionPairingChallenge, now = new Date()): Promise<void> {
     const client = await this.#getRedisClient();
     const remainingTtlMs = Math.max(1, ttlMs(challenge, now));
-    await client.set(pairingKey(challenge.id), JSON.stringify(challenge), "PX", remainingTtlMs);
-    await client.set(pairingCodeKey(challenge.shortCode), challenge.id, "PX", remainingTtlMs);
+    await client.set(pairingKey(challenge.id), JSON.stringify(challenge), { PX: remainingTtlMs });
+    await client.set(pairingCodeKey(challenge.shortCode), challenge.id, { PX: remainingTtlMs });
   }
 }
 
@@ -243,8 +243,7 @@ async function getSharedRedisClient(): Promise<RedisClient> {
   }
   const redisClient = await sharedRedisConnection.client;
   return {
-    set: async (key, value, mode, millisecondsToExpire) =>
-      redisClient.set(key, value, mode, millisecondsToExpire),
+    set: async (key, value, options) => redisClient.set(key, value, options),
     get: async (key) => redisClient.get(key),
     del: async (...keys) => redisClient.del(...keys),
   };
