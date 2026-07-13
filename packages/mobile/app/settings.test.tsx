@@ -6,11 +6,13 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFileWrite = vi.fn();
+const mockFileDelete = vi.fn();
 const mockDownloadFileAsync = vi.fn();
 vi.mock("expo-file-system", () => {
   const MockFile = vi.fn().mockImplementation((_cache, filename: string) => ({
     uri: `file:///tmp/cache/${filename}`,
     write: mockFileWrite,
+    delete: mockFileDelete,
   }));
   MockFile.downloadFileAsync = mockDownloadFileAsync;
   return {
@@ -589,12 +591,16 @@ describe("SettingsScreen export flow", () => {
       expect(mockDownloadFileAsync).toHaveBeenCalledWith(
         "https://test.example.com/api/export/download/export-789",
         expect.objectContaining({ uri: "file:///tmp/cache/export-789-dofek-export.zip" }),
-        expect.objectContaining({ headers: { Authorization: "Bearer test-token" } }),
+        expect.objectContaining({
+          headers: { Authorization: "Bearer test-token" },
+          idempotent: true,
+        }),
       );
       expect(shareAsync).toHaveBeenCalledWith(
         "file:///tmp/cache/export-789-dofek-export.zip",
         expect.objectContaining({ mimeType: "application/zip" }),
       );
+      expect(mockFileDelete).toHaveBeenCalledOnce();
     });
   });
 });

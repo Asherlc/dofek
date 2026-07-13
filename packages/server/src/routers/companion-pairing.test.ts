@@ -173,6 +173,7 @@ describe("companionPairingRouter", () => {
     await expect(caller.claim({ code: "ABC234" })).rejects.toThrow(
       "Pairing code has already been used.",
     );
+    expect(mockConsumeClaimAttempt).toHaveBeenCalledWith("user-1");
     expect(mockClaimChallenge).toHaveBeenCalledWith({
       shortCode: "ABC234",
       userId: "user-1",

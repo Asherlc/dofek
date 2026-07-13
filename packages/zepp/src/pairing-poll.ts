@@ -1,5 +1,6 @@
 import type { ZeppFetchSummary } from "./zepp-fetch.ts";
 
 export function shouldRetryPairingPollFailure(summary: ZeppFetchSummary): boolean {
-  return summary.status !== 404;
+  if (summary.status === null) return true;
+  return summary.status === 429 || summary.status >= 500;
 }

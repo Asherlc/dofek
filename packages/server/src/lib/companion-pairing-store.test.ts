@@ -14,6 +14,16 @@ interface FakeRedisEntry {
   expiresAtMs: number | null;
 }
 
+interface FakeRedisEvalCall {
+  script: string;
+  keyCount: number;
+  args: string[];
+}
+
+function fakePairingKey(pairingId: string): string {
+  return `companion-pairing:{companion-pairing}:challenge:${pairingId}`;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -36,6 +46,7 @@ function parseMilliseconds(value: string): number {
 
 class FakeRedisClient {
   #entries = new Map<string, FakeRedisEntry>();
+  evalCalls: FakeRedisEvalCall[] = [];
   evalResults: unknown[] = [];
   evalCallCount = 0;
   nextEvalResult: unknown | undefined;
@@ -75,8 +86,9 @@ class FakeRedisClient {
     return deletedCount;
   }
 
-  async eval(script: string, _keyCount: number, ...args: string[]): Promise<unknown> {
+  async eval(script: string, keyCount: number, ...args: string[]): Promise<unknown> {
     this.evalCallCount += 1;
+    this.evalCalls.push({ script, keyCount, args });
     if (this.evalResults.length > 0) {
       return this.evalResults.shift();
     }
@@ -99,18 +111,18 @@ class FakeRedisClient {
   }
 
   writePairingPayload(pairingId: string, value: string): void {
-    this.#entries.set(`companion-pairing:${pairingId}`, {
+    this.#entries.set(fakePairingKey(pairingId), {
       value,
       expiresAtMs: Date.now() + COMPANION_PAIRING_TTL_MS,
     });
   }
 
   async deletePairingPayload(pairingId: string): Promise<void> {
-    await this.del(`companion-pairing:${pairingId}`);
+    await this.del(fakePairingKey(pairingId));
   }
 
   async readPairingPayload(pairingId: string): Promise<Record<string, unknown> | null> {
-    const payload = await this.get(`companion-pairing:${pairingId}`);
+    const payload = await this.get(fakePairingKey(pairingId));
     return payload ? JSON.parse(payload) : null;
   }
 
@@ -131,17 +143,17 @@ class FakeRedisClient {
 
   async #claimChallenge(script: string, args: string[]): Promise<string | null> {
     const codeKey = requireArg(args, 0);
-    const pairingKeyPrefix = requireArg(args, 1);
-    const claimedAt = requireArg(args, 2);
-    const userId = requireArg(args, 3);
-    const companionToken = args[4] ?? "";
+    const challengeKey = requireArg(args, 1);
+    const expectedPairingId = requireArg(args, 2);
+    const claimedAt = requireArg(args, 3);
+    const userId = requireArg(args, 4);
+    const companionToken = args[5] ?? "";
 
     const pairingId = await this.get(codeKey);
-    if (!pairingId) {
+    if (!pairingId || pairingId !== expectedPairingId) {
       return null;
     }
 
-    const challengeKey = `${pairingKeyPrefix}${pairingId}`;
     const payload = await this.get(challengeKey);
     if (!payload) {
       await this.del(codeKey);
@@ -388,6 +400,17 @@ describe("RedisCompanionPairingStore", () => {
         now,
       }),
     ).resolves.toMatchObject({ companionToken: "dofek_companion_test" });
+    expect(redisClient.evalCalls.at(-1)).toMatchObject({
+      keyCount: 2,
+      args: [
+        `companion-pairing:{companion-pairing}:code:${challenge.shortCode}`,
+        fakePairingKey(challenge.id),
+        challenge.id,
+        now.toISOString(),
+        "user-1",
+        "dofek_companion_test",
+      ],
+    });
   });
 
   it("expires stale Redis challenges", async () => {

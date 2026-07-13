@@ -168,13 +168,22 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
       const file = new ExpoFile(Paths.cache, getExportCacheFilename(dataExport));
       await ExpoFile.downloadFileAsync(`${serverUrl}/api/export/download/${dataExport.id}`, file, {
         headers: getAuthHeaders(usableSessionToken),
+        idempotent: true,
       });
       setExportState("done");
       setExportMessage("Export ready");
-      await Sharing.shareAsync(file.uri, {
-        mimeType: "application/zip",
-        dialogTitle: "Save Health Data Export",
-      });
+      try {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: "application/zip",
+          dialogTitle: "Save Health Data Export",
+        });
+      } finally {
+        try {
+          file.delete();
+        } catch (error: unknown) {
+          captureException(error, { context: "data-export-download-cleanup" });
+        }
+      }
     } catch (error: unknown) {
       captureException(error, { context: "data-export-download" });
       setExportState("error");

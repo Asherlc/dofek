@@ -8,8 +8,9 @@ export const COMPANION_PAIRING_TTL_MS = 10 * 60 * 1000;
 
 const SHORT_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const SHORT_CODE_LENGTH = 6;
-const PAIRING_KEY_PREFIX = "companion-pairing:";
-const PAIRING_CODE_KEY_PREFIX = "companion-pairing-code:";
+const PAIRING_HASH_TAG = "{companion-pairing}";
+const PAIRING_KEY_PREFIX = `companion-pairing:${PAIRING_HASH_TAG}:challenge:`;
+const PAIRING_CODE_KEY_PREFIX = `companion-pairing:${PAIRING_HASH_TAG}:code:`;
 const CLAIM_ATTEMPT_KEY_PREFIX = "companion-pairing-claim-attempts:";
 const CLAIM_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const CLAIM_ATTEMPT_LIMIT = 20;
@@ -23,32 +24,31 @@ return 1
 `;
 const CLAIM_CHALLENGE_SCRIPT = `
 local id = redis.call("GET", KEYS[1])
-if not id then
+if not id or id ~= ARGV[1] then
   return nil
 end
 
-local challengeKey = ARGV[1] .. id
-local payload = redis.call("GET", challengeKey)
+local payload = redis.call("GET", KEYS[2])
 if not payload then
   redis.call("DEL", KEYS[1])
   return nil
 end
 
-local remainingTtlMs = redis.call("PTTL", challengeKey)
+local remainingTtlMs = redis.call("PTTL", KEYS[2])
 if remainingTtlMs <= 0 then
-  redis.call("DEL", KEYS[1], challengeKey)
+  redis.call("DEL", KEYS[1], KEYS[2])
   return nil
 end
 
-	local decodedOk, challenge = pcall(cjson.decode, payload)
-	if not decodedOk or type(challenge) ~= "table" then
-	  redis.call("DEL", KEYS[1], challengeKey)
-	  return nil
-	end
+local decodedOk, challenge = pcall(cjson.decode, payload)
+if not decodedOk or type(challenge) ~= "table" then
+  redis.call("DEL", KEYS[1], KEYS[2])
+  return nil
+end
 
-	if challenge["claimedAt"] ~= nil then
-	  return nil
-	end
+if challenge["claimedAt"] ~= nil then
+  return nil
+end
 
 challenge["claimedAt"] = ARGV[2]
 challenge["userId"] = ARGV[3]
@@ -56,7 +56,7 @@ if ARGV[4] ~= "" then
   challenge["companionToken"] = ARGV[4]
 end
 local updatedPayload = cjson.encode(challenge)
-redis.call("PSETEX", challengeKey, remainingTtlMs, updatedPayload)
+redis.call("PSETEX", KEYS[2], remainingTtlMs, updatedPayload)
 redis.call("PEXPIRE", KEYS[1], remainingTtlMs)
 return updatedPayload
 `;
@@ -263,7 +263,6 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
 }
 
 export class RedisCompanionPairingStore implements CompanionPairingStore {
-  // Pairing scripts assume a single-node Redis deployment; Redis Cluster would need hash-tagged keys.
   readonly #getRedisClient: () => Promise<RedisClient>;
 
   constructor(getRedisClient: () => Promise<RedisClient> = getSharedRedisClient) {
@@ -350,11 +349,16 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
   }): Promise<CompanionPairingChallenge | null> {
     const normalizedShortCode = normalizePairingCode(shortCode);
     const client = await this.#getRedisClient();
+    const shortCodeKey = pairingCodeKey(normalizedShortCode);
+    const id = await client.get(shortCodeKey);
+    if (!id) return null;
+
     const payload = await client.eval(
       CLAIM_CHALLENGE_SCRIPT,
-      1,
-      pairingCodeKey(normalizedShortCode),
-      PAIRING_KEY_PREFIX,
+      2,
+      shortCodeKey,
+      pairingKey(id),
+      id,
       now.toISOString(),
       userId,
       companionToken ?? "",
@@ -382,7 +386,7 @@ async function getSharedRedisClient(): Promise<RedisClient> {
       skipVersionCheck: true,
     });
   }
-  const client: unknown = sharedRedisConnection.client;
+  const client: unknown = await sharedRedisConnection.client;
   if (!isRedisClient(client)) {
     throw new Error("Redis companion pairing store requires a Redis client with Lua eval support");
   }
