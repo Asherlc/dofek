@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { mockGetByShortCode, mockClaimChallenge, mockRegenerateCompanionToken } = vi.hoisted(() => ({
+const {
+  mockGetByShortCode,
+  mockConsumeClaimAttempt,
+  mockClaimChallenge,
+  mockRegenerateCompanionToken,
+} = vi.hoisted(() => ({
   mockGetByShortCode: vi.fn(),
+  mockConsumeClaimAttempt: vi.fn(),
   mockClaimChallenge: vi.fn(),
   mockRegenerateCompanionToken: vi.fn(),
 }));
@@ -21,6 +27,7 @@ vi.mock("../trpc.ts", async () => {
 vi.mock("../lib/companion-pairing-store.ts", () => ({
   getCompanionPairingStore: () => ({
     getByShortCode: (...args: unknown[]) => mockGetByShortCode(...args),
+    consumeClaimAttempt: (...args: unknown[]) => mockConsumeClaimAttempt(...args),
     claimChallenge: (...args: unknown[]) => mockClaimChallenge(...args),
   }),
   parsePairingCodeInput: (code: string) => {
@@ -40,6 +47,7 @@ const createCaller = createTestCallerFactory(companionPairingRouter);
 describe("companionPairingRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockConsumeClaimAttempt.mockResolvedValue(true);
   });
 
   it("claims an active pairing code", async () => {
@@ -72,6 +80,7 @@ describe("companionPairingRouter", () => {
       expiresAt: "2026-07-12T00:10:00.000Z",
     });
     expect(mockRegenerateCompanionToken).toHaveBeenCalledWith({}, "user-1");
+    expect(mockConsumeClaimAttempt).toHaveBeenCalledWith("user-1");
     expect(mockClaimChallenge).toHaveBeenCalledWith({
       shortCode: "ABC234",
       userId: "user-1",
@@ -112,17 +121,14 @@ describe("companionPairingRouter", () => {
     );
   });
 
-  it("throttles repeated pairing code guesses per user", async () => {
-    mockGetByShortCode.mockResolvedValue(null);
+  it("rejects claims after the shared store limiter is exhausted", async () => {
+    mockConsumeClaimAttempt.mockResolvedValue(false);
     const caller = createCaller({ db: {}, userId: "rate-limited-user", timezone: "UTC" });
 
-    for (let attemptNumber = 0; attemptNumber < 20; attemptNumber += 1) {
-      await expect(caller.claim({ code: "ABC234" })).rejects.toThrow(
-        "Pairing code was not found or has expired.",
-      );
-    }
     await expect(caller.claim({ code: "ABC234" })).rejects.toThrow(
       "Too many pairing attempts. Please wait a few minutes and try again.",
     );
+    expect(mockConsumeClaimAttempt).toHaveBeenCalledWith("rate-limited-user");
+    expect(mockGetByShortCode).not.toHaveBeenCalled();
   });
 });

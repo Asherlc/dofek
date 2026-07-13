@@ -43,6 +43,7 @@
     "CLICKHOUSE",
     "clickhouse",
     "cjson",
+    "pcall",
     "kafkajs",
     "REDPANDA",
     "Redpanda",

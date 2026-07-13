@@ -4,32 +4,17 @@ import { regenerateCompanionToken } from "../companion/token-repository.ts";
 import { getCompanionPairingStore, parsePairingCodeInput } from "../lib/companion-pairing-store.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
-const CLAIM_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
-const CLAIM_ATTEMPT_LIMIT = 20;
-const claimAttemptsByUser = new Map<string, { count: number; resetsAt: number }>();
-
-function pruneExpiredClaimAttempts(now: number): void {
-  for (const [userId, userAttempts] of claimAttemptsByUser) {
-    if (userAttempts.resetsAt <= now) {
-      claimAttemptsByUser.delete(userId);
-    }
-  }
-}
-
-function assertClaimAttemptAllowed(userId: string, now = Date.now()): void {
-  pruneExpiredClaimAttempts(now);
-  const existing = claimAttemptsByUser.get(userId);
-  if (!existing || existing.resetsAt <= now) {
-    claimAttemptsByUser.set(userId, { count: 1, resetsAt: now + CLAIM_ATTEMPT_WINDOW_MS });
-    return;
-  }
-  if (existing.count >= CLAIM_ATTEMPT_LIMIT) {
+async function assertClaimAttemptAllowed(
+  store: ReturnType<typeof getCompanionPairingStore>,
+  userId: string,
+): Promise<void> {
+  const attemptAllowed = await store.consumeClaimAttempt(userId);
+  if (!attemptAllowed) {
     throw new TRPCError({
       code: "TOO_MANY_REQUESTS",
       message: "Too many pairing attempts. Please wait a few minutes and try again.",
     });
   }
-  existing.count += 1;
 }
 
 export const companionPairingRouter = router({
@@ -56,8 +41,8 @@ export const companionPairingRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      assertClaimAttemptAllowed(ctx.userId);
       const store = getCompanionPairingStore();
+      await assertClaimAttemptAllowed(store, ctx.userId);
       const challenge = await store.getByShortCode(input.code);
       if (!challenge) {
         throw new TRPCError({

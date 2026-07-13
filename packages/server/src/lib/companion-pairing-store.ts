@@ -10,6 +10,9 @@ const SHORT_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const SHORT_CODE_LENGTH = 6;
 const PAIRING_KEY_PREFIX = "companion-pairing:";
 const PAIRING_CODE_KEY_PREFIX = "companion-pairing-code:";
+const CLAIM_ATTEMPT_KEY_PREFIX = "companion-pairing-claim-attempts:";
+const CLAIM_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
+const CLAIM_ATTEMPT_LIMIT = 20;
 const CREATE_CHALLENGE_SCRIPT = `
 if redis.call("EXISTS", KEYS[1]) == 1 then
   return 0
@@ -37,10 +40,15 @@ if remainingTtlMs <= 0 then
   return nil
 end
 
-local challenge = cjson.decode(payload)
-if challenge["claimedAt"] ~= nil then
-  return nil
-end
+	local decodedOk, challenge = pcall(cjson.decode, payload)
+	if not decodedOk or type(challenge) ~= "table" then
+	  redis.call("DEL", KEYS[1], challengeKey)
+	  return nil
+	end
+
+	if challenge["claimedAt"] ~= nil then
+	  return nil
+	end
 
 challenge["claimedAt"] = ARGV[2]
 challenge["userId"] = ARGV[3]
@@ -49,6 +57,14 @@ local updatedPayload = cjson.encode(challenge)
 redis.call("PSETEX", challengeKey, remainingTtlMs, updatedPayload)
 redis.call("PEXPIRE", KEYS[1], remainingTtlMs)
 return updatedPayload
+`;
+const CONSUME_CLAIM_ATTEMPT_SCRIPT = `
+local count = redis.call("INCR", KEYS[1])
+local remainingTtlMs = redis.call("PTTL", KEYS[1])
+if remainingTtlMs < 0 then
+  redis.call("PEXPIRE", KEYS[1], ARGV[1])
+end
+return count
 `;
 
 const companionPairingChallengeSchema = z.object({
@@ -92,6 +108,7 @@ export interface CompanionPairingStore {
   createChallenge(now?: Date): Promise<CompanionPairingChallenge>;
   getById(id: string, now?: Date): Promise<CompanionPairingChallenge | null>;
   getByShortCode(shortCode: string, now?: Date): Promise<CompanionPairingChallenge | null>;
+  consumeClaimAttempt(userId: string, now?: Date): Promise<boolean>;
   claimChallenge(params: {
     shortCode: string;
     userId: string;
@@ -106,6 +123,10 @@ function pairingKey(id: string): string {
 
 function pairingCodeKey(shortCode: string): string {
   return `${PAIRING_CODE_KEY_PREFIX}${shortCode}`;
+}
+
+function claimAttemptKey(userId: string): string {
+  return `${CLAIM_ATTEMPT_KEY_PREFIX}${userId}`;
 }
 
 function ttlMs(challenge: CompanionPairingChallenge, now = new Date()): number {
@@ -147,6 +168,7 @@ function newChallenge(now = new Date()): CompanionPairingChallenge {
 export class InMemoryCompanionPairingStore implements CompanionPairingStore {
   #byId = new Map<string, CompanionPairingChallenge>();
   #idByShortCode = new Map<string, string>();
+  #claimAttemptsByUser = new Map<string, { count: number; resetsAt: number }>();
 
   async createChallenge(now = new Date()): Promise<CompanionPairingChallenge> {
     let challenge = newChallenge(now);
@@ -178,6 +200,23 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
     const id = this.#idByShortCode.get(normalizedShortCode);
     if (!id) return null;
     return this.getById(id, now);
+  }
+
+  async consumeClaimAttempt(userId: string, now = new Date()): Promise<boolean> {
+    this.#pruneExpiredClaimAttempts(now);
+    const existing = this.#claimAttemptsByUser.get(userId);
+    if (!existing || existing.resetsAt <= now.getTime()) {
+      this.#claimAttemptsByUser.set(userId, {
+        count: 1,
+        resetsAt: now.getTime() + CLAIM_ATTEMPT_WINDOW_MS,
+      });
+      return true;
+    }
+    if (existing.count >= CLAIM_ATTEMPT_LIMIT) {
+      return false;
+    }
+    existing.count += 1;
+    return true;
   }
 
   async claimChallenge({
@@ -217,6 +256,14 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
   #delete(challenge: CompanionPairingChallenge): void {
     this.#byId.delete(challenge.id);
     this.#idByShortCode.delete(challenge.shortCode);
+  }
+
+  #pruneExpiredClaimAttempts(now: Date): void {
+    for (const [userId, userAttempts] of this.#claimAttemptsByUser) {
+      if (userAttempts.resetsAt <= now.getTime()) {
+        this.#claimAttemptsByUser.delete(userId);
+      }
+    }
   }
 }
 
@@ -277,6 +324,20 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
     const id = await client.get(pairingCodeKey(normalizedShortCode));
     if (!id) return null;
     return this.getById(id, now);
+  }
+
+  async consumeClaimAttempt(userId: string): Promise<boolean> {
+    const client = await this.#getRedisClient();
+    const attemptCount = await client.eval(
+      CONSUME_CLAIM_ATTEMPT_SCRIPT,
+      1,
+      claimAttemptKey(userId),
+      String(CLAIM_ATTEMPT_WINDOW_MS),
+    );
+    if (typeof attemptCount !== "number") {
+      throw new Error("Redis companion pairing claim attempt limiter returned a non-numeric count");
+    }
+    return attemptCount <= CLAIM_ATTEMPT_LIMIT;
   }
 
   async claimChallenge({
