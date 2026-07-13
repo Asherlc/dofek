@@ -20,7 +20,7 @@ vi.mock("../lib/cache.ts", () => ({
 }));
 
 vi.mock("../logger.ts", () => ({
-  logger: { info: vi.fn(), error: vi.fn() },
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
 // Lazy import to respect vi.mock ordering
@@ -132,6 +132,32 @@ describe("processPostSyncJob", () => {
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 100,
       message: "Post-sync refit complete.",
+    });
+  });
+
+  it("reports partial completion progress when user refit work has errors", async () => {
+    const job = makeUserRefitJob("user-1");
+    mockRefitAllParams.mockRejectedValueOnce(new Error("refit failed"));
+
+    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Post-sync refit completed with errors.",
+    });
+  });
+
+  it("continues post-sync work when progress updates fail", async () => {
+    const progressError = new Error("redis down");
+    const job = makeUserRefitJob("user-1");
+    job.updateProgress = vi.fn().mockRejectedValue(progressError);
+
+    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
+
+    expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1", fakeSensorStore);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
+    expect(mockCaptureException).toHaveBeenCalledWith(progressError, {
+      tags: { postSyncStep: "updateProgress" },
     });
   });
 

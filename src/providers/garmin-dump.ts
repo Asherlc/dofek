@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promise
 import { basename, dirname, join, relative } from "node:path";
 import type { Readable } from "node:stream";
 import type { CanonicalActivityType } from "@dofek/training/training";
+import * as Sentry from "@sentry/node";
 import yauzl from "yauzl";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -16,6 +17,7 @@ import {
   getFitFileImportQueue,
   getFitFileImportQueueEvents,
 } from "../jobs/queues.ts";
+import { logger } from "../logger.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
 export const GARMIN_DUMP_PROVIDER_ID = "garmin-dump";
@@ -161,7 +163,13 @@ async function reportGarminDumpProgress(
   percentage: number,
   message: string,
 ): Promise<void> {
-  await options.onProgress?.({ percentage, message });
+  if (!options.onProgress) return;
+  try {
+    await options.onProgress({ percentage, message });
+  } catch (error) {
+    logger.warn("Failed to report Garmin dump progress: %s", error);
+    Sentry.captureException(error, { tags: { garminDumpStep: "progress" } });
+  }
 }
 
 function countExtractedBytes(
@@ -443,17 +451,12 @@ async function enqueueFitFileImportJobs(
       results.push(
         ...(await Promise.all(
           batch.map(async ({ entry, job }) => {
+            let result: FitFileImportJobResult;
             try {
-              const result = fitFileImportJobResultSchema.parse(
-                await job.waitUntilFinished(queueEvents),
-              );
-              completedCount++;
-              await onJobFinished(completedCount, jobs.length);
-              return result;
+              result = fitFileImportJobResultSchema.parse(await job.waitUntilFinished(queueEvents));
             } catch (error) {
-              completedCount++;
-              await onJobFinished(completedCount, jobs.length);
-              return {
+              Sentry.captureException(error, { tags: { garminDumpStep: "fit-child-import" } });
+              result = {
                 recordsSynced: 0,
                 errors: [
                   {
@@ -464,6 +467,9 @@ async function enqueueFitFileImportJobs(
                 ],
               };
             }
+            completedCount++;
+            await onJobFinished(completedCount, jobs.length);
+            return result;
           }),
         )),
       );

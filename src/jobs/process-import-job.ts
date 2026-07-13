@@ -34,14 +34,19 @@ interface ImportProgressInfo {
   message: string;
 }
 
-function updateImportJobProgress(job: ImportJob, info: ImportProgressInfo): void {
-  job.updateProgress(info).catch((error: unknown) => {
+async function updateImportJobProgress(job: ImportJob, info: ImportProgressInfo): Promise<void> {
+  await job.updateProgress(info).catch((error: unknown) => {
     logger.warn("Failed to update import progress: %s", error);
+    Sentry.captureException(error, { tags: { phase: "import-progress-update" } });
   });
 }
 
-function reportImportProgress(job: ImportJob, percentage: number, message: string): void {
-  updateImportJobProgress(job, { percentage, message });
+async function reportImportProgress(
+  job: ImportJob,
+  percentage: number,
+  message: string,
+): Promise<void> {
+  await updateImportJobProgress(job, { percentage, message });
 }
 
 async function logImportCompletion(
@@ -78,7 +83,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   try {
     await runWithTokenUser(userId, async () => {
       if (importType === "apple-health") {
-        reportImportProgress(job, 0, "Starting Apple Health import...");
+        await reportImportProgress(job, 0, "Starting Apple Health import...");
         const { importAppleHealthFile } = await import("../providers/apple-health/import.ts");
         let lastLoggedPercentage = 0;
         // Scale streaming progress to 0-90% — remaining 10% is for post-import steps
@@ -96,6 +101,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
             : "Importing health data...";
           job.updateProgress({ percentage: scaledPercentage, message }).catch((error: unknown) => {
             logger.warn("Failed to update import progress: %s", error);
+            Sentry.captureException(error, { tags: { phase: "import-progress-update" } });
           });
           if (info.percentage >= lastLoggedPercentage + 10) {
             logger.info(`[worker] Apple Health import progress: ${info.percentage}%`);
@@ -113,14 +119,14 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           userId,
         );
       } else if (importType === "strong-csv") {
-        reportImportProgress(job, 0, "Starting Strong CSV import...");
+        await reportImportProgress(job, 0, "Starting Strong CSV import...");
         const { readFile } = await import("node:fs/promises");
-        reportImportProgress(job, 10, "Reading Strong CSV file...");
+        await reportImportProgress(job, 10, "Reading Strong CSV file...");
         const csvText = await readFile(filePath, "utf-8");
         const { importStrongCsv } = await import("../providers/strong-csv.ts");
-        reportImportProgress(job, 25, "Importing Strong CSV workouts...");
+        await reportImportProgress(job, 25, "Importing Strong CSV workouts...");
         const result = await importStrongCsv(db, csvText, userId, weightUnit ?? "kg");
-        reportImportProgress(job, 90, "Strong CSV import complete.");
+        await reportImportProgress(job, 90, "Strong CSV import complete.");
 
         await logImportCompletion(
           db,
@@ -132,14 +138,14 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           userId,
         );
       } else if (importType === "cronometer-csv") {
-        reportImportProgress(job, 0, "Starting Cronometer CSV import...");
+        await reportImportProgress(job, 0, "Starting Cronometer CSV import...");
         const { readFile } = await import("node:fs/promises");
-        reportImportProgress(job, 10, "Reading Cronometer CSV file...");
+        await reportImportProgress(job, 10, "Reading Cronometer CSV file...");
         const csvText = await readFile(filePath, "utf-8");
         const { importCronometerCsv } = await import("../providers/cronometer-csv.ts");
-        reportImportProgress(job, 25, "Importing Cronometer food entries...");
+        await reportImportProgress(job, 25, "Importing Cronometer food entries...");
         const result = await importCronometerCsv(db, csvText, userId);
-        reportImportProgress(job, 90, "Cronometer CSV import complete.");
+        await reportImportProgress(job, 90, "Cronometer CSV import complete.");
 
         await logImportCompletion(
           db,
@@ -151,14 +157,14 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           userId,
         );
       } else if (importType === "kaya-export") {
-        reportImportProgress(job, 0, "Starting Kaya export import...");
+        await reportImportProgress(job, 0, "Starting Kaya export import...");
         const { readFile } = await import("node:fs/promises");
-        reportImportProgress(job, 10, "Reading Kaya export file...");
+        await reportImportProgress(job, 10, "Reading Kaya export file...");
         const csvText = await readFile(filePath, "utf-8");
         const { importKayaExportFile } = await import("../providers/kaya/import.ts");
-        reportImportProgress(job, 25, "Importing Kaya climbing entries...");
+        await reportImportProgress(job, 25, "Importing Kaya climbing entries...");
         const result = await importKayaExportFile(requireKayaImportDatabase(db), csvText, userId);
-        reportImportProgress(job, 90, "Kaya export import complete.");
+        await reportImportProgress(job, 90, "Kaya export import complete.");
 
         await logImportCompletion(
           db,
@@ -170,15 +176,21 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           userId,
         );
       } else if (importType === "zos-app") {
-        reportImportProgress(job, 0, "Starting ZOS App import...");
+        await reportImportProgress(job, 0, "Starting ZOS App import...");
         const { readFile } = await import("node:fs/promises");
-        reportImportProgress(job, 10, "Reading ZOS App file...");
+        await reportImportProgress(job, 10, "Reading ZOS App file...");
         const binData = await readFile(filePath);
         const { importZosAppBin } = await import("../providers/zos-app/provider.ts");
-        reportImportProgress(job, 25, "Importing ZOS App sessions...");
+        await reportImportProgress(job, 25, "Importing ZOS App sessions...");
         const result = await importZosAppBin(db, binData, userId);
-        reportImportProgress(job, 90, "ZOS App import complete.");
 
+        if (result.recordsSynced === 0 && result.errors.length > 0) {
+          throw new Error(
+            `ZOS App import failed: ${result.errors.map((error: { message: string }) => error.message).join("; ")}`,
+          );
+        }
+
+        await reportImportProgress(job, 90, "ZOS App import complete.");
         await logImportCompletion(
           db,
           "zos-app",
@@ -188,14 +200,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           importStart,
           userId,
         );
-
-        if (result.recordsSynced === 0 && result.errors.length > 0) {
-          throw new Error(
-            `ZOS App import failed: ${result.errors.map((error: { message: string }) => error.message).join("; ")}`,
-          );
-        }
       } else if (importType === "garmin-dump") {
-        reportImportProgress(job, 0, "Starting Garmin dump import...");
         const { importGarminDumpFile } = await import("../providers/garmin-dump.ts");
         const result = await importGarminDumpFile(db, filePath, userId, {
           extendLock: job.extendLock,

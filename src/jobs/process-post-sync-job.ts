@@ -8,7 +8,7 @@ import type { PostSyncJobData } from "./queues.ts";
 /** Minimal Job interface — only the subset processPostSyncJob actually uses. */
 export interface PostSyncJob {
   data: PostSyncJobData;
-  updateProgress: (data: object) => Promise<void>;
+  updateProgress: (data: { percentage: number; message: string }) => Promise<void>;
 }
 
 async function updatePostSyncProgress(
@@ -16,7 +16,10 @@ async function updatePostSyncProgress(
   percentage: number,
   message: string,
 ): Promise<void> {
-  await job.updateProgress({ percentage, message });
+  await job.updateProgress({ percentage, message }).catch((error: unknown) => {
+    logger.warn("Failed to update post-sync progress: %s", error);
+    Sentry.captureException(error, { tags: { postSyncStep: "updateProgress" } });
+  });
 }
 
 /**
@@ -41,6 +44,7 @@ export async function processPostSyncJob(
 
   await updatePostSyncProgress(job, 0, "Starting post-sync refit...");
   logger.info(`[post-sync] Running post-sync refit for user ${job.data.userId}`);
+  let completedWithErrors = false;
 
   try {
     await updatePostSyncProgress(job, 20, "Refreshing body measurements...");
@@ -60,6 +64,7 @@ export async function processPostSyncJob(
     await refitAllParams(db, job.data.userId, sensorStore);
     logger.info("[post-sync] Personalized parameters updated.");
   } catch (err) {
+    completedWithErrors = true;
     logger.error(`[post-sync] Failed to refit parameters: ${err}`);
     Sentry.captureException(err, { tags: { postSyncStep: "refitParams" } });
   }
@@ -70,10 +75,15 @@ export async function processPostSyncJob(
     await queryCache.invalidateByPrefix(`${job.data.userId}:`);
     logger.info(`[post-sync] Cache invalidated for user ${job.data.userId}`);
   } catch (err) {
+    completedWithErrors = true;
     logger.error(`[post-sync] Failed to invalidate cache for user ${job.data.userId}: ${err}`);
     Sentry.captureException(err, { tags: { postSyncStep: "invalidateUserCache" } });
   }
 
   logger.info(`[post-sync] Post-sync refit complete for user ${job.data.userId}`);
-  await updatePostSyncProgress(job, 100, "Post-sync refit complete.");
+  await updatePostSyncProgress(
+    job,
+    100,
+    completedWithErrors ? "Post-sync refit completed with errors." : "Post-sync refit complete.",
+  );
 }

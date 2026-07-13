@@ -3,6 +3,7 @@
 import { readFile, unlink } from "node:fs/promises";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { Decoder, Stream } from "@garmin/fitsdk";
+import * as Sentry from "@sentry/node";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch, writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
@@ -16,7 +17,7 @@ import { type FitFileImportJobData, fitFileImportJobDataSchema } from "./queues.
 
 interface FitFileImportJob {
   data: unknown;
-  updateProgress: (data: object) => Promise<void>;
+  updateProgress: (data: FitFileImportProgressInfo) => Promise<void>;
 }
 
 export interface FitFileImportJobResult {
@@ -86,6 +87,7 @@ async function updateFitFileImportProgress(
 ): Promise<void> {
   await job.updateProgress(info).catch((error: unknown) => {
     logger.warn("Failed to update FIT import progress: %s", error);
+    Sentry.captureException(error, { tags: { fitImportStep: "updateProgress" } });
   });
 }
 
@@ -261,6 +263,10 @@ export async function processFitFileImportJob(
       await updateFitFileImportProgress(job, {
         percentage: 50,
         message: "Importing FIT weight data...",
+      });
+      await updateFitFileImportProgress(job, {
+        percentage: 80,
+        message: "Writing FIT weight data...",
       });
       result = await importWeightFit(db, data, messages);
     } else {

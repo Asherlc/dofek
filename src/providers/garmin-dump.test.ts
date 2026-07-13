@@ -14,6 +14,16 @@ import {
   parseGarminDumpFile,
 } from "./garmin-dump.ts";
 
+const mockCaptureException = vi.fn();
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
+const mockLoggerWarn = vi.fn();
+vi.mock("../logger.ts", () => ({
+  logger: { warn: (...args: unknown[]) => mockLoggerWarn(...args) },
+}));
+
 type FileStats = Awaited<ReturnType<typeof stat>>;
 
 interface FsPromisesMock {
@@ -227,11 +237,14 @@ describe("Garmin dump provider", () => {
     mockReplaceMetricStreamBatch.mockResolvedValue(undefined);
     mockWriteMetricStreamBatch.mockResolvedValue(undefined);
     mockEnsureProvider.mockResolvedValue(undefined);
+    fitQueueMock.add.mockReset();
+    fitQueueMock.waitUntilFinished.mockReset();
     fitQueueMock.add.mockImplementation(async (_name: string, data: unknown) => ({
       id: "fit-job-1",
       waitUntilFinished: () => fitQueueMock.waitUntilFinished(data),
     }));
     fitQueueMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 0, errors: [] });
+    mockCaptureException.mockClear();
     mockParseFitFile.mockResolvedValue({
       session: {
         sport: "cycling",
@@ -553,6 +566,21 @@ describe("Garmin dump provider", () => {
     });
   });
 
+  it("continues Garmin dump import when progress callbacks fail", async () => {
+    fitQueueMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 1, errors: [] });
+    const progressError = new Error("redis down");
+    const filePath = await createGarminDumpZip();
+    const onProgress = vi.fn().mockRejectedValue(progressError);
+
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1", { onProgress });
+
+    expect(result.recordsSynced).toBe(3);
+    expect(fitQueueMock.add).toHaveBeenCalledTimes(2);
+    expect(mockCaptureException).toHaveBeenCalledWith(progressError, {
+      tags: { garminDumpStep: "progress" },
+    });
+  });
+
   it("keeps parse errors in import results and imports FIT-only activities", async () => {
     fitQueueMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 1, errors: [] });
     const zip = await createZip({
@@ -705,6 +733,9 @@ describe("Garmin dump provider", () => {
     expect(onProgress).toHaveBeenCalledWith({
       percentage: 95,
       message: "Importing Garmin FIT files (2/2)...",
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { garminDumpStep: "fit-child-import" },
     });
   });
 

@@ -1,10 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockCaptureException = vi.fn();
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 const mockWaitForPeerDbActivityDeletes = vi.fn().mockResolvedValue(undefined);
 const mockWaitForPeerDbActivityRestores = vi.fn().mockResolvedValue(undefined);
 const mockRunActivityReadModelBuild = vi.fn().mockResolvedValue(undefined);
 const mockInvalidateByPrefix = vi.fn().mockResolvedValue(undefined);
 const mockClose = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("../logger.ts", () => ({
+  logger: { info: vi.fn(), warn: vi.fn() },
+}));
 
 vi.mock("../analytics/activity-read-model-build.ts", () => ({
   waitForPeerDbActivityDeletes: (...args: unknown[]) => mockWaitForPeerDbActivityDeletes(...args),
@@ -54,6 +63,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockWaitForPeerDbActivityRestores.mockClear();
     mockWaitForPeerDbActivityRestores.mockResolvedValue(undefined);
     mockRunActivityReadModelBuild.mockResolvedValue(undefined);
+    mockCaptureException.mockClear();
   });
 
   it("waits for PeerDB, rebuilds activity read models, and invalidates user caches", async () => {
@@ -140,8 +150,20 @@ describe("processActivityDeleteAnalyticsJob", () => {
     await processActivityDeleteAnalyticsJob(job);
 
     expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting activity analytics refresh...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 20,
       message: "Waiting for activity restores to reach analytics...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 60,
+      message: "Rebuilding activity analytics...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 90,
+      message: "Invalidating activity analytics cache...",
     });
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 100,
@@ -155,12 +177,34 @@ describe("processActivityDeleteAnalyticsJob", () => {
     await processActivityDeleteAnalyticsJob(job);
 
     expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting activity analytics refresh...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 60,
       message: "Rebuilding activity analytics...",
     });
     expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 90,
+      message: "Invalidating activity analytics cache...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 100,
       message: "Activity analytics refresh complete.",
+    });
+  });
+
+  it("continues analytics refresh when progress updates fail", async () => {
+    const progressError = new Error("redis down");
+    const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
+    job.updateProgress = vi.fn().mockRejectedValue(progressError);
+
+    await processActivityDeleteAnalyticsJob(job);
+
+    expect(mockRunActivityReadModelBuild).toHaveBeenCalledOnce();
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
+    expect(mockCaptureException).toHaveBeenCalledWith(progressError, {
+      tags: { activityAnalyticsStep: "updateProgress" },
     });
   });
 });

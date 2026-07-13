@@ -6,6 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
 
+const mockCaptureException = vi.fn();
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 const mockReplaceMetricStreamBatch = vi.fn().mockResolvedValue(undefined);
 const mockWriteMetricStreamBatch = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/metric-stream-writer.ts", () => ({
@@ -120,6 +125,7 @@ function createWeightFileOnlyFit(): Buffer {
 describe("processFitFileImportJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCaptureException.mockClear();
     mockUpsertProviderActivity.mockResolvedValue({ id: "activity-row-1" });
     mockReplaceMetricStreamBatch.mockResolvedValue(undefined);
     mockWriteMetricStreamBatch.mockResolvedValue(undefined);
@@ -245,6 +251,10 @@ describe("processFitFileImportJob", () => {
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 0,
       message: "Starting FIT file import...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 10,
+      message: "Reading FIT file...",
     });
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 25,
@@ -552,8 +562,33 @@ describe("processFitFileImportJob", () => {
       message: "Importing FIT weight data...",
     });
     expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 80,
+      message: "Writing FIT weight data...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 100,
       message: "FIT file import complete.",
+    });
+  });
+
+  it("continues FIT import when progress updates fail", async () => {
+    const progressError = new Error("redis down");
+    const filePath = await writeTempFit(createWeightFit());
+    const job = createFitFileImportJob({
+      filePath,
+      originalPath: "DI_CONNECT/asher@example.com_20260701_weight.fit",
+      userId: "user-1",
+      providerId: "garmin-dump",
+      sourceName: "Garmin Dump",
+    });
+    job.updateProgress = vi.fn().mockRejectedValue(progressError);
+
+    const result = await processFitFileImportJob(job, mockDb);
+
+    expect(result).toEqual({ recordsSynced: 1, errors: [] });
+    expect(mockWriteMetricStreamBatch).toHaveBeenCalledOnce();
+    expect(mockCaptureException).toHaveBeenCalledWith(progressError, {
+      tags: { fitImportStep: "updateProgress" },
     });
   });
 

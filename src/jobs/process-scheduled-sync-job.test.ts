@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SyncDatabase } from "../db/index.ts";
 
 /** Per-provider mock queues keyed by provider ID */
 const providerQueues = new Map<
@@ -13,7 +14,13 @@ const providerQueues = new Map<
   }
 >();
 const mockLoggerInfo = vi.fn();
+const mockLoggerWarn = vi.fn();
 const mockGetActiveCooldown = vi.fn();
+const mockCaptureException = vi.fn();
+
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
 
 function getMockQueue(providerId: string) {
   const existing = providerQueues.get(providerId);
@@ -44,6 +51,7 @@ vi.mock("./queues.ts", () => ({
 vi.mock("../logger.ts", () => ({
   logger: {
     info: (...args: unknown[]) => mockLoggerInfo(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
   },
 }));
 
@@ -71,6 +79,20 @@ vi.mock("./provider-rate-limit-cooldown.ts", () => ({
 
 const { processScheduledSyncJob } = await import("./process-scheduled-sync-job.ts");
 
+interface ScheduledSyncRow {
+  user_id: string;
+  provider_id: string;
+}
+
+function createScheduledSyncDatabase(rows: ScheduledSyncRow[]): SyncDatabase {
+  return {
+    select: vi.fn(),
+    insert: vi.fn(),
+    delete: vi.fn(),
+    execute: vi.fn().mockResolvedValue(rows),
+  };
+}
+
 function createScheduledSyncJob() {
   return {
     data: { type: "scheduled-sync-all" as const },
@@ -84,21 +106,20 @@ describe("processScheduledSyncJob", () => {
     providerQueues.clear();
     mockGetActiveCooldown.mockReset();
     mockGetActiveCooldown.mockResolvedValue(null);
+    mockCaptureException.mockClear();
   });
 
   it("enqueues sync jobs into per-provider queues for non-CSV providers only", async () => {
-    const db = {
-      execute: vi.fn().mockResolvedValue([
-        { user_id: "user-1", provider_id: "strava" },
-        { user_id: "user-1", provider_id: "strong-csv" },
-        { user_id: "user-2", provider_id: "wahoo" },
-        { user_id: "user-3", provider_id: "whoop" },
-      ]),
-    };
+    const db = createScheduledSyncDatabase([
+      { user_id: "user-1", provider_id: "strava" },
+      { user_id: "user-1", provider_id: "strong-csv" },
+      { user_id: "user-2", provider_id: "wahoo" },
+      { user_id: "user-3", provider_id: "whoop" },
+    ]);
 
     const job = createScheduledSyncJob();
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [job, db]);
+    await processScheduledSyncJob(job, db);
 
     // Each provider gets its own queue
     const stravaQueue = getMockQueue("strava");
@@ -154,14 +175,12 @@ describe("processScheduledSyncJob", () => {
   });
 
   it("reuses the same queue instance for multiple users of the same provider", async () => {
-    const db = {
-      execute: vi.fn().mockResolvedValue([
-        { user_id: "user-1", provider_id: "strava" },
-        { user_id: "user-2", provider_id: "strava" },
-      ]),
-    };
+    const db = createScheduledSyncDatabase([
+      { user_id: "user-1", provider_id: "strava" },
+      { user_id: "user-2", provider_id: "strava" },
+    ]);
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [createScheduledSyncJob(), db]);
+    await processScheduledSyncJob(createScheduledSyncJob(), db);
 
     const stravaQueue = getMockQueue("strava");
     expect(stravaQueue.add).toHaveBeenCalledTimes(2);
@@ -170,11 +189,11 @@ describe("processScheduledSyncJob", () => {
   });
 
   it("defaults sinceDays when provider metadata is missing", async () => {
-    const db = {
-      execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "unknown-provider" }]),
-    };
+    const db = createScheduledSyncDatabase([
+      { user_id: "user-1", provider_id: "unknown-provider" },
+    ]);
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [createScheduledSyncJob(), db]);
+    await processScheduledSyncJob(createScheduledSyncJob(), db);
 
     const unknownQueue = getMockQueue("unknown-provider");
     expect(unknownQueue.add).toHaveBeenCalledWith(
@@ -196,13 +215,11 @@ describe("processScheduledSyncJob", () => {
       expiresAt: new Date("2026-06-02T12:10:00Z"),
     };
     mockGetActiveCooldown.mockResolvedValue(cooldown);
-    const db = {
-      execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "garmin" }]),
-    };
+    const db = createScheduledSyncDatabase([{ user_id: "user-1", provider_id: "garmin" }]);
 
     const job = createScheduledSyncJob();
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [job, db]);
+    await processScheduledSyncJob(job, db);
 
     const garminQueue = getMockQueue("garmin");
     expect(garminQueue.add).not.toHaveBeenCalled();
@@ -230,13 +247,11 @@ describe("processScheduledSyncJob", () => {
       },
     ]);
 
-    const db = {
-      execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "garmin" }]),
-    };
+    const db = createScheduledSyncDatabase([{ user_id: "user-1", provider_id: "garmin" }]);
 
     const job = createScheduledSyncJob();
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [job, db]);
+    await processScheduledSyncJob(job, db);
 
     expect(garminQueue.add).not.toHaveBeenCalled();
     expect(job.updateProgress).toHaveBeenCalledWith({
@@ -271,15 +286,13 @@ describe("processScheduledSyncJob", () => {
         },
       },
     ]);
-    const db = {
-      execute: vi.fn().mockResolvedValue([
-        { user_id: "user-1", provider_id: "garmin" },
-        { user_id: "user-2", provider_id: "strava" },
-      ]),
-    };
+    const db = createScheduledSyncDatabase([
+      { user_id: "user-1", provider_id: "garmin" },
+      { user_id: "user-2", provider_id: "strava" },
+    ]);
     const job = createScheduledSyncJob();
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [job, db]);
+    await processScheduledSyncJob(job, db);
 
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 95,
@@ -288,15 +301,13 @@ describe("processScheduledSyncJob", () => {
   });
 
   it("reports progress while dispatching scheduled sync jobs", async () => {
-    const db = {
-      execute: vi.fn().mockResolvedValue([
-        { user_id: "user-1", provider_id: "strava" },
-        { user_id: "user-2", provider_id: "wahoo" },
-      ]),
-    };
+    const db = createScheduledSyncDatabase([
+      { user_id: "user-1", provider_id: "strava" },
+      { user_id: "user-2", provider_id: "wahoo" },
+    ]);
     const job = createScheduledSyncJob();
 
-    await Reflect.apply(processScheduledSyncJob, undefined, [job, db]);
+    await processScheduledSyncJob(job, db);
 
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 0,
@@ -321,6 +332,20 @@ describe("processScheduledSyncJob", () => {
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 100,
       message: "Scheduled 2 sync jobs for 2 users.",
+    });
+  });
+
+  it("continues scheduled sync dispatch when progress updates fail", async () => {
+    const progressError = new Error("redis down");
+    const db = createScheduledSyncDatabase([{ user_id: "user-1", provider_id: "strava" }]);
+    const job = createScheduledSyncJob();
+    job.updateProgress = vi.fn().mockRejectedValue(progressError);
+
+    await processScheduledSyncJob(job, db);
+
+    expect(getMockQueue("strava").add).toHaveBeenCalledOnce();
+    expect(mockCaptureException).toHaveBeenCalledWith(progressError, {
+      tags: { scheduledSyncStep: "updateProgress" },
     });
   });
 });

@@ -273,6 +273,9 @@ describe("processImportJob", () => {
         "Failed to update import progress: %s",
         progressError,
       );
+      expect(mockCaptureException).toHaveBeenCalledWith(progressError, {
+        tags: { phase: "import-progress-update" },
+      });
     });
 
     it("only logs progress at 10% increments", async () => {
@@ -727,9 +730,11 @@ describe("processImportJob", () => {
           _db: unknown,
           _filePath: unknown,
           _userId: unknown,
-          options: { onProgress: (info: { percentage: number; message: string }) => void },
+          options: {
+            onProgress: (info: { percentage: number; message: string }) => Promise<void>;
+          },
         ) => {
-          options.onProgress({ percentage: 35, message: "Reading Garmin dump..." });
+          await options.onProgress({ percentage: 35, message: "Reading Garmin dump..." });
           return { recordsSynced: 1, errors: [] };
         },
       );
@@ -739,6 +744,14 @@ describe("processImportJob", () => {
       expect(job.updateProgress).toHaveBeenCalledWith({
         percentage: 35,
         message: "Reading Garmin dump...",
+      });
+      expect(job.updateProgress).toHaveBeenNthCalledWith(1, {
+        percentage: 35,
+        message: "Reading Garmin dump...",
+      });
+      expect(job.updateProgress).toHaveBeenNthCalledWith(2, {
+        percentage: 95,
+        message: "Scheduling post-import processing...",
       });
     });
   });

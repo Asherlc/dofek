@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import {
   runActivityReadModelBuild,
   waitForPeerDbActivityDeletes,
@@ -10,7 +11,7 @@ import type { ActivityAnalyticsJobData } from "./queues.ts";
 
 export interface ActivityAnalyticsJob {
   data: ActivityAnalyticsJobData;
-  updateProgress: (data: object) => Promise<void>;
+  updateProgress: (data: { percentage: number; message: string }) => Promise<void>;
 }
 
 async function updateActivityAnalyticsProgress(
@@ -18,7 +19,23 @@ async function updateActivityAnalyticsProgress(
   percentage: number,
   message: string,
 ): Promise<void> {
-  await job.updateProgress({ percentage, message });
+  await job.updateProgress({ percentage, message }).catch((error: unknown) => {
+    logger.warn("Failed to update activity analytics progress: %s", error);
+    Sentry.captureException(error, { tags: { activityAnalyticsStep: "updateProgress" } });
+  });
+}
+
+async function rebuildActivityAnalytics(
+  job: ActivityAnalyticsJob,
+  userId: string,
+  logMessage: string,
+): Promise<void> {
+  await updateActivityAnalyticsProgress(job, 60, "Rebuilding activity analytics...");
+  await runActivityReadModelBuild();
+  await updateActivityAnalyticsProgress(job, 90, "Invalidating activity analytics cache...");
+  await queryCache.invalidateByPrefix(`${userId}:`);
+  logger.info(logMessage);
+  await updateActivityAnalyticsProgress(job, 100, "Activity analytics refresh complete.");
 }
 
 export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJob): Promise<void> {
@@ -28,14 +45,11 @@ export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJo
   try {
     await updateActivityAnalyticsProgress(job, 0, "Starting activity analytics refresh...");
     if (job.data.type === "activity-recompute-analytics-refresh") {
-      await updateActivityAnalyticsProgress(job, 60, "Rebuilding activity analytics...");
-      await runActivityReadModelBuild();
-      await updateActivityAnalyticsProgress(job, 90, "Invalidating activity analytics cache...");
-      await queryCache.invalidateByPrefix(`${userId}:`);
-      logger.info(
+      await rebuildActivityAnalytics(
+        job,
+        userId,
         `[activity-recompute-analytics] Refreshed activity read models for ${activityIds.length} activities for user ${userId}`,
       );
-      await updateActivityAnalyticsProgress(job, 100, "Activity analytics refresh complete.");
       return;
     }
 
@@ -46,14 +60,11 @@ export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJo
         "Waiting for activity restores to reach analytics...",
       );
       await waitForPeerDbActivityRestores(client, activityIds);
-      await updateActivityAnalyticsProgress(job, 60, "Rebuilding activity analytics...");
-      await runActivityReadModelBuild();
-      await updateActivityAnalyticsProgress(job, 90, "Invalidating activity analytics cache...");
-      await queryCache.invalidateByPrefix(`${userId}:`);
-      logger.info(
+      await rebuildActivityAnalytics(
+        job,
+        userId,
         `[activity-restore-analytics] Refreshed activity read models after restoring ${activityIds.length} activities for user ${userId}`,
       );
-      await updateActivityAnalyticsProgress(job, 100, "Activity analytics refresh complete.");
       return;
     }
 
@@ -63,14 +74,11 @@ export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJo
       "Waiting for activity deletes to reach analytics...",
     );
     await waitForPeerDbActivityDeletes(client, activityIds);
-    await updateActivityAnalyticsProgress(job, 60, "Rebuilding activity analytics...");
-    await runActivityReadModelBuild();
-    await updateActivityAnalyticsProgress(job, 90, "Invalidating activity analytics cache...");
-    await queryCache.invalidateByPrefix(`${userId}:`);
-    logger.info(
+    await rebuildActivityAnalytics(
+      job,
+      userId,
       `[activity-delete-analytics] Refreshed activity read models after deleting ${activityIds.length} activities for user ${userId}`,
     );
-    await updateActivityAnalyticsProgress(job, 100, "Activity analytics refresh complete.");
   } finally {
     await client.close?.();
   }

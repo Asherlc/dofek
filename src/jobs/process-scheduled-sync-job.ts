@@ -1,5 +1,5 @@
 import { isStepChainSyncProvider } from "@dofek/provider-http/adaptive-rate-limit";
-import type { Job } from "bullmq";
+import * as Sentry from "@sentry/node";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { listProviderSyncJobsForUser } from "../lib/sync-request-queue.ts";
@@ -10,7 +10,7 @@ import type { ScheduledSyncJobData } from "./queues.ts";
 
 interface ScheduledSyncJob {
   data: ScheduledSyncJobData;
-  updateProgress: (data: object) => Promise<void>;
+  updateProgress: (data: { percentage: number; message: string }) => Promise<void>;
 }
 
 async function updateScheduledSyncProgress(
@@ -18,7 +18,10 @@ async function updateScheduledSyncProgress(
   percentage: number,
   message: string,
 ): Promise<void> {
-  await job.updateProgress({ percentage, message });
+  await job.updateProgress({ percentage, message }).catch((error: unknown) => {
+    logger.warn("Failed to update scheduled sync progress: %s", error);
+    Sentry.captureException(error, { tags: { scheduledSyncStep: "updateProgress" } });
+  });
 }
 
 /**
@@ -26,7 +29,7 @@ async function updateScheduledSyncProgress(
  * and enqueue per-user sync jobs into per-provider queues so different
  * providers sync in parallel (while the same provider stays serialized).
  */
-export async function processScheduledSyncJob(job: Job<ScheduledSyncJobData>, db: SyncDatabase) {
+export async function processScheduledSyncJob(job: ScheduledSyncJob, db: SyncDatabase) {
   await updateScheduledSyncProgress(job, 0, "Starting scheduled sync dispatch...");
   // Ensure provider registry is populated so provider metadata (type, auth) is available.
   const { ensureProvidersRegistered } = await import("./provider-registration.ts");
