@@ -27,12 +27,12 @@ describe("activity_aerobic_efficiency model", () => {
 
     expect(heartRateSamplesSql).toContain("channel = 'heart_rate'");
     expect(powerSamplesSql).toContain("channel = 'power'");
-    expect(powerSamplesSql).not.toContain("AND scalar > 0");
+    expect(powerSamplesSql).toContain("AND scalar > 0");
     expect(z2SamplesSql).toContain("ASOF JOIN");
     expect(z2SamplesSql).toContain(`ON hr.user_id = pwr.user_id
         AND hr.activity_id = pwr.activity_id
         AND hr.recorded_at >= pwr.recorded_at`);
-    expect(z2SamplesSql).toContain("WHERE pwr.scalar > 0");
+    expect(z2SamplesSql).not.toContain("WHERE pwr.scalar > 0");
     expect(z2SamplesSql).not.toContain("pwr.recorded_at = hr.recorded_at");
     expect(z2SamplesSql).toContain("HAVING count() >= 300");
   });

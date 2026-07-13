@@ -290,6 +290,7 @@ export class EfficiencyRepository extends BaseRepository {
          AND power.recorded_at >= am.started_at
          AND power.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
          AND power.channel = 'power'
+         AND power.scalar > 0
          AND power.is_deleted = 0
         WHERE 1 = 1
           ${powerSampleLowerBoundPredicate}
@@ -301,7 +302,6 @@ export class EfficiencyRepository extends BaseRepository {
         ON hr.user_id = pwr.user_id
        AND hr.id = pwr.id
        AND hr.recorded_at >= pwr.recorded_at
-      WHERE pwr.scalar > 0
       GROUP BY hr.id
       HAVING count() >= 300
       ORDER BY any(hr.started_at)`,

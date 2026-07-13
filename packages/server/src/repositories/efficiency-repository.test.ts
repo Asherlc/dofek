@@ -208,8 +208,8 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     expect(fallbackQuery).toContain(`ON hr.user_id = pwr.user_id
        AND hr.id = pwr.id
        AND hr.recorded_at >= pwr.recorded_at`);
-    expect(fallbackQuery).not.toContain("AND power.scalar > 0");
-    expect(fallbackQuery).toContain("WHERE pwr.scalar > 0");
+    expect(fallbackQuery).toContain("AND power.scalar > 0");
+    expect(fallbackQuery).not.toContain("WHERE pwr.scalar > 0");
     expect(fallbackQuery).toContain("power.recorded_at > now() - INTERVAL {days:Int32} DAY");
     expect(fallbackQuery).not.toContain("pwr.recorded_at = hr.recorded_at");
   });
