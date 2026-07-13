@@ -168,6 +168,27 @@ describe("processFitFileImportJob", () => {
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
   });
 
+  it("cleans up temp files when queue payload validation fails", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+
+    await expect(
+      processFitFileImportJob(
+        {
+          data: {
+            filePath,
+            originalPath: "DI_CONNECT/activity.fit",
+            userId: "user-1",
+            providerId: "garmin-dump",
+          },
+        },
+        mockDb,
+      ),
+    ).rejects.toThrow();
+
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    await expect(readFile(filePath)).rejects.toThrow();
+  });
+
   it("imports an activity FIT file with a parent summary and replaces sensor samples", async () => {
     const filePath = await writeTempFit(createActivityFit());
 

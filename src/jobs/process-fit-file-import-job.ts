@@ -65,6 +65,15 @@ const decodedFitSchema = z.object({
   messages: fitMessagesSchema.optional(),
 });
 
+const fitFileImportCleanupPathSchema = z.object({
+  filePath: z.string(),
+});
+
+function cleanupPathFromJobData(data: unknown): string | null {
+  const parsed = fitFileImportCleanupPathSchema.safeParse(data);
+  return parsed.success ? parsed.data.filePath : null;
+}
+
 function normalizedFitSport(value: string | undefined): string {
   return (
     value
@@ -219,17 +228,20 @@ export async function processFitFileImportJob(
   job: FitFileImportJob,
   db: SyncDatabase,
 ): Promise<FitFileImportJobResult> {
-  const data = fitFileImportJobDataSchema.parse(job.data);
-  const buffer = await readFile(data.filePath);
+  const cleanupFilePath = cleanupPathFromJobData(job.data);
   try {
+    const data = fitFileImportJobDataSchema.parse(job.data);
+    const buffer = await readFile(data.filePath);
     const messages = decodeFitMessages(buffer);
     if (isWeightFit(messages)) {
       return await importWeightFit(db, data, messages);
     }
     return await importActivityFit(db, data, buffer);
   } finally {
-    await unlink(data.filePath).catch((error: unknown) => {
-      logger.warn("Failed to clean up FIT import file %s: %s", data.filePath, error);
-    });
+    if (cleanupFilePath) {
+      await unlink(cleanupFilePath).catch((error: unknown) => {
+        logger.warn("Failed to clean up FIT import file %s: %s", cleanupFilePath, error);
+      });
+    }
   }
 }
