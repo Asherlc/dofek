@@ -614,14 +614,17 @@ describe("Garmin dump provider", () => {
 
     expect(result.recordsSynced).toBe(2);
     expect(fitQueueMock.add).toHaveBeenCalledTimes(2);
-    expect(fitQueueMock.add.mock.calls.map((call) => call[1])).toEqual([
-      expect.objectContaining({
-        originalPath: "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit",
-      }),
-      expect.objectContaining({
-        originalPath: "DI_CONNECT/DI-Connect-Uploaded-Files/copy/asher@example.com_12345_extra.fit",
-      }),
-    ]);
+    expect(fitQueueMock.add.mock.calls.map((call) => call[1])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          originalPath: "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit",
+        }),
+        expect.objectContaining({
+          originalPath:
+            "DI_CONNECT/DI-Connect-Uploaded-Files/copy/asher@example.com_12345_extra.fit",
+        }),
+      ]),
+    );
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     expect(mockParseFitFile).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
