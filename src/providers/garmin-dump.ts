@@ -1,20 +1,25 @@
 import { createHash } from "node:crypto";
+import { createWriteStream } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 import type { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { CanonicalActivityType } from "@dofek/training/training";
+import type { FlowChildJob } from "bullmq";
 import yauzl from "yauzl";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import { fitExternalId } from "../fit/external-id.ts";
 import type { ParsedFitSession } from "../fit/parser.ts";
 import type { FitFileImportJobResult } from "../jobs/process-fit-file-import-job.ts";
 import {
+  FIT_FILE_IMPORT_BATCH_QUEUE,
+  FIT_FILE_IMPORT_QUEUE,
   type FitFileImportJobData,
-  getFitFileImportQueue,
-  getFitFileImportQueueEvents,
+  getFitFileImportBatchQueueEvents,
+  getFlowProducer,
+  ZIP_ENTRY_EXTRACT_QUEUE,
 } from "../jobs/queues.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
@@ -25,7 +30,6 @@ const MAX_GARMIN_DUMP_ENTRY_BYTES = 128 * 1024 * 1024;
 const MAX_GARMIN_DUMP_NESTED_ZIP_BYTES = 1024 * 1024 * 1024;
 const MAX_GARMIN_DUMP_EXTRACTED_BYTES = 4 * 1024 * 1024 * 1024;
 const GARMIN_DUMP_IMPORT_LOCK_EXTENSION_MS = 10 * 60 * 1000;
-const FIT_FILE_IMPORT_BATCH_SIZE = 16;
 
 const summarizedActivitySchema = z
   .object({
@@ -53,7 +57,9 @@ const summarizedActivitiesSuffix = `_${"summarized"}${"activities"}.json`;
 
 interface GarminDumpEntry {
   path: string;
-  data: Buffer;
+  archivePath?: string;
+  entryPath?: string[];
+  filePath?: string;
 }
 
 interface ParsedGarminDump {
@@ -61,6 +67,7 @@ interface ParsedGarminDump {
   fitFiles: GarminDumpEntry[];
   weightFitFiles: GarminDumpEntry[];
   errors: SyncError[];
+  tempDirectories: string[];
 }
 
 interface GarminDumpExtractionState {
@@ -75,6 +82,11 @@ const fitFileImportJobResultSchema = z.object({
   recordsSynced: z.number(),
   errors: z.array(z.object({ message: z.string() })),
 });
+
+const GARMIN_DUMP_LOCK_RENEWAL_INTERVAL_MS = 4 * 60 * 1000;
+const FIT_FILE_IMPORT_JOB_NAME = "fit-file-import";
+const FIT_FILE_IMPORT_BATCH_JOB_NAME = "fit-file-import-batch";
+const ZIP_ENTRY_EXTRACT_JOB_NAME = "zip-entry-extract";
 
 const GARMIN_ACTIVITY_TYPE_MAP: Readonly<Record<string, CanonicalActivityType>> = {
   cycling: "cycling",
@@ -140,6 +152,12 @@ function isGarminWeightFitPath(path: string): boolean {
   return /_weights?\.fit$/i.test(path);
 }
 
+function fitExternalIdFromPath(path: string): string | null {
+  const fileName = path.split("/").pop() ?? path;
+  const match = fileName.match(/_(\d+)(?:_[^/]*)?\.fit$/i);
+  return match?.[1] ?? null;
+}
+
 function assertGarminDumpSize(byteCount: number, maxBytes: number, description: string): void {
   if (byteCount > maxBytes) {
     throw new Error(`${description} exceeds maximum size of ${maxBytes} bytes`);
@@ -182,9 +200,33 @@ async function streamToBuffer(
   return Buffer.concat(chunks);
 }
 
-function openZipFromBuffer(buffer: Buffer): Promise<yauzl.ZipFile> {
+async function streamToFile(
+  stream: Readable,
+  filePath: string,
+  maxBytes: number,
+  description: string,
+): Promise<number> {
+  let bytesRead = 0;
+  await pipeline(
+    stream,
+    async function* limitBytes(source) {
+      for await (const chunk of source) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        bytesRead += buffer.length;
+        if (bytesRead > maxBytes) {
+          throw new Error(`${description} exceeds maximum size of ${maxBytes} bytes`);
+        }
+        yield buffer;
+      }
+    },
+    createWriteStream(filePath, { flags: "wx" }),
+  );
+  return bytesRead;
+}
+
+function openZipFromPath(filePath: string): Promise<yauzl.ZipFile> {
   return new Promise((resolve, reject) => {
-    yauzl.fromBuffer(buffer, { lazyEntries: true }, (error, zipFile) => {
+    yauzl.open(filePath, { lazyEntries: true }, (error, zipFile) => {
       if (error) {
         reject(error);
         return;
@@ -196,6 +238,12 @@ function openZipFromBuffer(buffer: Buffer): Promise<yauzl.ZipFile> {
       resolve(zipFile);
     });
   });
+}
+
+function shouldReadGarminDumpEntry(lowerPath: string): boolean {
+  if (lowerPath.endsWith(".fit")) return true;
+  if (lowerPath.endsWith(summarizedActivitiesSuffix)) return true;
+  return lowerPath.endsWith(".zip") && lowerPath.includes("/di-connect-uploaded-files/");
 }
 
 function openReadStream(zipFile: yauzl.ZipFile, entry: yauzl.Entry): Promise<Readable> {
@@ -242,11 +290,14 @@ function readNextZipEntry(zipFile: yauzl.ZipFile): Promise<yauzl.Entry | null> {
 }
 
 async function collectZipEntries(
-  buffer: Buffer,
+  rootArchivePath: string,
+  zipPath: string,
+  extractionDirectory: string,
   prefix = "",
+  entryPathPrefix: string[] = [],
   state: GarminDumpExtractionState = { extractedBytes: 0 },
 ): Promise<GarminDumpEntry[]> {
-  const zipFile = await openZipFromBuffer(buffer);
+  const zipFile = await openZipFromPath(zipPath);
   const entries: GarminDumpEntry[] = [];
 
   try {
@@ -257,26 +308,75 @@ async function collectZipEntries(
 
       const path = `${prefix}${entry.fileName}`;
       const lowerPath = path.toLowerCase();
+      if (!shouldReadGarminDumpEntry(lowerPath)) continue;
+
       const maxEntryBytes = lowerPath.endsWith(".zip")
         ? MAX_GARMIN_DUMP_NESTED_ZIP_BYTES
         : MAX_GARMIN_DUMP_ENTRY_BYTES;
       assertGarminDumpSize(entry.uncompressedSize, maxEntryBytes, `Garmin dump entry ${path}`);
-      const stream = await openReadStream(zipFile, entry);
-      const data = await streamToBuffer(stream, maxEntryBytes, `Garmin dump entry ${path}`);
-      countExtractedBytes(state, data.length, path);
       if (lowerPath.endsWith(".zip")) {
-        entries.push(...(await collectZipEntries(data, `${path}/`, state)));
-      } else {
-        entries.push({ path, data });
+        const nestedEntryPath = [...entryPathPrefix, entry.fileName];
+        const stream = await openReadStream(zipFile, entry);
+        const nestedZipPath = join(
+          extractionDirectory,
+          `${createHash("sha256").update(path).digest("hex")}.zip`,
+        );
+        const bytesRead = await streamToFile(
+          stream,
+          nestedZipPath,
+          maxEntryBytes,
+          `Garmin dump entry ${path}`,
+        );
+        countExtractedBytes(state, bytesRead, path);
+        entries.push(
+          ...(await collectZipEntries(
+            rootArchivePath,
+            nestedZipPath,
+            extractionDirectory,
+            `${path}/`,
+            nestedEntryPath,
+            state,
+          )),
+        );
+        continue;
       }
+
+      if (lowerPath.endsWith(summarizedActivitiesSuffix)) {
+        const stream = await openReadStream(zipFile, entry);
+        const data = await streamToBuffer(stream, maxEntryBytes, `Garmin dump entry ${path}`);
+        countExtractedBytes(state, data.length, path);
+        const filePath = join(
+          extractionDirectory,
+          `${createHash("sha256").update(path).digest("hex")}.json`,
+        );
+        await writeFile(filePath, data, { flag: "wx" });
+        entries.push({
+          path,
+          filePath,
+          archivePath: rootArchivePath,
+          entryPath: [...entryPathPrefix, entry.fileName],
+        });
+        continue;
+      }
+
+      countExtractedBytes(state, entry.uncompressedSize, path);
+      entries.push({
+        path,
+        archivePath: rootArchivePath,
+        entryPath: [...entryPathPrefix, entry.fileName],
+      });
     }
   } finally {
     zipFile.close();
   }
 }
 
-async function collectDirectoryEntries(rootPath: string): Promise<GarminDumpEntry[]> {
+async function collectDirectoryEntries(rootPath: string): Promise<{
+  entries: GarminDumpEntry[];
+  tempDirectories: string[];
+}> {
   const entries: GarminDumpEntry[] = [];
+  const tempDirectories: string[] = [];
   const state: GarminDumpExtractionState = { extractedBytes: 0 };
 
   async function visit(directoryPath: string): Promise<void> {
@@ -292,22 +392,34 @@ async function collectDirectoryEntries(rootPath: string): Promise<GarminDumpEntr
       const relativePath = relative(rootPath, childPath);
       const childStats = await stat(childPath);
       const lowerPath = relativePath.toLowerCase();
+      if (!shouldReadGarminDumpEntry(lowerPath)) continue;
+
       const maxEntryBytes = lowerPath.endsWith(".zip")
         ? MAX_GARMIN_DUMP_NESTED_ZIP_BYTES
         : MAX_GARMIN_DUMP_ENTRY_BYTES;
       assertGarminDumpSize(childStats.size, maxEntryBytes, `Garmin dump file ${relativePath}`);
-      const data = await readFile(childPath);
-      countExtractedBytes(state, data.length, relativePath);
-      if (relativePath.toLowerCase().endsWith(".zip")) {
-        entries.push(...(await collectZipEntries(data, `${relativePath}/`, state)));
+      countExtractedBytes(state, childStats.size, relativePath);
+      if (lowerPath.endsWith(".zip")) {
+        const extractionDirectory = await mkdtemp(join(rootPath, ".garmin-dump-extract-"));
+        tempDirectories.push(extractionDirectory);
+        entries.push(
+          ...(await collectZipEntries(
+            childPath,
+            childPath,
+            extractionDirectory,
+            `${relativePath}/`,
+            [],
+            state,
+          )),
+        );
       } else {
-        entries.push({ path: relativePath, data });
+        entries.push({ path: relativePath, filePath: childPath });
       }
     }
   }
 
   await visit(rootPath);
-  return entries;
+  return { entries, tempDirectories };
 }
 
 export async function parseGarminDumpFile(filePath: string): Promise<ParsedGarminDump> {
@@ -318,9 +430,19 @@ export async function parseGarminDumpFile(filePath: string): Promise<ParsedGarmi
     }
     assertGarminDumpSize(fileStats.size, MAX_GARMIN_DUMP_INPUT_BYTES, "Garmin dump upload");
   }
-  const entries = fileStats.isDirectory()
-    ? await collectDirectoryEntries(filePath)
-    : await collectZipEntries(await readFile(filePath));
+  const tempDirectories: string[] = [];
+  let entries: GarminDumpEntry[];
+  if (fileStats.isDirectory()) {
+    const directoryResult = await collectDirectoryEntries(filePath);
+    tempDirectories.push(...directoryResult.tempDirectories);
+    entries = directoryResult.entries;
+  } else {
+    const extractionDirectory = await mkdtemp(
+      join(dirname(filePath), `${basename(filePath)}-extract-`),
+    );
+    tempDirectories.push(extractionDirectory);
+    entries = await collectZipEntries(filePath, filePath, extractionDirectory);
+  }
   const errors: SyncError[] = [];
   const summaries: GarminSummarizedActivity[] = [];
   const fitFiles: GarminDumpEntry[] = [];
@@ -341,7 +463,10 @@ export async function parseGarminDumpFile(filePath: string): Promise<ParsedGarmi
     if (!lowerPath.endsWith(summarizedActivitiesSuffix)) continue;
 
     try {
-      const parsedJson: unknown = JSON.parse(entry.data.toString("utf8"));
+      if (!entry.filePath) {
+        throw new Error(`Garmin summarized activities ${entry.path} was not extracted`);
+      }
+      const parsedJson: unknown = JSON.parse(await readFile(entry.filePath, "utf8"));
       const parsedFile = summarizedActivitiesFileSchema.parse(parsedJson);
       for (const group of parsedFile) {
         summaries.push(...(group.summarizedActivitiesExport ?? []));
@@ -356,7 +481,7 @@ export async function parseGarminDumpFile(filePath: string): Promise<ParsedGarmi
     }
   }
 
-  return { summaries, fitFiles, weightFitFiles, errors };
+  return { summaries, fitFiles, weightFitFiles, errors, tempDirectories };
 }
 
 function garminSummaryToFitJobSummary(
@@ -377,78 +502,96 @@ function garminSummaryToFitJobSummary(
   };
 }
 
-async function enqueueFitFileImportJobs(
+function fitFileImportFlowChild(
+  uploadPath: string,
+  entry: GarminDumpEntry,
+  data: Omit<FitFileImportJobData, "filePath">,
+): FlowChildJob {
+  const fitImportData: FitFileImportJobData = entry.filePath
+    ? { ...data, filePath: entry.filePath }
+    : data;
+  const children =
+    entry.archivePath && entry.entryPath
+      ? [
+          {
+            name: ZIP_ENTRY_EXTRACT_JOB_NAME,
+            queueName: ZIP_ENTRY_EXTRACT_QUEUE,
+            data: {
+              archivePath: entry.archivePath,
+              entryPath: entry.entryPath,
+              outputExtension: "fit",
+              maxBytes: MAX_GARMIN_DUMP_ENTRY_BYTES,
+            },
+            opts: {
+              failParentOnFailure: true,
+              removeOnComplete: { age: 86_400, count: 1_000 },
+              removeOnFail: { age: 604_800, count: 1_000 },
+            },
+          },
+        ]
+      : undefined;
+
+  return {
+    name: FIT_FILE_IMPORT_JOB_NAME,
+    queueName: FIT_FILE_IMPORT_QUEUE,
+    data: fitImportData,
+    opts: {
+      failParentOnFailure: true,
+      jobId: `${basename(uploadPath)}:${createHash("sha256").update(entry.path).digest("hex")}`,
+      removeOnComplete: { age: 86_400, count: 1_000 },
+      removeOnFail: { age: 604_800, count: 1_000 },
+    },
+    ...(children ? { children } : {}),
+  };
+}
+
+async function enqueueFitFileImportFlow(
   entries: Array<{ entry: GarminDumpEntry; data: Omit<FitFileImportJobData, "filePath"> }>,
   uploadPath: string,
-): Promise<FitFileImportJobResult[]> {
-  if (entries.length === 0) return [];
+): Promise<FitFileImportJobResult> {
+  if (entries.length === 0) return { recordsSynced: 0, errors: [] };
 
-  const tempDirectory = await mkdtemp(join(dirname(uploadPath), `${basename(uploadPath)}-fit-`));
-  const queue = getFitFileImportQueue();
-  const queueEvents = getFitFileImportQueueEvents();
+  const flow = await getFlowProducer().add({
+    name: FIT_FILE_IMPORT_BATCH_JOB_NAME,
+    queueName: FIT_FILE_IMPORT_BATCH_QUEUE,
+    data: { type: "fit-file-import-batch" },
+    opts: {
+      jobId: `garmin-dump-fit-batch:${basename(uploadPath)}:${createHash("sha256")
+        .update(entries.map(({ entry }) => entry.path).join("\n"))
+        .digest("hex")}`,
+      removeOnComplete: { age: 86_400, count: 1_000 },
+      removeOnFail: { age: 604_800, count: 1_000 },
+    },
+    children: entries.map(({ entry, data }) => fitFileImportFlowChild(uploadPath, entry, data)),
+  });
 
-  try {
-    const jobs: Array<{
-      entry: GarminDumpEntry;
-      job: Awaited<ReturnType<typeof queue.add>>;
-    }> = [];
-    for (
-      let startIndex = 0;
-      startIndex < entries.length;
-      startIndex += FIT_FILE_IMPORT_BATCH_SIZE
-    ) {
-      const batch = entries.slice(startIndex, startIndex + FIT_FILE_IMPORT_BATCH_SIZE);
-      jobs.push(
-        ...(await Promise.all(
-          batch.map(async ({ entry, data }, entryIndex) => {
-            const absoluteEntryIndex = startIndex + entryIndex;
-            const filePath = join(
-              tempDirectory,
-              `${absoluteEntryIndex}-${createHash("sha256").update(entry.path).digest("hex")}.fit`,
-            );
-            await writeFile(filePath, entry.data);
-            const job = await queue.add(
-              "fit-file-import",
-              { ...data, filePath },
-              {
-                removeOnComplete: { age: 86_400, count: 1_000 },
-                removeOnFail: { age: 604_800, count: 1_000 },
-              },
-            );
-            return { entry, job };
-          }),
-        )),
-      );
-    }
+  return fitFileImportJobResultSchema.parse(
+    await flow.job.waitUntilFinished(getFitFileImportBatchQueueEvents()),
+  );
+}
 
-    const results: FitFileImportJobResult[] = [];
-    for (let startIndex = 0; startIndex < jobs.length; startIndex += FIT_FILE_IMPORT_BATCH_SIZE) {
-      const batch = jobs.slice(startIndex, startIndex + FIT_FILE_IMPORT_BATCH_SIZE);
-      results.push(
-        ...(await Promise.all(
-          batch.map(async ({ entry, job }) => {
-            try {
-              return fitFileImportJobResultSchema.parse(await job.waitUntilFinished(queueEvents));
-            } catch (error) {
-              return {
-                recordsSynced: 0,
-                errors: [
-                  {
-                    message: `Failed to import Garmin FIT file ${entry.path}: ${
-                      error instanceof Error ? error.message : String(error)
-                    }`,
-                  },
-                ],
-              };
-            }
-          }),
-        )),
-      );
-    }
-    return results;
-  } finally {
-    await rm(tempDirectory, { recursive: true, force: true });
+function startGarminDumpImportLockRenewal(options: GarminDumpImportOptions): {
+  stop: () => void;
+  throwIfFailed: () => void;
+} {
+  if (!options.extendLock) {
+    return { stop: () => undefined, throwIfFailed: () => undefined };
   }
+
+  let renewalError: unknown;
+  const interval = setInterval(() => {
+    options.extendLock?.(GARMIN_DUMP_IMPORT_LOCK_EXTENSION_MS).catch((error: unknown) => {
+      renewalError = error;
+    });
+  }, GARMIN_DUMP_LOCK_RENEWAL_INTERVAL_MS);
+  interval.unref?.();
+
+  return {
+    stop: () => clearInterval(interval),
+    throwIfFailed: () => {
+      if (renewalError) throw renewalError;
+    },
+  };
 }
 
 export async function importGarminDumpFile(
@@ -459,105 +602,119 @@ export async function importGarminDumpFile(
 ): Promise<SyncResult> {
   const start = Date.now();
   await extendGarminDumpImportLock(options);
-  const parsedDump = await parseGarminDumpFile(filePath);
-  const errors: SyncError[] = [...parsedDump.errors];
+  const lockRenewal = startGarminDumpImportLockRenewal(options);
+  const errors: SyncError[] = [];
   let recordsSynced = 0;
+  let parsedDump: ParsedGarminDump | null = null;
   const summaryByExternalId = new Map<string, GarminSummarizedActivity>();
 
-  await ensureProvider(db, GARMIN_DUMP_PROVIDER_ID, GARMIN_DUMP_PROVIDER_NAME, undefined, userId);
-
-  for (const summary of parsedDump.summaries) {
-    const externalId = String(summary.activityId);
-    summaryByExternalId.set(externalId, summary);
-    const startedAt = timestampFromSummary(summary);
-    if (!startedAt) {
-      errors.push({ message: `Garmin activity ${externalId} is missing a valid start time` });
-      continue;
-    }
-
-    const activityType = mapGarminDumpActivityType(summary.activityType, summary.sportType);
-    const name = summary.name ?? `Garmin ${activityType.replace(/_/g, " ")}`;
-    const endedAt = new Date(startedAt.getTime() + durationMilliseconds(summary));
-    await upsertProviderActivity(
-      db,
-      {
-        providerId: GARMIN_DUMP_PROVIDER_ID,
-        userId,
-        externalId,
-        activityType,
-        startedAt,
-        endedAt,
-        name,
-        sourceName: GARMIN_DUMP_PROVIDER_NAME,
-        raw: summary,
-      },
-      {
-        activityType,
-        startedAt,
-        endedAt,
-        name,
-        sourceName: GARMIN_DUMP_PROVIDER_NAME,
-        raw: summary,
-      },
-    );
-    recordsSynced++;
-  }
-
-  const fitJobEntries: Array<{
-    entry: GarminDumpEntry;
-    data: Omit<FitFileImportJobData, "filePath">;
-  }> = parsedDump.weightFitFiles.map((entry) => ({
-    entry,
-    data: {
-      originalPath: entry.path,
-      userId,
-      providerId: GARMIN_DUMP_PROVIDER_ID,
-      sourceName: GARMIN_DUMP_PROVIDER_NAME,
-    },
-  }));
-
-  for (const fitFile of parsedDump.fitFiles) {
-    const externalId = fitExternalId(fitFile.path, fitFile.data);
-    if (summaryByExternalId.size > 0 && !summaryByExternalId.has(externalId)) {
-      continue;
-    }
-    const summary = summaryByExternalId.get(externalId);
-    const activitySummary = summary ? garminSummaryToFitJobSummary(summary) : undefined;
-    if (summary && !activitySummary) {
-      errors.push({ message: `Garmin activity ${externalId} is missing a valid start time` });
-      continue;
-    }
-    const jobData: Omit<FitFileImportJobData, "filePath"> = {
-      originalPath: fitFile.path,
-      userId,
-      providerId: GARMIN_DUMP_PROVIDER_ID,
-      sourceName: GARMIN_DUMP_PROVIDER_NAME,
-    };
-    if (activitySummary) {
-      jobData.activitySummary = activitySummary;
-    }
-    fitJobEntries.push({
-      entry: fitFile,
-      data: jobData,
-    });
-  }
-
   try {
-    await extendGarminDumpImportLock(options);
-    const fitResults = await enqueueFitFileImportJobs(fitJobEntries, filePath);
-    for (const result of fitResults) {
-      recordsSynced += result.recordsSynced;
-      for (const error of result.errors) {
+    parsedDump = await parseGarminDumpFile(filePath);
+    lockRenewal.throwIfFailed();
+    errors.push(...parsedDump.errors);
+
+    await ensureProvider(db, GARMIN_DUMP_PROVIDER_ID, GARMIN_DUMP_PROVIDER_NAME, undefined, userId);
+
+    for (const summary of parsedDump.summaries) {
+      const externalId = String(summary.activityId);
+      summaryByExternalId.set(externalId, summary);
+      const startedAt = timestampFromSummary(summary);
+      if (!startedAt) {
+        errors.push({ message: `Garmin activity ${externalId} is missing a valid start time` });
+        continue;
+      }
+
+      const activityType = mapGarminDumpActivityType(summary.activityType, summary.sportType);
+      const name = summary.name ?? `Garmin ${activityType.replace(/_/g, " ")}`;
+      const endedAt = new Date(startedAt.getTime() + durationMilliseconds(summary));
+      await upsertProviderActivity(
+        db,
+        {
+          providerId: GARMIN_DUMP_PROVIDER_ID,
+          userId,
+          externalId,
+          activityType,
+          startedAt,
+          endedAt,
+          name,
+          sourceName: GARMIN_DUMP_PROVIDER_NAME,
+          raw: summary,
+        },
+        {
+          activityType,
+          startedAt,
+          endedAt,
+          name,
+          sourceName: GARMIN_DUMP_PROVIDER_NAME,
+          raw: summary,
+        },
+      );
+      recordsSynced++;
+    }
+
+    const fitJobEntries: Array<{
+      entry: GarminDumpEntry;
+      data: Omit<FitFileImportJobData, "filePath">;
+    }> = parsedDump.weightFitFiles.map((entry) => ({
+      entry,
+      data: {
+        originalPath: entry.path,
+        userId,
+        providerId: GARMIN_DUMP_PROVIDER_ID,
+        sourceName: GARMIN_DUMP_PROVIDER_NAME,
+      },
+    }));
+
+    for (const fitFile of parsedDump.fitFiles) {
+      const externalId = fitExternalIdFromPath(fitFile.path);
+      if (summaryByExternalId.size > 0 && (!externalId || !summaryByExternalId.has(externalId))) {
+        continue;
+      }
+      const summary = externalId ? summaryByExternalId.get(externalId) : undefined;
+      const activitySummary = summary ? garminSummaryToFitJobSummary(summary) : undefined;
+      if (summary && !activitySummary) {
+        errors.push({ message: `Garmin activity ${externalId} is missing a valid start time` });
+        continue;
+      }
+      const jobData: Omit<FitFileImportJobData, "filePath"> = {
+        originalPath: fitFile.path,
+        userId,
+        providerId: GARMIN_DUMP_PROVIDER_ID,
+        sourceName: GARMIN_DUMP_PROVIDER_NAME,
+      };
+      if (activitySummary) {
+        jobData.activitySummary = activitySummary;
+      }
+      fitJobEntries.push({
+        entry: fitFile,
+        data: jobData,
+      });
+    }
+
+    try {
+      await extendGarminDumpImportLock(options);
+      const fitResults = await enqueueFitFileImportFlow(fitJobEntries, filePath);
+      recordsSynced += fitResults.recordsSynced;
+      for (const error of fitResults.errors) {
         errors.push(error);
       }
+    } catch (error) {
+      errors.push({
+        message: `Failed to process Garmin FIT import jobs: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        cause: error,
+      });
     }
-  } catch (error) {
-    errors.push({
-      message: `Failed to process Garmin FIT import jobs: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-      cause: error,
-    });
+  } finally {
+    lockRenewal.stop();
+    if (parsedDump) {
+      await Promise.all(
+        parsedDump.tempDirectories.map((directory) =>
+          rm(directory, { recursive: true, force: true }),
+        ),
+      );
+    }
   }
 
   return {

@@ -8,8 +8,12 @@ const MockQueue = vi.fn(() => mockQueueInstance);
 const mockQueueEventsClose = vi.fn().mockResolvedValue(undefined);
 const mockQueueEventsInstance = { name: "mock-queue-events", close: mockQueueEventsClose };
 const MockQueueEvents = vi.fn(() => mockQueueEventsInstance);
+const mockFlowProducerClose = vi.fn().mockResolvedValue(undefined);
+const mockFlowProducerInstance = { name: "mock-flow-producer", close: mockFlowProducerClose };
+const MockFlowProducer = vi.fn(() => mockFlowProducerInstance);
 
 vi.mock("bullmq", () => ({
+  FlowProducer: MockFlowProducer,
   Queue: MockQueue,
   QueueEvents: MockQueueEvents,
 }));
@@ -21,6 +25,7 @@ describe("queues", () => {
     mockQueueAdd.mockResolvedValue(undefined);
     mockQueueClose.mockResolvedValue(undefined);
     mockQueueEventsClose.mockResolvedValue(undefined);
+    mockFlowProducerClose.mockResolvedValue(undefined);
   });
 
   describe("constants", () => {
@@ -28,15 +33,19 @@ describe("queues", () => {
       const {
         ACTIVITY_DELETE_ANALYTICS_QUEUE,
         EXPORT_QUEUE,
+        FIT_FILE_IMPORT_BATCH_QUEUE,
         FIT_FILE_IMPORT_QUEUE,
         IMPORT_QUEUE,
         POST_SYNC_QUEUE,
         SCHEDULED_SYNC_QUEUE,
         SYNC_QUEUE,
+        ZIP_ENTRY_EXTRACT_QUEUE,
       } = await import("./queues.ts");
       expect(SYNC_QUEUE).toBe("sync");
       expect(IMPORT_QUEUE).toBe("import");
       expect(FIT_FILE_IMPORT_QUEUE).toBe("fit-file-import");
+      expect(FIT_FILE_IMPORT_BATCH_QUEUE).toBe("fit-file-import-batch");
+      expect(ZIP_ENTRY_EXTRACT_QUEUE).toBe("zip-entry-extract");
       expect(EXPORT_QUEUE).toBe("export");
       expect(SCHEDULED_SYNC_QUEUE).toBe("scheduled-sync");
       expect(POST_SYNC_QUEUE).toBe("post-sync");
@@ -232,30 +241,73 @@ describe("queues", () => {
     });
   });
 
+  describe("getFitFileImportBatchQueueEvents", () => {
+    it("reuses one FIT file import batch queue events instance", async () => {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      const { getFitFileImportBatchQueueEvents, FIT_FILE_IMPORT_BATCH_QUEUE } = await import(
+        "./queues.ts"
+      );
+
+      const first = getFitFileImportBatchQueueEvents();
+      const second = getFitFileImportBatchQueueEvents();
+
+      expect(first).toBe(second);
+      expect(MockQueueEvents).toHaveBeenCalledTimes(1);
+      expect(MockQueueEvents).toHaveBeenCalledWith(FIT_FILE_IMPORT_BATCH_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+    });
+  });
+
+  describe("getFlowProducer", () => {
+    it("reuses one flow producer instance", async () => {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      const { getFlowProducer } = await import("./queues.ts");
+
+      const first = getFlowProducer();
+      const second = getFlowProducer();
+
+      expect(first).toBe(second);
+      expect(MockFlowProducer).toHaveBeenCalledTimes(1);
+      expect(MockFlowProducer).toHaveBeenCalledWith({
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+    });
+  });
+
   describe("closeFitFileImportQueueResources", () => {
     it("closes cached FIT file import queue resources and clears the cache", async () => {
       process.env.REDIS_URL = "redis://localhost:6379";
       const {
         closeFitFileImportQueueResources,
+        getFitFileImportBatchQueueEvents,
         getFitFileImportQueue,
         getFitFileImportQueueEvents,
+        getFlowProducer,
       } = await import("./queues.ts");
 
       getFitFileImportQueue();
       getFitFileImportQueueEvents();
+      getFitFileImportBatchQueueEvents();
+      getFlowProducer();
       const queueConstructorCallsBeforeClose = MockQueue.mock.calls.length;
       const queueEventsConstructorCallsBeforeClose = MockQueueEvents.mock.calls.length;
+      const flowProducerConstructorCallsBeforeClose = MockFlowProducer.mock.calls.length;
 
       await closeFitFileImportQueueResources();
 
       expect(mockQueueClose).toHaveBeenCalledOnce();
-      expect(mockQueueEventsClose).toHaveBeenCalledOnce();
+      expect(mockQueueEventsClose).toHaveBeenCalledTimes(2);
+      expect(mockFlowProducerClose).toHaveBeenCalledOnce();
 
       getFitFileImportQueue();
       getFitFileImportQueueEvents();
+      getFitFileImportBatchQueueEvents();
+      getFlowProducer();
 
       expect(MockQueue).toHaveBeenCalledTimes(queueConstructorCallsBeforeClose + 1);
-      expect(MockQueueEvents).toHaveBeenCalledTimes(queueEventsConstructorCallsBeforeClose + 1);
+      expect(MockQueueEvents).toHaveBeenCalledTimes(queueEventsConstructorCallsBeforeClose + 2);
+      expect(MockFlowProducer).toHaveBeenCalledTimes(flowProducerConstructorCallsBeforeClose + 1);
     });
   });
 

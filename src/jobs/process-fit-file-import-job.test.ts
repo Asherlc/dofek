@@ -149,7 +149,7 @@ describe("processFitFileImportJob", () => {
     );
   });
 
-  it("rejects invalid queue payloads before reading a file", async () => {
+  it("rejects jobs without a file path or extraction child before reading a file", async () => {
     await expect(
       processFitFileImportJob(
         {
@@ -162,7 +162,7 @@ describe("processFitFileImportJob", () => {
         },
         mockDb,
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow("FIT import job is missing filePath and has no child extraction result");
 
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
@@ -292,6 +292,51 @@ describe("processFitFileImportJob", () => {
       ],
       "file",
     );
+  });
+
+  it("imports a FIT file from a flow child extraction result", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    const getChildrenValues = vi.fn().mockResolvedValue({
+      "bull:zip-entry-extract:1": { filePath },
+    });
+
+    const result = await processFitFileImportJob(
+      {
+        data: {
+          originalPath: "DI_CONNECT/asher@example.com_activity.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        },
+        getChildrenValues,
+      },
+      mockDb,
+    );
+
+    expect(result).toEqual({ recordsSynced: 1, errors: [] });
+    expect(getChildrenValues).toHaveBeenCalledOnce();
+    expect(mockUpsertProviderActivity).toHaveBeenCalledOnce();
+    await expect(readFile(filePath)).rejects.toThrow();
+  });
+
+  it("rejects FIT flow jobs with multiple extraction results", async () => {
+    await expect(
+      processFitFileImportJob(
+        {
+          data: {
+            originalPath: "DI_CONNECT/asher@example.com_activity.fit",
+            userId: "user-1",
+            providerId: "garmin-dump",
+            sourceName: "Garmin Dump",
+          },
+          getChildrenValues: async () => ({
+            "bull:zip-entry-extract:1": { filePath: "/tmp/one.fit" },
+            "bull:zip-entry-extract:2": { filePath: "/tmp/two.fit" },
+          }),
+        },
+        mockDb,
+      ),
+    ).rejects.toThrow("FIT import job expected 1 child extraction result, got 2");
   });
 
   it("extracts numeric activity IDs from FIT file names", async () => {

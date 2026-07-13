@@ -7,18 +7,22 @@ import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { jobContext, logger } from "../logger.ts";
 import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
 import { processExportJob } from "./process-export-job.ts";
+import { processFitFileImportBatchJob } from "./process-fit-file-import-batch-job.ts";
 import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
 import { processImportJob } from "./process-import-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
+import { processZipEntryExtractJob } from "./process-zip-entry-extract-job.ts";
 import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
 import {
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
   type ActivityAnalyticsJobData,
   EXPORT_QUEUE,
   type ExportJobData,
+  FIT_FILE_IMPORT_BATCH_QUEUE,
   FIT_FILE_IMPORT_QUEUE,
+  type FitFileImportBatchJobData,
   type FitFileImportJobData,
   getRedisConnection,
   IMPORT_QUEUE,
@@ -30,6 +34,8 @@ import {
   type ScheduledSyncJobData,
   SYNC_QUEUE,
   type SyncJobData,
+  ZIP_ENTRY_EXTRACT_QUEUE,
+  type ZipEntryExtractJobData,
 } from "./queues.ts";
 import { setupScheduledSync } from "./scheduled-sync.ts";
 
@@ -116,6 +122,16 @@ const fitFileImportWorker = new Worker<FitFileImportJobData>(
   (job) => jobContext.run(job, () => processFitFileImportJob(job, db)),
   { autorun: false, connection, concurrency: 2 },
 );
+const fitFileImportBatchWorker = new Worker<FitFileImportBatchJobData>(
+  FIT_FILE_IMPORT_BATCH_QUEUE,
+  (job) => jobContext.run(job, () => processFitFileImportBatchJob(job)),
+  { autorun: false, connection, concurrency: 1 },
+);
+const zipEntryExtractWorker = new Worker<ZipEntryExtractJobData>(
+  ZIP_ENTRY_EXTRACT_QUEUE,
+  (job) => jobContext.run(job, () => processZipEntryExtractJob(job)),
+  { autorun: false, connection, concurrency: 2 },
+);
 const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
   SCHEDULED_SYNC_QUEUE,
   (job) => jobContext.run(job, () => processScheduledSyncJob(job, db)),
@@ -193,6 +209,8 @@ const allWorkers: Worker[] = [
   importWorker,
   exportWorker,
   fitFileImportWorker,
+  fitFileImportBatchWorker,
+  zipEntryExtractWorker,
   scheduledSyncWorker,
   postSyncWorker,
   activityDeleteAnalyticsWorker,

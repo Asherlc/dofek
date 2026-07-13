@@ -37,6 +37,14 @@ vi.mock("./process-fit-file-import-job.ts", () => ({
   processFitFileImportJob: vi.fn(),
 }));
 
+vi.mock("./process-fit-file-import-batch-job.ts", () => ({
+  processFitFileImportBatchJob: vi.fn(),
+}));
+
+vi.mock("./process-zip-entry-extract-job.ts", () => ({
+  processZipEntryExtractJob: vi.fn(),
+}));
+
 vi.mock("./process-sync-job.ts", () => ({
   processSyncJob: vi.fn(),
 }));
@@ -75,6 +83,8 @@ vi.mock("./queues.ts", () => ({
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
   IMPORT_QUEUE: "import-queue",
   FIT_FILE_IMPORT_QUEUE: "fit-file-import-queue",
+  FIT_FILE_IMPORT_BATCH_QUEUE: "fit-file-import-batch-queue",
+  ZIP_ENTRY_EXTRACT_QUEUE: "zip-entry-extract-queue",
   SYNC_QUEUE: "sync-queue",
   EXPORT_QUEUE: "export-queue",
   SCHEDULED_SYNC_QUEUE: "scheduled-sync-queue",
@@ -115,9 +125,11 @@ describe("worker module", () => {
     await import("./worker.ts");
   });
 
-  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import + 1 export + 1 scheduled-sync + 1 post-sync + 1 activity-delete-analytics = 9
+  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import
+  // + 1 FIT batch + 1 ZIP extract + 1 export + 1 scheduled-sync + 1 post-sync
+  // + 1 activity-delete-analytics = 11
   // Training export is handled by the standalone Python BullMQ worker (packages/ml).
-  const EXPECTED_WORKER_COUNT = 9;
+  const EXPECTED_WORKER_COUNT = 11;
 
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");
@@ -131,6 +143,16 @@ describe("worker module", () => {
     expect(Worker).toHaveBeenCalledWith("import-queue", expect.any(Function), expect.any(Object));
     expect(Worker).toHaveBeenCalledWith(
       "fit-file-import-queue",
+      expect.any(Function),
+      expect.objectContaining({ concurrency: 2 }),
+    );
+    expect(Worker).toHaveBeenCalledWith(
+      "fit-file-import-batch-queue",
+      expect.any(Function),
+      expect.objectContaining({ concurrency: 1 }),
+    );
+    expect(Worker).toHaveBeenCalledWith(
+      "zip-entry-extract-queue",
       expect.any(Function),
       expect.objectContaining({ concurrency: 2 }),
     );
@@ -466,6 +488,28 @@ describe("worker module", () => {
     });
 
     expect(processFitFileImportJob).toHaveBeenCalled();
+  });
+
+  it("FIT file import batch processor delegates to processFitFileImportBatchJob", async () => {
+    const { processFitFileImportBatchJob } = await import("./process-fit-file-import-batch-job.ts");
+    vi.mocked(processFitFileImportBatchJob).mockClear();
+
+    await invokeProcessor("fit-file-import-batch-queue", { type: "fit-file-import-batch" });
+
+    expect(processFitFileImportBatchJob).toHaveBeenCalled();
+  });
+
+  it("ZIP entry extract processor delegates to processZipEntryExtractJob", async () => {
+    const { processZipEntryExtractJob } = await import("./process-zip-entry-extract-job.ts");
+    vi.mocked(processZipEntryExtractJob).mockClear();
+
+    await invokeProcessor("zip-entry-extract-queue", {
+      archivePath: "/tmp/archive.zip",
+      entryPath: ["activity.fit"],
+      outputExtension: "fit",
+    });
+
+    expect(processZipEntryExtractJob).toHaveBeenCalled();
   });
 
   it("scheduled-sync processor delegates to processScheduledSyncJob", async () => {

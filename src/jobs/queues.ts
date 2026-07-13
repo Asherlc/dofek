@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { CANONICAL_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { ConnectionOptions, JobsOptions } from "bullmq";
-import { Queue, QueueEvents } from "bullmq";
+import { FlowProducer, Queue, QueueEvents } from "bullmq";
 import { z } from "zod";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
@@ -45,7 +45,7 @@ export const fitFileImportActivitySummarySchema = z.object({
 });
 
 export const fitFileImportJobDataSchema = z.object({
-  filePath: z.string(),
+  filePath: z.string().optional(),
   originalPath: z.string(),
   userId: z.string(),
   providerId: z.string(),
@@ -55,6 +55,19 @@ export const fitFileImportJobDataSchema = z.object({
 
 export type FitFileImportActivitySummary = z.infer<typeof fitFileImportActivitySummarySchema>;
 export type FitFileImportJobData = z.infer<typeof fitFileImportJobDataSchema>;
+
+export const zipEntryExtractJobDataSchema = z.object({
+  archivePath: z.string(),
+  entryPath: z.array(z.string()).min(1),
+  outputExtension: z.string().regex(/^[A-Za-z0-9]+$/),
+  maxBytes: z.number().int().positive().optional(),
+});
+
+export type ZipEntryExtractJobData = z.infer<typeof zipEntryExtractJobDataSchema>;
+
+export interface FitFileImportBatchJobData {
+  type: "fit-file-import-batch";
+}
 
 export interface ExportJobData {
   exportId: string;
@@ -112,6 +125,8 @@ export const SYNC_QUEUE = "sync";
 export const SYNC_QUEUE_PREFIX = "sync";
 export const IMPORT_QUEUE = "import";
 export const FIT_FILE_IMPORT_QUEUE = "fit-file-import";
+export const FIT_FILE_IMPORT_BATCH_QUEUE = "fit-file-import-batch";
+export const ZIP_ENTRY_EXTRACT_QUEUE = "zip-entry-extract";
 export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 export const POST_SYNC_QUEUE = "post-sync";
@@ -203,6 +218,28 @@ export function createFitFileImportQueueEvents(connection?: ConnectionOptions): 
   return new QueueEvents(FIT_FILE_IMPORT_QUEUE, { connection: connection ?? getRedisConnection() });
 }
 
+export function createFitFileImportBatchQueue(
+  connection?: ConnectionOptions,
+): Queue<FitFileImportBatchJobData> {
+  return new Queue(FIT_FILE_IMPORT_BATCH_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+export function createFitFileImportBatchQueueEvents(connection?: ConnectionOptions): QueueEvents {
+  return new QueueEvents(FIT_FILE_IMPORT_BATCH_QUEUE, {
+    connection: connection ?? getRedisConnection(),
+  });
+}
+
+export function createZipEntryExtractQueue(
+  connection?: ConnectionOptions,
+): Queue<ZipEntryExtractJobData> {
+  return new Queue(ZIP_ENTRY_EXTRACT_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+export function createFlowProducer(connection?: ConnectionOptions): FlowProducer {
+  return new FlowProducer({ connection: connection ?? getRedisConnection() });
+}
+
 export function createExportQueue(connection?: ConnectionOptions): Queue<ExportJobData> {
   return new Queue(EXPORT_QUEUE, { connection: connection ?? getRedisConnection() });
 }
@@ -230,6 +267,8 @@ let cachedActivityDeleteAnalyticsQueue: Queue<ActivityAnalyticsJobData> | null =
 let cachedImportQueue: Queue<ImportJobData> | null = null;
 let cachedFitFileImportQueue: Queue<FitFileImportJobData> | null = null;
 let cachedFitFileImportQueueEvents: QueueEvents | null = null;
+let cachedFitFileImportBatchQueueEvents: QueueEvents | null = null;
+let cachedFlowProducer: FlowProducer | null = null;
 
 export function getImportQueue(): Queue<ImportJobData> {
   if (!cachedImportQueue) {
@@ -252,9 +291,25 @@ export function getFitFileImportQueueEvents(): QueueEvents {
   return cachedFitFileImportQueueEvents;
 }
 
+export function getFitFileImportBatchQueueEvents(): QueueEvents {
+  if (!cachedFitFileImportBatchQueueEvents) {
+    cachedFitFileImportBatchQueueEvents = createFitFileImportBatchQueueEvents();
+  }
+  return cachedFitFileImportBatchQueueEvents;
+}
+
+export function getFlowProducer(): FlowProducer {
+  if (!cachedFlowProducer) {
+    cachedFlowProducer = createFlowProducer();
+  }
+  return cachedFlowProducer;
+}
+
 export async function closeFitFileImportQueueResources(): Promise<void> {
   const queue = cachedFitFileImportQueue;
   const queueEvents = cachedFitFileImportQueueEvents;
+  const batchQueueEvents = cachedFitFileImportBatchQueueEvents;
+  const flowProducer = cachedFlowProducer;
 
   const closeOperations: Array<Promise<unknown>> = [];
   if (queue) {
@@ -263,10 +318,18 @@ export async function closeFitFileImportQueueResources(): Promise<void> {
   if (queueEvents) {
     closeOperations.push(queueEvents.close());
   }
+  if (batchQueueEvents) {
+    closeOperations.push(batchQueueEvents.close());
+  }
+  if (flowProducer) {
+    closeOperations.push(flowProducer.close());
+  }
   await Promise.all(closeOperations);
 
   cachedFitFileImportQueue = null;
   cachedFitFileImportQueueEvents = null;
+  cachedFitFileImportBatchQueueEvents = null;
+  cachedFlowProducer = null;
 }
 
 export function getPostSyncQueue(): Queue<PostSyncJobData> {

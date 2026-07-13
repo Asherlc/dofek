@@ -16,6 +16,7 @@ import { type FitFileImportJobData, fitFileImportJobDataSchema } from "./queues.
 
 interface FitFileImportJob {
   data: unknown;
+  getChildrenValues?: () => Promise<Record<string, unknown>>;
 }
 
 export interface FitFileImportJobResult {
@@ -65,9 +66,15 @@ const decodedFitSchema = z.object({
   messages: fitMessagesSchema.optional(),
 });
 
+const zipEntryExtractJobResultSchema = z.object({
+  filePath: z.string(),
+});
+
 const fitFileImportCleanupPathSchema = z.object({
   filePath: z.string(),
 });
+
+type ResolvedFitFileImportJobData = FitFileImportJobData & { filePath: string };
 
 function cleanupPathFromJobData(data: unknown): string | null {
   const parsed = fitFileImportCleanupPathSchema.safeParse(data);
@@ -138,7 +145,7 @@ function isWeightFit(messages: z.infer<typeof fitMessagesSchema>): boolean {
 
 async function importWeightFit(
   db: SyncDatabase,
-  data: FitFileImportJobData,
+  data: ResolvedFitFileImportJobData,
   messages: z.infer<typeof fitMessagesSchema>,
 ): Promise<FitFileImportJobResult> {
   const rows = messages.weightScaleMesgs ?? [];
@@ -169,7 +176,7 @@ async function importWeightFit(
 
 async function importActivityFit(
   db: SyncDatabase,
-  data: FitFileImportJobData,
+  data: ResolvedFitFileImportJobData,
   buffer: Buffer,
 ): Promise<FitFileImportJobResult> {
   const fitActivity = await parseFitFileInWorkerThread(buffer);
@@ -224,13 +231,38 @@ async function importActivityFit(
   return { recordsSynced: summary ? 0 : 1, errors: [] };
 }
 
+async function resolveFlowChildFilePath(job: FitFileImportJob): Promise<string> {
+  if (!job.getChildrenValues) {
+    throw new Error("FIT import job is missing filePath and has no child extraction result");
+  }
+  const childrenValues = await job.getChildrenValues();
+  const extractResults = Object.values(childrenValues).map((value) =>
+    zipEntryExtractJobResultSchema.parse(value),
+  );
+  const [extractResult] = extractResults;
+  if (!extractResult || extractResults.length !== 1) {
+    throw new Error(
+      `FIT import job expected 1 child extraction result, got ${extractResults.length}`,
+    );
+  }
+  return extractResult.filePath;
+}
+
+async function resolveFitFileImportJobData(
+  job: FitFileImportJob,
+): Promise<ResolvedFitFileImportJobData> {
+  const data = fitFileImportJobDataSchema.parse(job.data);
+  return { ...data, filePath: data.filePath ?? (await resolveFlowChildFilePath(job)) };
+}
+
 export async function processFitFileImportJob(
   job: FitFileImportJob,
   db: SyncDatabase,
 ): Promise<FitFileImportJobResult> {
-  const cleanupFilePath = cleanupPathFromJobData(job.data);
+  let cleanupFilePath = cleanupPathFromJobData(job.data);
   try {
-    const data = fitFileImportJobDataSchema.parse(job.data);
+    const data = await resolveFitFileImportJobData(job);
+    cleanupFilePath = data.filePath;
     const buffer = await readFile(data.filePath);
     const messages = decodeFitMessages(buffer);
     if (isWeightFit(messages)) {
