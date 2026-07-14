@@ -12956,10 +12956,17 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   ([watchOS job](https://github.com/Asherlc/dofek/actions/runs/29301102824/job/86984914870)).
 - **Root cause:** `build-docker.yml` used mixed-case
   `${{ github.repository }}` directly in GHCR registry cache references, while
-  Buildx registry cache refs require lowercase repository names. The watchOS
-  workflow passed `-derivedDataPath` to target-based `xcodebuild build`
-  commands, which the Xcode version on `macos-26` rejects unless the invocation
-  uses a scheme, test products path, or xctestrun file.
+  Buildx registry cache refs use Docker image references whose name components
+  are limited to lowercase letters, digits, and separators
+  ([Docker image reference docs](https://docs.docker.com/guides/golang/#tag-images),
+  [distribution/reference parser](https://pkg.go.dev/github.com/distribution/reference#pkg-variables)).
+  The watchOS workflow passed `-derivedDataPath` to target-based
+  `xcodebuild build` commands, but `xcodebuild` documents `-derivedDataPath` as
+  applying when performing an action on a scheme in a workspace, and Apple’s
+  command-line Xcode FAQ documents listing and building schemes from the command
+  line
+  ([xcodebuild(1) man page](https://keith.github.io/xcode-man-pages/xcodebuild.1.html),
+  [Apple TN2339](https://developer.apple.com/library/archive/technotes/tn2339/_index.html)).
 - **Fix / mitigation:** `build-docker.yml` now computes a lowercased
   `ghcr.io/<owner>/<repo>` image name and reuses it for Docker metadata and
   registry cache refs. `build-mobile.yml` now builds the generated
