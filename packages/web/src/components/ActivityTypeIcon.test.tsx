@@ -24,4 +24,13 @@ describe("ActivityTypeIcon", () => {
     expect(icon.className).toContain("w-16");
     expect(icon.getAttribute("aria-label")).toBe("Strength Training activity");
   });
+
+  it("renders a plain aligned icon without a colored background", () => {
+    render(<ActivityTypeIcon activityType="strength_training" variant="plain" />);
+
+    const icon = screen.getByTestId("activity-type-icon");
+    expect(icon.className).toContain("h-12");
+    expect(icon.className).toContain("w-16");
+    expect(icon.getAttribute("style")).toBeNull();
+  });
 });
