@@ -52,6 +52,16 @@ describe("inferImportProviderFromFile", () => {
     expect(provider).toBe("garmin-dump");
   });
 
+  it("detects a generic FIT file by extension", () => {
+    const provider = inferImportProviderFromFile({
+      fileName: "morning-ride.fit",
+      fileExtension: ".fit",
+      mimeType: "application/octet-stream",
+      csvHeaderLine: "",
+    });
+    expect(provider).toBe("fit-file");
+  });
+
   it("detects Kaya CSV by filename", () => {
     const provider = inferImportProviderFromFile({
       fileName: "kaya-export.csv",
@@ -64,6 +74,58 @@ describe("inferImportProviderFromFile", () => {
 });
 
 describe("importSharedFile", () => {
+  it("uploads a FIT file to the generic FIT provider", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const customReadBlob = vi
+      .fn()
+      .mockResolvedValue(new Blob(["fit-data"], { type: "application/octet-stream" }));
+
+    fetchImpl
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "processing", jobId: "job-fit" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "done", progress: 100 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    const result = await importSharedFile(
+      {
+        fileUri: "file:///tmp/morning-ride.fit",
+        serverUrl: "https://example.com",
+        sessionToken: "session-token",
+      },
+      {
+        fetchImpl,
+        readBlob: customReadBlob,
+        sleep: async () => {},
+        now: () => 321,
+      },
+    );
+
+    expect(result).toEqual({ providerId: "fit-file", jobId: "job-fit" });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/api/upload/fit-file",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer session-token",
+          "x-file-ext": ".fit",
+        }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://example.com/api/upload/fit-file/status/job-fit",
+      expect.anything(),
+    );
+  });
+
   it("uploads an explicitly selected Garmin dump ZIP", async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     const customReadBlob = vi

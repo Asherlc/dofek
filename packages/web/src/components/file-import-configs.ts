@@ -35,6 +35,14 @@ export const fileImportConfigs: Record<string, FileImportZoneProps> = {
     statusUrl: "/api/upload/garmin-dump/status",
     chunked: true,
   },
+  "fit-file": {
+    title: "FIT File",
+    description: ".fit activity or weight file",
+    accept: ".fit",
+    uploadUrl: "/api/upload/fit-file",
+    statusUrl: "/api/upload/fit-file/status",
+    chunked: true,
+  },
   "kaya-export": {
     title: "Kaya",
     description: ".csv export from Kaya",

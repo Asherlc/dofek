@@ -22,6 +22,7 @@ describe("PROVIDER_LABELS", () => {
     expect(PROVIDER_LABELS.ble_heart_rate).toBe("Heart Rate Monitor (Bluetooth)");
     expect(PROVIDER_LABELS["ride-with-gps"]).toBe("Ride with GPS");
     expect(PROVIDER_LABELS["cronometer-csv"]).toBe("Cronometer");
+    expect(PROVIDER_LABELS["fit-file"]).toBe("FIT File");
     expect(PROVIDER_LABELS.fatsecret).toBe("fatsecret");
     expect(PROVIDER_LABELS.apple_health).toBe("Apple Health");
   });

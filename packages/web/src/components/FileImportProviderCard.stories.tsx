@@ -71,6 +71,18 @@ export const AppleHealth: Story = {
   },
 };
 
+export const FitFile: Story = {
+  args: {
+    providerId: "fit-file",
+    title: "FIT File",
+    description: ".fit activity or weight file",
+    accept: ".fit",
+    uploadUrl: "/api/upload/fit-file",
+    statusUrl: "/api/upload/fit-file/status",
+    chunked: true,
+  },
+};
+
 export const WithoutDetailsLink: Story = {
   args: {
     showDetailsLink: false,

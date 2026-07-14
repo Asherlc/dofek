@@ -21,6 +21,12 @@ export interface FileImportZoneProps {
   showDetailsLink?: boolean;
 }
 
+function selectedFileExtension(fileName: string): string | undefined {
+  const dotIndex = fileName.lastIndexOf(".");
+  if (dotIndex < 0) return undefined;
+  return fileName.slice(dotIndex).toLowerCase();
+}
+
 export function FileImportZone({
   providerId,
   title,
@@ -134,7 +140,7 @@ export function FileImportZone({
           const CHUNK_SIZE = 50 * 1024 * 1024;
           const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
           const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          const fileExt = file.name.endsWith(".xml") ? ".xml" : ".zip";
+          const fileExtension = selectedFileExtension(file.name);
 
           for (let i = 0; i < totalChunks; i++) {
             const start = i * CHUNK_SIZE;
@@ -157,7 +163,7 @@ export function FileImportZone({
                 "x-upload-id": uploadId,
                 "x-chunk-index": String(i),
                 "x-chunk-total": String(totalChunks),
-                "x-file-ext": fileExt,
+                ...(fileExtension ? { "x-file-ext": fileExtension } : {}),
               },
               body: chunk,
             });

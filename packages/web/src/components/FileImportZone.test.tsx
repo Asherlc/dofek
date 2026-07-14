@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FileImportZone } from "./FileImportZone.tsx";
@@ -8,7 +8,10 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="/providers/strong-csv">{children}</a>,
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("FileImportZone", () => {
   it("renders an explicit file picker button", () => {
@@ -66,5 +69,48 @@ describe("FileImportZone", () => {
     expect(screen.getByText("43")).toBeTruthy();
     expect(screen.getByText("Events")).toBeTruthy();
     expect(screen.getByText("392")).toBeTruthy();
+  });
+
+  it("preserves the selected FIT extension for chunked uploads", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ jobId: "job-fit" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "done", progress: 100 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchImpl);
+
+    render(
+      <FileImportZone
+        providerId="fit-file"
+        title="FIT File"
+        description=".fit activity or weight file"
+        accept=".fit"
+        uploadUrl="/api/upload/fit-file"
+        statusUrl="/api/upload/fit-file/status"
+        chunked
+      />,
+    );
+
+    fireEvent.drop(screen.getByRole("region", { name: "FIT File file drop zone" }), {
+      dataTransfer: { files: [new File(["fit-data"], "morning-ride.fit")] },
+    });
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "/api/upload/fit-file",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "x-file-ext": ".fit" }),
+      }),
+    );
   });
 });

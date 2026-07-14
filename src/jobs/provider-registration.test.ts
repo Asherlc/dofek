@@ -19,6 +19,7 @@ const mockProviders = {
   fitbit: { id: "fitbit" },
   garmin: { id: "garmin" },
   "garmin-dump": { id: "garmin-dump" },
+  "fit-file": { id: "fit-file" },
   strava: { id: "strava" },
   "cronometer-csv": { id: "cronometer-csv" },
   oura: { id: "oura" },
@@ -74,6 +75,9 @@ vi.mock("../providers/garmin/provider.ts", () => ({
 }));
 vi.mock("../providers/garmin-dump.ts", () => ({
   GarminDumpProvider: vi.fn(() => mockProviders["garmin-dump"]),
+}));
+vi.mock("../providers/fit-file.ts", () => ({
+  FitFileProvider: vi.fn(() => mockProviders["fit-file"]),
 }));
 vi.mock("../providers/strava.ts", () => ({
   StravaProvider: vi.fn(() => mockProviders.strava),
