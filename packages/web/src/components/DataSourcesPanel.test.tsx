@@ -44,7 +44,7 @@ const mockSyncMutateAsync = vi.hoisted(() => vi.fn());
 const mockPollSyncJob = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
 const mockSyncStatusFetch = vi.hoisted(() => vi.fn());
-const mockFileImportZone = vi.hoisted(() => vi.fn());
+const mockFileImportProviderCard = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -85,8 +85,8 @@ vi.mock("./DataSourcesAuthModals.tsx", () => ({
   ),
 }));
 
-vi.mock("./FileImportZone.tsx", () => ({
-  FileImportZone: (props: {
+vi.mock("./FileImportProviderCard.tsx", () => ({
+  FileImportProviderCard: (props: {
     providerId?: string;
     title: string;
     description: string;
@@ -94,11 +94,12 @@ vi.mock("./FileImportZone.tsx", () => ({
     uploadUrl: string;
     statusUrl: string;
   }) => {
-    mockFileImportZone(props);
+    mockFileImportProviderCard(props);
     return (
       <section data-testid={`file-import-${props.providerId ?? props.title}`}>
         <h4>{props.title}</h4>
         <p>{props.description}</p>
+        <button type="button">Import file</button>
       </section>
     );
   },
@@ -180,7 +181,7 @@ describe("DataSourcesPanel", () => {
     mockPollSyncJob.mockResolvedValue(undefined);
     mockInvalidate.mockReset();
     mockSyncStatusFetch.mockReset();
-    mockFileImportZone.mockClear();
+    mockFileImportProviderCard.mockClear();
   });
 
   it("shows server data readiness messages above provider cards", () => {
@@ -323,7 +324,7 @@ describe("DataSourcesPanel", () => {
     expect(screen.getByTestId("file-import-kaya-export")).toBeTruthy();
     expect(screen.getByText("Kaya")).toBeTruthy();
     expect(screen.getByText(".csv export from Kaya")).toBeTruthy();
-    expect(mockFileImportZone).toHaveBeenCalledWith(
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: "kaya-export",
         title: "Kaya",
@@ -331,6 +332,22 @@ describe("DataSourcesPanel", () => {
         accept: ".csv",
         uploadUrl: "/api/upload/kaya-export",
         statusUrl: "/api/upload/kaya-export/status",
+      }),
+    );
+  });
+
+  it("renders Apple Health through the shared file import provider card", () => {
+    render(<DataSourcesPanel />);
+
+    expect(screen.getByTestId("file-import-apple_health")).toBeTruthy();
+    expect(screen.getByText("Import file")).toBeTruthy();
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "apple_health",
+        title: "Apple Health",
+        description: ".zip or .xml from Health app export",
+        uploadUrl: "/api/upload/apple-health?fullSync=true",
+        statusUrl: "/api/upload/apple-health/status",
       }),
     );
   });

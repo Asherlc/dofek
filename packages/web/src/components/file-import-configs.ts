@@ -40,3 +40,8 @@ export const fileImportConfigs: Record<string, FileImportZoneProps> = {
     statusUrl: "/api/upload/kaya-export/status",
   },
 };
+
+export function getFileImportConfig(providerId: string): FileImportZoneProps | undefined {
+  if (providerId === "apple_health") return appleHealthFileImportConfig;
+  return fileImportConfigs[providerId];
+}

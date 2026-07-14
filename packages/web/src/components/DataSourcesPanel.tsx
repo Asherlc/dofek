@@ -5,8 +5,12 @@ import { trpc } from "../lib/trpc.ts";
 import { DataReadinessBanner } from "./DataReadinessBanner.tsx";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
 import type { ProviderState, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
-import { FileImportZone } from "./FileImportZone.tsx";
-import { appleHealthFileImportConfig, fileImportConfigs } from "./file-import-configs.ts";
+import { FileImportProviderCard } from "./FileImportProviderCard.tsx";
+import {
+  appleHealthFileImportConfig,
+  type fileImportConfigs,
+  getFileImportConfig,
+} from "./file-import-configs.ts";
 import { SyncProviderCard } from "./SyncProviderCard.tsx";
 
 const oauthBroadcastMessage = z.object({
@@ -298,7 +302,7 @@ export function DataSourcesPanel() {
   });
 
   for (const p of allProviders) {
-    const importConfig = fileImportConfigs[p.id];
+    const importConfig = getFileImportConfig(p.id);
     if (importConfig) {
       unifiedProviders.push({ kind: "import", id: p.id, config: importConfig });
     } else {
@@ -359,7 +363,7 @@ export function DataSourcesPanel() {
               const providerStats = statsByProvider.get(entry.id);
               const recentLogs = (logsByProvider.get(entry.id) ?? []).slice(0, 5);
               return (
-                <FileImportZone
+                <FileImportProviderCard
                   key={entry.id}
                   providerId={entry.id}
                   {...entry.config}
