@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promise
 import { basename, dirname, join, relative } from "node:path";
 import type { Readable } from "node:stream";
 import type { CanonicalActivityType } from "@dofek/training/training";
+import * as Sentry from "@sentry/node";
 import yauzl from "yauzl";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -16,6 +17,7 @@ import {
   getFitFileImportQueue,
   getFitFileImportQueueEvents,
 } from "../jobs/queues.ts";
+import { logger } from "../logger.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
 export const GARMIN_DUMP_PROVIDER_ID = "garmin-dump";
@@ -69,6 +71,12 @@ interface GarminDumpExtractionState {
 
 interface GarminDumpImportOptions {
   extendLock?: (durationMs: number) => Promise<void>;
+  onProgress?: (progress: GarminDumpProgress) => void | Promise<void>;
+}
+
+interface GarminDumpProgress {
+  percentage: number;
+  message: string;
 }
 
 const fitFileImportJobResultSchema = z.object({
@@ -148,6 +156,20 @@ function assertGarminDumpSize(byteCount: number, maxBytes: number, description: 
 
 async function extendGarminDumpImportLock(options: GarminDumpImportOptions): Promise<void> {
   await options.extendLock?.(GARMIN_DUMP_IMPORT_LOCK_EXTENSION_MS);
+}
+
+async function reportGarminDumpProgress(
+  options: GarminDumpImportOptions,
+  percentage: number,
+  message: string,
+): Promise<void> {
+  if (!options.onProgress) return;
+  try {
+    await options.onProgress({ percentage, message });
+  } catch (error) {
+    logger.warn("Failed to report Garmin dump progress: %s", error);
+    Sentry.captureException(error, { tags: { garminDumpStep: "progress" } });
+  }
 }
 
 function countExtractedBytes(
@@ -380,6 +402,7 @@ function garminSummaryToFitJobSummary(
 async function enqueueFitFileImportJobs(
   entries: Array<{ entry: GarminDumpEntry; data: Omit<FitFileImportJobData, "filePath"> }>,
   uploadPath: string,
+  onJobFinished: (completedCount: number, totalCount: number) => void | Promise<void>,
 ): Promise<FitFileImportJobResult[]> {
   if (entries.length === 0) return [];
 
@@ -422,15 +445,33 @@ async function enqueueFitFileImportJobs(
     }
 
     const results: FitFileImportJobResult[] = [];
+    let completedCount = 0;
     for (let startIndex = 0; startIndex < jobs.length; startIndex += FIT_FILE_IMPORT_BATCH_SIZE) {
       const batch = jobs.slice(startIndex, startIndex + FIT_FILE_IMPORT_BATCH_SIZE);
       results.push(
         ...(await Promise.all(
           batch.map(async ({ entry, job }) => {
+            let result: FitFileImportJobResult;
             try {
-              return fitFileImportJobResultSchema.parse(await job.waitUntilFinished(queueEvents));
+              const jobResult = await job.waitUntilFinished(queueEvents);
+              const parsedResult = fitFileImportJobResultSchema.safeParse(jobResult);
+              if (parsedResult.success) {
+                result = parsedResult.data;
+              } else {
+                Sentry.captureException(parsedResult.error, {
+                  tags: { garminDumpStep: "fit-child-import-result" },
+                });
+                result = {
+                  recordsSynced: 0,
+                  errors: [
+                    {
+                      message: `Failed to import Garmin FIT file ${entry.path}: unexpected result shape from FIT import job`,
+                    },
+                  ],
+                };
+              }
             } catch (error) {
-              return {
+              result = {
                 recordsSynced: 0,
                 errors: [
                   {
@@ -441,6 +482,9 @@ async function enqueueFitFileImportJobs(
                 ],
               };
             }
+            completedCount++;
+            await onJobFinished(completedCount, jobs.length);
+            return result;
           }),
         )),
       );
@@ -458,8 +502,16 @@ export async function importGarminDumpFile(
   options: GarminDumpImportOptions = {},
 ): Promise<SyncResult> {
   const start = Date.now();
+  await reportGarminDumpProgress(options, 0, "Starting Garmin dump import...");
   await extendGarminDumpImportLock(options);
+  await reportGarminDumpProgress(options, 5, "Reading Garmin dump...");
   const parsedDump = await parseGarminDumpFile(filePath);
+  const totalFitFileCount = parsedDump.fitFiles.length + parsedDump.weightFitFiles.length;
+  await reportGarminDumpProgress(
+    options,
+    25,
+    `Found ${parsedDump.summaries.length} activity summaries and ${totalFitFileCount} FIT files.`,
+  );
   const errors: SyncError[] = [...parsedDump.errors];
   let recordsSynced = 0;
   const summaryByExternalId = new Map<string, GarminSummarizedActivity>();
@@ -544,7 +596,22 @@ export async function importGarminDumpFile(
 
   try {
     await extendGarminDumpImportLock(options);
-    const fitResults = await enqueueFitFileImportJobs(fitJobEntries, filePath);
+    await reportGarminDumpProgress(
+      options,
+      45,
+      `Importing Garmin FIT files (0/${fitJobEntries.length})...`,
+    );
+    const fitResults = await enqueueFitFileImportJobs(
+      fitJobEntries,
+      filePath,
+      async (completedCount, totalCount) => {
+        await reportGarminDumpProgress(
+          options,
+          Math.floor(45 + (completedCount / totalCount) * 50),
+          `Importing Garmin FIT files (${completedCount}/${totalCount})...`,
+        );
+      },
+    );
     for (const result of fitResults) {
       recordsSynced += result.recordsSynced;
       for (const error of result.errors) {
@@ -559,6 +626,8 @@ export async function importGarminDumpFile(
       cause: error,
     });
   }
+
+  await reportGarminDumpProgress(options, 95, "Garmin dump import complete.");
 
   return {
     provider: GARMIN_DUMP_PROVIDER_ID,
