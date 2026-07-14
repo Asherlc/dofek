@@ -80,7 +80,7 @@
     "low": 90,
     "break": 75
   },
-  "reporters": ["clear-text", "progress", "json"],
+  "reporters": ["clear-text", "progress-append-only", "dots", "json"],
   "jsonReporter": {
     "fileName": "reports/mutation/mutation.json"
   }
