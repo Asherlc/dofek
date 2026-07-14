@@ -1727,6 +1727,29 @@ describe("ProvidersScreen", () => {
     expect(screen.getByText("Apple Health")).toBeTruthy();
   });
 
+  it("shows resumable progress for an in-flight Apple Health import", async () => {
+    mockActiveImportsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "job-apple-health",
+          providerId: "apple_health",
+          progress: 42,
+          message: "Importing Apple Health data",
+        },
+      ],
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    expect(appleCard.getByText("Importing Apple Health data")).toBeTruthy();
+    expect(appleCard.getByText("Loading...")).toBeTruthy();
+    expect(
+      screen.getByTestId("provider-card-apple_health-progress-fill").getAttribute("data-style"),
+    ).toContain('"width":"42%"');
+  });
+
   it("triggers HealthKit sync with syncRangeDays: 7 when Sync is clicked", async () => {
     await renderProvidersScreen();
 

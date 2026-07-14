@@ -543,6 +543,22 @@ export default function ProvidersScreen() {
     sharedImportState !== null &&
     sharedImportState.status !== "done" &&
     sharedImportState.status !== "error";
+  const appleHealthActiveImport = activeImportByProvider.get("apple_health");
+  const appleHealthActiveImportProgress = appleHealthActiveImport
+    ? {
+        percentage: appleHealthActiveImport.progress,
+        message: appleHealthActiveImport.message,
+      }
+    : undefined;
+  const appleHealthLocalImportProgress =
+    localImportIsActive && sharedImportState.providerId === "apple-health"
+      ? {
+          percentage: sharedImportState.progress,
+          message: sharedImportState.message,
+        }
+      : undefined;
+  const appleHealthImportProgress =
+    appleHealthLocalImportProgress ?? appleHealthActiveImportProgress;
 
   return (
     <ScrollView
@@ -638,9 +654,11 @@ export default function ProvidersScreen() {
           ...appleHealthProvider,
         }}
         stats={statsMap.apple_health}
-        syncing={healthKitSyncing}
+        syncing={healthKitSyncing || appleHealthImportProgress !== undefined}
         syncProgress={
-          healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined
+          healthKitSyncing || healthKitProgress
+            ? { message: healthKitProgress }
+            : appleHealthImportProgress
         }
         onSync={() => handleHealthKitSync()}
         onFullSync={() => handleHealthKitSync(true)}
