@@ -26,10 +26,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image name
+        id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         id: meta
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ steps.image-name.outputs.name }}
           tags: |
             type=sha,value=${{ github.sha }}
             type=raw,value=latest
@@ -57,10 +64,10 @@ jobs:
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: |
             type=gha,scope=server
-            type=registry,ref=ghcr.io/${{ github.repository }}:server-buildcache
+            type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache
           cache-to: |
             type=gha,mode=max,scope=server
-            type=registry,ref=ghcr.io/${{ github.repository }}:server-buildcache,mode=max
+            type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache,mode=max
 
   e2e-cache:
     name: E2E Docker Cache
@@ -83,6 +90,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image name
+        id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
@@ -92,7 +106,7 @@ jobs:
           tags: e2e-server-cache:latest
           cache-from: |
             type=gha,scope=e2e
-            type=registry,ref=ghcr.io/${{ github.repository }}:e2e-buildcache
+            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
           cache-to: |
             type=gha,mode=max,scope=e2e
-            type=registry,ref=ghcr.io/${{ github.repository }}:e2e-buildcache,mode=max
+            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache,mode=max
