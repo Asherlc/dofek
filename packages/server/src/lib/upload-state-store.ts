@@ -2,6 +2,8 @@ import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
 import { z } from "zod";
 
+// cspell:words HGET HVALS HSET ipairs
+
 export const UPLOAD_SESSION_TTL_MS = 30 * 60 * 1000;
 export const UPLOAD_STATUS_TTL_MS = 10 * 60 * 1000;
 
