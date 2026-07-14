@@ -717,7 +717,7 @@ describe("ProviderCard", () => {
       <FileImportProviderCard
         provider={makeProvider({ id: "strong-csv", label: "Strong", importOnly: true })}
         stats={{
-          totalRecords: 206_538,
+          totalRecords: 206_539,
           activities: 352,
           metricStream: 205_367,
           dailyMetrics: 229,
@@ -740,7 +740,7 @@ describe("ProviderCard", () => {
       />,
     );
 
-    expect(screen.getByText("206,538")).toBeTruthy();
+    expect(screen.getByText("206,539")).toBeTruthy();
     expect(screen.getByText("records")).toBeTruthy();
     expect(screen.getByText("Activities")).toBeTruthy();
     expect(screen.getByText("352")).toBeTruthy();
