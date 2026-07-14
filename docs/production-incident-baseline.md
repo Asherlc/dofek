@@ -12935,3 +12935,42 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Medium until deployed and tested against the
   original production Garmin dump. Increasing the worker memory limit alone
   would still be a mitigation knob, not the root fix.
+
+## 2026-07-14 — CI Docker Cache and watchOS Workflow Failures
+
+- **Symptoms:** CI run
+  [`29301102824`](https://github.com/Asherlc/dofek/actions/runs/29301102824)
+  failed `Build Docker / Docker Build & Push`,
+  `Build Docker / E2E Docker Cache`, and
+  `Build Mobile / watchOS Build`; `Build Mobile / Mobile Build Gate` failed as
+  a downstream gate.
+- **User impact:** The main-branch CI run could not complete, blocking
+  confidence in the pushed revision and downstream deploy automation.
+- **Evidence:** The first Docker fatal line was
+  `ERROR: failed to build: failed to solve: failed to configure registry cache exporter: invalid reference format: repository name (Asherlc/dofek) must be lowercase`
+  in both failed Buildx jobs
+  ([Docker Build & Push job](https://github.com/Asherlc/dofek/actions/runs/29301102824/job/86984891874),
+  [E2E Docker Cache job](https://github.com/Asherlc/dofek/actions/runs/29301102824/job/86984891902)).
+  The linked watchOS job failed in `Build Watch target for simulator` with
+  `xcodebuild: error: The flag -scheme, -testProductsPath, or -xctestrun is required when specifying -derivedDataPath`
+  ([watchOS job](https://github.com/Asherlc/dofek/actions/runs/29301102824/job/86984914870)).
+- **Root cause:** `build-docker.yml` used mixed-case
+  `${{ github.repository }}` directly in GHCR registry cache references, while
+  Buildx registry cache refs require lowercase repository names. The watchOS
+  workflow passed `-derivedDataPath` to target-based `xcodebuild build`
+  commands, which the Xcode version on `macos-26` rejects unless the invocation
+  uses a scheme, test products path, or xctestrun file.
+- **Fix / mitigation:** `build-docker.yml` now computes a lowercased
+  `ghcr.io/<owner>/<repo>` image name and reuses it for Docker metadata and
+  registry cache refs. `build-mobile.yml` no longer passes `-derivedDataPath`
+  to the watchOS target-based `xcodebuild` commands and removed the unused
+  watch DerivedData cache.
+- **Validation:** Locally, YAML parsing, `git diff --check`, `pnpm lint`, and
+  `pnpm typecheck` passed. Manual CI dispatch
+  [`29301809529`](https://github.com/Asherlc/dofek/actions/runs/29301809529)
+  on `Asherlc/debug-actions-job-v1` completed successfully; the two Docker
+  jobs and the watchOS job all passed.
+- **Remaining risk / follow-up:** Low. The fix changes only workflow
+  arguments and cache reference normalization. A small reusable workflow helper
+  for GHCR image-name normalization would reduce the chance of reintroducing
+  mixed-case registry refs in future Docker workflows.
