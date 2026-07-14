@@ -1838,6 +1838,31 @@ describe("syncRouter", () => {
       ]);
     });
 
+    it("uses a stable fallback jobId when an import job has no id", async () => {
+      mockImportQueueGetJobs.mockResolvedValueOnce([
+        {
+          id: undefined,
+          data: {
+            userId: "user-1",
+            importType: "garmin-dump",
+            filePath: "/tmp/garmin.zip",
+            since: "1970-01-01T00:00:00.000Z",
+          },
+          progress: 20,
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.activeImports();
+      expect(result[0]?.jobId).toBe("job-garmin-dump");
+    });
+
     it("surfaces an actionable error when the import queue is unavailable", async () => {
       mockImportQueueGetJobs.mockRejectedValueOnce(new Error("Redis connection refused"));
       const caller = createCaller({

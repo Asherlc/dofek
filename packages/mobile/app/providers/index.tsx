@@ -677,6 +677,12 @@ export default function ProvidersScreen() {
       ) : null}
       {providerList.map((provider) => {
         const activeImport = activeImportByProvider.get(provider.id);
+        const activeImportProgress = activeImport
+          ? {
+              percentage: activeImport.progress,
+              message: activeImport.message,
+            }
+          : undefined;
         const localImportProgress =
           localImportIsActive && sharedImportState.providerId === provider.id
             ? {
@@ -684,7 +690,7 @@ export default function ProvidersScreen() {
                 message: sharedImportState.message,
               }
             : undefined;
-        const importProgress = localImportProgress ?? activeImport;
+        const importProgress = localImportProgress ?? activeImportProgress;
         return (
           <ProviderCard
             key={provider.id}

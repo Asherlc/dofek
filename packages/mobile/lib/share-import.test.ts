@@ -41,6 +41,16 @@ describe("inferImportProviderFromFile", () => {
     });
     expect(provider).toBe("apple-health");
   });
+
+  it("detects Garmin dump before generic zip handling", () => {
+    const provider = inferImportProviderFromFile({
+      fileName: "garmin-export.zip",
+      fileExtension: ".zip",
+      mimeType: "application/zip",
+      csvHeaderLine: "",
+    });
+    expect(provider).toBe("garmin-dump");
+  });
 });
 
 describe("importSharedFile", () => {

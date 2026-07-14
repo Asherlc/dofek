@@ -134,6 +134,7 @@ export function ProviderCard({
           {syncProgress.percentage != null && (
             <View style={styles.syncProgressTrack}>
               <View
+                testID={`provider-card-${provider.id}-progress-fill`}
                 style={[
                   styles.syncProgressFill,
                   {

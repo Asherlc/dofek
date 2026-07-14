@@ -15,7 +15,7 @@ const mockGetDocumentAsync = vi.fn();
 vi.mock("react-native", () => ({
   View: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) => {
     const {
-      style: _s,
+      style,
       contentContainerStyle: _cs,
       activeOpacity: _ao,
       numberOfLines: _nl,
@@ -26,6 +26,7 @@ vi.mock("react-native", () => ({
       "div",
       {
         ...(testID ? { "data-testid": testID } : {}),
+        ...(testID && style ? { "data-style": JSON.stringify(style) } : {}),
         ...rest,
       },
       children,
@@ -1307,6 +1308,9 @@ describe("ProvidersScreen", () => {
     const garminCard = within(screen.getByTestId("provider-card-garmin-dump"));
     expect(garminCard.getByText("Importing activities")).toBeTruthy();
     expect(garminCard.getByText("Loading...")).toBeTruthy();
+    expect(
+      screen.getByTestId("provider-card-garmin-dump-progress-fill").getAttribute("data-style"),
+    ).toContain('"width":"64%"');
     expect(garminCard.queryByText("Import only")).toBeNull();
   });
 

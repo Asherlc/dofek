@@ -792,7 +792,7 @@ export const syncRouter = router({
             : "Processing import...";
 
       results.push({
-        jobId: String(job.id ?? `job-${providerId}-${Date.now()}`),
+        jobId: String(job.id ?? `job-${providerId}`),
         providerId,
         progress,
         message,

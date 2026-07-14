@@ -164,6 +164,15 @@ function isAppleHealthLike(fileExtension: string, mimeType: string | null): bool
   return lowerMimeType.includes("zip") || lowerMimeType.includes("xml");
 }
 
+function isGarminDumpLike(fileName: string, fileExtension: string): boolean {
+  if (fileExtension !== ".zip" && fileExtension !== ".xml") return false;
+  return (
+    fileName.includes("garmin") ||
+    fileName.includes("di_connect") ||
+    fileName.includes("di-connect")
+  );
+}
+
 export function inferImportProviderFromFile({
   fileName,
   fileExtension,
@@ -172,6 +181,10 @@ export function inferImportProviderFromFile({
 }: InferImportProviderInput): ImportProviderId | null {
   const normalizedExtension = normalizeExtension(fileExtension);
   const normalizedFileName = fileName.trim().toLowerCase();
+
+  if (isGarminDumpLike(normalizedFileName, normalizedExtension)) {
+    return "garmin-dump";
+  }
 
   if (isAppleHealthLike(normalizedExtension, mimeType)) {
     return "apple-health";
