@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { mkdir, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -33,7 +34,7 @@ const uploadStateStore = getUploadStateStore();
 
 const uploadRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 120,
+  limit: 600,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: "Too many upload requests; please try again later",
@@ -205,7 +206,6 @@ interface FileImportRouteConfig {
   unsupportedContentTypeMessage: string;
   invalidFileExtensionMessage?: string;
   maxUploadBytes?: number;
-  rateLimited?: boolean;
   getSince: (request: Request) => Date;
   getJobOptions?: (request: Request) => { weightUnit?: "kg" | "lbs" };
   inferFileExtension?: (input: { contentType: string | undefined }) => string | undefined;
@@ -267,7 +267,6 @@ const uploadRouteConfigs: FileImportRouteConfig[] = [
     allowedContentTypes: csvContentTypes,
     unsupportedContentTypeMessage: "Kaya imports require a CSV export",
     invalidFileExtensionMessage: "Kaya imports require a CSV export",
-    rateLimited: true,
     getSince: () => new Date(0),
   },
   {
@@ -294,10 +293,17 @@ const uploadRouteConfigs: FileImportRouteConfig[] = [
     unsupportedContentTypeMessage:
       "Unsupported Content-Type. Expected application/zip or application/octet-stream",
     maxUploadBytes: GARMIN_DUMP_MAX_UPLOAD_BYTES,
-    rateLimited: true,
     getSince: () => new Date(0),
   },
 ];
+
+function createJobFilePath(config: FileImportRouteConfig, fileExtension: string): string {
+  return join(JOB_FILES_DIR, `${config.fileNamePrefix}-${randomUUID()}${fileExtension}`);
+}
+
+function createChunkDirectoryPath(config: FileImportRouteConfig): string {
+  return join(JOB_FILES_DIR, `${config.fileNamePrefix}-chunked-${randomUUID()}`);
+}
 
 function getHeaderValue(request: Request, headerName: string): string | undefined {
   const value = request.headers[headerName.toLowerCase()];
@@ -417,8 +423,7 @@ async function handleSingleFileUpload({
   fileExtension: string;
   deps: UploadRouteDeps;
 }): Promise<void> {
-  const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  const tmpFile = join(JOB_FILES_DIR, `${config.fileNamePrefix}-${tmpId}${fileExtension}`);
+  const tmpFile = createJobFilePath(config, fileExtension);
 
   try {
     if (config.maxUploadBytes) {
@@ -477,7 +482,7 @@ async function handleChunkedFileUpload({
   try {
     let upload = await uploadStateStore.getUploadSession(uploadId);
     if (!upload) {
-      const dir = join(JOB_FILES_DIR, `${config.fileNamePrefix}-chunked-${uploadId}`);
+      const dir = createChunkDirectoryPath(config);
       await mkdir(dir, { recursive: true });
       upload = { total: chunkTotal, dir, userId };
       await uploadStateStore.saveUploadSession(uploadId, upload, IN_PROGRESS_UPLOAD_STATUS_TTL_MS);
@@ -543,10 +548,7 @@ async function handleChunkedFileUpload({
 
     void (async () => {
       try {
-        const assembledFile = join(
-          JOB_FILES_DIR,
-          `${config.fileNamePrefix}-${uploadId}${fileExtension}`,
-        );
+        const assembledFile = createJobFilePath(config, fileExtension);
         await assembleChunks(chunkDir, assembledFile);
         await rm(chunkDir, { recursive: true, force: true });
         await enqueueImport(deps.importQueue, assembledFile, since, config.importType, userId, {
@@ -632,11 +634,7 @@ function registerFileImportRoutes(
     });
   };
 
-  if (config.rateLimited) {
-    router.post(`/${config.routeId}`, uploadRateLimiter, uploadHandler);
-    return;
-  }
-  router.post(`/${config.routeId}`, uploadHandler);
+  router.post(`/${config.routeId}`, uploadRateLimiter, uploadHandler);
 }
 
 export function createUploadRouter(deps: UploadRouteDeps): Router {

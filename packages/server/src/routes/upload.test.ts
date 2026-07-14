@@ -531,8 +531,8 @@ describe("createUploadRouter", () => {
         );
       });
       expect(assembleChunks).toHaveBeenCalledWith(
-        expect.stringContaining("strong-csv-chunked-strong-chunked"),
-        expect.stringMatching(/strong-csv-strong-chunked\.csv$/),
+        expect.not.stringContaining("strong-chunked"),
+        expect.not.stringContaining("strong-chunked"),
       );
     });
   });
@@ -1229,7 +1229,8 @@ describe("createUploadRouter", () => {
       });
       const assembledPath = vi.mocked(assembleChunks).mock.calls[0][1];
       expect(assembledPath.startsWith(EXPECTED_JOB_FILES_DIR)).toBe(true);
-      expect(assembledPath).toContain("apple-health-upload-assemble-dir");
+      expect(assembledPath).toContain("apple-health-");
+      expect(assembledPath).not.toContain("upload-assemble-dir");
     });
 
     it("writes Strong CSV upload to JOB_FILES_DIR", async () => {
@@ -1324,9 +1325,7 @@ describe("createUploadRouter", () => {
         expect.stringContaining("garmin-dump-"),
         2 * 1024 * 1024 * 1024,
       );
-      expect(vi.mocked(streamToFile).mock.calls[0][1]).toMatch(
-        /garmin-dump-job-\d+-[a-z0-9]{4}\.zip$/,
-      );
+      expect(vi.mocked(streamToFile).mock.calls[0][1]).toMatch(/garmin-dump-[a-f0-9-]+\.zip$/);
       expect(queue.add).toHaveBeenCalledWith(
         "garmin-dump",
         expect.objectContaining({ importType: "garmin-dump", userId: "user-1" }),
@@ -1446,8 +1445,8 @@ describe("createUploadRouter", () => {
         );
       });
       expect(assembleChunks).toHaveBeenCalledWith(
-        expect.stringContaining("garmin-dump-chunked-garmin-chunked"),
-        expect.stringMatching(/garmin-dump-garmin-chunked\.zip$/),
+        expect.not.stringContaining("garmin-chunked"),
+        expect.not.stringContaining("garmin-chunked"),
       );
     });
 
