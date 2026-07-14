@@ -204,6 +204,8 @@ describe("createUploadRouter", () => {
       "upload-assembly-err",
       "upload-rm-assembly-err",
       "upload-assemble-dir",
+      "strong-chunked",
+      "garmin-chunked",
     ]) {
       await uploadStateStore.deleteUploadSession(uploadId);
       await uploadStateStore.deleteUploadStatus(uploadId);
@@ -480,6 +482,57 @@ describe("createUploadRouter", () => {
         "strong-csv",
         expect.objectContaining({ weightUnit: "kg" }),
         undefined,
+      );
+    });
+
+    it("accepts chunked CSV uploads through the shared upload flow", async () => {
+      const { app, queue } = createTestApp();
+
+      const first = await request(app, "post", "/api/upload/strong-csv?units=lbs", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "strong-chunked",
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+          "x-file-ext": ".csv",
+        },
+        body: Buffer.from("date,exercise\n"),
+      });
+      const second = await request(app, "post", "/api/upload/strong-csv?units=lbs", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "strong-chunked",
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+          "x-file-ext": ".csv",
+        },
+        body: Buffer.from("2026-01-01,squat"),
+      });
+
+      expect(first.status).toBe(200);
+      expect(JSON.parse(first.body)).toMatchObject({
+        status: "uploading",
+        jobId: "strong-chunked",
+      });
+      expect(second.status).toBe(200);
+      expect(JSON.parse(second.body)).toMatchObject({
+        status: "assembling",
+        jobId: "strong-chunked",
+      });
+      await vi.waitFor(() => {
+        expect(queue.add).toHaveBeenCalledWith(
+          "strong-csv",
+          expect.objectContaining({
+            importType: "strong-csv",
+            userId: "user-1",
+            weightUnit: "lbs",
+          }),
+          { jobId: "strong-chunked" },
+        );
+      });
+      expect(assembleChunks).toHaveBeenCalledWith(
+        expect.stringContaining("strong-csv-chunked-strong-chunked"),
+        expect.stringMatching(/strong-csv-strong-chunked\.csv$/),
       );
     });
   });
@@ -1354,6 +1407,48 @@ describe("createUploadRouter", () => {
 
       expect(res.status).toBe(200);
       expect(streamToFile).toHaveBeenCalled();
+    });
+
+    it("accepts chunked ZIP uploads through the shared upload flow", async () => {
+      const { app, queue } = createTestApp();
+
+      await request(app, "post", "/api/upload/garmin-dump", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "garmin-chunked",
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+          "x-file-ext": ".zip",
+        },
+        body: Buffer.from("PK-1"),
+      });
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "garmin-chunked",
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+          "x-file-ext": ".zip",
+        },
+        body: Buffer.from("PK-2"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toMatchObject({
+        status: "assembling",
+        jobId: "garmin-chunked",
+      });
+      await vi.waitFor(() => {
+        expect(queue.add).toHaveBeenCalledWith(
+          "garmin-dump",
+          expect.objectContaining({ importType: "garmin-dump", userId: "user-1" }),
+          { jobId: "garmin-chunked" },
+        );
+      });
+      expect(assembleChunks).toHaveBeenCalledWith(
+        expect.stringContaining("garmin-dump-chunked-garmin-chunked"),
+        expect.stringMatching(/garmin-dump-garmin-chunked\.zip$/),
+      );
     });
 
     it("cleans up the temp file and returns upload failure when streaming fails", async () => {

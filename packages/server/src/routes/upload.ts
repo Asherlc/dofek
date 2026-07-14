@@ -195,497 +195,454 @@ async function authenticate(req: Request, res: Response, db: Database): Promise<
   return session.userId;
 }
 
-export function createUploadRouter(deps: UploadRouteDeps): Router {
-  const router = Router();
-  const { importQueue, db } = deps;
-  // Poll job status — checks BullMQ first, falls back to upload-phase status
-  router.get<{ jobId: string }>(
-    "/apple-health/status/:jobId",
-    uploadStatusRateLimiter,
-    async (req, res) => {
-      const userId = await authenticate(req, res, db);
-      if (!userId) return;
+interface FileImportRouteConfig {
+  routeId: string;
+  importType: ImportJobData["importType"];
+  fileNamePrefix: string;
+  defaultFileExtension: string;
+  allowedFileExtensions: readonly string[];
+  allowedContentTypes: readonly string[];
+  unsupportedContentTypeMessage: string;
+  invalidFileExtensionMessage?: string;
+  maxUploadBytes?: number;
+  rateLimited?: boolean;
+  getSince: (request: Request) => Date;
+  getJobOptions?: (request: Request) => { weightUnit?: "kg" | "lbs" };
+  inferFileExtension?: (input: { contentType: string | undefined }) => string | undefined;
+}
 
-      const uploadStatus = await uploadStateStore.getUploadStatus(req.params.jobId);
-      if (uploadStatus) {
-        if (uploadStatus.userId !== userId) {
-          res.status(403).json({ error: "Forbidden" });
-          return;
-        }
-        if (uploadStatus.expiresAt && uploadStatus.expiresAt <= Date.now()) {
-          res.json(stripExpiry(await expireStaleUpload(req.params.jobId, userId)));
-          return;
-        }
-        res.json(stripExpiry(uploadStatus));
-        return;
-      }
+const csvContentTypes = ["text/csv", "application/octet-stream", "text/plain"] as const;
 
-      const jobId = req.params.jobId;
+const uploadRouteConfigs: FileImportRouteConfig[] = [
+  {
+    routeId: "apple-health",
+    importType: "apple-health",
+    fileNamePrefix: "apple-health",
+    defaultFileExtension: ".zip",
+    allowedFileExtensions: [".zip", ".xml"],
+    allowedContentTypes: [
+      "application/octet-stream",
+      "application/zip",
+      "application/xml",
+      "text/xml",
+    ],
+    unsupportedContentTypeMessage:
+      "Unsupported Content-Type. Expected application/octet-stream, application/zip, application/xml, or text/xml",
+    getSince: (request) =>
+      request.query.fullSync === "true"
+        ? new Date(0)
+        : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    inferFileExtension: ({ contentType }) =>
+      contentType?.includes("xml") === true ? ".xml" : undefined,
+  },
+  {
+    routeId: "strong-csv",
+    importType: "strong-csv",
+    fileNamePrefix: "strong-csv",
+    defaultFileExtension: ".csv",
+    allowedFileExtensions: [".csv"],
+    allowedContentTypes: csvContentTypes,
+    unsupportedContentTypeMessage:
+      "Unsupported Content-Type. Expected text/csv, application/octet-stream, or text/plain",
+    getSince: () => new Date(0),
+    getJobOptions: (request) => ({ weightUnit: request.query.units === "lbs" ? "lbs" : "kg" }),
+  },
+  {
+    routeId: "cronometer-csv",
+    importType: "cronometer-csv",
+    fileNamePrefix: "cronometer-csv",
+    defaultFileExtension: ".csv",
+    allowedFileExtensions: [".csv"],
+    allowedContentTypes: csvContentTypes,
+    unsupportedContentTypeMessage:
+      "Unsupported Content-Type. Expected text/csv, application/octet-stream, or text/plain",
+    getSince: () => new Date(0),
+  },
+  {
+    routeId: "kaya-export",
+    importType: "kaya-export",
+    fileNamePrefix: "kaya-export",
+    defaultFileExtension: ".csv",
+    allowedFileExtensions: [".csv"],
+    allowedContentTypes: csvContentTypes,
+    unsupportedContentTypeMessage: "Kaya imports require a CSV export",
+    invalidFileExtensionMessage: "Kaya imports require a CSV export",
+    rateLimited: true,
+    getSince: () => new Date(0),
+  },
+  {
+    routeId: "zos-app",
+    importType: "zos-app",
+    fileNamePrefix: "zos-app",
+    defaultFileExtension: ".bin",
+    allowedFileExtensions: [".bin"],
+    allowedContentTypes: ["application/octet-stream"],
+    unsupportedContentTypeMessage: "Unsupported Content-Type. Expected application/octet-stream",
+    getSince: () => new Date(0),
+  },
+  {
+    routeId: "garmin-dump",
+    importType: "garmin-dump",
+    fileNamePrefix: "garmin-dump",
+    defaultFileExtension: ".zip",
+    allowedFileExtensions: [".zip"],
+    allowedContentTypes: [
+      "application/zip",
+      "application/x-zip-compressed",
+      "application/octet-stream",
+    ],
+    unsupportedContentTypeMessage:
+      "Unsupported Content-Type. Expected application/zip or application/octet-stream",
+    maxUploadBytes: GARMIN_DUMP_MAX_UPLOAD_BYTES,
+    rateLimited: true,
+    getSince: () => new Date(0),
+  },
+];
 
-      const status = await getImportJobStatus(importQueue, jobId);
-      if (!status) {
-        res.status(404).json({ error: "Unknown job" });
-        return;
-      }
-      if (status.userId && status.userId !== userId) {
-        res.status(403).json({ error: "Forbidden" });
-        return;
-      }
-      res.json(status);
-    },
+function getHeaderValue(request: Request, headerName: string): string | undefined {
+  const value = request.headers[headerName.toLowerCase()];
+  return typeof value === "string" ? value : undefined;
+}
+
+function getNormalizedContentType(request: Request): string | undefined {
+  return getHeaderValue(request, "content-type")?.split(";")[0]?.trim().toLowerCase();
+}
+
+function getUploadId(request: Request): string | undefined {
+  return getHeaderValue(request, "x-upload-id");
+}
+
+function getChunkNumber(request: Request, headerName: string): number {
+  return Number.parseInt(getHeaderValue(request, headerName) ?? "", 10);
+}
+
+function getRequestedFileExtension(request: Request): string | undefined {
+  const extension = getHeaderValue(request, "x-file-ext")?.trim().toLowerCase();
+  return extension && extension.length > 0 ? extension : undefined;
+}
+
+function getFileExtension(
+  request: Request,
+  config: FileImportRouteConfig,
+  contentType: string | undefined,
+): string {
+  return (
+    getRequestedFileExtension(request) ??
+    config.inferFileExtension?.({ contentType }) ??
+    config.defaultFileExtension
   );
+}
 
-  // Chunked upload endpoint
-  router.post("/apple-health", async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
+function validateUploadRequest(
+  request: Request,
+  response: Response,
+  config: FileImportRouteConfig,
+): { contentType: string | undefined; uploadId: string | undefined; fileExtension: string } | null {
+  const contentType = getNormalizedContentType(request);
+  if (contentType && !config.allowedContentTypes.includes(contentType)) {
+    response.status(415).json({ error: config.unsupportedContentTypeMessage });
+    return null;
+  }
 
-    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
-    if (
-      contentType &&
-      !["application/octet-stream", "application/zip", "application/xml", "text/xml"].includes(
-        contentType,
-      )
-    ) {
-      res.status(415).json({
-        error:
-          "Unsupported Content-Type. Expected application/octet-stream, application/zip, application/xml, or text/xml",
-      });
+  if (config.maxUploadBytes && exceedsContentLengthLimit(request, config.maxUploadBytes)) {
+    response.status(413).json({
+      error: `Garmin dump upload exceeds maximum size of ${config.maxUploadBytes} bytes`,
+    });
+    return null;
+  }
+
+  const uploadId = getUploadId(request);
+  if (uploadId && !/^[a-zA-Z0-9_-]+$/.test(uploadId)) {
+    response.status(400).json({ error: "Invalid upload ID" });
+    return null;
+  }
+
+  const fileExtension = getFileExtension(request, config, contentType);
+  if (!config.allowedFileExtensions.includes(fileExtension)) {
+    response.status(400).json({
+      error: config.invalidFileExtensionMessage ?? "Invalid file extension",
+    });
+    return null;
+  }
+
+  return { contentType, uploadId, fileExtension };
+}
+
+async function handleUploadStatus(
+  request: Request<{ jobId: string }>,
+  response: Response,
+  deps: UploadRouteDeps,
+): Promise<void> {
+  const userId = await authenticate(request, response, deps.db);
+  if (!userId) return;
+
+  const uploadStatus = await uploadStateStore.getUploadStatus(request.params.jobId);
+  if (uploadStatus) {
+    if (uploadStatus.userId !== userId) {
+      response.status(403).json({ error: "Forbidden" });
       return;
     }
+    if (uploadStatus.expiresAt && uploadStatus.expiresAt <= Date.now()) {
+      response.json(stripExpiry(await expireStaleUpload(request.params.jobId, userId)));
+      return;
+    }
+    response.json(stripExpiry(uploadStatus));
+    return;
+  }
 
-    const uploadId =
-      typeof req.headers["x-upload-id"] === "string" ? req.headers["x-upload-id"] : undefined;
-    const chunkIndex = parseInt(
-      typeof req.headers["x-chunk-index"] === "string" ? req.headers["x-chunk-index"] : "",
-      10,
+  const status = await getImportJobStatus(deps.importQueue, request.params.jobId);
+  if (!status) {
+    response.status(404).json({ error: "Unknown job" });
+    return;
+  }
+  if (status.userId && status.userId !== userId) {
+    response.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  response.json(status);
+}
+
+async function handleSingleFileUpload({
+  request,
+  response,
+  userId,
+  config,
+  fileExtension,
+  deps,
+}: {
+  request: Request;
+  response: Response;
+  userId: string;
+  config: FileImportRouteConfig;
+  fileExtension: string;
+  deps: UploadRouteDeps;
+}): Promise<void> {
+  const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const tmpFile = join(JOB_FILES_DIR, `${config.fileNamePrefix}-${tmpId}${fileExtension}`);
+
+  try {
+    if (config.maxUploadBytes) {
+      await streamToFile(request, tmpFile, config.maxUploadBytes);
+    } else {
+      await streamToFile(request, tmpFile);
+    }
+    const jobId = await enqueueImport(
+      deps.importQueue,
+      tmpFile,
+      config.getSince(request),
+      config.importType,
+      userId,
+      config.getJobOptions?.(request),
     );
-    const chunkTotal = parseInt(
-      typeof req.headers["x-chunk-total"] === "string" ? req.headers["x-chunk-total"] : "",
-      10,
-    );
-    const fileExt =
-      (typeof req.headers["x-file-ext"] === "string" ? req.headers["x-file-ext"] : "") || ".zip";
-    const fullSync = req.query.fullSync === "true";
+    response.json({ status: "processing", jobId });
+  } catch (error: unknown) {
+    logger.error(`[${config.routeId}] Upload failed: ${error}`);
+    await cleanupTempFile(tmpFile);
+    response.status(500).json({ error: "Upload failed" });
+  }
+}
 
-    // Validate uploadId and fileExt to prevent path traversal
-    if (uploadId && !/^[a-zA-Z0-9_-]+$/.test(uploadId)) {
-      res.status(400).json({ error: "Invalid upload ID" });
-      return;
-    }
-    if (![".zip", ".xml"].includes(fileExt)) {
-      res.status(400).json({ error: "Invalid file extension" });
-      return;
-    }
-    const since = fullSync ? new Date(0) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+async function handleChunkedFileUpload({
+  request,
+  response,
+  userId,
+  config,
+  uploadId,
+  fileExtension,
+  chunkIndex,
+  chunkTotal,
+  deps,
+}: {
+  request: Request;
+  response: Response;
+  userId: string;
+  config: FileImportRouteConfig;
+  uploadId: string;
+  fileExtension: string;
+  chunkIndex: number;
+  chunkTotal: number;
+  deps: UploadRouteDeps;
+}): Promise<void> {
+  if (
+    !Number.isInteger(chunkIndex) ||
+    !Number.isInteger(chunkTotal) ||
+    chunkIndex < 0 ||
+    chunkTotal <= 1 ||
+    chunkIndex >= chunkTotal
+  ) {
+    response.status(400).json({ error: "Invalid chunk headers" });
+    return;
+  }
 
-    // Non-chunked upload (single small file)
-    if (!uploadId || Number.isNaN(chunkTotal) || chunkTotal <= 1) {
-      const ext = fileExt === ".xml" || (contentType ?? "").includes("xml") ? ".xml" : ".zip";
-      const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const tmpFile = join(JOB_FILES_DIR, `apple-health-${tmpId}${ext}`);
-      try {
-        await streamToFile(req, tmpFile);
-        const jobId = await enqueueImport(importQueue, tmpFile, since, "apple-health", userId);
-        res.json({ status: "processing", jobId });
-      } catch (err: unknown) {
-        logger.error(`[upload] Apple Health upload failed: ${err}`);
-        res.status(500).json({ error: "Upload failed" });
-      }
-      return;
-    }
-
-    // Chunked upload
-    try {
-      let upload = await uploadStateStore.getUploadSession(uploadId);
-      if (!upload) {
-        const dir = join(JOB_FILES_DIR, `apple-health-chunked-${uploadId}`);
-        await mkdir(dir, { recursive: true });
-        upload = { total: chunkTotal, dir, userId };
-        await uploadStateStore.saveUploadSession(
-          uploadId,
-          upload,
-          IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
-        );
-        await setUploadStatus(
-          uploadId,
-          inProgressStatus("uploading", 0, "Receiving chunks...", userId),
-          IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
-        );
-      } else if (upload.userId !== userId) {
-        res.status(403).json({ error: "Forbidden" });
-        return;
-      }
-
-      const chunkPath = join(upload.dir, `chunk-${String(chunkIndex).padStart(6, "0")}`);
-      await streamToFile(req, chunkPath);
-      const receivedCount = await uploadStateStore.addReceivedChunk(
-        uploadId,
-        chunkIndex,
-        IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
-      );
+  try {
+    let upload = await uploadStateStore.getUploadSession(uploadId);
+    if (!upload) {
+      const dir = join(JOB_FILES_DIR, `${config.fileNamePrefix}-chunked-${uploadId}`);
+      await mkdir(dir, { recursive: true });
+      upload = { total: chunkTotal, dir, userId };
       await uploadStateStore.saveUploadSession(uploadId, upload, IN_PROGRESS_UPLOAD_STATUS_TTL_MS);
-
-      const uploadPercentage = Math.round((receivedCount / upload.total) * 100);
-      logger.info(`[upload] Chunk ${chunkIndex + 1}/${chunkTotal} for ${uploadId}`);
-
-      if (receivedCount < upload.total) {
-        await setUploadStatus(
-          uploadId,
-          inProgressStatus(
-            "uploading",
-            uploadPercentage,
-            `Received ${receivedCount}/${upload.total} chunks`,
-            userId,
-          ),
-          IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
-        );
-        res.json({
-          status: "uploading",
-          jobId: uploadId,
-          received: receivedCount,
-          total: upload.total,
-        });
-        return;
-      }
-
-      // All chunks received — respond immediately, assemble in background.
-      // This prevents gateway timeouts when assembly takes a long time for large files.
-      const chunkDir = upload.dir;
-      await uploadStateStore.deleteUploadSession(uploadId);
       await setUploadStatus(
         uploadId,
-        inProgressStatus("assembling", 0, "Assembling file...", userId),
+        inProgressStatus("uploading", 0, "Receiving chunks...", userId),
         IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
       );
-      res.json({ status: "assembling", jobId: uploadId });
+    } else if (upload.userId !== userId) {
+      response.status(403).json({ error: "Forbidden" });
+      return;
+    } else if (upload.total !== chunkTotal) {
+      response.status(400).json({ error: "Chunk total does not match existing upload" });
+      return;
+    }
 
-      // Fire-and-forget: assemble chunks → enqueue import
-      (async () => {
-        try {
-          const assembledFile = join(JOB_FILES_DIR, `apple-health-${uploadId}${fileExt}`);
-          await assembleChunks(chunkDir, assembledFile);
-          await rm(chunkDir, { recursive: true, force: true });
-          // Use uploadId as the BullMQ job ID so the client can poll the same ID
-          await enqueueImport(importQueue, assembledFile, since, "apple-health", userId, {
-            jobId: uploadId,
-          });
-          // Clear upload status — BullMQ job status takes over
-          await uploadStateStore.deleteUploadStatus(uploadId);
-        } catch (err: unknown) {
-          logger.error(`[upload] Assembly/enqueue failed for ${uploadId}: ${err}`);
-          await rm(chunkDir, { recursive: true, force: true }).catch((error: unknown) => {
-            logger.warn("Failed to clean up chunk dir %s: %s", chunkDir, error);
-          });
-          await setUploadStatus(uploadId, {
-            status: "error",
-            progress: 0,
-            message: "Failed to assemble uploaded file",
-            userId,
-          });
-        }
-      })();
-    } catch (err: unknown) {
-      logger.error(`[upload] Chunked upload failed: ${err}`);
-      const upload = await uploadStateStore.getUploadSession(uploadId);
-      if (upload) {
-        await uploadStateStore.deleteUploadSession(uploadId);
-        await rm(upload.dir, { recursive: true, force: true }).catch((error: unknown) => {
-          logger.warn("Failed to clean up upload dir %s: %s", upload.dir, error);
+    const chunkPath = join(upload.dir, `chunk-${String(chunkIndex).padStart(6, "0")}`);
+    if (config.maxUploadBytes) {
+      await streamToFile(request, chunkPath, config.maxUploadBytes);
+    } else {
+      await streamToFile(request, chunkPath);
+    }
+    const receivedCount = await uploadStateStore.addReceivedChunk(
+      uploadId,
+      chunkIndex,
+      IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
+    );
+    await uploadStateStore.saveUploadSession(uploadId, upload, IN_PROGRESS_UPLOAD_STATUS_TTL_MS);
+
+    const uploadPercentage = Math.round((receivedCount / upload.total) * 100);
+    logger.info(`[upload] ${config.routeId} chunk ${chunkIndex + 1}/${chunkTotal} for ${uploadId}`);
+
+    if (receivedCount < upload.total) {
+      await setUploadStatus(
+        uploadId,
+        inProgressStatus(
+          "uploading",
+          uploadPercentage,
+          `Received ${receivedCount}/${upload.total} chunks`,
+          userId,
+        ),
+        IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
+      );
+      response.json({
+        status: "uploading",
+        jobId: uploadId,
+        received: receivedCount,
+        total: upload.total,
+      });
+      return;
+    }
+
+    const chunkDir = upload.dir;
+    const since = config.getSince(request);
+    const jobOptions = config.getJobOptions?.(request);
+    await uploadStateStore.deleteUploadSession(uploadId);
+    await setUploadStatus(
+      uploadId,
+      inProgressStatus("assembling", 0, "Assembling file...", userId),
+      IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
+    );
+    response.json({ status: "assembling", jobId: uploadId });
+
+    void (async () => {
+      try {
+        const assembledFile = join(
+          JOB_FILES_DIR,
+          `${config.fileNamePrefix}-${uploadId}${fileExtension}`,
+        );
+        await assembleChunks(chunkDir, assembledFile);
+        await rm(chunkDir, { recursive: true, force: true });
+        await enqueueImport(deps.importQueue, assembledFile, since, config.importType, userId, {
+          ...jobOptions,
+          jobId: uploadId,
+        });
+        await uploadStateStore.deleteUploadStatus(uploadId);
+      } catch (error: unknown) {
+        logger.error(`[upload] Assembly/enqueue failed for ${uploadId}: ${error}`);
+        await rm(chunkDir, { recursive: true, force: true }).catch((rmError: unknown) => {
+          logger.warn("Failed to clean up chunk dir %s: %s", chunkDir, rmError);
+        });
+        await setUploadStatus(uploadId, {
+          status: "error",
+          progress: 0,
+          message: "Failed to assemble uploaded file",
+          userId,
         });
       }
-      await setUploadStatus(uploadId, {
-        status: "error",
-        progress: 0,
-        message: "Upload failed",
+    })();
+  } catch (error: unknown) {
+    logger.error(`[upload] Chunked upload failed: ${error}`);
+    const upload = await uploadStateStore.getUploadSession(uploadId);
+    if (upload) {
+      await uploadStateStore.deleteUploadSession(uploadId);
+      await rm(upload.dir, { recursive: true, force: true }).catch((rmError: unknown) => {
+        logger.warn("Failed to clean up upload dir %s: %s", upload.dir, rmError);
+      });
+    }
+    await setUploadStatus(uploadId, {
+      status: "error",
+      progress: 0,
+      message: "Upload failed",
+      userId,
+    });
+    response.status(500).json({ error: "Upload failed" });
+  }
+}
+
+function registerFileImportRoutes(
+  router: Router,
+  config: FileImportRouteConfig,
+  deps: UploadRouteDeps,
+): void {
+  router.get<{ jobId: string }>(
+    `/${config.routeId}/status/:jobId`,
+    uploadStatusRateLimiter,
+    async (request, response) => {
+      await handleUploadStatus(request, response, deps);
+    },
+  );
+
+  const uploadHandler = async (request: Request, response: Response) => {
+    const userId = await authenticate(request, response, deps.db);
+    if (!userId) return;
+
+    const validation = validateUploadRequest(request, response, config);
+    if (!validation) return;
+
+    const chunkTotal = getChunkNumber(request, "x-chunk-total");
+    if (validation.uploadId && chunkTotal > 1) {
+      await handleChunkedFileUpload({
+        request,
+        response,
         userId,
-      });
-      res.status(500).json({ error: "Upload failed" });
-    }
-  });
-
-  // ── Strong CSV upload ──
-  router.get<{ jobId: string }>(
-    "/strong-csv/status/:jobId",
-    uploadStatusRateLimiter,
-    async (req, res) => {
-      const userId = await authenticate(req, res, db);
-      if (!userId) return;
-
-      const jobId = req.params.jobId;
-
-      const status = await getImportJobStatus(importQueue, jobId);
-      if (!status) {
-        res.status(404).json({ error: "Unknown job" });
-        return;
-      }
-      if (status.userId && status.userId !== userId) {
-        res.status(403).json({ error: "Forbidden" });
-        return;
-      }
-      res.json(status);
-    },
-  );
-
-  router.post("/strong-csv", async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
-
-    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
-    if (
-      contentType &&
-      !["text/csv", "application/octet-stream", "text/plain"].includes(contentType)
-    ) {
-      res.status(415).json({
-        error:
-          "Unsupported Content-Type. Expected text/csv, application/octet-stream, or text/plain",
+        config,
+        uploadId: validation.uploadId,
+        fileExtension: validation.fileExtension,
+        chunkIndex: getChunkNumber(request, "x-chunk-index"),
+        chunkTotal,
+        deps,
       });
       return;
     }
 
-    const weightUnit = req.query.units === "lbs" ? "lbs" : "kg";
-    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(JOB_FILES_DIR, `strong-csv-${tmpId}.csv`);
+    await handleSingleFileUpload({
+      request,
+      response,
+      userId,
+      config,
+      fileExtension: validation.fileExtension,
+      deps,
+    });
+  };
 
-    try {
-      await streamToFile(req, tmpFile);
-      const jobId = await enqueueImport(importQueue, tmpFile, new Date(0), "strong-csv", userId, {
-        weightUnit,
-      });
-      res.json({ status: "processing", jobId });
-    } catch (err: unknown) {
-      logger.error(`[strong-csv] Upload failed: ${err}`);
-      res.status(500).json({ error: "Upload failed" });
-    }
-  });
+  if (config.rateLimited) {
+    router.post(`/${config.routeId}`, uploadRateLimiter, uploadHandler);
+    return;
+  }
+  router.post(`/${config.routeId}`, uploadHandler);
+}
 
-  // ── Cronometer CSV upload ──
-  router.get<{ jobId: string }>(
-    "/cronometer-csv/status/:jobId",
-    uploadStatusRateLimiter,
-    async (req, res) => {
-      const userId = await authenticate(req, res, db);
-      if (!userId) return;
-
-      const jobId = req.params.jobId;
-
-      const status = await getImportJobStatus(importQueue, jobId);
-      if (!status) {
-        res.status(404).json({ error: "Unknown job" });
-        return;
-      }
-      if (status.userId && status.userId !== userId) {
-        res.status(403).json({ error: "Forbidden" });
-        return;
-      }
-      res.json(status);
-    },
-  );
-
-  router.post("/cronometer-csv", async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
-
-    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
-    if (
-      contentType &&
-      !["text/csv", "application/octet-stream", "text/plain"].includes(contentType)
-    ) {
-      res.status(415).json({
-        error:
-          "Unsupported Content-Type. Expected text/csv, application/octet-stream, or text/plain",
-      });
-      return;
-    }
-
-    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(JOB_FILES_DIR, `cronometer-csv-${tmpId}.csv`);
-
-    try {
-      await streamToFile(req, tmpFile);
-      const jobId = await enqueueImport(
-        importQueue,
-        tmpFile,
-        new Date(0),
-        "cronometer-csv",
-        userId,
-      );
-      res.json({ status: "processing", jobId });
-    } catch (err: unknown) {
-      logger.error(`[cronometer-csv] Upload failed: ${err}`);
-      res.status(500).json({ error: "Upload failed" });
-    }
-  });
-
-  // ── Kaya CSV export upload ──
-  router.get<{ jobId: string }>(
-    "/kaya-export/status/:jobId",
-    uploadStatusRateLimiter,
-    async (req, res) => {
-      const userId = await authenticate(req, res, db);
-      if (!userId) return;
-
-      const jobId = req.params.jobId;
-
-      const status = await getImportJobStatus(importQueue, jobId);
-      if (!status) {
-        res.status(404).json({ error: "Unknown job" });
-        return;
-      }
-      if (status.userId && status.userId !== userId) {
-        res.status(403).json({ error: "Forbidden" });
-        return;
-      }
-      res.json(status);
-    },
-  );
-
-  router.post("/kaya-export", uploadRateLimiter, async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
-
-    const guidance = "Kaya imports require a CSV export";
-    const contentType = req.headers["content-type"]?.split(";").at(0)?.trim().toLowerCase();
-    if (
-      contentType &&
-      !["text/csv", "application/octet-stream", "text/plain"].includes(contentType)
-    ) {
-      res.status(415).json({ error: guidance });
-      return;
-    }
-
-    const fileExt = req.get("x-file-ext") || ".csv";
-    if (fileExt.toLowerCase() !== ".csv") {
-      res.status(400).json({ error: guidance });
-      return;
-    }
-
-    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(JOB_FILES_DIR, `kaya-export-${tmpId}.csv`);
-
-    try {
-      await streamToFile(req, tmpFile);
-      const jobId = await enqueueImport(importQueue, tmpFile, new Date(0), "kaya-export", userId);
-      res.json({ status: "processing", jobId });
-    } catch (err: unknown) {
-      logger.error(`[kaya-export] Upload failed: ${err}`);
-      await cleanupTempFile(tmpFile);
-      res.status(500).json({ error: "Upload failed" });
-    }
-  });
-
-  // ── ZOS App bin upload ──
-  router.get<{ jobId: string }>(
-    "/zos-app/status/:jobId",
-    uploadStatusRateLimiter,
-    async (req, res) => {
-      const userId = await authenticate(req, res, db);
-      if (!userId) return;
-
-      const jobId = req.params.jobId;
-
-      const status = await getImportJobStatus(importQueue, jobId);
-      if (!status) {
-        res.status(404).json({ error: "Unknown job" });
-        return;
-      }
-      if (status.userId && status.userId !== userId) {
-        res.status(403).json({ error: "Forbidden" });
-        return;
-      }
-      res.json(status);
-    },
-  );
-
-  router.post("/zos-app", async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
-
-    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
-    if (contentType && !["application/octet-stream"].includes(contentType)) {
-      res.status(415).json({
-        error: "Unsupported Content-Type. Expected application/octet-stream",
-      });
-      return;
-    }
-
-    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(JOB_FILES_DIR, `zos-app-${tmpId}.bin`);
-
-    try {
-      await streamToFile(req, tmpFile);
-      const jobId = await enqueueImport(importQueue, tmpFile, new Date(0), "zos-app", userId);
-      res.json({ status: "processing", jobId });
-    } catch (err: unknown) {
-      logger.error(`[zos-app] Upload failed: ${err}`);
-      await cleanupTempFile(tmpFile);
-      res.status(500).json({ error: "Upload failed" });
-    }
-  });
-
-  // ── Garmin account export dump upload ──
-  router.get<{ jobId: string }>(
-    "/garmin-dump/status/:jobId",
-    uploadStatusRateLimiter,
-    async (req, res) => {
-      const userId = await authenticate(req, res, db);
-      if (!userId) return;
-
-      const jobId = req.params.jobId;
-
-      const status = await getImportJobStatus(importQueue, jobId);
-      if (!status) {
-        res.status(404).json({ error: "Unknown job" });
-        return;
-      }
-      if (status.userId && status.userId !== userId) {
-        res.status(403).json({ error: "Forbidden" });
-        return;
-      }
-      res.json(status);
-    },
-  );
-
-  router.post("/garmin-dump", uploadRateLimiter, async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
-
-    const contentTypeHeader = req.headers["content-type"];
-    const contentType =
-      typeof contentTypeHeader === "string"
-        ? (contentTypeHeader.split(";")[0] ?? "").trim().toLowerCase()
-        : undefined;
-    if (
-      contentType &&
-      !["application/zip", "application/x-zip-compressed", "application/octet-stream"].includes(
-        contentType,
-      )
-    ) {
-      res.status(415).json({
-        error: "Unsupported Content-Type. Expected application/zip or application/octet-stream",
-      });
-      return;
-    }
-    if (exceedsContentLengthLimit(req, GARMIN_DUMP_MAX_UPLOAD_BYTES)) {
-      res.status(413).json({
-        error: `Garmin dump upload exceeds maximum size of ${GARMIN_DUMP_MAX_UPLOAD_BYTES} bytes`,
-      });
-      return;
-    }
-
-    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(JOB_FILES_DIR, `garmin-dump-${tmpId}.zip`);
-
-    try {
-      await streamToFile(req, tmpFile, GARMIN_DUMP_MAX_UPLOAD_BYTES);
-      const jobId = await enqueueImport(importQueue, tmpFile, new Date(0), "garmin-dump", userId);
-      res.json({ status: "processing", jobId });
-    } catch (err: unknown) {
-      logger.error(`[garmin-dump] Upload failed: ${err}`);
-      await cleanupTempFile(tmpFile);
-      res.status(500).json({ error: "Upload failed" });
-    }
-  });
-
+export function createUploadRouter(deps: UploadRouteDeps): Router {
+  const router = Router();
+  for (const config of uploadRouteConfigs) {
+    registerFileImportRoutes(router, config, deps);
+  }
   return router;
 }

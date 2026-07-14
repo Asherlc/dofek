@@ -39,6 +39,11 @@ const fileImportProviderConfigs = {
     documentTypes: ["application/zip", "application/x-zip-compressed"],
     selectionErrorMessage: "Unable to select Garmin export",
   },
+  "kaya-export": {
+    providerId: "kaya-export",
+    documentTypes: csvDocumentTypes,
+    selectionErrorMessage: "Unable to select Kaya export",
+  },
 } satisfies Partial<Record<ImportProviderId, FileImportProviderConfig>>;
 
 export function getFileImportProviderConfig(
@@ -51,6 +56,7 @@ export function getFileImportProviderConfig(
     case "strong-csv":
     case "cronometer-csv":
     case "garmin-dump":
+    case "kaya-export":
       return fileImportProviderConfigs[providerId];
     default:
       return undefined;

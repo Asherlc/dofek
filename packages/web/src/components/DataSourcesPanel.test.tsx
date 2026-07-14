@@ -45,6 +45,13 @@ const mockPollSyncJob = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
 const mockSyncStatusFetch = vi.hoisted(() => vi.fn());
 const mockFileImportProviderCard = vi.hoisted(() => vi.fn());
+const mockProviderStatsQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  })),
+);
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -52,7 +59,7 @@ vi.mock("../lib/trpc.ts", () => ({
       providers: {
         useQuery: mockProvidersQuery,
       },
-      providerStats: { useQuery: () => ({ data: [], isLoading: false }) },
+      providerStats: { useQuery: mockProviderStatsQuery },
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
       dataHealth: { useQuery: mockDataHealthQuery },
@@ -93,6 +100,8 @@ vi.mock("./FileImportProviderCard.tsx", () => ({
     accept: string;
     uploadUrl: string;
     statusUrl: string;
+    chunked?: boolean;
+    stats?: Record<string, unknown>;
   }) => {
     mockFileImportProviderCard(props);
     return (
@@ -182,6 +191,8 @@ describe("DataSourcesPanel", () => {
     mockInvalidate.mockReset();
     mockSyncStatusFetch.mockReset();
     mockFileImportProviderCard.mockClear();
+    mockProviderStatsQuery.mockReset();
+    mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   });
 
   it("shows server data readiness messages above provider cards", () => {
@@ -332,6 +343,73 @@ describe("DataSourcesPanel", () => {
         accept: ".csv",
         uploadUrl: "/api/upload/kaya-export",
         statusUrl: "/api/upload/kaya-export/status",
+        chunked: true,
+      }),
+    );
+  });
+
+  it("passes provider summaries to file import cards", () => {
+    const appleHealthStats = {
+      providerId: "apple_health",
+      activities: 0,
+      metricStream: 205_367,
+      dailyMetrics: 229,
+      sleepSessions: 155,
+      bodyMeasurements: 43,
+      healthEvents: 392,
+      foodEntries: 0,
+      nutritionDaily: 0,
+      labPanels: 0,
+      labResults: 0,
+      journalEntries: 0,
+    };
+    const kayaStats = {
+      providerId: "kaya-export",
+      activities: 352,
+      metricStream: 205_367,
+      dailyMetrics: 229,
+      sleepSessions: 155,
+      bodyMeasurements: 43,
+      healthEvents: 392,
+      foodEntries: 0,
+      nutritionDaily: 0,
+      labPanels: 0,
+      labResults: 0,
+      journalEntries: 0,
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "kaya-export",
+          name: "Kaya",
+          authorized: true,
+          authType: "file-import",
+          importOnly: true,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockProviderStatsQuery.mockReturnValue({
+      data: [appleHealthStats, kayaStats],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "kaya-export",
+        stats: kayaStats,
+      }),
+    );
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "apple_health",
+        stats: appleHealthStats,
       }),
     );
   });
@@ -348,6 +426,7 @@ describe("DataSourcesPanel", () => {
         description: ".zip or .xml from Health app export",
         uploadUrl: "/api/upload/apple-health?fullSync=true",
         statusUrl: "/api/upload/apple-health/status",
+        chunked: true,
       }),
     );
   });

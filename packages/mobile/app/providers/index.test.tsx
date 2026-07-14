@@ -707,6 +707,50 @@ describe("ProviderCard", () => {
     expect(importProvider).toHaveBeenCalledWith("apple-health");
   });
 
+  it("renders the shared provider summary on file import provider cards", async () => {
+    const { FileImportProviderCard } = await import("./file-import-provider-card.tsx");
+    render(
+      <FileImportProviderCard
+        provider={makeProvider({ id: "strong-csv", label: "Strong", importOnly: true })}
+        stats={{
+          activities: 352,
+          metricStream: 205_367,
+          dailyMetrics: 229,
+          sleepSessions: 155,
+          bodyMeasurements: 43,
+          healthEvents: 392,
+          foodEntries: 0,
+          nutritionDaily: 0,
+          labPanels: 0,
+          labResults: 0,
+          journalEntries: 0,
+        }}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onFullSync={noopFn}
+        onConnect={noopFn}
+        onImportProvider={noopFn}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(screen.getByText("206,538")).toBeTruthy();
+    expect(screen.getByText("records")).toBeTruthy();
+    expect(screen.getByText("Activities")).toBeTruthy();
+    expect(screen.getByText("352")).toBeTruthy();
+    expect(screen.getByText("Metric Stream")).toBeTruthy();
+    expect(screen.getByText("205,367")).toBeTruthy();
+    expect(screen.getByText("Daily Metrics")).toBeTruthy();
+    expect(screen.getByText("229")).toBeTruthy();
+    expect(screen.getByText("Sleep")).toBeTruthy();
+    expect(screen.getByText("155")).toBeTruthy();
+    expect(screen.getByText("Body")).toBeTruthy();
+    expect(screen.getByText("43")).toBeTruthy();
+    expect(screen.getByText("Events")).toBeTruthy();
+    expect(screen.getByText("392")).toBeTruthy();
+  });
+
   describe("import-only providers", () => {
     it("does not render Sync button for import-only providers", async () => {
       const { ProviderCard } = await import("./provider-card.tsx");
@@ -1404,6 +1448,56 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/cronometer-export.csv",
           providerId: "cronometer-csv",
+          serverUrl: "https://test.example.com",
+          sessionToken: "test-token",
+        }),
+        expect.objectContaining({ readBlob: expect.any(Function) }),
+      );
+    });
+  });
+
+  it("selects and imports a Kaya CSV from the Kaya card", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          ...importOnlyProvider,
+          id: "kaya-export",
+          name: "Kaya",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///tmp/kaya-export.csv",
+          name: "kaya-export.csv",
+          mimeType: "text/csv",
+        },
+      ],
+    });
+    mockImportSharedFile.mockResolvedValue({
+      providerId: "kaya-export",
+      jobId: "job-kaya",
+    });
+
+    await renderProvidersScreen();
+
+    const kayaCard = within(screen.getByTestId("provider-card-kaya-export"));
+    fireEvent.click(kayaCard.getByText("Import file"));
+
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+      });
+      expect(mockImportSharedFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileUri: "file:///tmp/kaya-export.csv",
+          providerId: "kaya-export",
           serverUrl: "https://test.example.com",
           sessionToken: "test-token",
         }),

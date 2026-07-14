@@ -49,6 +49,7 @@ const meta = {
     accept: ".csv",
     uploadUrl: "/api/upload/strong-csv?units=kg",
     statusUrl: "/api/upload/strong-csv/status",
+    chunked: true,
   },
 } satisfies Meta<typeof FileImportProviderCard>;
 

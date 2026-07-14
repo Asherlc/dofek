@@ -51,6 +51,16 @@ describe("inferImportProviderFromFile", () => {
     });
     expect(provider).toBe("garmin-dump");
   });
+
+  it("detects Kaya CSV by filename", () => {
+    const provider = inferImportProviderFromFile({
+      fileName: "kaya-export.csv",
+      fileExtension: ".csv",
+      mimeType: "text/csv",
+      csvHeaderLine: "Date,Climb,Grade",
+    });
+    expect(provider).toBe("kaya-export");
+  });
 });
 
 describe("importSharedFile", () => {
@@ -96,6 +106,7 @@ describe("importSharedFile", () => {
         fetchImpl,
         readBlob: customReadBlob,
         sleep: async () => {},
+        now: () => 123,
       },
     );
 
@@ -106,7 +117,11 @@ describe("importSharedFile", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Bearer session-token",
-          "Content-Type": "application/zip",
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": expect.stringMatching(/^share-123-/),
+          "x-chunk-index": "0",
+          "x-chunk-total": "1",
+          "x-file-ext": ".zip",
         }),
       }),
     );
@@ -116,6 +131,80 @@ describe("importSharedFile", () => {
       expect.anything(),
     );
     expect(progressMessages).toContain("Importing activities");
+  });
+
+  it("splits large Garmin dumps into shared upload chunks", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const chunkSize = 50 * 1024 * 1024;
+    const largeBlob = new Blob(["garmin-export"], { type: "application/zip" });
+    Object.defineProperty(largeBlob, "size", { value: chunkSize + 1 });
+    const slice = vi
+      .spyOn(largeBlob, "slice")
+      .mockImplementation(() => new Blob(["chunk"], { type: "application/octet-stream" }));
+    const customReadBlob = vi.fn().mockResolvedValue(largeBlob);
+
+    fetchImpl
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "uploading", jobId: "large-upload" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "assembling", jobId: "large-upload" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "done", progress: 100 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    const result = await importSharedFile(
+      {
+        fileUri: "file:///tmp/garmin-export.zip",
+        providerId: "garmin-dump",
+        serverUrl: "https://example.com",
+        sessionToken: "session-token",
+      },
+      {
+        fetchImpl,
+        readBlob: customReadBlob,
+        sleep: async () => {},
+        now: () => 999,
+      },
+    );
+
+    expect(result).toEqual({ providerId: "garmin-dump", jobId: "large-upload" });
+    expect(slice).toHaveBeenNthCalledWith(1, 0, chunkSize);
+    expect(slice).toHaveBeenNthCalledWith(2, chunkSize, chunkSize + 1);
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/api/upload/garmin-dump",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-upload-id": expect.stringMatching(/^share-999-/),
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+          "x-file-ext": ".zip",
+        }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://example.com/api/upload/garmin-dump",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-upload-id": expect.stringMatching(/^share-999-/),
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+          "x-file-ext": ".zip",
+        }),
+      }),
+    );
   });
 
   it("uploads a Strong CSV and polls until done", async () => {
@@ -161,6 +250,7 @@ describe("importSharedFile", () => {
       {
         fetchImpl,
         sleep: async () => {},
+        now: () => 456,
       },
     );
 
@@ -175,7 +265,65 @@ describe("importSharedFile", () => {
       2,
       "https://example.com/api/upload/strong-csv?units=kg",
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer session-token" }),
+        headers: expect.objectContaining({
+          Authorization: "Bearer session-token",
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": expect.stringMatching(/^share-456-/),
+          "x-chunk-index": "0",
+          "x-chunk-total": "1",
+          "x-file-ext": ".csv",
+        }),
+      }),
+    );
+  });
+
+  it("uploads an explicitly selected Kaya CSV through the shared chunked path", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const fileBody = "Date,Climb,Grade\n2026-03-10,Test Boulder,V5";
+    const customReadBlob = vi.fn().mockResolvedValue(new Blob([fileBody], { type: "text/csv" }));
+
+    fetchImpl
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "processing", jobId: "job-kaya" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "done", progress: 100 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    const result = await importSharedFile(
+      {
+        fileUri: "file:///tmp/kaya-export.csv",
+        providerId: "kaya-export",
+        serverUrl: "https://example.com",
+        sessionToken: "session-token",
+      },
+      {
+        fetchImpl,
+        readBlob: customReadBlob,
+        sleep: async () => {},
+        now: () => 567,
+      },
+    );
+
+    expect(result).toEqual({ providerId: "kaya-export", jobId: "job-kaya" });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/api/upload/kaya-export",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer session-token",
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": expect.stringMatching(/^share-567-/),
+          "x-chunk-index": "0",
+          "x-chunk-total": "1",
+          "x-file-ext": ".csv",
+        }),
       }),
     );
   });
