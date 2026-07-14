@@ -1,9 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { ChartRange } from "../lib/chart-range.ts";
+import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, router } from "../trpc.ts";
 
 const powerModelSchema = z.object({
   cp: z.number(),
@@ -149,24 +149,23 @@ function requireRepository(ctx: {
 }
 
 export const cyclingRouter = router({
-  performance: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
-    .input(z.object({ days: selectedChartRangeDaysSchema("cycling.performance") }))
-    .output(performanceOutputSchema)
-    .query(({ ctx, input }) =>
-      requireRepository(ctx).getPerformance(ChartRange.fromDays(input.days)),
-    ),
-  activities: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
-    .input(
-      z.object({
-        days: selectedChartRangeDaysSchema("cycling.activities"),
-        activityLimit: z.number().int().min(1).max(100).default(20),
-        activityOffset: z.number().int().min(0).default(0),
-        variabilityLimit: z.number().int().min(1).max(100).default(20),
-        variabilityOffset: z.number().int().min(0).default(0),
-      }),
-    )
-    .output(activitiesOutputSchema)
-    .query(({ ctx, input }) =>
-      requireRepository(ctx).getActivities(ChartRange.fromDays(input.days), input),
-    ),
+  performance: selectedChartRangeQuery(
+    "cycling.performance",
+    CacheTTL.LONG,
+    async ({ ctx, range }) =>
+      performanceOutputSchema.parse(await requireRepository(ctx).getPerformance(range)),
+  ),
+  activities: selectedChartCustomRangeQuery(
+    "cycling.activities",
+    CacheTTL.LONG,
+    z.object({
+      days: selectedChartRangeDaysSchema("cycling.activities"),
+      activityLimit: z.number().int().min(1).max(100).default(20),
+      activityOffset: z.number().int().min(0).default(0),
+      variabilityLimit: z.number().int().min(1).max(100).default(20),
+      variabilityOffset: z.number().int().min(0).default(0),
+    }),
+    async ({ ctx, input, range }) =>
+      activitiesOutputSchema.parse(await requireRepository(ctx).getActivities(range, input)),
+  ),
 });
