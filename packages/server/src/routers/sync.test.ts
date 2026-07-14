@@ -1911,6 +1911,7 @@ describe("syncRouter", () => {
       expect(result).toEqual([
         {
           providerId: "wahoo",
+          totalRecords: 148,
           activities: 10,
           dailyMetrics: 5,
           sleepSessions: 3,
