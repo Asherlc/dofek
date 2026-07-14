@@ -172,32 +172,24 @@ jobs:
       - name: Generate native project
         working-directory: packages/mobile
         run: pnpm expo prebuild --clean --platform ios --no-install
-      - name: Cache CocoaPods
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: packages/mobile/ios/Pods
-          key: pods-v10-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'pnpm-lock.yaml') }}
-          restore-keys: pods-v10-
       - name: Cache DerivedData
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DERIVED_DATA_PATH }}
-          key: watch-deriveddata-v2-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/targets/DofekWatch/expo-target.config.js', 'pnpm-lock.yaml', 'packages/mobile/targets/DofekWatch/**/*.swift', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
+          key: watch-deriveddata-v2-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.js', 'packages/mobile/targets/DofekWatch/expo-target.config.js', 'pnpm-lock.yaml', 'packages/mobile/targets/DofekWatch/**/*.swift', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
           restore-keys: watch-deriveddata-v2-
-      - name: Install CocoaPods dependencies
-        run: cd packages/mobile/ios && pod install
       - name: Validate Watch scheme
         run: |
           set -euo pipefail
-          xcodebuild -list -json -workspace packages/mobile/ios/Dofek.xcworkspace \
-            | ruby -rjson -e 'schemes = JSON.parse(STDIN.read).dig("workspace", "schemes") || []; abort("DofekWatch scheme not found") unless schemes.include?("DofekWatch")'
+          xcodebuild -list -json -project packages/mobile/ios/Dofek.xcodeproj \
+            | ruby -rjson -e 'schemes = JSON.parse(STDIN.read).dig("project", "schemes") || []; abort("DofekWatch scheme not found") unless schemes.include?("DofekWatch")'
       - name: Build Watch target for simulator
         timeout-minutes: 25
         run: |
           set -o pipefail
           BUILD_DIR="$(pwd)/packages/mobile/ios/build"
           xcodebuild build \
-            -workspace packages/mobile/ios/Dofek.xcworkspace \
+            -project packages/mobile/ios/Dofek.xcodeproj \
             -scheme DofekWatch \
             -configuration Debug \
             -destination 'generic/platform=watchOS Simulator' \

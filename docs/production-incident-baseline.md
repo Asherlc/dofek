@@ -12985,3 +12985,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   arguments and cache reference normalization. A small reusable workflow helper
   for GHCR image-name normalization would reduce the chance of reintroducing
   mixed-case registry refs in future Docker workflows.
+
+## 2026-07-14 — watchOS CI Timed Out Building iOS Pods
+
+- **Symptoms:** Main-branch CI run
+  [`29307162590`](https://github.com/Asherlc/dofek/actions/runs/29307162590)
+  failed `Build Mobile / watchOS Build`, which caused
+  `Build Mobile / Mobile Build Gate` and `CI Gate` to fail downstream.
+- **User impact:** Main-branch CI could not complete after PR `1601`, blocking
+  confidence in the pushed workflow fix.
+- **Evidence:** The failing step was `Build Watch target for simulator`; GitHub
+  Actions reported `The action 'Build Watch target for simulator' has timed out`
+  after the step's 25-minute timeout
+  ([watchOS job](https://github.com/Asherlc/dofek/actions/runs/29307162590/job/87002825636)).
+  The uploaded `watchos-build-log` artifact showed `xcodebuild` was still
+  compiling `RNReanimated` for `iphonesimulator` when the timeout terminated
+  the job, while the requested product was the `DofekWatch` watch target.
+- **Root cause:** The watchOS job ran `pod install` and then built the generated
+  `DofekWatch` scheme from `Dofek.xcworkspace`. The generated watch target has
+  no watch-specific pods before CocoaPods integration, but the workspace scheme
+  allowed Xcode to traverse the iOS React Native pod graph; `RNReanimated` had
+  no prebuilt xcframework and was compiled from source, so the watch validation
+  exceeded the 25-minute step timeout. Apple's command-line Xcode guidance
+  documents building schemes from workspaces or projects, so the watch-only
+  validation can build the generated project scheme directly instead
+  ([Apple TN2339](https://developer.apple.com/library/archive/technotes/tn2339/_index.html)).
+- **Fix / mitigation:** Updated the watchOS workflow to skip CocoaPods in the
+  watch job, validate `DofekWatch` from `packages/mobile/ios/Dofek.xcodeproj`,
+  and build that generated project scheme directly with the existing
+  `watchOS Simulator` destination and `-derivedDataPath`. The watch DerivedData
+  cache key now hashes `packages/mobile/app.config.js`, the actual Expo config
+  file, rather than the obsolete `app.config.ts` path.
+- **Validation:** Local prebuild confirmed `DofekWatch` exists as a generated
+  project scheme before `pod install`, and the pre-CocoaPods generated project
+  contained no `RNReanimated`, `Pods-DofekWatch`, or `libPods-DofekWatch`
+  references. Local Xcode could not execute the watch simulator build because
+  the installed Xcode runtime lacks watchOS 26.5.
+- **Remaining risk / follow-up:** Unresolved until the updated workflow runs in
+  GitHub Actions on a runner with the watchOS simulator runtime. If the project
+  scheme exposes a new compile error after avoiding the iOS pod graph, capture
+  that first fatal line as the next root cause.
