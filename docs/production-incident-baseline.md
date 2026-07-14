@@ -13023,9 +13023,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** Local prebuild confirmed `DofekWatch` exists as a generated
   project scheme before `pod install`, and the pre-CocoaPods generated project
   contained no `RNReanimated`, `Pods-DofekWatch`, or `libPods-DofekWatch`
-  references. Local Xcode could not execute the watch simulator build because
-  the installed Xcode runtime lacks watchOS 26.5.
-- **Remaining risk / follow-up:** Unresolved until the updated workflow runs in
-  GitHub Actions on a runner with the watchOS simulator runtime. If the project
-  scheme exposes a new compile error after avoiding the iOS pod graph, capture
-  that first fatal line as the next root cause.
+  references. Local target-based build entered only the watch target graph but
+  could not complete because the installed Xcode runtime lacked watchOS 26.5 at
+  the time. Branch CI run
+  [`29337042176`](https://github.com/Asherlc/dofek/actions/runs/29337042176)
+  then ran the real `Build Mobile / watchOS Build` job
+  [`87100290194`](https://github.com/Asherlc/dofek/actions/runs/29337042176/job/87100290194),
+  which completed successfully.
+- **Remaining risk / follow-up:** No known remaining watchOS CI risk from this
+  incident. Keep the job target-based unless a future watch target needs
+  CocoaPods integration.
