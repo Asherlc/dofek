@@ -1,7 +1,4 @@
-import {
-  type ProviderStats,
-  providerStatsBreakdown,
-} from "@dofek/providers/provider-stats";
+import { type ProviderStats, providerStatsBreakdown } from "@dofek/providers/provider-stats";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
