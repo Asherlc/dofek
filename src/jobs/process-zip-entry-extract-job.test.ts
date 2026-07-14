@@ -100,6 +100,48 @@ describe("processZipEntryExtractJob", () => {
     await expect(readFile(replayResult.filePath, "utf8")).resolves.toBe("replayed-fit-bytes");
   });
 
+  it("preserves an existing deterministic output path when a replay extraction fails", async () => {
+    const directory = await createTempDirectory();
+    const archivePath = join(directory, "export.zip");
+    await writeFile(
+      archivePath,
+      await createZip({
+        "DI_CONNECT/activity.fit": "original-fit-bytes",
+      }),
+    );
+
+    const firstResult = await processZipEntryExtractJob({
+      data: {
+        archivePath,
+        entryPath: ["DI_CONNECT/activity.fit"],
+        outputExtension: "fit",
+      },
+    });
+    await writeFile(
+      archivePath,
+      await createZip({
+        "DI_CONNECT/activity.fit": "oversized-replay-fit-bytes",
+      }),
+    );
+
+    await expect(
+      processZipEntryExtractJob({
+        data: {
+          archivePath,
+          entryPath: ["DI_CONNECT/activity.fit"],
+          outputExtension: "fit",
+          maxBytes: 3,
+        },
+      }),
+    ).rejects.toThrow("ZIP entry DI_CONNECT/activity.fit exceeds maximum size of 3 bytes");
+
+    await expect(readFile(firstResult.filePath, "utf8")).resolves.toBe("original-fit-bytes");
+    const directoryEntries = await readdir(directory);
+    expect(
+      directoryEntries.filter((entryName) => entryName.startsWith(".zip-entry-extract-")),
+    ).toEqual([]);
+  });
+
   it("extracts an entry from a nested ZIP chain", async () => {
     const directory = await createTempDirectory();
     const archivePath = join(directory, "export.zip");
@@ -257,6 +299,27 @@ describe("processZipEntryExtractJob", () => {
         },
       }),
     ).rejects.toThrow("ZIP entry not found: missing.fit");
+
+    const directoryEntries = await readdir(directory);
+    expect(
+      directoryEntries.filter((entryName) => entryName.startsWith(".zip-entry-extract-")),
+    ).toEqual([]);
+  });
+
+  it("rejects empty ZIP entry path segments", async () => {
+    const directory = await createTempDirectory();
+    const archivePath = join(directory, "export.zip");
+    await writeFile(archivePath, await createZip({ "DI_CONNECT/activity.fit": "fit-bytes" }));
+
+    await expect(
+      processZipEntryExtractJob({
+        data: {
+          archivePath,
+          entryPath: [""],
+          outputExtension: "fit",
+        },
+      }),
+    ).rejects.toThrow("ZIP entry path cannot be empty");
 
     const directoryEntries = await readdir(directory);
     expect(

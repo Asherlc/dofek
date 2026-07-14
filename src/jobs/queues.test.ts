@@ -180,6 +180,80 @@ describe("queues", () => {
     });
   });
 
+  describe("createFitFileImportBatchQueue", () => {
+    it("creates a Queue with the FIT file import batch queue name", async () => {
+      const { createFitFileImportBatchQueue, FIT_FILE_IMPORT_BATCH_QUEUE } = await import(
+        "./queues.ts"
+      );
+
+      createFitFileImportBatchQueue({ host: "test", port: 8642 });
+
+      expect(MockQueue).toHaveBeenCalledWith(FIT_FILE_IMPORT_BATCH_QUEUE, {
+        connection: { host: "test", port: 8642 },
+      });
+    });
+  });
+
+  describe("createZipEntryExtractQueue", () => {
+    it("creates a Queue with the ZIP entry extract queue name", async () => {
+      const { createZipEntryExtractQueue, ZIP_ENTRY_EXTRACT_QUEUE } = await import("./queues.ts");
+
+      createZipEntryExtractQueue({ host: "test", port: 9753 });
+
+      expect(MockQueue).toHaveBeenCalledWith(ZIP_ENTRY_EXTRACT_QUEUE, {
+        connection: { host: "test", port: 9753 },
+      });
+    });
+  });
+
+  describe("zipEntryExtractJobDataSchema", () => {
+    it("accepts nested alphanumeric output extensions", async () => {
+      const { zipEntryExtractJobDataSchema } = await import("./queues.ts");
+
+      expect(
+        zipEntryExtractJobDataSchema.parse({
+          archivePath: "/tmp/export.zip",
+          entryPath: ["DI_CONNECT/files.zip", "activity.fit"],
+          outputExtension: "fit2",
+          maxBytes: 1024,
+          nestedArchiveMaxBytes: 2048,
+        }),
+      ).toEqual({
+        archivePath: "/tmp/export.zip",
+        entryPath: ["DI_CONNECT/files.zip", "activity.fit"],
+        outputExtension: "fit2",
+        maxBytes: 1024,
+        nestedArchiveMaxBytes: 2048,
+      });
+    });
+
+    it("rejects empty entry paths and non-alphanumeric output extensions", async () => {
+      const { zipEntryExtractJobDataSchema } = await import("./queues.ts");
+
+      expect(() =>
+        zipEntryExtractJobDataSchema.parse({
+          archivePath: "/tmp/export.zip",
+          entryPath: [],
+          outputExtension: "fit",
+        }),
+      ).toThrow();
+      expect(() =>
+        zipEntryExtractJobDataSchema.parse({
+          archivePath: "/tmp/export.zip",
+          entryPath: ["activity.fit"],
+          outputExtension: "fit.gz",
+        }),
+      ).toThrow();
+      expect(() =>
+        zipEntryExtractJobDataSchema.parse({
+          archivePath: "/tmp/export.zip",
+          entryPath: ["activity.fit"],
+          outputExtension: ".fit",
+        }),
+      ).toThrow();
+    });
+  });
+
   describe("ImportJobData", () => {
     it("allows kaya-export as an import job type", () => {
       const jobData = {
