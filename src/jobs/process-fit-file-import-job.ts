@@ -26,7 +26,7 @@ export interface FitFileImportJobResult {
   errors: Array<{ message: string }>;
 }
 
-interface FitFileImportProgressInfo {
+export interface FitFileImportProgressInfo {
   percentage: number;
   message: string;
 }
@@ -310,6 +310,44 @@ async function resolveFitFileImportJobData(
   return { ...data, filePath: data.filePath ?? (await resolveFlowChildFilePath(job)) };
 }
 
+export async function importFitFile(
+  db: SyncDatabase,
+  data: FitFileImportJobData & { filePath: string },
+  onProgress: (info: FitFileImportProgressInfo) => Promise<void>,
+): Promise<FitFileImportJobResult> {
+  try {
+    await onProgress({ percentage: 10, message: "Reading FIT file..." });
+    const buffer = await readFile(data.filePath);
+    await onProgress({ percentage: 25, message: "Decoding FIT file..." });
+    const messages = decodeFitMessages(buffer);
+    let result: FitFileImportJobResult;
+    if (isWeightFit(messages)) {
+      await onProgress({
+        percentage: 50,
+        message: "Importing FIT weight data...",
+      });
+      await onProgress({
+        percentage: 80,
+        message: "Writing FIT weight data...",
+      });
+      result = await importWeightFit(db, data, messages);
+    } else {
+      await onProgress({
+        percentage: 50,
+        message: "Importing FIT activity...",
+      });
+      result = await importActivityFit(db, data, buffer, onProgress);
+    }
+    await onProgress({
+      percentage: 100,
+      message: "FIT file import complete.",
+    });
+    return result;
+  } catch (error) {
+    return fitFileImportErrorResult(data, error);
+  }
+}
+
 export async function processFitFileImportJob(
   job: FitFileImportJob,
   db: SyncDatabase,
@@ -326,35 +364,7 @@ export async function processFitFileImportJob(
     });
     const data = await resolveFitFileImportJobData(job);
     pathsToClean.add(data.filePath);
-    await updateFitFileImportProgress(job, { percentage: 10, message: "Reading FIT file..." });
-    const buffer = await readFile(data.filePath);
-    await updateFitFileImportProgress(job, { percentage: 25, message: "Decoding FIT file..." });
-    const messages = decodeFitMessages(buffer);
-    let result: FitFileImportJobResult;
-    if (isWeightFit(messages)) {
-      await updateFitFileImportProgress(job, {
-        percentage: 50,
-        message: "Importing FIT weight data...",
-      });
-      await updateFitFileImportProgress(job, {
-        percentage: 80,
-        message: "Writing FIT weight data...",
-      });
-      result = await importWeightFit(db, data, messages);
-    } else {
-      await updateFitFileImportProgress(job, {
-        percentage: 50,
-        message: "Importing FIT activity...",
-      });
-      result = await importActivityFit(db, data, buffer, (info) =>
-        updateFitFileImportProgress(job, info),
-      );
-    }
-    await updateFitFileImportProgress(job, {
-      percentage: 100,
-      message: "FIT file import complete.",
-    });
-    return result;
+    return await importFitFile(db, data, (info) => updateFitFileImportProgress(job, info));
   } catch (error) {
     return fitFileImportErrorResult(job.data, error);
   } finally {

@@ -297,6 +297,17 @@ const uploadRouteConfigs: FileImportRouteConfig[] = [
     maxUploadBytes: GARMIN_DUMP_MAX_UPLOAD_BYTES,
     getSince: () => new Date(0),
   },
+  {
+    routeId: "fit-file",
+    importType: "fit-file",
+    fileNamePrefix: "fit-file",
+    defaultFileExtension: ".fit",
+    allowedFileExtensions: [".fit"],
+    allowedContentTypes: ["application/octet-stream"],
+    unsupportedContentTypeMessage: "FIT imports require a binary .fit file",
+    invalidFileExtensionMessage: "FIT imports require a .fit file",
+    getSince: () => new Date(0),
+  },
 ];
 
 function createJobFilePath(config: FileImportRouteConfig, fileExtension: string): string {

@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
+import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
 import type { ImportJobData } from "./queues.ts";
@@ -221,6 +222,31 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           "garmin-dump",
           "Garmin dump",
           "activities",
+          result,
+          importStart,
+          userId,
+        );
+      } else if (importType === "fit-file") {
+        await reportImportProgress(job, 0, "Starting FIT file import...");
+        await ensureProvider(db, "fit-file", "FIT File", undefined, userId);
+        const { importFitFile } = await import("./process-fit-file-import-job.ts");
+        const result = await importFitFile(
+          db,
+          {
+            filePath,
+            originalPath: "uploaded.fit",
+            userId,
+            providerId: "fit-file",
+            sourceName: "FIT File",
+          },
+          (info) => updateImportJobProgress(job, info),
+        );
+
+        await logImportCompletion(
+          db,
+          "fit-file",
+          "FIT file",
+          "records",
           result,
           importStart,
           userId,

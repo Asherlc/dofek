@@ -64,6 +64,7 @@ async function doRegisterProviders() {
       "garmin-dump",
       () => import("dofek/providers/garmin-dump").then((m) => new m.GarminDumpProvider()),
     ],
+    ["fit-file", () => import("dofek/providers/fit-file").then((m) => new m.FitFileProvider())],
     ["strava", () => import("dofek/providers/strava").then((m) => new m.StravaProvider())],
     [
       "cronometer-csv",
@@ -152,6 +153,7 @@ const importTypeToProviderId: Record<ImportJobData["importType"], string> = {
   "kaya-export": "kaya-export",
   "zos-app": "zos-app",
   "garmin-dump": "garmin-dump",
+  "fit-file": "fit-file",
 };
 
 function isKnownImportType(importType: string): importType is ImportJobData["importType"] {

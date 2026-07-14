@@ -30,7 +30,8 @@ export interface ImportJobData {
     | "cronometer-csv"
     | "kaya-export"
     | "zos-app"
-    | "garmin-dump";
+    | "garmin-dump"
+    | "fit-file";
   /** Weight unit for Strong CSV imports */
   weightUnit?: "kg" | "lbs";
 }

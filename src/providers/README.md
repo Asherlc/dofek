@@ -22,7 +22,7 @@ This directory contains implementations for various data providers (fitness trac
 
 - **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Coros, Cycling Analytics, Decathlon, Eight Sleep, FatSecret, Fitbit, Garmin, Komoot, MapMyFitness, Oura, Peloton, Polar, Ride with GPS, Strava, Suunto, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Zwift.
 - **Config-based sync providers**: Auto-Supplements.
-- **Import-only providers**: Cronometer CSV, Strong CSV.
+- **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, and Strong CSV. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
 
 ## Amazfit/Zepp
