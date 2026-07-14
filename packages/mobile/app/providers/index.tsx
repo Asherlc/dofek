@@ -656,9 +656,8 @@ export default function ProvidersScreen() {
         stats={statsMap.apple_health}
         syncing={healthKitSyncing || appleHealthImportProgress !== undefined}
         syncProgress={
-          healthKitSyncing || healthKitProgress
-            ? { message: healthKitProgress }
-            : appleHealthImportProgress
+          appleHealthImportProgress ??
+          (healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined)
         }
         onSync={() => handleHealthKitSync()}
         onFullSync={() => handleHealthKitSync(true)}
