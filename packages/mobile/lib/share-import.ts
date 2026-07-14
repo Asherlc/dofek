@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { captureException } from "./telemetry";
 
-const importProviderIds = ["apple-health", "strong-csv", "cronometer-csv"] as const;
+const importProviderIds = ["apple-health", "strong-csv", "cronometer-csv", "garmin-dump"] as const;
 
 export type ImportProviderId = (typeof importProviderIds)[number];
 
@@ -21,6 +21,7 @@ export interface ShareImportProgress {
 
 export interface ImportSharedFileArgs {
   fileUri: string;
+  providerId?: ImportProviderId;
   serverUrl: string;
   sessionToken: string;
   onProgress?: (progress: ShareImportProgress) => void;
@@ -99,6 +100,11 @@ function getUploadTarget(serverUrl: string, providerId: ImportProviderId): Uploa
         uploadUrl: `${baseUrl}/api/upload/cronometer-csv`,
         statusUrl: `${baseUrl}/api/upload/cronometer-csv/status`,
       };
+    case "garmin-dump":
+      return {
+        uploadUrl: `${baseUrl}/api/upload/garmin-dump`,
+        statusUrl: `${baseUrl}/api/upload/garmin-dump/status`,
+      };
   }
 }
 
@@ -142,6 +148,7 @@ function getContentTypeForUpload(providerId: ImportProviderId, fileExtension: st
   if (providerId === "apple-health") {
     return fileExtension === ".xml" ? "application/xml" : "application/zip";
   }
+  if (providerId === "garmin-dump") return "application/zip";
   return "text/csv";
 }
 
@@ -405,6 +412,7 @@ export async function importSharedFile(
     status: "reading",
     progress: 0,
     message: `Preparing ${fileName}...`,
+    providerId: args.providerId,
   });
 
   try {
@@ -417,12 +425,14 @@ export async function importSharedFile(
         ? getCsvHeaderLine(await readBlobText(blob, args.fileUri, fetchImpl))
         : "";
 
-    const providerId = inferImportProviderFromFile({
-      fileName,
-      fileExtension,
-      mimeType,
-      csvHeaderLine,
-    });
+    const providerId =
+      args.providerId ??
+      inferImportProviderFromFile({
+        fileName,
+        fileExtension,
+        mimeType,
+        csvHeaderLine,
+      });
 
     if (!providerId) {
       throw new Error("Unsupported shared file type");

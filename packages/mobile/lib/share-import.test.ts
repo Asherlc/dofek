@@ -44,6 +44,70 @@ describe("inferImportProviderFromFile", () => {
 });
 
 describe("importSharedFile", () => {
+  it("uploads an explicitly selected Garmin dump ZIP", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const customReadBlob = vi
+      .fn()
+      .mockResolvedValue(new Blob(["garmin-export"], { type: "application/zip" }));
+
+    fetchImpl
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "processing", jobId: "job-garmin" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ status: "processing", progress: 64, message: "Importing activities" }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "done", progress: 100 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    const progressMessages: string[] = [];
+    const result = await importSharedFile(
+      {
+        fileUri: "file:///tmp/export.zip",
+        providerId: "garmin-dump",
+        serverUrl: "https://example.com",
+        sessionToken: "session-token",
+        onProgress: (progress) => progressMessages.push(progress.message),
+      },
+      {
+        fetchImpl,
+        readBlob: customReadBlob,
+        sleep: async () => {},
+      },
+    );
+
+    expect(result).toEqual({ providerId: "garmin-dump", jobId: "job-garmin" });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/api/upload/garmin-dump",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer session-token",
+          "Content-Type": "application/zip",
+        }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://example.com/api/upload/garmin-dump/status/job-garmin",
+      expect.anything(),
+    );
+    expect(progressMessages).toContain("Importing activities");
+  });
+
   it("uploads a Strong CSV and polls until done", async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     const fileBody = "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";

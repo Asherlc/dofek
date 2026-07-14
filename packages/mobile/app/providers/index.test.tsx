@@ -10,6 +10,7 @@ const mockReplace = vi.fn();
 const mockUseLocalSearchParams = vi.fn().mockReturnValue({});
 const mockSyncMutateAsync = vi.fn();
 const mockImportSharedFile = vi.fn();
+const mockGetDocumentAsync = vi.fn();
 
 vi.mock("react-native", () => ({
   View: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) => {
@@ -189,6 +190,10 @@ vi.mock("expo-web-browser", () => ({
   openBrowserAsync: vi.fn().mockResolvedValue({ type: "cancel" }),
 }));
 
+vi.mock("expo-document-picker", () => ({
+  getDocumentAsync: (...args: unknown[]) => mockGetDocumentAsync(...args),
+}));
+
 vi.mock("../../lib/share-import", () => ({
   importSharedFile: (...args: unknown[]) => mockImportSharedFile(...args),
 }));
@@ -242,12 +247,14 @@ const mockStatsQuery = vi.fn();
 const mockLogsQuery = vi.fn();
 const mockDataHealthQuery = vi.fn();
 const mockActiveSyncsQuery = vi.fn();
+const mockActiveImportsQuery = vi.fn();
 const mockInvalidate = vi.fn();
 const mockInvalidateProviders = vi.fn();
 const mockInvalidateProviderStats = vi.fn();
 const mockInvalidateLogs = vi.fn();
 const mockInvalidateDataHealth = vi.fn();
 const mockInvalidateActiveSyncs = vi.fn();
+const mockInvalidateActiveImports = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockCredentialSignIn = vi.fn();
 const mockGarminSignIn = vi.fn();
@@ -273,6 +280,7 @@ vi.mock("../../lib/trpc", () => ({
       dataHealth: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
       triggerSync: { useMutation: () => ({ mutateAsync: mockSyncMutateAsync }) },
       activeSyncs: { useQuery: (...args: unknown[]) => mockActiveSyncsQuery(...args) },
+      activeImports: { useQuery: (...args: unknown[]) => mockActiveImportsQuery(...args) },
     },
     credentialAuth: {
       signIn: { useMutation: () => ({ mutateAsync: mockCredentialSignIn }) },
@@ -304,6 +312,7 @@ vi.mock("../../lib/trpc", () => ({
         logs: { invalidate: mockInvalidateLogs },
         dataHealth: { invalidate: mockInvalidateDataHealth },
         activeSyncs: { invalidate: mockInvalidateActiveSyncs },
+        activeImports: { invalidate: mockInvalidateActiveImports },
         syncStatus: { fetch: mockSyncStatusFetch },
       },
     }),
@@ -366,6 +375,7 @@ function setupDefaultMocks() {
   mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
   mockActiveSyncsQuery.mockReturnValue({ data: [] });
+  mockActiveImportsQuery.mockReturnValue({ data: [], error: null });
 }
 
 function makeProvider(
@@ -718,17 +728,20 @@ describe("ProvidersScreen", () => {
     mockUseLocalSearchParams.mockReturnValue({});
     mockSyncMutateAsync.mockReset();
     mockImportSharedFile.mockReset();
+    mockGetDocumentAsync.mockReset();
     mockProvidersQuery.mockReset();
     mockStatsQuery.mockReset();
     mockLogsQuery.mockReset();
     mockDataHealthQuery.mockReset();
     mockActiveSyncsQuery.mockReset();
+    mockActiveImportsQuery.mockReset();
     mockInvalidate.mockReset();
     mockInvalidateProviders.mockReset();
     mockInvalidateProviderStats.mockReset();
     mockInvalidateLogs.mockReset();
     mockInvalidateDataHealth.mockReset();
     mockInvalidateActiveSyncs.mockReset();
+    mockInvalidateActiveImports.mockReset();
     mockSyncStatusFetch.mockReset();
     mockUseRefresh.mockClear();
     mockCredentialSignIn.mockReset();
@@ -1210,6 +1223,104 @@ describe("ProvidersScreen", () => {
         }),
       );
     });
+  });
+
+  it("selects and imports a Garmin dump ZIP from the Garmin card", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin-dump",
+          name: "Garmin Dump",
+          authType: "none",
+          authorized: true,
+          importOnly: true,
+          lastSyncedAt: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///tmp/garmin-export.zip",
+          name: "garmin-export.zip",
+          mimeType: "application/zip",
+        },
+      ],
+    });
+    mockImportSharedFile.mockResolvedValue({ providerId: "garmin-dump", jobId: "job-garmin" });
+
+    await renderProvidersScreen();
+
+    const garminCard = within(screen.getByTestId("provider-card-garmin-dump"));
+    fireEvent.click(garminCard.getByText("Import file"));
+
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ["application/zip", "application/x-zip-compressed"],
+      });
+      expect(mockImportSharedFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileUri: "file:///tmp/garmin-export.zip",
+          providerId: "garmin-dump",
+          serverUrl: "https://test.example.com",
+          sessionToken: "test-token",
+        }),
+        expect.objectContaining({ readBlob: expect.any(Function) }),
+      );
+    });
+  });
+
+  it("shows resumable progress for an in-flight Garmin import", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin-dump",
+          name: "Garmin Dump",
+          authType: "none",
+          authorized: true,
+          importOnly: true,
+          lastSyncedAt: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockActiveImportsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "job-garmin",
+          providerId: "garmin-dump",
+          progress: 64,
+          message: "Importing activities",
+        },
+      ],
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    const garminCard = within(screen.getByTestId("provider-card-garmin-dump"));
+    expect(garminCard.getByText("Importing activities")).toBeTruthy();
+    expect(garminCard.getByText("Loading...")).toBeTruthy();
+    expect(garminCard.queryByText("Import only")).toBeNull();
+  });
+
+  it("shows the server error when active import progress cannot load", async () => {
+    mockActiveImportsQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Unable to check import progress because the queue service is unavailable."),
+    });
+
+    await renderProvidersScreen();
+
+    expect(
+      screen.getByText("Unable to check import progress because the queue service is unavailable."),
+    ).toBeTruthy();
   });
 
   it("shows shared import progress while providers are still loading", async () => {

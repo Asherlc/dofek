@@ -1755,6 +1755,103 @@ describe("syncRouter", () => {
     });
   });
 
+  describe("activeImports", () => {
+    it("returns progress for current-user import jobs", async () => {
+      mockImportQueueGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-garmin",
+          data: {
+            userId: "user-1",
+            importType: "garmin-dump",
+            filePath: "/tmp/garmin.zip",
+            since: "1970-01-01T00:00:00.000Z",
+          },
+          progress: { percentage: 64, message: "Importing activities" },
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+        {
+          id: "job-other-user",
+          data: {
+            userId: "user-2",
+            importType: "garmin-dump",
+            filePath: "/tmp/other.zip",
+            since: "1970-01-01T00:00:00.000Z",
+          },
+          progress: 20,
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.activeImports();
+
+      expect(mockImportQueueGetJobs).toHaveBeenCalledWith(["active", "waiting", "delayed"]);
+      expect(result).toEqual([
+        {
+          jobId: "job-garmin",
+          providerId: "garmin-dump",
+          progress: 64,
+          message: "Importing activities",
+        },
+      ]);
+    });
+
+    it("uses queued defaults and skips unknown import types", async () => {
+      mockImportQueueGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-waiting",
+          data: {
+            userId: "user-1",
+            importType: "garmin-dump",
+            filePath: "/tmp/garmin.zip",
+            since: "1970-01-01T00:00:00.000Z",
+          },
+          progress: undefined,
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+        {
+          id: "job-unknown",
+          data: { userId: "user-1", importType: "unknown" },
+          progress: 10,
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.activeImports()).resolves.toEqual([
+        {
+          jobId: "job-waiting",
+          providerId: "garmin-dump",
+          progress: 0,
+          message: "Waiting to import...",
+        },
+      ]);
+    });
+
+    it("surfaces an actionable error when the import queue is unavailable", async () => {
+      mockImportQueueGetJobs.mockRejectedValueOnce(new Error("Redis connection refused"));
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.activeImports()).rejects.toThrow(
+        "Unable to check import progress because the queue service is unavailable.",
+      );
+    });
+  });
+
   describe("providerStats", () => {
     it("maps ClickHouse rows to provider stats", async () => {
       const execute = vi.fn().mockResolvedValue([]);

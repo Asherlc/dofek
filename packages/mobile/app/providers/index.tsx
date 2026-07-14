@@ -1,5 +1,6 @@
 import { formatDateYmd } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
+import * as DocumentPicker from "expo-document-picker";
 import { File as ExpoFile } from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -17,7 +18,11 @@ import { getQueryErrorMessage, QueryStatePanel } from "../../components/QuerySta
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { useAuth } from "../../lib/auth-context";
 import { syncDofekFoodToHealthKit } from "../../lib/health-kit-food-writeback";
-import { importSharedFile, type ShareImportProgress } from "../../lib/share-import";
+import {
+  type ImportProviderId,
+  importSharedFile,
+  type ShareImportProgress,
+} from "../../lib/share-import";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
@@ -70,6 +75,10 @@ export default function ProvidersScreen() {
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
+  const activeImports = trpc.sync.activeImports.useQuery(undefined, {
+    staleTime: 0,
+    refetchInterval: (query) => ((query.state.data?.length ?? 0) > 0 ? 1000 : false),
+  });
 
   // Auth modal state
   const [credentialAuthProvider, setCredentialAuthProvider] = useState<{
@@ -274,17 +283,14 @@ export default function ProvidersScreen() {
     }
   }, [activeSyncs.data, pollJob]);
 
-  useEffect(() => {
-    if (!sharedFileUri) return;
-    if (!sessionToken) return;
-    if (importedSharedUris.current.has(sharedFileUri)) return;
-    importedSharedUris.current.add(sharedFileUri);
-
-    void (async () => {
+  const importFile = useCallback(
+    async (fileUri: string, providerId?: ImportProviderId) => {
+      if (!sessionToken) return;
       try {
         await importSharedFile(
           {
-            fileUri: sharedFileUri,
+            fileUri,
+            providerId,
             serverUrl,
             sessionToken,
             onProgress: setSharedImportState,
@@ -293,21 +299,54 @@ export default function ProvidersScreen() {
         );
         trpcUtils.invalidate();
       } catch (error: unknown) {
-        captureException(error, { context: "share-import", fileUri: sharedFileUri });
+        captureException(error, { context: "share-import", fileUri, providerId });
         setSharedImportState({
           status: "error",
           progress: 0,
           message: error instanceof Error ? error.message : "Import failed",
+          providerId,
         });
       } finally {
         try {
-          deleteSharedFile(sharedFileUri);
+          deleteSharedFile(fileUri);
         } catch (error: unknown) {
-          captureException(error, { context: "share-import-cleanup", fileUri: sharedFileUri });
+          captureException(error, { context: "share-import-cleanup", fileUri });
         }
       }
-    })();
-  }, [sharedFileUri, serverUrl, sessionToken, trpcUtils]);
+    },
+    [serverUrl, sessionToken, trpcUtils],
+  );
+
+  useEffect(() => {
+    if (!sharedFileUri) return;
+    if (!sessionToken) return;
+    if (importedSharedUris.current.has(sharedFileUri)) return;
+    importedSharedUris.current.add(sharedFileUri);
+
+    void importFile(sharedFileUri);
+  }, [importFile, sessionToken, sharedFileUri]);
+
+  const handleGarminDumpImport = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ["application/zip", "application/x-zip-compressed"],
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+      await importFile(asset.uri, "garmin-dump");
+    } catch (error: unknown) {
+      captureException(error, { context: "garmin-dump-document-picker" });
+      setSharedImportState({
+        status: "error",
+        progress: 0,
+        message: error instanceof Error ? error.message : "Unable to select Garmin export",
+        providerId: "garmin-dump",
+      });
+    }
+  }, [importFile]);
 
   const handleSyncProvider = useCallback(
     async (providerId: string, fullSync = false) => {
@@ -490,12 +529,20 @@ export default function ProvidersScreen() {
         trpcUtils.sync.logs.invalidate({ limit: 50 }),
         trpcUtils.sync.dataHealth.invalidate(),
         trpcUtils.sync.activeSyncs.invalidate(),
+        trpcUtils.sync.activeImports.invalidate(),
       ]).then(() => undefined),
   });
 
   const isLoading = providers.isLoading;
   const enabledProviders = providerList.filter((p) => p.enabled);
   const appleHealthProvider = appleHealth.model.toProviderCard();
+  const activeImportByProvider = new Map(
+    (activeImports.data ?? []).map((activeImport) => [activeImport.providerId, activeImport]),
+  );
+  const localImportIsActive =
+    sharedImportState !== null &&
+    sharedImportState.status !== "done" &&
+    sharedImportState.status !== "error";
 
   return (
     <ScrollView
@@ -542,9 +589,14 @@ export default function ProvidersScreen() {
       <View style={styles.shareInfoCard}>
         <Text style={styles.shareInfoTitle}>Import from Share</Text>
         <Text style={styles.shareInfoDescription}>
-          Export a CSV, XML, or ZIP file from Strong, Cronometer, or Apple Health and share it to
-          Dofek.
+          Export a CSV, XML, or ZIP file from Strong, Cronometer, Apple Health, or Garmin and share
+          it to Dofek.
         </Text>
+        {activeImports.error ? (
+          <Text style={[styles.shareImportMessage, styles.shareImportError]}>
+            {getQueryErrorMessage(activeImports.error, "Unable to load import progress.")}
+          </Text>
+        ) : null}
         {sharedImportState ? (
           <View style={styles.shareImportState}>
             <Text style={styles.shareImportTitle}>
@@ -623,19 +675,31 @@ export default function ProvidersScreen() {
       {isLoading && !providers.error ? (
         <QueryStatePanel variant="loading" style={styles.card} />
       ) : null}
-      {providerList.map((provider) => (
-        <ProviderCard
-          key={provider.id}
-          provider={provider}
-          stats={statsMap[provider.id]}
-          syncing={syncingProviders.has(provider.id)}
-          syncProgress={syncProgress[provider.id]}
-          onSync={() => handleSyncProvider(provider.id)}
-          onFullSync={() => handleSyncProvider(provider.id, true)}
-          onConnect={() => handleConnect(provider)}
-          onPress={() => router.push(`/providers/${provider.id}`)}
-        />
-      ))}
+      {providerList.map((provider) => {
+        const activeImport = activeImportByProvider.get(provider.id);
+        const localImportProgress =
+          localImportIsActive && sharedImportState.providerId === provider.id
+            ? {
+                percentage: sharedImportState.progress,
+                message: sharedImportState.message,
+              }
+            : undefined;
+        const importProgress = localImportProgress ?? activeImport;
+        return (
+          <ProviderCard
+            key={provider.id}
+            provider={provider}
+            stats={statsMap[provider.id]}
+            syncing={syncingProviders.has(provider.id) || importProgress !== undefined}
+            syncProgress={importProgress ?? syncProgress[provider.id]}
+            onSync={() => handleSyncProvider(provider.id)}
+            onFullSync={() => handleSyncProvider(provider.id, true)}
+            onConnect={() => handleConnect(provider)}
+            onImport={provider.id === "garmin-dump" ? handleGarminDumpImport : undefined}
+            onPress={() => router.push(`/providers/${provider.id}`)}
+          />
+        );
+      })}
 
       {/* Sync History */}
       <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Sync History</Text>

@@ -106,6 +106,22 @@ export const ImportOnly: ProviderCardStory = {
   },
 };
 
+export const GarminDumpImport: ProviderCardStory = {
+  args: {
+    provider: {
+      id: "garmin-dump",
+      label: "Garmin Dump",
+      enabled: false,
+      authStatus: "connected",
+      authType: "none",
+      lastSyncAt: null,
+      importOnly: true,
+      pushOnly: false,
+    },
+    onImport: () => {},
+  },
+};
+
 export const AppleHealthImportOnly: ProviderCardStory = {
   args: {
     provider: {

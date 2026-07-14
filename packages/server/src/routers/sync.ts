@@ -8,6 +8,7 @@ import {
   getImportQueue,
   getProviderSyncQueue,
   IMPORT_QUEUE,
+  type ImportJobData,
   providerSyncQueueName,
   type SyncJobData,
 } from "dofek/jobs/queues";
@@ -124,6 +125,23 @@ const providerStatsOutputSchema = z.array(
     journalEntries: z.number().int().nonnegative(),
   }),
 );
+
+const activeImportsOutputSchema = z.array(
+  z.object({
+    jobId: z.string(),
+    providerId: z.string(),
+    progress: z.number(),
+    message: z.string(),
+  }),
+);
+
+const importJobProgressSchema = z.union([
+  z.number(),
+  z.object({
+    percentage: z.number().optional(),
+    message: z.string().optional(),
+  }),
+]);
 
 const syncJobDataSchema = z.object({
   userId: z.string(),
@@ -734,6 +752,50 @@ export const syncRouter = router({
         status: mapBullMqStateToSyncStatus(state),
         percentage: progress?.percentage,
         providers: progress?.providers ?? {},
+      });
+    }
+
+    return results;
+  }),
+
+  /** Check for active file imports belonging to the current user. */
+  activeImports: protectedProcedure.output(activeImportsOutputSchema).query(async ({ ctx }) => {
+    let jobs: Job<ImportJobData>[];
+    try {
+      jobs = await getImportQueue().getJobs(["active", "waiting", "delayed"]);
+    } catch (error: unknown) {
+      captureException(error);
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to check import progress because the queue service is unavailable.",
+      });
+    }
+
+    const results: z.infer<typeof activeImportsOutputSchema> = [];
+    for (const job of jobs) {
+      if (!isJobDataForUser(job.data, ctx.userId)) continue;
+      const importType = importTypeFromJobData(job.data);
+      if (!importType) continue;
+      const providerId = providerIdForImportType(importType);
+      if (!providerId) continue;
+
+      const state = await job.getState();
+      const parsedProgress = importJobProgressSchema.safeParse(job.progress);
+      const progressValue = parsedProgress.success ? parsedProgress.data : undefined;
+      const progress =
+        typeof progressValue === "number" ? progressValue : (progressValue?.percentage ?? 0);
+      const message =
+        typeof progressValue === "object" && progressValue.message
+          ? progressValue.message
+          : state === "waiting" || state === "delayed"
+            ? "Waiting to import..."
+            : "Processing import...";
+
+      results.push({
+        jobId: String(job.id ?? `job-${providerId}-${Date.now()}`),
+        providerId,
+        progress,
+        message,
       });
     }
 

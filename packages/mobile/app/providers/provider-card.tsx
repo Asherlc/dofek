@@ -82,6 +82,7 @@ export function ProviderCard({
   onSync,
   onFullSync,
   onConnect,
+  onImport,
   onPress,
 }: {
   provider: Provider;
@@ -91,12 +92,14 @@ export function ProviderCard({
   onSync: () => void;
   onFullSync: () => void;
   onConnect: () => void;
+  onImport?: () => void;
   onPress: () => void;
 }) {
   const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
   const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
   const canRunManualSync = !provider.importOnly && !provider.pushOnly;
+  const canImport = provider.importOnly && onImport !== undefined;
 
   return (
     <View style={styles.card} testID={`provider-card-${provider.id}`}>
@@ -106,17 +109,21 @@ export function ProviderCard({
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
         </TouchableOpacity>
-        {canRunManualSync && (
+        {(canRunManualSync || canImport) && (
           <TouchableOpacity
             style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
-            onPress={provider.authStatus === "connected" ? onSync : onConnect}
+            onPress={
+              canImport ? onImport : provider.authStatus === "connected" ? onSync : onConnect
+            }
             activeOpacity={0.7}
             disabled={syncing}
           >
             {syncing ? (
               <ActivityIndicator color={colors.text} size="small" />
             ) : (
-              <Text style={styles.syncButtonText}>{providerActionLabel(provider.authStatus)}</Text>
+              <Text style={styles.syncButtonText}>
+                {canImport ? "Import file" : providerActionLabel(provider.authStatus)}
+              </Text>
             )}
           </TouchableOpacity>
         )}
