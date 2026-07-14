@@ -59,8 +59,8 @@ importers:
         specifier: 8.0.2
         version: 8.0.2(@bull-board/ui@8.0.2)
       '@bull-board/express':
-        specifier: 8.0.2
-        version: 8.0.2
+        specifier: 8.1.2
+        version: 8.1.2
       '@clickhouse/client':
         specifier: 1.12.1
         version: 1.12.1
@@ -1848,11 +1848,19 @@ packages:
     peerDependencies:
       '@bull-board/ui': 8.0.2
 
-  '@bull-board/express@8.0.2':
-    resolution: {integrity: sha512-SUVm61x6fzrnUhdX6qSOpWx4YJF/FiNF+wmmEB6z7hq7QZgWupl88G4VkFjFqhYmTJg0AUsOkGV2v7+RLFsAfw==}
+  '@bull-board/api@8.1.2':
+    resolution: {integrity: sha512-6NGYCIRhHJmmoCwAFA1z4lPpR/D/BdOjyERd2MMeG4Samu05FSjzKKdN55S3ga30EcXeENfYzmNn6IDmVz5OTg==}
+    peerDependencies:
+      '@bull-board/ui': 8.1.2
+
+  '@bull-board/express@8.1.2':
+    resolution: {integrity: sha512-IldpQLXlezJRzk1BVNJjH+Oi3NBRcBopq9bI2ndLs0R+ySK1ux+TtGDUW+eX2fl0wEHwSpuUgPBAJID695zohA==}
 
   '@bull-board/ui@8.0.2':
     resolution: {integrity: sha512-kFthFARLKt9z1SHH1qTUTglVex8NoKQgBKKvb2GjqEMw6kQBw98ZV5sWW5dOzJlW+gdQaWyVyupJb/778sbtCQ==}
+
+  '@bull-board/ui@8.1.2':
+    resolution: {integrity: sha512-gC5u9XUSiRile4/VC+WHXtaPvfZV4Mrrz8MSvPe32Hjl2MXStfSuEOb+9Tw/WMpNSZ442tGpFZLz0RDh1Yo3jg==}
 
   '@cacheable/memory@2.2.0':
     resolution: {integrity: sha512-CTLKqLItRCEixEAewD3/j9DB3/o96gpTPD4eJ1v+DGOlxZRZncRQkGYqqnAGCscYd6RNeXfGeiuCphsPtqyIfQ==}
@@ -16015,10 +16023,15 @@ snapshots:
       '@bull-board/ui': 8.0.2
       redis-info: 3.1.0
 
-  '@bull-board/express@8.0.2':
+  '@bull-board/api@8.1.2(@bull-board/ui@8.1.2)':
     dependencies:
-      '@bull-board/api': 8.0.2(@bull-board/ui@8.0.2)
-      '@bull-board/ui': 8.0.2
+      '@bull-board/ui': 8.1.2
+      redis-info: 3.1.0
+
+  '@bull-board/express@8.1.2':
+    dependencies:
+      '@bull-board/api': 8.1.2(@bull-board/ui@8.1.2)
+      '@bull-board/ui': 8.1.2
       ejs: 6.0.1
       express: 5.2.1
     transitivePeerDependencies:
@@ -16027,6 +16040,10 @@ snapshots:
   '@bull-board/ui@8.0.2':
     dependencies:
       '@bull-board/api': 8.0.2(@bull-board/ui@8.0.2)
+
+  '@bull-board/ui@8.1.2':
+    dependencies:
+      '@bull-board/api': 8.1.2(@bull-board/ui@8.1.2)
 
   '@cacheable/memory@2.2.0':
     dependencies:
@@ -23115,14 +23132,14 @@ snapshots:
       msw: 2.12.11(@types/node@22.19.15)(typescript@6.0.3)
       vite: 7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
-  '@vitest/mocker@3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))':
+  '@vitest/mocker@3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 3.2.6
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
       msw: 2.12.11(@types/node@25.9.1)(typescript@6.0.3)
-      vite: 7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
+      vite: 7.3.6(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
   '@vitest/pretty-format@3.2.4':
     dependencies:
@@ -30323,7 +30340,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.6
-      '@vitest/mocker': 3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
+      '@vitest/mocker': 3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
       '@vitest/pretty-format': 3.2.6
       '@vitest/runner': 3.2.6
       '@vitest/snapshot': 3.2.6
