@@ -1,4 +1,8 @@
-import { type ProviderStats, providerStatsBreakdown } from "@dofek/providers/provider-stats";
+import {
+  type ProviderStats,
+  providerStatsBreakdown,
+  providerStatsTotal,
+} from "@dofek/providers/provider-stats";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
@@ -22,7 +26,7 @@ export function ProviderStatsBreakdown({
   stats: ProviderStats;
   variant?: "compact" | "full";
 }) {
-  const total = stats.totalRecords ?? 0;
+  const total = providerStatsTotal(stats);
   const breakdown = providerStatsBreakdown(stats);
 
   if (variant === "full") {
