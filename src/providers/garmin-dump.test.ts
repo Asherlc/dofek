@@ -15,6 +15,16 @@ import {
   parseGarminDumpFile,
 } from "./garmin-dump.ts";
 
+const mockCaptureException = vi.fn();
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
+const mockLoggerWarn = vi.fn();
+vi.mock("../logger.ts", () => ({
+  logger: { warn: (...args: unknown[]) => mockLoggerWarn(...args) },
+}));
+
 type FileStats = Awaited<ReturnType<typeof stat>>;
 
 interface FsPromisesMock {
@@ -246,6 +256,8 @@ describe("Garmin dump provider", () => {
       },
     }));
     flowMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 0, errors: [] });
+    mockCaptureException.mockClear();
+    mockLoggerWarn.mockClear();
     mockParseFitFile.mockResolvedValue({
       session: {
         sport: "cycling",
@@ -745,6 +757,57 @@ describe("Garmin dump provider", () => {
     expect(extendLock.mock.invocationCallOrder[0]).toBeLessThan(
       flowMock.add.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER,
     );
+  });
+
+  it("reports progress while importing Garmin dump FIT flow jobs", async () => {
+    flowMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 2, errors: [] });
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_67890.fit": "fit-bytes",
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+    const onProgress = vi.fn();
+
+    await importGarminDumpFile(mockDb, filePath, "user-1", { onProgress });
+
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting Garmin dump import...",
+    });
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 5,
+      message: "Reading Garmin dump...",
+    });
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 25,
+      message: "Found 0 activity summaries and 2 FIT files.",
+    });
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 45,
+      message: "Importing Garmin FIT files (0/2)...",
+    });
+    expect(onProgress).toHaveBeenCalledWith({
+      percentage: 95,
+      message: "Garmin dump import complete.",
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("continues Garmin dump import when progress callbacks fail", async () => {
+    flowMock.waitUntilFinished.mockResolvedValue({ recordsSynced: 2, errors: [] });
+    const progressError = new Error("redis down");
+    const filePath = await createGarminDumpZip();
+    const onProgress = vi.fn().mockRejectedValue(progressError);
+
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1", { onProgress });
+
+    expect(result.recordsSynced).toBe(3);
+    expect(flowMock.add).toHaveBeenCalledOnce();
+    expect(mockCaptureException).toHaveBeenCalledWith(progressError, {
+      tags: { garminDumpStep: "progress" },
+    });
   });
 
   it("reports a lock renewal failure that happens while waiting for the FIT flow", async () => {

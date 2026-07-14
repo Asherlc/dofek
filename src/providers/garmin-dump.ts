@@ -5,6 +5,7 @@ import { basename, dirname, join, relative } from "node:path";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { CanonicalActivityType } from "@dofek/training/training";
+import * as Sentry from "@sentry/node";
 import type { FlowChildJob } from "bullmq";
 import yauzl from "yauzl";
 import { z } from "zod";
@@ -21,6 +22,7 @@ import {
   getFlowProducer,
   ZIP_ENTRY_EXTRACT_QUEUE,
 } from "../jobs/queues.ts";
+import { logger } from "../logger.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
 export const GARMIN_DUMP_PROVIDER_ID = "garmin-dump";
@@ -76,6 +78,12 @@ interface GarminDumpExtractionState {
 
 interface GarminDumpImportOptions {
   extendLock?: (durationMs: number) => Promise<void>;
+  onProgress?: (progress: GarminDumpProgress) => void | Promise<void>;
+}
+
+interface GarminDumpProgress {
+  percentage: number;
+  message: string;
 }
 
 const fitFileImportJobResultSchema = z.object({
@@ -166,6 +174,20 @@ function assertGarminDumpSize(byteCount: number, maxBytes: number, description: 
 
 async function extendGarminDumpImportLock(options: GarminDumpImportOptions): Promise<void> {
   await options.extendLock?.(GARMIN_DUMP_IMPORT_LOCK_EXTENSION_MS);
+}
+
+async function reportGarminDumpProgress(
+  options: GarminDumpImportOptions,
+  percentage: number,
+  message: string,
+): Promise<void> {
+  if (!options.onProgress) return;
+  try {
+    await options.onProgress({ percentage, message });
+  } catch (error) {
+    logger.warn("Failed to report Garmin dump progress: %s", error);
+    Sentry.captureException(error, { tags: { garminDumpStep: "progress" } });
+  }
 }
 
 function countExtractedBytes(
@@ -615,6 +637,7 @@ export async function importGarminDumpFile(
   options: GarminDumpImportOptions = {},
 ): Promise<SyncResult> {
   const start = Date.now();
+  await reportGarminDumpProgress(options, 0, "Starting Garmin dump import...");
   await extendGarminDumpImportLock(options);
   const lockRenewal = startGarminDumpImportLockRenewal(options);
   const errors: SyncError[] = [];
@@ -623,9 +646,16 @@ export async function importGarminDumpFile(
   const summaryByExternalId = new Map<string, GarminSummarizedActivity>();
 
   try {
+    await reportGarminDumpProgress(options, 5, "Reading Garmin dump...");
     parsedDump = await parseGarminDumpFile(filePath);
     lockRenewal.throwIfFailed();
     errors.push(...parsedDump.errors);
+    const totalFitFileCount = parsedDump.fitFiles.length + parsedDump.weightFitFiles.length;
+    await reportGarminDumpProgress(
+      options,
+      25,
+      `Found ${parsedDump.summaries.length} activity summaries and ${totalFitFileCount} FIT files.`,
+    );
 
     await ensureProvider(db, GARMIN_DUMP_PROVIDER_ID, GARMIN_DUMP_PROVIDER_NAME, undefined, userId);
 
@@ -707,6 +737,11 @@ export async function importGarminDumpFile(
 
     try {
       await extendGarminDumpImportLock(options);
+      await reportGarminDumpProgress(
+        options,
+        45,
+        `Importing Garmin FIT files (0/${fitJobEntries.length})...`,
+      );
       const fitResults = await enqueueFitFileImportFlow(fitJobEntries, filePath, userId);
       lockRenewal.throwIfFailed();
       recordsSynced += fitResults.recordsSynced;
@@ -731,6 +766,8 @@ export async function importGarminDumpFile(
       );
     }
   }
+
+  await reportGarminDumpProgress(options, 95, "Garmin dump import complete.");
 
   return {
     provider: GARMIN_DUMP_PROVIDER_ID,

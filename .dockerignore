@@ -6,4 +6,17 @@ web/dist
 web/node_modules
 .git
 .context
+.github
+cypress
+coverage
+reports
+.nyc_output
+.stryker-tmp
+.venv
+.venv-analytics
+analytics/target
+analytics/logs
+analytics/dbt_packages
+storybook-static
+**/storybook-static
 *.md

@@ -20,18 +20,24 @@ vi.mock("../lib/cache.ts", () => ({
 }));
 
 vi.mock("../logger.ts", () => ({
-  logger: { info: vi.fn(), error: vi.fn() },
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
 // Lazy import to respect vi.mock ordering
 const { processPostSyncJob } = await import("./process-post-sync-job.ts");
 
 function makeGlobalMaintenanceJob(): PostSyncJob {
-  return { data: { type: "global-maintenance" } };
+  return {
+    data: { type: "global-maintenance" },
+    updateProgress: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 function makeUserRefitJob(userId: string): PostSyncJob {
-  return { data: { type: "user-refit", userId } };
+  return {
+    data: { type: "user-refit", userId },
+    updateProgress: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 // All DB calls are mocked via vi.mock above, so an empty object satisfies the contract at runtime.
@@ -76,6 +82,21 @@ describe("processPostSyncJob", () => {
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
+  it("reports global maintenance progress", async () => {
+    const job = makeGlobalMaintenanceJob();
+
+    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting global post-sync maintenance...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Global post-sync maintenance complete.",
+    });
+  });
+
   it("runs only per-user refit for a user refit job", async () => {
     await processPostSyncJob(
       makeUserRefitJob("user-1"),
@@ -85,6 +106,59 @@ describe("processPostSyncJob", () => {
     );
 
     expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1", fakeSensorStore);
+  });
+
+  it("reports per-user refit progress", async () => {
+    const job = makeUserRefitJob("user-1");
+
+    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 0,
+      message: "Starting post-sync refit...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 20,
+      message: "Refreshing body measurements...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 45,
+      message: "Refitting personalized parameters...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 75,
+      message: "Invalidating user cache...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Post-sync refit complete.",
+    });
+  });
+
+  it("reports partial completion progress when user refit work has errors", async () => {
+    const job = makeUserRefitJob("user-1");
+    mockRefitAllParams.mockRejectedValueOnce(new Error("refit failed"));
+
+    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Post-sync refit completed with errors.",
+    });
+  });
+
+  it("continues post-sync work when progress updates fail", async () => {
+    const progressError = new Error("redis down");
+    const job = makeUserRefitJob("user-1");
+    job.updateProgress = vi.fn().mockRejectedValue(progressError);
+
+    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
+
+    expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1", fakeSensorStore);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
+    expect(mockCaptureException).toHaveBeenCalledWith(progressError, {
+      tags: { postSyncStep: "updateProgress" },
+    });
   });
 
   it("refreshes body measurements before refitting and invalidating user caches", async () => {
@@ -167,17 +241,17 @@ describe("processPostSyncJob", () => {
 
   it("reports errors to Sentry when user cache invalidation fails", async () => {
     const cacheError = new Error("cache failed");
+    const job = makeUserRefitJob("user-13");
     mockInvalidateByPrefix.mockRejectedValueOnce(cacheError);
 
-    await processPostSyncJob(
-      makeUserRefitJob("user-13"),
-      fakeDb,
-      getFakeSensorStore,
-      refreshBodyMeasurements,
-    );
+    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
 
     expect(mockCaptureException).toHaveBeenCalledWith(cacheError, {
       tags: { postSyncStep: "invalidateUserCache" },
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Post-sync refit completed with errors.",
     });
   });
 });
