@@ -292,7 +292,10 @@ describe("processZipEntryExtractJob", () => {
     const archivePath = join(directory, "export.zip");
     await writeFile(archivePath, await createZip({ "DI_CONNECT/activity.fit": "fit-bytes" }));
     vi.spyOn(yauzl, "open").mockImplementation(((_filePath, _options, callback) => {
-      callback(null, undefined);
+      if (!callback) {
+        throw new Error("Expected ZIP open callback");
+      }
+      Reflect.apply(callback, undefined, [null, undefined]);
     }) as typeof yauzl.open);
 
     await expect(
