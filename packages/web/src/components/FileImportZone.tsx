@@ -216,7 +216,7 @@ export function FileImportZone({
         <StatusDot status={state.status} />
         <span className="text-sm font-medium text-foreground">{title}</span>
       </div>
-      <fieldset
+      <section
         aria-label={`${title} file drop zone`}
         onDragOver={(e) => {
           e.preventDefault();
@@ -255,7 +255,7 @@ export function FileImportZone({
             <FileImportButton onClick={() => fileInputRef.current?.click()} />
           </div>
         )}
-      </fieldset>
+      </section>
       {state.status !== "idle" && state.status !== "syncing" && (
         <div
           className={`mt-1.5 text-xs ${state.status === "error" ? "text-red-400" : "text-emerald-400"}`}

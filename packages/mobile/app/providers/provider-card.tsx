@@ -80,6 +80,7 @@ export function ProviderCard({
   provider,
   stats,
   syncing,
+  importing = false,
   syncProgress,
   onSync,
   onFullSync,
@@ -90,6 +91,7 @@ export function ProviderCard({
   provider: Provider;
   stats: ProviderStats | undefined;
   syncing: boolean;
+  importing?: boolean;
   syncProgress: { percentage?: number; message?: string } | undefined;
   onSync: () => void;
   onFullSync: () => void;
@@ -102,6 +104,7 @@ export function ProviderCard({
   const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
   const canRunManualSync = !provider.importOnly && !provider.pushOnly;
   const canImport = onImport !== undefined;
+  const showingProgress = (syncing || importing) && syncProgress !== undefined;
 
   return (
     <View style={styles.card} testID={`provider-card-${provider.id}`}>
@@ -130,17 +133,13 @@ export function ProviderCard({
               </TouchableOpacity>
             ) : null}
             {canImport ? (
-              <FileImportButton
-                disabled={syncing}
-                loading={syncing && provider.importOnly}
-                onPress={onImport}
-              />
+              <FileImportButton disabled={importing} loading={importing} onPress={onImport} />
             ) : null}
           </View>
         )}
       </View>
 
-      {syncing && syncProgress ? (
+      {showingProgress ? (
         <View style={styles.syncProgressContainer}>
           {syncProgress.percentage != null && (
             <View style={styles.syncProgressTrack}>
@@ -161,7 +160,7 @@ export function ProviderCard({
         </View>
       ) : (
         <View style={styles.cardMeta}>
-          {!syncing && syncProgress?.message ? (
+          {!showingProgress && syncProgress?.message ? (
             <Text style={styles.cardMetaText}>{syncProgress.message}</Text>
           ) : (
             <Text style={styles.cardMetaText}>

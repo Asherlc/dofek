@@ -181,12 +181,15 @@ describe("importSharedFile", () => {
     expect(result).toEqual({ providerId: "garmin-dump", jobId: "large-upload" });
     expect(slice).toHaveBeenNthCalledWith(1, 0, chunkSize);
     expect(slice).toHaveBeenNthCalledWith(2, chunkSize, chunkSize + 1);
+    const firstChunkHeaders = new Headers(fetchImpl.mock.calls[0]?.[1]?.headers);
+    const secondChunkHeaders = new Headers(fetchImpl.mock.calls[1]?.[1]?.headers);
+    expect(firstChunkHeaders.get("x-upload-id")).toMatch(/^share-999-/);
+    expect(secondChunkHeaders.get("x-upload-id")).toBe(firstChunkHeaders.get("x-upload-id"));
     expect(fetchImpl).toHaveBeenNthCalledWith(
       1,
       "https://example.com/api/upload/garmin-dump",
       expect.objectContaining({
         headers: expect.objectContaining({
-          "x-upload-id": expect.stringMatching(/^share-999-/),
           "x-chunk-index": "0",
           "x-chunk-total": "2",
           "x-file-ext": ".zip",
@@ -198,7 +201,6 @@ describe("importSharedFile", () => {
       "https://example.com/api/upload/garmin-dump",
       expect.objectContaining({
         headers: expect.objectContaining({
-          "x-upload-id": expect.stringMatching(/^share-999-/),
           "x-chunk-index": "1",
           "x-chunk-total": "2",
           "x-file-ext": ".zip",

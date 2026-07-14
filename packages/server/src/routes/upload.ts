@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { mkdir, rm, unlink } from "node:fs/promises";
+import { mkdir, rename, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { captureException } from "@sentry/node";
 import type { Queue } from "bullmq";
 import type { Database } from "dofek/db";
 import type { ImportJobData } from "dofek/jobs/queues";
@@ -10,7 +11,7 @@ import { type Request, type Response, Router } from "express";
 import rateLimit from "express-rate-limit";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
-import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
+import { assembleChunks, MAX_UPLOAD_BYTES, streamToFile } from "../lib/server-utils.ts";
 import { startWorker } from "../lib/start-worker.ts";
 import {
   getUploadStateStore,
@@ -29,6 +30,7 @@ const JOB_FILES_DIR = process.env.JOB_FILES_DIR || join(tmpdir(), "dofek-job-fil
 mkdirSync(JOB_FILES_DIR, { recursive: true });
 const IN_PROGRESS_UPLOAD_STATUS_TTL_MS = UPLOAD_SESSION_TTL_MS + UPLOAD_STATUS_TTL_MS;
 const GARMIN_DUMP_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_UPLOAD_CHUNKS = 1000;
 
 const uploadStateStore = getUploadStateStore();
 
@@ -401,7 +403,7 @@ async function handleUploadStatus(
     response.status(404).json({ error: "Unknown job" });
     return;
   }
-  if (status.userId && status.userId !== userId) {
+  if (!status.userId || status.userId !== userId) {
     response.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -441,6 +443,7 @@ async function handleSingleFileUpload({
     );
     response.json({ status: "processing", jobId });
   } catch (error: unknown) {
+    captureException(error);
     logger.error(`[${config.routeId}] Upload failed: ${error}`);
     await cleanupTempFile(tmpFile);
     response.status(500).json({ error: "Upload failed" });
@@ -473,6 +476,7 @@ async function handleChunkedFileUpload({
     !Number.isInteger(chunkTotal) ||
     chunkIndex < 0 ||
     chunkTotal <= 1 ||
+    chunkTotal > MAX_UPLOAD_CHUNKS ||
     chunkIndex >= chunkTotal
   ) {
     response.status(400).json({ error: "Invalid chunk headers" });
@@ -499,18 +503,38 @@ async function handleChunkedFileUpload({
       return;
     }
 
+    const maxUploadBytes = config.maxUploadBytes ?? MAX_UPLOAD_BYTES;
     const chunkPath = join(upload.dir, `chunk-${String(chunkIndex).padStart(6, "0")}`);
-    if (config.maxUploadBytes) {
-      await streamToFile(request, chunkPath, config.maxUploadBytes);
-    } else {
-      await streamToFile(request, chunkPath);
-    }
-    const receivedCount = await uploadStateStore.addReceivedChunk(
+    const pendingChunkPath = join(
+      upload.dir,
+      `chunk-${String(chunkIndex).padStart(6, "0")}.${randomUUID()}.tmp`,
+    );
+    const receivedBytes = await streamToFile(request, pendingChunkPath, maxUploadBytes);
+    const chunkRecord = await uploadStateStore.recordReceivedChunk(
       uploadId,
       chunkIndex,
+      receivedBytes,
+      maxUploadBytes,
       IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
     );
+    if (!chunkRecord.accepted) {
+      await cleanupTempFile(pendingChunkPath);
+      await uploadStateStore.deleteUploadSession(uploadId);
+      await rm(upload.dir, { recursive: true, force: true }).catch((rmError: unknown) => {
+        logger.warn("Failed to clean up oversized upload dir %s: %s", upload.dir, rmError);
+      });
+      await setUploadStatus(uploadId, {
+        status: "error",
+        progress: 0,
+        message: "Upload exceeds maximum size",
+        userId,
+      });
+      response.status(413).json({ error: "Upload exceeds maximum size" });
+      return;
+    }
+    await rename(pendingChunkPath, chunkPath);
     await uploadStateStore.saveUploadSession(uploadId, upload, IN_PROGRESS_UPLOAD_STATUS_TTL_MS);
+    const receivedCount = chunkRecord.receivedCount;
 
     const uploadPercentage = Math.round((receivedCount / upload.total) * 100);
     logger.info(`[upload] ${config.routeId} chunk ${chunkIndex + 1}/${chunkTotal} for ${uploadId}`);
@@ -538,38 +562,41 @@ async function handleChunkedFileUpload({
     const chunkDir = upload.dir;
     const since = config.getSince(request);
     const jobOptions = config.getJobOptions?.(request);
-    await uploadStateStore.deleteUploadSession(uploadId);
     await setUploadStatus(
       uploadId,
       inProgressStatus("assembling", 0, "Assembling file...", userId),
       IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
     );
-    response.json({ status: "assembling", jobId: uploadId });
-
-    void (async () => {
-      try {
-        const assembledFile = createJobFilePath(config, fileExtension);
-        await assembleChunks(chunkDir, assembledFile);
-        await rm(chunkDir, { recursive: true, force: true });
-        await enqueueImport(deps.importQueue, assembledFile, since, config.importType, userId, {
-          ...jobOptions,
-          jobId: uploadId,
-        });
-        await uploadStateStore.deleteUploadStatus(uploadId);
-      } catch (error: unknown) {
-        logger.error(`[upload] Assembly/enqueue failed for ${uploadId}: ${error}`);
-        await rm(chunkDir, { recursive: true, force: true }).catch((rmError: unknown) => {
-          logger.warn("Failed to clean up chunk dir %s: %s", chunkDir, rmError);
-        });
-        await setUploadStatus(uploadId, {
-          status: "error",
-          progress: 0,
-          message: "Failed to assemble uploaded file",
-          userId,
-        });
-      }
-    })();
+    const assembledFile = createJobFilePath(config, fileExtension);
+    try {
+      await assembleChunks(chunkDir, assembledFile);
+      await enqueueImport(deps.importQueue, assembledFile, since, config.importType, userId, {
+        ...jobOptions,
+        jobId: uploadId,
+      });
+      await uploadStateStore.deleteUploadSession(uploadId);
+      await uploadStateStore.deleteUploadStatus(uploadId);
+      await rm(chunkDir, { recursive: true, force: true }).catch((rmError: unknown) => {
+        logger.warn("Failed to clean up chunk dir %s: %s", chunkDir, rmError);
+      });
+      response.json({ status: "processing", jobId: uploadId });
+    } catch (error: unknown) {
+      captureException(error);
+      logger.error(`[upload] Assembly/enqueue failed for ${uploadId}: ${error}`);
+      await cleanupTempFile(assembledFile);
+      await rm(chunkDir, { recursive: true, force: true }).catch((rmError: unknown) => {
+        logger.warn("Failed to clean up chunk dir %s: %s", chunkDir, rmError);
+      });
+      await setUploadStatus(uploadId, {
+        status: "error",
+        progress: 0,
+        message: "Failed to assemble uploaded file",
+        userId,
+      });
+      response.status(500).json({ error: "Failed to assemble uploaded file" });
+    }
   } catch (error: unknown) {
+    captureException(error);
     logger.error(`[upload] Chunked upload failed: ${error}`);
     const upload = await uploadStateStore.getUploadSession(uploadId);
     if (upload) {

@@ -15,7 +15,7 @@ export function streamToFile(
   req: Readable,
   filePath: string,
   maxBytes = MAX_UPLOAD_BYTES,
-): Promise<void> {
+): Promise<number> {
   return new Promise((resolve, reject) => {
     let bytesReceived = 0;
     const ws = createWriteStream(filePath);
@@ -28,7 +28,7 @@ export function streamToFile(
     });
 
     req.pipe(ws);
-    ws.on("finish", resolve);
+    ws.on("finish", () => resolve(bytesReceived));
     ws.on("error", reject);
     req.on("error", reject);
   });

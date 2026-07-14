@@ -122,6 +122,7 @@ export interface LatestError {
 
 export interface ProviderStatRow {
   providerId: string;
+  totalRecords: number;
   activities: number;
   dailyMetrics: number;
   sleepSessions: number;
@@ -338,6 +339,18 @@ export class SyncRepository {
 
     return rows.map((row) => ({
       providerId: row.provider_id,
+      totalRecords:
+        row.activities +
+        row.daily_metrics +
+        row.sleep_sessions +
+        row.body_measurements +
+        row.food_entries +
+        row.health_events +
+        row.metric_stream +
+        row.nutrition_daily +
+        row.lab_panels +
+        row.lab_results +
+        row.journal_entries,
       activities: row.activities,
       dailyMetrics: row.daily_metrics,
       sleepSessions: row.sleep_sessions,

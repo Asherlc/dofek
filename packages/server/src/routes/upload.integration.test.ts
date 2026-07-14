@@ -184,7 +184,7 @@ describe("upload integration (real file I/O)", () => {
         expect(JSON.parse(res.body).status).toBe("uploading");
       }
 
-      // Final chunk — responds immediately with "assembling", assembly happens in background
+      // Final chunk — assembles and enqueues before returning
       const res = await post(app, "/api/upload/apple-health", {
         headers: {
           "Content-Type": "application/octet-stream",
@@ -196,10 +196,8 @@ describe("upload integration (real file I/O)", () => {
       });
 
       expect(res.status).toBe(200);
-      expect(JSON.parse(res.body).status).toBe("assembling");
-
-      // Wait for background assembly + enqueue to complete
-      await vi.waitFor(() => expect(queue.recorded).toHaveLength(1), { timeout: 2000 });
+      expect(JSON.parse(res.body).status).toBe("processing");
+      expect(queue.recorded).toHaveLength(1);
 
       // Assembled file should contain all chunks concatenated in order
       const filePath = queue.recorded[0].data.filePath;
@@ -233,10 +231,8 @@ describe("upload integration (real file I/O)", () => {
       });
 
       expect(res.status).toBe(200);
-      expect(JSON.parse(res.body).status).toBe("assembling");
-
-      // Wait for background assembly + enqueue to complete
-      await vi.waitFor(() => expect(queue.recorded).toHaveLength(1), { timeout: 2000 });
+      expect(JSON.parse(res.body).status).toBe("processing");
+      expect(queue.recorded).toHaveLength(1);
 
       // assembleChunks sorts by filename (chunk-000000, chunk-000001),
       // so the result should be in correct order regardless of upload order

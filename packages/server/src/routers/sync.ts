@@ -112,6 +112,7 @@ export const logsInput = z.object({ limit: z.number().default(100) });
 const providerStatsOutputSchema = z.array(
   z.object({
     providerId: z.string(),
+    totalRecords: z.number().int().nonnegative(),
     activities: z.number().int().nonnegative(),
     dailyMetrics: z.number().int().nonnegative(),
     sleepSessions: z.number().int().nonnegative(),

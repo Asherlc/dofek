@@ -474,8 +474,8 @@ describe("tRPC API", () => {
         if (i === 0) {
           expect(data.status).toBe("uploading");
         } else {
-          // Last chunk responds immediately with "assembling" status
-          expect(data.status).toBe("assembling");
+          // Last chunk returns after the assembled file is enqueued
+          expect(data.status).toBe("processing");
           // jobId is the upload ID for seamless polling
           expect(data.jobId).toBe(uploadId);
         }

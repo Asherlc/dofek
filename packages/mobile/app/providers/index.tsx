@@ -287,8 +287,10 @@ export default function ProvidersScreen() {
 
   const importFile = useCallback(
     async (fileUri: string, providerId?: ImportProviderId) => {
-      if (!sessionToken) return;
       try {
+        if (!sessionToken) {
+          throw new Error("Sign in before importing a file");
+        }
         await importSharedFile(
           {
             fileUri,
@@ -321,12 +323,11 @@ export default function ProvidersScreen() {
 
   useEffect(() => {
     if (!sharedFileUri) return;
-    if (!sessionToken) return;
     if (importedSharedUris.current.has(sharedFileUri)) return;
     importedSharedUris.current.add(sharedFileUri);
 
     void importFile(sharedFileUri);
-  }, [importFile, sessionToken, sharedFileUri]);
+  }, [importFile, sharedFileUri]);
 
   const handleFileImportProvider = useCallback(
     async (providerId: ImportProviderId) => {
@@ -543,8 +544,9 @@ export default function ProvidersScreen() {
   const isLoading = providers.isLoading;
   const enabledProviders = providerList.filter((p) => p.enabled);
   const appleHealthProvider = appleHealth.model.toProviderCard();
+  const activeImportRows = activeImports.error ? [] : (activeImports.data ?? []);
   const activeImportByProvider = new Map(
-    (activeImports.data ?? []).map((activeImport) => [activeImport.providerId, activeImport]),
+    activeImportRows.map((activeImport) => [activeImport.providerId, activeImport]),
   );
   const localImportIsActive =
     sharedImportState !== null &&
@@ -616,9 +618,12 @@ export default function ProvidersScreen() {
           it to Dofek.
         </Text>
         {activeImports.error ? (
-          <Text style={[styles.shareImportMessage, styles.shareImportError]}>
-            {getQueryErrorMessage(activeImports.error, "Unable to load import progress.")}
-          </Text>
+          <QueryStatePanel
+            variant="error"
+            title="Could not load import progress"
+            message={getQueryErrorMessage(activeImports.error, "Unable to load import progress.")}
+            minHeight={96}
+          />
         ) : null}
         {sharedImportState ? (
           <View style={styles.shareImportState}>
@@ -661,7 +666,8 @@ export default function ProvidersScreen() {
           ...appleHealthProvider,
         }}
         stats={statsMap.apple_health}
-        syncing={healthKitSyncing || appleHealthImportProgress !== undefined}
+        syncing={healthKitSyncing}
+        importing={appleHealthImportProgress !== undefined}
         syncProgress={
           appleHealthImportProgress ??
           (healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined)
@@ -722,7 +728,8 @@ export default function ProvidersScreen() {
             key={provider.id}
             provider={provider}
             stats={statsMap[provider.id]}
-            syncing={syncingProviders.has(provider.id) || importProgress !== undefined}
+            syncing={syncingProviders.has(provider.id)}
+            importing={importProgress !== undefined}
             syncProgress={importProgress ?? syncProgress[provider.id]}
             onSync={() => handleSyncProvider(provider.id)}
             onFullSync={() => handleSyncProvider(provider.id, true)}

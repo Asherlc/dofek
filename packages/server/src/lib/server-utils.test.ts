@@ -45,7 +45,7 @@ describe("streamToFile", () => {
       url: "/test",
     });
 
-    await streamToFile(req, filePath);
+    await expect(streamToFile(req, filePath)).resolves.toBe(body.length);
     const contents = await readFile(filePath, "utf-8");
     expect(contents).toBe("hello world");
   });

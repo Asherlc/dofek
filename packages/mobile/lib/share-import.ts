@@ -168,7 +168,7 @@ function isAppleHealthLike(fileExtension: string, mimeType: string | null): bool
 }
 
 function isGarminDumpLike(fileName: string, fileExtension: string): boolean {
-  if (fileExtension !== ".zip" && fileExtension !== ".xml") return false;
+  if (fileExtension !== ".zip") return false;
   return (
     fileName.includes("garmin") ||
     fileName.includes("di_connect") ||

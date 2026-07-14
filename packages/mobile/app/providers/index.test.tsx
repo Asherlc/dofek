@@ -147,10 +147,14 @@ vi.mock("../../theme", () => ({
   spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
 }));
 
+const mockAuthState = vi.hoisted((): { sessionToken: string | null } => ({
+  sessionToken: "test-token",
+}));
+
 vi.mock("../../lib/auth-context", () => ({
   useAuth: () => ({
     serverUrl: "https://test.example.com",
-    sessionToken: "test-token",
+    sessionToken: mockAuthState.sessionToken,
   }),
 }));
 
@@ -713,6 +717,7 @@ describe("ProviderCard", () => {
       <FileImportProviderCard
         provider={makeProvider({ id: "strong-csv", label: "Strong", importOnly: true })}
         stats={{
+          totalRecords: 206_538,
           activities: 352,
           metricStream: 205_367,
           dailyMetrics: 229,
@@ -752,6 +757,28 @@ describe("ProviderCard", () => {
   });
 
   describe("import-only providers", () => {
+    it("keeps the sync action separate from an active file import", async () => {
+      const { ProviderCard } = await import("./provider-card.tsx");
+      render(
+        <ProviderCard
+          provider={makeProvider({ importOnly: false, authStatus: "connected" })}
+          stats={undefined}
+          syncing={false}
+          importing={true}
+          syncProgress={{ percentage: 25, message: "Importing file" }}
+          onSync={noopFn}
+          onFullSync={noopFn}
+          onConnect={noopFn}
+          onImport={noopFn}
+          onPress={noopFn}
+        />,
+      );
+
+      expect(screen.getByText("Sync")).toBeTruthy();
+      expect(screen.queryByText("Import file")).toBeNull();
+      expect(screen.getByText("Importing file")).toBeTruthy();
+    });
+
     it("does not render Sync button for import-only providers", async () => {
       const { ProviderCard } = await import("./provider-card.tsx");
       render(
@@ -840,6 +867,7 @@ describe("ProvidersScreen", () => {
     mockWhoopVerifyCode.mockReset();
     mockWhoopSaveTokens.mockReset();
     mockFileDelete.mockReset();
+    mockAuthState.sessionToken = "test-token";
     mockFileBytes.mockClear();
     mockIsHealthKitAvailable.mockReset().mockReturnValue(true);
     mockGetRequestStatus.mockReset().mockResolvedValue("unnecessary");
@@ -1313,6 +1341,21 @@ describe("ProvidersScreen", () => {
         }),
       );
     });
+  });
+
+  it("deletes a shared file and surfaces auth errors when importing without a session", async () => {
+    mockAuthState.sessionToken = null;
+    mockUseLocalSearchParams.mockReturnValue({
+      sharedFile: "file:///tmp/Strong%20Export.csv",
+    });
+
+    await renderProvidersScreen();
+
+    await waitFor(() => {
+      expect(mockFileDelete).toHaveBeenCalledWith("file:///tmp/Strong%20Export.csv");
+    });
+    expect(mockImportSharedFile).not.toHaveBeenCalled();
+    expect(screen.getByText("Sign in before importing a file")).toBeTruthy();
   });
 
   it("selects and imports a Garmin dump ZIP from the Garmin card", async () => {

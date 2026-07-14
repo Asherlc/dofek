@@ -7,6 +7,7 @@ export function FileImportProviderCard({
   provider,
   stats,
   syncing,
+  importing,
   syncProgress,
   onSync,
   onFullSync,
@@ -17,6 +18,7 @@ export function FileImportProviderCard({
   provider: Provider;
   stats: ProviderStats | undefined;
   syncing: boolean;
+  importing?: boolean;
   syncProgress: { percentage?: number; message?: string } | undefined;
   onSync: () => void;
   onFullSync: () => void;
@@ -30,6 +32,7 @@ export function FileImportProviderCard({
       provider={provider}
       stats={stats}
       syncing={syncing}
+      importing={importing}
       syncProgress={syncProgress}
       onSync={onSync}
       onFullSync={onFullSync}

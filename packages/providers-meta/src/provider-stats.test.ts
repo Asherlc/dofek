@@ -78,6 +78,10 @@ describe("providerStatsTotal", () => {
   it("returns the single non-zero value for sparse stats", () => {
     expect(providerStatsTotal(SPARSE_STATS)).toBe(42);
   });
+
+  it("uses the API-provided total when present", () => {
+    expect(providerStatsTotal({ ...SPARSE_STATS, totalRecords: 100 })).toBe(100);
+  });
 });
 
 describe("providerStatsBreakdown", () => {

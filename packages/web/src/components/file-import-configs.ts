@@ -47,5 +47,6 @@ export const fileImportConfigs: Record<string, FileImportZoneProps> = {
 
 export function getFileImportConfig(providerId: string): FileImportZoneProps | undefined {
   if (providerId === "apple_health") return appleHealthFileImportConfig;
+  if (!Object.hasOwn(fileImportConfigs, providerId)) return undefined;
   return fileImportConfigs[providerId];
 }
