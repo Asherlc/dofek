@@ -1,8 +1,10 @@
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { pathToFileURL } from "node:url";
 import { Encoder, Profile, Utils } from "@garmin/fitsdk";
 import archiver from "archiver";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -157,8 +159,11 @@ async function createTempDirectory(): Promise<string> {
   return directory;
 }
 
-async function createZip(entries: Record<string, Buffer | string>): Promise<Buffer> {
-  const archive = archiver("zip", { zlib: { level: 1 } });
+async function createZip(
+  entries: Record<string, Buffer | string>,
+  options: { store?: boolean } = {},
+): Promise<Buffer> {
+  const archive = archiver("zip", options.store ? { store: true } : { zlib: { level: 1 } });
   const stream = new PassThrough();
   const chunks: Buffer[] = [];
   stream.on("data", (chunk) => {
@@ -171,7 +176,10 @@ async function createZip(entries: Record<string, Buffer | string>): Promise<Buff
   });
   archive.pipe(stream);
   for (const [path, data] of Object.entries(entries)) {
-    archive.append(data, { name: path });
+    archive.append(data, {
+      name: path,
+      ...(options.store === undefined ? {} : { store: options.store }),
+    });
   }
   await archive.finalize();
   return finished;
@@ -205,6 +213,51 @@ async function createGarminDumpZip(): Promise<string> {
   const filePath = join(directory, "garmin-export.zip");
   await writeFile(filePath, topLevelZip);
   return filePath;
+}
+
+async function parseGarminDumpInChildProcess(filePath: string): Promise<void> {
+  const moduleUrl = pathToFileURL(join(process.cwd(), "src/providers/garmin-dump.ts")).href;
+  const source =
+    `import { parseGarminDumpFile } from ${JSON.stringify(moduleUrl)};` +
+    "const keepAlive = setInterval(() => undefined, 1_000);" +
+    `try { await parseGarminDumpFile(${JSON.stringify(filePath)}); } ` +
+    "finally { clearInterval(keepAlive); }";
+
+  await new Promise<void>((resolve, reject) => {
+    const childProcess = spawn(
+      process.execPath,
+      ["--import", "tsx", "--input-type=module", "--eval", source],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+    let standardError = "";
+    let timedOut = false;
+    childProcess.stderr.setEncoding("utf8");
+    childProcess.stderr.on("data", (chunk: string) => {
+      standardError += chunk;
+    });
+
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      childProcess.kill("SIGKILL");
+    }, 10_000);
+
+    childProcess.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    childProcess.once("exit", (exitCode) => {
+      clearTimeout(timeout);
+      if (timedOut) {
+        reject(new Error("Garmin dump parser did not finish streaming the nested ZIP within 10s"));
+        return;
+      }
+      if (exitCode !== 0) {
+        reject(new Error(standardError.trim() || `Garmin dump parser exited with ${exitCode}`));
+        return;
+      }
+      resolve();
+    });
+  });
 }
 
 async function waitUntil(assertion: () => void): Promise<void> {
@@ -376,6 +429,26 @@ describe("Garmin dump provider", () => {
       ],
     });
   });
+
+  it("finishes streaming a multi-chunk nested Garmin ZIP", async () => {
+    const incompressiblePayload = Buffer.concat(
+      Array.from({ length: 8_192 }, (_, chunkIndex) =>
+        createHash("sha256").update(String(chunkIndex)).digest(),
+      ),
+    );
+    const nestedZip = await createZip({ "padding.bin": incompressiblePayload }, { store: true });
+    const zip = await createZip(
+      {
+        "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip": nestedZip,
+      },
+      { store: false },
+    );
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+
+    await expect(parseGarminDumpInChildProcess(filePath)).resolves.toBeUndefined();
+  }, 15_000);
 
   it("parses extracted Garmin dump directories recursively", async () => {
     const directory = await createTempDirectory();

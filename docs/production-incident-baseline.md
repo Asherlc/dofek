@@ -13033,3 +13033,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** No known remaining watchOS CI risk from this
   incident. Keep the job target-based unless a future watch target needs
   CocoaPods integration.
+
+## 2026-07-14 — Garmin Dump ZIP Stream Hung at Five Percent
+
+- **Symptoms:** Production import job `6` remained active at five percent with
+  `Reading Garmin dump...` for more than 90 minutes. The application emitted no
+  phase log after that progress update, and the Axiom query limiter rejected the
+  required schema probe, so the investigation used Redis job state and
+  read-only worker/container diagnostics.
+- **User impact:** The Garmin dump never advanced to FIT fan-out. The generic
+  import worker has the BullMQ default concurrency of one, so the hung job also
+  prevented later file-import jobs from running.
+- **Evidence:** Redis showed job `6` active since `2026-07-14T15:17:41Z` with a
+  live lock and unchanged five-percent progress. The worker retained an open
+  output descriptor for the first nested ZIP at 23,854,864 bytes. A minimal
+  `yauzl@3.3.0` reproduction on the same production archive stopped at exactly
+  that byte count without emitting `end` or `error`, while BusyBox `unzip`
+  validated the archive and emitted the declared 23,857,672 bytes. An isolated,
+  read-only `yauzl@3.4.0` run on the same archive emitted all 23,857,672 bytes
+  and completed. Upstream `yauzl` 3.3.1 fixed its vendored `fd-slicer` stream
+  destruction behavior and added Node 26 coverage
+  ([upstream fix](https://github.com/thejoshwolfe/yauzl/pull/170)).
+- **Root cause:** Production used `yauzl@3.3.0`; its old vendored file-slice
+  stream implementation failed to finish this valid nested deflate stream on
+  Node 26.5.0. `streamToFile()` therefore waited forever, leaving the importer
+  at its pre-parse five-percent progress update.
+- **Fix / mitigation:** Updated the canonical ZIP dependency to the latest stable
+  `yauzl@3.4.0` and added a regression fixture that exercises file-backed nested
+  ZIP streaming. Deployment and retrying the import remain outstanding. The
+  current live job has not been cancelled or modified.
+- **Remaining risk / follow-up:** High until this dependency fix is deployed and
+  the active job is cleared. Add phase-level Garmin dump extraction logs so a
+  future archive-reader stall reports the active entry and byte progress rather
+  than presenting only a stale BullMQ percentage.
