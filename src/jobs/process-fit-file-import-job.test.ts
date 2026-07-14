@@ -162,38 +162,51 @@ describe("processFitFileImportJob", () => {
     );
   });
 
-  it("rejects jobs without a file path or extraction child before reading a file", async () => {
-    await expect(
-      processFitFileImportJob(
-        createFitFileImportJob({
-          originalPath: "DI_CONNECT/activity.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        }),
-        mockDb,
-      ),
-    ).rejects.toThrow("FIT import job is missing filePath and has no child extraction result");
+  it("returns an error result for jobs without a file path or extraction child", async () => {
+    const result = await processFitFileImportJob(
+      createFitFileImportJob({
+        originalPath: "DI_CONNECT/activity.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
+      mockDb,
+    );
 
+    expect(result).toEqual({
+      recordsSynced: 0,
+      errors: [
+        {
+          message:
+            "Failed to import FIT file DI_CONNECT/activity.fit: FIT import job is missing filePath and has no child extraction result",
+        },
+      ],
+    });
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { fitImportStep: "process" },
+      extra: { originalPath: "DI_CONNECT/activity.fit" },
+    });
   });
 
-  it("cleans up temp files when queue payload validation fails", async () => {
+  it("cleans up temp files when queue payload validation returns an error result", async () => {
     const filePath = await writeTempFit(createActivityFit());
 
-    await expect(
-      processFitFileImportJob(
-        createFitFileImportJob({
-          filePath,
-          originalPath: "DI_CONNECT/activity.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-        }),
-        mockDb,
-      ),
-    ).rejects.toThrow();
+    const result = await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/activity.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+      }),
+      mockDb,
+    );
 
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors[0]?.message).toContain(
+      "Failed to import FIT file DI_CONNECT/activity.fit:",
+    );
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     await expect(readFile(filePath)).rejects.toThrow();
   });
@@ -347,25 +360,33 @@ describe("processFitFileImportJob", () => {
     await expect(readFile(filePath)).rejects.toThrow();
   });
 
-  it("rejects FIT flow jobs with multiple extraction results", async () => {
-    await expect(
-      processFitFileImportJob(
-        {
-          data: {
-            originalPath: "DI_CONNECT/asher@example.com_activity.fit",
-            userId: "user-1",
-            providerId: "garmin-dump",
-            sourceName: "Garmin Dump",
-          },
-          getChildrenValues: async () => ({
-            "bull:zip-entry-extract:1": { filePath: "/tmp/one.fit" },
-            "bull:zip-entry-extract:2": { filePath: "/tmp/two.fit" },
-          }),
-          updateProgress: vi.fn().mockResolvedValue(undefined),
+  it("returns an error result for FIT flow jobs with multiple extraction results", async () => {
+    const result = await processFitFileImportJob(
+      {
+        data: {
+          originalPath: "DI_CONNECT/asher@example.com_activity.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
         },
-        mockDb,
-      ),
-    ).rejects.toThrow("FIT import job expected 1 child extraction result, got 2");
+        getChildrenValues: async () => ({
+          "bull:zip-entry-extract:1": { filePath: "/tmp/one.fit" },
+          "bull:zip-entry-extract:2": { filePath: "/tmp/two.fit" },
+        }),
+        updateProgress: vi.fn().mockResolvedValue(undefined),
+      },
+      mockDb,
+    );
+
+    expect(result).toEqual({
+      recordsSynced: 0,
+      errors: [
+        {
+          message:
+            "Failed to import FIT file DI_CONNECT/asher@example.com_activity.fit: FIT import job expected 1 child extraction result, got 2",
+        },
+      ],
+    });
   });
 
   it("extracts numeric activity IDs from FIT file names", async () => {
@@ -658,22 +679,30 @@ describe("processFitFileImportJob", () => {
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
   });
 
-  it("fails invalid FIT files before attempting activity parsing", async () => {
+  it("returns an error result for invalid FIT files before attempting activity parsing", async () => {
     const filePath = await writeTempFit(Buffer.from("not a fit file"));
 
-    await expect(
-      processFitFileImportJob(
-        createFitFileImportJob({
-          filePath,
-          originalPath: "DI_CONNECT/broken.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        }),
-        mockDb,
-      ),
-    ).rejects.toThrow("FIT decoder reported");
+    const result = await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/broken.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
+      mockDb,
+    );
 
+    expect(result).toEqual({
+      recordsSynced: 0,
+      errors: [
+        expect.objectContaining({
+          message: expect.stringContaining(
+            "Failed to import FIT file DI_CONNECT/broken.fit: FIT decoder reported",
+          ),
+        }),
+      ],
+    });
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     await expect(readFile(filePath)).rejects.toThrow();
   });

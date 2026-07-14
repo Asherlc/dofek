@@ -81,11 +81,40 @@ const fitFileImportCleanupPathSchema = z.object({
   filePath: z.string(),
 });
 
+const fitFileImportErrorPathSchema = z
+  .object({
+    originalPath: z.string().optional(),
+  })
+  .passthrough();
+
 type ResolvedFitFileImportJobData = FitFileImportJobData & { filePath: string };
 
 function cleanupPathFromJobData(data: unknown): string | null {
   const parsed = fitFileImportCleanupPathSchema.safeParse(data);
   return parsed.success ? parsed.data.filePath : null;
+}
+
+function originalPathFromJobData(data: unknown): string {
+  const parsed = fitFileImportErrorPathSchema.safeParse(data);
+  return parsed.success ? (parsed.data.originalPath ?? "unknown FIT file") : "unknown FIT file";
+}
+
+function fitFileImportErrorResult(data: unknown, error: unknown): FitFileImportJobResult {
+  const originalPath = originalPathFromJobData(data);
+  Sentry.captureException(error, {
+    tags: { fitImportStep: "process" },
+    extra: { originalPath },
+  });
+  return {
+    recordsSynced: 0,
+    errors: [
+      {
+        message: `Failed to import FIT file ${originalPath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      },
+    ],
+  };
 }
 
 async function updateFitFileImportProgress(
@@ -315,6 +344,8 @@ export async function processFitFileImportJob(
       message: "FIT file import complete.",
     });
     return result;
+  } catch (error) {
+    return fitFileImportErrorResult(job.data, error);
   } finally {
     if (cleanupFilePath) {
       await unlink(cleanupFilePath).catch((error: unknown) => {

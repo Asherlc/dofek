@@ -360,6 +360,7 @@ async function collectZipEntries(
             state,
           )),
         );
+        await rm(nestedZipPath, { force: true });
         continue;
       }
 
@@ -554,7 +555,7 @@ function fitFileImportFlowChild(
               nestedArchiveMaxBytes: MAX_GARMIN_DUMP_NESTED_ZIP_BYTES,
             },
             opts: {
-              failParentOnFailure: true,
+              ignoreDependencyOnFailure: true,
               removeOnComplete: { age: 86_400, count: 1_000 },
               removeOnFail: { age: 604_800, count: 1_000 },
             },
@@ -567,7 +568,6 @@ function fitFileImportFlowChild(
     queueName: FIT_FILE_IMPORT_QUEUE,
     data: fitImportData,
     opts: {
-      failParentOnFailure: true,
       jobId: `garmin-dump-fit:${createHash("sha256")
         .update(`${userId}\n${uploadPath}\n${entry.path}`)
         .digest("hex")}`,
