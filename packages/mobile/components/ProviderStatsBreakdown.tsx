@@ -25,8 +25,6 @@ export function ProviderStatsBreakdown({
   const total = stats.totalRecords ?? 0;
   const breakdown = providerStatsBreakdown(stats);
 
-  if (total === 0) return null;
-
   if (variant === "full") {
     return (
       <View style={styles.fullContainer}>
@@ -35,8 +33,8 @@ export function ProviderStatsBreakdown({
           <Text style={styles.totalLabel}>total records</Text>
         </View>
         <View style={styles.statsRow}>
-          {breakdown.map((b) => (
-            <StatBadge key={b.label} label={b.label} count={b.count} />
+          {breakdown.map((stat) => (
+            <StatBadge key={stat.label} label={stat.label} count={stat.count} />
           ))}
         </View>
       </View>
@@ -49,13 +47,11 @@ export function ProviderStatsBreakdown({
         <Text style={styles.compactTotalCount}>{total.toLocaleString()}</Text>
         <Text style={styles.compactTotalLabel}>records</Text>
       </View>
-      {breakdown.length > 1 && (
-        <View style={styles.statsRow}>
-          {breakdown.map((b) => (
-            <StatBadge key={b.label} label={b.label} count={b.count} />
-          ))}
-        </View>
-      )}
+      <View style={styles.statsRow}>
+        {breakdown.map((stat) => (
+          <StatBadge key={stat.label} label={stat.label} count={stat.count} />
+        ))}
+      </View>
     </View>
   );
 }
