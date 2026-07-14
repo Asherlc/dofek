@@ -587,7 +587,6 @@ describe("Garmin dump provider", () => {
           sourceName: "Garmin Dump",
         }),
         opts: expect.objectContaining({
-          failParentOnFailure: true,
           jobId: `garmin-dump-fit:${expectedFlowHash(
             [
               "user-1",
@@ -613,7 +612,7 @@ describe("Garmin dump provider", () => {
               nestedArchiveMaxBytes: 1024 * 1024 * 1024,
             }),
             opts: {
-              failParentOnFailure: true,
+              ignoreDependencyOnFailure: true,
               removeOnComplete: { age: 86_400, count: 1_000 },
               removeOnFail: { age: 604_800, count: 1_000 },
             },
@@ -639,7 +638,6 @@ describe("Garmin dump provider", () => {
           }),
         }),
         opts: expect.objectContaining({
-          failParentOnFailure: true,
           jobId: `garmin-dump-fit:${expectedFlowHash(
             [
               "user-1",
