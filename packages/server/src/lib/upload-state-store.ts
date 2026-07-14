@@ -208,6 +208,7 @@ export class RedisUploadStateStore implements UploadStateStore {
     const client = await this.#getRedisClient();
     await client.set(uploadSessionKey(uploadId), JSON.stringify(session), "PX", timeToLiveMs);
     await client.expire(uploadChunksKey(uploadId), ttlSeconds(timeToLiveMs));
+    await client.expire(uploadChunkBytesKey(uploadId), ttlSeconds(timeToLiveMs));
   }
 
   async getUploadSession(uploadId: string): Promise<UploadSession | null> {

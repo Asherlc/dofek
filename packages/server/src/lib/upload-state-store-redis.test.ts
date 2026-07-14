@@ -114,6 +114,7 @@ describe("RedisUploadStateStore", () => {
       userId: "user-1",
     });
     expect(fakeRedis.ttlSeconds.get("upload-chunks:upload-1")).toBe(1800);
+    expect(fakeRedis.ttlSeconds.get("upload-chunk-bytes:upload-1")).toBe(1800);
   });
 
   it("tracks chunk byte totals atomically in Redis", async () => {
