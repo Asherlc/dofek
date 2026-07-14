@@ -13088,3 +13088,52 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Garmin dump unit tests passed after the fix.
 - **Remaining risk / follow-up:** The fix still needs deployment, followed by a
   retry of the failed Garmin dump import.
+
+## 2026-07-14 — Cycling Training Page Took 15–23 Seconds to Load
+
+- **Symptoms:** `https://dofek.asherlc.com/training/cycling` initially appeared
+  not to load and then completed only after a long wait; the user reported that
+  other analytics pages also felt slow despite proactively refreshed
+  ClickHouse models.
+- **User impact:** Cycling charts and recent rides took 15–23 seconds to become
+  useful, making interactive date-range changes impractical and limiting
+  realistic multi-user concurrency.
+- **Evidence:** Production tRPC procedure durations were 15–23 seconds while
+  the corresponding ClickHouse model queries completed in roughly 0.1–0.8
+  seconds. The cycling route issued eight top-level tRPC queries, with nested
+  repository calls adding more ClickHouse work. The production ClickHouse
+  service has one CPU, while application admission allows two dashboard and two
+  regular queries, so page fan-out amplified queueing and application work even
+  though individual read-model SQL was fast.
+- **Root cause:** The page composed many independently cached endpoints instead
+  of reading page-grain serving contracts. Concurrent query fan-out and nested
+  work saturated the single-CPU ClickHouse service; successful dbt refreshes
+  also did not proactively refresh live Redis query responses.
+- **Fix / mitigation:** Added dirty-keyed incremental `cycling_activity` and
+  `daily_cycling` dbt models. Added typed `cycling.performance` and
+  `cycling.activities` contracts shared by web and the mobile training service,
+  moved watts-per-kilogram, estimated VO2 max, time-to-exhaustion, variability,
+  and other metric calculations to the server, and reduced a cold cycling page
+  to exactly three ClickHouse statements. After successful safe dbt builds, an
+  app-wide cache warmer now replays every live Redis-registered tRPC query with
+  its original user, timezone, path, and input; refresh mode preserves the old
+  value unless recomputation succeeds.
+- **Validation:** Focused unit suites passed 132 tests. The executable isolated
+  ClickHouse integration test populated the two new serving-table schemas and
+  verified the complete cycling response in exactly three statements. Root,
+  server, and web typechecks passed; dbt compilation, analytics policy, and SQL
+  lint passed. Both new dbt models also completed a full refresh and a subsequent
+  incremental build against local ClickHouse. A full local historical migration
+  replay could not reach the new models because pre-existing migration
+  `0022_incremental_activity_summary` exceeded the local ClickHouse 3 GiB memory
+  cap; the first fatal line was `memory limit exceeded ... maximum: 3.00 GiB`,
+  so no timeout, retry, or memory workaround was added.
+- **Remaining risk / follow-up:** Production deployment and an Axiom before/after
+  measurement are still required. App-wide warming intentionally performs one
+  sequential recomputation per live Redis query key after each model cycle; at
+  substantially higher user counts, measure the warm-cycle duration and move
+  to a durable bounded work queue if it approaches the 15-minute model interval.
+  Redis expiration semantics are documented by the official
+  [`EXPIRE` reference](https://redis.io/docs/latest/commands/expire/), and dbt's
+  incremental behavior is documented in the official
+  [incremental model guide](https://docs.getdbt.com/docs/build/incremental-models).

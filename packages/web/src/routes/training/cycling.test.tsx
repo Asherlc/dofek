@@ -93,62 +93,71 @@ const emptyQuery = { data: [], isLoading: false, error: null };
 
 vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
-    power: {
-      powerCurve: {
-        useQuery: (input: { days: number | null }) => ({
-          ...recordQuery("powerCurve")(input),
-          data: {
+    useUtils: () => ({
+      cycling: { activities: { invalidate: vi.fn() } },
+      calendar: {
+        weekList: { invalidate: vi.fn() },
+        activityOverview: { invalidate: vi.fn() },
+      },
+    }),
+    activity: {
+      bulkDelete: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+      },
+    },
+    cycling: {
+      performance: {
+        useQuery: (input: { days: number | null }) => {
+          const latestWeight = state.bodyRecords
+            .filter((record) => typeof record.weightKg === "number")
+            .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))[0]?.weightKg;
+          const weightKg = typeof latestWeight === "number" ? latestWeight : null;
+          const period = (watts: number, cp: number) => ({
             points: [
               {
                 durationSeconds: 300,
-                bestPower: input.days === 365 ? 500 : 400,
+                bestPower: watts,
                 label: "5m",
                 activityDate: "2026-03-15",
               },
             ],
-            model: { cp: input.days === 365 ? 350 : 300, wPrime: 20_000, r2: 0.95 },
+            model: { cp, wPrime: 20_000, r2: 0.95 },
+          });
+          const summary = (watts: number) => ({
+            efforts: [
+              {
+                durationSeconds: 300,
+                watts,
+                wattsPerKg: weightKg == null ? null : watts / weightKg,
+              },
+            ],
+            maximalAerobicPower: watts,
+            vo2Max: weightKg == null ? null : Math.round(((watts / weightKg) * 10.8 + 7) * 10) / 10,
+            timeToExhaustionSeconds: 200,
+          });
+          return {
+            ...recordQuery("cycling.performance")(input),
+            data: {
+              powerCurve: { recent: period(400, 300), season: period(500, 350) },
+              powerSummary: { weightKg, recent: summary(400), season: summary(500) },
+              pmc: {
+                data: [],
+                model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+              },
+              eftpTrend: { trend: [], currentEftp: null, model: null },
+            },
+          };
+        },
+      },
+      activities: {
+        useQuery: (input: unknown) => ({
+          ...recordQuery("cycling.activities")(input),
+          data: {
+            activities: { items: [], totalCount: 0 },
+            variability: { rows: [], totalCount: 0, emptyReason: null },
+            verticalAscent: [],
+            aerobicEfficiency: { activities: state.efficiencyActivities, maxHr: null },
           },
-        }),
-      },
-      eftpTrend: {
-        useQuery: (input: unknown) => ({
-          ...recordQuery("eftpTrend")(input),
-          data: { trend: [], currentEftp: null },
-        }),
-      },
-    },
-    pmc: {
-      chart: {
-        useQuery: (input: unknown) => ({
-          ...recordQuery("pmc")(input),
-          data: { data: [], model: null },
-        }),
-      },
-    },
-    efficiency: {
-      aerobicEfficiency: {
-        useQuery: (input: unknown) => ({
-          ...recordQuery("aerobicEfficiency")(input),
-          data: { activities: state.efficiencyActivities, maxHr: null },
-        }),
-      },
-    },
-    cyclingAdvanced: {
-      activityVariability: {
-        useQuery: (input: unknown) => ({
-          ...recordQuery("activityVariability")(input),
-          data: { rows: [], totalCount: 0 },
-        }),
-      },
-      verticalAscentRate: {
-        useQuery: (input: unknown) => recordQuery("verticalAscentRate")(input),
-      },
-    },
-    body: {
-      list: {
-        useQuery: (input: unknown) => ({
-          ...recordQuery("bodyList")(input),
-          data: state.bodyRecords,
         }),
       },
     },
@@ -246,7 +255,7 @@ describe("CyclingTab", () => {
     expect(screen.queryByText("50.2")).toBeNull();
   });
 
-  it("passes only cycling aerobic efficiency activities to the chart", async () => {
+  it("passes server-filtered aerobic efficiency activities to the chart", async () => {
     const cyclingActivity = {
       date: "2026-03-10",
       activityType: "cycling",
@@ -256,18 +265,7 @@ describe("CyclingTab", () => {
       efficiencyFactor: 1.333,
       z2Samples: 600,
     };
-    state.efficiencyActivities = [
-      cyclingActivity,
-      {
-        date: "2026-03-12",
-        activityType: "running",
-        name: "Easy Run",
-        avgPowerZ2: 220,
-        avgHrZ2: 145,
-        efficiencyFactor: 1.517,
-        z2Samples: 900,
-      },
-    ];
+    state.efficiencyActivities = [cyclingActivity];
 
     await renderCyclingTab();
 
@@ -280,17 +278,17 @@ describe("CyclingTab", () => {
     await renderCyclingTab();
 
     expect(state.queryCalls).toEqual([
-      { name: "powerCurve", input: { days: 365 } },
-      { name: "powerCurve", input: { days: 365 } },
-      { name: "eftpTrend", input: { days: 365 } },
-      { name: "pmc", input: { days: 365 } },
-      { name: "aerobicEfficiency", input: { days: 365 } },
+      { name: "cycling.performance", input: { days: 365 } },
       {
-        name: "activityVariability",
-        input: { days: 365, limit: 20, offset: 0 },
+        name: "cycling.activities",
+        input: {
+          days: 365,
+          activityLimit: 20,
+          activityOffset: 0,
+          variabilityLimit: 20,
+          variabilityOffset: 0,
+        },
       },
-      { name: "verticalAscentRate", input: { days: 365 } },
-      { name: "bodyList", input: { days: 365 } },
     ]);
   });
 
@@ -299,24 +297,19 @@ describe("CyclingTab", () => {
 
     await renderCyclingTab();
 
-    expect(state.queryCalls).toEqual(
-      expect.arrayContaining([
-        { name: "powerCurve", input: { days: null } },
-        { name: "eftpTrend", input: { days: null } },
-        { name: "pmc", input: { days: null } },
-        { name: "aerobicEfficiency", input: { days: null } },
-        {
-          name: "activityVariability",
-          input: { days: null, limit: 20, offset: 0 },
+    expect(state.queryCalls).toEqual([
+      { name: "cycling.performance", input: { days: null } },
+      {
+        name: "cycling.activities",
+        input: {
+          days: null,
+          activityLimit: 20,
+          activityOffset: 0,
+          variabilityLimit: 20,
+          variabilityOffset: 0,
         },
-        { name: "verticalAscentRate", input: { days: null } },
-      ]),
-    );
-    expect(state.queryCalls.filter((call) => call.name === "powerCurve")).toEqual([
-      { name: "powerCurve", input: { days: null } },
-      { name: "powerCurve", input: { days: 365 } },
+      },
     ]);
-    expect(state.queryCalls).toContainEqual({ name: "bodyList", input: { days: 365 } });
   });
 
   it("selecting All in the training header passes null to cycling selected-range queries", async () => {
@@ -325,22 +318,18 @@ describe("CyclingTab", () => {
     state.queryCalls.length = 0;
     fireEvent.click(screen.getByRole("button", { name: "All" }));
 
-    expect(state.queryCalls).toEqual(
-      expect.arrayContaining([
-        { name: "powerCurve", input: { days: null } },
-        { name: "eftpTrend", input: { days: null } },
-        { name: "pmc", input: { days: null } },
-        { name: "aerobicEfficiency", input: { days: null } },
-        {
-          name: "activityVariability",
-          input: { days: null, limit: 20, offset: 0 },
+    expect(state.queryCalls).toEqual([
+      { name: "cycling.performance", input: { days: null } },
+      {
+        name: "cycling.activities",
+        input: {
+          days: null,
+          activityLimit: 20,
+          activityOffset: 0,
+          variabilityLimit: 20,
+          variabilityOffset: 0,
         },
-        { name: "verticalAscentRate", input: { days: null } },
-      ]),
-    );
-    expect(state.queryCalls.filter((call) => call.name === "powerCurve")).toEqual([
-      { name: "powerCurve", input: { days: null } },
-      { name: "powerCurve", input: { days: 365 } },
+      },
     ]);
   });
 });

@@ -58,11 +58,16 @@ describe("loadMobileTrainingTab", () => {
       });
     const cyclingSpy = vi
       .spyOn(
-        (await import("../repositories/cycling-advanced-repository.ts")).CyclingAdvancedRepository
+        (await import("../repositories/cycling-analytics-repository.ts")).CyclingAnalyticsRepository
           .prototype,
-        "getVerticalAscentRates",
+        "getActivities",
       )
-      .mockResolvedValue(verticalAscent);
+      .mockResolvedValue({
+        activities: { items: [], totalCount: 0 },
+        variability: { rows: [], totalCount: 0, emptyReason: null },
+        verticalAscent: verticalAscent.map((model) => model.toDetail()),
+        aerobicEfficiency: { maxHr: null, activities: [] },
+      });
     return { trainingSpy, cyclingSpy };
   }
 

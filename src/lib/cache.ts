@@ -5,6 +5,7 @@ import { getRedisConnection } from "dofek/jobs/queues";
 export interface CacheStore {
   get(key: string): Promise<unknown | undefined>;
   set<T>(key: string, data: T, ttlMs: number): Promise<void>;
+  listKeys(prefix?: string): Promise<string[]>;
   invalidateByPrefix(prefix: string): Promise<void>;
   invalidateAll(): Promise<void>;
 }
@@ -12,6 +13,7 @@ export interface CacheStore {
 interface RedisClient {
   set(key: string, value: string, mode: "PX", millisecondsToExpire: number): Promise<"OK" | null>;
   get(key: string): Promise<string | null>;
+  mget(...keys: string[]): Promise<Array<string | null>>;
   del(...keys: string[]): Promise<number>;
   sadd(key: string, ...members: string[]): Promise<number>;
   smembers(key: string): Promise<string[]>;
@@ -53,6 +55,11 @@ export class MemoryCacheStore implements CacheStore {
 
   async set<T>(key: string, data: T, ttlMs: number): Promise<void> {
     this.#store.set(key, { data, expiresAt: Date.now() + ttlMs });
+  }
+
+  async listKeys(prefix = ""): Promise<string[]> {
+    this.#sweep();
+    return [...this.#store.keys()].filter((key) => key.startsWith(prefix));
   }
 
   async invalidateByPrefix(prefix: string): Promise<void> {
@@ -111,6 +118,25 @@ export class RedisCacheStore implements CacheStore {
     await client.sadd(CACHE_KEY_REGISTRY, cacheKey);
   }
 
+  async listKeys(prefix = ""): Promise<string[]> {
+    const client = await this.#getRedisClient();
+    const cacheKeys = await client.smembers(CACHE_KEY_REGISTRY);
+    const matchingCacheKeys = cacheKeys.filter((cacheKey) => {
+      const decoded = decodeRedisCacheKey(cacheKey);
+      return decoded?.startsWith(prefix);
+    });
+    if (matchingCacheKeys.length === 0) return [];
+    const payloads = await client.mget(...matchingCacheKeys);
+    const expiredCacheKeys = matchingCacheKeys.filter((_, index) => payloads[index] === null);
+    if (expiredCacheKeys.length > 0) {
+      await client.srem(CACHE_KEY_REGISTRY, ...expiredCacheKeys);
+    }
+    return matchingCacheKeys.flatMap((cacheKey, index) => {
+      const decoded = decodeRedisCacheKey(cacheKey);
+      return payloads[index] !== null && decoded ? [decoded] : [];
+    });
+  }
+
   async invalidateByPrefix(prefix: string): Promise<void> {
     const client = await this.#getRedisClient();
     const cacheKeys = await client.smembers(CACHE_KEY_REGISTRY);
@@ -140,6 +166,9 @@ export class NullCacheStore implements CacheStore {
     return undefined;
   }
   async set(): Promise<void> {}
+  async listKeys(): Promise<string[]> {
+    return [];
+  }
   async invalidateByPrefix(): Promise<void> {}
   async invalidateAll(): Promise<void> {}
 }
@@ -160,6 +189,7 @@ async function getSharedRedisClient(): Promise<RedisClient> {
     set: async (key, value, mode, millisecondsToExpire) =>
       redisClient.set(key, value, mode, millisecondsToExpire),
     get: async (key) => redisClient.get(key),
+    mget: async (...keys) => redisClient.mget(...keys),
     del: async (...keys) => redisClient.del(...keys),
     sadd: async (key, ...members) => redisClient.sadd(key, ...members),
     smembers: async (key) => redisClient.smembers(key),

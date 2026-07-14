@@ -1,7 +1,7 @@
 import { formatNumber } from "@dofek/format/format";
-import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { ActivityList } from "../../components/ActivityList.tsx";
 import { ActivityVariabilityTable } from "../../components/ActivityVariabilityTable.tsx";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
@@ -9,14 +9,11 @@ import { EftpTrendChart } from "../../components/EftpTrendChart.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
-import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { VerticalAscentChart } from "../../components/VerticalAscentChart.tsx";
 import { chartColors, chartThemeColors } from "../../lib/chartTheme.ts";
 import {
-  fixedRangeQueryInput,
   formatTimeRangeLabel,
   formatTimeRangeShortLabel,
-  selectedRangeQueryInput,
   type TimeRangeDays,
 } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
@@ -36,20 +33,6 @@ const DURATION_LABELS: Record<number, string> = {
   1200: "20m",
 };
 
-/** Estimate VO2max from 5-minute best power and body weight.
- *  Formula: (MAP_watts / weight_kg × 10.8) + 7  (Hawley & Noakes) */
-function estimateVo2max(mapWatts: number, weightKg: number): number {
-  return (mapWatts / weightKg) * 10.8 + 7;
-}
-
-/** Time to Exhaustion at CP: how long W' lasts above CP.
- *  TTE = W' / (MAP - CP), returns seconds. */
-function estimateTte(wPrime: number, mapWatts: number, cp: number): number | null {
-  const diff = mapWatts - cp;
-  if (diff <= 0) return null;
-  return wPrime / diff;
-}
-
 function formatTte(seconds: number | null): string {
   if (seconds == null) return "--";
   const mins = Math.round(seconds / 60);
@@ -57,94 +40,65 @@ function formatTte(seconds: number | null): string {
 }
 
 const VARIABILITY_PAGE_SIZE = 20;
+const ACTIVITY_PAGE_SIZE = 20;
 
 function CyclingTab() {
   const { days } = useTrainingDays();
   const [variabilityOffset, setVariabilityOffset] = useState(0);
-
-  // Recent period = user-selected range
-  const recentCurve = trpc.power.powerCurve.useQuery(
-    selectedRangeQueryInput(days),
-    TRAINING_SLOW_QUERY_OPTIONS,
-  );
-  const seasonCurve = trpc.power.powerCurve.useQuery(
-    fixedRangeQueryInput(365),
-    TRAINING_SLOW_QUERY_OPTIONS,
-  );
-  const eftpTrend = trpc.power.eftpTrend.useQuery(selectedRangeQueryInput(days));
-  const pmc = trpc.pmc.chart.useQuery(selectedRangeQueryInput(days));
-  const efficiency = trpc.efficiency.aerobicEfficiency.useQuery(
-    selectedRangeQueryInput(days),
-    TRAINING_SLOW_QUERY_OPTIONS,
-  );
-  const variability = trpc.cyclingAdvanced.activityVariability.useQuery(
+  const [activityPage, setActivityPage] = useState(0);
+  const trpcUtils = trpc.useUtils();
+  const performance = trpc.cycling.performance.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
+  const activityAnalytics = trpc.cycling.activities.useQuery(
     {
-      ...selectedRangeQueryInput(days),
-      limit: VARIABILITY_PAGE_SIZE,
-      offset: variabilityOffset,
+      days,
+      activityLimit: ACTIVITY_PAGE_SIZE,
+      activityOffset: activityPage * ACTIVITY_PAGE_SIZE,
+      variabilityLimit: VARIABILITY_PAGE_SIZE,
+      variabilityOffset,
     },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
-  const verticalAscent = trpc.cyclingAdvanced.verticalAscentRate.useQuery(
-    selectedRangeQueryInput(days),
-    TRAINING_SLOW_QUERY_OPTIONS,
-  );
-  const bodyData = trpc.body.list.useQuery(fixedRangeQueryInput(365));
-
-  type BodyRecord = NonNullable<typeof bodyData.data>[number];
-  const latestBodyRecord = bodyData.data?.reduce<BodyRecord | null>((latestRecord, bodyRecord) => {
-    if (typeof bodyRecord.weightKg !== "number") return latestRecord;
-    if (latestRecord == null) return bodyRecord;
-    return bodyRecord.recordedAt > latestRecord.recordedAt ? bodyRecord : latestRecord;
-  }, null);
-  const rawWeight = latestBodyRecord?.weightKg;
-  const latestWeight = typeof rawWeight === "number" ? rawWeight : undefined;
+  const bulkDelete = trpc.activity.bulkDelete.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        trpcUtils.cycling.activities.invalidate(),
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+      ]);
+    },
+  });
 
   // Build lookup: duration → best power for each period
   const recentByDuration = new Map(
-    (recentCurve.data?.points ?? []).map((p) => [p.durationSeconds, p.bestPower]),
+    (performance.data?.powerSummary.recent.efforts ?? []).map((effort) => [
+      effort.durationSeconds,
+      effort,
+    ]),
   );
   const seasonByDuration = new Map(
-    (seasonCurve.data?.points ?? []).map((p) => [p.durationSeconds, p.bestPower]),
+    (performance.data?.powerSummary.season.efforts ?? []).map((effort) => [
+      effort.durationSeconds,
+      effort,
+    ]),
   );
 
-  const recentModel = recentCurve.data?.model ?? null;
-  const seasonModel = seasonCurve.data?.model ?? null;
-
-  // Derived metrics
-  const recentMap = recentByDuration.get(300) ?? null; // 5m best = MAP proxy
-  const seasonMap = seasonByDuration.get(300) ?? null;
-
-  const recentVo2max =
-    recentMap && latestWeight
-      ? Math.round(estimateVo2max(recentMap, latestWeight) * 10) / 10
-      : null;
-  const seasonVo2max =
-    seasonMap && latestWeight
-      ? Math.round(estimateVo2max(seasonMap, latestWeight) * 10) / 10
-      : null;
-
-  const recentTte =
-    recentModel && recentMap ? estimateTte(recentModel.wPrime, recentMap, recentModel.cp) : null;
-  const seasonTte =
-    seasonModel && seasonMap ? estimateTte(seasonModel.wPrime, seasonMap, seasonModel.cp) : null;
-
-  const loading = recentCurve.isLoading || seasonCurve.isLoading;
-  const cyclingEfficiencyActivities = (efficiency.data?.activities ?? []).filter((activity) =>
-    CYCLING_ACTIVITY_TYPES.some((activityType) => activityType === activity.activityType),
-  );
+  const recentModel = performance.data?.powerCurve.recent.model ?? null;
+  const seasonModel = performance.data?.powerCurve.season.model ?? null;
+  const recentSummary = performance.data?.powerSummary.recent;
+  const seasonSummary = performance.data?.powerSummary.season;
+  const loading = performance.isLoading;
 
   return (
     <>
       {/* Power Duration Curve with comparison */}
       <Section title="Power Duration Curve" subtitle="Best power at each duration">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6">
-          {(recentCurve.error ?? seasonCurve.error) ? (
-            <QueryStatePanel error={recentCurve.error ?? seasonCurve.error} />
+          {performance.error ? (
+            <QueryStatePanel error={performance.error} />
           ) : (
             <PowerCurveChart
-              data={recentCurve.data?.points ?? []}
-              comparisonData={seasonCurve.data?.points ?? []}
+              data={performance.data?.powerCurve.recent.points ?? []}
+              comparisonData={performance.data?.powerCurve.season.points ?? []}
               model={recentModel}
               loading={loading}
             />
@@ -154,13 +108,12 @@ function CyclingTab() {
             seasonByDuration={seasonByDuration}
             recentModel={recentModel}
             seasonModel={seasonModel}
-            recentMap={recentMap}
-            seasonMap={seasonMap}
-            recentVo2max={recentVo2max}
-            seasonVo2max={seasonVo2max}
-            recentTte={recentTte}
-            seasonTte={seasonTte}
-            weightKg={latestWeight ?? null}
+            recentMap={recentSummary?.maximalAerobicPower ?? null}
+            seasonMap={seasonSummary?.maximalAerobicPower ?? null}
+            recentVo2max={recentSummary?.vo2Max ?? null}
+            seasonVo2max={seasonSummary?.vo2Max ?? null}
+            recentTte={recentSummary?.timeToExhaustionSeconds ?? null}
+            seasonTte={seasonSummary?.timeToExhaustionSeconds ?? null}
             loading={loading}
             recentDays={days}
           />
@@ -181,10 +134,14 @@ function CyclingTab() {
         title="Fitness, Fatigue & Form"
         subtitle="42-day fitness (blue), 7-day fatigue (purple), form = fitness − fatigue"
       >
-        {pmc.error ? (
-          <QueryStatePanel error={pmc.error} />
+        {performance.error ? (
+          <QueryStatePanel error={performance.error} />
         ) : (
-          <PmcChart data={pmc.data?.data ?? []} model={pmc.data?.model} loading={pmc.isLoading} />
+          <PmcChart
+            data={performance.data?.pmc.data ?? []}
+            model={performance.data?.pmc.model}
+            loading={performance.isLoading}
+          />
         )}
       </Section>
 
@@ -193,13 +150,13 @@ function CyclingTab() {
         title="Estimated Threshold Power Trend"
         subtitle="Per-activity normalized power × 0.95"
       >
-        {eftpTrend.error ? (
-          <QueryStatePanel error={eftpTrend.error} />
+        {performance.error ? (
+          <QueryStatePanel error={performance.error} />
         ) : (
           <EftpTrendChart
-            data={eftpTrend.data?.trend ?? []}
-            currentEftp={eftpTrend.data?.currentEftp ?? null}
-            loading={eftpTrend.isLoading}
+            data={performance.data?.eftpTrend.trend ?? []}
+            currentEftp={performance.data?.eftpTrend.currentEftp ?? null}
+            loading={performance.isLoading}
           />
         )}
       </Section>
@@ -210,13 +167,13 @@ function CyclingTab() {
           title="Aerobic Efficiency"
           subtitle="Power output per heartbeat at easy effort — higher means fitter"
         >
-          {efficiency.error ? (
-            <QueryStatePanel error={efficiency.error} />
+          {activityAnalytics.error ? (
+            <QueryStatePanel error={activityAnalytics.error} />
           ) : (
             <AerobicEfficiencyChart
-              activities={cyclingEfficiencyActivities}
-              maxHr={efficiency.data?.maxHr ?? null}
-              loading={efficiency.isLoading}
+              activities={activityAnalytics.data?.aerobicEfficiency.activities ?? []}
+              maxHr={activityAnalytics.data?.aerobicEfficiency.maxHr ?? null}
+              loading={activityAnalytics.isLoading}
             />
           )}
         </Section>
@@ -225,12 +182,12 @@ function CyclingTab() {
           title="Vertical Ascent Rate"
           subtitle="Climbing speed — meters gained per hour while ascending"
         >
-          {verticalAscent.error ? (
-            <QueryStatePanel error={verticalAscent.error} />
+          {activityAnalytics.error ? (
+            <QueryStatePanel error={activityAnalytics.error} />
           ) : (
             <VerticalAscentChart
-              data={verticalAscent.data ?? []}
-              loading={verticalAscent.isLoading}
+              data={activityAnalytics.data?.verticalAscent ?? []}
+              loading={activityAnalytics.isLoading}
             />
           )}
         </Section>
@@ -240,23 +197,34 @@ function CyclingTab() {
         title="Activity Variability Index"
         subtitle="Normalized power vs average power ratio per activity"
       >
-        {variability.error ? (
-          <QueryStatePanel error={variability.error} />
+        {activityAnalytics.error ? (
+          <QueryStatePanel error={activityAnalytics.error} />
         ) : (
           <ActivityVariabilityTable
-            data={variability.data?.rows ?? []}
-            totalCount={variability.data?.totalCount ?? 0}
+            data={activityAnalytics.data?.variability.rows ?? []}
+            totalCount={activityAnalytics.data?.variability.totalCount ?? 0}
             offset={variabilityOffset}
             limit={VARIABILITY_PAGE_SIZE}
             onPageChange={setVariabilityOffset}
-            loading={variability.isLoading}
-            emptyReason={variability.data?.emptyReason}
+            loading={activityAnalytics.isLoading}
+            emptyReason={activityAnalytics.data?.variability.emptyReason ?? undefined}
           />
         )}
       </Section>
 
       <Section title="Recent Cycling Activities" subtitle="Recent rides and cycling workouts">
-        <RecentActivitiesSection activityTypes={CYCLING_ACTIVITY_TYPES} />
+        <ActivityList
+          activities={activityAnalytics.data?.activities.items ?? []}
+          loading={activityAnalytics.isLoading}
+          error={activityAnalytics.error?.message}
+          totalCount={activityAnalytics.data?.activities.totalCount}
+          page={activityPage}
+          pageSize={ACTIVITY_PAGE_SIZE}
+          onPageChange={setActivityPage}
+          onBulkDelete={(ids) => bulkDelete.mutate({ ids })}
+          bulkDeletePending={bulkDelete.isPending}
+          bulkDeleteError={bulkDelete.error?.message}
+        />
       </Section>
     </>
   );
@@ -265,8 +233,8 @@ function CyclingTab() {
 // ── Power Summary Table ──
 
 interface PowerSummaryTableProps {
-  recentByDuration: Map<number, number>;
-  seasonByDuration: Map<number, number>;
+  recentByDuration: Map<number, { watts: number; wattsPerKg: number | null }>;
+  seasonByDuration: Map<number, { watts: number; wattsPerKg: number | null }>;
   recentModel: { cp: number; wPrime: number; r2: number } | null;
   seasonModel: { cp: number; wPrime: number; r2: number } | null;
   recentMap: number | null;
@@ -275,7 +243,6 @@ interface PowerSummaryTableProps {
   seasonVo2max: number | null;
   recentTte: number | null;
   seasonTte: number | null;
-  weightKg: number | null;
   loading: boolean;
   recentDays: TimeRangeDays;
 }
@@ -291,17 +258,11 @@ function PowerSummaryTable({
   seasonVo2max,
   recentTte,
   seasonTte,
-  weightKg,
   loading,
   recentDays,
 }: PowerSummaryTableProps) {
   if (loading) {
     return <div className="w-[260px] animate-pulse bg-skeleton rounded h-[280px]" />;
-  }
-
-  function wkg(watts: number | null): string {
-    if (watts == null || !weightKg) return "--";
-    return formatNumber(watts / weightKg, 2);
   }
 
   return (
@@ -327,15 +288,19 @@ function PowerSummaryTable({
         </thead>
         <tbody>
           {KEY_DURATIONS.map((dur) => {
-            const recent = recentByDuration.get(dur) ?? null;
-            const season = seasonByDuration.get(dur) ?? null;
+            const recent = recentByDuration.get(dur);
+            const season = seasonByDuration.get(dur);
             return (
               <tr key={dur} className="border-b border-border/50">
                 <td className="py-1.5 pr-3 text-muted">{DURATION_LABELS[dur]}</td>
-                <td className="text-right px-2 text-violet-300">{recent ?? "--"}</td>
-                <td className="text-right px-2 text-violet-300">{wkg(recent)}</td>
-                <td className="text-right px-2">{season ?? "--"}</td>
-                <td className="text-right px-2">{wkg(season)}</td>
+                <td className="text-right px-2 text-violet-300">{recent?.watts ?? "--"}</td>
+                <td className="text-right px-2 text-violet-300">
+                  {recent?.wattsPerKg == null ? "--" : formatNumber(recent.wattsPerKg, 2)}
+                </td>
+                <td className="text-right px-2">{season?.watts ?? "--"}</td>
+                <td className="text-right px-2">
+                  {season?.wattsPerKg == null ? "--" : formatNumber(season.wattsPerKg, 2)}
+                </td>
               </tr>
             );
           })}

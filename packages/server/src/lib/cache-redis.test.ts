@@ -14,6 +14,9 @@ function createFakeRedisClient() {
       async get(key: string): Promise<string | null> {
         return values.get(key) ?? null;
       },
+      async mget(...keys: string[]): Promise<Array<string | null>> {
+        return keys.map((key) => values.get(key) ?? null);
+      },
       async del(...keys: string[]): Promise<number> {
         let deleted = 0;
         for (const key of keys) {
@@ -67,6 +70,15 @@ describe("RedisCacheStore", () => {
 
   it("returns undefined for missing keys", async () => {
     expect(await store.get("missing")).toBeUndefined();
+  });
+
+  it("lists registered keys with an optional prefix", async () => {
+    await store.set("user-1:cycling.performance:UTC:{}", "one", 60_000);
+    await store.set("user-1:sleep.list:UTC:{}", "two", 60_000);
+
+    await expect(store.listKeys("user-1:cycling.")).resolves.toEqual([
+      "user-1:cycling.performance:UTC:{}",
+    ]);
   });
 
   it.each([

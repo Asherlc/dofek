@@ -764,6 +764,38 @@ z2_samples Int32,
 is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
+    cycling_activity: `activity_id UUID,
+user_id UUID,
+provider_id String,
+source_providers Array(String),
+activity_type String,
+activity_name Nullable(String),
+started_at DateTime64(6, 'UTC'),
+ended_at Nullable(DateTime64(6, 'UTC')),
+distance_meters Nullable(Float64),
+average_heart_rate Nullable(Float64),
+max_heart_rate Nullable(Float64),
+average_power Nullable(Float64),
+power_samples UInt64,
+heart_rate_samples UInt64,
+normalized_power Nullable(Float64),
+best_twenty_minute_power Nullable(Float64),
+elevation_gain_meters Nullable(Float64),
+elapsed_seconds Int32,
+efficiency_max_heart_rate Nullable(Float64),
+average_power_zone_two Nullable(Float64),
+average_heart_rate_zone_two Nullable(Float64),
+efficiency_factor Nullable(Float64),
+zone_two_samples Nullable(Int32),
+is_deleted UInt8,
+refresh_version UInt64,
+refreshed_at DateTime64(9, 'UTC')`,
+    daily_cycling: `user_id UUID,
+date Date,
+activities Array(Tuple(UUID, DateTime64(6, 'UTC'), Float64, Float64, Float64, Nullable(Float64), UInt64, UInt64, Nullable(Float64), Nullable(String))),
+is_deleted UInt8,
+refresh_version UInt64,
+refreshed_at DateTime64(9, 'UTC')`,
     activity_polarization_zones: `activity_id UUID,
 user_id UUID,
 activity_type String,
@@ -805,6 +837,8 @@ refreshed_at DateTime64(9)`,
     shortViewName === "hiking_activity" ||
     shortViewName === "activity_power_curve" ||
     shortViewName === "activity_aerobic_efficiency" ||
+    shortViewName === "cycling_activity" ||
+    shortViewName === "daily_cycling" ||
     shortViewName === "activity_polarization_zones"
       ? "ReplacingMergeTree(refresh_version)"
       : "MergeTree";
@@ -843,7 +877,11 @@ refreshed_at DateTime64(9)`,
                                   shortViewName === "activity_aerobic_efficiency" ||
                                   shortViewName === "activity_polarization_zones"
                                 ? "(user_id, activity_id)"
-                                : "tuple()";
+                                : shortViewName === "cycling_activity"
+                                  ? "(user_id, activity_id)"
+                                  : shortViewName === "daily_cycling"
+                                    ? "(user_id, date)"
+                                    : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
@@ -2492,6 +2530,12 @@ ${buildTestHealthspanReadModelSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: buildTestAnalyticsTableStatement("analytics.activity_polarization_zones"),
+  });
+  await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.cycling_activity"),
+  });
+  await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.daily_cycling"),
   });
 }
 
