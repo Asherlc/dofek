@@ -4,10 +4,12 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import archiver from "archiver";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Options as YauzlOptions, ZipFile } from "yauzl";
 import yauzl from "yauzl";
 import { processZipEntryExtractJob } from "./process-zip-entry-extract-job.ts";
 
 const createdDirectories: string[] = [];
+type YauzlOpenCallback = (error: Error | null, zipFile: ZipFile) => void;
 
 async function createTempDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "zip-entry-extract-test-"));
@@ -291,12 +293,24 @@ describe("processZipEntryExtractJob", () => {
     const directory = await createTempDirectory();
     const archivePath = join(directory, "export.zip");
     await writeFile(archivePath, await createZip({ "DI_CONNECT/activity.fit": "fit-bytes" }));
-    vi.spyOn(yauzl, "open").mockImplementation(((_filePath, _options, callback) => {
-      if (!callback) {
+    function openWithoutZipFile(
+      _filePath: string,
+      _options: YauzlOptions,
+      callback?: YauzlOpenCallback,
+    ): void;
+    function openWithoutZipFile(_filePath: string, callback?: YauzlOpenCallback): void;
+    function openWithoutZipFile(
+      _filePath: string,
+      optionsOrCallback?: YauzlOptions | YauzlOpenCallback,
+      callback?: YauzlOpenCallback,
+    ): void {
+      const openCallback = typeof optionsOrCallback === "function" ? optionsOrCallback : callback;
+      if (!openCallback) {
         throw new Error("Expected ZIP open callback");
       }
-      Reflect.apply(callback, undefined, [null, undefined]);
-    }) as typeof yauzl.open);
+      Reflect.apply(openCallback, undefined, [null, undefined]);
+    }
+    vi.spyOn(yauzl, "open").mockImplementation(openWithoutZipFile);
 
     await expect(
       processZipEntryExtractJob({
