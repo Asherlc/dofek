@@ -553,7 +553,7 @@ function fitFileImportFlowChild(
     queueName: FIT_FILE_IMPORT_QUEUE,
     data: fitImportData,
     opts: {
-      jobId: `garmin-dump-fit:${createHash("sha256")
+      jobId: `garmin-dump-fit-${createHash("sha256")
         .update(`${userId}\n${uploadPath}\n${entry.path}`)
         .digest("hex")}`,
       removeOnComplete: { age: 86_400, count: 1_000 },
@@ -575,7 +575,7 @@ async function enqueueFitFileImportFlow(
     queueName: FIT_FILE_IMPORT_BATCH_QUEUE,
     data: { type: "fit-file-import-batch" },
     opts: {
-      jobId: `garmin-dump-fit-batch:${basename(uploadPath)}:${createHash("sha256")
+      jobId: `garmin-dump-fit-batch-${createHash("sha256")
         .update(`${userId}\n${uploadPath}\n${entries.map(({ entry }) => entry.path).join("\n")}`)
         .digest("hex")}`,
       removeOnComplete: { age: 86_400, count: 1_000 },

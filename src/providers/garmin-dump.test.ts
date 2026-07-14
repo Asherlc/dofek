@@ -631,7 +631,7 @@ describe("Garmin dump provider", () => {
         queueName: "fit-file-import-batch",
         data: { type: "fit-file-import-batch" },
         opts: {
-          jobId: `garmin-dump-fit-batch:garmin-export.zip:${expectedFlowHash(
+          jobId: `garmin-dump-fit-batch-${expectedFlowHash(
             [
               "user-1",
               filePath,
@@ -660,7 +660,7 @@ describe("Garmin dump provider", () => {
           sourceName: "Garmin Dump",
         }),
         opts: expect.objectContaining({
-          jobId: `garmin-dump-fit:${expectedFlowHash(
+          jobId: `garmin-dump-fit-${expectedFlowHash(
             [
               "user-1",
               filePath,
@@ -711,7 +711,7 @@ describe("Garmin dump provider", () => {
           }),
         }),
         opts: expect.objectContaining({
-          jobId: `garmin-dump-fit:${expectedFlowHash(
+          jobId: `garmin-dump-fit-${expectedFlowHash(
             [
               "user-1",
               filePath,

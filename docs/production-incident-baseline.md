@@ -13066,3 +13066,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the active job is cleared. Add phase-level Garmin dump extraction logs so a
   future archive-reader stall reports the active entry and byte progress rather
   than presenting only a stale BullMQ percentage.
+
+## 2026-07-14 — Garmin FIT Import Flow Rejected Custom Job IDs
+
+- **Symptoms:** Garmin dump imports failed while creating the FIT import flow
+  with `Failed to process Garmin FIT import jobs: Custom Id cannot contain :`.
+- **User impact:** FIT activities and weight records in Garmin dump uploads were
+  not processed.
+- **Evidence:** `enqueueFitFileImportFlow()` constructed the batch ID as
+  `garmin-dump-fit-batch:<filename>:<hash>`, while `fitFileImportFlowChild()`
+  constructed child IDs as `garmin-dump-fit:<hash>`. BullMQ reserves colons as
+  Redis key separators and prohibits them in custom job IDs, including flow
+  jobs ([BullMQ job ID documentation](https://docs.bullmq.io/guide/jobs/job-ids),
+  [BullMQ flow documentation](https://docs.bullmq.io/guide/flows)).
+- **Root cause:** The Garmin FIT flow used colon-delimited custom BullMQ job IDs.
+- **Fix / mitigation:** Changed both IDs to deterministic, colon-free forms:
+  `garmin-dump-fit-<hash>` and `garmin-dump-fit-batch-<hash>`. The batch hash
+  still includes the upload path and entries, preserving uniqueness without
+  embedding a potentially unsafe filename.
+- **Validation:** The regression test failed against the old IDs and all 28
+  Garmin dump unit tests passed after the fix.
+- **Remaining risk / follow-up:** The fix still needs deployment, followed by a
+  retry of the failed Garmin dump import.
