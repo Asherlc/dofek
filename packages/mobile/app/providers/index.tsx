@@ -29,6 +29,7 @@ import { useRefresh } from "../../lib/useRefresh";
 import { deleteDietarySamples, writeDietarySamples } from "../../modules/health-kit";
 import { colors } from "../../theme";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals.tsx";
+import { getFileImportProviderConfig } from "./file-import-providers.ts";
 import {
   importProviderLabel,
   type Provider,
@@ -326,27 +327,32 @@ export default function ProvidersScreen() {
     void importFile(sharedFileUri);
   }, [importFile, sessionToken, sharedFileUri]);
 
-  const handleGarminDumpImport = useCallback(async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        copyToCacheDirectory: true,
-        multiple: false,
-        type: ["application/zip", "application/x-zip-compressed"],
-      });
-      if (result.canceled) return;
-      const asset = result.assets[0];
-      if (!asset) return;
-      await importFile(asset.uri, "garmin-dump");
-    } catch (error: unknown) {
-      captureException(error, { context: "garmin-dump-document-picker" });
-      setSharedImportState({
-        status: "error",
-        progress: 0,
-        message: error instanceof Error ? error.message : "Unable to select Garmin export",
-        providerId: "garmin-dump",
-      });
-    }
-  }, [importFile]);
+  const handleFileImportProvider = useCallback(
+    async (providerId: ImportProviderId) => {
+      const providerConfig = getFileImportProviderConfig(providerId);
+      if (!providerConfig) return;
+      try {
+        const result = await DocumentPicker.getDocumentAsync({
+          copyToCacheDirectory: true,
+          multiple: false,
+          type: providerConfig.documentTypes,
+        });
+        if (result.canceled) return;
+        const asset = result.assets[0];
+        if (!asset) return;
+        await importFile(asset.uri, providerConfig.providerId);
+      } catch (error: unknown) {
+        captureException(error, { context: "file-import-document-picker", providerId });
+        setSharedImportState({
+          status: "error",
+          progress: 0,
+          message: error instanceof Error ? error.message : providerConfig.selectionErrorMessage,
+          providerId: providerConfig.providerId,
+        });
+      }
+    },
+    [importFile],
+  );
 
   const handleSyncProvider = useCallback(
     async (providerId: string, fullSync = false) => {
@@ -693,6 +699,7 @@ export default function ProvidersScreen() {
         <QueryStatePanel variant="loading" style={styles.card} />
       ) : null}
       {providerList.map((provider) => {
+        const fileImportProviderConfig = getFileImportProviderConfig(provider.id);
         const activeImport = activeImportByProvider.get(provider.id);
         const activeImportProgress = activeImport
           ? {
@@ -718,7 +725,11 @@ export default function ProvidersScreen() {
             onSync={() => handleSyncProvider(provider.id)}
             onFullSync={() => handleSyncProvider(provider.id, true)}
             onConnect={() => handleConnect(provider)}
-            onImport={provider.id === "garmin-dump" ? handleGarminDumpImport : undefined}
+            onImport={
+              fileImportProviderConfig
+                ? () => handleFileImportProvider(fileImportProviderConfig.providerId)
+                : undefined
+            }
             onPress={() => router.push(`/providers/${provider.id}`)}
           />
         );

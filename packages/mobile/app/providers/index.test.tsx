@@ -1276,6 +1276,97 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("selects and imports a Strong CSV from the Strong card", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [importOnlyProvider],
+      isLoading: false,
+      error: null,
+    });
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///tmp/strong-export.csv",
+          name: "strong-export.csv",
+          mimeType: "text/csv",
+        },
+      ],
+    });
+    mockImportSharedFile.mockResolvedValue({ providerId: "strong-csv", jobId: "job-strong" });
+
+    await renderProvidersScreen();
+
+    const strongCard = within(screen.getByTestId("provider-card-strong-csv"));
+    fireEvent.click(strongCard.getByText("Import file"));
+
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+      });
+      expect(mockImportSharedFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileUri: "file:///tmp/strong-export.csv",
+          providerId: "strong-csv",
+          serverUrl: "https://test.example.com",
+          sessionToken: "test-token",
+        }),
+        expect.objectContaining({ readBlob: expect.any(Function) }),
+      );
+    });
+  });
+
+  it("selects and imports a Cronometer CSV from the Cronometer card", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          ...importOnlyProvider,
+          id: "cronometer-csv",
+          name: "Cronometer",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///tmp/cronometer-export.csv",
+          name: "cronometer-export.csv",
+          mimeType: "text/csv",
+        },
+      ],
+    });
+    mockImportSharedFile.mockResolvedValue({
+      providerId: "cronometer-csv",
+      jobId: "job-cronometer",
+    });
+
+    await renderProvidersScreen();
+
+    const cronometerCard = within(screen.getByTestId("provider-card-cronometer-csv"));
+    fireEvent.click(cronometerCard.getByText("Import file"));
+
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+      });
+      expect(mockImportSharedFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileUri: "file:///tmp/cronometer-export.csv",
+          providerId: "cronometer-csv",
+          serverUrl: "https://test.example.com",
+          sessionToken: "test-token",
+        }),
+        expect.objectContaining({ readBlob: expect.any(Function) }),
+      );
+    });
+  });
+
   it("shows resumable progress for an in-flight Garmin import", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [
