@@ -29,6 +29,7 @@ import { useRefresh } from "../../lib/useRefresh";
 import { deleteDietarySamples, writeDietarySamples } from "../../modules/health-kit";
 import { colors } from "../../theme";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals.tsx";
+import { FileImportProviderCard } from "./file-import-provider-card.tsx";
 import { getFileImportProviderConfig } from "./file-import-providers.ts";
 import {
   importProviderLabel,
@@ -655,7 +656,7 @@ export default function ProvidersScreen() {
         loading={dataHealth.isLoading}
       />
       <Text style={styles.sectionTitle}>Data Sources</Text>
-      <ProviderCard
+      <FileImportProviderCard
         provider={{
           ...appleHealthProvider,
         }}
@@ -668,6 +669,7 @@ export default function ProvidersScreen() {
         onSync={() => handleHealthKitSync()}
         onFullSync={() => handleHealthKitSync(true)}
         onConnect={handleHealthKitConnect}
+        onImportProvider={handleFileImportProvider}
         onPress={() => router.push("/providers/apple_health")}
       />
       {appleHealth.model.shouldShowPermissionBanner() && (
@@ -715,8 +717,8 @@ export default function ProvidersScreen() {
               }
             : undefined;
         const importProgress = localImportProgress ?? activeImportProgress;
-        return (
-          <ProviderCard
+        return fileImportProviderConfig ? (
+          <FileImportProviderCard
             key={provider.id}
             provider={provider}
             stats={statsMap[provider.id]}
@@ -725,11 +727,19 @@ export default function ProvidersScreen() {
             onSync={() => handleSyncProvider(provider.id)}
             onFullSync={() => handleSyncProvider(provider.id, true)}
             onConnect={() => handleConnect(provider)}
-            onImport={
-              fileImportProviderConfig
-                ? () => handleFileImportProvider(fileImportProviderConfig.providerId)
-                : undefined
-            }
+            onImportProvider={handleFileImportProvider}
+            onPress={() => router.push(`/providers/${provider.id}`)}
+          />
+        ) : (
+          <ProviderCard
+            key={provider.id}
+            provider={provider}
+            stats={statsMap[provider.id]}
+            syncing={syncingProviders.has(provider.id)}
+            syncProgress={syncProgress[provider.id]}
+            onSync={() => handleSyncProvider(provider.id)}
+            onFullSync={() => handleSyncProvider(provider.id, true)}
+            onConnect={() => handleConnect(provider)}
             onPress={() => router.push(`/providers/${provider.id}`)}
           />
         );

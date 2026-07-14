@@ -662,6 +662,51 @@ describe("ProviderCard", () => {
     expect(screen.getByText("Wahoo")).toBeTruthy();
   });
 
+  it("renders the shared file import button alongside sync for providers that support both", async () => {
+    const { ProviderCard } = await import("./provider-card.tsx");
+    const importFile = vi.fn();
+    render(
+      <ProviderCard
+        provider={makeProvider({ id: "apple_health", label: "Apple Health" })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onFullSync={noopFn}
+        onConnect={noopFn}
+        onImport={importFile}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(screen.getByText("Sync")).toBeTruthy();
+    fireEvent.click(screen.getByText("Import file"));
+
+    expect(importFile).toHaveBeenCalledOnce();
+  });
+
+  it("wires provider ids through the shared file import provider card", async () => {
+    const { FileImportProviderCard } = await import("./file-import-provider-card.tsx");
+    const importProvider = vi.fn();
+    render(
+      <FileImportProviderCard
+        provider={makeProvider({ id: "apple_health", label: "Apple Health" })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onFullSync={noopFn}
+        onConnect={noopFn}
+        onImportProvider={importProvider}
+        onPress={noopFn}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Import file"));
+
+    expect(importProvider).toHaveBeenCalledWith("apple-health");
+  });
+
   describe("import-only providers", () => {
     it("does not render Sync button for import-only providers", async () => {
       const { ProviderCard } = await import("./provider-card.tsx");
@@ -1839,6 +1884,47 @@ describe("ProvidersScreen", () => {
     expect(
       screen.getByTestId("provider-card-apple_health-progress-fill").getAttribute("data-style"),
     ).toContain('"width":"42%"');
+  });
+
+  it("selects and imports an Apple Health export from the Apple Health card", async () => {
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///tmp/apple-health-export.zip",
+          name: "apple-health-export.zip",
+          mimeType: "application/zip",
+        },
+      ],
+    });
+    mockImportSharedFile.mockResolvedValue({ providerId: "apple-health", jobId: "job-apple" });
+
+    await renderProvidersScreen();
+
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Import file")).toBeTruthy();
+    });
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    fireEvent.click(appleCard.getByText("Import file"));
+
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ["application/zip", "application/x-zip-compressed", "application/xml", "text/xml"],
+      });
+      expect(mockImportSharedFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileUri: "file:///tmp/apple-health-export.zip",
+          providerId: "apple-health",
+          serverUrl: "https://test.example.com",
+          sessionToken: "test-token",
+        }),
+        expect.objectContaining({ readBlob: expect.any(Function) }),
+      );
+    });
   });
 
   it("triggers HealthKit sync with syncRangeDays: 7 when Sync is clicked", async () => {

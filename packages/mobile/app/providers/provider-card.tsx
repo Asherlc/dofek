@@ -5,6 +5,7 @@ import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
+import { FileImportButton } from "./file-import-button.tsx";
 import { styles } from "./styles.ts";
 
 export type AuthStatus = "connected" | "not_connected" | "expired";
@@ -99,7 +100,7 @@ export function ProviderCard({
   const dotColor = statusDotColor(provider.authStatus);
   const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
   const canRunManualSync = !provider.importOnly && !provider.pushOnly;
-  const canImport = provider.importOnly && onImport !== undefined;
+  const canImport = onImport !== undefined;
 
   return (
     <View style={styles.card} testID={`provider-card-${provider.id}`}>
@@ -110,22 +111,31 @@ export function ProviderCard({
           <Text style={styles.cardTitle}>{provider.label}</Text>
         </TouchableOpacity>
         {(canRunManualSync || canImport) && (
-          <TouchableOpacity
-            style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
-            onPress={
-              canImport ? onImport : provider.authStatus === "connected" ? onSync : onConnect
-            }
-            activeOpacity={0.7}
-            disabled={syncing}
-          >
-            {syncing ? (
-              <ActivityIndicator color={colors.text} size="small" />
-            ) : (
-              <Text style={styles.syncButtonText}>
-                {canImport ? "Import file" : providerActionLabel(provider.authStatus)}
-              </Text>
-            )}
-          </TouchableOpacity>
+          <View style={styles.cardActions}>
+            {canRunManualSync ? (
+              <TouchableOpacity
+                style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
+                onPress={provider.authStatus === "connected" ? onSync : onConnect}
+                activeOpacity={0.7}
+                disabled={syncing}
+              >
+                {syncing ? (
+                  <ActivityIndicator color={colors.text} size="small" />
+                ) : (
+                  <Text style={styles.syncButtonText}>
+                    {providerActionLabel(provider.authStatus)}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ) : null}
+            {canImport ? (
+              <FileImportButton
+                disabled={syncing}
+                loading={syncing && provider.importOnly}
+                onPress={onImport}
+              />
+            ) : null}
+          </View>
         )}
       </View>
 

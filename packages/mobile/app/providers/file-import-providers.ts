@@ -14,6 +14,16 @@ const csvDocumentTypes = [
 ];
 
 const fileImportProviderConfigs = {
+  "apple-health": {
+    providerId: "apple-health",
+    documentTypes: [
+      "application/zip",
+      "application/x-zip-compressed",
+      "application/xml",
+      "text/xml",
+    ],
+    selectionErrorMessage: "Unable to select Apple Health export",
+  },
   "strong-csv": {
     providerId: "strong-csv",
     documentTypes: csvDocumentTypes,
@@ -35,6 +45,9 @@ export function getFileImportProviderConfig(
   providerId: string,
 ): FileImportProviderConfig | undefined {
   switch (providerId) {
+    case "apple-health":
+    case "apple_health":
+      return fileImportProviderConfigs["apple-health"];
     case "strong-csv":
     case "cronometer-csv":
     case "garmin-dump":

@@ -1,0 +1,41 @@
+import type { ProviderStats } from "@dofek/providers/provider-stats";
+import type { ImportProviderId } from "../../lib/share-import";
+import { getFileImportProviderConfig } from "./file-import-providers.ts";
+import { type Provider, ProviderCard } from "./provider-card.tsx";
+
+export function FileImportProviderCard({
+  provider,
+  stats,
+  syncing,
+  syncProgress,
+  onSync,
+  onFullSync,
+  onConnect,
+  onImportProvider,
+  onPress,
+}: {
+  provider: Provider;
+  stats: ProviderStats | undefined;
+  syncing: boolean;
+  syncProgress: { percentage?: number; message?: string } | undefined;
+  onSync: () => void;
+  onFullSync: () => void;
+  onConnect: () => void;
+  onImportProvider: (providerId: ImportProviderId) => void;
+  onPress: () => void;
+}) {
+  const providerConfig = getFileImportProviderConfig(provider.id);
+  return (
+    <ProviderCard
+      provider={provider}
+      stats={stats}
+      syncing={syncing}
+      syncProgress={syncProgress}
+      onSync={onSync}
+      onFullSync={onFullSync}
+      onConnect={onConnect}
+      onImport={providerConfig ? () => onImportProvider(providerConfig.providerId) : undefined}
+      onPress={onPress}
+    />
+  );
+}
