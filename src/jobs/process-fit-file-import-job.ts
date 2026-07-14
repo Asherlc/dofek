@@ -81,11 +81,9 @@ const fitFileImportCleanupPathSchema = z.object({
   filePath: z.string(),
 });
 
-const fitFileImportErrorPathSchema = z
-  .object({
-    originalPath: z.string().optional(),
-  })
-  .passthrough();
+const fitFileImportErrorPathSchema = z.looseObject({
+  originalPath: z.string().optional(),
+});
 
 type ResolvedFitFileImportJobData = FitFileImportJobData & { filePath: string };
 
@@ -376,6 +374,7 @@ export async function processFitFileImportJob(
     for (const path of pathsToClean) {
       await unlink(path).catch((error: unknown) => {
         logger.warn("Failed to clean up FIT import file %s: %s", path, error);
+        Sentry.captureException(error, { tags: { fitImportStep: "cleanup" }, extra: { path } });
       });
     }
   }

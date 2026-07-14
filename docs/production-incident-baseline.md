@@ -12902,9 +12902,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `DI_CONNECT/DI-Connect-Uploaded-Files/*Part1.zip` nested ZIPs. Each nested ZIP
   contained 7,887 FIT files totaling about 44 MiB uncompressed.
 - **Root cause:** `src/providers/garmin-dump.ts` previously read the full uploaded ZIP
-  into memory, recursively buffers every extracted entry into arrays, including
+  into memory, recursively buffered every extracted entry into arrays, including
   unrelated Garmin account-export payloads and both large nested uploaded-file
-  ZIPs, and only extends the BullMQ import-job lock with a one-shot 10-minute
+  ZIPs, and only extended the BullMQ import-job lock with a one-shot 10-minute
   extension. The 48 MiB export expanded into thousands of buffered FIT entries
   inside the 400 MiB worker container while the same process was also running
   other provider workers. The first attempt was OOM-killed, which stopped lock

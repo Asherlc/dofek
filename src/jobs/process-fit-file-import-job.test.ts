@@ -211,6 +211,45 @@ describe("processFitFileImportJob", () => {
     await expect(readFile(filePath)).rejects.toThrow();
   });
 
+  it("reports cleanup failures to Sentry", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "fit-file-import-cleanup-failure-test-"));
+    createdDirectories.push(directory);
+
+    const result = await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath: directory,
+        originalPath: "DI_CONNECT/activity.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
+      mockDb,
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors[0]?.message).toContain(
+      "Failed to import FIT file DI_CONNECT/activity.fit:",
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { fitImportStep: "cleanup" },
+      extra: { path: directory },
+    });
+  });
+
+  it("keeps originalPath for error messages when job data has extra fields", async () => {
+    const result = await processFitFileImportJob(
+      createFitFileImportJob({
+        originalPath: "DI_CONNECT/activity.fit",
+        ignored: "extra",
+      }),
+      mockDb,
+    );
+
+    expect(result.errors[0]?.message).toContain(
+      "Failed to import FIT file DI_CONNECT/activity.fit:",
+    );
+  });
+
   it("imports an activity FIT file with a parent summary and replaces sensor samples", async () => {
     const filePath = await writeTempFit(createActivityFit());
 
