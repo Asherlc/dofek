@@ -13012,10 +13012,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   ([Apple TN2339](https://developer.apple.com/library/archive/technotes/tn2339/_index.html)).
 - **Fix / mitigation:** Updated the watchOS workflow to skip CocoaPods in the
   watch job, validate `DofekWatch` from `packages/mobile/ios/Dofek.xcodeproj`,
-  and build that generated project scheme directly with the existing
-  `watchOS Simulator` destination and `-derivedDataPath`. The watch DerivedData
-  cache key now hashes `packages/mobile/app.config.js`, the actual Expo config
-  file, rather than the obsolete `app.config.ts` path.
+  and build that generated project target directly with the watch simulator
+  SDK. A first branch validation run
+  [`29336594786`](https://github.com/Asherlc/dofek/actions/runs/29336594786)
+  proved the timeout was gone but showed the generated `DofekWatch` scheme
+  still included the main `Dofek` iOS target, which failed the CocoaPods
+  manifest check without `pod install`; the workflow now uses `-target
+  DofekWatch -sdk watchsimulator` instead of the generated scheme so only the
+  watch target enters the build graph.
 - **Validation:** Local prebuild confirmed `DofekWatch` exists as a generated
   project scheme before `pod install`, and the pre-CocoaPods generated project
   contained no `RNReanimated`, `Pods-DofekWatch`, or `libPods-DofekWatch`

@@ -159,8 +159,6 @@ jobs:
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-26
-    env:
-      DERIVED_DATA_PATH: ${{ github.workspace }}/WatchDerivedData
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -172,17 +170,11 @@ jobs:
       - name: Generate native project
         working-directory: packages/mobile
         run: pnpm expo prebuild --clean --platform ios --no-install
-      - name: Cache DerivedData
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DERIVED_DATA_PATH }}
-          key: watch-deriveddata-v2-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.js', 'packages/mobile/targets/DofekWatch/expo-target.config.js', 'pnpm-lock.yaml', 'packages/mobile/targets/DofekWatch/**/*.swift', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
-          restore-keys: watch-deriveddata-v2-
-      - name: Validate Watch scheme
+      - name: Validate Watch target
         run: |
           set -euo pipefail
           xcodebuild -list -json -project packages/mobile/ios/Dofek.xcodeproj \
-            | ruby -rjson -e 'schemes = JSON.parse(STDIN.read).dig("project", "schemes") || []; abort("DofekWatch scheme not found") unless schemes.include?("DofekWatch")'
+            | ruby -rjson -e 'targets = JSON.parse(STDIN.read).dig("project", "targets") || []; abort("DofekWatch target not found") unless targets.include?("DofekWatch")'
       - name: Build Watch target for simulator
         timeout-minutes: 25
         run: |
@@ -190,10 +182,9 @@ jobs:
           BUILD_DIR="$(pwd)/packages/mobile/ios/build"
           xcodebuild build \
             -project packages/mobile/ios/Dofek.xcodeproj \
-            -scheme DofekWatch \
+            -target DofekWatch \
             -configuration Debug \
-            -destination 'generic/platform=watchOS Simulator' \
-            -derivedDataPath "$DERIVED_DATA_PATH" \
+            -sdk watchsimulator \
             SYMROOT="$BUILD_DIR" \
             CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
