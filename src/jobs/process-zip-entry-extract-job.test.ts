@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import archiver from "archiver";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import yauzl from "yauzl";
 import { processZipEntryExtractJob } from "./process-zip-entry-extract-job.ts";
 
 const createdDirectories: string[] = [];
@@ -36,6 +37,7 @@ async function createZip(entries: Record<string, Buffer | string>): Promise<Buff
 
 describe("processZipEntryExtractJob", () => {
   afterEach(async () => {
+    vi.restoreAllMocks();
     await Promise.all(
       createdDirectories
         .splice(0)
@@ -277,7 +279,31 @@ describe("processZipEntryExtractJob", () => {
           outputExtension: "fit",
         },
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow("End of central directory record signature not found");
+
+    const directoryEntries = await readdir(directory);
+    expect(
+      directoryEntries.filter((entryName) => entryName.startsWith(".zip-entry-extract-")),
+    ).toEqual([]);
+  });
+
+  it("rejects when the ZIP library returns no opened file", async () => {
+    const directory = await createTempDirectory();
+    const archivePath = join(directory, "export.zip");
+    await writeFile(archivePath, await createZip({ "DI_CONNECT/activity.fit": "fit-bytes" }));
+    vi.spyOn(yauzl, "open").mockImplementation(((_filePath, _options, callback) => {
+      callback(null, undefined);
+    }) as typeof yauzl.open);
+
+    await expect(
+      processZipEntryExtractJob({
+        data: {
+          archivePath,
+          entryPath: ["DI_CONNECT/activity.fit"],
+          outputExtension: "fit",
+        },
+      }),
+    ).rejects.toThrow(`ZIP file could not be opened: ${archivePath}`);
 
     const directoryEntries = await readdir(directory);
     expect(
