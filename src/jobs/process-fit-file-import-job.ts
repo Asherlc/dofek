@@ -17,6 +17,7 @@ import { type FitFileImportJobData, fitFileImportJobDataSchema } from "./queues.
 
 interface FitFileImportJob {
   data: unknown;
+  getChildrenValues?: () => Promise<Record<string, unknown>>;
   updateProgress: (data: FitFileImportProgressInfo) => Promise<void>;
 }
 
@@ -72,13 +73,55 @@ const decodedFitSchema = z.object({
   messages: fitMessagesSchema.optional(),
 });
 
+const zipEntryExtractJobResultSchema = z.object({
+  filePath: z.string(),
+});
+
 const fitFileImportCleanupPathSchema = z.object({
   filePath: z.string(),
 });
 
+const fitFileImportErrorPathSchema = z.looseObject({
+  originalPath: z.string().optional(),
+});
+
+type ResolvedFitFileImportJobData = FitFileImportJobData & { filePath: string };
+
 function cleanupPathFromJobData(data: unknown): string | null {
   const parsed = fitFileImportCleanupPathSchema.safeParse(data);
   return parsed.success ? parsed.data.filePath : null;
+}
+
+async function cleanupPathsFromChildResults(job: FitFileImportJob): Promise<string[]> {
+  if (!job.getChildrenValues) return [];
+  const childrenValues = await job.getChildrenValues();
+  return Object.values(childrenValues).flatMap((value) => {
+    const parsed = zipEntryExtractJobResultSchema.safeParse(value);
+    return parsed.success ? [parsed.data.filePath] : [];
+  });
+}
+
+function originalPathFromJobData(data: unknown): string {
+  const parsed = fitFileImportErrorPathSchema.safeParse(data);
+  return parsed.success ? (parsed.data.originalPath ?? "unknown FIT file") : "unknown FIT file";
+}
+
+function fitFileImportErrorResult(data: unknown, error: unknown): FitFileImportJobResult {
+  const originalPath = originalPathFromJobData(data);
+  Sentry.captureException(error, {
+    tags: { fitImportStep: "process" },
+    extra: { originalPath },
+  });
+  return {
+    recordsSynced: 0,
+    errors: [
+      {
+        message: `Failed to import FIT file ${originalPath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      },
+    ],
+  };
 }
 
 async function updateFitFileImportProgress(
@@ -155,7 +198,7 @@ function isWeightFit(messages: z.infer<typeof fitMessagesSchema>): boolean {
 
 async function importWeightFit(
   db: SyncDatabase,
-  data: FitFileImportJobData,
+  data: ResolvedFitFileImportJobData,
   messages: z.infer<typeof fitMessagesSchema>,
 ): Promise<FitFileImportJobResult> {
   const rows = messages.weightScaleMesgs ?? [];
@@ -186,7 +229,7 @@ async function importWeightFit(
 
 async function importActivityFit(
   db: SyncDatabase,
-  data: FitFileImportJobData,
+  data: ResolvedFitFileImportJobData,
   buffer: Buffer,
   onProgress: (info: FitFileImportProgressInfo) => Promise<void>,
 ): Promise<FitFileImportJobResult> {
@@ -243,17 +286,46 @@ async function importActivityFit(
   return { recordsSynced: summary ? 0 : 1, errors: [] };
 }
 
+async function resolveFlowChildFilePath(job: FitFileImportJob): Promise<string> {
+  if (!job.getChildrenValues) {
+    throw new Error("FIT import job is missing filePath and has no child extraction result");
+  }
+  const childrenValues = await job.getChildrenValues();
+  const extractResults = Object.values(childrenValues).map((value) =>
+    zipEntryExtractJobResultSchema.parse(value),
+  );
+  const [extractResult] = extractResults;
+  if (!extractResult || extractResults.length !== 1) {
+    throw new Error(
+      `FIT import job expected 1 child extraction result, got ${extractResults.length}`,
+    );
+  }
+  return extractResult.filePath;
+}
+
+async function resolveFitFileImportJobData(
+  job: FitFileImportJob,
+): Promise<ResolvedFitFileImportJobData> {
+  const data = fitFileImportJobDataSchema.parse(job.data);
+  return { ...data, filePath: data.filePath ?? (await resolveFlowChildFilePath(job)) };
+}
+
 export async function processFitFileImportJob(
   job: FitFileImportJob,
   db: SyncDatabase,
 ): Promise<FitFileImportJobResult> {
+  const pathsToClean = new Set<string>();
   const cleanupFilePath = cleanupPathFromJobData(job.data);
+  if (cleanupFilePath) {
+    pathsToClean.add(cleanupFilePath);
+  }
   try {
     await updateFitFileImportProgress(job, {
       percentage: 0,
       message: "Starting FIT file import...",
     });
-    const data = fitFileImportJobDataSchema.parse(job.data);
+    const data = await resolveFitFileImportJobData(job);
+    pathsToClean.add(data.filePath);
     await updateFitFileImportProgress(job, { percentage: 10, message: "Reading FIT file..." });
     const buffer = await readFile(data.filePath);
     await updateFitFileImportProgress(job, { percentage: 25, message: "Decoding FIT file..." });
@@ -283,10 +355,26 @@ export async function processFitFileImportJob(
       message: "FIT file import complete.",
     });
     return result;
+  } catch (error) {
+    return fitFileImportErrorResult(job.data, error);
   } finally {
-    if (cleanupFilePath) {
-      await unlink(cleanupFilePath).catch((error: unknown) => {
-        logger.warn("Failed to clean up FIT import file %s: %s", cleanupFilePath, error);
+    if (pathsToClean.size === 0) {
+      await cleanupPathsFromChildResults(job)
+        .then((childPaths) => {
+          for (const childPath of childPaths) {
+            pathsToClean.add(childPath);
+          }
+        })
+        .catch((error: unknown) => {
+          logger.warn("Failed to discover FIT import child cleanup paths: %s", error);
+          Sentry.captureException(error, { tags: { fitImportStep: "cleanupDiscovery" } });
+        });
+    }
+
+    for (const path of pathsToClean) {
+      await unlink(path).catch((error: unknown) => {
+        logger.warn("Failed to clean up FIT import file %s: %s", path, error);
+        Sentry.captureException(error, { tags: { fitImportStep: "cleanup" }, extra: { path } });
       });
     }
   }

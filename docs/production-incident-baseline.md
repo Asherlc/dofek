@@ -12880,3 +12880,58 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   summary rebuild still exceeds the local ClickHouse 3 GiB memory limit on the
   recursive activity de-duplication CTE, so hosted CI remains the source of
   truth for the full Stryker matrix.
+
+## 2026-07-13 — Garmin Dump Import Stalled After Worker OOM
+
+- **Symptoms:** BullMQ import job `5`, name `garmin-dump`, failed with
+  `job stalled more than allowable limit`.
+- **User impact:** The Garmin account export import did not complete. Prior
+  Garmin dump import jobs `2`, `3`, and `4` had the same BullMQ failure reason.
+- **Evidence:** Redis stream `bull:import:events` showed job `5` added and made
+  active at `2026-07-13T20:54:30.592Z`, stalled at
+  `2026-07-13T21:05:04.748Z`, became active again, then stalled and failed at
+  `2026-07-13T21:15:24.496Z`; Redis documents `XRANGE` as the command for
+  reading stream entries by ID range
+  ([Redis XRANGE](https://redis.io/docs/latest/commands/xrange/)). The worker container
+  `dofek_worker.1.0exqzy2t768r9kfpmtbar0c0a` ran from
+  `2026-07-13T20:59:55.719Z` to `2026-07-13T21:05:09.463Z` with
+  `Exit=137` and `OOMKilled=true`, as reported by `docker inspect`
+  ([Docker inspect CLI](https://docs.docker.com/reference/cli/docker/inspect/)). The uploaded Garmin dump ZIP remained in
+  `/app/job-files`, was about 48 MiB, had 111 top-level entries and about
+  78.5 MiB top-level uncompressed data, and contained two
+  `DI_CONNECT/DI-Connect-Uploaded-Files/*Part1.zip` nested ZIPs. Each nested ZIP
+  contained 7,887 FIT files totaling about 44 MiB uncompressed.
+- **Root cause:** `src/providers/garmin-dump.ts` previously read the full uploaded ZIP
+  into memory, recursively buffered every extracted entry into arrays, including
+  unrelated Garmin account-export payloads and both large nested uploaded-file
+  ZIPs, and only extended the BullMQ import-job lock with a one-shot 10-minute
+  extension. The 48 MiB export expanded into thousands of buffered FIT entries
+  inside the 400 MiB worker container while the same process was also running
+  other provider workers. The first attempt was OOM-killed, which stopped lock
+  renewal. The retry again exceeded the one-shot lock window and BullMQ failed
+  the job after the second stall; BullMQ documents that jobs rely on worker lock
+  renewal and can be marked stalled, retried, and eventually failed when the
+  lock is not renewed
+  ([BullMQ stalled jobs](https://docs.bullmq.io/guide/workers/stalled-jobs)).
+- **Fix / mitigation:** Updated Garmin dump parsing to open ZIP files from the
+  filesystem, skip irrelevant Garmin export entries before opening their
+  streams, spill selected summary entries to temporary files under the job-files
+  volume, and create a BullMQ flow for selected FIT files. The flow uses a
+  generic ZIP-entry extraction job to materialize entry paths to files, ZIP-
+  agnostic FIT import child jobs to process those files, and a batch parent job
+  to aggregate child results. The import job lock is now renewed periodically
+  during the long-running import instead of relying only on a one-shot 10-minute
+  extension. BullMQ documents flows as parent-child job trees where parent jobs
+  wait for child jobs to finish before processing
+  ([BullMQ flows](https://docs.bullmq.io/guide/flows)).
+- **Validation:** Docker inspect confirmed the OOM kill, Redis import events
+  confirmed the two-stall/fail timeline, queue inspection showed no
+  `fit-file-import` jobs were active/failed at investigation time, and ZIP
+  inspection confirmed the nested uploaded-file FIT volume. Regression coverage
+  now verifies selective filesystem-backed Garmin parsing, one-flow FIT fan-out,
+  generic nested ZIP-entry extraction, FIT import resolution from flow child
+  results, batch result aggregation, queue resource caching, and worker
+  registration for the new queues.
+- **Remaining risk / follow-up:** Medium until deployed and tested against the
+  original production Garmin dump. Increasing the worker memory limit alone
+  would still be a mitigation knob, not the root fix.
