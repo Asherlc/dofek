@@ -1,8 +1,4 @@
-import {
-  type ProviderStats,
-  providerStatsBreakdown,
-  providerStatsTotal,
-} from "@dofek/providers/provider-stats";
+import { type ProviderStats, providerStatsBreakdown } from "@dofek/providers/provider-stats";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
@@ -26,7 +22,7 @@ export function ProviderStatsBreakdown({
   stats: ProviderStats;
   variant?: "compact" | "full";
 }) {
-  const total = providerStatsTotal(stats);
+  const total = stats.totalRecords ?? 0;
   const breakdown = providerStatsBreakdown(stats);
 
   if (total === 0) return null;
@@ -48,10 +44,18 @@ export function ProviderStatsBreakdown({
   }
 
   return (
-    <View style={styles.compactRow}>
-      {breakdown.map((b) => (
-        <StatBadge key={b.label} label={b.label} count={b.count} />
-      ))}
+    <View style={styles.compactContainer}>
+      <View style={styles.compactTotalRow}>
+        <Text style={styles.compactTotalCount}>{total.toLocaleString()}</Text>
+        <Text style={styles.compactTotalLabel}>records</Text>
+      </View>
+      {breakdown.length > 1 && (
+        <View style={styles.statsRow}>
+          {breakdown.map((b) => (
+            <StatBadge key={b.label} label={b.label} count={b.count} />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -82,14 +86,26 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
-  compactRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  compactContainer: {
     gap: 8,
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.surfaceSecondary,
+  },
+  compactTotalRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 4,
+  },
+  compactTotalCount: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  compactTotalLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
   },
   statBadge: {
     flexDirection: "row",

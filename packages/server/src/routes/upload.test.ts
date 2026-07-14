@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../lib/server-utils.ts", () => ({
-  streamToFile: vi.fn(() => Promise.resolve()),
+  MAX_UPLOAD_BYTES: 2 * 1024 * 1024 * 1024,
+  streamToFile: vi.fn(() => Promise.resolve(1)),
   assembleChunks: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
 }));
 
 vi.mock("../lib/start-worker.ts", () => ({
@@ -16,12 +21,16 @@ vi.mock("../logger.ts", () => ({
 const mockRm = vi
   .fn<(path: string, options?: object) => Promise<void>>()
   .mockResolvedValue(undefined);
+const mockRename = vi
+  .fn<(oldPath: string, newPath: string) => Promise<void>>()
+  .mockResolvedValue(undefined);
 const mockUnlink = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined);
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
     rm: (...args: [string, object?]) => mockRm(...args),
+    rename: (oldPath: string, newPath: string) => mockRename(oldPath, newPath),
     unlink: (path: string) => mockUnlink(path),
   };
 });
@@ -55,6 +64,7 @@ function mockQueue() {
     progress: 0,
     failedReason: null,
     returnvalue: null,
+    data: { userId: "user-1" },
   };
   return {
     add: vi.fn(() => Promise.resolve(mockJob)),
@@ -204,6 +214,10 @@ describe("createUploadRouter", () => {
       "upload-assembly-err",
       "upload-rm-assembly-err",
       "upload-assemble-dir",
+      "strong-chunked",
+      "garmin-chunked",
+      "garmin-too-large",
+      "garmin-too-many-chunks",
     ]) {
       await uploadStateStore.deleteUploadSession(uploadId);
       await uploadStateStore.deleteUploadStatus(uploadId);
@@ -482,6 +496,57 @@ describe("createUploadRouter", () => {
         undefined,
       );
     });
+
+    it("accepts chunked CSV uploads through the shared upload flow", async () => {
+      const { app, queue } = createTestApp();
+
+      const first = await request(app, "post", "/api/upload/strong-csv?units=lbs", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "strong-chunked",
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+          "x-file-ext": ".csv",
+        },
+        body: Buffer.from("date,exercise\n"),
+      });
+      const second = await request(app, "post", "/api/upload/strong-csv?units=lbs", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "strong-chunked",
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+          "x-file-ext": ".csv",
+        },
+        body: Buffer.from("2026-01-01,squat"),
+      });
+
+      expect(first.status).toBe(200);
+      expect(JSON.parse(first.body)).toMatchObject({
+        status: "uploading",
+        jobId: "strong-chunked",
+      });
+      expect(second.status).toBe(200);
+      expect(JSON.parse(second.body)).toMatchObject({
+        status: "processing",
+        jobId: "strong-chunked",
+      });
+      await vi.waitFor(() => {
+        expect(queue.add).toHaveBeenCalledWith(
+          "strong-csv",
+          expect.objectContaining({
+            importType: "strong-csv",
+            userId: "user-1",
+            weightUnit: "lbs",
+          }),
+          { jobId: "strong-chunked" },
+        );
+      });
+      expect(assembleChunks).toHaveBeenCalledWith(
+        expect.not.stringContaining("strong-chunked"),
+        expect.not.stringContaining("strong-chunked"),
+      );
+    });
   });
 
   describe("POST /api/upload/apple-health (chunked)", () => {
@@ -578,6 +643,7 @@ describe("createUploadRouter", () => {
     it("returns failed status for failed job", async () => {
       const { app, queue } = createTestApp();
       const mockJob = {
+        data: { userId: "user-1" },
         getState: vi.fn(() => Promise.resolve("failed")),
         progress: 0,
         failedReason: "Out of memory",
@@ -594,6 +660,7 @@ describe("createUploadRouter", () => {
     it("returns processing status for active job", async () => {
       const { app, queue } = createTestApp();
       const mockJob = {
+        data: { userId: "user-1" },
         getState: vi.fn(() => Promise.resolve("active")),
         progress: { percentage: 50, message: "Parsing records..." },
         failedReason: null,
@@ -611,6 +678,7 @@ describe("createUploadRouter", () => {
     it("handles numeric progress", async () => {
       const { app, queue } = createTestApp();
       const mockJob = {
+        data: { userId: "user-1" },
         getState: vi.fn(() => Promise.resolve("active")),
         progress: 75,
         failedReason: null,
@@ -626,6 +694,7 @@ describe("createUploadRouter", () => {
     it("handles undefined progress", async () => {
       const { app, queue } = createTestApp();
       const mockJob = {
+        data: { userId: "user-1" },
         getState: vi.fn(() => Promise.resolve("waiting")),
         progress: null,
         failedReason: null,
@@ -897,7 +966,7 @@ describe("createUploadRouter", () => {
   });
 
   describe("POST /api/upload/apple-health (chunked - all chunks)", () => {
-    it("responds immediately with assembling status when all chunks received", async () => {
+    it("responds with processing status after enqueue when all chunks are received", async () => {
       const { app } = createTestApp();
 
       // Send chunk 0 of 2
@@ -911,7 +980,7 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-0"),
       });
 
-      // Send chunk 1 of 2 (final) — should respond immediately without blocking on assembly
+      // Send chunk 1 of 2 (final) — should enqueue before returning the job ID
       const res = await request(app, "post", "/api/upload/apple-health", {
         headers: {
           "Content-Type": "application/octet-stream",
@@ -924,7 +993,7 @@ describe("createUploadRouter", () => {
 
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
-      expect(data.status).toBe("assembling");
+      expect(data.status).toBe("processing");
       expect(data.jobId).toBe("upload-full");
     });
 
@@ -1007,14 +1076,11 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-1"),
       });
 
-      // Wait for background assembly error + rm error to propagate
-      await vi.waitFor(() => {
-        expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-          "Failed to clean up chunk dir %s: %s",
-          expect.any(String),
-          expect.any(Error),
-        );
-      });
+      expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+        "Failed to clean up chunk dir %s: %s",
+        expect.any(String),
+        expect.any(Error),
+      );
     });
 
     it("warns when rm fails during stale upload cleanup", async () => {
@@ -1048,7 +1114,7 @@ describe("createUploadRouter", () => {
       vi.useRealTimers();
     });
 
-    it("sets error status when background assembly fails", async () => {
+    it("sets error status when assembly fails", async () => {
       vi.mocked(assembleChunks).mockRejectedValueOnce(new Error("disk full"));
       const { app } = createTestApp();
 
@@ -1063,7 +1129,7 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-0"),
       });
 
-      // Send chunk 1 of 2 (final) — responds immediately
+      // Send chunk 1 of 2 (final)
       const res = await request(app, "post", "/api/upload/apple-health", {
         headers: {
           "Content-Type": "application/octet-stream",
@@ -1074,11 +1140,8 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-1"),
       });
 
-      expect(res.status).toBe(200);
-      expect(JSON.parse(res.body).status).toBe("assembling");
-
-      // Let background assembly error propagate through microtasks
-      await new Promise((r) => setTimeout(r, 10));
+      expect(res.status).toBe(500);
+      expect(JSON.parse(res.body)).toEqual({ error: "Failed to assemble uploaded file" });
 
       // Verify error status is set — poll the status endpoint
       const statusRes = await request(
@@ -1115,14 +1178,11 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-1"),
       });
 
-      // Wait for background assembly + enqueue to complete.
-      await vi.waitFor(() => {
-        expect(queue.add).toHaveBeenCalledWith(
-          "apple-health",
-          expect.objectContaining({ importType: "apple-health" }),
-          { jobId: "upload-jobid-test" },
-        );
-      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "apple-health",
+        expect.objectContaining({ importType: "apple-health" }),
+        { jobId: "upload-jobid-test" },
+      );
     });
   });
 
@@ -1176,7 +1236,8 @@ describe("createUploadRouter", () => {
       });
       const assembledPath = vi.mocked(assembleChunks).mock.calls[0][1];
       expect(assembledPath.startsWith(EXPECTED_JOB_FILES_DIR)).toBe(true);
-      expect(assembledPath).toContain("apple-health-upload-assemble-dir");
+      expect(assembledPath).toContain("apple-health-");
+      expect(assembledPath).not.toContain("upload-assemble-dir");
     });
 
     it("writes Strong CSV upload to JOB_FILES_DIR", async () => {
@@ -1271,9 +1332,7 @@ describe("createUploadRouter", () => {
         expect.stringContaining("garmin-dump-"),
         2 * 1024 * 1024 * 1024,
       );
-      expect(vi.mocked(streamToFile).mock.calls[0][1]).toMatch(
-        /garmin-dump-job-\d+-[a-z0-9]{4}\.zip$/,
-      );
+      expect(vi.mocked(streamToFile).mock.calls[0][1]).toMatch(/garmin-dump-[a-f0-9-]+\.zip$/);
       expect(queue.add).toHaveBeenCalledWith(
         "garmin-dump",
         expect.objectContaining({ importType: "garmin-dump", userId: "user-1" }),
@@ -1354,6 +1413,103 @@ describe("createUploadRouter", () => {
 
       expect(res.status).toBe(200);
       expect(streamToFile).toHaveBeenCalled();
+    });
+
+    it("accepts chunked ZIP uploads through the shared upload flow", async () => {
+      const { app, queue } = createTestApp();
+
+      await request(app, "post", "/api/upload/garmin-dump", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "garmin-chunked",
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+          "x-file-ext": ".zip",
+        },
+        body: Buffer.from("PK-1"),
+      });
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "garmin-chunked",
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+          "x-file-ext": ".zip",
+        },
+        body: Buffer.from("PK-2"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toMatchObject({
+        status: "processing",
+        jobId: "garmin-chunked",
+      });
+      await vi.waitFor(() => {
+        expect(queue.add).toHaveBeenCalledWith(
+          "garmin-dump",
+          expect.objectContaining({ importType: "garmin-dump", userId: "user-1" }),
+          { jobId: "garmin-chunked" },
+        );
+      });
+      expect(assembleChunks).toHaveBeenCalledWith(
+        expect.not.stringContaining("garmin-chunked"),
+        expect.not.stringContaining("garmin-chunked"),
+      );
+    });
+
+    it("rejects chunked uploads that exceed the route total size limit", async () => {
+      const { app, queue } = createTestApp();
+      const garminLimitBytes = 2 * 1024 * 1024 * 1024;
+      vi.mocked(streamToFile).mockResolvedValueOnce(garminLimitBytes).mockResolvedValueOnce(1);
+
+      const first = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "garmin-too-large",
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+          "x-file-ext": ".zip",
+        },
+        body: Buffer.from("PK-1"),
+      });
+      const second = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "garmin-too-large",
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+          "x-file-ext": ".zip",
+        },
+        body: Buffer.from("PK-2"),
+      });
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(413);
+      expect(JSON.parse(second.body)).toEqual({ error: "Upload exceeds maximum size" });
+      expect(queue.add).not.toHaveBeenCalled();
+      expect(mockRm).toHaveBeenCalledWith(expect.not.stringContaining("garmin-too-large"), {
+        recursive: true,
+        force: true,
+      });
+    });
+
+    it("rejects chunked uploads with too many chunks", async () => {
+      const { app } = createTestApp();
+
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "garmin-too-many-chunks",
+          "x-chunk-index": "0",
+          "x-chunk-total": "1001",
+          "x-file-ext": ".zip",
+        },
+        body: Buffer.from("PK-1"),
+      });
+
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body)).toEqual({ error: "Invalid chunk headers" });
+      expect(streamToFile).not.toHaveBeenCalled();
     });
 
     it("cleans up the temp file and returns upload failure when streaming fails", async () => {

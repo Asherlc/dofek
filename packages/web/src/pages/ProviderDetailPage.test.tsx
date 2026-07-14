@@ -21,21 +21,29 @@ vi.mock("../components/ProviderLogo.tsx", () => ({
   ProviderLogo: () => <div data-testid="provider-logo" />,
 }));
 
-vi.mock("../components/FileImportZone.tsx", () => ({
-  FileImportZone: ({
+const mockFileImportProviderCard = vi.hoisted(() => vi.fn());
+
+vi.mock("../components/FileImportProviderCard.tsx", () => ({
+  FileImportProviderCard: ({
+    providerId,
     title,
     description,
     showDetailsLink,
   }: {
+    providerId: string;
     title: string;
     description: string;
     showDetailsLink?: boolean;
-  }) => (
-    <div data-testid="file-import-zone" data-show-details-link={String(showDetailsLink)}>
-      <span>{title}</span>
-      <span>{description}</span>
-    </div>
-  ),
+  }) => {
+    mockFileImportProviderCard({ providerId, title, description, showDetailsLink });
+    return (
+      <div data-testid="file-import-provider-card" data-show-details-link={String(showDetailsLink)}>
+        <span>{title}</span>
+        <span>{description}</span>
+        <button type="button">Import file</button>
+      </div>
+    );
+  },
 }));
 
 interface MockProvider {
@@ -144,6 +152,7 @@ afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.clearAllMocks();
+  mockFileImportProviderCard.mockClear();
 });
 
 function queryButton(container: HTMLElement, ariaLabel: string): Element {
@@ -351,17 +360,40 @@ describe("ProviderDetailPage import-only providers", () => {
 
     expect(screen.getByRole("heading", { name: "Garmin Dump" })).toBeTruthy();
     expect(screen.getByText("Import")).toBeTruthy();
-    expect(screen.getByTestId("file-import-zone").getAttribute("data-show-details-link")).toBe(
-      "false",
-    );
+    expect(
+      screen.getByTestId("file-import-provider-card").getAttribute("data-show-details-link"),
+    ).toBe("false");
     expect(screen.getByText(".zip account export from Garmin")).toBeTruthy();
+    expect(screen.getByText("Import file")).toBeTruthy();
     expect(screen.queryByText("Sync Controls")).toBeNull();
   });
 
+  it("shows the shared upload card for Apple Health on the provider detail page", async () => {
+    mockUseParams.mockReturnValue({ id: "apple_health" });
+    mockProviders.data = [];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByRole("heading", { name: "Apple Health" })).toBeTruthy();
+    expect(screen.getByText("Import")).toBeTruthy();
+    expect(screen.getByText(".zip or .xml from Health app export")).toBeTruthy();
+    expect(screen.getByText("Import file")).toBeTruthy();
+    expect(screen.queryByText("Sync Controls")).toBeNull();
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "apple_health",
+        title: "Apple Health",
+        showDetailsLink: false,
+      }),
+    );
+  });
+
   it("shows sync controls for non-import-only providers", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
       {
-        id: "strong-csv",
+        id: "wahoo",
         name: "Wahoo",
         authorized: true,
         authType: "oauth",
@@ -379,9 +411,10 @@ describe("ProviderDetailPage import-only providers", () => {
   });
 
   it("shows provider data readiness when read models are blocked", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
       {
-        id: "strong-csv",
+        id: "wahoo",
         name: "Wahoo",
         authorized: true,
         authType: "oauth",
@@ -417,9 +450,10 @@ describe("ProviderDetailPage import-only providers", () => {
   });
 
   it("shows single-provider cooldown outcome without polling a fake job", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
       {
-        id: "strong-csv",
+        id: "wahoo",
         name: "Wahoo",
         authorized: true,
         authType: "oauth",
@@ -433,7 +467,7 @@ describe("ProviderDetailPage import-only providers", () => {
       providerJobs: [],
       providerResults: [
         {
-          providerId: "strong-csv",
+          providerId: "wahoo",
           status: "skippedCooldown",
           message: "Provider sync skipped: rate-limit cooldown active",
         },
@@ -453,9 +487,10 @@ describe("ProviderDetailPage import-only providers", () => {
   });
 
   it("does not trigger sync for an inverted date range", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
       {
-        id: "strong-csv",
+        id: "wahoo",
         name: "Wahoo",
         authorized: true,
         authType: "oauth",
@@ -477,9 +512,10 @@ describe("ProviderDetailPage import-only providers", () => {
   });
 
   it("does not render disconnect for providers that are not connected", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
       {
-        id: "strong-csv",
+        id: "wahoo",
         name: "Wahoo",
         authorized: false,
         authType: "oauth",

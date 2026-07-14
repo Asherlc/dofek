@@ -207,6 +207,7 @@ describe("SyncRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
         providerId: "wahoo",
+        totalRecords: 168,
         activities: 5,
         dailyMetrics: 30,
         sleepSessions: 0,

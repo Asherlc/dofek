@@ -44,7 +44,14 @@ const mockSyncMutateAsync = vi.hoisted(() => vi.fn());
 const mockPollSyncJob = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
 const mockSyncStatusFetch = vi.hoisted(() => vi.fn());
-const mockFileImportZone = vi.hoisted(() => vi.fn());
+const mockFileImportProviderCard = vi.hoisted(() => vi.fn());
+const mockProviderStatsQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  })),
+);
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -52,7 +59,7 @@ vi.mock("../lib/trpc.ts", () => ({
       providers: {
         useQuery: mockProvidersQuery,
       },
-      providerStats: { useQuery: () => ({ data: [], isLoading: false }) },
+      providerStats: { useQuery: mockProviderStatsQuery },
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
       dataHealth: { useQuery: mockDataHealthQuery },
@@ -85,20 +92,23 @@ vi.mock("./DataSourcesAuthModals.tsx", () => ({
   ),
 }));
 
-vi.mock("./FileImportZone.tsx", () => ({
-  FileImportZone: (props: {
+vi.mock("./FileImportProviderCard.tsx", () => ({
+  FileImportProviderCard: (props: {
     providerId?: string;
     title: string;
     description: string;
     accept: string;
     uploadUrl: string;
     statusUrl: string;
+    chunked?: boolean;
+    stats?: Record<string, unknown>;
   }) => {
-    mockFileImportZone(props);
+    mockFileImportProviderCard(props);
     return (
       <section data-testid={`file-import-${props.providerId ?? props.title}`}>
         <h4>{props.title}</h4>
         <p>{props.description}</p>
+        <button type="button">Import file</button>
       </section>
     );
   },
@@ -180,7 +190,9 @@ describe("DataSourcesPanel", () => {
     mockPollSyncJob.mockResolvedValue(undefined);
     mockInvalidate.mockReset();
     mockSyncStatusFetch.mockReset();
-    mockFileImportZone.mockClear();
+    mockFileImportProviderCard.mockClear();
+    mockProviderStatsQuery.mockReset();
+    mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   });
 
   it("shows server data readiness messages above provider cards", () => {
@@ -323,7 +335,7 @@ describe("DataSourcesPanel", () => {
     expect(screen.getByTestId("file-import-kaya-export")).toBeTruthy();
     expect(screen.getByText("Kaya")).toBeTruthy();
     expect(screen.getByText(".csv export from Kaya")).toBeTruthy();
-    expect(mockFileImportZone).toHaveBeenCalledWith(
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: "kaya-export",
         title: "Kaya",
@@ -331,6 +343,90 @@ describe("DataSourcesPanel", () => {
         accept: ".csv",
         uploadUrl: "/api/upload/kaya-export",
         statusUrl: "/api/upload/kaya-export/status",
+        chunked: true,
+      }),
+    );
+  });
+
+  it("passes provider summaries to file import cards", () => {
+    const appleHealthStats = {
+      providerId: "apple_health",
+      activities: 0,
+      metricStream: 205_367,
+      dailyMetrics: 229,
+      sleepSessions: 155,
+      bodyMeasurements: 43,
+      healthEvents: 392,
+      foodEntries: 0,
+      nutritionDaily: 0,
+      labPanels: 0,
+      labResults: 0,
+      journalEntries: 0,
+    };
+    const kayaStats = {
+      providerId: "kaya-export",
+      activities: 352,
+      metricStream: 205_367,
+      dailyMetrics: 229,
+      sleepSessions: 155,
+      bodyMeasurements: 43,
+      healthEvents: 392,
+      foodEntries: 0,
+      nutritionDaily: 0,
+      labPanels: 0,
+      labResults: 0,
+      journalEntries: 0,
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "kaya-export",
+          name: "Kaya",
+          authorized: true,
+          authType: "file-import",
+          importOnly: true,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockProviderStatsQuery.mockReturnValue({
+      data: [appleHealthStats, kayaStats],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "kaya-export",
+        stats: kayaStats,
+      }),
+    );
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "apple_health",
+        stats: appleHealthStats,
+      }),
+    );
+  });
+
+  it("renders Apple Health through the shared file import provider card", () => {
+    render(<DataSourcesPanel />);
+
+    expect(screen.getByTestId("file-import-apple_health")).toBeTruthy();
+    expect(screen.getByText("Import file")).toBeTruthy();
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "apple_health",
+        title: "Apple Health",
+        description: ".zip or .xml from Health app export",
+        uploadUrl: "/api/upload/apple-health?fullSync=true",
+        statusUrl: "/api/upload/apple-health/status",
+        chunked: true,
       }),
     );
   });

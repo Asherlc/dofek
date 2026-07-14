@@ -5,6 +5,7 @@ import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
+import { FileImportButton } from "./file-import-button.tsx";
 import { styles } from "./styles.ts";
 
 export type AuthStatus = "connected" | "not_connected" | "expired";
@@ -68,6 +69,7 @@ const IMPORT_PROVIDER_LABELS: Readonly<Record<string, string>> = {
   "strong-csv": "Strong",
   "cronometer-csv": "Cronometer",
   "garmin-dump": "Garmin Dump",
+  "kaya-export": "Kaya",
 };
 
 export function importProviderLabel(providerId: string | undefined): string {
@@ -78,25 +80,31 @@ export function ProviderCard({
   provider,
   stats,
   syncing,
+  importing = false,
   syncProgress,
   onSync,
   onFullSync,
   onConnect,
+  onImport,
   onPress,
 }: {
   provider: Provider;
   stats: ProviderStats | undefined;
   syncing: boolean;
+  importing?: boolean;
   syncProgress: { percentage?: number; message?: string } | undefined;
   onSync: () => void;
   onFullSync: () => void;
   onConnect: () => void;
+  onImport?: () => void;
   onPress: () => void;
 }) {
   const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
   const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
   const canRunManualSync = !provider.importOnly && !provider.pushOnly;
+  const canImport = onImport !== undefined;
+  const showingProgress = (syncing || importing) && syncProgress !== undefined;
 
   return (
     <View style={styles.card} testID={`provider-card-${provider.id}`}>
@@ -106,27 +114,37 @@ export function ProviderCard({
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
         </TouchableOpacity>
-        {canRunManualSync && (
-          <TouchableOpacity
-            style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
-            onPress={provider.authStatus === "connected" ? onSync : onConnect}
-            activeOpacity={0.7}
-            disabled={syncing}
-          >
-            {syncing ? (
-              <ActivityIndicator color={colors.text} size="small" />
-            ) : (
-              <Text style={styles.syncButtonText}>{providerActionLabel(provider.authStatus)}</Text>
-            )}
-          </TouchableOpacity>
+        {(canRunManualSync || canImport) && (
+          <View style={styles.cardActions}>
+            {canRunManualSync ? (
+              <TouchableOpacity
+                style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
+                onPress={provider.authStatus === "connected" ? onSync : onConnect}
+                activeOpacity={0.7}
+                disabled={syncing}
+              >
+                {syncing ? (
+                  <ActivityIndicator color={colors.text} size="small" />
+                ) : (
+                  <Text style={styles.syncButtonText}>
+                    {providerActionLabel(provider.authStatus)}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ) : null}
+            {canImport ? (
+              <FileImportButton disabled={importing} loading={importing} onPress={onImport} />
+            ) : null}
+          </View>
         )}
       </View>
 
-      {syncing && syncProgress ? (
+      {showingProgress ? (
         <View style={styles.syncProgressContainer}>
           {syncProgress.percentage != null && (
             <View style={styles.syncProgressTrack}>
               <View
+                testID={`provider-card-${provider.id}-progress-fill`}
                 style={[
                   styles.syncProgressFill,
                   {
@@ -142,7 +160,7 @@ export function ProviderCard({
         </View>
       ) : (
         <View style={styles.cardMeta}>
-          {!syncing && syncProgress?.message ? (
+          {!showingProgress && syncProgress?.message ? (
             <Text style={styles.cardMetaText}>{syncProgress.message}</Text>
           ) : (
             <Text style={styles.cardMetaText}>

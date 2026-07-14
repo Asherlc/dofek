@@ -10,11 +10,12 @@ const mockReplace = vi.fn();
 const mockUseLocalSearchParams = vi.fn().mockReturnValue({});
 const mockSyncMutateAsync = vi.fn();
 const mockImportSharedFile = vi.fn();
+const mockGetDocumentAsync = vi.fn();
 
 vi.mock("react-native", () => ({
   View: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) => {
     const {
-      style: _s,
+      style,
       contentContainerStyle: _cs,
       activeOpacity: _ao,
       numberOfLines: _nl,
@@ -25,6 +26,7 @@ vi.mock("react-native", () => ({
       "div",
       {
         ...(testID ? { "data-testid": testID } : {}),
+        ...(testID && style ? { "data-style": JSON.stringify(style) } : {}),
         ...rest,
       },
       children,
@@ -145,10 +147,14 @@ vi.mock("../../theme", () => ({
   spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
 }));
 
+const mockAuthState = vi.hoisted((): { sessionToken: string | null } => ({
+  sessionToken: "test-token",
+}));
+
 vi.mock("../../lib/auth-context", () => ({
   useAuth: () => ({
     serverUrl: "https://test.example.com",
-    sessionToken: "test-token",
+    sessionToken: mockAuthState.sessionToken,
   }),
 }));
 
@@ -187,6 +193,10 @@ vi.mock("expo-file-system", () => ({
 
 vi.mock("expo-web-browser", () => ({
   openBrowserAsync: vi.fn().mockResolvedValue({ type: "cancel" }),
+}));
+
+vi.mock("expo-document-picker", () => ({
+  getDocumentAsync: (...args: unknown[]) => mockGetDocumentAsync(...args),
 }));
 
 vi.mock("../../lib/share-import", () => ({
@@ -242,12 +252,14 @@ const mockStatsQuery = vi.fn();
 const mockLogsQuery = vi.fn();
 const mockDataHealthQuery = vi.fn();
 const mockActiveSyncsQuery = vi.fn();
+const mockActiveImportsQuery = vi.fn();
 const mockInvalidate = vi.fn();
 const mockInvalidateProviders = vi.fn();
 const mockInvalidateProviderStats = vi.fn();
 const mockInvalidateLogs = vi.fn();
 const mockInvalidateDataHealth = vi.fn();
 const mockInvalidateActiveSyncs = vi.fn();
+const mockInvalidateActiveImports = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockCredentialSignIn = vi.fn();
 const mockGarminSignIn = vi.fn();
@@ -273,6 +285,7 @@ vi.mock("../../lib/trpc", () => ({
       dataHealth: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
       triggerSync: { useMutation: () => ({ mutateAsync: mockSyncMutateAsync }) },
       activeSyncs: { useQuery: (...args: unknown[]) => mockActiveSyncsQuery(...args) },
+      activeImports: { useQuery: (...args: unknown[]) => mockActiveImportsQuery(...args) },
     },
     credentialAuth: {
       signIn: { useMutation: () => ({ mutateAsync: mockCredentialSignIn }) },
@@ -304,6 +317,7 @@ vi.mock("../../lib/trpc", () => ({
         logs: { invalidate: mockInvalidateLogs },
         dataHealth: { invalidate: mockInvalidateDataHealth },
         activeSyncs: { invalidate: mockInvalidateActiveSyncs },
+        activeImports: { invalidate: mockInvalidateActiveImports },
         syncStatus: { fetch: mockSyncStatusFetch },
       },
     }),
@@ -366,6 +380,7 @@ function setupDefaultMocks() {
   mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
   mockActiveSyncsQuery.mockReturnValue({ data: [] });
+  mockActiveImportsQuery.mockReturnValue({ data: [], error: null });
 }
 
 function makeProvider(
@@ -651,7 +666,119 @@ describe("ProviderCard", () => {
     expect(screen.getByText("Wahoo")).toBeTruthy();
   });
 
+  it("renders the shared file import button alongside sync for providers that support both", async () => {
+    const { ProviderCard } = await import("./provider-card.tsx");
+    const importFile = vi.fn();
+    render(
+      <ProviderCard
+        provider={makeProvider({ id: "apple_health", label: "Apple Health" })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onFullSync={noopFn}
+        onConnect={noopFn}
+        onImport={importFile}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(screen.getByText("Sync")).toBeTruthy();
+    fireEvent.click(screen.getByText("Import file"));
+
+    expect(importFile).toHaveBeenCalledOnce();
+  });
+
+  it("wires provider ids through the shared file import provider card", async () => {
+    const { FileImportProviderCard } = await import("./file-import-provider-card.tsx");
+    const importProvider = vi.fn();
+    render(
+      <FileImportProviderCard
+        provider={makeProvider({ id: "apple_health", label: "Apple Health" })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onFullSync={noopFn}
+        onConnect={noopFn}
+        onImportProvider={importProvider}
+        onPress={noopFn}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Import file"));
+
+    expect(importProvider).toHaveBeenCalledWith("apple-health");
+  });
+
+  it("renders the shared provider summary on file import provider cards", async () => {
+    const { FileImportProviderCard } = await import("./file-import-provider-card.tsx");
+    render(
+      <FileImportProviderCard
+        provider={makeProvider({ id: "strong-csv", label: "Strong", importOnly: true })}
+        stats={{
+          totalRecords: 206_539,
+          activities: 352,
+          metricStream: 205_367,
+          dailyMetrics: 229,
+          sleepSessions: 155,
+          bodyMeasurements: 43,
+          healthEvents: 392,
+          foodEntries: 0,
+          nutritionDaily: 0,
+          labPanels: 0,
+          labResults: 0,
+          journalEntries: 0,
+        }}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onFullSync={noopFn}
+        onConnect={noopFn}
+        onImportProvider={noopFn}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(screen.getByText("206,539")).toBeTruthy();
+    expect(screen.getByText("records")).toBeTruthy();
+    expect(screen.getByText("Activities")).toBeTruthy();
+    expect(screen.getByText("352")).toBeTruthy();
+    expect(screen.getByText("Metric Stream")).toBeTruthy();
+    expect(screen.getByText("205,367")).toBeTruthy();
+    expect(screen.getByText("Daily Metrics")).toBeTruthy();
+    expect(screen.getByText("229")).toBeTruthy();
+    expect(screen.getByText("Sleep")).toBeTruthy();
+    expect(screen.getByText("155")).toBeTruthy();
+    expect(screen.getByText("Body")).toBeTruthy();
+    expect(screen.getByText("43")).toBeTruthy();
+    expect(screen.getByText("Events")).toBeTruthy();
+    expect(screen.getByText("392")).toBeTruthy();
+  });
+
   describe("import-only providers", () => {
+    it("keeps the sync action separate from an active file import", async () => {
+      const { ProviderCard } = await import("./provider-card.tsx");
+      render(
+        <ProviderCard
+          provider={makeProvider({ importOnly: false, authStatus: "connected" })}
+          stats={undefined}
+          syncing={false}
+          importing={true}
+          syncProgress={{ percentage: 25, message: "Importing file" }}
+          onSync={noopFn}
+          onFullSync={noopFn}
+          onConnect={noopFn}
+          onImport={noopFn}
+          onPress={noopFn}
+        />,
+      );
+
+      expect(screen.getByText("Sync")).toBeTruthy();
+      expect(screen.queryByText("Import file")).toBeNull();
+      expect(screen.getByText("Importing file")).toBeTruthy();
+    });
+
     it("does not render Sync button for import-only providers", async () => {
       const { ProviderCard } = await import("./provider-card.tsx");
       render(
@@ -718,17 +845,20 @@ describe("ProvidersScreen", () => {
     mockUseLocalSearchParams.mockReturnValue({});
     mockSyncMutateAsync.mockReset();
     mockImportSharedFile.mockReset();
+    mockGetDocumentAsync.mockReset();
     mockProvidersQuery.mockReset();
     mockStatsQuery.mockReset();
     mockLogsQuery.mockReset();
     mockDataHealthQuery.mockReset();
     mockActiveSyncsQuery.mockReset();
+    mockActiveImportsQuery.mockReset();
     mockInvalidate.mockReset();
     mockInvalidateProviders.mockReset();
     mockInvalidateProviderStats.mockReset();
     mockInvalidateLogs.mockReset();
     mockInvalidateDataHealth.mockReset();
     mockInvalidateActiveSyncs.mockReset();
+    mockInvalidateActiveImports.mockReset();
     mockSyncStatusFetch.mockReset();
     mockUseRefresh.mockClear();
     mockCredentialSignIn.mockReset();
@@ -737,6 +867,7 @@ describe("ProvidersScreen", () => {
     mockWhoopVerifyCode.mockReset();
     mockWhoopSaveTokens.mockReset();
     mockFileDelete.mockReset();
+    mockAuthState.sessionToken = "test-token";
     mockFileBytes.mockClear();
     mockIsHealthKitAvailable.mockReset().mockReturnValue(true);
     mockGetRequestStatus.mockReset().mockResolvedValue("unnecessary");
@@ -1212,6 +1343,263 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("deletes a shared file and surfaces auth errors when importing without a session", async () => {
+    mockAuthState.sessionToken = null;
+    mockUseLocalSearchParams.mockReturnValue({
+      sharedFile: "file:///tmp/Strong%20Export.csv",
+    });
+
+    await renderProvidersScreen();
+
+    await waitFor(() => {
+      expect(mockFileDelete).toHaveBeenCalledWith("file:///tmp/Strong%20Export.csv");
+    });
+    expect(mockImportSharedFile).not.toHaveBeenCalled();
+    expect(screen.getByText("Sign in before importing a file")).toBeTruthy();
+  });
+
+  it("selects and imports a Garmin dump ZIP from the Garmin card", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin-dump",
+          name: "Garmin Dump",
+          authType: "none",
+          authorized: true,
+          importOnly: true,
+          lastSyncedAt: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///tmp/garmin-export.zip",
+          name: "garmin-export.zip",
+          mimeType: "application/zip",
+        },
+      ],
+    });
+    mockImportSharedFile.mockResolvedValue({ providerId: "garmin-dump", jobId: "job-garmin" });
+
+    await renderProvidersScreen();
+
+    const garminCard = within(screen.getByTestId("provider-card-garmin-dump"));
+    fireEvent.click(garminCard.getByText("Import file"));
+
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ["application/zip", "application/x-zip-compressed"],
+      });
+      expect(mockImportSharedFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileUri: "file:///tmp/garmin-export.zip",
+          providerId: "garmin-dump",
+          serverUrl: "https://test.example.com",
+          sessionToken: "test-token",
+        }),
+        expect.objectContaining({ readBlob: expect.any(Function) }),
+      );
+    });
+  });
+
+  it("selects and imports a Strong CSV from the Strong card", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [importOnlyProvider],
+      isLoading: false,
+      error: null,
+    });
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///tmp/strong-export.csv",
+          name: "strong-export.csv",
+          mimeType: "text/csv",
+        },
+      ],
+    });
+    mockImportSharedFile.mockResolvedValue({ providerId: "strong-csv", jobId: "job-strong" });
+
+    await renderProvidersScreen();
+
+    const strongCard = within(screen.getByTestId("provider-card-strong-csv"));
+    fireEvent.click(strongCard.getByText("Import file"));
+
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+      });
+      expect(mockImportSharedFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileUri: "file:///tmp/strong-export.csv",
+          providerId: "strong-csv",
+          serverUrl: "https://test.example.com",
+          sessionToken: "test-token",
+        }),
+        expect.objectContaining({ readBlob: expect.any(Function) }),
+      );
+    });
+  });
+
+  it("selects and imports a Cronometer CSV from the Cronometer card", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          ...importOnlyProvider,
+          id: "cronometer-csv",
+          name: "Cronometer",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///tmp/cronometer-export.csv",
+          name: "cronometer-export.csv",
+          mimeType: "text/csv",
+        },
+      ],
+    });
+    mockImportSharedFile.mockResolvedValue({
+      providerId: "cronometer-csv",
+      jobId: "job-cronometer",
+    });
+
+    await renderProvidersScreen();
+
+    const cronometerCard = within(screen.getByTestId("provider-card-cronometer-csv"));
+    fireEvent.click(cronometerCard.getByText("Import file"));
+
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+      });
+      expect(mockImportSharedFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileUri: "file:///tmp/cronometer-export.csv",
+          providerId: "cronometer-csv",
+          serverUrl: "https://test.example.com",
+          sessionToken: "test-token",
+        }),
+        expect.objectContaining({ readBlob: expect.any(Function) }),
+      );
+    });
+  });
+
+  it("selects and imports a Kaya CSV from the Kaya card", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          ...importOnlyProvider,
+          id: "kaya-export",
+          name: "Kaya",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///tmp/kaya-export.csv",
+          name: "kaya-export.csv",
+          mimeType: "text/csv",
+        },
+      ],
+    });
+    mockImportSharedFile.mockResolvedValue({
+      providerId: "kaya-export",
+      jobId: "job-kaya",
+    });
+
+    await renderProvidersScreen();
+
+    const kayaCard = within(screen.getByTestId("provider-card-kaya-export"));
+    fireEvent.click(kayaCard.getByText("Import file"));
+
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+      });
+      expect(mockImportSharedFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileUri: "file:///tmp/kaya-export.csv",
+          providerId: "kaya-export",
+          serverUrl: "https://test.example.com",
+          sessionToken: "test-token",
+        }),
+        expect.objectContaining({ readBlob: expect.any(Function) }),
+      );
+    });
+  });
+
+  it("shows resumable progress for an in-flight Garmin import", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin-dump",
+          name: "Garmin Dump",
+          authType: "none",
+          authorized: true,
+          importOnly: true,
+          lastSyncedAt: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockActiveImportsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "job-garmin",
+          providerId: "garmin-dump",
+          progress: 64,
+          message: "Importing activities",
+        },
+      ],
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    const garminCard = within(screen.getByTestId("provider-card-garmin-dump"));
+    expect(garminCard.getByText("Importing activities")).toBeTruthy();
+    expect(garminCard.getByText("Loading...")).toBeTruthy();
+    expect(
+      screen.getByTestId("provider-card-garmin-dump-progress-fill").getAttribute("data-style"),
+    ).toContain('"width":"64%"');
+    expect(garminCard.queryByText("Import only")).toBeNull();
+  });
+
+  it("shows the server error when active import progress cannot load", async () => {
+    mockActiveImportsQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Unable to check import progress because the queue service is unavailable."),
+    });
+
+    await renderProvidersScreen();
+
+    expect(
+      screen.getByText("Unable to check import progress because the queue service is unavailable."),
+    ).toBeTruthy();
+  });
+
   it("shows shared import progress while providers are still loading", async () => {
     mockProvidersQuery.mockReturnValue({
       data: undefined,
@@ -1610,6 +1998,70 @@ describe("ProvidersScreen", () => {
 
     expect(screen.getByTestId("provider-card-apple_health")).toBeTruthy();
     expect(screen.getByText("Apple Health")).toBeTruthy();
+  });
+
+  it("shows resumable progress for an in-flight Apple Health import", async () => {
+    mockActiveImportsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "job-apple-health",
+          providerId: "apple_health",
+          progress: 42,
+          message: "Importing Apple Health data",
+        },
+      ],
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    expect(appleCard.getByText("Importing Apple Health data")).toBeTruthy();
+    expect(appleCard.getByText("Loading...")).toBeTruthy();
+    expect(
+      screen.getByTestId("provider-card-apple_health-progress-fill").getAttribute("data-style"),
+    ).toContain('"width":"42%"');
+  });
+
+  it("selects and imports an Apple Health export from the Apple Health card", async () => {
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///tmp/apple-health-export.zip",
+          name: "apple-health-export.zip",
+          mimeType: "application/zip",
+        },
+      ],
+    });
+    mockImportSharedFile.mockResolvedValue({ providerId: "apple-health", jobId: "job-apple" });
+
+    await renderProvidersScreen();
+
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Import file")).toBeTruthy();
+    });
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    fireEvent.click(appleCard.getByText("Import file"));
+
+    await waitFor(() => {
+      expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ["application/zip", "application/x-zip-compressed", "application/xml", "text/xml"],
+      });
+      expect(mockImportSharedFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileUri: "file:///tmp/apple-health-export.zip",
+          providerId: "apple-health",
+          serverUrl: "https://test.example.com",
+          sessionToken: "test-token",
+        }),
+        expect.objectContaining({ readBlob: expect.any(Function) }),
+      );
+    });
   });
 
   it("triggers HealthKit sync with syncRangeDays: 7 when Sync is clicked", async () => {

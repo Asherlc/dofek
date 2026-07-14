@@ -3,6 +3,7 @@ import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SyncLogEntry, SyncStatus } from "./DataSourcesSyncTypes.ts";
+import { FileImportButton } from "./FileImportButton.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown.tsx";
 import { StatusDot } from "./StatusDot.tsx";
@@ -215,22 +216,14 @@ export function FileImportZone({
         <StatusDot status={state.status} />
         <span className="text-sm font-medium text-foreground">{title}</span>
       </div>
-      <button
-        type="button"
-        tabIndex={0}
+      <section
+        aria-label={`${title} file drop zone`}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            fileInputRef.current?.click();
-          }
-        }}
         className={`rounded border-2 border-dashed p-3 text-center cursor-pointer transition-colors ${
           dragOver
             ? "border-blue-500 bg-blue-500/10"
@@ -257,9 +250,12 @@ export function FileImportZone({
             )}
           </div>
         ) : (
-          <div className="text-xs text-dim">{description}</div>
+          <div className="space-y-2">
+            <div className="text-xs text-dim">{description}</div>
+            <FileImportButton onClick={() => fileInputRef.current?.click()} />
+          </div>
         )}
-      </button>
+      </section>
       {state.status !== "idle" && state.status !== "syncing" && (
         <div
           className={`mt-1.5 text-xs ${state.status === "error" ? "text-red-400" : "text-emerald-400"}`}

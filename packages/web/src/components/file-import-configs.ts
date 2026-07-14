@@ -17,6 +17,7 @@ export const fileImportConfigs: Record<string, FileImportZoneProps> = {
     accept: ".csv",
     uploadUrl: "/api/upload/strong-csv?units=kg",
     statusUrl: "/api/upload/strong-csv/status",
+    chunked: true,
   },
   "cronometer-csv": {
     title: "Cronometer",
@@ -24,6 +25,7 @@ export const fileImportConfigs: Record<string, FileImportZoneProps> = {
     accept: ".csv",
     uploadUrl: "/api/upload/cronometer-csv",
     statusUrl: "/api/upload/cronometer-csv/status",
+    chunked: true,
   },
   "garmin-dump": {
     title: "Garmin Dump",
@@ -31,6 +33,7 @@ export const fileImportConfigs: Record<string, FileImportZoneProps> = {
     accept: ".zip",
     uploadUrl: "/api/upload/garmin-dump",
     statusUrl: "/api/upload/garmin-dump/status",
+    chunked: true,
   },
   "kaya-export": {
     title: "Kaya",
@@ -38,5 +41,12 @@ export const fileImportConfigs: Record<string, FileImportZoneProps> = {
     accept: ".csv",
     uploadUrl: "/api/upload/kaya-export",
     statusUrl: "/api/upload/kaya-export/status",
+    chunked: true,
   },
 };
+
+export function getFileImportConfig(providerId: string): FileImportZoneProps | undefined {
+  if (providerId === "apple_health") return appleHealthFileImportConfig;
+  if (!Object.hasOwn(fileImportConfigs, providerId)) return undefined;
+  return fileImportConfigs[providerId];
+}

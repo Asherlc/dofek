@@ -1,5 +1,6 @@
 import { formatDateYmd } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
+import * as DocumentPicker from "expo-document-picker";
 import { File as ExpoFile } from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -17,13 +18,19 @@ import { getQueryErrorMessage, QueryStatePanel } from "../../components/QuerySta
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { useAuth } from "../../lib/auth-context";
 import { syncDofekFoodToHealthKit } from "../../lib/health-kit-food-writeback";
-import { importSharedFile, type ShareImportProgress } from "../../lib/share-import";
+import {
+  type ImportProviderId,
+  importSharedFile,
+  type ShareImportProgress,
+} from "../../lib/share-import";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { deleteDietarySamples, writeDietarySamples } from "../../modules/health-kit";
 import { colors } from "../../theme";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals.tsx";
+import { FileImportProviderCard } from "./file-import-provider-card.tsx";
+import { getFileImportProviderConfig } from "./file-import-providers.ts";
 import {
   importProviderLabel,
   type Provider,
@@ -70,6 +77,10 @@ export default function ProvidersScreen() {
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
+  const activeImports = trpc.sync.activeImports.useQuery(undefined, {
+    staleTime: 0,
+    refetchInterval: (query) => ((query.state.data?.length ?? 0) > 0 ? 1000 : false),
+  });
 
   // Auth modal state
   const [credentialAuthProvider, setCredentialAuthProvider] = useState<{
@@ -274,17 +285,16 @@ export default function ProvidersScreen() {
     }
   }, [activeSyncs.data, pollJob]);
 
-  useEffect(() => {
-    if (!sharedFileUri) return;
-    if (!sessionToken) return;
-    if (importedSharedUris.current.has(sharedFileUri)) return;
-    importedSharedUris.current.add(sharedFileUri);
-
-    void (async () => {
+  const importFile = useCallback(
+    async (fileUri: string, providerId?: ImportProviderId) => {
       try {
+        if (!sessionToken) {
+          throw new Error("Sign in before importing a file");
+        }
         await importSharedFile(
           {
-            fileUri: sharedFileUri,
+            fileUri,
+            providerId,
             serverUrl,
             sessionToken,
             onProgress: setSharedImportState,
@@ -293,21 +303,58 @@ export default function ProvidersScreen() {
         );
         trpcUtils.invalidate();
       } catch (error: unknown) {
-        captureException(error, { context: "share-import", fileUri: sharedFileUri });
+        captureException(error, { context: "share-import", fileUri, providerId });
         setSharedImportState({
           status: "error",
           progress: 0,
           message: error instanceof Error ? error.message : "Import failed",
+          providerId,
         });
       } finally {
         try {
-          deleteSharedFile(sharedFileUri);
+          deleteSharedFile(fileUri);
         } catch (error: unknown) {
-          captureException(error, { context: "share-import-cleanup", fileUri: sharedFileUri });
+          captureException(error, { context: "share-import-cleanup", fileUri });
         }
       }
-    })();
-  }, [sharedFileUri, serverUrl, sessionToken, trpcUtils]);
+    },
+    [serverUrl, sessionToken, trpcUtils],
+  );
+
+  useEffect(() => {
+    if (!sharedFileUri) return;
+    if (importedSharedUris.current.has(sharedFileUri)) return;
+    importedSharedUris.current.add(sharedFileUri);
+
+    void importFile(sharedFileUri);
+  }, [importFile, sharedFileUri]);
+
+  const handleFileImportProvider = useCallback(
+    async (providerId: ImportProviderId) => {
+      const providerConfig = getFileImportProviderConfig(providerId);
+      if (!providerConfig) return;
+      try {
+        const result = await DocumentPicker.getDocumentAsync({
+          copyToCacheDirectory: true,
+          multiple: false,
+          type: providerConfig.documentTypes,
+        });
+        if (result.canceled) return;
+        const asset = result.assets[0];
+        if (!asset) return;
+        await importFile(asset.uri, providerConfig.providerId);
+      } catch (error: unknown) {
+        captureException(error, { context: "file-import-document-picker", providerId });
+        setSharedImportState({
+          status: "error",
+          progress: 0,
+          message: error instanceof Error ? error.message : providerConfig.selectionErrorMessage,
+          providerId: providerConfig.providerId,
+        });
+      }
+    },
+    [importFile],
+  );
 
   const handleSyncProvider = useCallback(
     async (providerId: string, fullSync = false) => {
@@ -490,12 +537,37 @@ export default function ProvidersScreen() {
         trpcUtils.sync.logs.invalidate({ limit: 50 }),
         trpcUtils.sync.dataHealth.invalidate(),
         trpcUtils.sync.activeSyncs.invalidate(),
+        trpcUtils.sync.activeImports.invalidate(),
       ]).then(() => undefined),
   });
 
   const isLoading = providers.isLoading;
   const enabledProviders = providerList.filter((p) => p.enabled);
   const appleHealthProvider = appleHealth.model.toProviderCard();
+  const activeImportRows = activeImports.error ? [] : (activeImports.data ?? []);
+  const activeImportByProvider = new Map(
+    activeImportRows.map((activeImport) => [activeImport.providerId, activeImport]),
+  );
+  const localImportIsActive =
+    sharedImportState !== null &&
+    sharedImportState.status !== "done" &&
+    sharedImportState.status !== "error";
+  const appleHealthActiveImport = activeImportByProvider.get("apple_health");
+  const appleHealthActiveImportProgress = appleHealthActiveImport
+    ? {
+        percentage: appleHealthActiveImport.progress,
+        message: appleHealthActiveImport.message,
+      }
+    : undefined;
+  const appleHealthLocalImportProgress =
+    localImportIsActive && sharedImportState.providerId === "apple-health"
+      ? {
+          percentage: sharedImportState.progress,
+          message: sharedImportState.message,
+        }
+      : undefined;
+  const appleHealthImportProgress =
+    appleHealthLocalImportProgress ?? appleHealthActiveImportProgress;
 
   return (
     <ScrollView
@@ -542,9 +614,17 @@ export default function ProvidersScreen() {
       <View style={styles.shareInfoCard}>
         <Text style={styles.shareInfoTitle}>Import from Share</Text>
         <Text style={styles.shareInfoDescription}>
-          Export a CSV, XML, or ZIP file from Strong, Cronometer, or Apple Health and share it to
-          Dofek.
+          Export a CSV, XML, or ZIP file from Strong, Cronometer, Apple Health, or Garmin and share
+          it to Dofek.
         </Text>
+        {activeImports.error ? (
+          <QueryStatePanel
+            variant="error"
+            title="Could not load import progress"
+            message={getQueryErrorMessage(activeImports.error, "Unable to load import progress.")}
+            minHeight={96}
+          />
+        ) : null}
         {sharedImportState ? (
           <View style={styles.shareImportState}>
             <Text style={styles.shareImportTitle}>
@@ -581,18 +661,21 @@ export default function ProvidersScreen() {
         loading={dataHealth.isLoading}
       />
       <Text style={styles.sectionTitle}>Data Sources</Text>
-      <ProviderCard
+      <FileImportProviderCard
         provider={{
           ...appleHealthProvider,
         }}
         stats={statsMap.apple_health}
         syncing={healthKitSyncing}
+        importing={appleHealthImportProgress !== undefined}
         syncProgress={
-          healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined
+          appleHealthImportProgress ??
+          (healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined)
         }
         onSync={() => handleHealthKitSync()}
         onFullSync={() => handleHealthKitSync(true)}
         onConnect={handleHealthKitConnect}
+        onImportProvider={handleFileImportProvider}
         onPress={() => router.push("/providers/apple_health")}
       />
       {appleHealth.model.shouldShowPermissionBanner() && (
@@ -623,19 +706,51 @@ export default function ProvidersScreen() {
       {isLoading && !providers.error ? (
         <QueryStatePanel variant="loading" style={styles.card} />
       ) : null}
-      {providerList.map((provider) => (
-        <ProviderCard
-          key={provider.id}
-          provider={provider}
-          stats={statsMap[provider.id]}
-          syncing={syncingProviders.has(provider.id)}
-          syncProgress={syncProgress[provider.id]}
-          onSync={() => handleSyncProvider(provider.id)}
-          onFullSync={() => handleSyncProvider(provider.id, true)}
-          onConnect={() => handleConnect(provider)}
-          onPress={() => router.push(`/providers/${provider.id}`)}
-        />
-      ))}
+      {providerList.map((provider) => {
+        const fileImportProviderConfig = getFileImportProviderConfig(provider.id);
+        const activeImport = activeImportByProvider.get(provider.id);
+        const activeImportProgress = activeImport
+          ? {
+              percentage: activeImport.progress,
+              message: activeImport.message,
+            }
+          : undefined;
+        const localImportProgress =
+          localImportIsActive && sharedImportState.providerId === provider.id
+            ? {
+                percentage: sharedImportState.progress,
+                message: sharedImportState.message,
+              }
+            : undefined;
+        const importProgress = localImportProgress ?? activeImportProgress;
+        return fileImportProviderConfig ? (
+          <FileImportProviderCard
+            key={provider.id}
+            provider={provider}
+            stats={statsMap[provider.id]}
+            syncing={syncingProviders.has(provider.id)}
+            importing={importProgress !== undefined}
+            syncProgress={importProgress ?? syncProgress[provider.id]}
+            onSync={() => handleSyncProvider(provider.id)}
+            onFullSync={() => handleSyncProvider(provider.id, true)}
+            onConnect={() => handleConnect(provider)}
+            onImportProvider={handleFileImportProvider}
+            onPress={() => router.push(`/providers/${provider.id}`)}
+          />
+        ) : (
+          <ProviderCard
+            key={provider.id}
+            provider={provider}
+            stats={statsMap[provider.id]}
+            syncing={syncingProviders.has(provider.id)}
+            syncProgress={syncProgress[provider.id]}
+            onSync={() => handleSyncProvider(provider.id)}
+            onFullSync={() => handleSyncProvider(provider.id, true)}
+            onConnect={() => handleConnect(provider)}
+            onPress={() => router.push(`/providers/${provider.id}`)}
+          />
+        );
+      })}
 
       {/* Sync History */}
       <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Sync History</Text>

@@ -27,6 +27,26 @@ describe("InMemoryUploadStateStore", () => {
     expect(await store.getReceivedChunks("upload-1")).toEqual([0, 2]);
   });
 
+  it("tracks chunk byte totals and rejects oversized uploads", async () => {
+    await store.saveUploadSession("upload-1", {
+      total: 3,
+      dir: "/tmp/upload-1",
+      userId: "user-1",
+    });
+
+    await expect(store.recordReceivedChunk("upload-1", 0, 4, 10)).resolves.toEqual({
+      accepted: true,
+      receivedCount: 1,
+      receivedBytes: 4,
+    });
+    await expect(store.recordReceivedChunk("upload-1", 1, 7, 10)).resolves.toEqual({
+      accepted: false,
+      receivedCount: 1,
+      receivedBytes: 4,
+    });
+    await expect(store.getReceivedChunks("upload-1")).resolves.toEqual([0]);
+  });
+
   it("stores and deletes upload statuses", async () => {
     const status: UploadStatus = {
       status: "uploading",

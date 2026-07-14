@@ -16,8 +16,8 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
-import { FileImportZone } from "../components/FileImportZone.tsx";
-import { fileImportConfigs } from "../components/file-import-configs.ts";
+import { FileImportProviderCard } from "../components/FileImportProviderCard.tsx";
+import { getFileImportConfig } from "../components/file-import-configs.ts";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
@@ -69,7 +69,8 @@ export function ProviderDetailPage() {
 
   const provider = (providers.data ?? []).find((p) => p.id === providerId);
   const providerStats = (stats.data ?? []).find((s) => s.providerId === providerId);
-  const importConfig = fileImportConfigs[providerId];
+  const importConfig = getFileImportConfig(providerId);
+  const hasFileImportConfig = importConfig !== undefined;
   const pushOnly = provider?.pushOnly === true;
   const lastSyncedRelative = hasValidDateInput(provider?.lastSyncedAt)
     ? formatRelativeTime(provider.lastSyncedAt)
@@ -268,10 +269,10 @@ export function ProviderDetailPage() {
         loading={dataHealth.isLoading}
       />
 
-      {provider?.importOnly && importConfig && (
+      {importConfig && (
         <section className="space-y-2">
           <h2 className="text-sm font-medium text-foreground">Import</h2>
-          <FileImportZone
+          <FileImportProviderCard
             providerId={providerId}
             {...importConfig}
             stats={providerStats}
@@ -301,7 +302,7 @@ export function ProviderDetailPage() {
       )}
 
       {/* Sync controls */}
-      {!provider?.importOnly && !pushOnly && (
+      {!hasFileImportConfig && !pushOnly && (
         <section className="card p-4 space-y-3">
           <h2 className="text-sm font-medium text-foreground">Sync Controls</h2>
           <div className="flex flex-wrap items-end gap-3">
