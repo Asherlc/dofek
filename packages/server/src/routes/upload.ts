@@ -483,7 +483,7 @@ async function handleChunkedFileUpload({
     let upload = await uploadStateStore.getUploadSession(uploadId);
     if (!upload) {
       const dir = createChunkDirectoryPath(config);
-      await mkdir(dir, { recursive: true });
+      await mkdir(dir);
       upload = { total: chunkTotal, dir, userId };
       await uploadStateStore.saveUploadSession(uploadId, upload, IN_PROGRESS_UPLOAD_STATUS_TTL_MS);
       await setUploadStatus(
