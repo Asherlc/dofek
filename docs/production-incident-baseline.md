@@ -12962,14 +12962,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   uses a scheme, test products path, or xctestrun file.
 - **Fix / mitigation:** `build-docker.yml` now computes a lowercased
   `ghcr.io/<owner>/<repo>` image name and reuses it for Docker metadata and
-  registry cache refs. `build-mobile.yml` no longer passes `-derivedDataPath`
-  to the watchOS target-based `xcodebuild` commands and removed the unused
-  watch DerivedData cache.
+  registry cache refs. `build-mobile.yml` now builds the generated
+  `DofekWatch` workspace scheme with `-derivedDataPath`, restores watchOS
+  DerivedData caching through an Xcode-supported command shape, and validates
+  that the generated workspace exposes the watch scheme before building.
 - **Validation:** Locally, YAML parsing, `git diff --check`, `pnpm lint`, and
   `pnpm typecheck` passed. Manual CI dispatch
   [`29301809529`](https://github.com/Asherlc/dofek/actions/runs/29301809529)
   on `Asherlc/debug-actions-job-v1` completed successfully; the two Docker
-  jobs and the watchOS job all passed.
+  jobs and the watchOS job all passed. A follow-up manual CI dispatch
+  [`29302632188`](https://github.com/Asherlc/dofek/actions/runs/29302632188)
+  completed successfully after restoring the watchOS DerivedData cache through
+  the `DofekWatch` scheme; `Build Mobile / watchOS Build` also passed.
 - **Remaining risk / follow-up:** Low. The fix changes only workflow
   arguments and cache reference normalization. A small reusable workflow helper
   for GHCR image-name normalization would reduce the chance of reintroducing
