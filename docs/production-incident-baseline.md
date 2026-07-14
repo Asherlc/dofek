@@ -12890,15 +12890,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Evidence:** Redis stream `bull:import:events` showed job `5` added and made
   active at `2026-07-13T20:54:30.592Z`, stalled at
   `2026-07-13T21:05:04.748Z`, became active again, then stalled and failed at
-  `2026-07-13T21:15:24.496Z`. The worker container
+  `2026-07-13T21:15:24.496Z`; Redis documents `XRANGE` as the command for
+  reading stream entries by ID range
+  ([Redis XRANGE](https://redis.io/docs/latest/commands/xrange/)). The worker container
   `dofek_worker.1.0exqzy2t768r9kfpmtbar0c0a` ran from
   `2026-07-13T20:59:55.719Z` to `2026-07-13T21:05:09.463Z` with
-  `Exit=137` and `OOMKilled=true`. The uploaded Garmin dump ZIP remained in
+  `Exit=137` and `OOMKilled=true`, as reported by `docker inspect`
+  ([Docker inspect CLI](https://docs.docker.com/reference/cli/docker/inspect/)). The uploaded Garmin dump ZIP remained in
   `/app/job-files`, was about 48 MiB, had 111 top-level entries and about
   78.5 MiB top-level uncompressed data, and contained two
   `DI_CONNECT/DI-Connect-Uploaded-Files/*Part1.zip` nested ZIPs. Each nested ZIP
   contained 7,887 FIT files totaling about 44 MiB uncompressed.
-- **Root cause:** `src/providers/garmin-dump.ts` reads the full uploaded ZIP
+- **Root cause:** `src/providers/garmin-dump.ts` previously read the full uploaded ZIP
   into memory, recursively buffers every extracted entry into arrays, including
   unrelated Garmin account-export payloads and both large nested uploaded-file
   ZIPs, and only extends the BullMQ import-job lock with a one-shot 10-minute
@@ -12906,7 +12909,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   inside the 400 MiB worker container while the same process was also running
   other provider workers. The first attempt was OOM-killed, which stopped lock
   renewal. The retry again exceeded the one-shot lock window and BullMQ failed
-  the job after the second stall.
+  the job after the second stall; BullMQ documents that jobs rely on worker lock
+  renewal and can be marked stalled, retried, and eventually failed when the
+  lock is not renewed
+  ([BullMQ stalled jobs](https://docs.bullmq.io/guide/workers/stalled-jobs)).
 - **Fix / mitigation:** Updated Garmin dump parsing to open ZIP files from the
   filesystem, skip irrelevant Garmin export entries before opening their
   streams, spill selected summary entries to temporary files under the job-files
@@ -12915,7 +12921,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   agnostic FIT import child jobs to process those files, and a batch parent job
   to aggregate child results. The import job lock is now renewed periodically
   during the long-running import instead of relying only on a one-shot 10-minute
-  extension.
+  extension. BullMQ documents flows as parent-child job trees where parent jobs
+  wait for child jobs to finish before processing
+  ([BullMQ flows](https://docs.bullmq.io/guide/flows)).
 - **Validation:** Docker inspect confirmed the OOM kill, Redis import events
   confirmed the two-stall/fail timeline, queue inspection showed no
   `fit-file-import` jobs were active/failed at investigation time, and ZIP

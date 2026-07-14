@@ -64,6 +64,42 @@ describe("processZipEntryExtractJob", () => {
     await expect(readFile(result.filePath, "utf8")).resolves.toBe("fit-bytes");
   });
 
+  it("replaces an existing deterministic output path on replay", async () => {
+    const directory = await createTempDirectory();
+    const archivePath = join(directory, "export.zip");
+    await writeFile(
+      archivePath,
+      await createZip({
+        "DI_CONNECT/activity.fit": "first-fit-bytes",
+      }),
+    );
+
+    const firstResult = await processZipEntryExtractJob({
+      data: {
+        archivePath,
+        entryPath: ["DI_CONNECT/activity.fit"],
+        outputExtension: "fit",
+      },
+    });
+    await writeFile(
+      archivePath,
+      await createZip({
+        "DI_CONNECT/activity.fit": "replayed-fit-bytes",
+      }),
+    );
+
+    const replayResult = await processZipEntryExtractJob({
+      data: {
+        archivePath,
+        entryPath: ["DI_CONNECT/activity.fit"],
+        outputExtension: "fit",
+      },
+    });
+
+    expect(replayResult.filePath).toBe(firstResult.filePath);
+    await expect(readFile(replayResult.filePath, "utf8")).resolves.toBe("replayed-fit-bytes");
+  });
+
   it("extracts an entry from a nested ZIP chain", async () => {
     const directory = await createTempDirectory();
     const archivePath = join(directory, "export.zip");

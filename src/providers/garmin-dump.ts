@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -203,25 +203,6 @@ function countExtractedBytes(
   );
 }
 
-async function streamToBuffer(
-  stream: Readable,
-  maxBytes: number,
-  description: string,
-): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  let bytesRead = 0;
-  for await (const chunk of stream) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    bytesRead += buffer.length;
-    if (bytesRead > maxBytes) {
-      stream.destroy(new Error(`${description} exceeds maximum size of ${maxBytes} bytes`));
-      throw new Error(`${description} exceeds maximum size of ${maxBytes} bytes`);
-    }
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks);
-}
-
 async function streamToFile(
   stream: Readable,
   filePath: string,
@@ -365,14 +346,18 @@ async function collectZipEntries(
       }
 
       if (lowerPath.endsWith(summarizedActivitiesSuffix)) {
-        const stream = await openReadStream(zipFile, entry);
-        const data = await streamToBuffer(stream, maxEntryBytes, `Garmin dump entry ${path}`);
-        countExtractedBytes(state, data.length, path);
         const filePath = join(
           extractionDirectory,
           `${createHash("sha256").update(path).digest("hex")}.json`,
         );
-        await writeFile(filePath, data, { flag: "wx" });
+        const stream = await openReadStream(zipFile, entry);
+        const bytesRead = await streamToFile(
+          stream,
+          filePath,
+          maxEntryBytes,
+          `Garmin dump entry ${path}`,
+        );
+        countExtractedBytes(state, bytesRead, path);
         entries.push({
           path,
           filePath,
@@ -607,24 +592,42 @@ async function enqueueFitFileImportFlow(
 }
 
 function startGarminDumpImportLockRenewal(options: GarminDumpImportOptions): {
-  stop: () => void;
-  throwIfFailed: () => void;
+  stop: () => Promise<void>;
+  throwIfFailed: () => Promise<void>;
 } {
   if (!options.extendLock) {
-    return { stop: () => undefined, throwIfFailed: () => undefined };
+    return {
+      stop: async () => undefined,
+      throwIfFailed: async () => undefined,
+    };
   }
 
+  const extendLock = options.extendLock;
   let renewalError: unknown;
+  let activeRenewal: Promise<void> | null = null;
+  const renewLock = (): Promise<void> => {
+    if (activeRenewal) return activeRenewal;
+    activeRenewal = extendLock(GARMIN_DUMP_IMPORT_LOCK_EXTENSION_MS)
+      .catch((error: unknown) => {
+        renewalError = error;
+      })
+      .finally(() => {
+        activeRenewal = null;
+      });
+    return activeRenewal;
+  };
   const interval = setInterval(() => {
-    options.extendLock?.(GARMIN_DUMP_IMPORT_LOCK_EXTENSION_MS).catch((error: unknown) => {
-      renewalError = error;
-    });
+    void renewLock();
   }, GARMIN_DUMP_LOCK_RENEWAL_INTERVAL_MS);
   interval.unref?.();
 
   return {
-    stop: () => clearInterval(interval),
-    throwIfFailed: () => {
+    stop: async () => {
+      clearInterval(interval);
+      await activeRenewal;
+    },
+    throwIfFailed: async () => {
+      await activeRenewal;
       if (renewalError) throw renewalError;
     },
   };
@@ -648,7 +651,7 @@ export async function importGarminDumpFile(
   try {
     await reportGarminDumpProgress(options, 5, "Reading Garmin dump...");
     parsedDump = await parseGarminDumpFile(filePath);
-    lockRenewal.throwIfFailed();
+    await lockRenewal.throwIfFailed();
     errors.push(...parsedDump.errors);
     const totalFitFileCount = parsedDump.fitFiles.length + parsedDump.weightFitFiles.length;
     await reportGarminDumpProgress(
@@ -743,12 +746,15 @@ export async function importGarminDumpFile(
         `Importing Garmin FIT files (0/${fitJobEntries.length})...`,
       );
       const fitResults = await enqueueFitFileImportFlow(fitJobEntries, filePath, userId);
-      lockRenewal.throwIfFailed();
+      await lockRenewal.throwIfFailed();
       recordsSynced += fitResults.recordsSynced;
       for (const error of fitResults.errors) {
         errors.push(error);
       }
     } catch (error) {
+      Sentry.captureException(error, {
+        tags: { garminDumpStep: "fit-flow" },
+      });
       errors.push({
         message: `Failed to process Garmin FIT import jobs: ${
           error instanceof Error ? error.message : String(error)
@@ -757,7 +763,7 @@ export async function importGarminDumpFile(
       });
     }
   } finally {
-    lockRenewal.stop();
+    await lockRenewal.stop();
     if (parsedDump) {
       await Promise.all(
         parsedDump.tempDirectories.map((directory) =>

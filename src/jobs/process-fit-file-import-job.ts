@@ -94,6 +94,15 @@ function cleanupPathFromJobData(data: unknown): string | null {
   return parsed.success ? parsed.data.filePath : null;
 }
 
+async function cleanupPathsFromChildResults(job: FitFileImportJob): Promise<string[]> {
+  if (!job.getChildrenValues) return [];
+  const childrenValues = await job.getChildrenValues();
+  return Object.values(childrenValues).flatMap((value) => {
+    const parsed = zipEntryExtractJobResultSchema.safeParse(value);
+    return parsed.success ? [parsed.data.filePath] : [];
+  });
+}
+
 function originalPathFromJobData(data: unknown): string {
   const parsed = fitFileImportErrorPathSchema.safeParse(data);
   return parsed.success ? (parsed.data.originalPath ?? "unknown FIT file") : "unknown FIT file";
@@ -307,14 +316,18 @@ export async function processFitFileImportJob(
   job: FitFileImportJob,
   db: SyncDatabase,
 ): Promise<FitFileImportJobResult> {
-  let cleanupFilePath = cleanupPathFromJobData(job.data);
+  const pathsToClean = new Set<string>();
+  const cleanupFilePath = cleanupPathFromJobData(job.data);
+  if (cleanupFilePath) {
+    pathsToClean.add(cleanupFilePath);
+  }
   try {
     await updateFitFileImportProgress(job, {
       percentage: 0,
       message: "Starting FIT file import...",
     });
     const data = await resolveFitFileImportJobData(job);
-    cleanupFilePath = data.filePath;
+    pathsToClean.add(data.filePath);
     await updateFitFileImportProgress(job, { percentage: 10, message: "Reading FIT file..." });
     const buffer = await readFile(data.filePath);
     await updateFitFileImportProgress(job, { percentage: 25, message: "Decoding FIT file..." });
@@ -347,9 +360,22 @@ export async function processFitFileImportJob(
   } catch (error) {
     return fitFileImportErrorResult(job.data, error);
   } finally {
-    if (cleanupFilePath) {
-      await unlink(cleanupFilePath).catch((error: unknown) => {
-        logger.warn("Failed to clean up FIT import file %s: %s", cleanupFilePath, error);
+    if (pathsToClean.size === 0) {
+      await cleanupPathsFromChildResults(job)
+        .then((childPaths) => {
+          for (const childPath of childPaths) {
+            pathsToClean.add(childPath);
+          }
+        })
+        .catch((error: unknown) => {
+          logger.warn("Failed to discover FIT import child cleanup paths: %s", error);
+          Sentry.captureException(error, { tags: { fitImportStep: "cleanupDiscovery" } });
+        });
+    }
+
+    for (const path of pathsToClean) {
+      await unlink(path).catch((error: unknown) => {
+        logger.warn("Failed to clean up FIT import file %s: %s", path, error);
       });
     }
   }

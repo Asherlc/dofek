@@ -360,6 +360,31 @@ describe("processFitFileImportJob", () => {
     await expect(readFile(filePath)).rejects.toThrow();
   });
 
+  it("cleans up flow child extraction files when job data validation fails", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+
+    const result = await processFitFileImportJob(
+      {
+        data: {
+          originalPath: "DI_CONNECT/asher@example.com_activity.fit",
+          userId: "user-1",
+          sourceName: "Garmin Dump",
+        },
+        getChildrenValues: async () => ({
+          "bull:zip-entry-extract:1": { filePath },
+        }),
+        updateProgress: vi.fn().mockResolvedValue(undefined),
+      },
+      mockDb,
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors[0]?.message).toContain(
+      "Failed to import FIT file DI_CONNECT/asher@example.com_activity.fit:",
+    );
+    await expect(readFile(filePath)).rejects.toThrow();
+  });
+
   it("returns an error result for FIT flow jobs with multiple extraction results", async () => {
     const result = await processFitFileImportJob(
       {

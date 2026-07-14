@@ -810,11 +810,15 @@ describe("Garmin dump provider", () => {
 
   it("reports a lock renewal failure that happens while waiting for the FIT flow", async () => {
     const filePath = await createGarminDumpZip();
+    let rejectRenewal: (error: Error) => void = () => undefined;
+    const deferredRenewal = new Promise<void>((_, reject) => {
+      rejectRenewal = reject;
+    });
     const extendLock = vi
       .fn()
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error("lost lock"));
+      .mockReturnValueOnce(deferredRenewal);
     let renewalCallback: (() => void) | undefined;
     const intervalHandle = setInterval(() => undefined, 60_000);
     intervalHandle.unref?.();
@@ -828,7 +832,7 @@ describe("Garmin dump provider", () => {
     const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => {});
     flowMock.waitUntilFinished.mockImplementation(async () => {
       renewalCallback?.();
-      await Promise.resolve();
+      setTimeout(() => rejectRenewal(new Error("lost lock")), 0);
       return { recordsSynced: 1, errors: [] };
     });
 
@@ -1070,6 +1074,10 @@ describe("Garmin dump provider", () => {
         message: "Failed to process Garmin FIT import jobs: bad fit",
       }),
     ]);
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { garminDumpStep: "fit-flow" },
+    });
+    expect(mockCaptureException.mock.calls[0]?.[0]).toEqual(new Error("bad fit"));
   });
 
   it("removes temporary extraction directories after importing a ZIP dump", async () => {

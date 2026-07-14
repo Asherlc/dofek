@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -176,21 +176,26 @@ export async function processZipEntryExtractJob(
       .update(data.entryPath.join("\n"))
       .digest("hex")}.${data.outputExtension}`,
   );
+  const publishPath = join(
+    tempDirectory,
+    `${createHash("sha256").update(`${outputPath}\n${Date.now()}`).digest("hex")}.${data.outputExtension}`,
+  );
 
   let extracted = false;
   try {
     await extractEntryChain(
       data.archivePath,
       data.entryPath,
-      outputPath,
+      publishPath,
       data.maxBytes ?? DEFAULT_MAX_EXTRACTED_BYTES,
       data.nestedArchiveMaxBytes ?? DEFAULT_MAX_EXTRACTED_BYTES,
       tempDirectory,
     );
+    await rename(publishPath, outputPath);
     extracted = true;
   } finally {
     if (!extracted) {
-      await rm(outputPath, { force: true });
+      await rm(publishPath, { force: true });
     }
     await rm(tempDirectory, { recursive: true, force: true });
   }
