@@ -10,7 +10,9 @@ function makeMockDb() {
   };
 }
 
-function makeClient(overrides: Partial<OAuthClientInformationFull> = {}): OAuthClientInformationFull {
+function makeClient(
+  overrides: Partial<OAuthClientInformationFull> = {},
+): OAuthClientInformationFull {
   return {
     client_id: `client_${randomBytes(8).toString("hex")}`,
     client_id_issued_at: Math.floor(Date.now() / 1000),
