@@ -539,7 +539,6 @@ function garminSummaryToFitJobSummary(
     startedAtIso: startedAt.toISOString(),
     endedAtIso: endedAt.toISOString(),
     name: summary.name ?? `Garmin ${activityType.replace(/_/g, " ")}`,
-    raw: summary,
   };
 }
 
@@ -683,7 +682,7 @@ export async function prepareGarminDumpImport(
         errors: errors.map((error) => ({ message: error.message })),
       },
       fitJobEntries,
-      tempDirectories: parsedDump.tempDirectories,
+      tempDirectories: [...parsedDump.tempDirectories],
       totalFitFiles: fitJobEntries.length,
     };
     preparationComplete = true;

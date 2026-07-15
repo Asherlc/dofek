@@ -216,12 +216,21 @@ describe("attachGarminFitImportFlow", () => {
       { id: "import-job-1", queue: "bull:import" },
     );
 
-    const flow: FlowJob | undefined = mockAdd.mock.calls[0]?.[0];
-    const fitJobIds = flow?.children?.map((child) => child.opts?.jobId);
-    const extractionJobIds = flow?.children?.map((child) => child.children?.[0]?.opts?.jobId);
-    expect(fitJobIds).toHaveLength(1_294);
-    expect(extractionJobIds).toHaveLength(1_294);
-    expect(new Set(fitJobIds).size).toBe(1_294);
-    expect(new Set(extractionJobIds).size).toBe(1_294);
+    const flows: FlowJob[] = mockAdd.mock.calls.map(([flow]) => flow);
+    const allFitJobIds = flows.flatMap(
+      (flow) => flow.children?.map((child) => child.opts?.jobId) ?? [],
+    );
+    const allExtractionJobIds = flows.flatMap(
+      (flow) =>
+        flow.children?.flatMap((child) => child.children?.map((c) => c.opts?.jobId) ?? []) ?? [],
+    );
+    expect(allFitJobIds).toHaveLength(1_294);
+    expect(allExtractionJobIds).toHaveLength(1_294);
+    expect(new Set(allFitJobIds).size).toBe(1_294);
+    expect(new Set(allExtractionJobIds).size).toBe(1_294);
+
+    expect(flows).toHaveLength(Math.ceil(1_294 / 500));
+    const batchIds = flows.map((flow) => flow.opts?.jobId);
+    expect(new Set(batchIds).size).toBe(flows.length);
   });
 });

@@ -25,6 +25,10 @@ vi.mock("../providers/garmin-dump.ts", () => ({
 
 vi.mock("./garmin-dump-flow.ts", () => ({
   attachGarminFitImportFlow: vi.fn(),
+  createBatchId: vi.fn((preparedImport: { batchId: string }, batchIndex: number) =>
+    batchIndex === 0 ? preparedImport.batchId : `${preparedImport.batchId}-batch-${batchIndex}`,
+  ),
+  FLOW_BATCH_SIZE: 500,
 }));
 
 const mockDb: SyncDatabase = {
@@ -334,6 +338,46 @@ describe("processGarminDumpImportJob", () => {
     const result = await processGarminDumpImportJob(job, mockDb);
 
     expect(result.recordsSynced).toBe(2);
+    expect(result.errors).toEqual([
+      { message: "one summary was invalid" },
+      { message: "Garmin FIT batch failed: batch Redis connection failed" },
+    ]);
+  });
+
+  it("finalizes zero FIT files without throwing", async () => {
+    const job = createJob({
+      ...waitingCheckpoint(),
+      totalFitFiles: 0,
+      batchIds: [],
+    });
+    job.moveToWaitingChildren.mockResolvedValue(false);
+
+    const result = await processGarminDumpImportJob(job, mockDb);
+
+    expect(result.recordsSynced).toBe(2);
+    expect(result.errors).toEqual([{ message: "one summary was invalid" }]);
+    expect(result.totalFitFiles).toBe(0);
+  });
+
+  it("merges partial batch failures into successful batch results", async () => {
+    const job = createJob({
+      ...waitingCheckpoint(),
+      batchIds: ["garmin-fit-batch-1", "garmin-fit-batch-1-batch-1"],
+    });
+    job.moveToWaitingChildren.mockResolvedValue(false);
+    job.getChildrenValues.mockResolvedValue({
+      "bull:fit-file-import-batch:garmin-fit-batch-1": {
+        recordsSynced: 3,
+        errors: [],
+      },
+    });
+    job.getIgnoredChildrenFailures.mockResolvedValue({
+      "bull:fit-file-import-batch:garmin-fit-batch-1-batch-1": "batch Redis connection failed",
+    });
+
+    const result = await processGarminDumpImportJob(job, mockDb);
+
+    expect(result.recordsSynced).toBe(5);
     expect(result.errors).toEqual([
       { message: "one summary was invalid" },
       { message: "Garmin FIT batch failed: batch Redis connection failed" },

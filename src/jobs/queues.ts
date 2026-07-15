@@ -43,7 +43,7 @@ export const fitFileImportActivitySummarySchema = z.object({
   startedAtIso: z.string(),
   endedAtIso: z.string(),
   name: z.string(),
-  raw: z.unknown(),
+  raw: z.unknown().optional(),
 });
 
 export const fitFileImportJobDataSchema = z.object({
