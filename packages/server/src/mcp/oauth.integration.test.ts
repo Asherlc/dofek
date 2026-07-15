@@ -222,6 +222,73 @@ describe("MCP OAuth", () => {
     expect((await rawRefreshResponse(nextTokens.refresh_token)).status).toBe(400);
   });
 
+  it("returns invalid_grant for non-existent authorization code", async () => {
+    const response = await fetch(`${baseUrl}/token`, {
+      body: new URLSearchParams({
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
+        code: "dofek_mcp_code_nonexistent",
+        code_verifier: randomBytes(32).toString("base64url"),
+        grant_type: "authorization_code",
+        redirect_uri: redirectUri,
+        resource,
+      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("invalid_grant");
+  });
+
+  it("returns invalid_grant for non-existent refresh token", async () => {
+    const response = await rawRefreshResponse("dofek_mcp_refresh_nonexistent");
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("invalid_grant");
+  });
+
+  it("rejects refresh token rotation with mismatched resource", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const tokens = await completeAuthorization(codeVerifier);
+
+    const response = await fetch(`${baseUrl}/token`, {
+      body: new URLSearchParams({
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
+        grant_type: "refresh_token",
+        refresh_token: tokens.refresh_token,
+        resource: "https://other.example.test/api/mcp",
+      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("invalid_grant");
+  });
+
+  it("rejects refresh token rotation when requesting scopes beyond granted", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const tokens = await completeAuthorization(codeVerifier);
+
+    const response = await fetch(`${baseUrl}/token`, {
+      body: new URLSearchParams({
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
+        grant_type: "refresh_token",
+        refresh_token: tokens.refresh_token,
+        resource,
+        scope: "health:read activity:read nutrition:write",
+      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("invalid_grant");
+  });
+
   function authorizationParameters(codeVerifier: string): URLSearchParams {
     return new URLSearchParams({
       client_id: registeredClient.client_id,
