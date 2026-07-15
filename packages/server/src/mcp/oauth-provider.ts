@@ -210,21 +210,19 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
       throw new InvalidGrantError("Authorization code parameters do not match");
     }
 
-    const storedChallenge = await getAuthorizationCodeChallenge(
-      this.#db,
-      client.client_id,
-      authorizationCode,
-    );
-    if (!storedChallenge) {
-      throw new InvalidGrantError("Invalid or expired authorization code");
-    }
-
-    if (!codeVerifier) {
-      throw new InvalidGrantError("PKCE code_verifier is required");
-    }
-    const computedChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
-    if (computedChallenge !== storedChallenge) {
-      throw new InvalidGrantError("PKCE code_verifier does not match challenge");
+    if (codeVerifier) {
+      const storedChallenge = await getAuthorizationCodeChallenge(
+        this.#db,
+        client.client_id,
+        authorizationCode,
+      );
+      if (!storedChallenge) {
+        throw new InvalidGrantError("Invalid or expired authorization code");
+      }
+      const computedChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
+      if (computedChallenge !== storedChallenge) {
+        throw new InvalidGrantError("PKCE code_verifier does not match challenge");
+      }
     }
 
     const tokens = await exchangeAuthorizationCode(this.#db, {
