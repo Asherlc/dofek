@@ -8,13 +8,13 @@
 
 Replace the worker healthcheck's second Node runtime with readiness served by the existing worker process, and make Garmin dump imports recover safely when that worker exits at any point in the FIT child flow.
 
-WHOOP response streaming is not part of this incident fix. Production evidence did not show the fatal WHOOP response body resident at the kill, while cgroup accounting directly identified the healthcheck process as the missing memory. Any future WHOOP memory work requires a separate issue and independent baseline.
+WHOOP response streaming is not part of this incident fix. Production evidence did not show the fatal WHOOP response body resident at the kill, while cgroup accounting directly identified the healthcheck process as the missing memory ([incident evidence](../../incidents/2026-07-14-worker-oom-evidence.md#production-capture)). Any future WHOOP memory work requires a separate issue and independent baseline.
 
 ## Evidence and root cause
 
-The production worker was killed at `2026-07-14T20:15:51.556Z` with `OOMKilled=true` and exit code `137`. The cgroup reached its exact 400 MiB limit: the main Node worker held 344,543,232 anonymous bytes, the healthcheck's second Node runtime held 65,556,480 anonymous bytes, and kernel memory accounted for the remainder. Docker health commands execute inside the service container, so both runtimes shared the same configured memory limit ([Docker healthcheck reference](https://docs.docker.com/reference/compose-file/services/#healthcheck), [Docker memory constraints](https://docs.docker.com/engine/containers/resource_constraints/)).
+The production worker was killed at `2026-07-14T20:15:51.556Z` with `OOMKilled=true` and exit code `137`. The cgroup reached its exact 400 MiB limit: the main Node worker held 344,543,232 anonymous bytes, the healthcheck's second Node runtime held 65,556,480 anonymous bytes, and kernel memory accounted for the remainder ([incident evidence](../../incidents/2026-07-14-worker-oom-evidence.md#production-capture)). Docker health commands execute inside the service container, so both runtimes shared the same configured memory limit ([Docker healthcheck reference](https://docs.docker.com/reference/compose-file/services/#healthcheck), [Docker memory constraints](https://docs.docker.com/engine/containers/resource_constraints/)).
 
-The restart exposed a second defect. The Garmin parent recreated 948 unfinished extraction children because FIT and batch IDs were deterministic but extraction IDs were not. Those FIT jobs then observed two extraction results and failed. BullMQ custom IDs are intended to suppress duplicate additions, and colons are prohibited in those IDs ([BullMQ job IDs](https://docs.bullmq.io/guide/jobs/job-ids)).
+The restart exposed a second defect. The Garmin parent recreated 948 unfinished extraction children because FIT and batch IDs were deterministic but extraction IDs were not. Those FIT jobs then observed two extraction results and failed ([incident record](https://github.com/Asherlc/dofek/issues/1606)). BullMQ custom IDs are intended to suppress duplicate additions, and colons are prohibited in those IDs ([BullMQ job IDs](https://docs.bullmq.io/guide/jobs/job-ids)).
 
 Definitive root cause: the ten-second healthcheck launched a second fully instrumented Node runtime while the long-lived worker was near its cgroup limit; after the resulting kill, non-deterministic extraction IDs made the Garmin recovery non-idempotent.
 
@@ -89,28 +89,31 @@ The real-Redis test uses isolated queue prefixes and proves that a parked parent
 
 Before integration tests:
 
-    rtk docker compose up -d db redis
-    rtk docker compose ps db redis
+```sh
+rtk docker compose up -d db redis
+rtk docker compose ps db redis
+```
 
 Required checks:
 
-    rtk pnpm lint
-    rtk pnpm typecheck
-    rtk pnpm test:unit
-    rtk pnpm test:changed
-    rtk pnpm vitest run --project integration src/jobs/process-garmin-dump-import-job.integration.test.ts
-    rtk docker stack config --compose-file deploy/stack.yml
+```sh
+rtk pnpm lint
+rtk pnpm typecheck
+rtk pnpm test:unit
+rtk pnpm test:changed
+rtk pnpm vitest run --project integration src/jobs/process-garmin-dump-import-job.integration.test.ts
+rtk docker stack config --compose-file deploy/stack.yml
+```
 
 The stack-render check supplies required environment variables but does not deploy. No memory-limit increase, retry delay, additional worker service, WHOOP refactor, or warn-and-continue deployment behavior is permitted as part of this fix.
 
 Completed validation:
 
-- `pnpm lint` passed, including Biome, sqlfluff/dbt, and the analytics policy check.
-- `pnpm typecheck` passed across all packages.
-- `pnpm test:unit` passed 11,699 tests in 595 files, with 21 tests and two files skipped by their existing conditions.
-- `pnpm test:changed` passed 6,157 tests in 254 files against real Postgres, Redis, and ClickHouse dependencies.
+- `pnpm lint` and all-package typecheck passed in the [complete CI run](https://github.com/Asherlc/dofek/actions/runs/29386899805).
+- [Unit validation](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87262093631) passed 11,699 tests in 595 files, with 21 tests and two files skipped by their existing conditions.
+- The [unit and integration test gate](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87263034432) passed against real Postgres, Redis, and ClickHouse dependencies.
 - The isolated real-Redis restart test passed and proved parent reactivation without the old lock or duplicate child execution.
-- Mutation testing reported a 100 percent score for every changed production module in the readiness and durable Garmin paths, with no surviving or uncovered mutants.
+- All mutation shards passed the [mutation-testing gate](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87263784522), including a [100 percent Stryker shard](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87262133382) containing the import worker changes.
 - `docker stack config --compose-file deploy/stack.yml` rendered successfully with required variables and did not deploy.
 
 ## Definition of done

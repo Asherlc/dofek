@@ -13104,7 +13104,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   anonymous bytes, a second Node process owned 65,556,480 anonymous bytes, and
   kernel memory accounted for the remainder. The host still had approximately
   9 GiB available, so this was a container-limit event rather than host
-  pressure. Docker documents that a container health command runs inside the
+  pressure ([incident evidence](incidents/2026-07-14-worker-oom-evidence.md#production-capture)). Docker documents that a container health command runs inside the
   container and that the kernel kills container processes when a configured
   memory limit is exhausted
   ([healthcheck configuration](https://docs.docker.com/reference/compose-file/services/#healthcheck),
@@ -13114,7 +13114,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   heart-rate step was active after the preceding steps wrote 76,897 and 99,456
   samples, and one Strava job had remained active since `19:23:15Z`. The fatal
   WHOOP step had not emitted its response-header event, so its large response
-  was not proven to be materialized.
+  was not proven to be materialized
+  ([incident evidence](incidents/2026-07-14-worker-oom-evidence.md#production-capture)).
 - **Healthcheck evidence:** The worker healthcheck starts a fresh Node runtime,
   imports Sentry and BullMQ, invokes `ps`, and connects six queues every ten
   seconds. Retained checks ended at `20:15:38.915Z`, placing the next start near
@@ -13122,7 +13123,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   independently launched Node command in the container and its measured memory
   matches the second process. This heavyweight probe was introduced in
   [PR #1394](https://github.com/Asherlc/dofek/pull/1394) to strengthen queue
-  readiness beyond the prior process-name check.
+  readiness beyond the prior process-name check
+  ([incident evidence](incidents/2026-07-14-worker-oom-evidence.md#production-capture)).
 - **Controlled evidence:** The exact incident image was replayed with production
   Node instrumentation, the exact health command/cadence, cgroup accounting, a
   synthetic 1,294-entry Garmin allocation, and three 100,000-value WHOOP
@@ -13132,7 +13134,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   counts represent fixture allocation only, not executed BullMQ children or
   observed stalls. At the highest overlap, the primary workload was within
   7,335,936 anonymous bytes of the production main process; production kernel
-  accounting proves the real main process plus the probe exhausted the cgroup.
+  accounting proves the real main process plus the probe exhausted the cgroup
+  ([controlled exact-image profile](incidents/2026-07-14-worker-oom-evidence.md#controlled-exact-image-profile)).
 - **Root cause:** A heavyweight healthcheck launched a second full Node runtime
   inside the same 400 MiB cgroup while the long-lived worker was already near
   capacity across Garmin extraction and other provider jobs. Their anonymous
@@ -13149,13 +13152,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   without a lock, resumes from a versioned checkpoint, reports authoritative
   progress, preserves successful siblings, bounds grouped failures, and owns
   temporary-file cleanup. No memory limit or retry delay was increased.
-- **Validation:** Lint and all-package typecheck passed. Unit validation passed
-  11,699 tests in 595 files, and the changed integration suite passed 6,157
-  tests in 254 files against real Postgres, Redis, and ClickHouse dependencies.
+- **Validation:** Lint and all-package typecheck passed in the
+  [complete CI run](https://github.com/Asherlc/dofek/actions/runs/29386899805).
+  [Unit validation](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87262093631)
+  passed 11,699 tests in 595 files, and the
+  [unit and integration test gate](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87263034432)
+  passed against real Postgres, Redis, and ClickHouse dependencies.
   An isolated real-Redis restart test proved that the parent resumed without
   its old lock and that two identical flow attachments executed every child
-  exactly once. Mutation testing scored 100 percent across every changed
-  production module in these paths, with no surviving or uncovered mutants.
+  exactly once. All mutation shards passed the
+  [mutation-testing gate](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87263784522),
+  including a
+  [100 percent Stryker shard](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87262133382)
+  containing the import worker changes.
   The Swarm stack rendered successfully without deployment.
 - **Remaining risk / follow-up:** The direct fix still requires deployment,
   retrying the affected Garmin import, and production monitoring of worker

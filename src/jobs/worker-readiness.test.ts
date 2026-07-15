@@ -197,6 +197,30 @@ describe("createWorkerReadinessServer", () => {
     );
   }, 1_000);
 
+  it("does not start another Redis command while a timed-out check is still pending", async () => {
+    let markCommandStarted: (() => void) | undefined;
+    const commandStarted = new Promise<void>((resolve) => {
+      markCommandStarted = resolve;
+    });
+    const listLength = vi.fn(() => {
+      markCommandStarted?.();
+      return new Promise<number>(() => undefined);
+    });
+    const serverUrl = await startReadinessServer([makeWorker("sync", { listLength })]);
+    vi.useFakeTimers();
+
+    const firstResponsePromise = fetch(`${serverUrl}/readyz`);
+    await commandStarted;
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect((await firstResponsePromise).status).toBe(503);
+
+    const secondResponsePromise = fetch(`${serverUrl}/readyz`);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect((await secondResponsePromise).status).toBe(503);
+    expect(listLength).toHaveBeenCalledOnce();
+  }, 1_000);
+
   it("does not expose readiness on unrelated paths", async () => {
     const response = await requestReadiness([makeWorker("sync")], "/healthz");
 

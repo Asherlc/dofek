@@ -79,6 +79,8 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   let terminalImportError: UnrecoverableError | null = null;
 
   let shouldCleanUpUploadedFile = importType !== "garmin-dump";
+  let importFailed = false;
+  let importError: unknown;
   try {
     await runWithTokenUser(userId, async () => {
       if (importType === "apple-health") {
@@ -254,14 +256,27 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         );
       }
     });
-  } finally {
-    if (shouldCleanUpUploadedFile) {
-      const { unlink } = await import("node:fs/promises");
-      await unlink(filePath).catch((error: unknown) => {
-        logger.warn("Failed to clean up uploaded file %s: %s", filePath, error);
-      });
+  } catch (error) {
+    importFailed = true;
+    importError = error;
+  }
+
+  if (shouldCleanUpUploadedFile) {
+    const { unlink } = await import("node:fs/promises");
+    try {
+      await unlink(filePath);
+    } catch (cleanupError) {
+      Sentry.captureException(cleanupError, { tags: { phase: "uploaded-file-cleanup" } });
+      if (importFailed) {
+        throw new AggregateError(
+          [importError, cleanupError],
+          "Import and uploaded-file cleanup both failed",
+        );
+      }
+      throw cleanupError;
     }
   }
+  if (importFailed) throw importError;
 
   try {
     job

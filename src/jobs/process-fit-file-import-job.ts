@@ -1,6 +1,8 @@
 /// <reference path="../activity-export/garmin-fitsdk.d.ts" />
 
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { Decoder, Stream } from "@garmin/fitsdk";
 import * as Sentry from "@sentry/node";
@@ -92,19 +94,36 @@ function originalPathFromJobData(data: unknown): string {
   return parsed.success ? (parsed.data.originalPath ?? "unknown FIT file") : "unknown FIT file";
 }
 
+function sanitizedFitFileName(originalPath: string): string {
+  return basename(originalPath).replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, "[redacted]");
+}
+
+function sanitizedFitImportError(error: unknown, originalPath: string): Error {
+  const sanitizedFileName = sanitizedFitFileName(originalPath);
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const message = rawMessage
+    .replaceAll(originalPath, sanitizedFileName)
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, "[redacted]");
+  const sanitizedError = new Error(message);
+  sanitizedError.name = error instanceof Error ? error.name : "Error";
+  return sanitizedError;
+}
+
 function fitFileImportErrorResult(data: unknown, error: unknown): FitFileImportJobResult {
   const originalPath = originalPathFromJobData(data);
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  Sentry.captureException(error, {
+  const fitFileId = createHash("sha256").update(originalPath).digest("hex");
+  const fileName = sanitizedFitFileName(originalPath);
+  const sanitizedError = sanitizedFitImportError(error, originalPath);
+  Sentry.captureException(sanitizedError, {
     tags: { fitImportStep: "process" },
-    extra: { originalPath },
+    extra: { fitFileId },
   });
-  logger.error("Failed to import FIT file %s: %s", originalPath, errorMessage);
+  logger.error("Failed to import FIT file %s: %s", fileName, sanitizedError.message);
   return {
     recordsSynced: 0,
     errors: [
       {
-        message: `Failed to import FIT file ${originalPath}: ${errorMessage}`,
+        message: `Failed to import FIT file ${fileName}: ${sanitizedError.message}`,
       },
     ],
   };

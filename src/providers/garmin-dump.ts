@@ -14,10 +14,7 @@ import { ensureProvider } from "../db/tokens.ts";
 import type { ParsedFitSession } from "../fit/parser.ts";
 import {
   createGarminFitBatchId,
-  type GarminDumpFlowEntry,
   type GarminFitJobEntry,
-  MAX_GARMIN_DUMP_ENTRY_BYTES,
-  MAX_GARMIN_DUMP_NESTED_ZIP_BYTES,
   type PreparedGarminDumpImport,
 } from "../jobs/garmin-dump-flow.ts";
 import type { FitFileImportJobData } from "../jobs/queues.ts";
@@ -27,6 +24,8 @@ import type { ImportProvider, SyncError } from "./types.ts";
 export const GARMIN_DUMP_PROVIDER_ID = "garmin-dump";
 const GARMIN_DUMP_PROVIDER_NAME = "Garmin Dump";
 const MAX_GARMIN_DUMP_INPUT_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_GARMIN_DUMP_ENTRY_BYTES = 128 * 1024 * 1024;
+const MAX_GARMIN_DUMP_NESTED_ZIP_BYTES = 1024 * 1024 * 1024;
 const MAX_GARMIN_DUMP_EXTRACTED_BYTES = 4 * 1024 * 1024 * 1024;
 const GARMIN_DUMP_IMPORT_LOCK_EXTENSION_MS = 10 * 60 * 1000;
 
@@ -53,6 +52,24 @@ const summarizedActivitiesFileSchema = z.array(
 
 type GarminSummarizedActivity = z.infer<typeof summarizedActivitySchema>;
 const summarizedActivitiesSuffix = `_${"summarized"}${"activities"}.json`;
+
+export type GarminDumpFlowEntry =
+  | {
+      path: string;
+      filePath: string;
+      archivePath?: string;
+      entryPath?: string[];
+      outputDirectory?: string;
+    }
+  | {
+      path: string;
+      filePath?: never;
+      archivePath: string;
+      entryPath: string[];
+      outputDirectory: string;
+      maxBytes: number;
+      nestedArchiveMaxBytes: number;
+    };
 
 type GarminDumpEntry = GarminDumpFlowEntry;
 
@@ -358,6 +375,8 @@ async function collectZipEntries(
         archivePath: rootArchivePath,
         entryPath: [...entryPathPrefix, entry.fileName],
         outputDirectory: extractionDirectory,
+        maxBytes: MAX_GARMIN_DUMP_ENTRY_BYTES,
+        nestedArchiveMaxBytes: MAX_GARMIN_DUMP_NESTED_ZIP_BYTES,
       });
     }
   } finally {

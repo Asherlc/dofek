@@ -39,7 +39,7 @@ async function checkWorkerReadiness(workers: readonly ReadinessWorker[]): Promis
   );
 }
 
-async function checkWorkerReadinessWithTimeout(workers: readonly ReadinessWorker[]): Promise<void> {
+async function checkWorkerReadinessWithTimeout(readinessCheck: Promise<void>): Promise<void> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timeoutId = setTimeout(
@@ -49,7 +49,7 @@ async function checkWorkerReadinessWithTimeout(workers: readonly ReadinessWorker
   });
 
   try {
-    await Promise.race([checkWorkerReadiness(workers), timeout]);
+    await Promise.race([readinessCheck, timeout]);
   } finally {
     clearTimeout(timeoutId);
   }
@@ -61,6 +61,23 @@ function sendJson(response: ServerResponse, status: number, body: object) {
 }
 
 export function createWorkerReadinessServer(workers: readonly ReadinessWorker[]): Server {
+  let readinessCheck: Promise<void> | null = null;
+
+  function waitUntilReady(): Promise<void> {
+    if (readinessCheck) {
+      return Promise.reject(new Error("Worker readiness check is already in progress"));
+    }
+    const currentCheck = checkWorkerReadiness(workers);
+    readinessCheck = currentCheck;
+    const clearCurrentCheck = () => {
+      if (readinessCheck === currentCheck) {
+        readinessCheck = null;
+      }
+    };
+    void currentCheck.then(clearCurrentCheck, clearCurrentCheck);
+    return checkWorkerReadinessWithTimeout(currentCheck);
+  }
+
   return createServer((request, response) => {
     if (request.method !== "GET" || request.url !== "/readyz") {
       response.writeHead(404);
@@ -68,7 +85,7 @@ export function createWorkerReadinessServer(workers: readonly ReadinessWorker[])
       return;
     }
 
-    void checkWorkerReadinessWithTimeout(workers)
+    void waitUntilReady()
       .then(() => sendJson(response, 200, { status: "ok", workers: workers.length }))
       .catch((error: unknown) => {
         Sentry.captureException(error);

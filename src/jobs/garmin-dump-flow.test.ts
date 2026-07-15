@@ -3,8 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   attachGarminFitImportFlow,
   createGarminFitBatchId,
-  MAX_GARMIN_DUMP_ENTRY_BYTES,
-  MAX_GARMIN_DUMP_NESTED_ZIP_BYTES,
   type PreparedGarminDumpImport,
 } from "./garmin-dump-flow.ts";
 import { getFlowProducer } from "./queues.ts";
@@ -30,6 +28,8 @@ const preparedImport = {
         archivePath: "/job-files/upload.zip",
         entryPath: ["nested.zip", "activity.fit"],
         outputDirectory: "/job-files/extracted",
+        maxBytes: 128 * 1024 * 1024,
+        nestedArchiveMaxBytes: 1024 * 1024 * 1024,
       },
       data: {
         originalPath: "nested/activity.fit",
@@ -105,8 +105,8 @@ describe("attachGarminFitImportFlow", () => {
                 entryPath: ["nested.zip", "activity.fit"],
                 outputDirectory: "/job-files/extracted",
                 outputExtension: "fit",
-                maxBytes: MAX_GARMIN_DUMP_ENTRY_BYTES,
-                nestedArchiveMaxBytes: MAX_GARMIN_DUMP_NESTED_ZIP_BYTES,
+                maxBytes: 128 * 1024 * 1024,
+                nestedArchiveMaxBytes: 1024 * 1024 * 1024,
               },
               opts: expect.objectContaining({
                 jobId: expect.stringMatching(/^garmin-dump-fit-extract-[a-f0-9]{64}$/),
@@ -203,6 +203,8 @@ describe("attachGarminFitImportFlow", () => {
         archivePath: "/job-files/upload.zip",
         entryPath: ["nested.zip", `activity-${entryIndex}.fit`],
         outputDirectory: "/job-files/extracted",
+        maxBytes: 128 * 1024 * 1024,
+        nestedArchiveMaxBytes: 1024 * 1024 * 1024,
       },
       data: {
         originalPath: `nested/activity-${entryIndex}.fit`,

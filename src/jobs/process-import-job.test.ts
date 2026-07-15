@@ -804,15 +804,31 @@ describe("processImportJob", () => {
 
       await expect(access(tempFilePath)).rejects.toThrow();
     });
-    it("warns when unlink fails during file cleanup", async () => {
-      mockUnlink.mockRejectedValueOnce(new Error("EACCES: permission denied"));
+    it("reports and propagates unlink failures so cleanup remains retryable", async () => {
+      const cleanupError = new Error("EACCES: permission denied");
+      mockUnlink.mockRejectedValueOnce(cleanupError);
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
-      await runImportJob(job, mockDb);
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        "Failed to clean up uploaded file %s: %s",
-        tempFilePath,
-        expect.any(Error),
+      await expect(runImportJob(job, mockDb)).rejects.toBe(cleanupError);
+      expect(mockCaptureException).toHaveBeenCalledWith(cleanupError, {
+        tags: { phase: "uploaded-file-cleanup" },
+      });
+    });
+    it("preserves both errors when import and cleanup fail", async () => {
+      const importError = new Error("parse error");
+      const cleanupError = new Error("EACCES: permission denied");
+      mockImportAppleHealthFile.mockRejectedValueOnce(importError);
+      mockUnlink.mockRejectedValueOnce(cleanupError);
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await expect(runImportJob(job, mockDb)).rejects.toEqual(
+        expect.objectContaining({
+          name: "AggregateError",
+          errors: [importError, cleanupError],
+        }),
       );
+      expect(mockCaptureException).toHaveBeenCalledWith(cleanupError, {
+        tags: { phase: "uploaded-file-cleanup" },
+      });
     });
   });
   describe("post-import refresh", () => {

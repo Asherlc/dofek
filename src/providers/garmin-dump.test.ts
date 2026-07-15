@@ -280,6 +280,8 @@ describe("Garmin dump provider", () => {
         "asher@example.com_12345.fit",
       ],
       outputDirectory: parsed.tempDirectories[0],
+      maxBytes: 128 * 1024 * 1024,
+      nestedArchiveMaxBytes: 1024 * 1024 * 1024,
     });
     expect(parsed.weightFitFiles[0]).toEqual({
       path: "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_999_weight.fit",
@@ -289,6 +291,8 @@ describe("Garmin dump provider", () => {
         "asher@example.com_999_weight.fit",
       ],
       outputDirectory: parsed.tempDirectories[0],
+      maxBytes: 128 * 1024 * 1024,
+      nestedArchiveMaxBytes: 1024 * 1024 * 1024,
     });
   });
 
@@ -364,6 +368,8 @@ describe("Garmin dump provider", () => {
         archivePath: nestedZipPath,
         entryPath: ["asher@example.com_12345.fit"],
         outputDirectory: parsed.tempDirectories[0],
+        maxBytes: 128 * 1024 * 1024,
+        nestedArchiveMaxBytes: 1024 * 1024 * 1024,
       },
     ]);
     expect(parsed.weightFitFiles).toEqual([]);

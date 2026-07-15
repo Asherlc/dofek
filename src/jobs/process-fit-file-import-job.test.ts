@@ -182,14 +182,14 @@ describe("processFitFileImportJob", () => {
       expect.objectContaining({
         name: "UnrecoverableError",
         message:
-          "Failed to import FIT file DI_CONNECT/activity.fit: FIT import job is missing filePath and has no child extraction result",
+          "Failed to import FIT file activity.fit: FIT import job is missing filePath and has no child extraction result",
       }),
     );
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { fitImportStep: "process" },
-      extra: { originalPath: "DI_CONNECT/activity.fit" },
+      extra: { fitFileId: expect.stringMatching(/^[a-f0-9]{64}$/) },
     });
   });
 
@@ -227,14 +227,14 @@ describe("processFitFileImportJob", () => {
     ).rejects.toBeInstanceOf(UnrecoverableError);
     expect(mockLoggerError).toHaveBeenCalledWith(
       "Failed to import FIT file %s: %s",
-      "DI_CONNECT/activity.fit",
+      "activity.fit",
       expect.any(String),
     );
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
   });
 
-  it("keeps originalPath for error messages when job data has extra fields", async () => {
+  it("keeps the sanitized file name in error messages when job data has extra fields", async () => {
     await expect(
       processFitFileImportJob(
         createFitFileImportJob({
@@ -245,7 +245,7 @@ describe("processFitFileImportJob", () => {
       ),
     ).rejects.toEqual(
       expect.objectContaining({
-        message: expect.stringContaining("Failed to import FIT file DI_CONNECT/activity.fit:"),
+        message: expect.stringContaining("Failed to import FIT file activity.fit:"),
       }),
     );
   });
@@ -421,7 +421,7 @@ describe("processFitFileImportJob", () => {
       expect.objectContaining({
         name: "UnrecoverableError",
         message:
-          "Failed to import FIT file DI_CONNECT/activity.fit: FIT extraction failed: archive CRC mismatch",
+          "Failed to import FIT file activity.fit: FIT extraction failed: archive CRC mismatch",
       }),
     );
   });
@@ -470,7 +470,7 @@ describe("processFitFileImportJob", () => {
       expect.objectContaining({
         name: "UnrecoverableError",
         message:
-          "Failed to import FIT file DI_CONNECT/asher@example.com_activity.fit: FIT import job expected 1 child extraction result, got 2",
+          "Failed to import FIT file [redacted]_activity.fit: FIT import job expected 1 child extraction result, got 2",
       }),
     );
   });
@@ -651,8 +651,7 @@ describe("processFitFileImportJob", () => {
     ).rejects.toEqual(
       expect.objectContaining({
         name: "UnrecoverableError",
-        message:
-          "Failed to import FIT file DI_CONNECT/missing-start.fit: missing a valid start time",
+        message: "Failed to import FIT file missing-start.fit: missing a valid start time",
       }),
     );
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
@@ -786,7 +785,7 @@ describe("processFitFileImportJob", () => {
       expect.objectContaining({
         name: "UnrecoverableError",
         message: expect.stringContaining(
-          "Failed to import FIT file DI_CONNECT/broken.fit: FIT decoder reported",
+          "Failed to import FIT file broken.fit: FIT decoder reported",
         ),
       }),
     );
@@ -808,12 +807,47 @@ describe("processFitFileImportJob", () => {
     await expect(processFitFileImportJob(job, mockDb)).rejects.toEqual(
       expect.objectContaining({
         name: "UnrecoverableError",
-        message: "Failed to import FIT file DI_CONNECT/broken-session.fit: invalid FIT session",
+        message: "Failed to import FIT file broken-session.fit: invalid FIT session",
       }),
     );
     expect(job.updateProgress).not.toHaveBeenCalledWith({
       percentage: 100,
       message: "FIT file import complete.",
+    });
+  });
+
+  it("redacts Garmin paths from telemetry, logs, and persisted failures", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    const privatePath = "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_broken-session.fit";
+    mockParseFitFileInWorkerThread.mockRejectedValueOnce(
+      new Error(`FIT parser rejected ${privatePath}`),
+    );
+
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: privatePath,
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        }),
+        mockDb,
+      ),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: "UnrecoverableError",
+        message:
+          "Failed to import FIT file [redacted]_broken-session.fit: FIT parser rejected [redacted]_broken-session.fit",
+      }),
+    );
+    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(privatePath);
+    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain("asher@example.com");
+    expect(JSON.stringify(mockLoggerError.mock.calls)).not.toContain(privatePath);
+    expect(JSON.stringify(mockLoggerError.mock.calls)).not.toContain("asher@example.com");
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { fitImportStep: "process" },
+      extra: { fitFileId: expect.stringMatching(/^[a-f0-9]{64}$/) },
     });
   });
 
