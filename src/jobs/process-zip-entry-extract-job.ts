@@ -169,9 +169,10 @@ export async function processZipEntryExtractJob(
   job: ZipEntryExtractJob,
 ): Promise<ZipEntryExtractJobResult> {
   const data = zipEntryExtractJobDataSchema.parse(job.data);
-  const tempDirectory = await mkdtemp(join(dirname(data.archivePath), ".zip-entry-extract-"));
+  const outputDirectory = data.outputDirectory ?? dirname(data.archivePath);
+  const tempDirectory = await mkdtemp(join(outputDirectory, ".zip-entry-extract-"));
   const outputPath = join(
-    dirname(data.archivePath),
+    outputDirectory,
     `${basename(data.archivePath)}-${createHash("sha256")
       .update(data.entryPath.join("\n"))
       .digest("hex")}.${data.outputExtension}`,

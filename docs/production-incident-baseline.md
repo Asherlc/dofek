@@ -13089,6 +13089,88 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** The fix still needs deployment, followed by a
   retry of the failed Garmin dump import.
 
+## 2026-07-14 — Worker Healthcheck Exhausted the Garmin Import Cgroup
+
+- **Symptoms:** A production Garmin dump import remained at 45 percent with
+  `Importing Garmin FIT files (0/1294)...`, and its shared Swarm worker
+  restarted.
+- **User impact:** The UI showed no Garmin progress while BullMQ recovered the
+  parent job, other work in the process was interrupted, and the eventual
+  import reported 948 child errors.
+- **Production evidence:** The worker task was killed at
+  `2026-07-14T20:15:51.556Z`; Docker reported `OOMKilled=true`, exit code `137`,
+  and Swarm reported `task: non-zero exit (137)`. The memory cgroup was exactly
+  at its 419,430,400-byte limit. Its main Node process owned 344,543,232
+  anonymous bytes, a second Node process owned 65,556,480 anonymous bytes, and
+  kernel memory accounted for the remainder. The host still had approximately
+  9 GiB available, so this was a container-limit event rather than host
+  pressure ([incident evidence](incidents/2026-07-14-worker-oom-evidence.md#production-capture)). Docker documents that a container health command runs inside the
+  container and that the kernel kills container processes when a configured
+  memory limit is exhausted
+  ([healthcheck configuration](https://docs.docker.com/reference/compose-file/services/#healthcheck),
+  [memory constraints](https://docs.docker.com/engine/containers/resource_constraints/)).
+- **Concurrent work:** The Garmin parent was active from `20:13:44Z`, with two
+  ZIP extractors active, 283 terminal, and 1,009 waiting at the kill. A WHOOP
+  heart-rate step was active after the preceding steps wrote 76,897 and 99,456
+  samples, and one Strava job had remained active since `19:23:15Z`. The fatal
+  WHOOP step had not emitted its response-header event, so its large response
+  was not proven to be materialized
+  ([incident evidence](incidents/2026-07-14-worker-oom-evidence.md#production-capture)).
+- **Healthcheck evidence:** The worker healthcheck starts a fresh Node runtime,
+  imports Sentry and BullMQ, invokes `ps`, and connects six queues every ten
+  seconds. Retained checks ended at `20:15:38.915Z`, placing the next start near
+  `20:15:48.915Z`; the OOM followed 2.641 seconds later. It is the only
+  independently launched Node command in the container and its measured memory
+  matches the second process. This heavyweight probe was introduced in
+  [PR #1394](https://github.com/Asherlc/dofek/pull/1394) to strengthen queue
+  readiness beyond the prior process-name check
+  ([incident evidence](incidents/2026-07-14-worker-oom-evidence.md#production-capture)).
+- **Controlled evidence:** The exact incident image was replayed with production
+  Node instrumentation, the exact health command/cadence, cgroup accounting, a
+  synthetic 1,294-entry Garmin allocation, and three 100,000-value WHOOP
+  windows. Healthcheck-on runs reached 414,978,048 current bytes and 416,161,792
+  peak bytes while the probe held 59–61 MiB of anonymous memory. Identical
+  healthcheck-off runs peaked at 376,233,984 current bytes. The synthetic Garmin
+  counts represent fixture allocation only, not executed BullMQ children or
+  observed stalls. At the highest overlap, the primary workload was within
+  7,335,936 anonymous bytes of the production main process; production kernel
+  accounting proves the real main process plus the probe exhausted the cgroup
+  ([controlled exact-image profile](incidents/2026-07-14-worker-oom-evidence.md#controlled-exact-image-profile)).
+- **Root cause:** A heavyweight healthcheck launched a second full Node runtime
+  inside the same 400 MiB cgroup while the long-lived worker was already near
+  capacity across Garmin extraction and other provider jobs. Their anonymous
+  memory plus kernel memory reached the limit exactly. The healthcheck consumed
+  decisive headroom; WHOOP full-response materialization was not established as
+  the fatal step's cause. A separate recovery defect caused the 948 Garmin child
+  errors: non-deterministic extraction IDs allowed unfinished FIT jobs to
+  acquire duplicate child results after restart.
+- **Fix / mitigation:** Replaced the second Node healthcheck runtime with a
+  loopback-only readiness endpoint served by the existing worker process. It
+  checks every existing BullMQ worker and both of its Redis connections, while
+  Swarm calls the endpoint with BusyBox `wget`. Reworked Garmin imports into a
+  deterministic BullMQ child flow whose parent parks in `waiting-children`
+  without a lock, resumes from a versioned checkpoint, reports authoritative
+  progress, preserves successful siblings, bounds grouped failures, and owns
+  temporary-file cleanup. No memory limit or retry delay was increased.
+- **Validation:** Lint and all-package typecheck passed in the
+  [complete CI run](https://github.com/Asherlc/dofek/actions/runs/29386899805).
+  [Unit validation](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87262093631)
+  passed 11,699 tests in 595 files, and the
+  [unit and integration test gate](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87263034432)
+  passed against real Postgres, Redis, and ClickHouse dependencies.
+  An isolated real-Redis restart test proved that the parent resumed without
+  its old lock and that two identical flow attachments executed every child
+  exactly once. All mutation shards passed the
+  [mutation-testing gate](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87263784522),
+  including a
+  [100 percent Stryker shard](https://github.com/Asherlc/dofek/actions/runs/29386899805/job/87262133382)
+  containing the import worker changes.
+  The Swarm stack rendered successfully without deployment.
+- **Remaining risk / follow-up:** The direct fix still requires deployment,
+  retrying the affected Garmin import, and production monitoring of worker
+  memory, readiness, and recovered job progress. WHOOP response streaming
+  remains separate hardening because the incident did not establish it as a
+  resident allocation at the fatal overlap.
 ## 2026-07-14 — Cycling Training Page Took 15–23 Seconds to Load
 
 - **Symptoms:** `https://dofek.asherlc.com/training/cycling` initially appeared
@@ -13209,3 +13291,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   completed successfully with all three steps pinned to 4.36.3.
 - **Remaining risk / follow-up:** Dependabot treats each CodeQL sub-action as a
   separate dependency, so a future partial update can recreate version skew.
+
+## 2026-07-15 — Garmin Import PR Failed Mobile, Boundary, and Mutation Checks
+
+- **Symptoms:** PR #1630 failed the mobile Metro bundle, import-boundary,
+  Stryker shard 10, and aggregate lint/static-analysis jobs.
+- **User impact:** The Garmin import fix could not merge despite its functional
+  tests passing.
+- **Evidence:** The mobile job reported `Found outdated dependencies` for 19
+  Expo packages in the
+  [Metro job](https://github.com/Asherlc/dofek/actions/runs/29423879565/job/87381222960).
+  Dependency Cruiser reported the cycle `garmin-dump-flow.ts → garmin-dump.ts →
+  garmin-dump-flow.ts` in the
+  [import-boundary job](https://github.com/Asherlc/dofek/actions/runs/29423879565/job/87381172910).
+  The [Stryker job](https://github.com/Asherlc/dofek/actions/runs/29423879565/job/87381218923)
+  failed its initial test run because a medication-dose assertion assumed ZIP
+  entry enumeration order. The aggregate job then failed because a required
+  child job had failed.
+- **Root cause:** Expo-compatible package patches had advanced after the lockfile
+  was generated, Garmin-specific prepared-import contracts were owned by the
+  queue-flow module and imported back into the provider, and the Apple Health
+  test asserted an ordering that the ZIP format does not guarantee.
+- **Fix / mitigation:** Updated the Expo 57 package set and the required
+  `@expo/plist` patch to the resolved patch release, moved Garmin prepared-import
+  contract ownership and batch-ID creation into the Garmin provider so the flow
+  only depends one way, and made the medication-dose assertion order-independent
+  while preserving exact cardinality.
+- **Validation:** Expo dependency validation and an iOS Metro export pass;
+  Dependency Cruiser reports zero violations; 117 affected server tests and all
+  843 mobile tests pass; TypeScript reports no errors; Biome and the analytics
+  policy check pass. The full local analytics SQL lint could not connect because
+  local ClickHouse had exhausted its Docker volume (`No space left on device`),
+  so the replacement GitHub Actions run remains the authoritative clean-run
+  validation.
+- **Remaining risk / follow-up:** Confirm the replacement workflow completes all
+  Stryker shards and the aggregate required-check job on fresh hosted runners.

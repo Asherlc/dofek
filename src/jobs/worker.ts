@@ -1,10 +1,11 @@
 import * as Sentry from "@sentry/node";
-import { type Job, Worker } from "bullmq";
+import { Job, Worker } from "bullmq";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { jobContext, logger } from "../logger.ts";
+import { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
 import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
 import { processExportJob } from "./process-export-job.ts";
 import { processFitFileImportBatchJob } from "./process-fit-file-import-batch-job.ts";
@@ -38,6 +39,7 @@ import {
   type ZipEntryExtractJobData,
 } from "./queues.ts";
 import { setupScheduledSync } from "./scheduled-sync.ts";
+import { createWorkerReadinessServer } from "./worker-readiness.ts";
 
 const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
 if (sentryDsn) {
@@ -45,6 +47,8 @@ if (sentryDsn) {
 }
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const WORKER_READINESS_HOST = "127.0.0.1";
+const WORKER_READINESS_PORT = 3001;
 
 const db = createDatabaseFromEnv();
 const connection = getRedisConnection();
@@ -106,10 +110,12 @@ const legacySyncWorker = new Worker<SyncJobData>(
 
 // ── Other workers ──
 
-const importWorker = new Worker<ImportJobData>(
+const importWorker: Worker<ImportJobData> = new Worker<ImportJobData>(
   IMPORT_QUEUE,
   (job, token) =>
-    jobContext.run(job, () => processImportJob(importJobWithLockExtender(job, token), db)),
+    jobContext.run(job, () =>
+      processImportJob(importJobWithLockExtender(job, token, importWorker), db),
+    ),
   { autorun: false, connection },
 );
 const exportWorker = new Worker<ExportJobData>(
@@ -215,16 +221,42 @@ const allWorkers: Worker[] = [
   postSyncWorker,
   activityDeleteAnalyticsWorker,
 ];
+const garminImportProgressCoordinator = createGarminImportProgressCoordinator(connection);
 
-function importJobWithLockExtender(job: Job<ImportJobData>, token?: string) {
+function importJobWithLockExtender(
+  job: Job<ImportJobData>,
+  token: string | undefined,
+  worker: Worker<ImportJobData>,
+) {
+  const jobId = job.id;
+  if (!jobId) {
+    throw new Error("BullMQ import job ID missing");
+  }
+
+  const requireToken = (): string => {
+    if (!token) {
+      throw new Error("BullMQ import job lock token missing");
+    }
+    return token;
+  };
+
   return {
+    id: jobId,
+    queueQualifiedName: job.queueQualifiedName,
     data: job.data,
     updateProgress: (data: object) => job.updateProgress(data),
+    updateData: (data: ImportJobData) => job.updateData(data),
+    moveToWaitingChildren: () => job.moveToWaitingChildren(requireToken()),
+    getChildrenValues: () => job.getChildrenValues<unknown>(),
+    getIgnoredChildrenFailures: () => job.getIgnoredChildrenFailures(),
+    log: async (message: string) => {
+      await Job.addJobLog(worker, jobId, message, 500);
+    },
     extendLock: async (durationMs: number) => {
-      if (!token) {
-        throw new Error("BullMQ import job lock token missing");
+      const extendedLockCount = await job.extendLock(requireToken(), durationMs);
+      if (extendedLockCount !== 1) {
+        throw new Error(`BullMQ import job lock is no longer owned: ${jobId}`);
       }
-      await job.extendLock(token, durationMs);
     },
   };
 }
@@ -244,7 +276,53 @@ for (const worker of allWorkers) {
     finishActiveJob(worker, job);
     Sentry.captureException(err);
     logger.error(`[worker] Job failed: ${err.message}`);
+    if (job?.id) {
+      const message = `BullMQ job failed: queue=${worker.name} jobId=${job.id} cause=${err.message}`;
+      void Job.addJobLog(worker, job.id, `[error] ${message}`, 100).catch((logError: unknown) => {
+        Sentry.captureException(logError, {
+          tags: { bullmqEvent: "failed", queue: worker.name },
+          extra: { jobId: job.id, operation: "addJobLog" },
+        });
+        logger.error(
+          `[worker] Failed to append failed job log: queue=${worker.name} jobId=${job.id}: ${String(logError)}`,
+        );
+      });
+    }
     if (activeJobCount() === 0) startIdleTimer();
+  });
+
+  worker.on("stalled", (jobId, previousState) => {
+    const message = `BullMQ job stalled: queue=${worker.name} jobId=${jobId} previousState=${previousState}`;
+    const error = new Error(message);
+    Sentry.captureException(error, {
+      tags: { bullmqEvent: "stalled", queue: worker.name },
+    });
+    logger.error(`[worker] ${message}`);
+    void Job.addJobLog(worker, jobId, `[error] ${message}`, 100).catch((logError: unknown) => {
+      Sentry.captureException(logError);
+      logger.error(`[worker] Failed to append stalled job log: ${String(logError)}`);
+    });
+  });
+
+  worker.on("lockRenewalFailed", (jobIds) => {
+    const message = `BullMQ lock renewal failed: queue=${worker.name} jobIds=${jobIds.join(",")}`;
+    const error = new Error(message);
+    Sentry.captureException(error, {
+      tags: { bullmqEvent: "lockRenewalFailed", queue: worker.name },
+      extra: { jobIds },
+    });
+    logger.error(`[worker] ${message}`);
+    for (const jobId of jobIds) {
+      void Job.addJobLog(worker, jobId, `[error] ${message}`, 100).catch((logError: unknown) => {
+        Sentry.captureException(logError, {
+          tags: { bullmqEvent: "lockRenewalFailed", queue: worker.name },
+          extra: { jobId, operation: "addJobLog" },
+        });
+        logger.error(
+          `[worker] Failed to append lock renewal failure job log: queue=${worker.name} jobId=${jobId}: ${String(logError)}`,
+        );
+      });
+    }
   });
 
   worker.on("error", (err) => {
@@ -253,12 +331,31 @@ for (const worker of allWorkers) {
   });
 }
 
+fitFileImportWorker.on("completed", (job) => {
+  garminImportProgressCoordinator.observeFitJob(job);
+});
+fitFileImportWorker.on("failed", (job) => {
+  if (job) {
+    garminImportProgressCoordinator.observeFitJob(job);
+  }
+});
+
 // Start idle timer immediately (exit if no jobs arrive within timeout)
 startIdleTimer();
 
 for (const worker of allWorkers) {
   void worker.run();
 }
+void garminImportProgressCoordinator.reconcile().catch((error: unknown) => {
+  Sentry.captureException(error, { tags: { garminDumpStep: "progress-reconcile" } });
+  logger.error(`[worker] Failed to reconcile Garmin import progress: ${String(error)}`);
+});
+
+const readinessServer = createWorkerReadinessServer(allWorkers);
+readinessServer.listen(WORKER_READINESS_PORT, WORKER_READINESS_HOST);
+logger.info(
+  `[worker] Readiness endpoint listening on http://${WORKER_READINESS_HOST}:${WORKER_READINESS_PORT}/readyz`,
+);
 
 // Set up periodic sync for API providers
 const syncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES
@@ -276,7 +373,13 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info("[worker] Shutting down gracefully...");
-  await Promise.all(allWorkers.map((w) => w.close()));
+  await Promise.all([
+    new Promise<void>((resolve, reject) => {
+      readinessServer.close((error) => (error ? reject(error) : resolve()));
+    }),
+    garminImportProgressCoordinator.close(),
+    ...allWorkers.map((worker) => worker.close()),
+  ]);
   logger.info("[worker] Shutdown complete.");
   process.exit(0);
 }

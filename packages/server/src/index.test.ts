@@ -11,6 +11,9 @@ const mockQueue = {
   getJobCounts: mockQueueGetJobCounts,
   close: mockQueueClose,
 };
+const mockFitFileImportQueue = { ...mockQueue, name: "fit-file-import" };
+const mockFitFileImportBatchQueue = { ...mockQueue, name: "fit-file-import-batch" };
+const mockZipEntryExtractQueue = { ...mockQueue, name: "zip-entry-extract" };
 const mockCheckReadiness = vi.fn(async () => ({
   status: "ok" as const,
   checks: {
@@ -65,11 +68,14 @@ vi.mock("dofek/db/clickhouse", () => ({
 vi.mock("dofek/jobs/queues", () => ({
   createActivityDeleteAnalyticsQueue: vi.fn(() => mockQueue),
   createExportQueue: vi.fn(() => mockQueue),
+  createFitFileImportBatchQueue: vi.fn(() => mockFitFileImportBatchQueue),
+  createFitFileImportQueue: vi.fn(() => mockFitFileImportQueue),
   createImportQueue: vi.fn(() => mockQueue),
   getImportQueue: vi.fn(() => mockQueue),
   createPostSyncQueue: vi.fn(() => mockQueue),
   createScheduledSyncQueue: vi.fn(() => mockQueue),
   createSyncQueue: vi.fn(() => mockQueue),
+  createZipEntryExtractQueue: vi.fn(() => mockZipEntryExtractQueue),
 }));
 vi.mock("../repositories/clickhouse-activity-sensor-store.ts", () => ({
   ClickHouseActivitySensorStore: vi.fn(),
@@ -207,6 +213,18 @@ describe("createApp", () => {
     const fakeDb = createDatabaseFromEnv();
     createApp(fakeDb, makeMockSensorStore());
     expect(createIngestZosHealthRouter).toHaveBeenCalled();
+  });
+
+  it("registers FIT import flow queues in Bull Board", async () => {
+    const { BullMQAdapter } = await import("@bull-board/api/bullMQAdapter");
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    vi.mocked(BullMQAdapter).mockClear();
+
+    createApp(createDatabaseFromEnv(), makeMockSensorStore());
+
+    expect(BullMQAdapter).toHaveBeenCalledWith(mockFitFileImportQueue);
+    expect(BullMQAdapter).toHaveBeenCalledWith(mockFitFileImportBatchQueue);
+    expect(BullMQAdapter).toHaveBeenCalledWith(mockZipEntryExtractQueue);
   });
 
   it("passes db to createIngestZosHealthRouter", async () => {

@@ -160,8 +160,8 @@
     "@aws-crypto/client-node": "5.0.0",
     "@aws-sdk/client-s3": "3.1050.0",
     "@aws-sdk/s3-request-presigner": "3.1050.0",
-    "@bull-board/api": "8.0.2",
-    "@bull-board/express": "8.0.2",
+    "@bull-board/api": "8.1.2",
+    "@bull-board/express": "8.1.2",
     "@clickhouse/client": "1.12.1",
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
@@ -289,7 +289,7 @@
     },
     "patchedDependencies": {
       "@expo/plist@0.0.18": "patches/@expo__plist@0.0.18.patch",
-      "@expo/plist@0.8.0": "patches/@expo__plist@0.8.0.patch"
+      "@expo/plist@0.8.1": "patches/@expo__plist@0.8.1.patch"
     }
   },
   "engines": {

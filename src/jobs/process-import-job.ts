@@ -1,18 +1,14 @@
 import * as Sentry from "@sentry/node";
+import { UnrecoverableError } from "bullmq";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
-import type { ImportJobData } from "./queues.ts";
+import type { GarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
 
-/** Minimal Job interface — only the subset processImportJob actually uses. */
-interface ImportJob {
-  data: ImportJobData;
-  updateProgress: (data: object) => Promise<void>;
-  extendLock: (durationMs: number) => Promise<void>;
-}
+type ImportJob = GarminDumpImportJob;
 
 function isKayaImportDatabase(db: SyncDatabase): db is KayaImportDatabase {
   return "transaction" in db && typeof db.transaction === "function";
@@ -80,7 +76,11 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   const { filePath, since, userId, importType, weightUnit } = job.data;
   const sinceDate = new Date(since);
   const importStart = Date.now();
+  let terminalImportError: UnrecoverableError | null = null;
 
+  let shouldCleanUpUploadedFile = importType !== "garmin-dump";
+  let importFailed = false;
+  let importError: unknown;
   try {
     await runWithTokenUser(userId, async () => {
       if (importType === "apple-health") {
@@ -211,11 +211,9 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           userId,
         );
       } else if (importType === "garmin-dump") {
-        const { importGarminDumpFile } = await import("../providers/garmin-dump.ts");
-        const result = await importGarminDumpFile(db, filePath, userId, {
-          extendLock: job.extendLock,
-          onProgress: (info) => updateImportJobProgress(job, info),
-        });
+        const { processGarminDumpImportJob } = await import("./process-garmin-dump-import-job.ts");
+        const result = await processGarminDumpImportJob(job, db);
+        shouldCleanUpUploadedFile = true;
 
         await logImportCompletion(
           db,
@@ -226,6 +224,11 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           importStart,
           userId,
         );
+        if (result.errors.length > 0) {
+          terminalImportError = new UnrecoverableError(
+            `Garmin dump import batch ${result.batchId} completed with errors after importing ${result.recordsSynced} activities across ${result.totalFitFiles} FIT files: ${result.errors.map((error) => error.message).join("; ")}`,
+          );
+        }
       } else if (importType === "fit-file") {
         await reportImportProgress(job, 0, "Starting FIT file import...");
         await ensureProvider(db, "fit-file", "FIT File", undefined, userId);
@@ -253,13 +256,27 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         );
       }
     });
-  } finally {
-    // Clean up uploaded file
-    const { unlink } = await import("node:fs/promises");
-    await unlink(filePath).catch((error: unknown) => {
-      logger.warn("Failed to clean up uploaded file %s: %s", filePath, error);
-    });
+  } catch (error) {
+    importFailed = true;
+    importError = error;
   }
+
+  if (shouldCleanUpUploadedFile) {
+    const { unlink } = await import("node:fs/promises");
+    try {
+      await unlink(filePath);
+    } catch (cleanupError) {
+      Sentry.captureException(cleanupError, { tags: { phase: "uploaded-file-cleanup" } });
+      if (importFailed) {
+        throw new AggregateError(
+          [importError, cleanupError],
+          "Import and uploaded-file cleanup both failed",
+        );
+      }
+      throw cleanupError;
+    }
+  }
+  if (importFailed) throw importError;
 
   try {
     job
@@ -280,5 +297,9 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   } catch (err) {
     logger.error(`[worker] Failed to enqueue post-import user refit: ${err}`);
     Sentry.captureException(err, { tags: { phase: "post-import-user-refit-enqueue" } });
+  }
+
+  if (terminalImportError) {
+    throw terminalImportError;
   }
 }

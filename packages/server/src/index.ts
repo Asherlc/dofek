@@ -14,9 +14,12 @@ import { bootstrapClickHouseFromEnv, createClickHouseClientFromEnv } from "dofek
 import {
   createActivityDeleteAnalyticsQueue,
   createExportQueue,
+  createFitFileImportBatchQueue,
+  createFitFileImportQueue,
   createPostSyncQueue,
   createScheduledSyncQueue,
   createSyncQueue,
+  createZipEntryExtractQueue,
   getImportQueue,
 } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
@@ -157,6 +160,9 @@ function setupRoutes(
 
   // ── BullMQ queues ──
   const importQueue = getImportQueue();
+  const fitFileImportQueue = createFitFileImportQueue();
+  const fitFileImportBatchQueue = createFitFileImportBatchQueue();
+  const zipEntryExtractQueue = createZipEntryExtractQueue();
   const syncQueue = createSyncQueue();
   const exportQueue = createExportQueue();
   const scheduledSyncQueue = createScheduledSyncQueue();
@@ -170,6 +176,9 @@ function setupRoutes(
     queues: [
       new BullMQAdapter(syncQueue),
       new BullMQAdapter(importQueue),
+      new BullMQAdapter(fitFileImportQueue),
+      new BullMQAdapter(fitFileImportBatchQueue),
+      new BullMQAdapter(zipEntryExtractQueue),
       new BullMQAdapter(exportQueue),
       new BullMQAdapter(scheduledSyncQueue),
       new BullMQAdapter(postSyncQueue),

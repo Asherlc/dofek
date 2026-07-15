@@ -1,5 +1,6 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { WaitingChildrenError } from "bullmq";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
@@ -9,7 +10,6 @@ const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
-
 let realUnlink: typeof import("node:fs/promises").unlink;
 const mockUnlink = vi.fn<(path: string) => Promise<void>>();
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -17,13 +17,11 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   realUnlink = actual.unlink;
   return { ...actual, unlink: (...args: [string]) => mockUnlink(...args) };
 });
-
 const { writeFile, access } = await import("node:fs/promises");
 
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
 const mockLoggerWarn = vi.fn();
-
 vi.mock("../logger.ts", () => ({
   logger: {
     info: (...args: unknown[]) => mockLoggerInfo(...args),
@@ -32,18 +30,15 @@ vi.mock("../logger.ts", () => ({
     debug: vi.fn(),
   },
 }));
-
 // Mock dependencies with module-level mock functions (avoids `as` casts)
 const mockLogSync = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/sync-log.ts", () => ({
   logSync: (...args: unknown[]) => mockLogSync(...args),
 }));
-
 const mockEnsureProvider = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/tokens.ts", () => ({
   ensureProvider: (...args: unknown[]) => mockEnsureProvider(...args),
 }));
-
 const mockEnqueueDebouncedPostSyncMaintenance = vi.fn().mockResolvedValue(undefined);
 const mockEnqueueDebouncedUserRefit = vi.fn().mockResolvedValue(undefined);
 vi.mock("./queues.ts", () => ({
@@ -59,7 +54,6 @@ const mockImportAppleHealthFile = vi.fn().mockResolvedValue({
 vi.mock("../providers/apple-health/import.ts", () => ({
   importAppleHealthFile: (...args: unknown[]) => mockImportAppleHealthFile(...args),
 }));
-
 const mockImportStrongCsv = vi.fn().mockResolvedValue({
   recordsSynced: 10,
   errors: [],
@@ -67,7 +61,6 @@ const mockImportStrongCsv = vi.fn().mockResolvedValue({
 vi.mock("../providers/strong-csv.ts", () => ({
   importStrongCsv: (...args: unknown[]) => mockImportStrongCsv(...args),
 }));
-
 const mockImportCronometerCsv = vi.fn().mockResolvedValue({
   recordsSynced: 7,
   errors: [],
@@ -75,7 +68,6 @@ const mockImportCronometerCsv = vi.fn().mockResolvedValue({
 vi.mock("../providers/cronometer-csv.ts", () => ({
   importCronometerCsv: (...args: unknown[]) => mockImportCronometerCsv(...args),
 }));
-
 const mockImportKayaExportFile = vi.fn().mockResolvedValue({
   recordsSynced: 4,
   errors: [],
@@ -83,7 +75,6 @@ const mockImportKayaExportFile = vi.fn().mockResolvedValue({
 vi.mock("../providers/kaya/import.ts", () => ({
   importKayaExportFile: (...args: unknown[]) => mockImportKayaExportFile(...args),
 }));
-
 const mockImportZosAppBin = vi.fn().mockResolvedValue({
   recordsSynced: 3,
   errors: [],
@@ -92,14 +83,17 @@ vi.mock("../providers/zos-app/provider.ts", () => ({
   importZosAppBin: (...args: unknown[]) => mockImportZosAppBin(...args),
 }));
 
-const mockImportGarminDumpFile = vi.fn().mockResolvedValue({
+const mockProcessGarminDumpImportJob = vi.fn().mockResolvedValue({
+  provider: "garmin-dump",
+  batchId: "garmin-fit-batch-1",
+  totalFitFiles: 5,
   recordsSynced: 5,
   errors: [],
+  duration: 100,
 });
-vi.mock("../providers/garmin-dump.ts", () => ({
-  importGarminDumpFile: (...args: unknown[]) => mockImportGarminDumpFile(...args),
+vi.mock("./process-garmin-dump-import-job.ts", () => ({
+  processGarminDumpImportJob: (...args: unknown[]) => mockProcessGarminDumpImportJob(...args),
 }));
-
 const mockImportFitFile = vi.fn().mockResolvedValue({
   recordsSynced: 1,
   errors: [],
@@ -107,10 +101,8 @@ const mockImportFitFile = vi.fn().mockResolvedValue({
 vi.mock("./process-fit-file-import-job.ts", () => ({
   importFitFile: (...args: unknown[]) => mockImportFitFile(...args),
 }));
-
 // Import after mocks
 const { processImportJob } = await import("./process-import-job.ts");
-
 // All DB functions are mocked at module level, so the db object is never actually called.
 const mockDb: KayaImportDatabase = {
   select: vi.fn(),
@@ -119,15 +111,23 @@ const mockDb: KayaImportDatabase = {
   execute: vi.fn(),
   transaction: vi.fn(),
 };
-
 interface MockJob {
+  id: string;
+  queueQualifiedName: string;
   data: ImportJobData;
   updateProgress: ReturnType<typeof vi.fn>;
+  updateData: ReturnType<typeof vi.fn>;
+  moveToWaitingChildren: ReturnType<typeof vi.fn>;
+  getChildrenValues: ReturnType<typeof vi.fn>;
+  getIgnoredChildrenFailures: ReturnType<typeof vi.fn>;
   extendLock: ReturnType<typeof vi.fn>;
+  log: ReturnType<typeof vi.fn>;
 }
 
 function createMockJob(overrides: Partial<ImportJobData> = {}): MockJob {
-  return {
+  const job: MockJob = {
+    id: "import-job-1",
+    queueQualifiedName: "bull:import-test",
     data: {
       filePath: "/tmp/test-upload.zip",
       since: "2024-01-01T00:00:00.000Z",
@@ -136,29 +136,33 @@ function createMockJob(overrides: Partial<ImportJobData> = {}): MockJob {
       ...overrides,
     },
     updateProgress: vi.fn().mockResolvedValue(undefined),
+    updateData: vi.fn().mockResolvedValue(undefined),
+    moveToWaitingChildren: vi.fn().mockResolvedValue(false),
+    getChildrenValues: vi.fn().mockResolvedValue({}),
+    getIgnoredChildrenFailures: vi.fn().mockResolvedValue({}),
     extendLock: vi.fn().mockResolvedValue(undefined),
+    log: vi.fn().mockResolvedValue(undefined),
   };
+  job.updateData.mockImplementation(async (data: ImportJobData) => {
+    job.data = data;
+  });
+  return job;
 }
-
 // Helper to call processImportJob with a mock job.
 // processImportJob accepts any object with .data and .updateProgress (ImportJob interface).
 function runImportJob(job: MockJob, db: SyncDatabase) {
   return processImportJob(job, db);
 }
-
 describe("processImportJob", () => {
   let tempFilePath: string;
-
   beforeEach(async () => {
     vi.clearAllMocks();
-
     // By default, call through to the real unlink so existing cleanup tests work
     mockUnlink.mockImplementation((path: string) => realUnlink(path));
 
     // Create a real temp file so unlink doesn't fail
     tempFilePath = join(tmpdir(), `test-import-${Date.now()}.tmp`);
     await writeFile(tempFilePath, "test data");
-
     // Restore default return values after clearAllMocks
     mockLogSync.mockResolvedValue(undefined);
     mockEnsureProvider.mockResolvedValue(undefined);
@@ -168,21 +172,25 @@ describe("processImportJob", () => {
     mockImportCronometerCsv.mockResolvedValue({ recordsSynced: 7, errors: [] });
     mockImportKayaExportFile.mockResolvedValue({ recordsSynced: 4, errors: [] });
     mockImportZosAppBin.mockResolvedValue({ recordsSynced: 3, errors: [] });
-    mockImportGarminDumpFile.mockResolvedValue({ recordsSynced: 5, errors: [] });
+    mockProcessGarminDumpImportJob.mockResolvedValue({
+      provider: "garmin-dump",
+      batchId: "garmin-fit-batch-1",
+      totalFitFiles: 5,
+      recordsSynced: 5,
+      errors: [],
+      duration: 100,
+    });
     mockImportFitFile.mockResolvedValue({ recordsSynced: 1, errors: [] });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
   });
-
   afterEach(() => {
     vi.restoreAllMocks();
   });
-
   describe("apple-health import", () => {
     it("calls importAppleHealthFile with correct args and reports progress", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
-
       expect(mockImportAppleHealthFile).toHaveBeenCalledWith(
         mockDb,
         tempFilePath,
@@ -194,7 +202,6 @@ describe("processImportJob", () => {
     it("logs sync on success", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
-
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({
@@ -205,16 +212,13 @@ describe("processImportJob", () => {
         }),
       );
     });
-
     it("logs sync as error when import has errors", async () => {
       mockImportAppleHealthFile.mockResolvedValue({
         recordsSynced: 10,
         errors: [{ message: "bad record 1" }, { message: "bad record 2" }],
       });
-
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
-
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({
@@ -243,10 +247,8 @@ describe("processImportJob", () => {
           return { recordsSynced: 10, errors: [] };
         },
       );
-
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
-
       // 50% streaming → 45% reported (50 * 0.9), message includes counts
       expect(job.updateProgress).toHaveBeenCalledWith({
         percentage: 45,
@@ -258,10 +260,8 @@ describe("processImportJob", () => {
         message: "Importing health data (2,000 records, 10 workouts, 3 sleep sessions)...",
       });
     });
-
     it("logs warning when updateProgress rejects", async () => {
       const progressError = new Error("Redis connection lost");
-
       mockImportAppleHealthFile.mockImplementation(
         async (
           _db: unknown,
@@ -282,7 +282,6 @@ describe("processImportJob", () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       job.updateProgress.mockRejectedValue(progressError);
       await runImportJob(job, mockDb);
-
       const importProgressWarnings = mockLoggerWarn.mock.calls.filter(
         ([message]) => message === "Failed to update import progress: %s",
       );
@@ -298,7 +297,6 @@ describe("processImportJob", () => {
       });
       expect(mockCaptureException).toHaveBeenCalledTimes(2);
     });
-
     it("only logs progress at 10% increments", async () => {
       mockImportAppleHealthFile.mockImplementation(
         async (
@@ -315,10 +313,8 @@ describe("processImportJob", () => {
           return { recordsSynced: 10, errors: [] };
         },
       );
-
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
-
       // Should log at 10% and 20%, but not at 5%, 9%, or 15%
       const progressLogs = mockLoggerInfo.mock.calls.filter((call) =>
         String(call[0]).includes("progress"),
@@ -331,25 +327,21 @@ describe("processImportJob", () => {
     it("logs completion message with record count", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
-
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining("Apple Health import complete"),
       );
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("42 records imported"));
     });
   });
-
   describe("strong-csv import", () => {
     it("reads file and calls importStrongCsv with correct args", async () => {
       await writeFile(tempFilePath, "Date,Exercise,Reps\n2024-01-01,Squat,10");
-
       const job = createMockJob({
         filePath: tempFilePath,
         importType: "strong-csv",
         weightUnit: "lbs",
       });
       await runImportJob(job, mockDb);
-
       expect(mockImportStrongCsv).toHaveBeenCalledWith(
         mockDb,
         "Date,Exercise,Reps\n2024-01-01,Squat,10",
@@ -360,20 +352,16 @@ describe("processImportJob", () => {
 
     it("defaults to kg when weightUnit is not specified", async () => {
       await writeFile(tempFilePath, "csv data");
-
       const job = createMockJob({
         filePath: tempFilePath,
         importType: "strong-csv",
         weightUnit: undefined,
       });
       await runImportJob(job, mockDb);
-
       expect(mockImportStrongCsv).toHaveBeenCalledWith(mockDb, "csv data", "user-1", "kg");
     });
-
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
-
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
       await runImportJob(job, mockDb);
 
@@ -391,13 +379,10 @@ describe("processImportJob", () => {
       );
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("10 workouts imported"));
     });
-
     it("reports progress", async () => {
       await writeFile(tempFilePath, "csv data");
-
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
       await runImportJob(job, mockDb);
-
       expect(job.updateProgress).toHaveBeenCalledWith({
         percentage: 0,
         message: "Starting Strong CSV import...",
@@ -416,27 +401,22 @@ describe("processImportJob", () => {
       });
     });
   });
-
   describe("cronometer-csv import", () => {
     it("reads file and calls importCronometerCsv with correct args", async () => {
       await writeFile(tempFilePath, "Day,Food Name,Amount\n2024-01-01,Rice,100g");
 
       const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
       await runImportJob(job, mockDb);
-
       expect(mockImportCronometerCsv).toHaveBeenCalledWith(
         mockDb,
         "Day,Food Name,Amount\n2024-01-01,Rice,100g",
         "user-1",
       );
     });
-
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
-
       const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
       await runImportJob(job, mockDb);
-
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({
@@ -456,10 +436,8 @@ describe("processImportJob", () => {
 
     it("reports progress", async () => {
       await writeFile(tempFilePath, "csv data");
-
       const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
       await runImportJob(job, mockDb);
-
       expect(job.updateProgress).toHaveBeenCalledWith({
         percentage: 0,
         message: "Starting Cronometer CSV import...",
@@ -478,14 +456,12 @@ describe("processImportJob", () => {
       });
     });
   });
-
   describe("kaya-export import", () => {
     it("reads file and calls importKayaExportFile with correct args", async () => {
       await writeFile(
         tempFilePath,
         "date,stiffness,rating,ascent_type,attempts,grade,color,climb_name,gym,location,country\nThu Jul 09 2026 15:17:17 GMT+0000 (GMT+00:00),0,,Onsight,1,v3,Pink,,Touchstone Pacific Pipe,,",
       );
-
       const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
       await runImportJob(job, mockDb);
 
@@ -495,13 +471,10 @@ describe("processImportJob", () => {
         "user-1",
       );
     });
-
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
-
       const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
       await runImportJob(job, mockDb);
-
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({
@@ -518,7 +491,6 @@ describe("processImportJob", () => {
         expect.stringContaining("4 climbing entries imported"),
       );
     });
-
     it("fails loudly when Kaya import runs without transactional database support", async () => {
       await writeFile(tempFilePath, "csv data");
       const nonTransactionalDb: SyncDatabase = {
@@ -534,7 +506,6 @@ describe("processImportJob", () => {
       );
       expect(mockImportKayaExportFile).not.toHaveBeenCalled();
     });
-
     it("logs Kaya errors and duration precisely", async () => {
       await writeFile(tempFilePath, "csv data");
       mockImportKayaExportFile.mockResolvedValueOnce({
@@ -545,10 +516,8 @@ describe("processImportJob", () => {
       const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
         return callCount++ === 0 ? 10_000 : 12_500;
       });
-
       const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
       await runImportJob(job, mockDb);
-
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining("0 climbing entries imported, 1 errors in 2.5s"),
       );
@@ -562,16 +531,13 @@ describe("processImportJob", () => {
           durationMs: 2500,
         }),
       );
-
       dateNowSpy.mockRestore();
     });
 
     it("reports progress", async () => {
       await writeFile(tempFilePath, "csv data");
-
       const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
       await runImportJob(job, mockDb);
-
       expect(job.updateProgress).toHaveBeenCalledWith({
         percentage: 0,
         message: "Starting Kaya export import...",
@@ -590,24 +556,19 @@ describe("processImportJob", () => {
       });
     });
   });
-
   describe("zos-app import", () => {
     it("reads binary file and calls importZosAppBin with correct args", async () => {
       const binContent = Buffer.from([0x49, 0x55, 0x4d, 0x31]);
       await writeFile(tempFilePath, binContent);
-
       const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
       await runImportJob(job, mockDb);
 
       expect(mockImportZosAppBin).toHaveBeenCalledWith(mockDb, binContent, "user-1");
     });
-
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, Buffer.from([0x00]));
-
       const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
       await runImportJob(job, mockDb);
-
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({
@@ -621,7 +582,6 @@ describe("processImportJob", () => {
         expect.stringContaining("ZOS App import complete"),
       );
     });
-
     it("logs error status when import has errors but some records synced", async () => {
       mockImportZosAppBin.mockResolvedValue({
         recordsSynced: 2,
@@ -631,7 +591,6 @@ describe("processImportJob", () => {
 
       const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
       await runImportJob(job, mockDb);
-
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({
@@ -641,16 +600,13 @@ describe("processImportJob", () => {
         }),
       );
     });
-
     it("throws when zero records synced and errors present", async () => {
       mockImportZosAppBin.mockResolvedValue({
         recordsSynced: 0,
         errors: [{ message: "invalid magic" }],
       });
       await writeFile(tempFilePath, Buffer.from([0x00]));
-
       const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
-
       await expect(runImportJob(job, mockDb)).rejects.toThrow(
         "ZOS App import failed: invalid magic",
       );
@@ -671,15 +627,11 @@ describe("processImportJob", () => {
         errors: [],
       });
       await writeFile(tempFilePath, Buffer.from([0x00]));
-
       const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
-
       await expect(runImportJob(job, mockDb)).resolves.toBeUndefined();
     });
-
     it("reports progress", async () => {
       await writeFile(tempFilePath, Buffer.from([0x00]));
-
       const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
       await runImportJob(job, mockDb);
 
@@ -701,97 +653,85 @@ describe("processImportJob", () => {
       });
     });
   });
-
   describe("garmin-dump import", () => {
-    it("imports Garmin dump zip files and logs completion", async () => {
+    it("delegates durable orchestration and runs terminal import side effects", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
-
       await runImportJob(job, mockDb);
-
-      expect(mockImportGarminDumpFile).toHaveBeenCalledWith(mockDb, tempFilePath, "user-1", {
-        extendLock: job.extendLock,
-        onProgress: expect.any(Function),
-      });
+      expect(mockProcessGarminDumpImportJob).toHaveBeenCalledWith(job, mockDb);
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({
           providerId: "garmin-dump",
-          dataType: "import",
           status: "success",
           recordCount: 5,
-          userId: "user-1",
         }),
       );
+      expect(mockUnlink).toHaveBeenCalledWith(tempFilePath);
+      expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
     });
-
-    it("does not treat unknown import types as Garmin dump imports", async () => {
-      const job = createMockJob({ filePath: tempFilePath });
-      // @ts-expect-error Queued payloads are runtime data; this verifies malformed payloads do not hit Garmin.
-      job.data.importType = "unsupported-import";
-
-      await runImportJob(job, mockDb);
-
-      expect(mockImportGarminDumpFile).not.toHaveBeenCalled();
-    });
-
-    it("passes a BullMQ lock extender to Garmin dump imports", async () => {
+    it("retains the upload and skips terminal side effects while waiting for children", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
-      mockImportGarminDumpFile.mockImplementationOnce(
-        async (
-          _db: unknown,
-          _filePath: unknown,
-          _userId: unknown,
-          options: { extendLock: (durationMs: number) => Promise<void> },
-        ) => {
-          await options.extendLock(600_000);
-          return { recordsSynced: 1, errors: [] };
-        },
+      mockProcessGarminDumpImportJob.mockRejectedValueOnce(new WaitingChildrenError());
+
+      await expect(runImportJob(job, mockDb)).rejects.toBeInstanceOf(WaitingChildrenError);
+      expect(mockUnlink).not.toHaveBeenCalled();
+      expect(mockLogSync).not.toHaveBeenCalled();
+      expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+      expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+      await expect(access(tempFilePath)).resolves.toBeUndefined();
+    });
+    it("retains the upload when durable orchestration fails before a terminal result", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
+      mockProcessGarminDumpImportJob.mockRejectedValueOnce(
+        new Error("waiting-children checkpoint write failed"),
       );
 
-      await runImportJob(job, mockDb);
-
-      expect(job.extendLock).toHaveBeenCalledWith(600_000);
-    });
-
-    it("passes Garmin dump import progress to BullMQ", async () => {
-      const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
-      mockImportGarminDumpFile.mockImplementationOnce(
-        async (
-          _db: unknown,
-          _filePath: unknown,
-          _userId: unknown,
-          options: {
-            onProgress: (info: { percentage: number; message: string }) => Promise<void>;
-          },
-        ) => {
-          await options.onProgress({ percentage: 35, message: "Reading Garmin dump..." });
-          return { recordsSynced: 1, errors: [] };
-        },
+      await expect(runImportJob(job, mockDb)).rejects.toThrow(
+        "waiting-children checkpoint write failed",
       );
-
-      await runImportJob(job, mockDb);
-
-      expect(job.updateProgress).toHaveBeenCalledWith({
-        percentage: 35,
-        message: "Reading Garmin dump...",
+      expect(mockUnlink).not.toHaveBeenCalled();
+      expect(mockLogSync).not.toHaveBeenCalled();
+      expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+      expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+      await expect(access(tempFilePath)).resolves.toBeUndefined();
+    });
+    it("records terminal side effects before failing an incomplete import without retrying", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
+      mockProcessGarminDumpImportJob.mockResolvedValueOnce({
+        provider: "garmin-dump",
+        batchId: "garmin-fit-batch-1",
+        totalFitFiles: 5,
+        recordsSynced: 4,
+        errors: [{ message: "invalid activity.fit" }],
+        duration: 100,
       });
-      expect(job.updateProgress).toHaveBeenNthCalledWith(1, {
-        percentage: 35,
-        message: "Reading Garmin dump...",
-      });
-      expect(job.updateProgress).toHaveBeenNthCalledWith(2, {
-        percentage: 95,
-        message: "Scheduling post-import processing...",
-      });
+      await expect(runImportJob(job, mockDb)).rejects.toEqual(
+        expect.objectContaining({
+          name: "UnrecoverableError",
+          message:
+            "Garmin dump import batch garmin-fit-batch-1 completed with errors after importing 4 activities across 5 FIT files: invalid activity.fit",
+        }),
+      );
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "garmin-dump",
+          status: "error",
+          recordCount: 4,
+          errorMessage: "invalid activity.fit",
+        }),
+      );
+      expect(mockUnlink).toHaveBeenCalledWith(tempFilePath);
+      expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
     });
   });
 
   describe("fit-file import", () => {
     it("delegates FIT decoding and records the import lifecycle", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "fit-file" });
-
       await runImportJob(job, mockDb);
-
       expect(mockImportFitFile).toHaveBeenCalledWith(
         mockDb,
         {
@@ -823,7 +763,6 @@ describe("processImportJob", () => {
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
       expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
     });
-
     it("forwards FIT progress and logs decoder errors", async () => {
       mockImportFitFile.mockImplementationOnce(
         async (
@@ -836,7 +775,6 @@ describe("processImportJob", () => {
         },
       );
       const job = createMockJob({ filePath: tempFilePath, importType: "fit-file" });
-
       await runImportJob(job, mockDb);
 
       expect(job.updateProgress).toHaveBeenCalledWith({
@@ -853,38 +791,46 @@ describe("processImportJob", () => {
       );
     });
   });
-
   describe("file cleanup", () => {
     it("cleans up uploaded file after successful import", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
-
       await expect(access(tempFilePath)).rejects.toThrow();
     });
-
     it("cleans up uploaded file even when import fails", async () => {
       mockImportAppleHealthFile.mockRejectedValue(new Error("parse error"));
-
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await expect(runImportJob(job, mockDb)).rejects.toThrow("parse error");
 
       await expect(access(tempFilePath)).rejects.toThrow();
     });
-
-    it("warns when unlink fails during file cleanup", async () => {
-      mockUnlink.mockRejectedValueOnce(new Error("EACCES: permission denied"));
-
+    it("reports and propagates unlink failures so cleanup remains retryable", async () => {
+      const cleanupError = new Error("EACCES: permission denied");
+      mockUnlink.mockRejectedValueOnce(cleanupError);
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
-      await runImportJob(job, mockDb);
+      await expect(runImportJob(job, mockDb)).rejects.toBe(cleanupError);
+      expect(mockCaptureException).toHaveBeenCalledWith(cleanupError, {
+        tags: { phase: "uploaded-file-cleanup" },
+      });
+    });
+    it("preserves both errors when import and cleanup fail", async () => {
+      const importError = new Error("parse error");
+      const cleanupError = new Error("EACCES: permission denied");
+      mockImportAppleHealthFile.mockRejectedValueOnce(importError);
+      mockUnlink.mockRejectedValueOnce(cleanupError);
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
 
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        "Failed to clean up uploaded file %s: %s",
-        tempFilePath,
-        expect.any(Error),
+      await expect(runImportJob(job, mockDb)).rejects.toEqual(
+        expect.objectContaining({
+          name: "AggregateError",
+          errors: [importError, cleanupError],
+        }),
       );
+      expect(mockCaptureException).toHaveBeenCalledWith(cleanupError, {
+        tags: { phase: "uploaded-file-cleanup" },
+      });
     });
   });
-
   describe("post-import refresh", () => {
     it("enqueues debounced global maintenance and per-user refit", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
@@ -893,20 +839,16 @@ describe("processImportJob", () => {
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
       expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
     });
-
     it("reports scheduling progress during post-import enqueue", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
-
       expect(job.updateProgress).toHaveBeenCalledWith({
         percentage: 95,
         message: "Scheduling post-import processing...",
       });
     });
-
     it("handles global maintenance enqueue failures gracefully", async () => {
       mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(new Error("queue gone"));
-
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
@@ -919,13 +861,10 @@ describe("processImportJob", () => {
         tags: { phase: "post-import-global-maintenance-enqueue" },
       });
     });
-
     it("handles user refit enqueue failures gracefully", async () => {
       mockEnqueueDebouncedUserRefit.mockRejectedValue(new Error("queue gone"));
-
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
-
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
       expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
       expect(mockLoggerError).toHaveBeenCalledWith(
@@ -936,7 +875,6 @@ describe("processImportJob", () => {
       });
     });
   });
-
   describe("duration tracking", () => {
     it("computes correct durationMs for apple-health (kills Date.now arithmetic mutations)", async () => {
       let callCount = 0;
@@ -947,61 +885,49 @@ describe("processImportJob", () => {
 
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
-
       const logCall = mockLogSync.mock.calls[0]?.[1];
       // durationMs = 10500 - 10000 = 500 (not 20500 if + was used)
       expect(logCall.durationMs).toBeLessThan(5000);
       expect(logCall.durationMs).toBeGreaterThanOrEqual(0);
-
       dateNowSpy.mockRestore();
     });
-
     it("computes correct duration string for apple-health log message", async () => {
       let callCount = 0;
       const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
         return callCount++ === 0 ? 10000 : 12000;
       });
-
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
       // Duration = (12000 - 10000) / 1000 = 2.0s (not 2000000.0 if * was used)
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("2.0s"));
-
       dateNowSpy.mockRestore();
     });
-
     it("computes correct duration for strong-csv import", async () => {
       let callCount = 0;
       const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
         return callCount++ === 0 ? 10000 : 13000;
       });
-
       await writeFile(tempFilePath, "csv data");
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
       await runImportJob(job, mockDb);
-
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("3.0s"));
       const logCall = mockLogSync.mock.calls[0]?.[1];
       expect(logCall.durationMs).toBeLessThan(5000);
 
       dateNowSpy.mockRestore();
     });
-
     it("computes correct duration for cronometer-csv import", async () => {
       let callCount = 0;
       const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
         return callCount++ === 0 ? 10000 : 11500;
       });
-
       await writeFile(tempFilePath, "csv data");
       const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
       await runImportJob(job, mockDb);
-
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("1.5s"));
       const logCall = mockLogSync.mock.calls[0]?.[1];
       expect(logCall.durationMs).toBeLessThan(5000);
-
       dateNowSpy.mockRestore();
     });
   });
@@ -1012,47 +938,39 @@ describe("processImportJob", () => {
         recordsSynced: 5,
         errors: undefined,
       });
-
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
-
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({ status: "success", recordCount: 5 }),
       );
     });
   });
-
   describe("error counting", () => {
     it("reports correct error count for apple-health import with errors", async () => {
       mockImportAppleHealthFile.mockResolvedValue({
         recordsSynced: 5,
         errors: [{ message: "err1" }, { message: "err2" }, { message: "err3" }],
       });
-
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
       // Logger info should contain error count
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("3 errors"));
     });
-
     it("reports error status for strong-csv with errors", async () => {
       mockImportStrongCsv.mockResolvedValue({
         recordsSynced: 0,
         errors: [{ message: "parse error" }],
       });
-
       await writeFile(tempFilePath, "bad csv");
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
       await runImportJob(job, mockDb);
-
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({ status: "error", errorMessage: "parse error" }),
       );
     });
-
     it("reports error status for cronometer-csv with errors", async () => {
       mockImportCronometerCsv.mockResolvedValue({
         recordsSynced: 0,
@@ -1062,7 +980,6 @@ describe("processImportJob", () => {
       await writeFile(tempFilePath, "bad csv");
       const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
       await runImportJob(job, mockDb);
-
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({ status: "error", errorMessage: "invalid format" }),
