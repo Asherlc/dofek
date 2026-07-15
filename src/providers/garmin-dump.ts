@@ -666,11 +666,6 @@ export async function prepareGarminDumpImport(
       });
     }
 
-    summaryByExternalId.clear();
-    parsedDump.summaries = [];
-    parsedDump.fitFiles = [];
-    parsedDump.weightFitFiles = [];
-
     await extendGarminDumpImportLock(options);
     await reportGarminDumpProgress(
       options,
@@ -687,7 +682,7 @@ export async function prepareGarminDumpImport(
         errors: errors.map((error) => ({ message: error.message })),
       },
       fitJobEntries,
-      tempDirectories: parsedDump.tempDirectories,
+      tempDirectories: [...parsedDump.tempDirectories],
       totalFitFiles: fitJobEntries.length,
     };
     preparationComplete = true;
