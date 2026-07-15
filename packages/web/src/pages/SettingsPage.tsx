@@ -179,7 +179,7 @@ export function SettingsPage() {
         </div>
       </PageSection>
 
-      <PageSection title="MCP Tokens" subtitle="Create and revoke remote MCP access tokens">
+      <PageSection title="MCP" subtitle="Connect remote MCP clients and manage access tokens">
         <McpTokensPanel />
       </PageSection>
 

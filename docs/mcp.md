@@ -6,7 +6,7 @@ Dofek exposes a remote Model Context Protocol endpoint from the existing API ser
 https://<your-dofek-host>/api/mcp
 ```
 
-The endpoint uses Streamable HTTP and requires a Dofek bearer token on every request. It supports two token-issuance paths:
+The endpoint uses Streamable HTTP and supports two authentication paths:
 
 - OAuth 2.1 authorization code with PKCE for Claude remote custom connectors.
 - Manually created MCP bearer tokens for clients such as Claude Code and Codex that support custom HTTP headers.
@@ -47,7 +47,9 @@ OAuth discovery endpoints:
 
 ## Create A Token
 
-Open Dofek Settings and use the **MCP Tokens** section to create, copy, list, and revoke tokens.
+Tokens are only needed for clients that use manual bearer token authentication (such as Codex). OAuth-based clients (such as Claude Desktop) authenticate automatically.
+
+Open Dofek Settings and use the **MCP** section to create, copy, list, and revoke tokens.
 
 The UI calls the authenticated tRPC `mcp.createToken` procedure from the logged-in Dofek client session.
 
