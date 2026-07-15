@@ -15,8 +15,10 @@ import type {
   OAuthTokenRevocationRequest,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
+import { createHash } from "node:crypto";
 import type { Database } from "dofek/db";
 import type { Response } from "express";
+import { z } from "zod";
 import { McpOAuthClientsStore } from "./oauth-client-store.ts";
 import {
   createAuthorizationCode,
@@ -34,6 +36,11 @@ export const MCP_OAUTH_SCOPES = [
   "providers:read",
   "sync:write",
 ] as const satisfies readonly McpScope[];
+
+const authorizeLocalsSchema = z.object({
+  mcpOAuthUserId: z.string(),
+  mcpOAuthApproval: z.string().optional(),
+});
 
 const MCP_SCOPE_LABELS: Record<McpScope, string> = {
   "activity:read": "Search your activities",
@@ -145,7 +152,11 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
       throw new InvalidTargetError("The requested resource is not the Dofek MCP server");
     }
     const scopes = parseScopes(params.scopes);
-    const approval = Reflect.get(response.locals, "mcpOAuthApproval");
+    const localsResult = authorizeLocalsSchema.safeParse(response.locals);
+    if (!localsResult.success) {
+      throw new AccessDeniedError("Missing OAuth session context");
+    }
+    const { mcpOAuthApproval: approval, mcpOAuthUserId: userId } = localsResult.data;
     if (approval === "deny") {
       response.redirect(
         redirectWithError(params, new AccessDeniedError("Access denied").errorCode),
@@ -157,7 +168,6 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
       return;
     }
 
-    const userId = Reflect.get(response.locals, "mcpOAuthUserId");
     if (typeof userId !== "string") {
       throw new AccessDeniedError("A signed-in Dofek user is required");
     }
@@ -191,7 +201,7 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
   async exchangeAuthorizationCode(
     client: OAuthClientInformationFull,
     authorizationCode: string,
-    _codeVerifier?: string,
+    codeVerifier?: string,
     redirectUri?: string,
     resource?: URL,
   ): Promise<OAuthTokens> {
@@ -199,6 +209,24 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
     if (!resolvedRedirectUri || resource?.href !== this.#resource.href) {
       throw new InvalidGrantError("Authorization code parameters do not match");
     }
+
+    const storedChallenge = await getAuthorizationCodeChallenge(
+      this.#db,
+      client.client_id,
+      authorizationCode,
+    );
+    if (!storedChallenge) {
+      throw new InvalidGrantError("Invalid or expired authorization code");
+    }
+
+    if (!codeVerifier) {
+      throw new InvalidGrantError("PKCE code_verifier is required");
+    }
+    const computedChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
+    if (computedChallenge !== storedChallenge) {
+      throw new InvalidGrantError("PKCE code_verifier does not match challenge");
+    }
+
     const tokens = await exchangeAuthorizationCode(this.#db, {
       clientId: client.client_id,
       code: authorizationCode,

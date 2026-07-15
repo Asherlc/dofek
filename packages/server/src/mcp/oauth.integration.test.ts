@@ -9,7 +9,7 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import { makeMockSensorStore } from "../routers/test-helpers.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 const insertedUserRowSchema = z.object({ id: z.string() });
 const storedClientSecretRowSchema = z.object({ client_secret: z.string() });

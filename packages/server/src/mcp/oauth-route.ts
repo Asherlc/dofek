@@ -1,15 +1,19 @@
 import { mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import type { Database } from "dofek/db";
 import express, { Router } from "express";
+import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
 import { DofekOAuthServerProvider, MCP_OAUTH_SCOPES } from "./oauth-provider.ts";
 
+const approvalBodySchema = z.object({
+  approval: z.string().min(1).optional(),
+});
+
 function approvalFromBody(body: unknown): string | undefined {
-  if (body === null || typeof body !== "object") return undefined;
-  const approval = Reflect.get(body, "approval");
-  return typeof approval === "string" ? approval : undefined;
+  const result = approvalBodySchema.safeParse(body);
+  return result.success ? result.data.approval : undefined;
 }
 
 export function createMcpOAuthRouter(db: Database): Router {

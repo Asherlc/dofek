@@ -13326,6 +13326,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   validation.
 - **Remaining risk / follow-up:** Confirm the replacement workflow completes all
   Stryker shards and the aggregate required-check job on fresh hosted runners.
+
 ## 2026-07-15 — Local Docker Disk Exhaustion Blocked OAuth Integration Tests
 
 - **Symptoms:** The workspace TimescaleDB container restarted during MCP OAuth integration-test setup.

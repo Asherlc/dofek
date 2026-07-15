@@ -11,11 +11,11 @@ The endpoint uses Streamable HTTP and supports two authentication paths:
 - OAuth 2.1 authorization code with PKCE for Claude remote custom connectors.
 - Manually created MCP bearer tokens for clients such as Claude Code and Codex that support custom HTTP headers.
 
-Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata, exact redirect URI matching, short-lived access tokens, rotating refresh tokens, and per-tool scopes as required by the [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization).
+Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)), exact redirect URI matching, short-lived access tokens, rotating refresh tokens, and per-tool scopes as required by the [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization).
 
 ## Connect Claude
 
-Dofek supports OAuth Dynamic Client Registration (DCR), so Claude creates distinct client credentials automatically. Configure the Claude custom connector with only:
+Dofek supports [OAuth Dynamic Client Registration (DCR)](https://www.rfc-editor.org/rfc/rfc7591), so Claude creates distinct client credentials automatically. Configure the Claude custom connector with only:
 
 ```text
 MCP URL: https://<your-dofek-host>/api/mcp
@@ -34,7 +34,7 @@ https://claude.com/api/mcp/auth_callback
 
 Registrations are rejected unless every callback matches this allowlist.
 
-OAuth discovery endpoints:
+OAuth discovery endpoints ([MCP auth spec](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)):
 
 ```text
 /.well-known/oauth-protected-resource/api/mcp
