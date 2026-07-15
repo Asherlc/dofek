@@ -15,15 +15,15 @@ Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata, 
 
 ## Connect Claude
 
-Dofek pre-registers Claude instead of exposing unauthenticated Dynamic Client Registration. Configure the Claude custom connector with:
+Dofek supports OAuth Dynamic Client Registration (DCR), so Claude creates distinct client credentials automatically. Configure the Claude custom connector with only:
 
 ```text
 MCP URL: https://<your-dofek-host>/api/mcp
-OAuth Client ID: claude
-OAuth Client Secret: <MCP_OAUTH_CLIENT_SECRET from Infisical>
 ```
 
-Claude redirects users to Dofek to sign in and approve the requested scopes. Access tokens expire after one hour. Refresh tokens expire after 30 days and rotate on every use; reusing an older refresh token fails. The revocation endpoint invalidates the complete access-and-refresh token pair.
+Leave the OAuth Client ID and OAuth Client Secret fields empty. Claude discovers `/register`, registers itself, and stores the resulting client credentials. Each registration receives a unique client ID and secret; Dofek encrypts the secret at rest with `CREDENTIAL_ENCRYPTION_KEY_BASE64`. Registration secrets expire after 30 days.
+
+Claude redirects each user to Dofek to sign in and approve the requested scopes. Access tokens expire after one hour. Refresh tokens expire after 30 days and rotate on every use; reusing an older refresh token fails. The revocation endpoint invalidates the complete access-and-refresh token pair. Anthropic documents DCR support and re-registration behavior in its [remote connector developer guide](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers).
 
 The registered callback URLs are:
 
@@ -32,13 +32,14 @@ https://claude.ai/api/mcp/auth_callback
 https://claude.com/api/mcp/auth_callback
 ```
 
-Anthropic documents the current `claude.ai` callback and recommends allowing the `claude.com` callback for forward compatibility in its [remote connector developer guide](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers).
+Registrations are rejected unless every callback matches this allowlist.
 
 OAuth discovery endpoints:
 
 ```text
 /.well-known/oauth-protected-resource/api/mcp
 /.well-known/oauth-authorization-server
+/register
 /authorize
 /token
 /revoke

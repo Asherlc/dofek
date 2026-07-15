@@ -2,6 +2,15 @@ ALTER TABLE fitness.mcp_access_token
   ADD COLUMN oauth_client_id text,
   ADD COLUMN oauth_resource text;
 
+CREATE TABLE fitness.mcp_oauth_client (
+  client_id text PRIMARY KEY,
+  client_secret text,
+  client_metadata jsonb NOT NULL,
+  client_id_issued_at bigint,
+  client_secret_expires_at bigint,
+  created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE fitness.mcp_oauth_authorization_code (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   code_hash text NOT NULL UNIQUE,

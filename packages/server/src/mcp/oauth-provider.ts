@@ -1,4 +1,3 @@
-import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import {
   AccessDeniedError,
   InvalidGrantError,
@@ -18,6 +17,7 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { Database } from "dofek/db";
 import type { Response } from "express";
+import { McpOAuthClientsStore } from "./oauth-client-store.ts";
 import {
   createAuthorizationCode,
   exchangeAuthorizationCode,
@@ -27,11 +27,6 @@ import {
 } from "./oauth-repository.ts";
 import { type McpScope, mcpScopeSchema, validateMcpToken } from "./token-repository.ts";
 
-export const MCP_OAUTH_CLIENT_ID = "claude";
-export const MCP_OAUTH_REDIRECT_URIS = [
-  "https://claude.ai/api/mcp/auth_callback",
-  "https://claude.com/api/mcp/auth_callback",
-] as const;
 export const MCP_OAUTH_SCOPES = [
   "health:read",
   "activity:read",
@@ -47,35 +42,6 @@ const MCP_SCOPE_LABELS: Record<McpScope, string> = {
   "providers:read": "View your connected data sources",
   "sync:write": "Start data synchronization",
 };
-
-function requiredClientSecret(): string {
-  const value = process.env.MCP_OAUTH_CLIENT_SECRET?.trim();
-  if (!value) {
-    throw new Error("MCP_OAUTH_CLIENT_SECRET environment variable is required");
-  }
-  return value;
-}
-
-class ClaudeClientsStore implements OAuthRegisteredClientsStore {
-  readonly #client: OAuthClientInformationFull;
-
-  constructor() {
-    this.#client = {
-      client_id: MCP_OAUTH_CLIENT_ID,
-      client_name: "Claude",
-      client_secret: requiredClientSecret(),
-      grant_types: ["authorization_code", "refresh_token"],
-      redirect_uris: [...MCP_OAUTH_REDIRECT_URIS],
-      response_types: ["code"],
-      scope: MCP_OAUTH_SCOPES.join(" "),
-      token_endpoint_auth_method: "client_secret_post",
-    };
-  }
-
-  getClient(clientId: string): OAuthClientInformationFull | undefined {
-    return clientId === this.#client.client_id ? this.#client : undefined;
-  }
-}
 
 function parseScopes(scopes: readonly string[] | undefined): McpScope[] {
   const requestedScopes = scopes && scopes.length > 0 ? scopes : [...MCP_OAUTH_SCOPES];
@@ -109,6 +75,7 @@ function consentHtml(
   const scopeItems = scopes
     .map((scope) => `<li>${escapeHtml(MCP_SCOPE_LABELS[scope])}</li>`)
     .join("");
+  const clientName = escapeHtml(client.client_name ?? "the MCP client");
   const fields = [
     hiddenInput("client_id", client.client_id),
     hiddenInput("redirect_uri", params.redirectUri),
@@ -124,7 +91,7 @@ function consentHtml(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Authorize Claude</title>
+  <title>Authorize ${clientName}</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 36rem; margin: 4rem auto; padding: 0 1.5rem; color: #17202a; }
     .card { border: 1px solid #d5d8dc; border-radius: 0.75rem; padding: 1.5rem; }
@@ -136,8 +103,8 @@ function consentHtml(
 </head>
 <body>
   <main class="card">
-    <h1>Allow Claude to access Dofek?</h1>
-    <p>Claude is requesting these permissions:</p>
+    <h1>Allow ${clientName} to access Dofek?</h1>
+    <p>${clientName} is requesting these permissions:</p>
     <ul>${scopeItems}</ul>
     <form method="post" action="/authorize">
       ${fields}
@@ -161,12 +128,12 @@ function redirectWithError(params: AuthorizationParams, error: string): string {
 export class DofekOAuthServerProvider implements OAuthServerProvider {
   readonly #db: Database;
   readonly #resource: URL;
-  readonly clientsStore: OAuthRegisteredClientsStore;
+  readonly clientsStore: McpOAuthClientsStore;
 
   constructor(db: Database, resource: URL) {
     this.#db = db;
     this.#resource = resource;
-    this.clientsStore = new ClaudeClientsStore();
+    this.clientsStore = new McpOAuthClientsStore(db);
   }
 
   async authorize(
@@ -276,11 +243,7 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
     const validated = await validateMcpToken(this.#db, token);
-    if (
-      !validated ||
-      validated.oauthClientId !== MCP_OAUTH_CLIENT_ID ||
-      validated.oauthResource !== this.#resource.href
-    ) {
+    if (!validated || !validated.oauthClientId || validated.oauthResource !== this.#resource.href) {
       throw new InvalidTokenError("Invalid or expired access token");
     }
     return {

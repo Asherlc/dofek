@@ -119,6 +119,15 @@ export const mcpAccessToken = fitness.table(
   ],
 );
 
+export const mcpOauthClient = fitness.table("mcp_oauth_client", {
+  clientId: text("client_id").primaryKey(),
+  clientSecret: text("client_secret"),
+  clientMetadata: jsonb("client_metadata").notNull(),
+  clientIdIssuedAt: bigint("client_id_issued_at", { mode: "number" }),
+  clientSecretExpiresAt: bigint("client_secret_expires_at", { mode: "number" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const mcpOauthAuthorizationCode = fitness.table(
   "mcp_oauth_authorization_code",
   {

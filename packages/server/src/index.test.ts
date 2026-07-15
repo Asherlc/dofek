@@ -215,20 +215,6 @@ describe("createApp", () => {
     expect(createIngestZosHealthRouter).toHaveBeenCalled();
   });
 
-  it("fails app creation when the Claude MCP OAuth client secret is missing", async () => {
-    const { createDatabaseFromEnv } = await import("dofek/db");
-    const originalSecret = process.env.MCP_OAUTH_CLIENT_SECRET;
-    delete process.env.MCP_OAUTH_CLIENT_SECRET;
-
-    try {
-      expect(() => createApp(createDatabaseFromEnv(), makeMockSensorStore())).toThrow(
-        "MCP_OAUTH_CLIENT_SECRET environment variable is required",
-      );
-    } finally {
-      process.env.MCP_OAUTH_CLIENT_SECRET = originalSecret;
-    }
-  });
-
   it("registers FIT import flow queues in Bull Board", async () => {
     const { BullMQAdapter } = await import("@bull-board/api/bullMQAdapter");
     const { createDatabaseFromEnv } = await import("dofek/db");

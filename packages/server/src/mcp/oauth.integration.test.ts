@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
+import { isEncryptedCredentialValue } from "dofek/security/credential-encryption";
 import { sql } from "drizzle-orm";
 import type express from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -11,6 +12,7 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
 
 const insertedUserRowSchema = z.object({ id: z.string() });
+const storedClientSecretRowSchema = z.object({ client_secret: z.string() });
 const oauthMetadataSchema = z.object({
   authorization_endpoint: z.string(),
   code_challenge_methods_supported: z.array(z.string()),
@@ -32,9 +34,13 @@ const tokenResponseSchema = z.object({
   scope: z.string(),
   token_type: z.literal("bearer"),
 });
+const registeredClientSchema = z.object({
+  client_id: z.string(),
+  client_secret: z.string(),
+  client_secret_expires_at: z.number(),
+  redirect_uris: z.array(z.string()),
+});
 
-const clientId = "claude";
-const clientSecret = "test-mcp-oauth-client-secret";
 const redirectUri = "https://claude.ai/api/mcp/auth_callback";
 const resource = "https://app.example.test/api/mcp";
 
@@ -55,6 +61,7 @@ describe("MCP OAuth", () => {
   let baseUrl: string;
   let closeServer: () => Promise<void>;
   let sessionCookie: string;
+  let registeredClient: z.infer<typeof registeredClientSchema>;
 
   beforeAll(async () => {
     context = await setupTestDatabase();
@@ -77,6 +84,7 @@ describe("MCP OAuth", () => {
     await context.db.execute(sql`DELETE FROM fitness.mcp_oauth_refresh_token`);
     await context.db.execute(sql`DELETE FROM fitness.mcp_oauth_authorization_code`);
     await context.db.execute(sql`DELETE FROM fitness.mcp_access_token`);
+    await context.db.execute(sql`DELETE FROM fitness.mcp_oauth_client`);
     await context.db.execute(sql`DELETE FROM fitness.session`);
     await context.db.execute(
       sql`DELETE FROM fitness.user_profile WHERE email = 'mcp-oauth@test.com'`,
@@ -91,9 +99,10 @@ describe("MCP OAuth", () => {
     if (!userId) throw new Error("Failed to create OAuth test user");
     const session = await createSession(context.db, userId);
     sessionCookie = `session=${session.sessionId}`;
+    registeredClient = await registerClient();
   });
 
-  it("publishes OAuth discovery metadata without dynamic registration", async () => {
+  it("publishes OAuth discovery metadata with dynamic registration", async () => {
     const authorizationMetadata = oauthMetadataSchema.parse(
       await (await fetch(`${baseUrl}/.well-known/oauth-authorization-server`)).json(),
     );
@@ -105,7 +114,7 @@ describe("MCP OAuth", () => {
       revocation_endpoint: "https://app.example.test/revoke",
       token_endpoint: "https://app.example.test/token",
     });
-    expect(authorizationMetadata.registration_endpoint).toBeUndefined();
+    expect(authorizationMetadata.registration_endpoint).toBe("https://app.example.test/register");
 
     const resourceMetadata = protectedResourceMetadataSchema.parse(
       await (await fetch(`${baseUrl}/.well-known/oauth-protected-resource/api/mcp`)).json(),
@@ -115,6 +124,32 @@ describe("MCP OAuth", () => {
       resource,
     });
     expect(resourceMetadata.scopes_supported).toContain("health:read");
+  });
+
+  it("issues distinct credentials for each client registration", async () => {
+    const anotherClient = await registerClient();
+
+    expect(anotherClient.client_id).not.toBe(registeredClient.client_id);
+    expect(anotherClient.client_secret).not.toBe(registeredClient.client_secret);
+    expect(anotherClient.redirect_uris).toEqual([redirectUri]);
+
+    const storedRows = await executeWithSchema(
+      context.db,
+      storedClientSecretRowSchema,
+      sql`SELECT client_secret
+          FROM fitness.mcp_oauth_client
+          WHERE client_id = ${registeredClient.client_id}`,
+    );
+    const storedSecret = storedRows[0]?.client_secret;
+    expect(storedSecret).not.toBe(registeredClient.client_secret);
+    expect(storedSecret ? isEncryptedCredentialValue(storedSecret) : false).toBe(true);
+  });
+
+  it("rejects registrations with non-Claude callback URLs", async () => {
+    const response = await rawRegisterClient("https://attacker.example/callback");
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: "invalid_client_metadata" });
   });
 
   it("requires login before displaying consent", async () => {
@@ -170,8 +205,8 @@ describe("MCP OAuth", () => {
 
     const revokeResponse = await fetch(`${baseUrl}/revoke`, {
       body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
         token: refreshedTokens.refresh_token,
         token_type_hint: "refresh_token",
       }),
@@ -189,7 +224,7 @@ describe("MCP OAuth", () => {
 
   function authorizationParameters(codeVerifier: string): URLSearchParams {
     return new URLSearchParams({
-      client_id: clientId,
+      client_id: registeredClient.client_id,
       code_challenge: codeChallenge(codeVerifier),
       code_challenge_method: "S256",
       redirect_uri: redirectUri,
@@ -206,8 +241,8 @@ describe("MCP OAuth", () => {
   ): Promise<z.infer<typeof tokenResponseSchema>> {
     const response = await fetch(`${baseUrl}/token`, {
       body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
         code,
         code_verifier: codeVerifier,
         grant_type: "authorization_code",
@@ -223,8 +258,8 @@ describe("MCP OAuth", () => {
   async function rawRefreshResponse(refreshToken: string): Promise<Response> {
     return fetch(`${baseUrl}/token`, {
       body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
         grant_type: "refresh_token",
         refresh_token: refreshToken,
         resource,
@@ -280,12 +315,32 @@ describe("MCP OAuth", () => {
   async function revokeToken(token: string, tokenTypeHint: string): Promise<Response> {
     return fetch(`${baseUrl}/revoke`, {
       body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
         token,
         token_type_hint: tokenTypeHint,
       }),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+  }
+
+  async function registerClient(): Promise<z.infer<typeof registeredClientSchema>> {
+    const response = await rawRegisterClient(redirectUri);
+    expect(response.status).toBe(201);
+    return registeredClientSchema.parse(await response.json());
+  }
+
+  async function rawRegisterClient(clientRedirectUri: string): Promise<Response> {
+    return fetch(`${baseUrl}/register`, {
+      body: JSON.stringify({
+        client_name: "Claude",
+        grant_types: ["authorization_code", "refresh_token"],
+        redirect_uris: [clientRedirectUri],
+        response_types: ["code"],
+        token_endpoint_auth_method: "client_secret_post",
+      }),
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": "203.0.113.10" },
       method: "POST",
     });
   }

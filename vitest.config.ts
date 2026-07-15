@@ -20,7 +20,6 @@ const sharedTestEnv = {
   CREDENTIAL_ENCRYPTION_KEY_BASE64: testCredentialEncryptionKey,
   CREDENTIAL_ENCRYPTION_KEY_NAMESPACE: "dofek-test",
   CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
-  MCP_OAUTH_CLIENT_SECRET: "test-mcp-oauth-client-secret",
   PUBLIC_URL: "https://app.example.test",
 };
 
