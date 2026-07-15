@@ -38,7 +38,6 @@ describe("cache module environment selection", () => {
     const client = {
       set: vi.fn(async () => "OK" as const),
       get: vi.fn(async () => JSON.stringify({ ok: true })),
-      mget: vi.fn(async () => [JSON.stringify({ ok: true })]),
       del: vi.fn(async () => 1),
       sadd: vi.fn(async () => 1),
       smembers: vi.fn(async () => ["query-cache:data:user-1:dashboard"]),

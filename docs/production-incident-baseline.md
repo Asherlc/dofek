@@ -13146,20 +13146,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **User impact:** PR #1610 could not pass required CI checks even though its
   unit and integration suites passed locally.
 - **Evidence:** The failed workflow mutated the newly created test-fixture
-  modules as production code. The cancelled shard's first fatal database line
-  was `could not resize shared memory segment ... No space left on device`,
-  followed by recovery-mode errors in the
-  [GitHub Actions job](https://github.com/Asherlc/dofek/actions/runs/29378387905/job/87238702717).
-- **Root cause:** Stryker treated the split integration-test helper modules as
-  mutation targets, greatly expanding unrelated test execution and exhausting
-  the runner's Postgres shared-memory allocation.
+  modules as production code. After those were excluded, the cache shard still
+  selected 3,043 related tests for 38 mutants, spent 9 minutes 18 seconds on its
+  dry run, reached only 29 mutants before the 75-minute job limit, and reported
+  `could not resize shared memory segment ... No space left on device` before
+  Postgres entered recovery in the
+  [GitHub Actions job](https://github.com/Asherlc/dofek/actions/runs/29386596024/job/87261501287).
+- **Root cause:** Two mutation targets had excessive test fan-out. Stryker first
+  treated split integration-test fixtures as production, then treated the new
+  Redis key-enumeration behavior as part of the central cache module imported by
+  nearly every server test. Repeated integration execution exhausted the
+  runner's Postgres shared memory before the shard could finish.
 - **Fix / mitigation:** Excluded only the test helper, fixture-model, and
   read-model setup modules from mutation targets in both Stryker configurations
   and the CI changed-file shard selector, whose explicit `--mutate` argument
-  otherwise overrides configuration exclusions. Production cycling repository
-  code remains mutation-tested; focused behavioral tests raised its score to
-  85.59% with no uncovered or timed-out mutants.
+  otherwise overrides configuration exclusions. Redis key enumeration now lives
+  in a dedicated registry used only by the cache warmer; the central cache module
+  is unchanged from `main`. Production cycling and Redis registry code remain
+  mutation-tested.
+- **Validation:** The focused cycling repository scored 85.59%. The isolated
+  Redis registry mutation run selected seven tests, killed all 60 covered
+  mutants (one by timeout), scored 100%, and completed in 11 seconds without
+  starting database integration tests or exhausting shared memory.
 - **Remaining risk / follow-up:** Confirm the next GitHub Actions run completes
-  every mutation shard without shared-memory pressure. If resource exhaustion
-  recurs, inspect the first fatal line and the selected related-test set before
-  changing runner resources or concurrency.
+  every mutation shard. If resource exhaustion recurs, inspect the first fatal
+  line and selected related-test set before changing resources or concurrency.

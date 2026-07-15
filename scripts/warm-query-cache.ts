@@ -7,7 +7,7 @@ import { appRouter } from "../packages/server/src/router.ts";
 import type { Context } from "../packages/server/src/trpc.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
-import { queryCache } from "../src/lib/cache.ts";
+import { RedisQueryCacheRegistry } from "../src/lib/redis-query-cache-registry.ts";
 import { logger } from "../src/logger.ts";
 
 export interface RegisteredQueryCacheKey {
@@ -154,9 +154,10 @@ async function main(): Promise<void> {
   const db = createDatabaseFromEnv();
   const clickHouseClient = createClickHouseClientFromEnv();
   const sensorStore = new ClickHouseActivitySensorStore(clickHouseClient);
+  const cacheRegistry = new RedisQueryCacheRegistry();
   try {
     const result = await warmRegisteredQueryCaches({
-      cacheStore: queryCache,
+      cacheStore: cacheRegistry,
       db,
       sensorStore,
       createCaller: (context) => appRouter.createCaller(context satisfies Context),
