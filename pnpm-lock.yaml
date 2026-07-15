@@ -476,8 +476,8 @@ importers:
         specifier: 0.86.0
         version: 0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.14)(react@19.2.3)
       react-native-body-highlighter:
-        specifier: 3.1.4
-        version: 3.1.4(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+        specifier: 3.2.0
+        version: 3.2.0(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       react-native-maps:
         specifier: 1.27.2
         version: 1.27.2(react-native-web@0.21.2(encoding@0.1.13)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
@@ -12600,8 +12600,8 @@ packages:
   react-is@19.2.6:
     resolution: {integrity: sha512-XjBR15BhXuylgWGuslhDKqlSayuqvqBX91BP8pauG8kd1zY8kotkNWbXksTCNRarse4kuGbe2kIY05ARtwNIvw==}
 
-  react-native-body-highlighter@3.1.4:
-    resolution: {integrity: sha512-QhIWC+JvSbIX4ia90uDuGQJUUCT/iqoHyp980WiYCPK0VqzQdhHoQlxwELw5Mnu07Xjlw7fU+lXc+dSmkKkOMg==}
+  react-native-body-highlighter@3.2.0:
+    resolution: {integrity: sha512-BxWwcX8PtbKr3X0bW0n4OyPT6b+2R9IUqDyMgq8PP6IhJouSt9ik10a3c7PRYOlA2DdrBjLFiwamqhsMS2BfeQ==}
     peerDependencies:
       react: 19.2.3
       react-native: '*'
@@ -28335,7 +28335,7 @@ snapshots:
 
   react-is@19.2.6: {}
 
-  react-native-body-highlighter@3.1.4(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3):
+  react-native-body-highlighter@3.2.0(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3):
     dependencies:
       react: 19.2.3
       react-native: 0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.14)(react@19.2.3)
