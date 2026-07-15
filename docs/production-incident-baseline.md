@@ -13191,3 +13191,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   job while retaining the web and mobile Storybook build jobs.
 - **Remaining risk / follow-up:** None known; Dependabot PRs will not receive a
   hosted Storybook preview, but their Storybook artifacts continue to build.
+
+## 2026-07-15 — Python 3.14 Image Bump Left 3.13 Runtime Paths
+
+- **Symptoms:** PR #1611 failed both `Test / E2E Tests (Web)` and
+  `Test / Image Vulnerability Scan` while building the server image.
+- **User impact:** The Python 3.14 dependency update could not pass required CI
+  or be merged.
+- **Evidence:** The first fatal build line was `"/usr/local/lib/python3.13": not
+  found` in [GitHub Actions run
+  29377486630](https://github.com/Asherlc/dofek/actions/runs/29377486630).
+- **Root cause:** Dependabot updated the `dbt-tools` base image to Python 3.14,
+  but the server stage still copied the Python 3.13 binary, library directory,
+  and shared library.
+- **Fix / mitigation:** Updated all three server-stage copy paths to Python
+  3.14.
+- **Validation:** A local `docker build --target server` completed successfully,
+  including the three Python 3.14 copy steps.
+- **Remaining risk / follow-up:** Confirm the fresh PR workflow completes both
+  Docker-build jobs successfully.
