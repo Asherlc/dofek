@@ -8,7 +8,7 @@ import {
   prepareGarminDumpImport,
 } from "../providers/garmin-dump.ts";
 import type { SyncResult } from "../providers/types.ts";
-import { attachGarminFitImportFlow } from "./garmin-dump-flow.ts";
+import { attachGarminFitImportFlow, createBatchId, FLOW_BATCH_SIZE } from "./garmin-dump-flow.ts";
 import type { ImportJobData } from "./queues.ts";
 
 const importResultSchema = z.object({
@@ -23,6 +23,7 @@ export const garminImportCheckpointSchema = z.object({
   phase: z.enum(["prepared", "waiting-children"]),
   startedAtMs: z.number().int().nonnegative(),
   batchId: z.string().min(1),
+  batchIds: z.array(z.string().min(1)).optional(),
   baseResult: importResultSchema,
   tempDirectories: z.array(z.string()),
   totalFitFiles: z.number().int().nonnegative(),
@@ -70,20 +71,30 @@ function batchResultFromChildren(
   checkpoint: GarminImportCheckpoint,
   childValues: Record<string, unknown>,
 ): z.infer<typeof importResultSchema> | null {
-  const batchEntry = Object.entries(childValues).find(([jobKey]) =>
-    jobKey.endsWith(`:${checkpoint.batchId}`),
+  const batchIds = checkpoint.batchIds ?? [checkpoint.batchId];
+  const batchEntries = Object.entries(childValues).filter(([jobKey]) =>
+    batchIds.some((id) => jobKey.endsWith(`:${id}`)),
   );
-  return batchEntry ? importResultSchema.parse(batchEntry[1]) : null;
+  if (batchEntries.length === 0) return null;
+
+  let totalRecordsSynced = 0;
+  const allErrors: Array<{ message: string }> = [];
+  for (const [, value] of batchEntries) {
+    const parsed = importResultSchema.parse(value);
+    totalRecordsSynced += parsed.recordsSynced;
+    allErrors.push(...parsed.errors);
+  }
+  return { recordsSynced: totalRecordsSynced, errors: allErrors };
 }
 
 function batchFailureFromChildren(
   checkpoint: GarminImportCheckpoint,
   ignoredFailures: Record<string, string>,
-): string | null {
-  const batchEntry = Object.entries(ignoredFailures).find(([jobKey]) =>
-    jobKey.endsWith(`:${checkpoint.batchId}`),
-  );
-  return batchEntry?.[1] ?? null;
+): string[] {
+  const batchIds = checkpoint.batchIds ?? [checkpoint.batchId];
+  return Object.entries(ignoredFailures)
+    .filter(([jobKey]) => batchIds.some((id) => jobKey.endsWith(`:${id}`)))
+    .map(([, message]) => message);
 }
 
 function uniqueDirectories(...directoryGroups: readonly string[][]): string[] {
@@ -149,7 +160,11 @@ export async function processGarminDumpImportJob(
       { ...preparedImport, tempDirectories },
       { id: job.id, queue: job.queueQualifiedName },
     );
-    checkpoint = { ...checkpoint, phase: "waiting-children" };
+    const batchCount = Math.ceil(preparedImport.totalFitFiles / FLOW_BATCH_SIZE);
+    const batchIds = Array.from({ length: batchCount }, (_, i) =>
+      createBatchId(preparedImport, i),
+    );
+    checkpoint = { ...checkpoint, phase: "waiting-children", batchIds };
     await persistCheckpoint(job, checkpoint);
     await logGarminImportPhase(
       job,
@@ -158,9 +173,11 @@ export async function processGarminDumpImportJob(
   }
 
   if (await job.moveToWaitingChildren()) {
+    const batchCount = checkpoint.batchIds?.length ?? 1;
+    const batchLabel = batchCount > 1 ? ` across ${batchCount} batches` : "";
     await logGarminImportPhase(
       job,
-      `[phase] Waiting for ${checkpoint.totalFitFiles} Garmin FIT ${checkpoint.totalFitFiles === 1 ? "file" : "files"} in batch ${checkpoint.batchId}`,
+      `[phase] Waiting for ${checkpoint.totalFitFiles} Garmin FIT ${checkpoint.totalFitFiles === 1 ? "file" : "files"} in batch ${checkpoint.batchId}${batchLabel}`,
     );
     throw new WaitingChildrenError();
   }
@@ -170,14 +187,14 @@ export async function processGarminDumpImportJob(
     job.getIgnoredChildrenFailures(),
   ]);
   const batchResult = batchResultFromChildren(checkpoint, childValues);
-  const batchFailure = batchFailureFromChildren(checkpoint, ignoredFailures);
-  if (!batchResult && !batchFailure) {
+  const batchFailures = batchFailureFromChildren(checkpoint, ignoredFailures);
+  if (!batchResult && batchFailures.length === 0) {
     throw new Error(`Garmin FIT batch result is missing: ${checkpoint.batchId}`);
   }
 
   const fitResult = batchResult ?? {
     recordsSynced: 0,
-    errors: [{ message: `Garmin FIT batch failed: ${batchFailure}` }],
+    errors: batchFailures.map((message) => ({ message: `Garmin FIT batch failed: ${message}` })),
   };
   await cleanupPreparedGarminDumpImport(checkpoint.tempDirectories);
   const result: GarminDumpImportResult = {

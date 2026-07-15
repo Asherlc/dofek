@@ -13,6 +13,8 @@ const FIT_FILE_IMPORT_JOB_NAME = "fit-file-import";
 const FIT_FILE_IMPORT_BATCH_JOB_NAME = "fit-file-import-batch";
 const ZIP_ENTRY_EXTRACT_JOB_NAME = "zip-entry-extract";
 
+export const FLOW_BATCH_SIZE = 500;
+
 export interface GarminImportParent {
   id: string;
   queue: string;
@@ -71,7 +73,9 @@ function fitFileImportFlowChild(
   };
 }
 
-async function addGarminFitImportFlow(
+async function addBatchFlow(
+  batchId: string,
+  entries: GarminFitJobEntry[],
   preparedImport: PreparedGarminDumpImport,
   parent?: GarminImportParent,
 ) {
@@ -80,21 +84,34 @@ async function addGarminFitImportFlow(
     queueName: FIT_FILE_IMPORT_BATCH_QUEUE,
     data: { type: "fit-file-import-batch" },
     opts: {
-      jobId: preparedImport.batchId,
+      jobId: batchId,
       ...(parent ? { parent } : {}),
       ignoreDependencyOnFailure: true,
       removeOnComplete: { age: 86_400 },
       removeOnFail: { age: 604_800 },
     },
-    children: preparedImport.fitJobEntries.map((fitJobEntry) =>
-      fitFileImportFlowChild(preparedImport, fitJobEntry),
-    ),
+    children: entries.map((fitJobEntry) => fitFileImportFlowChild(preparedImport, fitJobEntry)),
   });
+}
+
+export function createBatchId(preparedImport: PreparedGarminDumpImport, batchIndex: number): string {
+  if (batchIndex === 0) {
+    return preparedImport.batchId;
+  }
+  return `${preparedImport.batchId}-batch-${batchIndex}`;
 }
 
 export async function attachGarminFitImportFlow(
   preparedImport: PreparedGarminDumpImport,
   parent: GarminImportParent,
 ): Promise<void> {
-  await addGarminFitImportFlow(preparedImport, parent);
+  const allEntries = preparedImport.fitJobEntries;
+  const batchCount = Math.ceil(allEntries.length / FLOW_BATCH_SIZE);
+
+  for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
+    const start = batchIndex * FLOW_BATCH_SIZE;
+    const batchEntries = allEntries.slice(start, start + FLOW_BATCH_SIZE);
+    const batchId = createBatchId(preparedImport, batchIndex);
+    await addBatchFlow(batchId, batchEntries, preparedImport, parent);
+  }
 }

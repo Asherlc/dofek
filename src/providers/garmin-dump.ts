@@ -539,7 +539,6 @@ function garminSummaryToFitJobSummary(
     startedAtIso: startedAt.toISOString(),
     endedAtIso: endedAt.toISOString(),
     name: summary.name ?? `Garmin ${activityType.replace(/_/g, " ")}`,
-    raw: summary,
   };
 }
 
@@ -666,6 +665,11 @@ export async function prepareGarminDumpImport(
         data: jobData,
       });
     }
+
+    summaryByExternalId.clear();
+    parsedDump.summaries = [];
+    parsedDump.fitFiles = [];
+    parsedDump.weightFitFiles = [];
 
     await extendGarminDumpImportLock(options);
     await reportGarminDumpProgress(
