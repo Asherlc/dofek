@@ -7,6 +7,7 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import { ChartRange } from "../lib/chart-range.ts";
 import { computeCurrentStrain } from "../lib/current-strain.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
@@ -17,7 +18,7 @@ import {
   type ClimbingSessionSummaryRow,
   type ClimbingVolumeByGradeRow,
 } from "../repositories/climbing-repository.ts";
-import { CyclingAdvancedRepository } from "../repositories/cycling-advanced-repository.ts";
+import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
 import {
   type ActivityStatsRow,
   TrainingRepository,
@@ -188,11 +189,12 @@ export async function loadMobileTrainingTab(
     ctx.sensorStore,
     ctx.accessWindow,
   );
-  const cyclingRepo = new CyclingAdvancedRepository(
+  const cyclingRepo = new CyclingAnalyticsRepository(
     ctx.db,
     ctx.userId,
     ctx.timezone,
     ctx.sensorStore,
+    ctx.accessWindow,
   );
   const climbingRepo = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
 
@@ -260,13 +262,18 @@ export async function loadMobileTrainingTab(
 
   const [
     { activities, weeklyVolume },
-    verticalAscentModels,
+    cyclingAnalytics,
     gradeProgressionModels,
     volumeByGradeModels,
     sessionSummaryModels,
   ] = await Promise.all([
     trainingRepo.getActivityStatsAndWeeklyVolume(days),
-    cyclingRepo.getVerticalAscentRates(days),
+    cyclingRepo.getActivities(ChartRange.fromDays(days), {
+      activityLimit: 1,
+      activityOffset: 0,
+      variabilityLimit: 1,
+      variabilityOffset: 0,
+    }),
     climbingRepo.getGradeProgression(days),
     climbingRepo.getVolumeByGrade(days),
     climbingRepo.getSessionSummaries(days),
@@ -277,7 +284,7 @@ export async function loadMobileTrainingTab(
     strainTarget,
     activities,
     weeklyVolume,
-    verticalAscent: verticalAscentModels.map((model) => model.toDetail()),
+    verticalAscent: cyclingAnalytics.verticalAscent,
     climbing: {
       gradeProgression: gradeProgressionModels.map((model) => model.toDetail()),
       volumeByGrade: volumeByGradeModels.map((model) => model.toDetail()),
