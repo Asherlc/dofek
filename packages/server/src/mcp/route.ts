@@ -1,9 +1,11 @@
+import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import express, { Router } from "express";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { getMcpResourceUrl } from "./oauth-config.ts";
 import { validateMcpToken } from "./token-repository.ts";
 import { createDofekMcpServer } from "./tools.ts";
 
@@ -21,7 +23,11 @@ function bearerTokenFromHeader(value: string | undefined): string | null {
 }
 
 function sendUnauthorized(response: express.Response): void {
-  response.set("WWW-Authenticate", "Bearer");
+  const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(getMcpResourceUrl());
+  response.set(
+    "WWW-Authenticate",
+    `Bearer realm="dofek", resource_metadata="${resourceMetadataUrl}"`,
+  );
   response.status(401).json({
     jsonrpc: "2.0",
     error: { code: -32001, message: "MCP bearer token is required." },

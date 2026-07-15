@@ -1,0 +1,304 @@
+import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
+import {
+  AccessDeniedError,
+  InvalidGrantError,
+  InvalidScopeError,
+  InvalidTargetError,
+  InvalidTokenError,
+} from "@modelcontextprotocol/sdk/server/auth/errors.js";
+import type {
+  AuthorizationParams,
+  OAuthServerProvider,
+} from "@modelcontextprotocol/sdk/server/auth/provider.js";
+import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import type {
+  OAuthClientInformationFull,
+  OAuthTokenRevocationRequest,
+  OAuthTokens,
+} from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { Database } from "dofek/db";
+import type { Response } from "express";
+import {
+  createAuthorizationCode,
+  exchangeAuthorizationCode,
+  getAuthorizationCodeChallenge,
+  revokeOAuthToken,
+  rotateRefreshToken,
+} from "./oauth-repository.ts";
+import { type McpScope, mcpScopeSchema, validateMcpToken } from "./token-repository.ts";
+
+export const MCP_OAUTH_CLIENT_ID = "claude";
+export const MCP_OAUTH_REDIRECT_URIS = [
+  "https://claude.ai/api/mcp/auth_callback",
+  "https://claude.com/api/mcp/auth_callback",
+] as const;
+export const MCP_OAUTH_SCOPES = [
+  "health:read",
+  "activity:read",
+  "nutrition:write",
+  "providers:read",
+  "sync:write",
+] as const satisfies readonly McpScope[];
+
+const MCP_SCOPE_LABELS: Record<McpScope, string> = {
+  "activity:read": "Search your activities",
+  "health:read": "View your daily health summaries",
+  "nutrition:write": "Log food entries",
+  "providers:read": "View your connected data sources",
+  "sync:write": "Start data synchronization",
+};
+
+function requiredClientSecret(): string {
+  const value = process.env.MCP_OAUTH_CLIENT_SECRET?.trim();
+  if (!value) {
+    throw new Error("MCP_OAUTH_CLIENT_SECRET environment variable is required");
+  }
+  return value;
+}
+
+class ClaudeClientsStore implements OAuthRegisteredClientsStore {
+  readonly #client: OAuthClientInformationFull;
+
+  constructor() {
+    this.#client = {
+      client_id: MCP_OAUTH_CLIENT_ID,
+      client_name: "Claude",
+      client_secret: requiredClientSecret(),
+      grant_types: ["authorization_code", "refresh_token"],
+      redirect_uris: [...MCP_OAUTH_REDIRECT_URIS],
+      response_types: ["code"],
+      scope: MCP_OAUTH_SCOPES.join(" "),
+      token_endpoint_auth_method: "client_secret_post",
+    };
+  }
+
+  getClient(clientId: string): OAuthClientInformationFull | undefined {
+    return clientId === this.#client.client_id ? this.#client : undefined;
+  }
+}
+
+function parseScopes(scopes: readonly string[] | undefined): McpScope[] {
+  const requestedScopes = scopes && scopes.length > 0 ? scopes : [...MCP_OAUTH_SCOPES];
+  const parsed = mcpScopeSchema.array().safeParse(requestedScopes);
+  if (!parsed.success) {
+    throw new InvalidScopeError("One or more requested scopes are not supported");
+  }
+  return parsed.data;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function hiddenInput(name: string, value: string | undefined): string {
+  return value === undefined
+    ? ""
+    : `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`;
+}
+
+function consentHtml(
+  client: OAuthClientInformationFull,
+  params: AuthorizationParams,
+  scopes: readonly McpScope[],
+): string {
+  const scopeItems = scopes
+    .map((scope) => `<li>${escapeHtml(MCP_SCOPE_LABELS[scope])}</li>`)
+    .join("");
+  const fields = [
+    hiddenInput("client_id", client.client_id),
+    hiddenInput("redirect_uri", params.redirectUri),
+    hiddenInput("response_type", "code"),
+    hiddenInput("code_challenge", params.codeChallenge),
+    hiddenInput("code_challenge_method", "S256"),
+    hiddenInput("scope", scopes.join(" ")),
+    hiddenInput("state", params.state),
+    hiddenInput("resource", params.resource?.href),
+  ].join("");
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authorize Claude</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 36rem; margin: 4rem auto; padding: 0 1.5rem; color: #17202a; }
+    .card { border: 1px solid #d5d8dc; border-radius: 0.75rem; padding: 1.5rem; }
+    button { border: 0; border-radius: 0.5rem; cursor: pointer; font: inherit; padding: 0.75rem 1rem; }
+    .approve { background: #17202a; color: white; }
+    .deny { background: #eaeded; color: #17202a; }
+    .actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Allow Claude to access Dofek?</h1>
+    <p>Claude is requesting these permissions:</p>
+    <ul>${scopeItems}</ul>
+    <form method="post" action="/authorize">
+      ${fields}
+      <div class="actions">
+        <button class="approve" type="submit" name="approval" value="approve">Allow</button>
+        <button class="deny" type="submit" name="approval" value="deny">Deny</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>`;
+}
+
+function redirectWithError(params: AuthorizationParams, error: string): string {
+  const target = new URL(params.redirectUri);
+  target.searchParams.set("error", error);
+  if (params.state) target.searchParams.set("state", params.state);
+  return target.href;
+}
+
+export class DofekOAuthServerProvider implements OAuthServerProvider {
+  readonly #db: Database;
+  readonly #resource: URL;
+  readonly clientsStore: OAuthRegisteredClientsStore;
+
+  constructor(db: Database, resource: URL) {
+    this.#db = db;
+    this.#resource = resource;
+    this.clientsStore = new ClaudeClientsStore();
+  }
+
+  async authorize(
+    client: OAuthClientInformationFull,
+    params: AuthorizationParams,
+    response: Response,
+  ): Promise<void> {
+    if (params.resource?.href !== this.#resource.href) {
+      throw new InvalidTargetError("The requested resource is not the Dofek MCP server");
+    }
+    const scopes = parseScopes(params.scopes);
+    const approval = Reflect.get(response.locals, "mcpOAuthApproval");
+    if (approval === "deny") {
+      response.redirect(
+        redirectWithError(params, new AccessDeniedError("Access denied").errorCode),
+      );
+      return;
+    }
+    if (approval !== "approve") {
+      response.type("html").send(consentHtml(client, params, scopes));
+      return;
+    }
+
+    const userId = Reflect.get(response.locals, "mcpOAuthUserId");
+    if (typeof userId !== "string") {
+      throw new AccessDeniedError("A signed-in Dofek user is required");
+    }
+    const code = await createAuthorizationCode(this.#db, {
+      clientId: client.client_id,
+      codeChallenge: params.codeChallenge,
+      redirectUri: params.redirectUri,
+      resource: this.#resource.href,
+      scopes,
+      userId,
+    });
+    const target = new URL(params.redirectUri);
+    target.searchParams.set("code", code);
+    if (params.state) target.searchParams.set("state", params.state);
+    response.redirect(target.href);
+  }
+
+  async challengeForAuthorizationCode(
+    client: OAuthClientInformationFull,
+    authorizationCode: string,
+  ): Promise<string> {
+    const challenge = await getAuthorizationCodeChallenge(
+      this.#db,
+      client.client_id,
+      authorizationCode,
+    );
+    if (!challenge) throw new InvalidGrantError("Invalid or expired authorization code");
+    return challenge;
+  }
+
+  async exchangeAuthorizationCode(
+    client: OAuthClientInformationFull,
+    authorizationCode: string,
+    _codeVerifier?: string,
+    redirectUri?: string,
+    resource?: URL,
+  ): Promise<OAuthTokens> {
+    const resolvedRedirectUri = redirectUri ?? client.redirect_uris[0];
+    if (!resolvedRedirectUri || resource?.href !== this.#resource.href) {
+      throw new InvalidGrantError("Authorization code parameters do not match");
+    }
+    const tokens = await exchangeAuthorizationCode(this.#db, {
+      clientId: client.client_id,
+      code: authorizationCode,
+      redirectUri: resolvedRedirectUri,
+      resource: this.#resource.href,
+    });
+    if (!tokens) throw new InvalidGrantError("Invalid or expired authorization code");
+    return {
+      access_token: tokens.accessToken,
+      expires_in: tokens.accessTokenExpiresInSeconds,
+      refresh_token: tokens.refreshToken,
+      scope: tokens.scopes.join(" "),
+      token_type: "bearer",
+    };
+  }
+
+  async exchangeRefreshToken(
+    client: OAuthClientInformationFull,
+    refreshToken: string,
+    requestedScopes?: string[],
+    resource?: URL,
+  ): Promise<OAuthTokens> {
+    if (resource?.href !== this.#resource.href) {
+      throw new InvalidGrantError("Refresh token resource does not match");
+    }
+    const scopes = requestedScopes ? parseScopes(requestedScopes) : undefined;
+    const tokens = await rotateRefreshToken(this.#db, {
+      clientId: client.client_id,
+      refreshToken,
+      requestedScopes: scopes,
+      resource: this.#resource.href,
+    });
+    if (!tokens) throw new InvalidGrantError("Invalid, expired, or reused refresh token");
+    return {
+      access_token: tokens.accessToken,
+      expires_in: tokens.accessTokenExpiresInSeconds,
+      refresh_token: tokens.refreshToken,
+      scope: tokens.scopes.join(" "),
+      token_type: "bearer",
+    };
+  }
+
+  async verifyAccessToken(token: string): Promise<AuthInfo> {
+    const validated = await validateMcpToken(this.#db, token);
+    if (
+      !validated ||
+      validated.oauthClientId !== MCP_OAUTH_CLIENT_ID ||
+      validated.oauthResource !== this.#resource.href
+    ) {
+      throw new InvalidTokenError("Invalid or expired access token");
+    }
+    return {
+      clientId: validated.oauthClientId,
+      expiresAt: validated.expiresAt
+        ? Math.floor(new Date(validated.expiresAt).getTime() / 1000)
+        : undefined,
+      extra: { userId: validated.userId },
+      resource: this.#resource,
+      scopes: validated.scopes,
+      token,
+    };
+  }
+
+  async revokeToken(
+    client: OAuthClientInformationFull,
+    request: OAuthTokenRevocationRequest,
+  ): Promise<void> {
+    await revokeOAuthToken(this.#db, client.client_id, request.token);
+  }
+}

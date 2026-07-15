@@ -80,6 +80,8 @@ describe("MCP token repository", () => {
           user_id: "user-id",
           scopes: ["health:read", "activity:read"],
           expires_at: null,
+          oauth_client_id: null,
+          oauth_resource: null,
           revoked_at: null,
         },
       ])
@@ -91,6 +93,9 @@ describe("MCP token repository", () => {
       tokenId: "token-id",
       userId: "user-id",
       scopes: ["health:read", "activity:read"],
+      expiresAt: null,
+      oauthClientId: null,
+      oauthResource: null,
     });
     expect(mockExecute).toHaveBeenCalledTimes(2);
   });
@@ -102,6 +107,8 @@ describe("MCP token repository", () => {
         user_id: "user-id",
         scopes: ["health:read"],
         expires_at: null,
+        oauth_client_id: null,
+        oauth_resource: null,
         revoked_at: "2026-05-20T12:00:00.000Z",
       },
     ]);
@@ -116,6 +123,8 @@ describe("MCP token repository", () => {
         user_id: "user-id",
         scopes: ["health:read"],
         expires_at: new Date(Date.now() - 1_000).toISOString(),
+        oauth_client_id: null,
+        oauth_resource: null,
         revoked_at: null,
       },
     ]);

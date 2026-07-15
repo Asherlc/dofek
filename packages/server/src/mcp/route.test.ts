@@ -202,6 +202,9 @@ function parseToolCallText(responseText: string): unknown {
 
 function authorizeMcpToken(scopes: readonly (typeof mcpScopes)[number][] = mcpScopes): void {
   vi.mocked(validateMcpToken).mockResolvedValue({
+    expiresAt: null,
+    oauthClientId: null,
+    oauthResource: null,
     scopes: [...scopes],
     tokenId: "token-id",
     userId: "user-id",
@@ -265,7 +268,9 @@ describe("createMcpRouter", () => {
     const response = await request(createTestApp(), { body: initializeRequest });
 
     expect(response.status).toBe(401);
-    expect(response.headers.get("www-authenticate")).toBe("Bearer");
+    expect(response.headers.get("www-authenticate")).toBe(
+      'Bearer realm="dofek", resource_metadata="https://app.example.test/.well-known/oauth-protected-resource/api/mcp"',
+    );
     expect(jsonRpcEnvelopeSchema.parse(JSON.parse(response.text))).toEqual({
       error: { code: -32001, message: "MCP bearer token is required." },
       id: null,
@@ -308,7 +313,7 @@ describe("createMcpRouter", () => {
     const response = await request(createTestApp(), { rawBody: "{" });
 
     expect(response.status).toBe(401);
-    expect(response.headers.get("www-authenticate")).toBe("Bearer");
+    expect(response.headers.get("www-authenticate")).toContain("resource_metadata=");
   });
 
   it("returns 401 when the bearer token is invalid", async () => {
@@ -318,7 +323,7 @@ describe("createMcpRouter", () => {
     });
 
     expect(response.status).toBe(401);
-    expect(response.headers.get("www-authenticate")).toBe("Bearer");
+    expect(response.headers.get("www-authenticate")).toContain("resource_metadata=");
     expect(validateMcpToken).toHaveBeenCalledWith(expect.anything(), "bad-token");
   });
 

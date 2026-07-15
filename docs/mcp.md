@@ -6,7 +6,43 @@ Dofek exposes a remote Model Context Protocol endpoint from the existing API ser
 https://<your-dofek-host>/api/mcp
 ```
 
-The endpoint uses Streamable HTTP and requires a Dofek MCP bearer token on every request.
+The endpoint uses Streamable HTTP and requires a Dofek bearer token on every request. It supports two token-issuance paths:
+
+- OAuth 2.1 authorization code with PKCE for Claude remote custom connectors.
+- Manually created MCP bearer tokens for clients such as Claude Code and Codex that support custom HTTP headers.
+
+Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata, exact redirect URI matching, short-lived access tokens, rotating refresh tokens, and per-tool scopes as required by the [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization).
+
+## Connect Claude
+
+Dofek pre-registers Claude instead of exposing unauthenticated Dynamic Client Registration. Configure the Claude custom connector with:
+
+```text
+MCP URL: https://<your-dofek-host>/api/mcp
+OAuth Client ID: claude
+OAuth Client Secret: <MCP_OAUTH_CLIENT_SECRET from Infisical>
+```
+
+Claude redirects users to Dofek to sign in and approve the requested scopes. Access tokens expire after one hour. Refresh tokens expire after 30 days and rotate on every use; reusing an older refresh token fails. The revocation endpoint invalidates the complete access-and-refresh token pair.
+
+The registered callback URLs are:
+
+```text
+https://claude.ai/api/mcp/auth_callback
+https://claude.com/api/mcp/auth_callback
+```
+
+Anthropic documents the current `claude.ai` callback and recommends allowing the `claude.com` callback for forward compatibility in its [remote connector developer guide](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers).
+
+OAuth discovery endpoints:
+
+```text
+/.well-known/oauth-protected-resource/api/mcp
+/.well-known/oauth-authorization-server
+/authorize
+/token
+/revoke
+```
 
 ## Create A Token
 
@@ -48,9 +84,9 @@ List existing token metadata with `mcp.listTokens`. Revoke a token with `mcp.rev
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
-## Connect A Client
+## Connect A Header-Capable Client
 
-For MCP clients that support remote HTTP servers directly, configure the URL and bearer token:
+For MCP clients that support custom remote HTTP headers directly, configure the URL and a manually created bearer token:
 
 ```json
 {

@@ -1,0 +1,40 @@
+ALTER TABLE fitness.mcp_access_token
+  ADD COLUMN oauth_client_id text,
+  ADD COLUMN oauth_resource text;
+
+CREATE TABLE fitness.mcp_oauth_authorization_code (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  code_hash text NOT NULL UNIQUE,
+  client_id text NOT NULL,
+  user_id uuid NOT NULL REFERENCES fitness.user_profile (id) ON DELETE CASCADE,
+  scopes text [] NOT NULL,
+  code_challenge text NOT NULL,
+  redirect_uri text NOT NULL,
+  resource text NOT NULL,
+  expires_at timestamp with time zone NOT NULL,
+  consumed_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE INDEX mcp_oauth_authorization_code_hash_idx
+  ON fitness.mcp_oauth_authorization_code (code_hash);
+CREATE INDEX mcp_oauth_authorization_code_expires_idx
+  ON fitness.mcp_oauth_authorization_code (expires_at);
+
+CREATE TABLE fitness.mcp_oauth_refresh_token (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  token_hash text NOT NULL UNIQUE,
+  client_id text NOT NULL,
+  user_id uuid NOT NULL REFERENCES fitness.user_profile (id) ON DELETE CASCADE,
+  access_token_id uuid NOT NULL REFERENCES fitness.mcp_access_token (id) ON DELETE CASCADE,
+  scopes text [] NOT NULL,
+  resource text NOT NULL,
+  expires_at timestamp with time zone NOT NULL,
+  revoked_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE INDEX mcp_oauth_refresh_token_hash_idx
+  ON fitness.mcp_oauth_refresh_token (token_hash);
+CREATE INDEX mcp_oauth_refresh_token_active_idx
+  ON fitness.mcp_oauth_refresh_token (client_id, revoked_at, expires_at);

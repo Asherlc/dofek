@@ -109,11 +109,64 @@ export const mcpAccessToken = fitness.table(
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    oauthClientId: text("oauth_client_id"),
+    oauthResource: text("oauth_resource"),
   },
   (table) => [
     index("mcp_access_token_user_idx").on(table.userId),
     index("mcp_access_token_token_hash_idx").on(table.tokenHash),
     index("mcp_access_token_active_idx").on(table.userId, table.revokedAt, table.expiresAt),
+  ],
+);
+
+export const mcpOauthAuthorizationCode = fitness.table(
+  "mcp_oauth_authorization_code",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    codeHash: text("code_hash").notNull().unique(),
+    clientId: text("client_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    scopes: text("scopes").array().notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    resource: text("resource").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("mcp_oauth_authorization_code_hash_idx").on(table.codeHash),
+    index("mcp_oauth_authorization_code_expires_idx").on(table.expiresAt),
+  ],
+);
+
+export const mcpOauthRefreshToken = fitness.table(
+  "mcp_oauth_refresh_token",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tokenHash: text("token_hash").notNull().unique(),
+    clientId: text("client_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    accessTokenId: uuid("access_token_id")
+      .notNull()
+      .references(() => mcpAccessToken.id, { onDelete: "cascade" }),
+    scopes: text("scopes").array().notNull(),
+    resource: text("resource").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("mcp_oauth_refresh_token_hash_idx").on(table.tokenHash),
+    index("mcp_oauth_refresh_token_active_idx").on(
+      table.clientId,
+      table.revokedAt,
+      table.expiresAt,
+    ),
   ],
 );
 

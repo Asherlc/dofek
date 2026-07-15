@@ -115,6 +115,9 @@ describe("createMcpRouter lifecycle handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     routeMocks.validateMcpToken.mockResolvedValue({
+      expiresAt: null,
+      oauthClientId: null,
+      oauthResource: null,
       scopes: ["health:read"],
       tokenId: "token-id",
       userId: "user-id",
