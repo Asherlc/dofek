@@ -57,7 +57,7 @@ function makeWorker(
     isRunning: () => options.running ?? true,
     client: Promise.resolve({
       status: options.commandStatus ?? "ready",
-      llen: options.listLength ?? (() => Promise.resolve(0)),
+      llen: (key) => options.listLength?.(key) ?? Promise.resolve(0),
     }),
     toKey: (type) => `bull:${name}:${type}`,
     waitUntilReady: () => Promise.resolve({ status: options.blockingStatus ?? "ready" }),
@@ -83,17 +83,20 @@ describe("createWorkerReadinessServer", () => {
   it("reports ready using the existing clients of every running worker", async () => {
     const firstListLength = vi.fn(() => Promise.resolve(0));
     const secondListLength = vi.fn(() => Promise.resolve(1));
+    const firstWorker = makeWorker("sync", { listLength: firstListLength });
+    const secondWorker = makeWorker("import", { listLength: secondListLength });
+    const firstCommand = vi.spyOn(await firstWorker.client, "llen");
+    const secondCommand = vi.spyOn(await secondWorker.client, "llen");
 
-    const response = await requestReadiness([
-      makeWorker("sync", { listLength: firstListLength }),
-      makeWorker("import", { listLength: secondListLength }),
-    ]);
+    const response = await requestReadiness([firstWorker, secondWorker]);
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/json");
     await expect(response.json()).resolves.toEqual({ status: "ok", workers: 2 });
     expect(firstListLength).toHaveBeenCalledWith("bull:sync:wait");
     expect(secondListLength).toHaveBeenCalledWith("bull:import:wait");
+    expect(firstCommand).toHaveBeenCalledWith("bull:sync:wait");
+    expect(secondCommand).toHaveBeenCalledWith("bull:import:wait");
   });
 
   it("clears the readiness timeout after a fast successful check", async () => {

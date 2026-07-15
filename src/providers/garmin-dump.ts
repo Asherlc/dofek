@@ -12,8 +12,6 @@ import type { SyncDatabase } from "../db/index.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ParsedFitSession } from "../fit/parser.ts";
-import type { FitFileImportJobData } from "../jobs/queues.ts";
-import { logger } from "../logger.ts";
 import {
   createGarminFitBatchId,
   type GarminDumpFlowEntry,
@@ -21,7 +19,9 @@ import {
   MAX_GARMIN_DUMP_ENTRY_BYTES,
   MAX_GARMIN_DUMP_NESTED_ZIP_BYTES,
   type PreparedGarminDumpImport,
-} from "./garmin-dump-flow.ts";
+} from "../jobs/garmin-dump-flow.ts";
+import type { FitFileImportJobData } from "../jobs/queues.ts";
+import { logger } from "../logger.ts";
 import type { ImportProvider, SyncError } from "./types.ts";
 
 export const GARMIN_DUMP_PROVIDER_ID = "garmin-dump";
@@ -503,7 +503,7 @@ function garminSummaryToFitJobSummary(
   };
 }
 
-async function cleanupUncheckpointedGarminDumpDirectories(
+async function cleanupUnrecordedGarminDumpDirectories(
   filePath: string,
   preserveTempDirectories: readonly string[] | undefined,
 ): Promise<void> {
@@ -545,7 +545,7 @@ export async function prepareGarminDumpImport(
 
   try {
     await reportGarminDumpProgress(options, 5, "Reading Garmin dump...");
-    await cleanupUncheckpointedGarminDumpDirectories(filePath, options.preserveTempDirectories);
+    await cleanupUnrecordedGarminDumpDirectories(filePath, options.preserveTempDirectories);
     parsedDump = await parseGarminDumpFile(filePath);
     errors.push(...parsedDump.errors);
     const totalFitFileCount = parsedDump.fitFiles.length + parsedDump.weightFitFiles.length;

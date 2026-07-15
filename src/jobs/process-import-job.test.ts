@@ -696,7 +696,7 @@ describe("processImportJob", () => {
       expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
       await expect(access(tempFilePath)).resolves.toBeUndefined();
     });
-    it("records terminal side effects before failing an incomplete import nonretryably", async () => {
+    it("records terminal side effects before failing an incomplete import without retrying", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
       mockProcessGarminDumpImportJob.mockResolvedValueOnce({
         provider: "garmin-dump",

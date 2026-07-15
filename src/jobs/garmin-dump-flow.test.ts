@@ -1,6 +1,5 @@
 import type { FlowJob } from "bullmq";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getFlowProducer } from "../jobs/queues.ts";
 import {
   attachGarminFitImportFlow,
   createGarminFitBatchId,
@@ -8,10 +7,11 @@ import {
   MAX_GARMIN_DUMP_NESTED_ZIP_BYTES,
   type PreparedGarminDumpImport,
 } from "./garmin-dump-flow.ts";
+import { getFlowProducer } from "./queues.ts";
 
 const mockAdd = vi.fn().mockResolvedValue({});
 
-vi.mock("../jobs/queues.ts", () => ({
+vi.mock("./queues.ts", () => ({
   FIT_FILE_IMPORT_BATCH_QUEUE: "fit-file-import-batch",
   FIT_FILE_IMPORT_QUEUE: "fit-file-import",
   ZIP_ENTRY_EXTRACT_QUEUE: "zip-entry-extract",

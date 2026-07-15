@@ -167,7 +167,7 @@ describe("processFitFileImportJob", () => {
     );
   });
 
-  it("fails jobs without a file path or extraction child non-retryably", async () => {
+  it("fails jobs without a file path or extraction child without retrying", async () => {
     await expect(
       processFitFileImportJob(
         createFitFileImportJob({
@@ -448,7 +448,7 @@ describe("processFitFileImportJob", () => {
     await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
   });
 
-  it("fails FIT flow jobs with multiple extraction results non-retryably", async () => {
+  it("fails FIT flow jobs with multiple extraction results without retrying", async () => {
     await expect(
       processFitFileImportJob(
         {
@@ -620,7 +620,7 @@ describe("processFitFileImportJob", () => {
     );
   });
 
-  it("fails activity FIT files missing a valid start time non-retryably", async () => {
+  it("fails activity FIT files missing a valid start time without retrying", async () => {
     const filePath = await writeTempFit(createActivityFit());
     mockParseFitFileInWorkerThread.mockResolvedValueOnce({
       session: {
@@ -768,7 +768,7 @@ describe("processFitFileImportJob", () => {
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
   });
 
-  it("fails invalid FIT files non-retryably before attempting activity parsing", async () => {
+  it("fails invalid FIT files without retrying before attempting activity parsing", async () => {
     const filePath = await writeTempFit(Buffer.from("not a fit file"));
 
     await expect(
@@ -794,7 +794,7 @@ describe("processFitFileImportJob", () => {
     await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
   });
 
-  it("fails FIT activity parser errors non-retryably", async () => {
+  it("fails FIT activity parser errors without retrying", async () => {
     const filePath = await writeTempFit(createActivityFit());
     mockParseFitFileInWorkerThread.mockRejectedValueOnce(new Error("invalid FIT session"));
     const job = createFitFileImportJob({

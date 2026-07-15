@@ -199,7 +199,7 @@ describe("createGarminImportProgressCoordinator", () => {
     });
   });
 
-  it("caps terminal dependency overcounts at 90 percent", async () => {
+  it("caps dependency counts above the total at 90 percent", async () => {
     const importJob = createImportJob();
     const batchJob = createBatchJob();
     batchJob.getDependenciesCount.mockResolvedValue({

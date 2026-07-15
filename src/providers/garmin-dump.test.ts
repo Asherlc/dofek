@@ -773,7 +773,7 @@ describe("Garmin dump provider", () => {
     await cleanupPreparedGarminDumpImport(preparedImport.tempDirectories);
   });
 
-  it("removes uncheckpointed extraction directories before retrying preparation", async () => {
+  it("removes extraction directories absent from the checkpoint before retrying preparation", async () => {
     const filePath = await createGarminDumpZip();
     const staleDirectory = `${filePath}-extract-stale`;
     await mkdir(staleDirectory);
@@ -785,7 +785,7 @@ describe("Garmin dump provider", () => {
     await cleanupPreparedGarminDumpImport(preparedImport.tempDirectories);
   });
 
-  it("force-removes an uncheckpointed extraction directory discovered during cleanup", async () => {
+  it("force-removes an extraction directory absent from the checkpoint", async () => {
     const filePath = await createGarminDumpZip();
     const staleDirectory = `${filePath}-extract-stale`;
     await mkdir(staleDirectory);
@@ -810,19 +810,16 @@ describe("Garmin dump provider", () => {
     await cleanupPreparedGarminDumpImport([staleDirectory, ...preparedImport.tempDirectories]);
   });
 
-  it("preserves checkpointed extraction directories while rebuilding a prepared flow", async () => {
+  it("preserves extraction directories recorded in the checkpoint while rebuilding", async () => {
     const filePath = await createGarminDumpZip();
-    const checkpointedDirectory = `${filePath}-extract-checkpointed`;
-    await mkdir(checkpointedDirectory);
+    const preservedDirectory = `${filePath}-extract-preserved`;
+    await mkdir(preservedDirectory);
 
     const preparedImport = await prepareGarminDumpImport(mockDb, filePath, "user-1", {
-      preserveTempDirectories: [checkpointedDirectory],
+      preserveTempDirectories: [preservedDirectory],
     });
 
-    await expect(stat(checkpointedDirectory)).resolves.toBeDefined();
-    await cleanupPreparedGarminDumpImport([
-      checkpointedDirectory,
-      ...preparedImport.tempDirectories,
-    ]);
+    await expect(stat(preservedDirectory)).resolves.toBeDefined();
+    await cleanupPreparedGarminDumpImport([preservedDirectory, ...preparedImport.tempDirectories]);
   });
 });

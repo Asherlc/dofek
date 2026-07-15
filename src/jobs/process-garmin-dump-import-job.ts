@@ -7,8 +7,8 @@ import {
   cleanupPreparedGarminDumpImport,
   prepareGarminDumpImport,
 } from "../providers/garmin-dump.ts";
-import { attachGarminFitImportFlow } from "../providers/garmin-dump-flow.ts";
 import type { SyncResult } from "../providers/types.ts";
+import { attachGarminFitImportFlow } from "./garmin-dump-flow.ts";
 import type { ImportJobData } from "./queues.ts";
 
 const importResultSchema = z.object({

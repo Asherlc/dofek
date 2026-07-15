@@ -6,7 +6,7 @@ import {
   type FitFileImportJobData,
   getFlowProducer,
   ZIP_ENTRY_EXTRACT_QUEUE,
-} from "../jobs/queues.ts";
+} from "./queues.ts";
 
 const FIT_FILE_IMPORT_JOB_NAME = "fit-file-import";
 const FIT_FILE_IMPORT_BATCH_JOB_NAME = "fit-file-import-batch";

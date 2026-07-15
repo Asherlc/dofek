@@ -5,7 +5,7 @@ import {
   cleanupPreparedGarminDumpImport,
   prepareGarminDumpImport,
 } from "../providers/garmin-dump.ts";
-import { attachGarminFitImportFlow } from "../providers/garmin-dump-flow.ts";
+import { attachGarminFitImportFlow } from "./garmin-dump-flow.ts";
 import { processGarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
 import type { ImportJobData } from "./queues.ts";
 
@@ -23,7 +23,7 @@ vi.mock("../providers/garmin-dump.ts", () => ({
   prepareGarminDumpImport: vi.fn(),
 }));
 
-vi.mock("../providers/garmin-dump-flow.ts", () => ({
+vi.mock("./garmin-dump-flow.ts", () => ({
   attachGarminFitImportFlow: vi.fn(),
 }));
 
@@ -250,7 +250,7 @@ describe("processGarminDumpImportJob", () => {
     expect(cleanupPreparedGarminDumpImport).not.toHaveBeenCalled();
   });
 
-  it("rebuilds a prepared flow idempotently while retaining every cleanup directory", async () => {
+  it("rebuilds a prepared flow without duplicates while retaining every cleanup directory", async () => {
     const oldDirectory = "/job-files/upload.zip-extract-old";
     const job = createJob({
       ...waitingCheckpoint(),
@@ -403,7 +403,7 @@ describe("processGarminDumpImportJob", () => {
     expect(cleanupPreparedGarminDumpImport).not.toHaveBeenCalled();
   });
 
-  it("computes duration from the checkpointed orchestration start", async () => {
+  it("computes duration from the saved orchestration start", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_784_073_600_500);
     const job = createJob(waitingCheckpoint());
     job.moveToWaitingChildren.mockResolvedValue(false);

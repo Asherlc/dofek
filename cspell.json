@@ -131,6 +131,7 @@
     "otlp",
     "sentry",
     "sadd",
+    "llen",
     "smembers",
     "srem",
     "scard",
