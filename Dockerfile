@@ -85,11 +85,11 @@ RUN apk add --no-cache curl ca-certificates libbz2 && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-29.5.3.tgz" | \
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
     apk del curl
-COPY --from=dbt-tools /usr/local/bin/python3.13 /usr/local/bin/python3.13
+COPY --from=dbt-tools /usr/local/bin/python3.14 /usr/local/bin/python3.14
 COPY --from=dbt-tools /usr/local/bin/dbt /usr/local/bin/dbt
 COPY --from=dbt-tools /usr/local/bin/sqlfluff /usr/local/bin/sqlfluff
-COPY --from=dbt-tools /usr/local/lib/python3.13 /usr/local/lib/python3.13
-COPY --from=dbt-tools /usr/local/lib/libpython3.13.so* /usr/local/lib/
+COPY --from=dbt-tools /usr/local/lib/python3.14 /usr/local/lib/python3.14
+COPY --from=dbt-tools /usr/local/lib/libpython3.14.so* /usr/local/lib/
 
 
 COPY --from=source --chown=node:node /app/src ./src
