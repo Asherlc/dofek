@@ -13274,6 +13274,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** None known; Dependabot PRs will not receive a
   hosted Storybook preview, but their Storybook artifacts continue to build.
 
+## 2026-07-15 — Dependabot CodeQL Update Mixed Action Versions
+
+- **Symptoms:** PR `1618` failed `CodeQL Analysis (javascript-typescript)` after
+  Dependabot updated only the `analyze` action from 4.36.2 to 4.36.3.
+- **User impact:** The dependency-update PR could not satisfy its CodeQL check.
+- **Evidence:** The [failed job](https://github.com/Asherlc/dofek/actions/runs/29425187048/job/87385642418)
+  reported `Loaded a configuration file for version '4.36.2', but running
+  version '4.36.3'` in the `github/codeql-action/analyze` step.
+- **Root cause:** The workflow pinned CodeQL `init` and `autobuild` to 4.36.2
+  while Dependabot independently updated `analyze` to 4.36.3, but all CodeQL
+  steps in one job must use the same action version.
+- **Fix / mitigation:** Updated `init` and `autobuild` to the same 4.36.3 commit
+  already selected for `analyze`.
+- **Validation:** The replacement [CodeQL job](https://github.com/Asherlc/dofek/actions/runs/29427432529/job/87393376515)
+  completed successfully with all three steps pinned to 4.36.3.
+- **Remaining risk / follow-up:** Dependabot treats each CodeQL sub-action as a
+  separate dependency, so a future partial update can recreate version skew.
+
 ## 2026-07-15 — Garmin Import PR Failed Mobile, Boundary, and Mutation Checks
 
 - **Symptoms:** PR #1630 failed the mobile Metro bundle, import-boundary,
