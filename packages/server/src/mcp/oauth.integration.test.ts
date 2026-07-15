@@ -392,8 +392,113 @@ describe("MCP OAuth", () => {
     });
   }
 
+  it("displays consent with default scopes when none requested", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const parameters = new URLSearchParams({
+      client_id: registeredClient.client_id,
+      code_challenge: codeChallenge(codeVerifier),
+      code_challenge_method: "S256",
+      redirect_uri: redirectUri,
+      resource,
+      response_type: "code",
+      state: "test-state",
+    });
+
+    const response = await fetch(`${baseUrl}/authorize?${parameters}`, {
+      headers: { Cookie: sessionCookie },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("Search your activities");
+    expect(body).toContain("View your daily health summaries");
+    expect(body).toContain("Log food entries");
+    expect(body).toContain("View your connected data sources");
+    expect(body).toContain("Start data synchronization");
+  });
+
+  it("returns 400 for unsupported scopes", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const parameters = new URLSearchParams({
+      client_id: registeredClient.client_id,
+      code_challenge: codeChallenge(codeVerifier),
+      code_challenge_method: "S256",
+      redirect_uri: redirectUri,
+      resource,
+      response_type: "code",
+      scope: "invalid:scope",
+      state: "test-state",
+    });
+
+    const response = await fetch(`${baseUrl}/authorize?${parameters}`, {
+      headers: { Cookie: sessionCookie },
+      redirect: "manual",
+    });
+    expect(response.status).toBe(302);
+    const location = response.headers.get("location");
+    expect(location).toContain("error=invalid_scope");
+  });
+
+  it("rejects authorization when resource is missing", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const parameters = new URLSearchParams({
+      client_id: registeredClient.client_id,
+      code_challenge: codeChallenge(codeVerifier),
+      code_challenge_method: "S256",
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "health:read",
+      state: "test-state",
+    });
+
+    const response = await fetch(`${baseUrl}/authorize?${parameters}`, {
+      headers: { Cookie: sessionCookie },
+      redirect: "manual",
+    });
+    expect(response.status).toBe(302);
+    const location = response.headers.get("location");
+    expect(location).toContain("error=invalid_target");
+  });
+
+  it("defaults client name to 'the MCP client' when client_name is undefined", async () => {
+    const noNameClient = await rawRegisterClientNoName();
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const parameters = new URLSearchParams({
+      client_id: noNameClient.client_id,
+      code_challenge: codeChallenge(codeVerifier),
+      code_challenge_method: "S256",
+      redirect_uri: redirectUri,
+      resource,
+      response_type: "code",
+      scope: "health:read",
+      state: "test-state",
+    });
+
+    const response = await fetch(`${baseUrl}/authorize?${parameters}`, {
+      headers: { Cookie: sessionCookie },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("the MCP client");
+    expect(body).toContain("Allow the MCP client to access Dofek?");
+  });
+
   async function registerClient(): Promise<z.infer<typeof registeredClientSchema>> {
     const response = await rawRegisterClient(redirectUri);
+    expect(response.status).toBe(201);
+    return registeredClientSchema.parse(await response.json());
+  }
+
+  async function rawRegisterClientNoName(): Promise<z.infer<typeof registeredClientSchema>> {
+    const response = await fetch(`${baseUrl}/register`, {
+      body: JSON.stringify({
+        grant_types: ["authorization_code", "refresh_token"],
+        redirect_uris: [redirectUri],
+        response_types: ["code"],
+        token_endpoint_auth_method: "client_secret_post",
+      }),
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": "203.0.113.10" },
+      method: "POST",
+    });
     expect(response.status).toBe(201);
     return registeredClientSchema.parse(await response.json());
   }
