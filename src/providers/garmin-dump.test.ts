@@ -600,7 +600,7 @@ describe("Garmin dump provider", () => {
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
   });
 
-  it("records summary validation errors and skips unmatched FIT files", async () => {
+  it("imports unmatched FIT files even when summaries exist", async () => {
     const zip = await createZip({
       "DI_CONNECT/DI-Connect-Fitness/asher_0_summarizedActivities.json": JSON.stringify([
         { summarizedActivitiesExport: [{ activityId: 12345, activityType: "cycling" }] },
@@ -617,7 +617,11 @@ describe("Garmin dump provider", () => {
       recordsSynced: 0,
       errors: [{ message: "Garmin activity 12345 is missing a valid start time" }],
     });
-    expect(preparedImport.fitJobEntries).toEqual([]);
+    expect(preparedImport.fitJobEntries).toHaveLength(1);
+    expect(preparedImport.fitJobEntries[0]?.data.originalPath).toBe(
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_99999.fit",
+    );
+    expect(preparedImport.fitJobEntries[0]?.data.activitySummary).toBeUndefined();
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
   });
 
