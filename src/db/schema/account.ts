@@ -145,10 +145,7 @@ export const mcpOauthAuthorizationCode = fitness.table(
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index("mcp_oauth_authorization_code_hash_idx").on(table.codeHash),
-    index("mcp_oauth_authorization_code_expires_idx").on(table.expiresAt),
-  ],
+  (table) => [index("mcp_oauth_authorization_code_expires_idx").on(table.expiresAt)],
 );
 
 export const mcpOauthRefreshToken = fitness.table(
@@ -170,7 +167,6 @@ export const mcpOauthRefreshToken = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("mcp_oauth_refresh_token_hash_idx").on(table.tokenHash),
     index("mcp_oauth_refresh_token_active_idx").on(
       table.clientId,
       table.revokedAt,

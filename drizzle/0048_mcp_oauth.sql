@@ -28,9 +28,6 @@ CREATE TABLE fitness.mcp_oauth_authorization_code (
 );
 --> statement-breakpoint
 
-CREATE INDEX CONCURRENTLY mcp_oauth_authorization_code_hash_idx
-ON fitness.mcp_oauth_authorization_code (code_hash);
---> statement-breakpoint
 CREATE INDEX CONCURRENTLY mcp_oauth_authorization_code_expires_idx
 ON fitness.mcp_oauth_authorization_code (expires_at);
 --> statement-breakpoint
@@ -49,8 +46,5 @@ CREATE TABLE fitness.mcp_oauth_refresh_token (
 );
 --> statement-breakpoint
 
-CREATE INDEX CONCURRENTLY mcp_oauth_refresh_token_hash_idx
-ON fitness.mcp_oauth_refresh_token (token_hash);
---> statement-breakpoint
 CREATE INDEX CONCURRENTLY mcp_oauth_refresh_token_active_idx
 ON fitness.mcp_oauth_refresh_token (client_id, revoked_at, expires_at);
