@@ -33,6 +33,7 @@ import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { checkReadiness } from "./lib/readiness.ts";
 import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { logger } from "./logger.ts";
+import { createMcpOAuthRouter, type McpAuthRateLimitOptions } from "./mcp/oauth-route.ts";
 import { createMcpRouter } from "./mcp/route.ts";
 import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activity-sensor-store.ts";
 import { LimitedActivitySensorStore } from "./repositories/limited-activity-sensor-store.ts";
@@ -82,6 +83,7 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
 /** Create the Express app with all routes. */
 export interface CreateAppOptions {
   metricStreamPublisher?: MetricStreamEventPublisher;
+  mcpAuthRateLimit?: McpAuthRateLimitOptions;
 }
 
 export function createApp(
@@ -91,6 +93,7 @@ export function createApp(
 ): express.Express {
   initSentry();
   const app = express();
+  app.set("trust proxy", 1);
   const limitedSensorStore = new LimitedActivitySensorStore(sensorStore);
 
   // ── Health check (before ALL middleware and other routes) ──
@@ -214,6 +217,7 @@ function setupRoutes(
   app.use("/api/upload", createUploadRouter({ importQueue, db }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
+  app.use(createMcpOAuthRouter(db, options.mcpAuthRateLimit));
   app.use("/api/mcp", createMcpRouter({ db, sensorStore }));
   app.use("/api/ingest", createIngestZosHealthRouter({ db }));
   app.use("/api/companion-pairing/start", authRateLimiter);

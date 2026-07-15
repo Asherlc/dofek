@@ -13326,3 +13326,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   validation.
 - **Remaining risk / follow-up:** Confirm the replacement workflow completes all
   Stryker shards and the aggregate required-check job on fresh hosted runners.
+
+## 2026-07-15 — Local Docker Disk Exhaustion Blocked OAuth Integration Tests
+
+- **Symptoms:** The workspace TimescaleDB container restarted during MCP OAuth integration-test setup.
+- **User impact:** No production impact. Local database-backed tests could not start.
+- **Evidence:** `docker logs` reported the first fatal line, `initdb: error: could not create directory "/home/postgres/pgdata/data/pg_wal": No space left on device`. The Docker virtual disk was 98% full, while the macOS host retained 77 GiB. `docker system df` showed 6.4 GiB of build cache and 4.0 GiB of unused images.
+- **Root cause:** Unused Docker images and build cache exhausted Docker Desktop's virtual disk; this was not a Postgres configuration or recovery failure.
+- **Fix / mitigation:** Removed only unused build cache and images. No active containers or Docker volumes were deleted.
+- **Validation:** The database became healthy and `SELECT pg_is_in_recovery();` returned `false`; the real-Postgres MCP OAuth integration suite then passed.
+- **Remaining risk / follow-up:** Docker still has many stopped Conductor-workspace volumes. Archive obsolete workspaces through their normal lifecycle rather than globally pruning volumes that may contain retained local databases.

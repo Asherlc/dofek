@@ -6,11 +6,50 @@ Dofek exposes a remote Model Context Protocol endpoint from the existing API ser
 https://<your-dofek-host>/api/mcp
 ```
 
-The endpoint uses Streamable HTTP and requires a Dofek MCP bearer token on every request.
+The endpoint uses Streamable HTTP and supports two authentication paths:
+
+- OAuth 2.1 authorization code with PKCE for Claude remote custom connectors.
+- Manually created MCP bearer tokens for clients such as Claude Code and Codex that support custom HTTP headers.
+
+Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)), exact redirect URI matching, short-lived access tokens, rotating refresh tokens, and per-tool scopes as required by the [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization).
+
+## Connect Claude
+
+Dofek supports [OAuth Dynamic Client Registration (DCR)](https://www.rfc-editor.org/rfc/rfc7591) ([MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)), so Claude creates distinct client credentials automatically. Configure the Claude custom connector with only:
+
+```text
+MCP URL: https://<your-dofek-host>/api/mcp
+```
+
+Leave the OAuth Client ID and OAuth Client Secret fields empty. Claude discovers `/register` ([RFC 7591 §3](https://www.rfc-editor.org/rfc/rfc7591#section-3)), registers itself, and stores the resulting client credentials. Each registration receives a unique client ID and secret; Dofek encrypts the secret at rest with `CREDENTIAL_ENCRYPTION_KEY_BASE64` using the [AWS Encryption SDK](https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/introduction.html) raw AES-256-GCM keyring ([`@aws-crypto/client-node`](https://github.com/aws/aws-encryption-sdk-javascript); see [README credential encryption](../README.md#credential-encryption-at-rest-provider-credentials)). Registration secrets expire after 30 days via `client_secret_expires_at` ([RFC 7591 §3.2.1](https://www.rfc-editor.org/rfc/rfc7591#section-3.2.1)).
+
+Claude redirects each user to Dofek to sign in and approve the requested scopes. Access tokens expire after one hour. Refresh tokens expire after 30 days and rotate on every use; reusing an older refresh token fails ([OAuth 2.0 Security BCP refresh token rotation](https://www.rfc-editor.org/rfc/rfc9700#name-refresh-tokens); [RFC 6819 §5.2.2.3](https://www.rfc-editor.org/rfc/rfc6819#section-5.2.2.3)). The `/revoke` endpoint invalidates the complete access-and-refresh token pair ([RFC 7009](https://www.rfc-editor.org/rfc/rfc7009)). Anthropic documents DCR support and re-registration behavior in its [remote connector developer guide](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers).
+
+The registered callback URLs are:
+
+```text
+https://claude.ai/api/mcp/auth_callback
+https://claude.com/api/mcp/auth_callback
+```
+
+Registrations are rejected unless every callback matches this allowlist exactly ([OAuth 2.0 Security BCP §4.1.3](https://www.rfc-editor.org/rfc/rfc9700#section-4.1.3); [Anthropic remote connector guide](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers)).
+
+OAuth discovery and protocol endpoints ([MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization); [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728); [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414); [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591); [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009)):
+
+```text
+/.well-known/oauth-protected-resource/api/mcp
+/.well-known/oauth-authorization-server
+/register
+/authorize
+/token
+/revoke
+```
 
 ## Create A Token
 
-Open Dofek Settings and use the **MCP Tokens** section to create, copy, list, and revoke tokens.
+Tokens are only needed for clients that use manual bearer token authentication (such as Codex). OAuth-based clients (such as Claude Desktop) authenticate automatically.
+
+Open Dofek Settings and use the **MCP** section to create, copy, list, and revoke tokens.
 
 The UI calls the authenticated tRPC `mcp.createToken` procedure from the logged-in Dofek client session.
 
@@ -48,9 +87,9 @@ List existing token metadata with `mcp.listTokens`. Revoke a token with `mcp.rev
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
-## Connect A Client
+## Connect A Header-Capable Client
 
-For MCP clients that support remote HTTP servers directly, configure the URL and bearer token:
+For MCP clients that support custom remote HTTP headers directly, configure the URL and a manually created bearer token:
 
 ```json
 {

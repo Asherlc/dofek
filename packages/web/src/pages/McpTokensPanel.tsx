@@ -139,12 +139,10 @@ export function McpTokensPanel() {
     <div className="space-y-5">
       <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
         <div>
-          <p className="text-sm font-medium text-foreground">
-            Install in Model Context Protocol (MCP) client settings
-          </p>
+          <p className="text-sm font-medium text-foreground">Connect with OAuth (Recommended)</p>
           <p className="mt-1 text-sm text-subtle">
-            Create a token, then add this remote server to your Model Context Protocol client
-            settings.
+            For clients that support OAuth auto-discovery, such as Claude Desktop. Paste the URL and
+            sign in when prompted.
           </p>
         </div>
         <div className="space-y-1">
@@ -153,10 +151,22 @@ export function McpTokensPanel() {
             {mcpEndpoint}
           </code>
         </div>
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-subtle">
-            Client settings JavaScript Object Notation (JSON)
+        <p className="text-xs text-dim">
+          Claude discovers OAuth endpoints automatically and handles authentication. No manual token
+          is required.
+        </p>
+      </div>
+
+      <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
+        <div>
+          <p className="text-sm font-medium text-foreground">Connect with a manual token</p>
+          <p className="mt-1 text-sm text-subtle">
+            For clients that support custom HTTP headers, such as Codex. Create a token below, then
+            configure your client.
           </p>
+        </div>
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-subtle">Client settings JSON</p>
           <pre className="overflow-x-auto rounded bg-white/70 p-3 text-xs text-foreground">
             <code>{`{
   "mcpServers": {
@@ -171,7 +181,7 @@ export function McpTokensPanel() {
           </pre>
         </div>
         <p className="text-xs text-dim">
-          Some clients call this file or screen Settings, MCP Servers, or Connectors.
+          Some clients call this screen Settings, MCP Servers, or Connectors.
         </p>
       </div>
 
