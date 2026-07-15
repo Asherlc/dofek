@@ -15,6 +15,7 @@ import { companionPairingRouter } from "./routers/companion-pairing.ts";
 import { companionTokenRouter } from "./routers/companion-token.ts";
 import { correlationRouter } from "./routers/correlation.ts";
 import { credentialAuthRouter } from "./routers/credential-auth.ts";
+import { cyclingRouter } from "./routers/cycling.ts";
 import { cyclingAdvancedRouter } from "./routers/cycling-advanced.ts";
 import { dailyMetricsRouter } from "./routers/daily-metrics.ts";
 import { durationCurvesRouter } from "./routers/duration-curves.ts";
@@ -111,6 +112,7 @@ export const appRouter = router({
   whoopBleSync: whoopBleSyncRouter,
   strength: strengthRouter,
   cyclingAdvanced: cyclingAdvancedRouter,
+  cycling: cyclingRouter,
   hiking: hikingRouter,
   predictions: predictionsRouter,
   recovery: recoveryRouter,
