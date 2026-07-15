@@ -516,4 +516,171 @@ describe("MCP OAuth", () => {
       method: "POST",
     });
   }
+
+  it("denies authorization and redirects with error when user denies consent", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const parameters = authorizationParameters(codeVerifier);
+
+    const consentResponse = await fetch(`${baseUrl}/authorize?${parameters}`, {
+      headers: { Cookie: sessionCookie },
+    });
+    expect(consentResponse.status).toBe(200);
+
+    parameters.set("approval", "deny");
+    const denyResponse = await fetch(`${baseUrl}/authorize`, {
+      body: parameters,
+      headers: { Cookie: sessionCookie, "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(denyResponse.status).toBe(302);
+    const location = denyResponse.headers.get("location");
+    expect(location).toContain(redirectUri);
+    expect(location).toContain("error=access_denied");
+    expect(location).toContain("state=state-value");
+  });
+
+  it("verifyAccessToken throws for invalid token", async () => {
+    const response = await fetch(`${baseUrl}/api/mcp`, {
+      body: JSON.stringify({
+        id: 1,
+        jsonrpc: "2.0",
+        method: "initialize",
+        params: {
+          capabilities: {},
+          clientInfo: { name: "OAuth integration test", version: "1" },
+          protocolVersion: "2025-06-18",
+        },
+      }),
+      headers: {
+        Accept: "application/json, text/event-stream",
+        Authorization: "Bearer invalid-token-12345",
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it("exchangeAuthorizationCode rejects mismatched redirect URI", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const parameters = authorizationParameters(codeVerifier);
+    parameters.set("approval", "approve");
+    const approvalResponse = await fetch(`${baseUrl}/authorize`, {
+      body: parameters,
+      headers: { Cookie: sessionCookie, "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+      redirect: "manual",
+    });
+    const callbackUrl = new URL(approvalResponse.headers.get("location") ?? "");
+    const code = callbackUrl.searchParams.get("code");
+    if (!code) throw new Error("Missing authorization code");
+
+    const response = await fetch(`${baseUrl}/token`, {
+      body: new URLSearchParams({
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
+        code,
+        code_verifier: codeVerifier,
+        grant_type: "authorization_code",
+        redirect_uri: "https://wrong.example/callback",
+        resource,
+      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("invalid_grant");
+  });
+
+  it("exchangeRefreshToken rejects mismatched resource", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const tokens = await completeAuthorization(codeVerifier);
+
+    const response = await fetch(`${baseUrl}/token`, {
+      body: new URLSearchParams({
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
+        grant_type: "refresh_token",
+        refresh_token: tokens.refresh_token,
+        resource: "https://wrong.example/api/mcp",
+      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("invalid_grant");
+  });
+
+  it("challengeForAuthorizationCode returns error for invalid code", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const response = await fetch(`${baseUrl}/token`, {
+      body: new URLSearchParams({
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
+        code: "nonexistent-code-12345",
+        code_verifier: codeVerifier,
+        grant_type: "authorization_code",
+        redirect_uri: redirectUri,
+        resource,
+      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("invalid_grant");
+  });
+
+  it("exchangeAuthorizationCode rejects mismatched PKCE code_verifier", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const parameters = authorizationParameters(codeVerifier);
+    parameters.set("approval", "approve");
+    const approvalResponse = await fetch(`${baseUrl}/authorize`, {
+      body: parameters,
+      headers: { Cookie: sessionCookie, "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+      redirect: "manual",
+    });
+    const callbackUrl = new URL(approvalResponse.headers.get("location") ?? "");
+    const code = callbackUrl.searchParams.get("code");
+    if (!code) throw new Error("Missing authorization code");
+
+    const wrongVerifier = randomBytes(32).toString("base64url");
+    const response = await fetch(`${baseUrl}/token`, {
+      body: new URLSearchParams({
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
+        code,
+        code_verifier: wrongVerifier,
+        grant_type: "authorization_code",
+        redirect_uri: redirectUri,
+        resource,
+      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("invalid_grant");
+  });
+
+  it("exchangeRefreshToken rejects invalid refresh token", async () => {
+    const response = await fetch(`${baseUrl}/token`, {
+      body: new URLSearchParams({
+        client_id: registeredClient.client_id,
+        client_secret: registeredClient.client_secret,
+        grant_type: "refresh_token",
+        refresh_token: "nonexistent-refresh-token-12345",
+        resource,
+      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("invalid_grant");
+  });
 });
