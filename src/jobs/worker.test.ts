@@ -4,9 +4,27 @@ import { beforeAll, describe, expect, it, type MockInstance, vi } from "vitest";
 const mockOn = vi.fn();
 const mockClose = vi.fn(() => Promise.resolve());
 const mockRun = vi.fn(() => Promise.resolve());
+const mockAddJobLog = vi.fn(() => Promise.resolve(1));
+const mockReadinessListen = vi.fn();
+const mockReadinessClose = vi.fn((callback: (error?: Error) => void) => callback());
+const mockReadinessServer = {
+  listen: mockReadinessListen,
+  close: mockReadinessClose,
+};
+const mockObserveFitJob = vi.fn();
+const reconcileGarminProgressError = new Error("progress Redis unavailable");
+const mockReconcileGarminProgress = vi.fn().mockRejectedValueOnce(reconcileGarminProgressError);
+const mockCloseGarminProgress = vi.fn().mockResolvedValue(undefined);
+const mockGarminProgressCoordinator = {
+  observeFitJob: mockObserveFitJob,
+  reconcile: mockReconcileGarminProgress,
+  close: mockCloseGarminProgress,
+};
 
 vi.mock("bullmq", () => ({
-  Worker: vi.fn(() => ({
+  Job: { addJobLog: mockAddJobLog },
+  Worker: vi.fn((name: string) => ({
+    name,
     on: mockOn,
     close: mockClose,
     run: mockRun,
@@ -67,6 +85,14 @@ vi.mock("./process-activity-delete-analytics-job.ts", () => ({
 
 vi.mock("./scheduled-sync.ts", () => ({
   setupScheduledSync: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("./worker-readiness.ts", () => ({
+  createWorkerReadinessServer: vi.fn(() => mockReadinessServer),
+}));
+
+vi.mock("./garmin-import-progress.ts", () => ({
+  createGarminImportProgressCoordinator: vi.fn(() => mockGarminProgressCoordinator),
 }));
 
 vi.mock("./provider-queue-config.ts", () => ({
@@ -203,6 +229,24 @@ describe("worker module", () => {
     expect(lastHandlerRegistration).toBeLessThan(firstWorkerRun);
   });
 
+  it("serves readiness from the worker process after starting every queue worker", async () => {
+    const { Worker } = await import("bullmq");
+    const { createWorkerReadinessServer } = await import("./worker-readiness.ts");
+    const workerInstances = vi.mocked(Worker).mock.results.map((result) => result.value);
+
+    expect(createWorkerReadinessServer).toHaveBeenCalledWith(workerInstances);
+    expect(mockReadinessListen).toHaveBeenCalledWith(3001, "127.0.0.1");
+    const lastWorkerRun =
+      mockRun.mock.invocationCallOrder[mockRun.mock.invocationCallOrder.length - 1];
+    const readinessListen = mockReadinessListen.mock.invocationCallOrder[0];
+    expect(lastWorkerRun).toBeDefined();
+    expect(readinessListen).toBeDefined();
+    if (lastWorkerRun === undefined || readinessListen === undefined) {
+      throw new Error("Worker readiness startup order was not recorded");
+    }
+    expect(lastWorkerRun).toBeLessThan(readinessListen);
+  });
+
   it("initializes Sentry when DSN is set", async () => {
     const Sentry = await import("@sentry/node");
     expect(Sentry.init).toHaveBeenCalledWith({
@@ -211,14 +255,52 @@ describe("worker module", () => {
     });
   });
 
-  it("registers event handlers on each worker", () => {
-    // Each worker registers active, completed, failed, error = 4 events x N workers
-    expect(mockOn).toHaveBeenCalledTimes(4 * EXPECTED_WORKER_COUNT);
+  it("registers standard handlers plus FIT progress observers", () => {
+    expect(mockOn).toHaveBeenCalledTimes(6 * EXPECTED_WORKER_COUNT + 2);
     const events = mockOn.mock.calls.map((call) => String(call[0]));
     expect(events.filter((e: string) => e === "active")).toHaveLength(EXPECTED_WORKER_COUNT);
-    expect(events.filter((e: string) => e === "completed")).toHaveLength(EXPECTED_WORKER_COUNT);
-    expect(events.filter((e: string) => e === "failed")).toHaveLength(EXPECTED_WORKER_COUNT);
+    expect(events.filter((e: string) => e === "completed")).toHaveLength(EXPECTED_WORKER_COUNT + 1);
+    expect(events.filter((e: string) => e === "failed")).toHaveLength(EXPECTED_WORKER_COUNT + 1);
+    expect(events.filter((e: string) => e === "stalled")).toHaveLength(EXPECTED_WORKER_COUNT);
+    expect(events.filter((e: string) => e === "lockRenewalFailed")).toHaveLength(
+      EXPECTED_WORKER_COUNT,
+    );
     expect(events.filter((e: string) => e === "error")).toHaveLength(EXPECTED_WORKER_COUNT);
+  });
+
+  it("reports a durable Garmin progress reconciliation failure when the worker starts", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+
+    expect(mockReconcileGarminProgress).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(Sentry.captureException).toHaveBeenCalledWith(reconcileGarminProgressError, {
+        tags: { garminDumpStep: "progress-reconcile" },
+      });
+    });
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] Failed to reconcile Garmin import progress: Error: progress Redis unavailable",
+    );
+  });
+
+  it("observes completed and failed FIT jobs for durable parent progress", () => {
+    mockObserveFitJob.mockClear();
+    const completedHandlers = mockOn.mock.calls.filter((mockCall) => mockCall[0] === "completed");
+    const failedHandlers = mockOn.mock.calls.filter((mockCall) => mockCall[0] === "failed");
+    const completedHandler = completedHandlers.at(-1)?.[1];
+    const failedHandler = failedHandlers.at(-1)?.[1];
+    if (typeof completedHandler !== "function" || typeof failedHandler !== "function") {
+      throw new Error("FIT progress handlers were not registered");
+    }
+    const fitJob = { id: "fit-1", parent: { id: "batch-1", queueKey: "bull:fit-batch" } };
+
+    completedHandler(fitJob);
+    failedHandler(fitJob, new Error("invalid FIT"));
+    failedHandler(undefined, new Error("missing FIT job"));
+
+    expect(mockObserveFitJob).toHaveBeenNthCalledWith(1, fitJob);
+    expect(mockObserveFitJob).toHaveBeenNthCalledWith(2, fitJob);
+    expect(mockObserveFitJob).toHaveBeenCalledTimes(2);
   });
 
   it("registers SIGTERM and SIGINT handlers", () => {
@@ -292,6 +374,43 @@ describe("worker module", () => {
     expect(setTimeoutSpy.mock.calls.length).toBeGreaterThan(setTimeoutBefore);
   });
 
+  it("failed event handler appends the detailed cause to the BullMQ job log", async () => {
+    mockAddJobLog.mockClear();
+    mockAddJobLog.mockResolvedValue(1);
+    const failedJob = { id: "failed-fit-1" };
+
+    getWorkerHandler("failed")(failedJob, new Error("invalid timestamp in activity.fit"));
+    await vi.waitFor(() => {
+      expect(mockAddJobLog).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "sync-strava" }),
+        "failed-fit-1",
+        "[error] BullMQ job failed: queue=sync-strava jobId=failed-fit-1 cause=invalid timestamp in activity.fit",
+        100,
+      );
+    });
+  });
+
+  it("reports a failed-event BullMQ job-log write failure", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    const logError = new Error("job log Redis unavailable");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+    mockAddJobLog.mockRejectedValueOnce(logError);
+
+    getWorkerHandler("failed")({ id: "failed-fit-log-1" }, new Error("invalid FIT"));
+
+    await vi.waitFor(() => {
+      expect(Sentry.captureException).toHaveBeenCalledWith(logError, {
+        tags: { bullmqEvent: "failed", queue: "sync-strava" },
+        extra: { jobId: "failed-fit-log-1", operation: "addJobLog" },
+      });
+    });
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] Failed to append failed job log: queue=sync-strava jobId=failed-fit-log-1: Error: job log Redis unavailable",
+    );
+  });
+
   it("failed event handler does not restart idle timer while another job is active", async () => {
     const Sentry = await import("@sentry/node");
     vi.mocked(Sentry.captureException).mockClear();
@@ -332,6 +451,112 @@ describe("worker module", () => {
 
     expect(Sentry.captureException).toHaveBeenCalledWith(error);
     expect(logger.error).toHaveBeenCalledWith("[worker] Worker error: test worker error");
+  });
+
+  it("stalled event handler reports to Sentry and appends the failure to the BullMQ job log", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+    mockAddJobLog.mockClear();
+
+    getWorkerHandler("stalled")("stalled-job-1", "active");
+    await vi.waitFor(() => expect(mockAddJobLog).toHaveBeenCalledOnce());
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "BullMQ job stalled: queue=sync-strava jobId=stalled-job-1 previousState=active",
+      }),
+      expect.objectContaining({
+        tags: expect.objectContaining({ bullmqEvent: "stalled", queue: "sync-strava" }),
+      }),
+    );
+    expect(mockAddJobLog).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "sync-strava" }),
+      "stalled-job-1",
+      "[error] BullMQ job stalled: queue=sync-strava jobId=stalled-job-1 previousState=active",
+      100,
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] BullMQ job stalled: queue=sync-strava jobId=stalled-job-1 previousState=active",
+    );
+    expect(logger.error).toHaveBeenCalledOnce();
+  });
+
+  it("reports a stalled-event job-log write failure", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    const logError = new Error("Redis job log unavailable");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+    mockAddJobLog.mockRejectedValueOnce(logError);
+
+    getWorkerHandler("stalled")("stalled-job-1", "active");
+    await vi.waitFor(() => expect(Sentry.captureException).toHaveBeenCalledWith(logError));
+
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] Failed to append stalled job log: Error: Redis job log unavailable",
+    );
+  });
+
+  it("lockRenewalFailed event handler reports to Sentry and appends the failure to every BullMQ job log", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+    mockAddJobLog.mockClear();
+
+    getWorkerHandler("lockRenewalFailed")(["locked-job-1", "locked-job-2"]);
+    await vi.waitFor(() => expect(mockAddJobLog).toHaveBeenCalledTimes(2));
+
+    const message =
+      "BullMQ lock renewal failed: queue=sync-strava jobIds=locked-job-1,locked-job-2";
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message }),
+      expect.objectContaining({
+        tags: expect.objectContaining({
+          bullmqEvent: "lockRenewalFailed",
+          queue: "sync-strava",
+        }),
+        extra: { jobIds: ["locked-job-1", "locked-job-2"] },
+      }),
+    );
+    expect(mockAddJobLog).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ name: "sync-strava" }),
+      "locked-job-1",
+      `[error] ${message}`,
+      100,
+    );
+    expect(mockAddJobLog).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ name: "sync-strava" }),
+      "locked-job-2",
+      `[error] ${message}`,
+      100,
+    );
+    expect(logger.error).toHaveBeenCalledWith(`[worker] ${message}`);
+  });
+
+  it("reports a lock-renewal job-log write failure with queue and job context", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    const logError = new Error("Redis job log unavailable");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+    mockAddJobLog.mockRejectedValueOnce(logError);
+
+    getWorkerHandler("lockRenewalFailed")(["locked-job-1"]);
+    await vi.waitFor(() =>
+      expect(Sentry.captureException).toHaveBeenCalledWith(logError, {
+        tags: { bullmqEvent: "lockRenewalFailed", queue: "sync-strava" },
+        extra: { jobId: "locked-job-1", operation: "addJobLog" },
+      }),
+    );
+
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] Failed to append lock renewal failure job log: queue=sync-strava jobId=locked-job-1: Error: Redis job log unavailable",
+    );
   });
 
   it("unhandledRejection handler reports to Sentry and logs", async () => {
@@ -409,6 +634,27 @@ describe("worker module", () => {
     expect(processImportJob).toHaveBeenCalled();
   });
 
+  it("import processor fails loudly when BullMQ omits the job ID", async () => {
+    const { processImportJob } = await import("./process-import-job.ts");
+    vi.mocked(processImportJob).mockClear();
+
+    await expect(
+      invokeProcessor(
+        "import-queue",
+        {
+          filePath: "/tmp/f",
+          since: "2026-01-01",
+          userId: "u",
+          importType: "garmin-dump",
+        },
+        "token-1",
+        { id: undefined },
+      ),
+    ).rejects.toThrow("BullMQ import job ID missing");
+
+    expect(processImportJob).not.toHaveBeenCalled();
+  });
+
   it("import processor passes a token-backed lock extender to processImportJob", async () => {
     const { processImportJob } = await import("./process-import-job.ts");
     vi.mocked(processImportJob).mockClear();
@@ -438,6 +684,73 @@ describe("worker module", () => {
     expect(extendLock).toHaveBeenCalledWith("token-1", 600_000);
   });
 
+  it("import processor exposes token-bound durable flow operations to processImportJob", async () => {
+    const { processImportJob } = await import("./process-import-job.ts");
+    vi.mocked(processImportJob).mockClear();
+    const updateProgress = vi.fn().mockResolvedValue(undefined);
+    const updateData = vi.fn().mockResolvedValue(undefined);
+    const moveToWaitingChildren = vi.fn().mockResolvedValue(true);
+    const getChildrenValues = vi.fn().mockResolvedValue({ "bull:fit-batch:batch-1": {} });
+    const getIgnoredChildrenFailures = vi.fn().mockResolvedValue({});
+    const nextData = {
+      filePath: "/tmp/f",
+      since: "2026-01-01",
+      userId: "u",
+      importType: "garmin-dump" as const,
+      checkpoint: { version: 1 },
+    };
+
+    await invokeProcessor(
+      "import-queue",
+      {
+        filePath: "/tmp/f",
+        since: "2026-01-01",
+        userId: "u",
+        importType: "garmin-dump",
+      },
+      "token-1",
+      {
+        queueQualifiedName: "bull:import-queue",
+        updateProgress,
+        updateData,
+        moveToWaitingChildren,
+        getChildrenValues,
+        getIgnoredChildrenFailures,
+      },
+    );
+
+    const processCall = vi.mocked(processImportJob).mock.calls[0];
+    const durableJob = processCall?.[0];
+    expect(durableJob).toBeDefined();
+    if (!durableJob) {
+      throw new Error("processImportJob was not called");
+    }
+
+    expect(durableJob.id).toBe("test-job-1");
+    expect(durableJob.queueQualifiedName).toBe("bull:import-queue");
+    await durableJob.updateProgress({ percentage: 25 });
+    await durableJob.updateData(nextData);
+    await expect(durableJob.moveToWaitingChildren()).resolves.toBe(true);
+    await expect(durableJob.getChildrenValues()).resolves.toEqual({
+      "bull:fit-batch:batch-1": {},
+    });
+    await expect(durableJob.getIgnoredChildrenFailures()).resolves.toEqual({});
+    mockAddJobLog.mockClear();
+    await durableJob.log("[phase] prepared");
+
+    expect(updateProgress).toHaveBeenCalledWith({ percentage: 25 });
+    expect(updateData).toHaveBeenCalledWith(nextData);
+    expect(moveToWaitingChildren).toHaveBeenCalledWith("token-1");
+    expect(getChildrenValues).toHaveBeenCalledOnce();
+    expect(getIgnoredChildrenFailures).toHaveBeenCalledOnce();
+    expect(mockAddJobLog).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "import-queue" }),
+      "test-job-1",
+      "[phase] prepared",
+      500,
+    );
+  });
+
   it("import processor lock extender fails loudly when BullMQ omits the token", async () => {
     const { processImportJob } = await import("./process-import-job.ts");
     vi.mocked(processImportJob).mockClear();
@@ -464,6 +777,36 @@ describe("worker module", () => {
 
     await expect(job.extendLock(600_000)).rejects.toThrow("BullMQ import job lock token missing");
     expect(extendLock).not.toHaveBeenCalled();
+  });
+
+  it("import processor lock extender fails when BullMQ no longer owns the lock", async () => {
+    const { processImportJob } = await import("./process-import-job.ts");
+    vi.mocked(processImportJob).mockClear();
+    const extendLock = vi.fn().mockResolvedValue(0);
+
+    await invokeProcessor(
+      "import-queue",
+      {
+        filePath: "/tmp/f",
+        since: "2026-01-01",
+        userId: "u",
+        importType: "garmin-dump",
+      },
+      "stale-token",
+      { extendLock },
+    );
+
+    const processCall = vi.mocked(processImportJob).mock.calls[0];
+    const job = processCall?.[0];
+    expect(job).toBeDefined();
+    if (!job) {
+      throw new Error("processImportJob was not called");
+    }
+
+    await expect(job.extendLock(600_000)).rejects.toThrow(
+      "BullMQ import job lock is no longer owned: test-job-1",
+    );
+    expect(extendLock).toHaveBeenCalledWith("stale-token", 600_000);
   });
 
   it("export processor delegates to processExportJob", async () => {
@@ -575,5 +918,22 @@ describe("worker module", () => {
     });
 
     expect(processActivityDeleteAnalyticsJob).toHaveBeenCalled();
+  });
+
+  it("closes readiness and Garmin progress resources during graceful shutdown", async () => {
+    const signalHandler = process.listeners("SIGTERM").at(-1);
+    if (!signalHandler) {
+      throw new Error("SIGTERM handler was not registered");
+    }
+
+    const shutdownResult: unknown = Reflect.apply(signalHandler, process, []);
+    if (!(shutdownResult instanceof Promise)) {
+      throw new Error("SIGTERM handler did not return its shutdown promise");
+    }
+    await expect(shutdownResult).rejects.toThrow("process.exit called unexpectedly in test");
+
+    expect(mockReadinessClose).toHaveBeenCalledOnce();
+    expect(mockCloseGarminProgress).toHaveBeenCalledOnce();
+    expect(mockClose).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
   });
 });

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { CANONICAL_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { ConnectionOptions, JobsOptions } from "bullmq";
-import { FlowProducer, Queue, QueueEvents } from "bullmq";
+import { FlowProducer, Queue } from "bullmq";
 import { z } from "zod";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
@@ -34,6 +34,7 @@ export interface ImportJobData {
     | "fit-file";
   /** Weight unit for Strong CSV imports */
   weightUnit?: "kg" | "lbs";
+  checkpoint?: unknown;
 }
 
 export const fitFileImportActivitySummarySchema = z.object({
@@ -60,6 +61,7 @@ export type FitFileImportJobData = z.infer<typeof fitFileImportJobDataSchema>;
 export const zipEntryExtractJobDataSchema = z.object({
   archivePath: z.string(),
   entryPath: z.array(z.string()).min(1),
+  outputDirectory: z.string().optional(),
   outputExtension: z.string().regex(/^[A-Za-z0-9]+$/),
   maxBytes: z.number().int().positive().optional(),
   nestedArchiveMaxBytes: z.number().int().positive().optional(),
@@ -216,20 +218,10 @@ export function createFitFileImportQueue(
   return new Queue(FIT_FILE_IMPORT_QUEUE, { connection: connection ?? getRedisConnection() });
 }
 
-export function createFitFileImportQueueEvents(connection?: ConnectionOptions): QueueEvents {
-  return new QueueEvents(FIT_FILE_IMPORT_QUEUE, { connection: connection ?? getRedisConnection() });
-}
-
 export function createFitFileImportBatchQueue(
   connection?: ConnectionOptions,
 ): Queue<FitFileImportBatchJobData> {
   return new Queue(FIT_FILE_IMPORT_BATCH_QUEUE, { connection: connection ?? getRedisConnection() });
-}
-
-export function createFitFileImportBatchQueueEvents(connection?: ConnectionOptions): QueueEvents {
-  return new QueueEvents(FIT_FILE_IMPORT_BATCH_QUEUE, {
-    connection: connection ?? getRedisConnection(),
-  });
 }
 
 export function createZipEntryExtractQueue(
@@ -268,8 +260,6 @@ let cachedPostSyncQueue: Queue<PostSyncJobData> | null = null;
 let cachedActivityDeleteAnalyticsQueue: Queue<ActivityAnalyticsJobData> | null = null;
 let cachedImportQueue: Queue<ImportJobData> | null = null;
 let cachedFitFileImportQueue: Queue<FitFileImportJobData> | null = null;
-let cachedFitFileImportQueueEvents: QueueEvents | null = null;
-let cachedFitFileImportBatchQueueEvents: QueueEvents | null = null;
 let cachedFlowProducer: FlowProducer | null = null;
 
 export function getImportQueue(): Queue<ImportJobData> {
@@ -286,20 +276,6 @@ export function getFitFileImportQueue(): Queue<FitFileImportJobData> {
   return cachedFitFileImportQueue;
 }
 
-export function getFitFileImportQueueEvents(): QueueEvents {
-  if (!cachedFitFileImportQueueEvents) {
-    cachedFitFileImportQueueEvents = createFitFileImportQueueEvents();
-  }
-  return cachedFitFileImportQueueEvents;
-}
-
-export function getFitFileImportBatchQueueEvents(): QueueEvents {
-  if (!cachedFitFileImportBatchQueueEvents) {
-    cachedFitFileImportBatchQueueEvents = createFitFileImportBatchQueueEvents();
-  }
-  return cachedFitFileImportBatchQueueEvents;
-}
-
 export function getFlowProducer(): FlowProducer {
   if (!cachedFlowProducer) {
     cachedFlowProducer = createFlowProducer();
@@ -309,19 +285,11 @@ export function getFlowProducer(): FlowProducer {
 
 export async function closeFitFileImportQueueResources(): Promise<void> {
   const queue = cachedFitFileImportQueue;
-  const queueEvents = cachedFitFileImportQueueEvents;
-  const batchQueueEvents = cachedFitFileImportBatchQueueEvents;
   const flowProducer = cachedFlowProducer;
 
   const closeOperations: Array<Promise<unknown>> = [];
   if (queue) {
     closeOperations.push(queue.close());
-  }
-  if (queueEvents) {
-    closeOperations.push(queueEvents.close());
-  }
-  if (batchQueueEvents) {
-    closeOperations.push(batchQueueEvents.close());
   }
   if (flowProducer) {
     closeOperations.push(flowProducer.close());
@@ -329,8 +297,6 @@ export async function closeFitFileImportQueueResources(): Promise<void> {
   await Promise.all(closeOperations);
 
   cachedFitFileImportQueue = null;
-  cachedFitFileImportQueueEvents = null;
-  cachedFitFileImportBatchQueueEvents = null;
   cachedFlowProducer = null;
 }
 

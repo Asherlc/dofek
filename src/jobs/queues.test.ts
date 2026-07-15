@@ -5,9 +5,6 @@ const mockQueueAdd = vi.fn();
 const mockQueueClose = vi.fn().mockResolvedValue(undefined);
 const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd, close: mockQueueClose };
 const MockQueue = vi.fn(() => mockQueueInstance);
-const mockQueueEventsClose = vi.fn().mockResolvedValue(undefined);
-const mockQueueEventsInstance = { name: "mock-queue-events", close: mockQueueEventsClose };
-const MockQueueEvents = vi.fn(() => mockQueueEventsInstance);
 const mockFlowProducerClose = vi.fn().mockResolvedValue(undefined);
 const mockFlowProducerInstance = { name: "mock-flow-producer", close: mockFlowProducerClose };
 const MockFlowProducer = vi.fn(() => mockFlowProducerInstance);
@@ -15,7 +12,6 @@ const MockFlowProducer = vi.fn(() => mockFlowProducerInstance);
 vi.mock("bullmq", () => ({
   FlowProducer: MockFlowProducer,
   Queue: MockQueue,
-  QueueEvents: MockQueueEvents,
 }));
 
 describe("queues", () => {
@@ -24,7 +20,6 @@ describe("queues", () => {
     delete process.env.REDIS_URL;
     mockQueueAdd.mockResolvedValue(undefined);
     mockQueueClose.mockResolvedValue(undefined);
-    mockQueueEventsClose.mockResolvedValue(undefined);
     mockFlowProducerClose.mockResolvedValue(undefined);
   });
 
@@ -168,18 +163,6 @@ describe("queues", () => {
     });
   });
 
-  describe("createFitFileImportQueueEvents", () => {
-    it("creates QueueEvents with the FIT file import queue name", async () => {
-      const { createFitFileImportQueueEvents, FIT_FILE_IMPORT_QUEUE } = await import("./queues.ts");
-
-      createFitFileImportQueueEvents({ host: "test", port: 1357 });
-
-      expect(MockQueueEvents).toHaveBeenCalledWith(FIT_FILE_IMPORT_QUEUE, {
-        connection: { host: "test", port: 1357 },
-      });
-    });
-  });
-
   describe("createFitFileImportBatchQueue", () => {
     it("creates a Queue with the FIT file import batch queue name", async () => {
       const { createFitFileImportBatchQueue, FIT_FILE_IMPORT_BATCH_QUEUE } = await import(
@@ -299,40 +282,6 @@ describe("queues", () => {
     });
   });
 
-  describe("getFitFileImportQueueEvents", () => {
-    it("reuses one FIT file import queue events instance", async () => {
-      process.env.REDIS_URL = "redis://localhost:6379";
-      const { getFitFileImportQueueEvents, FIT_FILE_IMPORT_QUEUE } = await import("./queues.ts");
-
-      const first = getFitFileImportQueueEvents();
-      const second = getFitFileImportQueueEvents();
-
-      expect(first).toBe(second);
-      expect(MockQueueEvents).toHaveBeenCalledTimes(1);
-      expect(MockQueueEvents).toHaveBeenCalledWith(FIT_FILE_IMPORT_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
-    });
-  });
-
-  describe("getFitFileImportBatchQueueEvents", () => {
-    it("reuses one FIT file import batch queue events instance", async () => {
-      process.env.REDIS_URL = "redis://localhost:6379";
-      const { getFitFileImportBatchQueueEvents, FIT_FILE_IMPORT_BATCH_QUEUE } = await import(
-        "./queues.ts"
-      );
-
-      const first = getFitFileImportBatchQueueEvents();
-      const second = getFitFileImportBatchQueueEvents();
-
-      expect(first).toBe(second);
-      expect(MockQueueEvents).toHaveBeenCalledTimes(1);
-      expect(MockQueueEvents).toHaveBeenCalledWith(FIT_FILE_IMPORT_BATCH_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
-    });
-  });
-
   describe("getFlowProducer", () => {
     it("reuses one flow producer instance", async () => {
       process.env.REDIS_URL = "redis://localhost:6379";
@@ -352,35 +301,23 @@ describe("queues", () => {
   describe("closeFitFileImportQueueResources", () => {
     it("closes cached FIT file import queue resources and clears the cache", async () => {
       process.env.REDIS_URL = "redis://localhost:6379";
-      const {
-        closeFitFileImportQueueResources,
-        getFitFileImportBatchQueueEvents,
-        getFitFileImportQueue,
-        getFitFileImportQueueEvents,
-        getFlowProducer,
-      } = await import("./queues.ts");
+      const { closeFitFileImportQueueResources, getFitFileImportQueue, getFlowProducer } =
+        await import("./queues.ts");
 
       getFitFileImportQueue();
-      getFitFileImportQueueEvents();
-      getFitFileImportBatchQueueEvents();
       getFlowProducer();
       const queueConstructorCallsBeforeClose = MockQueue.mock.calls.length;
-      const queueEventsConstructorCallsBeforeClose = MockQueueEvents.mock.calls.length;
       const flowProducerConstructorCallsBeforeClose = MockFlowProducer.mock.calls.length;
 
       await closeFitFileImportQueueResources();
 
       expect(mockQueueClose).toHaveBeenCalledOnce();
-      expect(mockQueueEventsClose).toHaveBeenCalledTimes(2);
       expect(mockFlowProducerClose).toHaveBeenCalledOnce();
 
       getFitFileImportQueue();
-      getFitFileImportQueueEvents();
-      getFitFileImportBatchQueueEvents();
       getFlowProducer();
 
       expect(MockQueue).toHaveBeenCalledTimes(queueConstructorCallsBeforeClose + 1);
-      expect(MockQueueEvents).toHaveBeenCalledTimes(queueEventsConstructorCallsBeforeClose + 2);
       expect(MockFlowProducer).toHaveBeenCalledTimes(flowProducerConstructorCallsBeforeClose + 1);
     });
   });
