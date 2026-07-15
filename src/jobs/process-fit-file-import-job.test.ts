@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Encoder, Profile, Utils } from "@garmin/fitsdk";
+import { UnrecoverableError } from "bullmq";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
@@ -51,8 +52,12 @@ vi.mock("../fit/parser-worker.ts", () => ({
 }));
 
 const mockLoggerWarn = vi.fn();
+const mockLoggerError = vi.fn();
 vi.mock("../logger.ts", () => ({
-  logger: { warn: (...args: unknown[]) => mockLoggerWarn(...args) },
+  logger: {
+    error: (...args: unknown[]) => mockLoggerError(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+  },
 }));
 
 const mockDb: SyncDatabase = {
@@ -162,26 +167,24 @@ describe("processFitFileImportJob", () => {
     );
   });
 
-  it("returns an error result for jobs without a file path or extraction child", async () => {
-    const result = await processFitFileImportJob(
-      createFitFileImportJob({
-        originalPath: "DI_CONNECT/activity.fit",
-        userId: "user-1",
-        providerId: "garmin-dump",
-        sourceName: "Garmin Dump",
+  it("fails jobs without a file path or extraction child non-retryably", async () => {
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          originalPath: "DI_CONNECT/activity.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        }),
+        mockDb,
+      ),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: "UnrecoverableError",
+        message:
+          "Failed to import FIT file DI_CONNECT/activity.fit: FIT import job is missing filePath and has no child extraction result",
       }),
-      mockDb,
     );
-
-    expect(result).toEqual({
-      recordsSynced: 0,
-      errors: [
-        {
-          message:
-            "Failed to import FIT file DI_CONNECT/activity.fit: FIT import job is missing filePath and has no child extraction result",
-        },
-      ],
-    });
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
@@ -190,63 +193,60 @@ describe("processFitFileImportJob", () => {
     });
   });
 
-  it("cleans up temp files when queue payload validation returns an error result", async () => {
-    const filePath = await writeTempFit(createActivityFit());
-
-    const result = await processFitFileImportJob(
-      createFitFileImportJob({
-        filePath,
-        originalPath: "DI_CONNECT/activity.fit",
-        userId: "user-1",
-        providerId: "garmin-dump",
-      }),
-      mockDb,
-    );
-
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors[0]?.message).toContain(
-      "Failed to import FIT file DI_CONNECT/activity.fit:",
-    );
-    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
-    await expect(readFile(filePath)).rejects.toThrow();
-  });
-
-  it("reports cleanup failures to Sentry", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "fit-file-import-cleanup-failure-test-"));
-    createdDirectories.push(directory);
-
-    const result = await processFitFileImportJob(
-      createFitFileImportJob({
-        filePath: directory,
+  it("propagates unexpected extraction lookup failures for BullMQ retries", async () => {
+    const redisError = new Error("Redis child lookup failed");
+    const job = {
+      ...createFitFileImportJob({
         originalPath: "DI_CONNECT/activity.fit",
         userId: "user-1",
         providerId: "garmin-dump",
         sourceName: "Garmin Dump",
       }),
-      mockDb,
-    );
+      getChildrenValues: vi.fn().mockRejectedValue(redisError),
+      getIgnoredChildrenFailures: vi.fn().mockResolvedValue({}),
+    };
 
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors[0]?.message).toContain(
-      "Failed to import FIT file DI_CONNECT/activity.fit:",
+    await expect(processFitFileImportJob(job, mockDb)).rejects.toBe(redisError);
+
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+  });
+
+  it("retains parent-owned temp files when queue payload validation fails", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: "DI_CONNECT/activity.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+        }),
+        mockDb,
+      ),
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "Failed to import FIT file %s: %s",
+      "DI_CONNECT/activity.fit",
+      expect.any(String),
     );
-    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
-      tags: { fitImportStep: "cleanup" },
-      extra: { path: directory },
-    });
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
   });
 
   it("keeps originalPath for error messages when job data has extra fields", async () => {
-    const result = await processFitFileImportJob(
-      createFitFileImportJob({
-        originalPath: "DI_CONNECT/activity.fit",
-        ignored: "extra",
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          originalPath: "DI_CONNECT/activity.fit",
+          ignored: "extra",
+        }),
+        mockDb,
+      ),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining("Failed to import FIT file DI_CONNECT/activity.fit:"),
       }),
-      mockDb,
-    );
-
-    expect(result.errors[0]?.message).toContain(
-      "Failed to import FIT file DI_CONNECT/activity.fit:",
     );
   });
 
@@ -299,7 +299,7 @@ describe("processFitFileImportJob", () => {
       ],
       "file",
     );
-    await expect(readFile(filePath)).rejects.toThrow();
+    await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 0,
       message: "Starting FIT file import...",
@@ -396,61 +396,83 @@ describe("processFitFileImportJob", () => {
     expect(result).toEqual({ recordsSynced: 1, errors: [] });
     expect(getChildrenValues).toHaveBeenCalledOnce();
     expect(mockUpsertProviderActivity).toHaveBeenCalledOnce();
-    await expect(readFile(filePath)).rejects.toThrow();
+    await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
   });
 
-  it("cleans up flow child extraction files when job data validation fails", async () => {
+  it("preserves an ignored extraction child's exact failure cause", async () => {
+    await expect(
+      processFitFileImportJob(
+        {
+          data: {
+            originalPath: "DI_CONNECT/activity.fit",
+            userId: "user-1",
+            providerId: "garmin-dump",
+            sourceName: "Garmin Dump",
+          },
+          getChildrenValues: async () => ({}),
+          getIgnoredChildrenFailures: async () => ({
+            "bull:zip-entry-extract:extract-1": "archive CRC mismatch",
+          }),
+          updateProgress: vi.fn().mockResolvedValue(undefined),
+        },
+        mockDb,
+      ),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: "UnrecoverableError",
+        message:
+          "Failed to import FIT file DI_CONNECT/activity.fit: FIT extraction failed: archive CRC mismatch",
+      }),
+    );
+  });
+
+  it("retains parent-owned flow extraction files when job data validation fails", async () => {
     const filePath = await writeTempFit(createActivityFit());
 
-    const result = await processFitFileImportJob(
-      {
-        data: {
-          originalPath: "DI_CONNECT/asher@example.com_activity.fit",
-          userId: "user-1",
-          sourceName: "Garmin Dump",
+    await expect(
+      processFitFileImportJob(
+        {
+          data: {
+            originalPath: "DI_CONNECT/asher@example.com_activity.fit",
+            userId: "user-1",
+            sourceName: "Garmin Dump",
+          },
+          getChildrenValues: async () => ({
+            "bull:zip-entry-extract:1": { filePath },
+          }),
+          updateProgress: vi.fn().mockResolvedValue(undefined),
         },
-        getChildrenValues: async () => ({
-          "bull:zip-entry-extract:1": { filePath },
-        }),
-        updateProgress: vi.fn().mockResolvedValue(undefined),
-      },
-      mockDb,
-    );
-
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors[0]?.message).toContain(
-      "Failed to import FIT file DI_CONNECT/asher@example.com_activity.fit:",
-    );
-    await expect(readFile(filePath)).rejects.toThrow();
+        mockDb,
+      ),
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+    await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
   });
 
-  it("returns an error result for FIT flow jobs with multiple extraction results", async () => {
-    const result = await processFitFileImportJob(
-      {
-        data: {
-          originalPath: "DI_CONNECT/asher@example.com_activity.fit",
-          userId: "user-1",
-          providerId: "garmin-dump",
-          sourceName: "Garmin Dump",
-        },
-        getChildrenValues: async () => ({
-          "bull:zip-entry-extract:1": { filePath: "/tmp/one.fit" },
-          "bull:zip-entry-extract:2": { filePath: "/tmp/two.fit" },
-        }),
-        updateProgress: vi.fn().mockResolvedValue(undefined),
-      },
-      mockDb,
-    );
-
-    expect(result).toEqual({
-      recordsSynced: 0,
-      errors: [
+  it("fails FIT flow jobs with multiple extraction results non-retryably", async () => {
+    await expect(
+      processFitFileImportJob(
         {
-          message:
-            "Failed to import FIT file DI_CONNECT/asher@example.com_activity.fit: FIT import job expected 1 child extraction result, got 2",
+          data: {
+            originalPath: "DI_CONNECT/asher@example.com_activity.fit",
+            userId: "user-1",
+            providerId: "garmin-dump",
+            sourceName: "Garmin Dump",
+          },
+          getChildrenValues: async () => ({
+            "bull:zip-entry-extract:1": { filePath: "/tmp/one.fit" },
+            "bull:zip-entry-extract:2": { filePath: "/tmp/two.fit" },
+          }),
+          updateProgress: vi.fn().mockResolvedValue(undefined),
         },
-      ],
-    });
+        mockDb,
+      ),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: "UnrecoverableError",
+        message:
+          "Failed to import FIT file DI_CONNECT/asher@example.com_activity.fit: FIT import job expected 1 child extraction result, got 2",
+      }),
+    );
   });
 
   it("extracts numeric activity IDs from FIT file names", async () => {
@@ -598,7 +620,7 @@ describe("processFitFileImportJob", () => {
     );
   });
 
-  it("reports activity FIT files missing a valid start time", async () => {
+  it("fails activity FIT files missing a valid start time non-retryably", async () => {
     const filePath = await writeTempFit(createActivityFit());
     mockParseFitFileInWorkerThread.mockResolvedValueOnce({
       session: {
@@ -615,21 +637,24 @@ describe("processFitFileImportJob", () => {
       events: [],
     });
 
-    const result = await processFitFileImportJob(
-      createFitFileImportJob({
-        filePath,
-        originalPath: "DI_CONNECT/missing-start.fit",
-        userId: "user-1",
-        providerId: "garmin-dump",
-        sourceName: "Garmin Dump",
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: "DI_CONNECT/missing-start.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        }),
+        mockDb,
+      ),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: "UnrecoverableError",
+        message:
+          "Failed to import FIT file DI_CONNECT/missing-start.fit: missing a valid start time",
       }),
-      mockDb,
     );
-
-    expect(result).toEqual({
-      recordsSynced: 0,
-      errors: [{ message: "FIT file DI_CONNECT/missing-start.fit is missing a valid start time" }],
-    });
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
     expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
   });
@@ -688,7 +713,7 @@ describe("processFitFileImportJob", () => {
       ],
       "file",
     );
-    await expect(readFile(filePath)).rejects.toThrow();
+    await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 50,
       message: "Importing FIT weight data...",
@@ -743,31 +768,75 @@ describe("processFitFileImportJob", () => {
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
   });
 
-  it("returns an error result for invalid FIT files before attempting activity parsing", async () => {
+  it("fails invalid FIT files non-retryably before attempting activity parsing", async () => {
     const filePath = await writeTempFit(Buffer.from("not a fit file"));
 
-    const result = await processFitFileImportJob(
-      createFitFileImportJob({
-        filePath,
-        originalPath: "DI_CONNECT/broken.fit",
-        userId: "user-1",
-        providerId: "garmin-dump",
-        sourceName: "Garmin Dump",
-      }),
-      mockDb,
-    );
-
-    expect(result).toEqual({
-      recordsSynced: 0,
-      errors: [
-        expect.objectContaining({
-          message: expect.stringContaining(
-            "Failed to import FIT file DI_CONNECT/broken.fit: FIT decoder reported",
-          ),
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: "DI_CONNECT/broken.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
         }),
-      ],
-    });
+        mockDb,
+      ),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: "UnrecoverableError",
+        message: expect.stringContaining(
+          "Failed to import FIT file DI_CONNECT/broken.fit: FIT decoder reported",
+        ),
+      }),
+    );
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
-    await expect(readFile(filePath)).rejects.toThrow();
+    await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
+  });
+
+  it("fails FIT activity parser errors non-retryably", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockParseFitFileInWorkerThread.mockRejectedValueOnce(new Error("invalid FIT session"));
+    const job = createFitFileImportJob({
+      filePath,
+      originalPath: "DI_CONNECT/broken-session.fit",
+      userId: "user-1",
+      providerId: "garmin-dump",
+      sourceName: "Garmin Dump",
+    });
+
+    await expect(processFitFileImportJob(job, mockDb)).rejects.toEqual(
+      expect.objectContaining({
+        name: "UnrecoverableError",
+        message: "Failed to import FIT file DI_CONNECT/broken-session.fit: invalid FIT session",
+      }),
+    );
+    expect(job.updateProgress).not.toHaveBeenCalledWith({
+      percentage: 100,
+      message: "FIT file import complete.",
+    });
+  });
+
+  it("propagates transient database failures for BullMQ retries", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    const databaseError = new Error("database connection reset");
+    mockUpsertProviderActivity.mockRejectedValueOnce(databaseError);
+
+    const job = createFitFileImportJob({
+      filePath,
+      originalPath: "DI_CONNECT/activity.fit",
+      userId: "user-1",
+      providerId: "garmin-dump",
+      sourceName: "Garmin Dump",
+    });
+
+    await expect(processFitFileImportJob(job, mockDb)).rejects.toBe(databaseError);
+    await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
+
+    await expect(processFitFileImportJob(job, mockDb)).resolves.toEqual({
+      recordsSynced: 1,
+      errors: [],
+    });
+    await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
   });
 });

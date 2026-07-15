@@ -68,6 +68,34 @@ describe("processZipEntryExtractJob", () => {
     await expect(readFile(result.filePath, "utf8")).resolves.toBe("fit-bytes");
   });
 
+  it("publishes output inside a parent-owned cleanup directory", async () => {
+    const directory = await createTempDirectory();
+    const outputDirectory = await createTempDirectory();
+    const archivePath = join(directory, "export.zip");
+    await writeFile(
+      archivePath,
+      await createZip({
+        "DI_CONNECT/activity.fit": "fit-bytes",
+      }),
+    );
+
+    const result = await processZipEntryExtractJob({
+      data: {
+        archivePath,
+        entryPath: ["DI_CONNECT/activity.fit"],
+        outputDirectory,
+        outputExtension: "fit",
+      },
+    });
+
+    expect(result.filePath.startsWith(`${outputDirectory}/`)).toBe(true);
+    await expect(readFile(result.filePath, "utf8")).resolves.toBe("fit-bytes");
+    const outputEntries = await readdir(outputDirectory);
+    expect(
+      outputEntries.filter((entryName) => entryName.startsWith(".zip-entry-extract-")),
+    ).toEqual([]);
+  });
+
   it("replaces an existing deterministic output path on replay", async () => {
     const directory = await createTempDirectory();
     const archivePath = join(directory, "export.zip");

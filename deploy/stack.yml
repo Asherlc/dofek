@@ -110,8 +110,12 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "node --experimental-strip-types --disable-warning=ExperimentalWarning src/jobs/worker-health.ts",
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1:3001/readyz",
         ]
       interval: 10s
       timeout: 5s

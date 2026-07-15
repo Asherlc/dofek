@@ -13088,3 +13088,77 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Garmin dump unit tests passed after the fix.
 - **Remaining risk / follow-up:** The fix still needs deployment, followed by a
   retry of the failed Garmin dump import.
+
+## 2026-07-14 — Worker Healthcheck Exhausted the Garmin Import Cgroup
+
+- **Symptoms:** A production Garmin dump import remained at 45 percent with
+  `Importing Garmin FIT files (0/1294)...`, and its shared Swarm worker
+  restarted.
+- **User impact:** The UI showed no Garmin progress while BullMQ recovered the
+  parent job, other work in the process was interrupted, and the eventual
+  import reported 948 child errors.
+- **Production evidence:** The worker task was killed at
+  `2026-07-14T20:15:51.556Z`; Docker reported `OOMKilled=true`, exit code `137`,
+  and Swarm reported `task: non-zero exit (137)`. The memory cgroup was exactly
+  at its 419,430,400-byte limit. Its main Node process owned 344,543,232
+  anonymous bytes, a second Node process owned 65,556,480 anonymous bytes, and
+  kernel memory accounted for the remainder. The host still had approximately
+  9 GiB available, so this was a container-limit event rather than host
+  pressure. Docker documents that a container health command runs inside the
+  container and that the kernel kills container processes when a configured
+  memory limit is exhausted
+  ([healthcheck configuration](https://docs.docker.com/reference/compose-file/services/#healthcheck),
+  [memory constraints](https://docs.docker.com/engine/containers/resource_constraints/)).
+- **Concurrent work:** The Garmin parent was active from `20:13:44Z`, with two
+  ZIP extractors active, 283 terminal, and 1,009 waiting at the kill. A WHOOP
+  heart-rate step was active after the preceding steps wrote 76,897 and 99,456
+  samples, and one Strava job had remained active since `19:23:15Z`. The fatal
+  WHOOP step had not emitted its response-header event, so its large response
+  was not proven to be materialized.
+- **Healthcheck evidence:** The worker healthcheck starts a fresh Node runtime,
+  imports Sentry and BullMQ, invokes `ps`, and connects six queues every ten
+  seconds. Retained checks ended at `20:15:38.915Z`, placing the next start near
+  `20:15:48.915Z`; the OOM followed 2.641 seconds later. It is the only
+  independently launched Node command in the container and its measured memory
+  matches the second process. This heavyweight probe was introduced in
+  [PR #1394](https://github.com/Asherlc/dofek/pull/1394) to strengthen queue
+  readiness beyond the prior process-name check.
+- **Controlled evidence:** The exact incident image was replayed with production
+  Node instrumentation, the exact health command/cadence, cgroup accounting, a
+  synthetic 1,294-entry Garmin allocation, and three 100,000-value WHOOP
+  windows. Healthcheck-on runs reached 414,978,048 current bytes and 416,161,792
+  peak bytes while the probe held 59–61 MiB of anonymous memory. Identical
+  healthcheck-off runs peaked at 376,233,984 current bytes. The synthetic Garmin
+  counts represent fixture allocation only, not executed BullMQ children or
+  observed stalls. At the highest overlap, the primary workload was within
+  7,335,936 anonymous bytes of the production main process; production kernel
+  accounting proves the real main process plus the probe exhausted the cgroup.
+- **Root cause:** A heavyweight healthcheck launched a second full Node runtime
+  inside the same 400 MiB cgroup while the long-lived worker was already near
+  capacity across Garmin extraction and other provider jobs. Their anonymous
+  memory plus kernel memory reached the limit exactly. The healthcheck consumed
+  decisive headroom; WHOOP full-response materialization was not established as
+  the fatal step's cause. A separate recovery defect caused the 948 Garmin child
+  errors: non-deterministic extraction IDs allowed unfinished FIT jobs to
+  acquire duplicate child results after restart.
+- **Fix / mitigation:** Replaced the second Node healthcheck runtime with a
+  loopback-only readiness endpoint served by the existing worker process. It
+  checks every existing BullMQ worker and both of its Redis connections, while
+  Swarm calls the endpoint with BusyBox `wget`. Reworked Garmin imports into a
+  deterministic BullMQ child flow whose parent parks in `waiting-children`
+  without a lock, resumes from a versioned checkpoint, reports authoritative
+  progress, preserves successful siblings, bounds grouped failures, and owns
+  temporary-file cleanup. No memory limit or retry delay was increased.
+- **Validation:** Lint and all-package typecheck passed. Unit validation passed
+  11,699 tests in 595 files, and the changed integration suite passed 6,157
+  tests in 254 files against real Postgres, Redis, and ClickHouse dependencies.
+  An isolated real-Redis restart test proved that the parent resumed without
+  its old lock and that two identical flow attachments executed every child
+  exactly once. Mutation testing scored 100 percent across every changed
+  production module in these paths, with no surviving or uncovered mutants.
+  The Swarm stack rendered successfully without deployment.
+- **Remaining risk / follow-up:** The direct fix still requires deployment,
+  retrying the affected Garmin import, and production monitoring of worker
+  memory, readiness, and recovered job progress. WHOOP response streaming
+  remains separate hardening because the incident did not establish it as a
+  resident allocation at the fatal overlap.
