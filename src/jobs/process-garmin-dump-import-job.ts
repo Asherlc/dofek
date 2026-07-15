@@ -161,9 +161,7 @@ export async function processGarminDumpImportJob(
       { id: job.id, queue: job.queueQualifiedName },
     );
     const batchCount = Math.ceil(preparedImport.totalFitFiles / FLOW_BATCH_SIZE);
-    const batchIds = Array.from({ length: batchCount }, (_, i) =>
-      createBatchId(preparedImport, i),
-    );
+    const batchIds = Array.from({ length: batchCount }, (_, i) => createBatchId(preparedImport, i));
     checkpoint = { ...checkpoint, phase: "waiting-children", batchIds };
     await persistCheckpoint(job, checkpoint);
     await logGarminImportPhase(

@@ -217,9 +217,12 @@ describe("attachGarminFitImportFlow", () => {
     );
 
     const flows: FlowJob[] = mockAdd.mock.calls.map(([flow]) => flow);
-    const allFitJobIds = flows.flatMap((flow) => flow.children?.map((child) => child.opts?.jobId) ?? []);
+    const allFitJobIds = flows.flatMap(
+      (flow) => flow.children?.map((child) => child.opts?.jobId) ?? [],
+    );
     const allExtractionJobIds = flows.flatMap(
-      (flow) => flow.children?.flatMap((child) => child.children?.map((c) => c.opts?.jobId) ?? []) ?? [],
+      (flow) =>
+        flow.children?.flatMap((child) => child.children?.map((c) => c.opts?.jobId) ?? []) ?? [],
     );
     expect(allFitJobIds).toHaveLength(1_294);
     expect(allExtractionJobIds).toHaveLength(1_294);

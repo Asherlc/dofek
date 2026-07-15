@@ -26,9 +26,7 @@ vi.mock("../providers/garmin-dump.ts", () => ({
 vi.mock("./garmin-dump-flow.ts", () => ({
   attachGarminFitImportFlow: vi.fn(),
   createBatchId: vi.fn((preparedImport: { batchId: string }, batchIndex: number) =>
-    batchIndex === 0
-      ? preparedImport.batchId
-      : `${preparedImport.batchId}-batch-${batchIndex}`,
+    batchIndex === 0 ? preparedImport.batchId : `${preparedImport.batchId}-batch-${batchIndex}`,
   ),
   FLOW_BATCH_SIZE: 500,
 }));

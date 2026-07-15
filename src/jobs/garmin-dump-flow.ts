@@ -94,7 +94,10 @@ async function addBatchFlow(
   });
 }
 
-export function createBatchId(preparedImport: PreparedGarminDumpImport, batchIndex: number): string {
+export function createBatchId(
+  preparedImport: PreparedGarminDumpImport,
+  batchIndex: number,
+): string {
   if (batchIndex === 0) {
     return preparedImport.batchId;
   }
