@@ -646,9 +646,6 @@ export async function prepareGarminDumpImport(
 
     for (const fitFile of parsedDump.fitFiles) {
       const externalId = fitExternalIdFromPath(fitFile.path);
-      if (summaryByExternalId.size > 0 && (!externalId || !summaryByExternalId.has(externalId))) {
-        continue;
-      }
       const summary = externalId ? summaryByExternalId.get(externalId) : undefined;
       const activitySummary = summary ? garminSummaryToFitJobSummary(summary) : undefined;
       if (summary && !activitySummary) {
