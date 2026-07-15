@@ -1,11 +1,14 @@
 import { mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import type { Database } from "dofek/db";
 import express, { Router } from "express";
+import type { Options as RateLimitOptions } from "express-rate-limit";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
 import { DofekOAuthServerProvider, MCP_OAUTH_SCOPES } from "./oauth-provider.ts";
+
+export type McpAuthRateLimitOptions = Partial<RateLimitOptions> | false;
 
 const approvalBodySchema = z.object({
   approval: z.string().min(1).optional(),
@@ -16,7 +19,7 @@ function approvalFromBody(body: unknown): string | undefined {
   return result.success ? result.data.approval : undefined;
 }
 
-export function createMcpOAuthRouter(db: Database): Router {
+export function createMcpOAuthRouter(db: Database, rateLimit?: McpAuthRateLimitOptions): Router {
   const router = Router();
   const issuerUrl = getMcpIssuerUrl();
   const resourceUrl = getMcpResourceUrl();
@@ -48,6 +51,10 @@ export function createMcpOAuthRouter(db: Database): Router {
       resourceName: "Dofek",
       resourceServerUrl: resourceUrl,
       scopesSupported: [...MCP_OAUTH_SCOPES],
+      authorizationOptions: { rateLimit },
+      clientRegistrationOptions: { rateLimit },
+      revocationOptions: { rateLimit },
+      tokenOptions: { rateLimit },
     }),
   );
   return router;

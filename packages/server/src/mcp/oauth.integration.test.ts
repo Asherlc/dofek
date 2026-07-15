@@ -65,7 +65,7 @@ describe("MCP OAuth", () => {
 
   beforeAll(async () => {
     context = await setupTestDatabase();
-    const app = createApp(context.db, makeMockSensorStore());
+    const app = createApp(context.db, makeMockSensorStore(), { mcpAuthRateLimit: false });
     const server = app.listen(0);
     await new Promise<void>((resolve) => server.once("listening", resolve));
     baseUrl = `http://localhost:${getPort(server)}`;
