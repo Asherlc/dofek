@@ -344,6 +344,46 @@ describe("processGarminDumpImportJob", () => {
     ]);
   });
 
+  it("finalizes zero FIT files without throwing", async () => {
+    const job = createJob({
+      ...waitingCheckpoint(),
+      totalFitFiles: 0,
+      batchIds: [],
+    });
+    job.moveToWaitingChildren.mockResolvedValue(false);
+
+    const result = await processGarminDumpImportJob(job, mockDb);
+
+    expect(result.recordsSynced).toBe(2);
+    expect(result.errors).toEqual([{ message: "one summary was invalid" }]);
+    expect(result.totalFitFiles).toBe(0);
+  });
+
+  it("merges partial batch failures into successful batch results", async () => {
+    const job = createJob({
+      ...waitingCheckpoint(),
+      batchIds: ["garmin-fit-batch-1", "garmin-fit-batch-1-batch-1"],
+    });
+    job.moveToWaitingChildren.mockResolvedValue(false);
+    job.getChildrenValues.mockResolvedValue({
+      "bull:fit-file-import-batch:garmin-fit-batch-1": {
+        recordsSynced: 3,
+        errors: [],
+      },
+    });
+    job.getIgnoredChildrenFailures.mockResolvedValue({
+      "bull:fit-file-import-batch:garmin-fit-batch-1-batch-1": "batch Redis connection failed",
+    });
+
+    const result = await processGarminDumpImportJob(job, mockDb);
+
+    expect(result.recordsSynced).toBe(5);
+    expect(result.errors).toEqual([
+      { message: "one summary was invalid" },
+      { message: "Garmin FIT batch failed: batch Redis connection failed" },
+    ]);
+  });
+
   it("bounds combined preparation and FIT error groups", async () => {
     const baseErrors = Array.from({ length: 7 }, (_, errorIndex) => ({
       message: `summary error ${errorIndex + 1}`,

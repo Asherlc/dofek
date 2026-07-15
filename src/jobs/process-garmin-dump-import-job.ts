@@ -186,14 +186,14 @@ export async function processGarminDumpImportJob(
   ]);
   const batchResult = batchResultFromChildren(checkpoint, childValues);
   const batchFailures = batchFailureFromChildren(checkpoint, ignoredFailures);
-  if (!batchResult && batchFailures.length === 0) {
+  if (!batchResult && batchFailures.length === 0 && checkpoint.totalFitFiles > 0) {
     throw new Error(`Garmin FIT batch result is missing: ${checkpoint.batchId}`);
   }
 
-  const fitResult = batchResult ?? {
-    recordsSynced: 0,
-    errors: batchFailures.map((message) => ({ message: `Garmin FIT batch failed: ${message}` })),
-  };
+  const fitResult = batchResult ?? { recordsSynced: 0, errors: [] };
+  for (const message of batchFailures) {
+    fitResult.errors.push({ message: `Garmin FIT batch failed: ${message}` });
+  }
   await cleanupPreparedGarminDumpImport(checkpoint.tempDirectories);
   const result: GarminDumpImportResult = {
     provider: "garmin-dump",
