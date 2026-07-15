@@ -56,11 +56,11 @@ importers:
         specifier: 3.1050.0
         version: 3.1050.0
       '@bull-board/api':
-        specifier: 8.0.2
-        version: 8.0.2(@bull-board/ui@8.0.2)
+        specifier: 8.1.2
+        version: 8.1.2(@bull-board/ui@8.1.2)
       '@bull-board/express':
-        specifier: 8.0.2
-        version: 8.0.2
+        specifier: 8.1.2
+        version: 8.1.2
       '@clickhouse/client':
         specifier: 1.12.1
         version: 1.12.1
@@ -1808,16 +1808,16 @@ packages:
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
     hasBin: true
 
-  '@bull-board/api@8.0.2':
-    resolution: {integrity: sha512-b+AfdwFK/9u105Jj9P/Jj+pIC4hY/hNqrqvdhvRFFV7ThusTTy0QUQCS+GO/XwxztZkqNDxyt/djhWbirTIN1w==}
+  '@bull-board/api@8.1.2':
+    resolution: {integrity: sha512-6NGYCIRhHJmmoCwAFA1z4lPpR/D/BdOjyERd2MMeG4Samu05FSjzKKdN55S3ga30EcXeENfYzmNn6IDmVz5OTg==}
     peerDependencies:
-      '@bull-board/ui': 8.0.2
+      '@bull-board/ui': 8.1.2
 
-  '@bull-board/express@8.0.2':
-    resolution: {integrity: sha512-SUVm61x6fzrnUhdX6qSOpWx4YJF/FiNF+wmmEB6z7hq7QZgWupl88G4VkFjFqhYmTJg0AUsOkGV2v7+RLFsAfw==}
+  '@bull-board/express@8.1.2':
+    resolution: {integrity: sha512-IldpQLXlezJRzk1BVNJjH+Oi3NBRcBopq9bI2ndLs0R+ySK1ux+TtGDUW+eX2fl0wEHwSpuUgPBAJID695zohA==}
 
-  '@bull-board/ui@8.0.2':
-    resolution: {integrity: sha512-kFthFARLKt9z1SHH1qTUTglVex8NoKQgBKKvb2GjqEMw6kQBw98ZV5sWW5dOzJlW+gdQaWyVyupJb/778sbtCQ==}
+  '@bull-board/ui@8.1.2':
+    resolution: {integrity: sha512-gC5u9XUSiRile4/VC+WHXtaPvfZV4Mrrz8MSvPe32Hjl2MXStfSuEOb+9Tw/WMpNSZ442tGpFZLz0RDh1Yo3jg==}
 
   '@cacheable/memory@2.2.0':
     resolution: {integrity: sha512-CTLKqLItRCEixEAewD3/j9DB3/o96gpTPD4eJ1v+DGOlxZRZncRQkGYqqnAGCscYd6RNeXfGeiuCphsPtqyIfQ==}
@@ -15898,23 +15898,23 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
 
-  '@bull-board/api@8.0.2(@bull-board/ui@8.0.2)':
+  '@bull-board/api@8.1.2(@bull-board/ui@8.1.2)':
     dependencies:
-      '@bull-board/ui': 8.0.2
+      '@bull-board/ui': 8.1.2
       redis-info: 3.1.0
 
-  '@bull-board/express@8.0.2':
+  '@bull-board/express@8.1.2':
     dependencies:
-      '@bull-board/api': 8.0.2(@bull-board/ui@8.0.2)
-      '@bull-board/ui': 8.0.2
+      '@bull-board/api': 8.1.2(@bull-board/ui@8.1.2)
+      '@bull-board/ui': 8.1.2
       ejs: 6.0.1
       express: 5.2.1
     transitivePeerDependencies:
       - supports-color
 
-  '@bull-board/ui@8.0.2':
+  '@bull-board/ui@8.1.2':
     dependencies:
-      '@bull-board/api': 8.0.2(@bull-board/ui@8.0.2)
+      '@bull-board/api': 8.1.2(@bull-board/ui@8.1.2)
 
   '@cacheable/memory@2.2.0':
     dependencies:
