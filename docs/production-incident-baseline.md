@@ -13154,10 +13154,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   mutation targets, greatly expanding unrelated test execution and exhausting
   the runner's Postgres shared-memory allocation.
 - **Fix / mitigation:** Excluded only the test helper, fixture-model, and
-  read-model setup modules from mutation targets in both local and CI Stryker
-  configurations. Production cycling repository code remains mutation-tested;
-  focused behavioral tests raised its score to 85.59% with no uncovered or
-  timed-out mutants.
+  read-model setup modules from mutation targets in both Stryker configurations
+  and the CI changed-file shard selector, whose explicit `--mutate` argument
+  otherwise overrides configuration exclusions. Production cycling repository
+  code remains mutation-tested; focused behavioral tests raised its score to
+  85.59% with no uncovered or timed-out mutants.
 - **Remaining risk / follow-up:** Confirm the next GitHub Actions run completes
   every mutation shard without shared-memory pressure. If resource exhaustion
   recurs, inspect the first fatal line and the selected related-test set before
