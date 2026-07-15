@@ -25,6 +25,7 @@ If Axiom queries are unavailable, record the blocker, trace ID if provided, exac
 | Request-time query shape | A named ClickHouse query family is slow in fresh logs and the SQL scans or aggregates too much per request. | Move expensive derived analytics into an incremental dbt model with a domain-and-grain table name. |
 | Readiness fan-out | A readiness or freshness endpoint runs broad checks on every page critical path. | Cache briefly while preserving hard failures and response shape. |
 | Freshness trust gap | Cached data appears quickly but users cannot tell when it was refreshed or whether it is stale. | Render server-provided freshness timestamps and stale states. |
+| Model-to-cache freshness gap | Incremental models finish successfully, but live Redis query keys still contain pre-build responses until their normal TTL expires. | Replay the registered live query keys after the successful model build; bypass cache reads and overwrite only successful recomputations. |
 
 ## Axiom Workflow
 
@@ -55,6 +56,11 @@ Follow this policy on both web and iOS:
 - Do not hide server errors behind a generic message; render the server-provided error message.
 - Scope persisted query data by authenticated user and clear or isolate it on logout or user change.
 - Prefer targeted invalidation after sync, refresh, and mutations.
+- Keep scheduled model-refresh cache warming app-wide and registry-driven: replay
+  the exact live user/timezone/path/input keys already registered in Redis
+  instead of inventing a finite list for an unbounded query-input space. Redis
+  expiration determines whether a registered key is still live; see the
+  official [`EXPIRE` command documentation](https://redis.io/docs/latest/commands/expire/).
 
 ## Backend And Analytics Gate
 

@@ -31,6 +31,8 @@ export interface Context {
   assetsVersion?: string;
   /** Billing-derived read access window for authenticated users. */
   accessWindow?: AccessWindow;
+  /** Internal cache warmer mode: recompute and overwrite without reading the current value. */
+  cacheMode?: "refresh";
 }
 
 /** Context after auth middleware — userId is guaranteed non-null. */
@@ -272,7 +274,7 @@ function cached(policy: CachePolicy) {
 
     // Cache lookup
     const cacheLookupStart = performance.now();
-    const hit = await queryCache.get(key);
+    const hit = ctx.cacheMode === "refresh" ? undefined : await queryCache.get(key);
     trpcCacheLookupDuration.observe(
       { procedure: path, hit: hit !== undefined ? "true" : "false" },
       (performance.now() - cacheLookupStart) / 1000,
@@ -287,7 +289,9 @@ function cached(policy: CachePolicy) {
       return { ok: true as const, data: hit, marker: middlewareMarker };
     }
 
-    cacheMissesTotal.inc({ procedure: path });
+    if (ctx.cacheMode !== "refresh") {
+      cacheMissesTotal.inc({ procedure: path });
+    }
 
     const dbStart = performance.now();
     const result = await next();
