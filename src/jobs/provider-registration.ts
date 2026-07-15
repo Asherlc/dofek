@@ -35,6 +35,7 @@ async function doRegisterProviders() {
       "garmin-dump",
       () => import("../providers/garmin-dump.ts").then((m) => new m.GarminDumpProvider()),
     ],
+    ["fit-file", () => import("../providers/fit-file.ts").then((m) => new m.FitFileProvider())],
     ["strava", () => import("../providers/strava.ts").then((m) => new m.StravaProvider())],
     [
       "cronometer-csv",

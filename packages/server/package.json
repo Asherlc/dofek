@@ -43,7 +43,7 @@
     "express": "5.2.1",
     "express-rate-limit": "8.5.2",
     "qrcode": "1.5.4",
-    "simple-statistics": "7.8.9",
+    "simple-statistics": "7.9.3",
     "stripe": "22.1.0",
     "whoop-whoop": "workspace:*",
     "zod": "4.4.3"

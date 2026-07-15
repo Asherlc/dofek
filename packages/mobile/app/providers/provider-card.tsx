@@ -69,6 +69,7 @@ const IMPORT_PROVIDER_LABELS: Readonly<Record<string, string>> = {
   "strong-csv": "Strong",
   "cronometer-csv": "Cronometer",
   "garmin-dump": "Garmin Dump",
+  "fit-file": "FIT File",
   "kaya-export": "Kaya",
 };
 

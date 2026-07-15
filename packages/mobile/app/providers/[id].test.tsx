@@ -305,11 +305,18 @@ const pushOnlyProvider = {
 
 const appleHealthStats = {
   providerId: "apple_health",
+  totalRecords: 0,
   activities: 0,
-  bodyMetrics: 0,
+  metricStream: 0,
   dailyMetrics: 0,
   sleepSessions: 0,
-  workouts: 0,
+  bodyMeasurements: 0,
+  foodEntries: 0,
+  nutritionDaily: 0,
+  healthEvents: 0,
+  labPanels: 0,
+  labResults: 0,
+  journalEntries: 0,
 };
 
 function setupDefaultMocks() {

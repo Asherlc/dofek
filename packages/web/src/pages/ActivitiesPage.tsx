@@ -2,22 +2,15 @@ import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
-  formatTime,
   isToday,
   isYesterday,
   parseValidDate,
 } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
-import {
-  formatProviderAbsentTombstoneSummary,
-  formatProviderPartialAbsenceSummary,
-  type ProviderAbsentSource,
-} from "@dofek/providers/providers";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { type ActivityMapLocation, ActivityMapTile } from "../components/ActivityMapTile.tsx";
-import { ActivityTypeIcon } from "../components/ActivityTypeIcon.tsx";
+import { ActivityCardContent, type ActivityCardData } from "../components/ActivityCardContent.tsx";
 import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -433,19 +426,7 @@ function ActivityControls({
 }
 
 interface ActivityCardProps {
-  activity: {
-    id: string;
-    name: string | null;
-    activityType: string;
-    startedAt: string;
-    durationMin: number;
-    isProviderAbsent?: boolean;
-    providerId?: string;
-    providerAbsentAt?: string | null;
-    partialAbsentSources?: ProviderAbsentSource[];
-    location: ActivityMapLocation | null;
-    stats: { label: string; value: string }[];
-  };
+  activity: ActivityCardData;
   units: ReturnType<typeof useUnitConverter>;
   selectMode: boolean;
   selected: boolean;
@@ -460,13 +441,6 @@ function ActivityCard({
   onToggleSelected,
 }: ActivityCardProps) {
   const isHidden = activity.isProviderAbsent === true;
-  const tombstoneSummary =
-    isHidden && activity.providerId && activity.providerAbsentAt
-      ? formatProviderAbsentTombstoneSummary(activity.providerId, activity.providerAbsentAt)
-      : null;
-  const partialAbsenceSummary = formatProviderPartialAbsenceSummary(
-    activity.partialAbsentSources ?? [],
-  );
   const cardClassName = [
     "card block h-full overflow-hidden transition-colors",
     selectMode ? "cursor-pointer hover:bg-surface-elevated" : "hover:bg-surface-elevated",
@@ -477,51 +451,12 @@ function ActivityCard({
     .join(" ");
 
   const content = (
-    <div className="flex h-full flex-col">
-      {activity.location ? (
-        <ActivityMapTile location={activity.location} />
-      ) : (
-        <ActivityTypeIcon activityType={activity.activityType} variant="card" />
-      )}
-      <div className="flex min-w-0 flex-1 flex-col gap-3 p-3 sm:p-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            {selectMode ? (
-              <input
-                type="checkbox"
-                aria-label={`Select ${activity.name ?? formatActivityTypeLabel(activity.activityType)}`}
-                checked={selected}
-                readOnly
-                className="h-4 w-4 accent-accent cursor-pointer"
-              />
-            ) : null}
-            <h4 className="truncate text-sm font-semibold">
-              {activity.name ?? formatActivityTypeLabel(activity.activityType)}
-            </h4>
-            <span className="rounded border border-border bg-surface-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted">
-              {formatActivityTypeLabel(activity.activityType)}
-            </span>
-            {isHidden ? (
-              <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                Removed
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-1 text-xs text-muted">
-            {formatTime(activity.startedAt)} · {formatDurationMinutes(activity.durationMin)}
-          </p>
-          {tombstoneSummary ? (
-            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{tombstoneSummary}</p>
-          ) : null}
-          {partialAbsenceSummary ? (
-            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-              {partialAbsenceSummary}
-            </p>
-          ) : null}
-        </div>
-        <ActivityMetricStrip activity={activity} units={units} />
-      </div>
-    </div>
+    <ActivityCardContent
+      activity={activity}
+      units={units}
+      selectMode={selectMode}
+      selected={selected}
+    />
   );
 
   if (selectMode) {
@@ -585,53 +520,6 @@ function ActivityOverview({
           <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wider text-muted">
             {item.label}
           </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ActivityMetricStrip({
-  activity,
-  units,
-}: {
-  activity: {
-    location: {
-      distanceMeters: number | null;
-      elevationGainM: number | null;
-    } | null;
-    stats: { label: string; value: string }[];
-  };
-  units: ReturnType<typeof useUnitConverter>;
-}) {
-  const locationStats =
-    activity.location != null
-      ? [
-          {
-            label: "Distance",
-            value:
-              activity.location.distanceMeters != null
-                ? formatMeasurementText(
-                    units.formatDistance(activity.location.distanceMeters / 1000),
-                  )
-                : "—",
-          },
-          {
-            label: "Elevation",
-            value:
-              activity.location.elevationGainM != null
-                ? formatMeasurementText(units.formatElevation(activity.location.elevationGainM))
-                : "—",
-          },
-        ]
-      : activity.stats;
-
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      {locationStats.slice(0, 2).map((stat) => (
-        <div key={stat.label} className="rounded-md bg-surface-secondary px-2 py-1.5 text-right">
-          <div className="text-sm font-semibold tabular-nums">{stat.value}</div>
-          <div className="mt-0.5 text-[11px] text-muted">{stat.label}</div>
         </div>
       ))}
     </div>

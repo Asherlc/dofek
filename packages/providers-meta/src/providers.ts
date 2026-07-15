@@ -14,6 +14,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   withings: "Withings",
   garmin: "Garmin",
   "garmin-dump": "Garmin Dump",
+  "fit-file": "FIT File",
   polar: "Polar",
   whoop: "WHOOP (Cloud)",
   peloton: "Peloton",

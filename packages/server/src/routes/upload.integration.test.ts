@@ -19,18 +19,18 @@ const { createUploadRouter } = await import("./upload.ts");
 
 // ── Fake BullMQ queue (dependency-injected, no vi.mock) ──
 
-interface RecordedJob {
+interface RecordedJob<JobData> {
   name: string;
-  data: ImportJobData;
+  data: JobData;
 }
 
-function createFakeQueue() {
-  const recorded: RecordedJob[] = [];
+function createFakeQueue<JobData>() {
+  const recorded: RecordedJob<JobData>[] = [];
   return {
     recorded,
     // vi.fn gives the return value Mock<…> which is structurally compatible
     // with Queue<ImportJobData>.add / .getJob — avoids module-level vi.mock.
-    add: vi.fn(async (name: string, data: ImportJobData) => {
+    add: vi.fn(async (name: string, data: JobData) => {
       recorded.push({ name, data });
       return { id: `job-${recorded.length}` };
     }),
@@ -46,7 +46,7 @@ function createFakeDb(): import("dofek/db").Database {
 }
 
 function createTestApp() {
-  const queue = createFakeQueue();
+  const queue = createFakeQueue<ImportJobData>();
   const fakeDb = createFakeDb();
   const app = express();
   app.use("/api/upload", createUploadRouter({ importQueue: queue, db: fakeDb }));
@@ -367,6 +367,29 @@ describe("upload integration (real file I/O)", () => {
       const filePath = queue.recorded[0].data.filePath;
       expect(filePath).toMatch(/\.csv$/);
       expect(readFileSync(filePath).equals(csv)).toBe(true);
+    });
+  });
+
+  describe("POST /api/upload/fit-file", () => {
+    it("writes the FIT file to disk and enqueues the standard import lifecycle", async () => {
+      const { app, queue } = createTestApp();
+      const fitData = Buffer.from("fit-data");
+
+      const res = await post(app, "/api/upload/fit-file", {
+        headers: { "Content-Type": "application/octet-stream" },
+        body: fitData,
+      });
+
+      expect(res.status).toBe(200);
+      expect(queue.recorded).toHaveLength(1);
+      const job = queue.recorded[0];
+      expect(job.name).toBe("fit-file");
+      expect(job.data).toMatchObject({
+        userId: "test-user",
+        importType: "fit-file",
+      });
+      expect(job.data.filePath).toMatch(/\.fit$/);
+      expect(readFileSync(job.data.filePath).equals(fitData)).toBe(true);
     });
   });
 });

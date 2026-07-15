@@ -39,6 +39,11 @@ const fileImportProviderConfigs = {
     documentTypes: ["application/zip", "application/x-zip-compressed"],
     selectionErrorMessage: "Unable to select Garmin export",
   },
+  "fit-file": {
+    providerId: "fit-file",
+    documentTypes: ["application/octet-stream"],
+    selectionErrorMessage: "Unable to select FIT file",
+  },
   "kaya-export": {
     providerId: "kaya-export",
     documentTypes: csvDocumentTypes,
@@ -56,6 +61,7 @@ export function getFileImportProviderConfig(
     case "strong-csv":
     case "cronometer-csv":
     case "garmin-dump":
+    case "fit-file":
     case "kaya-export":
       return fileImportProviderConfigs[providerId];
     default:

@@ -122,6 +122,22 @@ export const GarminDumpImport: ProviderCardStory = {
   },
 };
 
+export const FitFileImport: ProviderCardStory = {
+  args: {
+    provider: {
+      id: "fit-file",
+      label: "FIT File",
+      enabled: false,
+      authStatus: "connected",
+      authType: "none",
+      lastSyncAt: null,
+      importOnly: true,
+      pushOnly: false,
+    },
+    onImport: () => {},
+  },
+};
+
 export const AppleHealthImportOnly: ProviderCardStory = {
   args: {
     provider: {

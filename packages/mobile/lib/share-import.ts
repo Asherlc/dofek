@@ -6,6 +6,7 @@ const importProviderIds = [
   "strong-csv",
   "cronometer-csv",
   "garmin-dump",
+  "fit-file",
   "kaya-export",
 ] as const;
 
@@ -111,6 +112,11 @@ function getUploadTarget(serverUrl: string, providerId: ImportProviderId): Uploa
         uploadUrl: `${baseUrl}/api/upload/garmin-dump`,
         statusUrl: `${baseUrl}/api/upload/garmin-dump/status`,
       };
+    case "fit-file":
+      return {
+        uploadUrl: `${baseUrl}/api/upload/fit-file`,
+        statusUrl: `${baseUrl}/api/upload/fit-file/status`,
+      };
     case "kaya-export":
       return {
         uploadUrl: `${baseUrl}/api/upload/kaya-export`,
@@ -187,6 +193,10 @@ export function inferImportProviderFromFile({
 
   if (isGarminDumpLike(normalizedFileName, normalizedExtension)) {
     return "garmin-dump";
+  }
+
+  if (normalizedExtension === ".fit") {
+    return "fit-file";
   }
 
   if (isAppleHealthLike(normalizedExtension, mimeType)) {
@@ -283,6 +293,7 @@ function getChunkedUploadFileExtension(
     return fileExtension === ".xml" ? ".xml" : ".zip";
   }
   if (providerId === "garmin-dump") return ".zip";
+  if (providerId === "fit-file") return ".fit";
   return ".csv";
 }
 

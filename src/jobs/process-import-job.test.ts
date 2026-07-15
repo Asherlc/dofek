@@ -39,6 +39,11 @@ vi.mock("../db/sync-log.ts", () => ({
   logSync: (...args: unknown[]) => mockLogSync(...args),
 }));
 
+const mockEnsureProvider = vi.fn().mockResolvedValue(undefined);
+vi.mock("../db/tokens.ts", () => ({
+  ensureProvider: (...args: unknown[]) => mockEnsureProvider(...args),
+}));
+
 const mockEnqueueDebouncedPostSyncMaintenance = vi.fn().mockResolvedValue(undefined);
 const mockEnqueueDebouncedUserRefit = vi.fn().mockResolvedValue(undefined);
 vi.mock("./queues.ts", () => ({
@@ -95,6 +100,14 @@ vi.mock("../providers/garmin-dump.ts", () => ({
   importGarminDumpFile: (...args: unknown[]) => mockImportGarminDumpFile(...args),
 }));
 
+const mockImportFitFile = vi.fn().mockResolvedValue({
+  recordsSynced: 1,
+  errors: [],
+});
+vi.mock("./process-fit-file-import-job.ts", () => ({
+  importFitFile: (...args: unknown[]) => mockImportFitFile(...args),
+}));
+
 // Import after mocks
 const { processImportJob } = await import("./process-import-job.ts");
 
@@ -148,6 +161,7 @@ describe("processImportJob", () => {
 
     // Restore default return values after clearAllMocks
     mockLogSync.mockResolvedValue(undefined);
+    mockEnsureProvider.mockResolvedValue(undefined);
     mockCaptureException.mockReset();
     mockImportAppleHealthFile.mockResolvedValue({ recordsSynced: 42, errors: [] });
     mockImportStrongCsv.mockResolvedValue({ recordsSynced: 10, errors: [] });
@@ -155,6 +169,7 @@ describe("processImportJob", () => {
     mockImportKayaExportFile.mockResolvedValue({ recordsSynced: 4, errors: [] });
     mockImportZosAppBin.mockResolvedValue({ recordsSynced: 3, errors: [] });
     mockImportGarminDumpFile.mockResolvedValue({ recordsSynced: 5, errors: [] });
+    mockImportFitFile.mockResolvedValue({ recordsSynced: 1, errors: [] });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
   });
@@ -768,6 +783,74 @@ describe("processImportJob", () => {
         percentage: 95,
         message: "Scheduling post-import processing...",
       });
+    });
+  });
+
+  describe("fit-file import", () => {
+    it("delegates FIT decoding and records the import lifecycle", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "fit-file" });
+
+      await runImportJob(job, mockDb);
+
+      expect(mockImportFitFile).toHaveBeenCalledWith(
+        mockDb,
+        {
+          filePath: tempFilePath,
+          originalPath: "uploaded.fit",
+          userId: "user-1",
+          providerId: "fit-file",
+          sourceName: "FIT File",
+        },
+        expect.any(Function),
+      );
+      expect(mockEnsureProvider).toHaveBeenCalledWith(
+        mockDb,
+        "fit-file",
+        "FIT File",
+        undefined,
+        "user-1",
+      );
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "fit-file",
+          dataType: "import",
+          status: "success",
+          recordCount: 1,
+          userId: "user-1",
+        }),
+      );
+      expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+    });
+
+    it("forwards FIT progress and logs decoder errors", async () => {
+      mockImportFitFile.mockImplementationOnce(
+        async (
+          _db: unknown,
+          _data: unknown,
+          onProgress: (info: { percentage: number; message: string }) => Promise<void>,
+        ) => {
+          await onProgress({ percentage: 50, message: "Importing FIT activity..." });
+          return { recordsSynced: 0, errors: [{ message: "invalid FIT file" }] };
+        },
+      );
+      const job = createMockJob({ filePath: tempFilePath, importType: "fit-file" });
+
+      await runImportJob(job, mockDb);
+
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 50,
+        message: "Importing FIT activity...",
+      });
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "fit-file",
+          status: "error",
+          errorMessage: "invalid FIT file",
+        }),
+      );
     });
   });
 

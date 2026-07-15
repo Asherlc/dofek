@@ -288,6 +288,17 @@ describe("createUploadRouter", () => {
       expect(streamToFile).not.toHaveBeenCalled();
     });
 
+    it("returns 401 for unauthenticated POST /fit-file", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/fit-file", {
+        headers: { "Content-Type": "application/octet-stream" },
+        body: Buffer.from("fit-data"),
+      });
+      expect(res.status).toBe(401);
+      expect(streamToFile).not.toHaveBeenCalled();
+    });
+
     it("returns 401 for unauthenticated GET /apple-health/status", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
@@ -1526,6 +1537,62 @@ describe("createUploadRouter", () => {
         expect.stringContaining("[garmin-dump] Upload failed: Error: disk full"),
       );
       expect(mockUnlink).toHaveBeenCalledWith(vi.mocked(streamToFile).mock.calls[0][1]);
+    });
+  });
+
+  describe("POST /api/upload/fit-file", () => {
+    it("enqueues a FIT import through the standard import lifecycle", async () => {
+      const { app, queue } = createTestApp();
+      const res = await request(app, "post", "/api/upload/fit-file", {
+        headers: { "Content-Type": "application/octet-stream" },
+        body: Buffer.from("fit-data"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({ status: "processing", jobId: "job-123" });
+      expect(queue.add).toHaveBeenCalledWith(
+        "fit-file",
+        expect.objectContaining({
+          filePath: expect.stringMatching(/fit-file-[a-f0-9-]+\.fit$/),
+          since: "1970-01-01T00:00:00.000Z",
+          userId: "user-1",
+          importType: "fit-file",
+        }),
+        undefined,
+      );
+    });
+
+    it("rejects non-FIT file extensions", async () => {
+      const { app, queue } = createTestApp();
+      const res = await request(app, "post", "/api/upload/fit-file", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-file-ext": ".zip",
+        },
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body)).toEqual({ error: "FIT imports require a .fit file" });
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+
+    it("reads import status from the standard import queue", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValue({
+        id: "fit-job",
+        getState: vi.fn().mockResolvedValue("completed"),
+        progress: { percentage: 100, message: "FIT file import complete." },
+        failedReason: null,
+        returnvalue: { recordsSynced: 1, errors: [] },
+        data: { userId: "user-1" },
+      });
+
+      const res = await request(app, "get", "/api/upload/fit-file/status/fit-job");
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toMatchObject({ status: "done", progress: 100 });
+      expect(queue.getJob).toHaveBeenCalledWith("fit-job");
     });
   });
 
