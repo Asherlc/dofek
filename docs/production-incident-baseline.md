@@ -13191,3 +13191,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   job while retaining the web and mobile Storybook build jobs.
 - **Remaining risk / follow-up:** None known; Dependabot PRs will not receive a
   hosted Storybook preview, but their Storybook artifacts continue to build.
+
+## 2026-07-15 — Expo SDK Patch Drift Blocked Dependabot PR
+
+- **Symptoms:** PR `1617` failed `Build Mobile / Metro Bundle` before Metro
+  started.
+- **User impact:** The Bull Board dependency update could not pass required CI.
+- **Evidence:** The
+  [GitHub Actions job](https://github.com/Asherlc/dofek/actions/runs/29425804395/job/87388393956)
+  ran `pnpm expo install --check`, reported 19 packages below Expo SDK 57's
+  expected patch versions, printed `Found outdated dependencies`, and exited 1.
+  Expo documents this dependency validation and its exclusion mechanism in the
+  official [Expo CLI guide](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
+- **Root cause:** The mobile manifest's Expo SDK packages had fallen behind the
+  SDK 57 compatibility matrix, so the required dependency-validation step
+  failed before bundling.
+- **Fix / mitigation:** Updated the 19 packages to Expo's SDK-compatible patch
+  releases, migrated the required `@expo/plist` parser patch from 0.8.0 to
+  0.8.1, and used Node's `URL` type for the server worker path exposed by the
+  refreshed TypeScript environment.
+- **Validation:** `expo install --check`, frozen-lockfile installation, all
+  workspace typechecks, 843 mobile tests, 15 worker tests, and a local iOS
+  Metro export passed. The replacement GitHub suite completed with 90 passing,
+  6 skipped, and 0 failed checks.
+- **Remaining risk / follow-up:** None known. Keep the Expo dependency check as
+  a fail-fast guard when SDK compatibility metadata advances.
