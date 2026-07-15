@@ -318,9 +318,17 @@ export class CyclingAnalyticsRepository {
     );
 
     const powerCandidates = rows.filter(
-      (row) => row.normalized_power != null && row.average_power != null,
+      (
+        row,
+      ): row is typeof row & {
+        normalized_power: number;
+        average_power: number;
+      } => row.normalized_power != null && row.average_power != null && row.average_power > 0,
     );
-    const variabilityCandidates = powerCandidates.filter((row) => row.estimated_ftp != null);
+    const variabilityCandidates = powerCandidates.filter(
+      (row): row is typeof row & { estimated_ftp: number } =>
+        row.estimated_ftp != null && row.estimated_ftp > 0,
+    );
     const variabilityRows = variabilityCandidates
       .slice(
         pagination.variabilityOffset,
@@ -332,10 +340,10 @@ export class CyclingAnalyticsRepository {
             activityId: row.id,
             date: row.date,
             activityName: row.activity_name ?? row.activity_type,
-            normalizedPower: row.normalized_power ?? 0,
-            averagePower: row.average_power ?? 0,
+            normalizedPower: row.normalized_power,
+            averagePower: row.average_power,
           },
-          row.estimated_ftp ?? 1,
+          row.estimated_ftp,
         ).toDetail(),
       );
     const verticalAscent = rows

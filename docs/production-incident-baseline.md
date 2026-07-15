@@ -13137,3 +13137,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [`EXPIRE` reference](https://redis.io/docs/latest/commands/expire/), and dbt's
   incremental behavior is documented in the official
   [incremental model guide](https://docs.getdbt.com/docs/build/incremental-models).
+
+## 2026-07-14 — Cycling PR Mutation Jobs Exhausted CI Shared Memory
+
+- **Symptoms:** Three mutation shards failed their score threshold after the
+  ClickHouse integration fixture was split into smaller modules, and a later
+  shard was cancelled after Postgres entered recovery mode.
+- **User impact:** PR #1610 could not pass required CI checks even though its
+  unit and integration suites passed locally.
+- **Evidence:** The failed workflow mutated the newly created test-fixture
+  modules as production code. The cancelled shard's first fatal database line
+  was `could not resize shared memory segment ... No space left on device`,
+  followed by recovery-mode errors in the
+  [GitHub Actions job](https://github.com/Asherlc/dofek/actions/runs/29378387905/job/87238702717).
+- **Root cause:** Stryker treated the split integration-test helper modules as
+  mutation targets, greatly expanding unrelated test execution and exhausting
+  the runner's Postgres shared-memory allocation.
+- **Fix / mitigation:** Excluded only the test helper, fixture-model, and
+  read-model setup modules from mutation targets in both local and CI Stryker
+  configurations. Production cycling repository code remains mutation-tested;
+  focused behavioral tests raised its score to 85.59% with no uncovered or
+  timed-out mutants.
+- **Remaining risk / follow-up:** Confirm the next GitHub Actions run completes
+  every mutation shard without shared-memory pressure. If resource exhaustion
+  recurs, inspect the first fatal line and the selected related-test set before
+  changing runner resources or concurrency.
