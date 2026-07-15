@@ -29,6 +29,8 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
     routerFile: "cycling-advanced.ts",
     input: "custom",
   },
+  "cycling.activities": { defaultDays: 90, routerFile: "cycling.ts", input: "custom" },
+  "cycling.performance": { defaultDays: 90, routerFile: "cycling.ts", input: "days" },
   "cyclingAdvanced.rampRate": {
     defaultDays: 90,
     routerFile: "cycling-advanced.ts",

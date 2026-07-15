@@ -58,11 +58,16 @@ describe("loadMobileTrainingTab", () => {
       });
     const cyclingSpy = vi
       .spyOn(
-        (await import("../repositories/cycling-advanced-repository.ts")).CyclingAdvancedRepository
+        (await import("../repositories/cycling-analytics-repository.ts")).CyclingAnalyticsRepository
           .prototype,
-        "getVerticalAscentRates",
+        "getActivities",
       )
-      .mockResolvedValue(verticalAscent);
+      .mockResolvedValue({
+        activities: { items: [], totalCount: 0 },
+        variability: { rows: [], totalCount: 0, emptyReason: null },
+        verticalAscent: verticalAscent.map((model) => model.toDetail()),
+        aerobicEfficiency: { maxHr: null, activities: [] },
+      });
     return { trainingSpy, cyclingSpy };
   }
 
@@ -126,7 +131,7 @@ describe("loadMobileTrainingTab", () => {
         },
       ],
     );
-    await mockTrainingRepos(
+    const { cyclingSpy } = await mockTrainingRepos(
       [
         {
           id: "act-1",
@@ -169,6 +174,12 @@ describe("loadMobileTrainingTab", () => {
     expect(result.weeklyVolume).toHaveLength(1);
     expect(result.verticalAscent[0]?.verticalAscentRate).toBe(1000);
     expect(result.verticalAscent[0]?.activityType).toBe("road_cycling");
+    expect(cyclingSpy).toHaveBeenCalledWith(expect.objectContaining({ days: 30 }), {
+      activityLimit: 1,
+      activityOffset: 0,
+      variabilityLimit: 1,
+      variabilityOffset: 0,
+    });
     expect(result.climbing).toEqual({
       gradeProgression: [
         {

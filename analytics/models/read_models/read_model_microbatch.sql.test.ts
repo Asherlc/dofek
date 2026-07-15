@@ -111,6 +111,8 @@ describe("production analytics read-model build", () => {
       "activity_aerobic_efficiency",
       "activity_polarization_zones",
       "activity_power_curve",
+      "cycling_activity",
+      "daily_cycling",
       "provider_stats",
     ]);
     expect(sleepDashboardMatch?.[1]?.split(" ")).toEqual([
@@ -132,6 +134,7 @@ describe("production analytics read-model build", () => {
     expect(entrypoint).toContain("run_dbt_safe_builds()");
     expect(entrypoint).toContain('--select "$DBT_ACTIVITY_MODELS" &&');
     expect(entrypoint).toContain('--select "$DBT_SLEEP_DASHBOARD_MODELS"');
+    expect(entrypoint).toContain("$NODE scripts/warm-query-cache.ts");
   });
 
   it("materializes sleep heart-rate membership from dirty sleep, sensor, and activity keys", () => {
