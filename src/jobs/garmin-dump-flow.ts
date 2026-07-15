@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { FlowChildJob } from "bullmq";
-import type { GarminDumpFlowEntry } from "../providers/garmin-dump.ts";
+import type { GarminFitJobEntry, PreparedGarminDumpImport } from "../providers/garmin-dump.ts";
 import {
   FIT_FILE_IMPORT_BATCH_QUEUE,
   FIT_FILE_IMPORT_QUEUE,
@@ -13,37 +13,9 @@ const FIT_FILE_IMPORT_JOB_NAME = "fit-file-import";
 const FIT_FILE_IMPORT_BATCH_JOB_NAME = "fit-file-import-batch";
 const ZIP_ENTRY_EXTRACT_JOB_NAME = "zip-entry-extract";
 
-export interface GarminFitJobEntry {
-  entry: GarminDumpFlowEntry;
-  data: Omit<FitFileImportJobData, "filePath">;
-}
-
-export interface PreparedGarminDumpImport {
-  uploadPath: string;
-  userId: string;
-  batchId: string;
-  baseResult: {
-    recordsSynced: number;
-    errors: Array<{ message: string }>;
-  };
-  fitJobEntries: GarminFitJobEntry[];
-  tempDirectories: string[];
-  totalFitFiles: number;
-}
-
 export interface GarminImportParent {
   id: string;
   queue: string;
-}
-
-export function createGarminFitBatchId(
-  uploadPath: string,
-  userId: string,
-  fitJobEntries: readonly GarminFitJobEntry[],
-): string {
-  return `garmin-dump-fit-batch-${createHash("sha256")
-    .update(`${userId}\n${uploadPath}\n${fitJobEntries.map(({ entry }) => entry.path).join("\n")}`)
-    .digest("hex")}`;
 }
 
 function stableFitJobHash(preparedImport: PreparedGarminDumpImport, entryPath: string): string {

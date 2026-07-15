@@ -13273,3 +13273,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   job while retaining the web and mobile Storybook build jobs.
 - **Remaining risk / follow-up:** None known; Dependabot PRs will not receive a
   hosted Storybook preview, but their Storybook artifacts continue to build.
+
+## 2026-07-15 — Garmin Import PR Failed Mobile, Boundary, and Mutation Checks
+
+- **Symptoms:** PR #1630 failed the mobile Metro bundle, import-boundary,
+  Stryker shard 10, and aggregate lint/static-analysis jobs.
+- **User impact:** The Garmin import fix could not merge despite its functional
+  tests passing.
+- **Evidence:** The mobile job reported `Found outdated dependencies` for 19
+  Expo packages in the
+  [Metro job](https://github.com/Asherlc/dofek/actions/runs/29423879565/job/87381222960).
+  Dependency Cruiser reported the cycle `garmin-dump-flow.ts → garmin-dump.ts →
+  garmin-dump-flow.ts` in the
+  [import-boundary job](https://github.com/Asherlc/dofek/actions/runs/29423879565/job/87381172910).
+  The [Stryker job](https://github.com/Asherlc/dofek/actions/runs/29423879565/job/87381218923)
+  failed its initial test run because a medication-dose assertion assumed ZIP
+  entry enumeration order. The aggregate job then failed because a required
+  child job had failed.
+- **Root cause:** Expo-compatible package patches had advanced after the lockfile
+  was generated, Garmin-specific prepared-import contracts were owned by the
+  queue-flow module and imported back into the provider, and the Apple Health
+  test asserted an ordering that the ZIP format does not guarantee.
+- **Fix / mitigation:** Updated the Expo 57 package set and the required
+  `@expo/plist` patch to the resolved patch release, moved Garmin prepared-import
+  contract ownership and batch-ID creation into the Garmin provider so the flow
+  only depends one way, and made the medication-dose assertion order-independent
+  while preserving exact cardinality.
+- **Validation:** Expo dependency validation and an iOS Metro export pass;
+  Dependency Cruiser reports zero violations; 117 affected server tests and all
+  843 mobile tests pass; TypeScript reports no errors; Biome and the analytics
+  policy check pass. The full local analytics SQL lint could not connect because
+  local ClickHouse had exhausted its Docker volume (`No space left on device`),
+  so the replacement GitHub Actions run remains the authoritative clean-run
+  validation.
+- **Remaining risk / follow-up:** Confirm the replacement workflow completes all
+  Stryker shards and the aggregate required-check job on fresh hosted runners.

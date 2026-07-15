@@ -1,10 +1,7 @@
 import type { FlowJob } from "bullmq";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  attachGarminFitImportFlow,
-  createGarminFitBatchId,
-  type PreparedGarminDumpImport,
-} from "./garmin-dump-flow.ts";
+import { createGarminFitBatchId, type PreparedGarminDumpImport } from "../providers/garmin-dump.ts";
+import { attachGarminFitImportFlow } from "./garmin-dump-flow.ts";
 import { getFlowProducer } from "./queues.ts";
 
 const mockAdd = vi.fn().mockResolvedValue({});
