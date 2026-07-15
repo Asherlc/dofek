@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   AccessDeniedError,
   InvalidGrantError,
@@ -15,7 +16,6 @@ import type {
   OAuthTokenRevocationRequest,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-import { createHash } from "node:crypto";
 import type { Database } from "dofek/db";
 import type { Response } from "express";
 import { z } from "zod";
