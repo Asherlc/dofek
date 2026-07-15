@@ -13088,3 +13088,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Garmin dump unit tests passed after the fix.
 - **Remaining risk / follow-up:** The fix still needs deployment, followed by a
   retry of the failed Garmin dump import.
+
+## 2026-07-14 — Dependabot Storybook Preview Missing R2 Secrets
+
+- **Symptoms:** PR `1622` failed `Storybook Preview / Deploy Storybook Preview`
+  while all other required CI checks passed.
+- **User impact:** Dependabot dependency-update PRs could not complete CI even
+  though their Storybook builds succeeded.
+- **Evidence:** Run
+  [`29377573409`](https://github.com/Asherlc/dofek/actions/runs/29377573409)
+  reported `Storybook preview missing required GitHub secrets:
+  R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY`; the job identified its secret source
+  as Dependabot. GitHub documents that Dependabot-triggered workflows receive
+  Dependabot secrets instead of Actions secrets
+  ([GitHub documentation](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-on-actions)).
+- **Root cause:** The Storybook preview deployment ran for Dependabot PRs even
+  though its R2 credentials exist only as GitHub Actions secrets, which GitHub
+  intentionally withholds from Dependabot-triggered workflows.
+- **Fix / mitigation:** Excluded Dependabot from the Storybook preview deploy
+  job while retaining the web and mobile Storybook build jobs.
+- **Remaining risk / follow-up:** None known; Dependabot PRs will not receive a
+  hosted Storybook preview, but their Storybook artifacts continue to build.
