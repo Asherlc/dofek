@@ -138,7 +138,7 @@ describe("createMcpOAuthRouter", () => {
       expect(decodeURIComponent(location)).toContain("/authorize?client_id=test");
     });
 
-    it("sets clickjacking headers before requiring a session", async () => {
+    it("sets CSP frame-ancestors and X-Frame-Options headers before requiring a session", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       app = await mount();
 

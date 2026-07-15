@@ -81,13 +81,12 @@ function consentHtml(
   client: OAuthClientInformationFull,
   params: AuthorizationParams,
   scopes: readonly McpScope[],
+  resource: URL,
 ): string {
   const scopeItems = scopes
     .map((scope) => `<li>${escapeHtml(MCP_SCOPE_LABELS[scope])}</li>`)
     .join("");
   const clientName = escapeHtml(client.client_name ?? "the MCP client");
-  // Resource is validated before consent is rendered, so it is always present here.
-  const resourceHref = params.resource.href;
   const fields = [
     hiddenInput("client_id", client.client_id),
     hiddenInput("redirect_uri", params.redirectUri),
@@ -96,7 +95,7 @@ function consentHtml(
     hiddenInput("code_challenge_method", "S256"),
     hiddenInput("scope", scopes.join(" ")),
     hiddenInput("state", params.state),
-    hiddenInput("resource", resourceHref),
+    hiddenInput("resource", resource.href),
   ].join("");
   return `<!doctype html>
 <html lang="en">
@@ -153,7 +152,8 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
     params: AuthorizationParams,
     response: Response,
   ): Promise<void> {
-    if (params.resource?.href !== this.#resource.href) {
+    const resource = params.resource;
+    if (!resource || resource.href !== this.#resource.href) {
       throw new InvalidTargetError("The requested resource is not the Dofek MCP server");
     }
     const scopes = parseScopes(params.scopes);
@@ -169,7 +169,7 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
       return;
     }
     if (approval !== "approve") {
-      response.type("html").send(consentHtml(client, params, scopes));
+      response.type("html").send(consentHtml(client, params, scopes, resource));
       return;
     }
 

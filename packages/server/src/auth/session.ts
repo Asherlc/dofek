@@ -36,7 +36,7 @@ export async function createSession(db: Database, userId: string): Promise<Sessi
 
 /** Validate a session token. Returns userId if valid and not expired, null otherwise. */
 export async function validateSession(
-  db: Database,
+  db: Pick<Database, "execute">,
   sessionId: string,
 ): Promise<{ userId: string } | null> {
   const rows = await executeWithSchema(
