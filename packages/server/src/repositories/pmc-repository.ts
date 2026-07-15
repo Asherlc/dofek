@@ -3,7 +3,7 @@ import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 
 import type { Database } from "dofek/db";
-import { getEffectiveParams } from "dofek/personalization/params";
+import { type EffectiveParams, getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -11,7 +11,11 @@ import { ChartRange } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { activityRepositoryFor } from "./activity-repository.ts";
 import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
-import { PmcTrainingLoadCalculator } from "./pmc-training-load-calculator.ts";
+import {
+  type PmcActivityRow,
+  type PmcNormalizedPowerRow,
+  PmcTrainingLoadCalculator,
+} from "./pmc-training-load-calculator.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
@@ -43,6 +47,64 @@ type PmcRepositoryChartResult = PmcChartResult & {
   model: TssModelInfo;
 };
 
+export async function buildPmcChartFromRows(input: {
+  db: Pick<Database, "execute">;
+  userId: string;
+  range: ChartRange;
+  activityRows: PmcActivityRow[];
+  normalizedPowerRows: PmcNormalizedPowerRow[];
+  parameters?: PmcChartParameters;
+}): Promise<PmcRepositoryChartResult> {
+  const parameters =
+    input.parameters ?? (await loadPmcChartParameters(input.db, input.userId, input.range));
+  const { effective, queryRange } = parameters;
+  const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
+  const { genderFactor, exponent } = effective.trainingImpulseConstants;
+  const trainingStressCalculator = new TrainingStressCalculator(genderFactor, exponent);
+  const trainingLoadCalculator = new PmcTrainingLoadCalculator({
+    estimateThresholdPower: TrainingStressCalculator.estimateFtp,
+    computeTrainingImpulse: (durationMin, avgHr, maxHr, restingHr) =>
+      trainingStressCalculator.computeTrimp(durationMin, avgHr, maxHr, restingHr),
+    computePowerTrainingStressScore: TrainingStressCalculator.computePowerTss,
+    computeHeartRateTrainingStressScore: (durationMin, avgHr, maxHr, restingHr) =>
+      trainingStressCalculator.computeHrTss(durationMin, avgHr, maxHr, restingHr),
+    buildTrainingStressModel: TrainingStressCalculator.buildTssModel,
+  });
+  const chartCalculator = new PmcChartCalculator({
+    chronicTrainingLoadDays,
+    acuteTrainingLoadDays,
+    trainingLoadCalculator,
+  });
+  const allTimeActivityDays = daysSinceEarliestActivity(input.activityRows);
+  return chartCalculator.buildChart({
+    activityRows: input.activityRows,
+    normalizedPowerRows: input.normalizedPowerRows,
+    queryDays: queryRange.days ?? allTimeActivityDays,
+    displayDays: input.range.days ?? allTimeActivityDays,
+  });
+}
+
+export interface PmcChartParameters {
+  effective: EffectiveParams;
+  queryRange: ChartRange;
+}
+
+export async function loadPmcChartParameters(
+  db: Pick<Database, "execute">,
+  userId: string,
+  range: ChartRange,
+): Promise<PmcChartParameters> {
+  const storedParams = await loadPersonalizedParams(db, userId);
+  const effective = getEffectiveParams(storedParams);
+  const displayRangeBaseDays = range.days === null ? null : Math.max(range.days, 365);
+  return {
+    effective,
+    queryRange: ChartRange.fromDays(displayRangeBaseDays).withWarmupDays(
+      effective.exponentialMovingAverage.chronicTrainingLoadDays,
+    ),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -63,17 +125,9 @@ export class PmcRepository extends BaseRepository {
   }
 
   async getChart(range: ChartRange): Promise<PmcRepositoryChartResult> {
-    // Load personalized algorithm parameters
-    const storedParams = await loadPersonalizedParams(this.db, this.userId);
-    const effective = getEffectiveParams(storedParams);
-    const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
-    const { genderFactor, exponent } = effective.trainingImpulseConstants;
-
     // Fetch enough history for EWMA convergence, regardless of display range.
-    const minHistoryDays = 365;
-    const displayRangeBaseDays = range.days === null ? null : Math.max(range.days, minHistoryDays);
-    const queryRange =
-      ChartRange.fromDays(displayRangeBaseDays).withWarmupDays(chronicTrainingLoadDays);
+    const parameters = await loadPmcChartParameters(this.db, this.userId, range);
+    const { queryRange } = parameters;
     const today = new Date().toISOString().slice(0, 10);
 
     if ((await this.#loadRawActivityCount(queryRange)) === 0) {
@@ -160,28 +214,13 @@ export class PmcRepository extends BaseRepository {
       },
     );
 
-    const trainingStressCalculator = new TrainingStressCalculator(genderFactor, exponent);
-    const trainingLoadCalculator = new PmcTrainingLoadCalculator({
-      estimateThresholdPower: TrainingStressCalculator.estimateFtp,
-      computeTrainingImpulse: (durationMin, avgHr, maxHr, restingHr) =>
-        trainingStressCalculator.computeTrimp(durationMin, avgHr, maxHr, restingHr),
-      computePowerTrainingStressScore: TrainingStressCalculator.computePowerTss,
-      computeHeartRateTrainingStressScore: (durationMin, avgHr, maxHr, restingHr) =>
-        trainingStressCalculator.computeHrTss(durationMin, avgHr, maxHr, restingHr),
-      buildTrainingStressModel: TrainingStressCalculator.buildTssModel,
-    });
-
-    const chartCalculator = new PmcChartCalculator({
-      chronicTrainingLoadDays,
-      acuteTrainingLoadDays,
-      trainingLoadCalculator,
-    });
-    const allTimeActivityDays = daysSinceEarliestActivity(visibleActivityRows);
-    return chartCalculator.buildChart({
+    return buildPmcChartFromRows({
+      db: this.db,
+      userId: this.userId,
+      range,
       activityRows: visibleActivityRows,
       normalizedPowerRows,
-      queryDays: queryRange.days ?? allTimeActivityDays,
-      displayDays: range.days ?? allTimeActivityDays,
+      parameters,
     });
   }
 

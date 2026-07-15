@@ -118,7 +118,7 @@ jobs:
 
   storybook-preview:
     name: Storybook Preview
-    if: github.event_name == 'pull_request' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true')
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true')
     needs: [detect-changes, build-storybook, build-storybook-mobile]
     uses: ./.github/workflows/storybook-preview.yml
     secrets:

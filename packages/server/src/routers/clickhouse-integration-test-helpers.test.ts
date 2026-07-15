@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runClickHouseMigrations } from "../../../../src/db/clickhouse-migrations.ts";
 import {
-  CLICKHOUSE_TEST_VIEW_REGEX,
-  clickHouseMigrationAnalyticsViewNames,
   createClickHouseTestActivitySensorStore,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
+import {
+  CLICKHOUSE_TEST_VIEW_REGEX,
+  clickHouseMigrationAnalyticsViewNames,
+} from "./clickhouse-integration-test-models.ts";
 
 const clickHouseMocks = vi.hoisted(() => ({
   close: vi.fn(),

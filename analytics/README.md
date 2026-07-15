@@ -30,6 +30,13 @@ offline ClickHouse models can set dbt `query_settings` locally and use
 fields used by the hiking training page so its grade-adjusted pace, elevation,
 and route-comparison procedures do not repeatedly scan the broad activity
 summary view at request time.
+`cycling_activity` materializes the per-ride fields used by cycling activity
+cards, variability, aerobic-efficiency, and ascent charts. `daily_cycling`
+groups the activity-level inputs needed by the cycling performance contract so
+fitness, fatigue, form, threshold-power trend, and power summaries do not fan
+out across request-time sensor queries. Both models use dbt incremental
+materializations and explicit row lifecycle handling; see dbt's official
+[incremental model documentation](https://docs.getdbt.com/docs/build/incremental-models).
 For loading-performance work, follow
 [`docs/performance/loading-performance-runbook.md`](../docs/performance/loading-performance-runbook.md)
 before adding or changing analytics models. A new route-facing model is allowed
@@ -57,7 +64,7 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `daily_sleep`, `daily_recovery_inputs`, `daily_recovery`, `activity_sensor_sample`, `activity_location_sample`,
 `activity_sensor_summary_rows`, `activity_location_summary_rows`,
 `activity_stream_points`, `activity_heart_rate_zones`, `activity_summary_rows`,
-`hiking_activity`, `activity_vo2max_estimate`, `activity_aerobic_efficiency`, `activity_polarization_zones`, `activity_power_curve`, `provider_stats`,
+`hiking_activity`, `activity_vo2max_estimate`, `activity_aerobic_efficiency`, `activity_polarization_zones`, `activity_power_curve`, `cycling_activity`, `daily_cycling`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
 and `weekly_healthspan`. Sample-time models use dbt's `microbatch`
 incremental strategy with daily batches and short lookbacks so ClickHouse
@@ -81,6 +88,14 @@ final API responses. `daily_recovery`, `daily_strain`,
 lower-level recovery, activity-load, and zone-minute models remain internal
 ingredients. `provider_stats` remains the route-facing provider inventory model
 so request paths do not recompute provider counts from raw source tables.
+
+After both safe dbt build groups succeed, `scripts/warm-query-cache.ts` replays
+every live query key registered in Redis with its original user, timezone,
+procedure path, and input. Refresh mode bypasses the old value and overwrites it
+only after a successful procedure call, so an individual refresh failure does
+not destroy the last successful cached response. Redis key expiry remains the
+source of truth for which registered queries are live; see Redis's official
+[expiration documentation](https://redis.io/docs/latest/commands/expire/).
 
 Append-incremental models backed by `ReplacingMergeTree(refresh_version)` must
 handle row lifecycle explicitly. A model that can lose a previously emitted row
