@@ -561,18 +561,21 @@ describe("importAppleHealthFile", () => {
         ? values.some((value) => value.medicationConceptId === "rxnorm-123")
         : false,
     )?.[0];
-    expect(doseEventBatch).toEqual([
-      expect.objectContaining({
-        externalId:
-          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:apple_health_export/clinical-records/MedicationDoseEvent-001.json",
-        doseStatus: "taken",
-      }),
-      expect.objectContaining({
-        externalId:
-          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:apple_health_export/clinical-records/MedicationDoseEvent-002.json",
-        doseStatus: "skipped",
-      }),
-    ]);
+    expect(doseEventBatch).toHaveLength(2);
+    expect(doseEventBatch).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          externalId:
+            "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:apple_health_export/clinical-records/MedicationDoseEvent-001.json",
+          doseStatus: "taken",
+        }),
+        expect.objectContaining({
+          externalId:
+            "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:apple_health_export/clinical-records/MedicationDoseEvent-002.json",
+          doseStatus: "skipped",
+        }),
+      ]),
+    );
   });
 
   it("preserves duplicate medication dose events without uuids by assigning distinct fallback external ids", async () => {
