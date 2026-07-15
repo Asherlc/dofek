@@ -869,6 +869,7 @@ jobs:
             | { grep -v '\.test\.ts$' || true; } \
             | { grep -v '\.cy\.ts$' || true; } \
             | { grep -v 'test-helpers\.ts$' || true; } \
+            | { grep -v '^packages/server/src/routers/clickhouse-integration-test-' || true; } \
             | { grep -v '\.d\.ts$' || true; } \
             | { grep -v '\.gen\.ts$' || true; } \
             | { grep -v '\.config\.' || true; } \

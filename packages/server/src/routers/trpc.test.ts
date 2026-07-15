@@ -572,6 +572,26 @@ describe("trpc", () => {
       );
     });
 
+    it("recomputes and overwrites successful results in cache refresh mode", async () => {
+      vi.mocked(queryCache.get).mockResolvedValue("stale-value");
+      const createCaller = createCachedRouter();
+      const caller = createCaller({
+        db: {},
+        userId: "user-1",
+        timezone: "UTC",
+        cacheMode: "refresh",
+      });
+
+      await expect(caller.cachedQuery()).resolves.toBe("db-result");
+      expect(queryCache.get).not.toHaveBeenCalled();
+      expect(cacheMissesTotal.inc).not.toHaveBeenCalled();
+      expect(queryCache.set).toHaveBeenCalledWith(
+        expect.stringContaining("user-1:cachedQuery:"),
+        "db-result",
+        CacheTTL.SHORT,
+      );
+    });
+
     it("records cache miss lookup and database duration metrics with labels", async () => {
       vi.mocked(queryCache.get).mockResolvedValue(undefined);
       const nowSpy = vi
