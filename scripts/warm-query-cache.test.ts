@@ -24,6 +24,33 @@ describe("parseRegisteredQueryCacheKey", () => {
 });
 
 describe("warmRegisteredQueryCaches", () => {
+  it("invokes registered procedures with their parent as the method context", async () => {
+    const observedContexts: unknown[] = [];
+    const queryParent = {
+      expectedValue: "from-parent",
+      query(this: { expectedValue: string }) {
+        observedContexts.push(this);
+        return Promise.resolve(this.expectedValue);
+      },
+    };
+    const query = vi.spyOn(queryParent, "query");
+
+    await warmRegisteredQueryCaches({
+      cacheStore: { listKeys: vi.fn().mockResolvedValue(["user-1:context.query:UTC:undefined"]) },
+      createCaller: vi.fn().mockReturnValue({ context: queryParent }),
+      getAccessWindow: vi.fn().mockResolvedValue({
+        kind: "full",
+        paid: true,
+        reason: "paid_grant",
+      }),
+      db: { execute: vi.fn() },
+      sensorStore: {},
+    });
+
+    expect(query).toHaveBeenCalledOnce();
+    expect(observedContexts).toEqual([queryParent]);
+  });
+
   it("replays every registered app query using refresh-mode callers", async () => {
     const performance = vi.fn().mockResolvedValue({ ok: true });
     const activities = vi.fn().mockResolvedValue({ ok: true });

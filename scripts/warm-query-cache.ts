@@ -83,16 +83,18 @@ export function parseRegisteredQueryCacheKey(key: string): RegisteredQueryCacheK
 
 async function invokeCallerProcedure(caller: unknown, path: string, input: unknown): Promise<void> {
   let procedure: unknown = caller;
+  let parent: unknown;
   for (const pathSegment of path.split(".")) {
     if ((typeof procedure !== "object" || procedure === null) && typeof procedure !== "function") {
       throw new Error(`Cached tRPC procedure path is not callable: ${path}`);
     }
-    procedure = Reflect.get(procedure, pathSegment);
+    parent = procedure;
+    procedure = Reflect.get(parent, pathSegment);
   }
   if (typeof procedure !== "function") {
     throw new Error(`Cached tRPC procedure path is not callable: ${path}`);
   }
-  await Reflect.apply(procedure, undefined, [input]);
+  await Reflect.apply(procedure, parent, [input]);
 }
 
 export async function warmRegisteredQueryCaches<TDatabase, TSensorStore>(
@@ -174,4 +176,5 @@ async function main(): Promise<void> {
 const scriptPath = process.argv[1];
 if (scriptPath && import.meta.url === pathToFileURL(scriptPath).href) {
   await main();
+  process.exit(0);
 }
