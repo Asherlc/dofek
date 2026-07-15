@@ -584,6 +584,7 @@ describe("trpc", () => {
 
       await expect(caller.cachedQuery()).resolves.toBe("db-result");
       expect(queryCache.get).not.toHaveBeenCalled();
+      expect(cacheMissesTotal.inc).not.toHaveBeenCalled();
       expect(queryCache.set).toHaveBeenCalledWith(
         expect.stringContaining("user-1:cachedQuery:"),
         "db-result",

@@ -197,7 +197,13 @@ export class CyclingAnalyticsRepository {
         SELECT
           coalesce(
             nullIf(max_hr, 0),
-            (SELECT max(max_heart_rate) FROM analytics.cycling_activity FINAL WHERE user_id = {userId:UUID} AND is_deleted = 0)
+            (
+              SELECT max(max_heart_rate)
+              FROM analytics.cycling_activity FINAL
+              WHERE user_id = {userId:UUID}
+                AND is_deleted = 0
+                ${this.#accessWindowPredicate("started_at")}
+            )
           ) AS global_max_hr,
           coalesce(nullIf(resting_hr, 0), 60) AS resting_hr
         FROM postgres_fitness.user_profile_current
@@ -311,10 +317,10 @@ export class CyclingAnalyticsRepository {
       { priority: "dashboard" },
     );
 
-    const variabilityCandidates = rows.filter(
-      (row) =>
-        row.normalized_power != null && row.average_power != null && row.estimated_ftp != null,
+    const powerCandidates = rows.filter(
+      (row) => row.normalized_power != null && row.average_power != null,
     );
+    const variabilityCandidates = powerCandidates.filter((row) => row.estimated_ftp != null);
     const variabilityRows = variabilityCandidates
       .slice(
         pagination.variabilityOffset,
@@ -382,9 +388,11 @@ export class CyclingAnalyticsRepository {
         emptyReason:
           rows.length === 0
             ? ("no_cycling_activities" as const)
-            : variabilityCandidates.length === 0
+            : powerCandidates.length === 0
               ? ("no_normalized_power" as const)
-              : null,
+              : variabilityCandidates.length === 0
+                ? ("no_ftp_estimate" as const)
+                : null,
       },
       verticalAscent,
       aerobicEfficiency: {

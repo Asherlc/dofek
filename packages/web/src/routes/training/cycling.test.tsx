@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted<{
   capturedRouteComponents: Record<string, ComponentType>;
   outletComponent: ComponentType | null;
-  bodyRecords: Array<{ recordedAt: string; weightKg: number | null }>;
   efficiencyActivities: Array<{
     date: string;
     activityType: string;
@@ -18,14 +17,19 @@ const state = vi.hoisted<{
     z2Samples: number;
   }>;
   capturedAerobicEfficiencyActivities: unknown[] | null;
+  performanceError: Error | null;
+  bulkDeleteOnSuccess: (() => Promise<void>) | null;
+  invalidatedQueries: string[];
   queryCalls: Array<{ name: string; input: unknown }>;
   selectedDays: number | null;
 }>(() => ({
   capturedRouteComponents: {},
   outletComponent: null,
-  bodyRecords: [],
   efficiencyActivities: [],
   capturedAerobicEfficiencyActivities: null,
+  performanceError: null,
+  bulkDeleteOnSuccess: null,
+  invalidatedQueries: [],
   queryCalls: [],
   selectedDays: 90,
 }));
@@ -43,7 +47,32 @@ vi.mock("@dofek/training/training", () => ({
   CYCLING_ACTIVITY_TYPES: ["cycling"],
 }));
 vi.mock("../../components/ActivityVariabilityTable.tsx", () => ({
-  ActivityVariabilityTable: () => <div data-testid="activity-variability" />,
+  ActivityVariabilityTable: ({
+    offset,
+    limit,
+    onPageChange,
+  }: {
+    offset: number;
+    limit: number;
+    onPageChange: (offset: number) => void;
+  }) => (
+    <button type="button" onClick={() => onPageChange(offset + limit)}>
+      Next variability page
+    </button>
+  ),
+}));
+vi.mock("../../components/ActivityList.tsx", () => ({
+  ActivityList: ({
+    page,
+    onPageChange,
+  }: {
+    page: number;
+    onPageChange: (page: number) => void;
+  }) => (
+    <button type="button" onClick={() => onPageChange(page + 1)}>
+      Next activity page
+    </button>
+  ),
 }));
 vi.mock("../../components/AerobicEfficiencyChart.tsx", () => ({
   AerobicEfficiencyChart: ({ activities }: { activities: unknown[] }) => {
@@ -94,24 +123,34 @@ const emptyQuery = { data: [], isLoading: false, error: null };
 vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
     useUtils: () => ({
-      cycling: { activities: { invalidate: vi.fn() } },
+      cycling: {
+        activities: {
+          invalidate: async () => state.invalidatedQueries.push("cycling.activities"),
+        },
+        performance: {
+          invalidate: async () => state.invalidatedQueries.push("cycling.performance"),
+        },
+      },
       calendar: {
-        weekList: { invalidate: vi.fn() },
-        activityOverview: { invalidate: vi.fn() },
+        weekList: {
+          invalidate: async () => state.invalidatedQueries.push("calendar.weekList"),
+        },
+        activityOverview: {
+          invalidate: async () => state.invalidatedQueries.push("calendar.activityOverview"),
+        },
       },
     }),
     activity: {
       bulkDelete: {
-        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+        useMutation: (options: { onSuccess: () => Promise<void> }) => {
+          state.bulkDeleteOnSuccess = options.onSuccess;
+          return { mutate: vi.fn(), isPending: false, error: null };
+        },
       },
     },
     cycling: {
       performance: {
         useQuery: (input: { days: number | null }) => {
-          const latestWeight = state.bodyRecords
-            .filter((record) => typeof record.weightKg === "number")
-            .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))[0]?.weightKg;
-          const weightKg = typeof latestWeight === "number" ? latestWeight : null;
           const period = (watts: number, cp: number) => ({
             points: [
               {
@@ -123,23 +162,28 @@ vi.mock("../../lib/trpc.ts", () => ({
             ],
             model: { cp, wPrime: 20_000, r2: 0.95 },
           });
-          const summary = (watts: number) => ({
+          const summary = (watts: number, wattsPerKg: number, vo2Max: number) => ({
             efforts: [
               {
                 durationSeconds: 300,
                 watts,
-                wattsPerKg: weightKg == null ? null : watts / weightKg,
+                wattsPerKg,
               },
             ],
             maximalAerobicPower: watts,
-            vo2Max: weightKg == null ? null : Math.round(((watts / weightKg) * 10.8 + 7) * 10) / 10,
+            vo2Max,
             timeToExhaustionSeconds: 200,
           });
           return {
             ...recordQuery("cycling.performance")(input),
+            error: state.performanceError,
             data: {
               powerCurve: { recent: period(400, 300), season: period(500, 350) },
-              powerSummary: { weightKg, recent: summary(400), season: summary(500) },
+              powerSummary: {
+                weightKg: 100,
+                recent: summary(400, 4, 50.2),
+                season: summary(500, 5, 61),
+              },
               pmc: {
                 data: [],
                 model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
@@ -206,12 +250,11 @@ describe("CyclingTab", () => {
     vi.resetModules();
     state.capturedRouteComponents = {};
     state.outletComponent = null;
-    state.bodyRecords = [
-      { recordedAt: "2026-07-01", weightKg: null },
-      { recordedAt: "2026-06-01", weightKg: 100 },
-    ];
     state.efficiencyActivities = [];
     state.capturedAerobicEfficiencyActivities = null;
+    state.performanceError = null;
+    state.bulkDeleteOnSuccess = null;
+    state.invalidatedQueries = [];
     state.queryCalls.length = 0;
     state.selectedDays = 90;
   });
@@ -220,7 +263,7 @@ describe("CyclingTab", () => {
     cleanup();
   });
 
-  it("uses the latest body record with a numeric weight for watts per kilogram calculations", async () => {
+  it("renders power summary values computed by the server", async () => {
     await renderCyclingTab();
 
     expect(screen.getByText("4.00")).toBeTruthy();
@@ -229,30 +272,24 @@ describe("CyclingTab", () => {
     expect(screen.getByText("61")).toBeTruthy();
   });
 
-  it("uses the newest numeric weight even when body records are out of order", async () => {
-    state.bodyRecords = [
-      { recordedAt: "2026-04-01", weightKg: 90 },
-      { recordedAt: "2026-07-01", weightKg: 80 },
-      { recordedAt: "2026-06-01", weightKg: 100 },
-    ];
-
+  it("does not render an empty power summary beside a query error", async () => {
+    state.performanceError = new Error("Cycling analytics unavailable");
     await renderCyclingTab();
 
-    expect(screen.getByText("5.00")).toBeTruthy();
-    expect(screen.getByText("6.25")).toBeTruthy();
+    expect(screen.queryByText("4.00")).toBeNull();
   });
 
-  it("omits watts per kilogram and VO2max metrics when no numeric weight exists", async () => {
-    state.bodyRecords = [
-      { recordedAt: "2026-07-01", weightKg: null },
-      { recordedAt: "2026-06-01", weightKg: null },
-    ];
-
+  it("invalidates both cycling query groups after deleting activities", async () => {
     await renderCyclingTab();
 
-    expect(screen.getAllByText("--").length).toBeGreaterThanOrEqual(4);
-    expect(screen.queryByText("4.00")).toBeNull();
-    expect(screen.queryByText("50.2")).toBeNull();
+    await state.bulkDeleteOnSuccess?.();
+
+    expect(state.invalidatedQueries).toEqual([
+      "cycling.activities",
+      "cycling.performance",
+      "calendar.weekList",
+      "calendar.activityOverview",
+    ]);
   });
 
   it("passes server-filtered aerobic efficiency activities to the chart", async () => {
@@ -331,5 +368,27 @@ describe("CyclingTab", () => {
         },
       },
     ]);
+  });
+
+  it("resets both cycling pagination cursors when the selected range changes", async () => {
+    await renderCyclingTabInTrainingLayout();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next activity page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next variability page" }));
+    expect(
+      state.queryCalls.filter((queryCall) => queryCall.name === "cycling.activities").at(-1),
+    ).toEqual({
+      name: "cycling.activities",
+      input: expect.objectContaining({ activityOffset: 20, variabilityOffset: 20 }),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+
+    expect(
+      state.queryCalls.filter((queryCall) => queryCall.name === "cycling.activities").at(-1),
+    ).toEqual({
+      name: "cycling.activities",
+      input: expect.objectContaining({ days: null, activityOffset: 0, variabilityOffset: 0 }),
+    });
   });
 });

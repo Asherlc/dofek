@@ -289,7 +289,9 @@ function cached(policy: CachePolicy) {
       return { ok: true as const, data: hit, marker: middlewareMarker };
     }
 
-    cacheMissesTotal.inc({ procedure: path });
+    if (ctx.cacheMode !== "refresh") {
+      cacheMissesTotal.inc({ procedure: path });
+    }
 
     const dbStart = performance.now();
     const result = await next();

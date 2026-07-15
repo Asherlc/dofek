@@ -1,15 +1,20 @@
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import {
   createClickHouseTestActivitySensorStore,
   executeClickHouseTestCommand,
+  syncClickHouseTestActivitySensorStore,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { CyclingAnalyticsRepository } from "./cycling-analytics-repository.ts";
 
 const ACTIVITY_ID = "11111111-1111-4111-8111-111111111111";
+const RECENT_HEART_RATE_ACTIVITY_ID = "22222222-2222-4222-8222-222222222222";
+const HISTORICAL_HIGH_HEART_RATE_ACTIVITY_ID = "33333333-3333-4333-8333-333333333333";
 
 describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
   let testContext: TestContext;
@@ -109,5 +114,104 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
     expect(activities.variability.rows[0]?.variabilityIndex).toBe(1.12);
     expect(activities.verticalAscent[0]?.verticalAscentRate).toBe(500);
     expect(activities.aerobicEfficiency.activities[0]?.efficiencyFactor).toBe(1.333);
+  });
+
+  it("uses the newest body measurement for power summary calculations", async () => {
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.daily_body_measurement VALUES
+        (generateUUIDv4(), toUUID('${TEST_USER_ID}'), today() - INTERVAL 10 DAY, now64(6, 'UTC') - INTERVAL 10 DAY, 90, NULL, 1, now64(9, 'UTC')),
+        (generateUUIDv4(), toUUID('${TEST_USER_ID}'), today() - INTERVAL 1 DAY, now64(6, 'UTC') - INTERVAL 1 DAY, 80, NULL, 1, now64(9, 'UTC'))`,
+    );
+    const repository = new CyclingAnalyticsRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "UTC",
+      sensorStore,
+    );
+
+    const performance = await repository.getPerformance(ChartRange.fromDays(90));
+
+    expect(performance.powerSummary.weightKg).toBe(80);
+    expect(performance.powerSummary.recent.efforts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ durationSeconds: 300, watts: 400, wattsPerKg: 5 }),
+      ]),
+    );
+  });
+
+  it("excludes historical maximum heart rate outside a limited access window", async () => {
+    await testContext.db.execute(
+      sql`UPDATE fitness.user_profile SET max_hr = NULL WHERE id = ${TEST_USER_ID}`,
+    );
+    await syncClickHouseTestActivitySensorStore(testContext);
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.cycling_activity VALUES
+        (
+          toUUID('${RECENT_HEART_RATE_ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), 'wahoo', ['wahoo'],
+          'cycling', 'Recent Heart Rate Ride', now64(6, 'UTC') - INTERVAL 3 DAY,
+          now64(6, 'UTC') - INTERVAL 3 DAY + INTERVAL 1 HOUR, 30000, 150, 180, NULL,
+          0, 3600, NULL, NULL, 100, 3600, 190, NULL, NULL, NULL, NULL, 0, 1, now64(9, 'UTC')
+        ),
+        (
+          toUUID('${HISTORICAL_HIGH_HEART_RATE_ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), 'wahoo', ['wahoo'],
+          'cycling', 'Historical Ride', now64(6, 'UTC') - INTERVAL 180 DAY,
+          now64(6, 'UTC') - INTERVAL 180 DAY + INTERVAL 1 HOUR, 30000, 150, 240, NULL,
+          0, 3600, NULL, NULL, 100, 3600, 250, NULL, NULL, NULL, NULL, 0, 1, now64(9, 'UTC')
+        )`,
+    );
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.daily_cycling VALUES (
+        toUUID('${TEST_USER_ID}'),
+        today() - INTERVAL 3 DAY,
+        [tuple(
+          toUUID('${RECENT_HEART_RATE_ACTIVITY_ID}'),
+          now64(6, 'UTC') - INTERVAL 3 DAY,
+          toFloat64(60),
+          toFloat64(150),
+          toFloat64(180),
+          CAST(NULL, 'Nullable(Float64)'),
+          toUInt64(0),
+          toUInt64(3600),
+          CAST(NULL, 'Nullable(Float64)'),
+          CAST('Recent Heart Rate Ride', 'Nullable(String)')
+        )],
+        0,
+        1,
+        now64(9, 'UTC')
+      )`,
+    );
+    const fullRepository = new CyclingAnalyticsRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "UTC",
+      sensorStore,
+    );
+    const limitedRepository = new CyclingAnalyticsRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "UTC",
+      sensorStore,
+      {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+        endDateExclusive: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    );
+
+    const querySpy = vi.spyOn(sensorStore, "query");
+    querySpy.mockClear();
+    await fullRepository.getPerformance(ChartRange.fromDays(30));
+    await limitedRepository.getPerformance(ChartRange.fromDays(30));
+    const activityRowsSchema = z.array(z.object({ global_max_hr: z.coerce.number().nullable() }));
+    const fullActivityRows = activityRowsSchema.parse(await querySpy.mock.results[1]?.value);
+    const limitedActivityRows = activityRowsSchema.parse(await querySpy.mock.results[3]?.value);
+
+    expect(fullActivityRows[0]?.global_max_hr).toBe(240);
+    expect(limitedActivityRows[0]?.global_max_hr).toBe(180);
   });
 });

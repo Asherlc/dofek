@@ -44,6 +44,10 @@ const ACTIVITY_PAGE_SIZE = 20;
 
 function CyclingTab() {
   const { days } = useTrainingDays();
+  return <CyclingContent key={days ?? "all"} days={days} />;
+}
+
+function CyclingContent({ days }: { days: TimeRangeDays }) {
   const [variabilityOffset, setVariabilityOffset] = useState(0);
   const [activityPage, setActivityPage] = useState(0);
   const trpcUtils = trpc.useUtils();
@@ -62,6 +66,7 @@ function CyclingTab() {
     onSuccess: async () => {
       await Promise.all([
         trpcUtils.cycling.activities.invalidate(),
+        trpcUtils.cycling.performance.invalidate(),
         trpcUtils.calendar.weekList.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
       ]);
@@ -92,32 +97,32 @@ function CyclingTab() {
     <>
       {/* Power Duration Curve with comparison */}
       <Section title="Power Duration Curve" subtitle="Best power at each duration">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6">
-          {performance.error ? (
-            <QueryStatePanel error={performance.error} />
-          ) : (
+        {performance.error ? (
+          <QueryStatePanel error={performance.error} />
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6">
             <PowerCurveChart
               data={performance.data?.powerCurve.recent.points ?? []}
               comparisonData={performance.data?.powerCurve.season.points ?? []}
               model={recentModel}
               loading={loading}
             />
-          )}
-          <PowerSummaryTable
-            recentByDuration={recentByDuration}
-            seasonByDuration={seasonByDuration}
-            recentModel={recentModel}
-            seasonModel={seasonModel}
-            recentMap={recentSummary?.maximalAerobicPower ?? null}
-            seasonMap={seasonSummary?.maximalAerobicPower ?? null}
-            recentVo2max={recentSummary?.vo2Max ?? null}
-            seasonVo2max={seasonSummary?.vo2Max ?? null}
-            recentTte={recentSummary?.timeToExhaustionSeconds ?? null}
-            seasonTte={seasonSummary?.timeToExhaustionSeconds ?? null}
-            loading={loading}
-            recentDays={days}
-          />
-        </div>
+            <PowerSummaryTable
+              recentByDuration={recentByDuration}
+              seasonByDuration={seasonByDuration}
+              recentModel={recentModel}
+              seasonModel={seasonModel}
+              recentMap={recentSummary?.maximalAerobicPower ?? null}
+              seasonMap={seasonSummary?.maximalAerobicPower ?? null}
+              recentVo2max={recentSummary?.vo2Max ?? null}
+              seasonVo2max={seasonSummary?.vo2Max ?? null}
+              recentTte={recentSummary?.timeToExhaustionSeconds ?? null}
+              seasonTte={seasonSummary?.timeToExhaustionSeconds ?? null}
+              loading={loading}
+              recentDays={days}
+            />
+          </div>
+        )}
         {/* Period labels */}
         <div className="mt-3 flex flex-wrap gap-4 text-xs">
           <PeriodLabel

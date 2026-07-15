@@ -115,4 +115,49 @@ describe("CyclingAnalyticsRepository", () => {
     expect(result.verticalAscent[0]?.verticalAscentRate).toBe(500);
     expect(result.aerobicEfficiency.activities[0]?.efficiencyFactor).toBe(1.333);
   });
+
+  it("reports a missing threshold estimate when power data exists without an FTP estimate", async () => {
+    const sensorStore = makeMockSensorStore([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        started_at: "2026-07-10T10:00:00.000Z",
+        ended_at: "2026-07-10T11:00:00.000Z",
+        activity_type: "cycling",
+        activity_name: "Steady Ride",
+        provider_id: "wahoo",
+        source_providers: ["wahoo"],
+        distance_meters: 40000,
+        date: "2026-07-10",
+        normalized_power: 220,
+        average_power: 200,
+        estimated_ftp: null,
+        elevation_gain_meters: null,
+        elapsed_seconds: 3600,
+        max_hr: null,
+        avg_power_z2: null,
+        avg_hr_z2: null,
+        efficiency_factor: null,
+        z2_samples: null,
+      },
+    ]);
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getActivities(ChartRange.fromDays(90), {
+      activityLimit: 20,
+      activityOffset: 0,
+      variabilityLimit: 20,
+      variabilityOffset: 0,
+    });
+
+    expect(result.variability).toMatchObject({
+      rows: [],
+      totalCount: 0,
+      emptyReason: "no_ftp_estimate",
+    });
+  });
 });

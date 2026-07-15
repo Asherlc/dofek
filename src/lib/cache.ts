@@ -22,6 +22,7 @@ interface RedisClient {
 
 const CACHE_KEY_REGISTRY = "query-cache:keys";
 const CACHE_KEY_PREFIX = "query-cache:data:";
+const CACHE_KEY_BATCH_SIZE = 1000;
 
 function redisCacheKey(key: string): string {
   return `${CACHE_KEY_PREFIX}${key}`;
@@ -126,15 +127,28 @@ export class RedisCacheStore implements CacheStore {
       return decoded?.startsWith(prefix);
     });
     if (matchingCacheKeys.length === 0) return [];
-    const payloads = await client.mget(...matchingCacheKeys);
-    const expiredCacheKeys = matchingCacheKeys.filter((_, index) => payloads[index] === null);
-    if (expiredCacheKeys.length > 0) {
-      await client.srem(CACHE_KEY_REGISTRY, ...expiredCacheKeys);
+    const validDecodedKeys: string[] = [];
+    for (
+      let batchStart = 0;
+      batchStart < matchingCacheKeys.length;
+      batchStart += CACHE_KEY_BATCH_SIZE
+    ) {
+      const cacheKeyBatch = matchingCacheKeys.slice(batchStart, batchStart + CACHE_KEY_BATCH_SIZE);
+      const payloads = await client.mget(...cacheKeyBatch);
+      const expiredCacheKeys: string[] = [];
+      for (const [cacheKeyIndex, cacheKey] of cacheKeyBatch.entries()) {
+        if (payloads[cacheKeyIndex] === null) {
+          expiredCacheKeys.push(cacheKey);
+          continue;
+        }
+        const decoded = decodeRedisCacheKey(cacheKey);
+        if (decoded) validDecodedKeys.push(decoded);
+      }
+      if (expiredCacheKeys.length > 0) {
+        await client.srem(CACHE_KEY_REGISTRY, ...expiredCacheKeys);
+      }
     }
-    return matchingCacheKeys.flatMap((cacheKey, index) => {
-      const decoded = decodeRedisCacheKey(cacheKey);
-      return payloads[index] !== null && decoded ? [decoded] : [];
-    });
+    return validDecodedKeys;
   }
 
   async invalidateByPrefix(prefix: string): Promise<void> {

@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 function createFakeRedisClient() {
   const values = new Map<string, string>();
   const sets = new Map<string, Set<string>>();
+  const mgetBatches: string[][] = [];
+  const sremBatches: string[][] = [];
 
   return {
     client: {
@@ -15,6 +17,7 @@ function createFakeRedisClient() {
         return values.get(key) ?? null;
       },
       async mget(...keys: string[]): Promise<Array<string | null>> {
+        mgetBatches.push(keys);
         return keys.map((key) => values.get(key) ?? null);
       },
       async del(...keys: string[]): Promise<number> {
@@ -38,6 +41,7 @@ function createFakeRedisClient() {
         return [...(sets.get(key) ?? new Set<string>())];
       },
       async srem(key: string, ...members: string[]): Promise<number> {
+        sremBatches.push(members);
         const set = sets.get(key);
         if (!set) return 0;
         let removed = 0;
@@ -49,6 +53,8 @@ function createFakeRedisClient() {
     },
     values,
     sets,
+    mgetBatches,
+    sremBatches,
   };
 }
 
@@ -59,6 +65,8 @@ describe("RedisCacheStore", () => {
   beforeEach(async () => {
     fakeRedis.values.clear();
     fakeRedis.sets.clear();
+    fakeRedis.mgetBatches.length = 0;
+    fakeRedis.sremBatches.length = 0;
     await store.invalidateAll();
   });
 
@@ -79,6 +87,19 @@ describe("RedisCacheStore", () => {
     await expect(store.listKeys("user-1:cycling.")).resolves.toEqual([
       "user-1:cycling.performance:UTC:{}",
     ]);
+  });
+
+  it("checks and removes registered keys in bounded batches", async () => {
+    const registeredKeys = Array.from(
+      { length: 1001 },
+      (_, index) => `query-cache:data:user-1:cycling.performance:UTC:${index}`,
+    );
+    await fakeRedis.client.sadd("query-cache:keys", ...registeredKeys);
+
+    await expect(store.listKeys("user-1:cycling.")).resolves.toEqual([]);
+
+    expect(fakeRedis.mgetBatches.map((batch) => batch.length)).toEqual([1000, 1]);
+    expect(fakeRedis.sremBatches.map((batch) => batch.length)).toEqual([1000, 1]);
   });
 
   it.each([
