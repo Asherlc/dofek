@@ -59,13 +59,16 @@ function parseScopes(scopes: readonly string[] | undefined): McpScope[] {
   return parsed.data;
 }
 
+const HTML_ESCAPE_REPLACEMENTS: Record<string, string> = {
+  "&": "&amp;",
+  '"': "&quot;",
+  "'": "&#039;",
+  "<": "&lt;",
+  ">": "&gt;",
+};
+
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  return value.replace(/[&"'<>]/g, (char) => HTML_ESCAPE_REPLACEMENTS[char] ?? char);
 }
 
 function hiddenInput(name: string, value: string | undefined): string {
@@ -83,6 +86,8 @@ function consentHtml(
     .map((scope) => `<li>${escapeHtml(MCP_SCOPE_LABELS[scope])}</li>`)
     .join("");
   const clientName = escapeHtml(client.client_name ?? "the MCP client");
+  // Resource is validated before consent is rendered, so it is always present here.
+  const resourceHref = params.resource.href;
   const fields = [
     hiddenInput("client_id", client.client_id),
     hiddenInput("redirect_uri", params.redirectUri),
@@ -91,7 +96,7 @@ function consentHtml(
     hiddenInput("code_challenge_method", "S256"),
     hiddenInput("scope", scopes.join(" ")),
     hiddenInput("state", params.state),
-    hiddenInput("resource", params.resource?.href),
+    hiddenInput("resource", resourceHref),
   ].join("");
   return `<!doctype html>
 <html lang="en">
@@ -133,11 +138,11 @@ function redirectWithError(params: AuthorizationParams, error: string): string {
 }
 
 export class DofekOAuthServerProvider implements OAuthServerProvider {
-  readonly #db: Database;
+  readonly #db: Pick<Database, "execute">;
   readonly #resource: URL;
   readonly clientsStore: McpOAuthClientsStore;
 
-  constructor(db: Database, resource: URL) {
+  constructor(db: Pick<Database, "execute">, resource: URL) {
     this.#db = db;
     this.#resource = resource;
     this.clientsStore = new McpOAuthClientsStore(db);
@@ -168,9 +173,6 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
       return;
     }
 
-    if (typeof userId !== "string") {
-      throw new AccessDeniedError("A signed-in Dofek user is required");
-    }
     const code = await createAuthorizationCode(this.#db, {
       clientId: client.client_id,
       codeChallenge: params.codeChallenge,

@@ -152,8 +152,8 @@ export function McpTokensPanel() {
           </code>
         </div>
         <p className="text-xs text-dim">
-          Claude discovers OAuth endpoints automatically and handles authentication. No token
-          required.
+          Claude discovers OAuth endpoints automatically and handles authentication. No manual token
+          is required.
         </p>
       </div>
 

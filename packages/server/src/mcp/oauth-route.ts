@@ -10,16 +10,22 @@ import { DofekOAuthServerProvider, MCP_OAUTH_SCOPES } from "./oauth-provider.ts"
 
 export type McpAuthRateLimitOptions = Partial<RateLimitOptions> | false;
 
+/** Shared by /authorize so consent form posts parse as flat string fields. */
+export const mcpAuthorizeUrlencodedOptions = { extended: false } as const;
+
 const approvalBodySchema = z.object({
   approval: z.string().min(1).optional(),
 });
 
-function approvalFromBody(body: unknown): string | undefined {
+export function approvalFromBody(body: unknown): string | undefined {
   const result = approvalBodySchema.safeParse(body);
   return result.success ? result.data.approval : undefined;
 }
 
-export function createMcpOAuthRouter(db: Database, rateLimit?: McpAuthRateLimitOptions): Router {
+export function createMcpOAuthRouter(
+  db: Pick<Database, "execute">,
+  rateLimit?: McpAuthRateLimitOptions,
+): Router {
   const router = Router();
   const issuerUrl = getMcpIssuerUrl();
   const resourceUrl = getMcpResourceUrl();
@@ -27,7 +33,7 @@ export function createMcpOAuthRouter(db: Database, rateLimit?: McpAuthRateLimitO
 
   router.use(
     "/authorize",
-    express.urlencoded({ extended: false }),
+    express.urlencoded(mcpAuthorizeUrlencodedOptions),
     async (request, response, next) => {
       response.set("Content-Security-Policy", "frame-ancestors 'none'");
       response.set("X-Frame-Options", "DENY");
@@ -44,6 +50,7 @@ export function createMcpOAuthRouter(db: Database, rateLimit?: McpAuthRateLimitO
     },
   );
 
+  const rateLimitOptions = { rateLimit };
   router.use(
     mcpAuthRouter({
       issuerUrl,
@@ -51,10 +58,10 @@ export function createMcpOAuthRouter(db: Database, rateLimit?: McpAuthRateLimitO
       resourceName: "Dofek",
       resourceServerUrl: resourceUrl,
       scopesSupported: [...MCP_OAUTH_SCOPES],
-      authorizationOptions: { rateLimit },
-      clientRegistrationOptions: { rateLimit },
-      revocationOptions: { rateLimit },
-      tokenOptions: { rateLimit },
+      authorizationOptions: rateLimitOptions,
+      clientRegistrationOptions: rateLimitOptions,
+      revocationOptions: rateLimitOptions,
+      tokenOptions: rateLimitOptions,
     }),
   );
   return router;
