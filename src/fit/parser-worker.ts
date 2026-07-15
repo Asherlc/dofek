@@ -1,3 +1,4 @@
+import { URL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { z } from "zod";
 import type { ParsedFitActivity } from "./parser.ts";
