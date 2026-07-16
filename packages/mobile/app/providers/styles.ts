@@ -199,7 +199,7 @@ export const styles = StyleSheet.create({
   },
   syncProgressFailedCount: {
     fontSize: 12,
-    color: "#f59e0b",
+    color: colors.warning,
     marginTop: 2,
   },
 
