@@ -134,25 +134,30 @@ class GarminImportProgressCoordinator {
       unprocessed: true,
     });
     const total = checkpoint.data.totalFitFiles;
-    const completed = Math.min(
-      total,
-      (counts.processed ?? 0) + (counts.ignored ?? 0) + (counts.failed ?? 0),
-    );
+    const processedCount = (counts.processed ?? 0) + (counts.ignored ?? 0);
+    const done = Math.min(total, processedCount + (counts.failed ?? 0));
+    const failedCount = Math.min(done, counts.failed ?? 0);
+    const succeededCount = done - failedCount;
     const percentage =
       total === 0
         ? FIT_PROGRESS_END_PERCENTAGE
         : FIT_PROGRESS_START_PERCENTAGE +
           Math.floor(
-            (completed / total) * (FIT_PROGRESS_END_PERCENTAGE - FIT_PROGRESS_START_PERCENTAGE),
+            (done / total) * (FIT_PROGRESS_END_PERCENTAGE - FIT_PROGRESS_START_PERCENTAGE),
           );
     const currentProgress = progressSchema.safeParse(importJob.progress);
     if (currentProgress.success && currentProgress.data.percentage >= percentage) {
       return;
     }
 
+    const message =
+      failedCount > 0
+        ? `Importing Garmin FIT activities (${succeededCount} of ${total} complete, ${failedCount} failed)...`
+        : `Importing Garmin FIT activities (${done} of ${total} complete)...`;
+
     await importJob.updateProgress({
       percentage,
-      message: `Importing Garmin FIT activities (${completed} of ${total} complete)...`,
+      message,
     });
   }
 }
