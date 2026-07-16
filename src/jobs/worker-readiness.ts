@@ -15,7 +15,36 @@ interface ReadinessWorker {
   waitUntilReady(): Promise<{ status: string }>;
 }
 
+class WorkerReadinessError extends Error {
+  readonly code = "WORKER_READINESS_NOT_READY" as const;
+  constructor(label: string) {
+    super(`BullMQ worker ${label} is not ready`);
+  }
+}
+
 const WORKER_READINESS_TIMEOUT_MS = 2_500;
+const CONNECTION_STATUS_RETRIES = 3;
+const CONNECTION_STATUS_RETRY_DELAY_MS = 200;
+
+async function waitForReadyStatus(
+  label: string,
+  getStatus: () => Promise<{ status: string }>,
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < CONNECTION_STATUS_RETRIES; attempt++) {
+    try {
+      const connection = await getStatus();
+      if (connection.status === "ready") return;
+      lastError = new WorkerReadinessError(label);
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt < CONNECTION_STATUS_RETRIES - 1) {
+      await new Promise((resolve) => setTimeout(resolve, CONNECTION_STATUS_RETRY_DELAY_MS));
+    }
+  }
+  throw lastError ?? new WorkerReadinessError(label);
+}
 
 async function checkWorkerReadiness(workers: readonly ReadinessWorker[]): Promise<void> {
   for (const worker of workers) {
@@ -26,14 +55,11 @@ async function checkWorkerReadiness(workers: readonly ReadinessWorker[]): Promis
 
   await Promise.all(
     workers.map(async (worker) => {
-      const blockingClient = await worker.waitUntilReady();
-      if (blockingClient.status !== "ready") {
-        throw new Error(`BullMQ worker blocking connection is not ready: ${worker.name}`);
-      }
+      await waitForReadyStatus(`blocking connection (${worker.name})`, () =>
+        worker.waitUntilReady(),
+      );
+      await waitForReadyStatus(`command connection (${worker.name})`, () => worker.client);
       const client = await worker.client;
-      if (client.status !== "ready") {
-        throw new Error(`BullMQ worker command connection is not ready: ${worker.name}`);
-      }
       await client.llen(worker.toKey("wait"));
     }),
   );
@@ -88,9 +114,13 @@ export function createWorkerReadinessServer(workers: readonly ReadinessWorker[])
     void waitUntilReady()
       .then(() => sendJson(response, 200, { status: "ok", workers: workers.length }))
       .catch((error: unknown) => {
-        Sentry.captureException(error);
         const message = error instanceof Error ? error.message : String(error);
-        logger.error(`[worker] Readiness check failed: ${message}`);
+        if (error instanceof WorkerReadinessError) {
+          logger.warn(`[worker] Readiness check failed: ${message}`);
+        } else {
+          Sentry.captureException(error);
+          logger.error(`[worker] Readiness check failed: ${message}`);
+        }
         sendJson(response, 503, { status: "unavailable" });
       });
   });
