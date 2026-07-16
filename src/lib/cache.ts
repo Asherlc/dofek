@@ -1,6 +1,5 @@
 import * as Sentry from "@sentry/node";
-import { RedisConnection } from "bullmq";
-import { getRedisConnection } from "dofek/jobs/queues";
+import { getSharedRedisConnection } from "dofek/jobs/queues";
 
 export interface CacheStore {
   get(key: string): Promise<unknown | undefined>;
@@ -144,15 +143,11 @@ export class NullCacheStore implements CacheStore {
   async invalidateAll(): Promise<void> {}
 }
 
-let sharedRedisConnection: RedisConnection | null = null;
+let sharedRedisConnection: ReturnType<typeof getSharedRedisConnection> | null = null;
 
 async function getSharedRedisClient(): Promise<RedisClient> {
   if (!sharedRedisConnection) {
-    sharedRedisConnection = new RedisConnection(getRedisConnection(), {
-      shared: true,
-      blocking: false,
-      skipVersionCheck: true,
-    });
+    sharedRedisConnection = getSharedRedisConnection();
   }
   // biome-ignore lint/suspicious/noExplicitAny: bullmq 5.79.2 narrowed IRedisClient; runtime is ioredis Redis
   const redisClient: any = await sharedRedisConnection.client;

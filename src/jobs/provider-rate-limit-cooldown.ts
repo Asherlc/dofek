@@ -1,7 +1,6 @@
 import type { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { RedisConnection } from "bullmq";
 import { providerAdaptiveRateLimitStore } from "../lib/provider-adaptive-rate-limit.ts";
-import { getRedisConnection } from "./queues.ts";
+import { getSharedRedisConnection } from "./queues.ts";
 
 export type ProviderRateLimitCooldownScope = "provider" | "user";
 
@@ -253,16 +252,12 @@ export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimit
   }
 }
 
-let sharedRedisConnection: RedisConnection | null = null;
+let sharedRedisConnection: ReturnType<typeof getSharedRedisConnection> | null = null;
 
 /* Stryker disable all */
 async function getSharedRedisClient(): Promise<RedisClient> {
   if (!sharedRedisConnection) {
-    sharedRedisConnection = new RedisConnection(getRedisConnection(), {
-      shared: true,
-      blocking: false,
-      skipVersionCheck: true,
-    });
+    sharedRedisConnection = getSharedRedisConnection();
   }
   // biome-ignore lint/suspicious/noExplicitAny: bullmq 5.79.2 narrowed IRedisClient; runtime is ioredis Redis
   const redisClient: any = await sharedRedisConnection.client;
