@@ -201,6 +201,63 @@ describe("createWorkerReadinessServer", () => {
     expect(callCount).toBe(3);
   });
 
+  it("retries exactly CONNECTION_STATUS_RETRIES times and applies correct delays", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    let callCount = 0;
+    const worker: TestWorker = {
+      name: "sync",
+      isRunning: () => true,
+      get client() {
+        return Promise.resolve({
+          status: "ready",
+          llen: () => Promise.resolve(0),
+        });
+      },
+      toKey: (type) => `bull:sync:${type}`,
+      waitUntilReady: () => {
+        callCount++;
+        return Promise.resolve({ status: "reconnecting" });
+      },
+    };
+
+    const response = await requestReadiness([worker]);
+
+    expect(response.status).toBe(503);
+    expect(callCount).toBe(3);
+    const readinessDelays = setTimeoutSpy.mock.calls.filter(([, ms]) => ms === 200);
+    expect(readinessDelays).toHaveLength(2);
+  });
+
+  it("retries when getStatus throws an error", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    let callCount = 0;
+    const worker: TestWorker = {
+      name: "sync",
+      isRunning: () => true,
+      get client() {
+        return Promise.resolve({
+          status: "ready",
+          llen: () => Promise.resolve(0),
+        });
+      },
+      toKey: (type) => `bull:sync:${type}`,
+      waitUntilReady: () => {
+        callCount++;
+        if (callCount < 3) {
+          return Promise.reject(new Error("blocking connection is not ready"));
+        }
+        return Promise.resolve({ status: "ready" });
+      },
+    };
+
+    const response = await requestReadiness([worker]);
+
+    expect(response.status).toBe(200);
+    expect(callCount).toBe(3);
+    const readinessDelays = setTimeoutSpy.mock.calls.filter(([, ms]) => ms === 200);
+    expect(readinessDelays).toHaveLength(2);
+  });
+
   it("reports unavailable when a Redis readiness command does not settle", async () => {
     let markCommandStarted: (() => void) | undefined;
     const commandStarted = new Promise<void>((resolve) => {
