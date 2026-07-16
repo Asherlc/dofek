@@ -138,6 +138,27 @@ function createWeightFileOnlyFit(): Buffer {
   return Buffer.from(encoder.close());
 }
 
+function createNonWeightTypeWithScaleFit(): Buffer {
+  const timestamp = Utils.convertDateToDateTime(new Date("2026-07-01T12:00:00.000Z"));
+  const encoder = new Encoder();
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.FILE_ID,
+    type: "activity",
+    timeCreated: timestamp,
+  });
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.WEIGHT_SCALE,
+    timestamp,
+    weight: 72,
+    percentFat: 18.5,
+    percentHydration: 55.2,
+    boneMass: 3.1,
+    muscleMass: 31.2,
+    bmi: 24.1,
+  });
+  return Buffer.from(encoder.close());
+}
+
 describe("processFitFileImportJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -798,6 +819,25 @@ describe("processFitFileImportJob", () => {
 
     expect(result).toEqual({ recordsSynced: 0, errors: [] });
     expect(mockWriteMetricStreamBatch).not.toHaveBeenCalled();
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+  });
+
+  it("treats FIT files with weight scale data but non-weight file type as weight data", async () => {
+    const filePath = await writeTempFit(createNonWeightTypeWithScaleFit());
+
+    const result = await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/mismatched_type.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
+      mockDb,
+    );
+
+    expect(result.recordsSynced).toBeGreaterThan(0);
+    expect(mockWriteMetricStreamBatch).toHaveBeenCalled();
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
   });
 
