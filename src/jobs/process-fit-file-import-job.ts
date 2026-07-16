@@ -15,6 +15,10 @@ import { fitExternalId } from "../fit/external-id.ts";
 import { parseFitFileInWorkerThread } from "../fit/parser-worker.ts";
 import { fitRecordsToSensorSamples } from "../fit/records.ts";
 import { logger } from "../logger.ts";
+import {
+  fitImportDroppedFieldOccurrencesTotal,
+  fitImportFilesWithDroppedFieldTotal,
+} from "../sync-metrics.ts";
 import { type FitFileImportJobData, fitFileImportJobDataSchema } from "./queues.ts";
 
 interface FitFileImportJob {
@@ -58,18 +62,20 @@ const weightScaleMessageSchema = z
   })
   .passthrough();
 
-const fitMessagesSchema = z.object({
-  fileIdMesgs: z
-    .array(
-      z
-        .object({
-          type: z.union([z.string(), z.number()]).optional(),
-        })
-        .passthrough(),
-    )
-    .optional(),
-  weightScaleMesgs: z.array(weightScaleMessageSchema).optional(),
-});
+const fitMessagesSchema = z
+  .object({
+    fileIdMesgs: z
+      .array(
+        z
+          .object({
+            type: z.union([z.string(), z.number()]).optional(),
+          })
+          .passthrough(),
+      )
+      .optional(),
+    weightScaleMesgs: z.array(weightScaleMessageSchema).optional(),
+  })
+  .passthrough();
 
 const decodedFitSchema = z.object({
   errors: z.array(z.unknown()).optional(),
@@ -194,14 +200,95 @@ function decodeFitMessages(buffer: Buffer) {
   return parsed.messages ?? {};
 }
 
+const FIT_FILE_TYPE_ACTIVITY = 4;
 const FIT_FILE_TYPE_WEIGHT = 9;
+const decodedMessageGroupSchema = z.array(z.record(z.string(), z.unknown()));
+const routingConsumedFields = new Map<string, ReadonlySet<string>>([
+  ["fileIdMesgs", new Set(["type"])],
+]);
+const weightConsumedFields = new Map<string, ReadonlySet<string>>([
+  ...routingConsumedFields,
+  [
+    "weightScaleMesgs",
+    new Set([
+      "timestamp",
+      "weight",
+      "percentFat",
+      "percentHydration",
+      "boneMass",
+      "muscleMass",
+      "bmi",
+    ]),
+  ],
+]);
+
+function fitFileType(messages: z.infer<typeof fitMessagesSchema>): string | number | undefined {
+  return messages.fileIdMesgs?.find((message) => message.type !== undefined)?.type;
+}
+
+function fitFileTypeLabel(messages: z.infer<typeof fitMessagesSchema>): string {
+  const fileType = fitFileType(messages);
+  if (fileType === undefined) return "unknown";
+  const label = String(fileType);
+  return label.length > 0 ? label : "unknown";
+}
+
+function droppedFitFieldReason(messageType: string): "derived" | "unsupported" {
+  return messageType === "stressLevelMesgs" ? "derived" : "unsupported";
+}
+
+function recordDroppedFitFields(
+  providerId: string,
+  messages: z.infer<typeof fitMessagesSchema>,
+  consumedFields: ReadonlyMap<string, ReadonlySet<string>>,
+): void {
+  const fileType = fitFileTypeLabel(messages);
+  for (const [messageType, value] of Object.entries(messages)) {
+    const parsedGroup = decodedMessageGroupSchema.safeParse(value);
+    if (!parsedGroup.success) continue;
+
+    const fieldOccurrences = new Map<string, number>();
+    const consumedMessageFields = consumedFields.get(messageType);
+    for (const message of parsedGroup.data) {
+      for (const field of Object.keys(message)) {
+        if (consumedMessageFields?.has(field)) continue;
+        fieldOccurrences.set(field, (fieldOccurrences.get(field) ?? 0) + 1);
+      }
+    }
+
+    for (const [field, occurrences] of fieldOccurrences) {
+      const attributes = {
+        provider: providerId,
+        file_type: fileType,
+        message_type: messageType,
+        field,
+        reason: droppedFitFieldReason(messageType),
+      };
+      fitImportDroppedFieldOccurrencesTotal.add(occurrences, attributes);
+      fitImportFilesWithDroppedFieldTotal.add(1, attributes);
+    }
+  }
+}
 
 function isWeightFit(messages: z.infer<typeof fitMessagesSchema>): boolean {
-  const fileType = messages.fileIdMesgs?.find((message) => message.type !== undefined)?.type;
+  const fileType = fitFileType(messages);
   return (
     fileType === "weight" ||
     fileType === FIT_FILE_TYPE_WEIGHT ||
     (messages.weightScaleMesgs?.length ?? 0) > 0
+  );
+}
+
+function isActivityFit(
+  messages: z.infer<typeof fitMessagesSchema>,
+  data: ResolvedFitFileImportJobData,
+): boolean {
+  const fileType = fitFileType(messages);
+  return (
+    data.activitySummary !== undefined ||
+    fileType === undefined ||
+    fileType === "activity" ||
+    fileType === FIT_FILE_TYPE_ACTIVITY
   );
 }
 
@@ -360,12 +447,20 @@ export async function importFitFile(
       message: "Writing FIT weight data...",
     });
     result = await importWeightFit(db, data, messages);
-  } else {
+    recordDroppedFitFields(data.providerId, messages, weightConsumedFields);
+  } else if (isActivityFit(messages, data)) {
     await onProgress({
       percentage: 50,
       message: "Importing FIT activity...",
     });
     result = await importActivityFit(db, data, buffer, onProgress);
+  } else {
+    await onProgress({
+      percentage: 50,
+      message: "Inspecting FIT data...",
+    });
+    recordDroppedFitFields(data.providerId, messages, routingConsumedFields);
+    result = { recordsSynced: 0, errors: [] };
   }
   if (result.errors.length === 0) {
     await onProgress({

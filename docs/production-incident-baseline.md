@@ -13337,6 +13337,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The database became healthy and `SELECT pg_is_in_recovery();` returned `false`; the real-Postgres MCP OAuth integration suite then passed.
 - **Remaining risk / follow-up:** Docker still has many stopped Conductor-workspace volumes. Archive obsolete workspaces through their normal lifecycle rather than globally pruning volumes that may contain retained local databases.
 
+## 2026-07-16 — Monitoring FIT Files Misclassified as Activities
+
+- **Symptoms:** Garmin dump child jobs failed permanently with `missing a valid
+  start time` for valid FIT files.
+- **User impact:** Expected non-activity files in a Garmin export were reported
+  as import failures even when they contained no canonical raw samples to store.
+- **Evidence:** Decoding the original failing file produced file type
+  `monitoringB`, four derived stress-level messages, and no session, lap,
+  activity record, or event messages. The generic importer recognized only
+  weight files and sent every other decoded FIT file through the activity path,
+  which requires a session start time. The FIT specification defines the File
+  ID type as the file's intent and permits different message groupings by file
+  type: <https://developer.garmin.com/fit/file-types/>.
+- **Root cause:** The provider-agnostic FIT importer lacked file-type dispatch;
+  valid non-weight, non-activity files were assumed to be activities.
+- **Fix / mitigation:** The generic FIT decoder now routes activity and weight
+  files to their existing handlers, accepts other valid FIT types with zero
+  persisted records, and emits aggregate metrics for every decoded field that
+  was not persisted. Derived stress fields are counted with reason `derived`;
+  no stress values, filenames, or user identifiers are retained in metrics.
+- **Validation:** The regression test failed before the fix by reporting one
+  synced activity for a generated `monitoringB` file. After the fix, 29 focused
+  tests, the full TypeScript check, Biome, analytics SQL lint, and analytics
+  policy lint pass.
+- **Remaining risk / follow-up:** Review
+  `fit.import.dropped_field_occurrences.total` and
+  `fit.import.files_with_dropped_field.total` after deployment to identify
+  common raw FIT fields that merit canonical ingestion support.
+
 ## 2026-07-16 — Garmin Dump Import Progress Froze at 354 Files
 
 - **Symptoms:** Garmin dump import job `12` remained active at 46 percent with
