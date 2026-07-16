@@ -1,4 +1,5 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
+import * as Sentry from "@sentry/node";
 import { logger } from "../logger.ts";
 
 interface WorkerReadinessClient {
@@ -21,7 +22,7 @@ class WorkerReadinessError extends Error {
   }
 }
 
-const WORKER_READINESS_TIMEOUT_MS = 5_000;
+const WORKER_READINESS_TIMEOUT_MS = 2_500;
 const CONNECTION_STATUS_RETRIES = 3;
 const CONNECTION_STATUS_RETRY_DELAY_MS = 200;
 
@@ -116,9 +117,8 @@ export function createWorkerReadinessServer(workers: readonly ReadinessWorker[])
         const message = error instanceof Error ? error.message : String(error);
         if (error instanceof WorkerReadinessError) {
           logger.warn(`[worker] Readiness check failed: ${message}`);
-        } else if (message.startsWith("Worker readiness timed out")) {
-          logger.warn(`[worker] ${message}`);
         } else {
+          Sentry.captureException(error);
           logger.error(`[worker] Readiness check failed: ${message}`);
         }
         sendJson(response, 503, { status: "unavailable" });

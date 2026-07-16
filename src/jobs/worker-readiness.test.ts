@@ -1,6 +1,11 @@
+import * as Sentry from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { logger } from "../logger.ts";
 import { createWorkerReadinessServer } from "./worker-readiness.ts";
+
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
 
 vi.mock("../logger.ts", () => ({
   logger: {
@@ -107,7 +112,7 @@ describe("createWorkerReadinessServer", () => {
 
     expect(response.status).toBe(200);
     const readinessTimeoutIndex = setTimeoutSpy.mock.calls.findIndex(
-      ([, timeoutMs]) => timeoutMs === 5_000,
+      ([, timeoutMs]) => timeoutMs === 2_500,
     );
     expect(readinessTimeoutIndex).toBeGreaterThanOrEqual(0);
     const readinessTimeoutId = setTimeoutSpy.mock.results[readinessTimeoutIndex]?.value;
@@ -125,8 +130,8 @@ describe("createWorkerReadinessServer", () => {
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ status: "unavailable" });
     expect(listLength).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(
-      "[worker] Readiness check failed: BullMQ worker is not running: sync",
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "BullMQ worker is not running: sync" }),
     );
   });
 
@@ -138,6 +143,7 @@ describe("createWorkerReadinessServer", () => {
     ]);
 
     expect(response.status).toBe(503);
+    expect(Sentry.captureException).toHaveBeenCalledWith(redisError);
     expect(logger.error).toHaveBeenCalledWith("[worker] Readiness check failed: redis offline");
   });
 
@@ -150,6 +156,7 @@ describe("createWorkerReadinessServer", () => {
 
     expect(response.status).toBe(503);
     expect(listLength).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       "[worker] Readiness check failed: BullMQ worker blocking connection (sync) is not ready",
     );
@@ -164,6 +171,7 @@ describe("createWorkerReadinessServer", () => {
 
     expect(response.status).toBe(503);
     expect(listLength).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       "[worker] Readiness check failed: BullMQ worker command connection (sync) is not ready",
     );
@@ -267,12 +275,12 @@ describe("createWorkerReadinessServer", () => {
 
     const responsePromise = fetch(`${serverUrl}/readyz`);
     await commandStarted;
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(2_500);
     const response = await responsePromise;
 
     expect(response.status).toBe(503);
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining("Worker readiness timed out after 5000ms"),
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Worker readiness timed out after 2500ms" }),
     );
   }, 1_000);
 
@@ -290,12 +298,12 @@ describe("createWorkerReadinessServer", () => {
 
     const firstResponsePromise = fetch(`${serverUrl}/readyz`);
     await commandStarted;
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(2_500);
     expect((await firstResponsePromise).status).toBe(503);
 
     const secondResponsePromise = fetch(`${serverUrl}/readyz`);
     await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(2_500);
     expect((await secondResponsePromise).status).toBe(503);
     expect(listLength).toHaveBeenCalledOnce();
   }, 1_000);
