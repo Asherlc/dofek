@@ -79,7 +79,15 @@ export function FileImportZone({
         try {
           const resp = await fetch(`${statusUrl}/${jobId}`);
           if (!resp.ok) throw new Error("Failed to get status");
-          const data = importStatusResponseSchema.parse(await resp.json());
+          const parsed = importStatusResponseSchema.safeParse(await resp.json());
+          if (!parsed.success) {
+            setState({
+              status: "error",
+              message: `Invalid server response: ${parsed.error.message}`,
+            });
+            return;
+          }
+          const data = parsed.data;
 
           if (cancelledRef.current) return;
 
