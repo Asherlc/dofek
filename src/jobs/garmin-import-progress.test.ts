@@ -220,6 +220,7 @@ describe("createGarminImportProgressCoordinator", () => {
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 90,
       message: "Importing Garmin FIT activities (7 of 10 complete, 3 failed)...",
+      failedCount: 3,
     });
   });
 
@@ -245,6 +246,7 @@ describe("createGarminImportProgressCoordinator", () => {
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 90,
       message: "Importing Garmin FIT activities (356 of 15774 complete, 15418 failed)...",
+      failedCount: 15418,
     });
   });
 

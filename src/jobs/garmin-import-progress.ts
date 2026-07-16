@@ -158,6 +158,7 @@ class GarminImportProgressCoordinator {
     await importJob.updateProgress({
       percentage,
       message,
+      ...(failedCount > 0 ? { failedCount } : {}),
     });
   }
 }
