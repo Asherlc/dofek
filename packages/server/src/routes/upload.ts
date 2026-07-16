@@ -159,8 +159,8 @@ async function getImportJobStatus(importQueue: Queue<ImportJobData>, jobId: stri
   const parsedProgress = jobProgressSchema.safeParse(job.progress);
   const progress = parsedProgress.success ? parsedProgress.data : undefined;
   const percentage = typeof progress === "number" ? progress : progress?.percentage;
-  const msg = typeof progress === "object" ? progress?.message : undefined;
-  const failedCount = typeof progress === "object" ? progress?.failedCount : undefined;
+  const msg = typeof progress === "object" ? progress.message : undefined;
+  const failedCount = typeof progress === "object" ? progress.failedCount : undefined;
 
   let status: "uploading" | "assembling" | "processing" | "done" | "error";
   if (state === "completed") status = "done";
