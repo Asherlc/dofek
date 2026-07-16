@@ -13365,3 +13365,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `fit.import.dropped_field_occurrences.total` and
   `fit.import.files_with_dropped_field.total` after deployment to identify
   common raw FIT fields that merit canonical ingestion support.
+
+## 2026-07-16 — Garmin Dump Import Progress Froze at 354 Files
+
+- **Symptoms:** Garmin dump import job `12` remained active at 46 percent with
+  `Importing Garmin FIT activities (354 of 15774 complete)...` even though the
+  worker continued consuming FIT extraction and import jobs.
+- **User impact:** The dashboard falsely presented a long-running import as
+  stalled. Data ingestion continued, but the user could not tell whether the
+  import was healthy or how much work remained.
+- **Evidence:** Production BullMQ state showed the parent in
+  `waiting-children`, with 22 of 32 FIT batch dependencies processed and 10
+  remaining. The worker was healthy at approximately 181 percent CPU and 248
+  MiB of its 512 MiB limit, while the extraction queue continued shrinking.
+  The progress coordinator read dependency counts from only the batch that
+  emitted the event, even though BullMQ exposes processed, ignored, failed, and
+  unprocessed dependency counts per parent job through
+  [`getDependenciesCount`](https://api.docs.bullmq.io/classes/v5.Job.html#getdependenciescount).
+- **Root cause:** Each batch contains at most 500 FIT files, but its completed
+  count was divided by the import-wide total of 15,774. The first batch reached
+  46 percent after 354 files; every later batch could calculate no more than 46
+  percent, so the monotonic progress guard rejected every later message update.
+- **Fix / mitigation:** The coordinator now loads every batch ID stored in the
+  import checkpoint, sums their terminal dependency counts, and refreshes each
+  parent import only once per debounce cycle. The focused change is
+  [commit `b48ec0647`](https://github.com/Asherlc/dofek/commit/b48ec0647).
+- **Validation:** The regression test first reproduced the defect by receiving
+  150 of 1,000 files at 51 percent instead of the cumulative 650 at 74 percent.
+  After the fix, all 45 related Garmin job tests passed, the all-package
+  TypeScript check passed, and the complete lint suite passed against local
+  ClickHouse.
+- **Remaining risk / follow-up:** The corrected progress calculation requires a
+  production deployment. FIT files rejected for `missing a valid start time`
+  are a separate import-data failure and are not addressed by this progress
+  fix.
