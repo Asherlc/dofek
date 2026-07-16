@@ -129,10 +129,87 @@ describe("createGarminImportProgressCoordinator", () => {
     });
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 63,
-      message: "Importing Garmin FIT activities (4 of 10 complete)...",
+      message: "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...",
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
     expect(mockLoggerWarn).not.toHaveBeenCalled();
+  });
+
+  it("reports cumulative progress across every FIT import batch", async () => {
+    const importJob = createImportJob();
+    importJob.data.checkpoint = {
+      ...waitingCheckpoint(1_000),
+      batchIds: ["batch-1", "batch-2"],
+    };
+    const firstBatchJob = createBatchJob();
+    firstBatchJob.getDependenciesCount.mockResolvedValue({
+      processed: 490,
+      ignored: 0,
+      failed: 10,
+      unprocessed: 0,
+    });
+    const secondBatchJob = {
+      ...createBatchJob(),
+      id: "batch-2",
+    };
+    secondBatchJob.getDependenciesCount.mockResolvedValue({
+      processed: 140,
+      ignored: 0,
+      failed: 10,
+      unprocessed: 350,
+    });
+    mockImportQueue.getJob.mockResolvedValue(importJob);
+    mockBatchQueue.getJob.mockImplementation(async (batchId: string) =>
+      batchId === "batch-1" ? firstBatchJob : secondBatchJob,
+    );
+    const coordinator = createGarminImportProgressCoordinator();
+
+    coordinator.observeFitJob({
+      parent: { id: "batch-2", queueKey: "bull:fit-file-import-batch" },
+    });
+    await vi.runAllTimersAsync();
+
+    expect(importJob.updateProgress).toHaveBeenCalledWith({
+      percentage: 74,
+      message:
+        "Importing Garmin FIT activities (630 succeeded, 20 failed, 650 of 1000 processed)...",
+      failedCount: 20,
+    });
+  });
+
+  it("reports missing checkpoint batch jobs instead of silently skipping progress", async () => {
+    const importJob = createImportJob();
+    importJob.data.checkpoint = {
+      ...waitingCheckpoint(),
+      batchIds: ["batch-1", "missing-batch"],
+    };
+    const batchJob = createBatchJob();
+    mockImportQueue.getJob.mockResolvedValue(importJob);
+    mockBatchQueue.getJob.mockImplementation(async (batchId: string) =>
+      batchId === "batch-1" ? batchJob : undefined,
+    );
+    const coordinator = createGarminImportProgressCoordinator();
+
+    coordinator.observeFitJob({
+      parent: { id: "batch-1", queueKey: "bull:fit-file-import-batch" },
+    });
+    await vi.runAllTimersAsync();
+
+    expect(mockCaptureException).toHaveBeenCalledOnce();
+    const [reportedError, context] = mockCaptureException.mock.calls[0] ?? [];
+    expect(reportedError).toEqual(
+      new Error("Garmin import import-1 is missing FIT batch jobs: missing-batch"),
+    );
+    expect(context).toEqual({
+      tags: { garminDumpStep: "progress-refresh" },
+      extra: { batchId: "batch-1" },
+    });
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "Failed to refresh Garmin import progress for batch %s: %s",
+      "batch-1",
+      reportedError,
+    );
+    expect(importJob.updateProgress).not.toHaveBeenCalled();
   });
 
   it("ignores events that are not children of a FIT import batch", () => {
@@ -195,7 +272,7 @@ describe("createGarminImportProgressCoordinator", () => {
 
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 90,
-      message: "Importing Garmin FIT activities (0 of 0 complete)...",
+      message: "Importing Garmin FIT activities (0 succeeded, 0 failed, 0 of 0 processed)...",
     });
   });
 
@@ -219,7 +296,7 @@ describe("createGarminImportProgressCoordinator", () => {
 
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 90,
-      message: "Importing Garmin FIT activities (7 of 10 complete, 3 failed)...",
+      message: "Importing Garmin FIT activities (7 succeeded, 3 failed, 10 of 10 processed)...",
       failedCount: 3,
     });
   });
@@ -245,7 +322,8 @@ describe("createGarminImportProgressCoordinator", () => {
 
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 90,
-      message: "Importing Garmin FIT activities (356 of 15774 complete, 15418 failed)...",
+      message:
+        "Importing Garmin FIT activities (356 succeeded, 15418 failed, 15774 of 15774 processed)...",
       failedCount: 15418,
     });
   });
@@ -307,6 +385,34 @@ describe("createGarminImportProgressCoordinator", () => {
     expect(mockBatchQueue.getJob).toHaveBeenCalledTimes(2);
   });
 
+  it("loads pending batch jobs concurrently", async () => {
+    const firstBatchLookup = deferred<ReturnType<typeof createBatchJob> | null>();
+    let firstBatchLookupSettled = false;
+    let secondBatchLookupStartedBeforeFirstSettled = false;
+    mockBatchQueue.getJob.mockImplementation((batchId: string) => {
+      if (batchId === "batch-1") {
+        return firstBatchLookup.promise;
+      }
+      secondBatchLookupStartedBeforeFirstSettled = !firstBatchLookupSettled;
+      return Promise.resolve(null);
+    });
+    const coordinator = createGarminImportProgressCoordinator();
+
+    coordinator.observeFitJob({
+      parent: { id: "batch-1", queueKey: "bull:fit-file-import-batch" },
+    });
+    coordinator.observeFitJob({
+      parent: { id: "batch-2", queueKey: "bull:fit-file-import-batch" },
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.waitFor(() => expect(mockBatchQueue.getJob).toHaveBeenCalledWith("batch-1"));
+    firstBatchLookupSettled = true;
+    firstBatchLookup.resolve(null);
+    await vi.runAllTimersAsync();
+
+    expect(secondBatchLookupStartedBeforeFirstSettled).toBe(true);
+  });
+
   it("reconciles waiting Garmin imports after a worker restart", async () => {
     const importJob = createImportJob();
     const batchJob = createBatchJob();
@@ -320,7 +426,7 @@ describe("createGarminImportProgressCoordinator", () => {
     expect(mockImportQueue.getJobs).toHaveBeenCalledWith(["waiting-children"], 0, -1, false);
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 63,
-      message: "Importing Garmin FIT activities (4 of 10 complete)...",
+      message: "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...",
     });
   });
 
