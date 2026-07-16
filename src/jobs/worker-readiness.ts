@@ -43,7 +43,7 @@ async function waitForReadyStatus(
       await new Promise((resolve) => setTimeout(resolve, CONNECTION_STATUS_RETRY_DELAY_MS));
     }
   }
-  throw lastError instanceof WorkerReadinessError ? lastError : new WorkerReadinessError(label);
+  throw lastError ?? new WorkerReadinessError(label);
 }
 
 async function checkWorkerReadiness(workers: readonly ReadinessWorker[]): Promise<void> {
