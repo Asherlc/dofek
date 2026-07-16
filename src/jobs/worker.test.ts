@@ -32,7 +32,9 @@ vi.mock("bullmq", () => ({
 }));
 
 vi.mock("../db/index.ts", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({})),
+  createDatabaseFromEnv: vi.fn(() => ({
+    $client: { end: vi.fn(() => Promise.resolve()) },
+  })),
 }));
 
 vi.mock("../db/clickhouse.ts", () => ({
@@ -116,6 +118,7 @@ vi.mock("./queues.ts", () => ({
   SCHEDULED_SYNC_QUEUE: "scheduled-sync-queue",
   POST_SYNC_QUEUE: "post-sync-queue",
   ACTIVITY_DELETE_ANALYTICS_QUEUE: "activity-delete-analytics-queue",
+  closeAllQueueResources: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -921,6 +924,7 @@ describe("worker module", () => {
   });
 
   it("closes readiness and Garmin progress resources during graceful shutdown", async () => {
+    const { closeAllQueueResources } = await import("./queues.ts");
     const signalHandler = process.listeners("SIGTERM").at(-1);
     if (!signalHandler) {
       throw new Error("SIGTERM handler was not registered");
@@ -935,5 +939,6 @@ describe("worker module", () => {
     expect(mockReadinessClose).toHaveBeenCalledOnce();
     expect(mockCloseGarminProgress).toHaveBeenCalledOnce();
     expect(mockClose).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
+    expect(closeAllQueueResources).toHaveBeenCalledOnce();
   });
 });
