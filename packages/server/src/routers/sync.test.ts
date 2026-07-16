@@ -1839,6 +1839,44 @@ describe("syncRouter", () => {
       ]);
     });
 
+    it("includes failedCount when progress reports it", async () => {
+      mockImportQueueGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-ongoing",
+          data: {
+            userId: "user-1",
+            importType: "garmin-dump",
+            filePath: "/tmp/garmin.zip",
+            since: "1970-01-01T00:00:00.000Z",
+          },
+          progress: {
+            percentage: 46,
+            message: "356 of 15774 complete, 15418 failed",
+            failedCount: 15418,
+          },
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.activeImports();
+
+      expect(result).toEqual([
+        {
+          jobId: "job-ongoing",
+          providerId: "garmin-dump",
+          progress: 46,
+          message: "356 of 15774 complete, 15418 failed",
+          failedCount: 15418,
+        },
+      ]);
+    });
+
     it("uses a stable fallback jobId when an import job has no id", async () => {
       mockImportQueueGetJobs.mockResolvedValueOnce([
         {

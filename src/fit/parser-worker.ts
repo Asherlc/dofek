@@ -10,7 +10,7 @@ const parsedFitRawRecordSchema = z.record(z.string(), z.unknown());
 const parsedFitSessionSchema = z
   .object({
     sport: z.string(),
-    startTime: z.date(),
+    startTime: z.instanceof(Date),
     totalElapsedTime: z.number(),
     totalTimerTime: z.number(),
     totalDistance: z.number(),

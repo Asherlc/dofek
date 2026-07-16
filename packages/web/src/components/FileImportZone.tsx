@@ -2,11 +2,21 @@ import { formatTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import type { SyncLogEntry, SyncStatus } from "./DataSourcesSyncTypes.ts";
 import { FileImportButton } from "./FileImportButton.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown.tsx";
 import { StatusDot } from "./StatusDot.tsx";
+
+const importStatusResponseSchema = z
+  .object({
+    status: z.string(),
+    progress: z.number().optional(),
+    message: z.string().optional(),
+    failedCount: z.number().optional(),
+  })
+  .passthrough();
 
 export interface FileImportZoneProps {
   providerId?: string;
@@ -39,9 +49,12 @@ export function FileImportZone({
   recentLogs = [],
   showDetailsLink = true,
 }: FileImportZoneProps) {
-  const [state, setState] = useState<{ status: SyncStatus; progress?: number; message?: string }>({
-    status: "idle",
-  });
+  const [state, setState] = useState<{
+    status: SyncStatus;
+    progress?: number;
+    message?: string;
+    failedCount?: number;
+  }>({ status: "idle" });
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cancelledRef = useRef(false);
@@ -66,7 +79,15 @@ export function FileImportZone({
         try {
           const resp = await fetch(`${statusUrl}/${jobId}`);
           if (!resp.ok) throw new Error("Failed to get status");
-          const data = await resp.json();
+          const parsed = importStatusResponseSchema.safeParse(await resp.json());
+          if (!parsed.success) {
+            setState({
+              status: "error",
+              message: `Invalid server response: ${parsed.error.message}`,
+            });
+            return;
+          }
+          const data = parsed.data;
 
           if (cancelledRef.current) return;
 
@@ -83,6 +104,7 @@ export function FileImportZone({
             status: "syncing",
             progress: data.progress ?? 0,
             message: data.message ?? "Processing...",
+            failedCount: data.failedCount,
           });
 
           await new Promise<void>((resolve) => {
@@ -246,6 +268,11 @@ export function FileImportZone({
         {state.status === "syncing" ? (
           <div>
             <div className="text-xs text-subtle">{state.message}</div>
+            {typeof state.failedCount === "number" && state.failedCount > 0 && (
+              <div className="mt-1 text-xs text-amber-400">
+                {state.failedCount.toLocaleString()} file{state.failedCount === 1 ? "" : "s"} failed
+              </div>
+            )}
             {state.progress != null && (
               <div className="mt-2 w-full h-1.5 rounded-full bg-accent/10 overflow-hidden">
                 <div

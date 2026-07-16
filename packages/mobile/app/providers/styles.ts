@@ -197,6 +197,11 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
   },
+  syncProgressFailedCount: {
+    fontSize: 12,
+    color: colors.warning,
+    marginTop: 2,
+  },
 
   // Sync history logs
   logRow: {

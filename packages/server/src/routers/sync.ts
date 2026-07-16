@@ -133,6 +133,7 @@ const activeImportsOutputSchema = z.array(
     providerId: z.string(),
     progress: z.number(),
     message: z.string(),
+    failedCount: z.number().optional(),
   }),
 );
 
@@ -141,6 +142,7 @@ const importJobProgressSchema = z.union([
   z.object({
     percentage: z.number().optional(),
     message: z.string().optional(),
+    failedCount: z.number().optional(),
   }),
 ]);
 
@@ -791,12 +793,14 @@ export const syncRouter = router({
           : state === "waiting" || state === "delayed"
             ? "Waiting to import..."
             : "Processing import...";
+      const failedCount = typeof progressValue === "object" ? progressValue.failedCount : undefined;
 
       results.push({
         jobId: String(job.id ?? `job-${providerId}`),
         providerId,
         progress,
         message,
+        ...(failedCount !== undefined ? { failedCount } : {}),
       });
     }
 

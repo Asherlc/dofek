@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/node";
-import { Job, Worker } from "bullmq";
+import { Job, UnrecoverableError, Worker } from "bullmq";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
@@ -275,7 +275,14 @@ for (const worker of allWorkers) {
 
   worker.on("failed", (job, err) => {
     finishActiveJob(worker, job);
-    Sentry.captureException(err);
+    // FIT file import batch children fail as UnrecoverableError — that's expected
+    // for invalid files. Suppress per-file capture to avoid flooding Sentry and
+    // rely on the batch/parent job to report grouped error causes once.
+    const isFitBatchChildFailure =
+      worker.name === FIT_FILE_IMPORT_QUEUE && job?.parentKey && err instanceof UnrecoverableError;
+    if (!isFitBatchChildFailure) {
+      Sentry.captureException(err);
+    }
     logger.error(`[worker] Job failed: ${err.message}`);
     if (job?.id) {
       const message = `BullMQ job failed: queue=${worker.name} jobId=${job.id} cause=${err.message}`;

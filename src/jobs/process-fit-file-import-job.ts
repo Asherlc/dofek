@@ -1,6 +1,5 @@
 /// <reference path="../activity-export/garmin-fitsdk.d.ts" />
 
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type { CanonicalActivityType } from "@dofek/training/training";
@@ -64,7 +63,7 @@ const fitMessagesSchema = z.object({
     .array(
       z
         .object({
-          type: z.string().optional(),
+          type: z.union([z.string(), z.number()]).optional(),
         })
         .passthrough(),
     )
@@ -111,13 +110,8 @@ function sanitizedFitImportError(error: unknown, originalPath: string): Error {
 
 function fitFileImportErrorResult(data: unknown, error: unknown): FitFileImportJobResult {
   const originalPath = originalPathFromJobData(data);
-  const fitFileId = createHash("sha256").update(originalPath).digest("hex");
   const fileName = sanitizedFitFileName(originalPath);
   const sanitizedError = sanitizedFitImportError(error, originalPath);
-  Sentry.captureException(sanitizedError, {
-    tags: { fitImportStep: "process" },
-    extra: { fitFileId },
-  });
   logger.error("Failed to import FIT file %s: %s", fileName, sanitizedError.message);
   return {
     recordsSynced: 0,
@@ -200,9 +194,15 @@ function decodeFitMessages(buffer: Buffer) {
   return parsed.messages ?? {};
 }
 
+const FIT_FILE_TYPE_WEIGHT = 9;
+
 function isWeightFit(messages: z.infer<typeof fitMessagesSchema>): boolean {
-  const fileType = messages.fileIdMesgs?.find((message) => message.type)?.type;
-  return fileType === "weight" || (messages.weightScaleMesgs?.length ?? 0) > 0;
+  const fileType = messages.fileIdMesgs?.find((message) => message.type !== undefined)?.type;
+  return (
+    fileType === "weight" ||
+    fileType === FIT_FILE_TYPE_WEIGHT ||
+    (messages.weightScaleMesgs?.length ?? 0) > 0
+  );
 }
 
 async function importWeightFit(

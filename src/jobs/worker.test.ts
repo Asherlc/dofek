@@ -1,34 +1,73 @@
-import { beforeAll, describe, expect, it, type MockInstance, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-// Mock dependencies before importing worker module
-const mockOn = vi.fn();
-const mockClose = vi.fn(() => Promise.resolve());
-const mockRun = vi.fn(() => Promise.resolve());
-const mockAddJobLog = vi.fn(() => Promise.resolve(1));
-const mockReadinessListen = vi.fn();
-const mockReadinessClose = vi.fn((callback: (error?: Error) => void) => callback());
-const mockReadinessServer = {
-  listen: mockReadinessListen,
-  close: mockReadinessClose,
-};
-const mockObserveFitJob = vi.fn();
-const reconcileGarminProgressError = new Error("progress Redis unavailable");
-const mockReconcileGarminProgress = vi.fn().mockRejectedValueOnce(reconcileGarminProgressError);
-const mockCloseGarminProgress = vi.fn().mockResolvedValue(undefined);
-const mockGarminProgressCoordinator = {
-  observeFitJob: mockObserveFitJob,
-  reconcile: mockReconcileGarminProgress,
-  close: mockCloseGarminProgress,
-};
+// All mock dependencies live inside vi.hoisted() so they are guaranteed to exist
+// before vi.mock() factories resolve and before the static import of worker.ts.
+// This satisfies vitest's "related" mode used by Stryker in CI, which requires a
+// static import dependency between the test and the source module.
+const hoisted = vi.hoisted(() => {
+  process.env.SENTRY_DSN = "https://test@sentry.io/123";
+
+  function noOpExit(): never {
+    throw new Error("process.exit called unexpectedly in test");
+  }
+
+  const mockOn = vi.fn();
+  const mockClose = vi.fn(() => Promise.resolve());
+  const mockRun = vi.fn(() => Promise.resolve());
+  const mockAddJobLog = vi.fn(() => Promise.resolve(1));
+
+  // Per-worker `on` mocks, keyed by queue name, so tests can find handlers
+  // registered by a specific worker rather than relying on call order.
+  const workerOnMocks: Record<string, ReturnType<typeof vi.fn>> = {};
+
+  const mockReadinessListen = vi.fn();
+  const mockReadinessClose = vi.fn((callback: (error?: Error) => void) => callback());
+  const mockReadinessServer = {
+    listen: mockReadinessListen,
+    close: mockReadinessClose,
+  };
+
+  class MockUnrecoverableError extends Error {}
+
+  const mockObserveFitJob = vi.fn();
+  const reconcileGarminProgressError = new Error("progress Redis unavailable");
+  const mockReconcileGarminProgress = vi.fn().mockRejectedValueOnce(reconcileGarminProgressError);
+  const mockCloseGarminProgress = vi.fn().mockResolvedValue(undefined);
+  const mockGarminProgressCoordinator = {
+    observeFitJob: mockObserveFitJob,
+    reconcile: mockReconcileGarminProgress,
+    close: mockCloseGarminProgress,
+  };
+
+  return {
+    exitSpy: vi.spyOn(process, "exit").mockImplementation(noOpExit),
+    setTimeoutSpy: vi.spyOn(globalThis, "setTimeout"),
+    clearTimeoutSpy: vi.spyOn(globalThis, "clearTimeout"),
+    mockOn,
+    mockClose,
+    mockRun,
+    mockAddJobLog,
+    mockReadinessListen,
+    mockReadinessClose,
+    mockReadinessServer,
+    mockObserveFitJob,
+    reconcileGarminProgressError,
+    mockReconcileGarminProgress,
+    mockCloseGarminProgress,
+    mockGarminProgressCoordinator,
+    MockUnrecoverableError,
+    workerOnMocks,
+  };
+});
 
 vi.mock("bullmq", () => ({
-  Job: { addJobLog: mockAddJobLog },
-  Worker: vi.fn((name: string) => ({
-    name,
-    on: mockOn,
-    close: mockClose,
-    run: mockRun,
-  })),
+  Job: { addJobLog: hoisted.mockAddJobLog },
+  UnrecoverableError: hoisted.MockUnrecoverableError,
+  Worker: vi.fn((name: string) => {
+    const on = vi.fn((...args: unknown[]) => hoisted.mockOn(...args));
+    hoisted.workerOnMocks[name] = on;
+    return { name, on, close: hoisted.mockClose, run: hoisted.mockRun };
+  }),
 }));
 
 vi.mock("../db/index.ts", () => ({
@@ -90,11 +129,11 @@ vi.mock("./scheduled-sync.ts", () => ({
 }));
 
 vi.mock("./worker-readiness.ts", () => ({
-  createWorkerReadinessServer: vi.fn(() => mockReadinessServer),
+  createWorkerReadinessServer: vi.fn(() => hoisted.mockReadinessServer),
 }));
 
 vi.mock("./garmin-import-progress.ts", () => ({
-  createGarminImportProgressCoordinator: vi.fn(() => mockGarminProgressCoordinator),
+  createGarminImportProgressCoordinator: vi.fn(() => hoisted.mockGarminProgressCoordinator),
 }));
 
 vi.mock("./provider-queue-config.ts", () => ({
@@ -135,25 +174,28 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
-// Prevent process.exit from actually exiting — must return `never` to match the real signature.
-// The throw is unreachable because no test triggers SIGTERM/SIGINT.
-function noOpExit(): never {
-  throw new Error("process.exit called unexpectedly in test");
-}
-const exitSpy = vi.spyOn(process, "exit").mockImplementation(noOpExit);
+const {
+  exitSpy,
+  setTimeoutSpy,
+  clearTimeoutSpy,
+  mockOn,
+  mockClose,
+  mockRun,
+  mockAddJobLog,
+  mockReadinessListen,
+  mockReadinessClose,
+  mockObserveFitJob,
+  reconcileGarminProgressError,
+  mockReconcileGarminProgress,
+  mockCloseGarminProgress,
+  workerOnMocks,
+} = hoisted;
+
+// Static import ensures vitest `related` mode (used by Stryker in CI) detects this
+// test file as related to worker.ts, so mutations in worker.ts are covered.
+import "./worker.ts";
 
 describe("worker module", () => {
-  let setTimeoutSpy: MockInstance;
-  let clearTimeoutSpy: MockInstance;
-
-  beforeAll(async () => {
-    process.env.SENTRY_DSN = "https://test@sentry.io/123";
-    setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
-    clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
-    // Import the module to trigger its side effects
-    await import("./worker.ts");
-  });
-
   // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import
   // + 1 FIT batch + 1 ZIP extract + 1 export + 1 scheduled-sync + 1 post-sync
   // + 1 activity-delete-analytics = 11
@@ -439,6 +481,69 @@ describe("worker module", () => {
     expect(Sentry.captureException).toHaveBeenCalledOnce();
     expect(setTimeoutSpy.mock.calls.length).toBe(setTimeoutBefore);
     getWorkerHandler("completed")({ id: "active-job" });
+  });
+
+  // ── FIT batch child failure suppression tests ──
+  // Each worker gets its own `on` mock; tests resolve a specific worker's
+  // handler by queue name via workerOnMocks rather than relying on call order.
+  function getWorkerFailedHandler(queueName: string): (...args: unknown[]) => unknown {
+    const on = workerOnMocks[queueName];
+    if (!on) throw new Error(`${queueName} worker on mock was not registered`);
+    const failedCall = on.mock.calls.find((call) => call[0] === "failed");
+    if (!failedCall || typeof failedCall[1] !== "function") {
+      throw new Error(`${queueName} worker failed handler was not registered`);
+    }
+    return failedCall[1];
+  }
+
+  function getFitWorkerFailedHandler(): (...args: unknown[]) => unknown {
+    return getWorkerFailedHandler("fit-file-import-queue");
+  }
+
+  it("suppresses Sentry for FIT batch child failures with UnrecoverableError", async () => {
+    const Sentry = await import("@sentry/node");
+    const { UnrecoverableError } = await import("bullmq");
+    vi.mocked(Sentry.captureException).mockClear();
+
+    const job = { id: "fit-child-1", parentKey: "bull:fit-batch:batch-1" };
+    const error = new UnrecoverableError("invalid FIT file");
+    getFitWorkerFailedHandler()(job, error);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("does not suppress Sentry for FIT worker failures without UnrecoverableError", async () => {
+    const Sentry = await import("@sentry/node");
+    vi.mocked(Sentry.captureException).mockClear();
+
+    const job = { id: "fit-child-2", parentKey: "bull:fit-batch:batch-2" };
+    const error = new Error("transient connection error");
+    getFitWorkerFailedHandler()(job, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+  });
+
+  it("does not suppress Sentry for non-FIT worker UnrecoverableError failures", async () => {
+    const Sentry = await import("@sentry/node");
+    const { UnrecoverableError } = await import("bullmq");
+    vi.mocked(Sentry.captureException).mockClear();
+
+    const job = { id: "sync-child-1", parentKey: "bull:sync-batch:batch-1" };
+    const error = new UnrecoverableError("unrecoverable sync error");
+    getWorkerFailedHandler("sync-queue")(job, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+  });
+
+  it("does not suppress Sentry for FIT worker failures without a parent job", async () => {
+    const Sentry = await import("@sentry/node");
+    const { UnrecoverableError } = await import("bullmq");
+    vi.mocked(Sentry.captureException).mockClear();
+
+    const error = new UnrecoverableError("unrecoverable fit error");
+    getFitWorkerFailedHandler()(undefined, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
   });
 
   it("error event handler reports to Sentry and logs the error", async () => {

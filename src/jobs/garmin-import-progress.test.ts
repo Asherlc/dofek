@@ -219,7 +219,34 @@ describe("createGarminImportProgressCoordinator", () => {
 
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 90,
-      message: "Importing Garmin FIT activities (10 of 10 complete)...",
+      message: "Importing Garmin FIT activities (7 of 10 complete, 3 failed)...",
+      failedCount: 3,
+    });
+  });
+
+  it("shows failed count separately when most FIT files fail", async () => {
+    const importJob = createImportJob();
+    importJob.data.checkpoint = waitingCheckpoint(15774);
+    const batchJob = createBatchJob();
+    batchJob.getDependenciesCount.mockResolvedValue({
+      processed: 356,
+      ignored: 0,
+      failed: 15418,
+      unprocessed: 0,
+    });
+    mockImportQueue.getJob.mockResolvedValue(importJob);
+    mockBatchQueue.getJob.mockResolvedValue(batchJob);
+    const coordinator = createGarminImportProgressCoordinator();
+
+    coordinator.observeFitJob({
+      parent: { id: "batch-1", queueKey: "bull:fit-file-import-batch" },
+    });
+    await vi.runAllTimersAsync();
+
+    expect(importJob.updateProgress).toHaveBeenCalledWith({
+      percentage: 90,
+      message: "Importing Garmin FIT activities (356 of 15774 complete, 15418 failed)...",
+      failedCount: 15418,
     });
   });
 

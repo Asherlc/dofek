@@ -19,7 +19,7 @@ export function FileImportProviderCard({
   stats: ProviderStats | undefined;
   syncing: boolean;
   importing?: boolean;
-  syncProgress: { percentage?: number; message?: string } | undefined;
+  syncProgress: { percentage?: number; message?: string; failedCount?: number } | undefined;
   onSync: () => void;
   onFullSync: () => void;
   onConnect: () => void;
