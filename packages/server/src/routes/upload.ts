@@ -158,8 +158,7 @@ async function getImportJobStatus(importQueue: Queue<ImportJobData>, jobId: stri
   const state = await job.getState();
   const parsedProgress = jobProgressSchema.safeParse(job.progress);
   const progress = parsedProgress.success ? parsedProgress.data : undefined;
-  const percentage =
-    typeof progress === "number" ? progress : progress?.percentage;
+  const percentage = typeof progress === "number" ? progress : progress?.percentage;
   const msg = typeof progress === "object" ? progress?.message : undefined;
   const failedCount = typeof progress === "object" ? progress?.failedCount : undefined;
 
