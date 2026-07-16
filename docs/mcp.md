@@ -8,31 +8,28 @@ https://<your-dofek-host>/api/mcp
 
 The endpoint uses Streamable HTTP and supports two authentication paths:
 
-- OAuth 2.1 authorization code with PKCE for Claude remote custom connectors.
+- OAuth 2.1 authorization code with PKCE for remote MCP clients (Claude, ChatGPT, and any other client that supports OAuth auto-discovery).
 - Manually created MCP bearer tokens for clients such as Claude Code and Codex that support custom HTTP headers.
 
 Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)), exact redirect URI matching, short-lived access tokens, rotating refresh tokens, and per-tool scopes as required by the [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization).
 
-## Connect Claude
+## Connect With OAuth
 
-Dofek supports [OAuth Dynamic Client Registration (DCR)](https://www.rfc-editor.org/rfc/rfc7591) ([MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)), so Claude creates distinct client credentials automatically. Configure the Claude custom connector with only:
+Dofek supports [OAuth Dynamic Client Registration (DCR)](https://www.rfc-editor.org/rfc/rfc7591) ([MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)), so MCP clients create distinct client credentials automatically. Configure the client with only:
 
 ```text
 MCP URL: https://<your-dofek-host>/api/mcp
 ```
 
-Leave the OAuth Client ID and OAuth Client Secret fields empty. Claude discovers `/register` ([RFC 7591 §3](https://www.rfc-editor.org/rfc/rfc7591#section-3)), registers itself, and stores the resulting client credentials. Each registration receives a unique client ID and secret; Dofek encrypts the secret at rest with `CREDENTIAL_ENCRYPTION_KEY_BASE64` using the [AWS Encryption SDK](https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/introduction.html) raw AES-256-GCM keyring ([`@aws-crypto/client-node`](https://github.com/aws/aws-encryption-sdk-javascript); see [README credential encryption](../README.md#credential-encryption-at-rest-provider-credentials)). Registration secrets expire after 30 days via `client_secret_expires_at` ([RFC 7591 §3.2.1](https://www.rfc-editor.org/rfc/rfc7591#section-3.2.1)).
+Leave the OAuth Client ID and OAuth Client Secret fields empty when the client supports DCR. The client discovers `/register` ([RFC 7591 §3](https://www.rfc-editor.org/rfc/rfc7591#section-3)), registers itself, and stores the resulting client credentials. Each registration receives a unique client ID and secret; Dofek encrypts the secret at rest with `CREDENTIAL_ENCRYPTION_KEY_BASE64` using the [AWS Encryption SDK](https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/introduction.html) raw AES-256-GCM keyring ([`@aws-crypto/client-node`](https://github.com/aws/aws-encryption-sdk-javascript); see [README credential encryption](../README.md#credential-encryption-at-rest-provider-credentials)). Registration secrets expire after 30 days via `client_secret_expires_at` ([RFC 7591 §3.2.1](https://www.rfc-editor.org/rfc/rfc7591#section-3.2.1)).
 
-Claude redirects each user to Dofek to sign in and approve the requested scopes. Access tokens expire after one hour. Refresh tokens expire after 30 days and rotate on every use; reusing an older refresh token fails ([OAuth 2.0 Security BCP refresh token rotation](https://www.rfc-editor.org/rfc/rfc9700#name-refresh-tokens); [RFC 6819 §5.2.2.3](https://www.rfc-editor.org/rfc/rfc6819#section-5.2.2.3)). The `/revoke` endpoint invalidates the complete access-and-refresh token pair ([RFC 7009](https://www.rfc-editor.org/rfc/rfc7009)). Anthropic documents DCR support and re-registration behavior in its [remote connector developer guide](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers).
+The client redirects each user to Dofek to sign in and approve the requested scopes. Access tokens expire after one hour. Refresh tokens expire after 30 days and rotate on every use; reusing an older refresh token fails ([OAuth 2.0 Security BCP refresh token rotation](https://www.rfc-editor.org/rfc/rfc9700#name-refresh-tokens); [RFC 6819 §5.2.2.3](https://www.rfc-editor.org/rfc/rfc6819#section-5.2.2.3)). The `/revoke` endpoint invalidates the complete access-and-refresh token pair ([RFC 7009](https://www.rfc-editor.org/rfc/rfc7009)).
 
-The registered callback URLs are:
+Examples that use this path include [Claude remote connectors](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers) and [ChatGPT apps / connectors](https://developers.openai.com/apps-sdk/build/auth).
 
-```text
-https://claude.ai/api/mcp/auth_callback
-https://claude.com/api/mcp/auth_callback
-```
+### Redirect URI policy
 
-Registrations are rejected unless every callback matches this allowlist exactly ([OAuth 2.0 Security BCP §4.1.3](https://www.rfc-editor.org/rfc/rfc9700#section-4.1.3); [Anthropic remote connector guide](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers)).
+Registrations may use any absolute `https://` callback URL. `http://` is allowed only for loopback hosts (`localhost`, `127.0.0.1`, `::1`) so local MCP clients can complete OAuth during development ([OAuth 2.1](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-13#section-9.7); [RFC 8252 §7.3](https://datatracker.ietf.org/doc/html/rfc8252#section-7.3)). Fragments, embedded credentials, and non-HTTPS remote URLs are rejected. Authorization and token exchange still require exact redirect URI matching against the registered value ([OAuth 2.0 Security BCP §4.1.3](https://www.rfc-editor.org/rfc/rfc9700#section-4.1.3)).
 
 OAuth discovery and protocol endpoints ([MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization); [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728); [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414); [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591); [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009)):
 
@@ -47,7 +44,7 @@ OAuth discovery and protocol endpoints ([MCP authorization specification](https:
 
 ## Create A Token
 
-Tokens are only needed for clients that use manual bearer token authentication (such as Codex). OAuth-based clients (such as Claude Desktop) authenticate automatically.
+Tokens are only needed for clients that use manual bearer token authentication (such as Codex). OAuth-based clients authenticate automatically.
 
 Open Dofek Settings and use the **MCP** section to create, copy, list, and revoke tokens.
 

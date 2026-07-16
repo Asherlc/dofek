@@ -141,8 +141,8 @@ export function McpTokensPanel() {
         <div>
           <p className="text-sm font-medium text-foreground">Connect with OAuth (Recommended)</p>
           <p className="mt-1 text-sm text-subtle">
-            For clients that support OAuth auto-discovery, such as Claude Desktop. Paste the URL and
-            sign in when prompted.
+            For clients that support OAuth auto-discovery (Claude, ChatGPT, and others). Paste the
+            URL and sign in when prompted.
           </p>
         </div>
         <div className="space-y-1">
@@ -152,7 +152,7 @@ export function McpTokensPanel() {
           </code>
         </div>
         <p className="text-xs text-dim">
-          Claude discovers OAuth endpoints automatically and handles authentication. No manual token
+          OAuth clients discover endpoints automatically and handle authentication. No manual token
           is required.
         </p>
       </div>

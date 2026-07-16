@@ -100,6 +100,7 @@ export async function exchangeAuthorizationCode(
   input: {
     clientId: string;
     code: string;
+    name: string;
     redirectUri: string;
     resource: string;
   },
@@ -125,7 +126,7 @@ export async function exchangeAuthorizationCode(
           INSERT INTO fitness.mcp_access_token (
             user_id, name, token_hash, scopes, expires_at, oauth_client_id, oauth_resource
           )
-          SELECT user_id, 'Claude OAuth', ${hashMcpToken(accessToken)}, scopes,
+          SELECT user_id, ${input.name}, ${hashMcpToken(accessToken)}, scopes,
                  ${accessTokenExpiresAt}, ${input.clientId}, ${input.resource}
           FROM consumed_code
           RETURNING id, user_id, scopes
@@ -154,6 +155,7 @@ export async function rotateRefreshToken(
   db: ExecutableDatabase,
   input: {
     clientId: string;
+    name: string;
     refreshToken: string;
     requestedScopes?: McpScope[];
     resource: string;
@@ -201,7 +203,7 @@ export async function rotateRefreshToken(
           INSERT INTO fitness.mcp_access_token (
             user_id, name, token_hash, scopes, expires_at, oauth_client_id, oauth_resource
           )
-          SELECT user_id, 'Claude OAuth', ${hashMcpToken(accessToken)}, ${scopesSql(scopes)},
+          SELECT user_id, ${input.name}, ${hashMcpToken(accessToken)}, ${scopesSql(scopes)},
                  ${accessTokenExpiresAt}, ${input.clientId}, ${input.resource}
           FROM consumed_refresh_token
           RETURNING id, user_id, scopes
