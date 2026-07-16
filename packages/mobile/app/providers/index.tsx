@@ -557,6 +557,7 @@ export default function ProvidersScreen() {
     ? {
         percentage: appleHealthActiveImport.progress,
         message: appleHealthActiveImport.message,
+        failedCount: appleHealthActiveImport.failedCount,
       }
     : undefined;
   const appleHealthLocalImportProgress =
@@ -713,6 +714,7 @@ export default function ProvidersScreen() {
           ? {
               percentage: activeImport.progress,
               message: activeImport.message,
+              failedCount: activeImport.failedCount,
             }
           : undefined;
         const localImportProgress =

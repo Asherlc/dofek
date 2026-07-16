@@ -93,7 +93,7 @@ export function ProviderCard({
   stats: ProviderStats | undefined;
   syncing: boolean;
   importing?: boolean;
-  syncProgress: { percentage?: number; message?: string } | undefined;
+  syncProgress: { percentage?: number; message?: string; failedCount?: number } | undefined;
   onSync: () => void;
   onFullSync: () => void;
   onConnect: () => void;
@@ -158,6 +158,12 @@ export function ProviderCard({
           {syncProgress.message ? (
             <Text style={styles.syncProgressMessage}>{syncProgress.message}</Text>
           ) : null}
+          {typeof syncProgress.failedCount === "number" && syncProgress.failedCount > 0 && (
+            <Text style={styles.syncProgressFailedCount}>
+              {syncProgress.failedCount.toLocaleString()} file
+              {syncProgress.failedCount === 1 ? "" : "s"} failed
+            </Text>
+          )}
         </View>
       ) : (
         <View style={styles.cardMeta}>
