@@ -129,7 +129,7 @@ describe("createGarminImportProgressCoordinator", () => {
     });
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 63,
-      message: "Importing Garmin FIT activities (4 of 10 complete)...",
+      message: "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...",
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
     expect(mockLoggerWarn).not.toHaveBeenCalled();
@@ -171,7 +171,8 @@ describe("createGarminImportProgressCoordinator", () => {
 
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 74,
-      message: "Importing Garmin FIT activities (630 of 1000 complete, 20 failed)...",
+      message:
+        "Importing Garmin FIT activities (630 succeeded, 20 failed, 650 of 1000 processed)...",
       failedCount: 20,
     });
   });
@@ -236,7 +237,7 @@ describe("createGarminImportProgressCoordinator", () => {
 
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 90,
-      message: "Importing Garmin FIT activities (0 of 0 complete)...",
+      message: "Importing Garmin FIT activities (0 succeeded, 0 failed, 0 of 0 processed)...",
     });
   });
 
@@ -260,7 +261,7 @@ describe("createGarminImportProgressCoordinator", () => {
 
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 90,
-      message: "Importing Garmin FIT activities (7 of 10 complete, 3 failed)...",
+      message: "Importing Garmin FIT activities (7 succeeded, 3 failed, 10 of 10 processed)...",
       failedCount: 3,
     });
   });
@@ -286,7 +287,8 @@ describe("createGarminImportProgressCoordinator", () => {
 
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 90,
-      message: "Importing Garmin FIT activities (356 of 15774 complete, 15418 failed)...",
+      message:
+        "Importing Garmin FIT activities (356 succeeded, 15418 failed, 15774 of 15774 processed)...",
       failedCount: 15418,
     });
   });
@@ -361,7 +363,7 @@ describe("createGarminImportProgressCoordinator", () => {
     expect(mockImportQueue.getJobs).toHaveBeenCalledWith(["waiting-children"], 0, -1, false);
     expect(importJob.updateProgress).toHaveBeenCalledWith({
       percentage: 63,
-      message: "Importing Garmin FIT activities (4 of 10 complete)...",
+      message: "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...",
     });
   });
 

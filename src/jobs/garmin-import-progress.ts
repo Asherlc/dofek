@@ -176,10 +176,7 @@ class GarminImportProgressCoordinator {
       return;
     }
 
-    const message =
-      failedCount > 0
-        ? `Importing Garmin FIT activities (${succeededCount} of ${total} complete, ${failedCount} failed)...`
-        : `Importing Garmin FIT activities (${done} of ${total} complete)...`;
+    const message = `Importing Garmin FIT activities (${succeededCount} succeeded, ${failedCount} failed, ${done} of ${total} processed)...`;
 
     await importJob.updateProgress({
       percentage,
