@@ -452,7 +452,8 @@ export async function closeAllQueueResources(): Promise<void> {
   cachedProviderQueues.clear();
 
   if (cachedPostSyncQueue) closePromises.push(cachedPostSyncQueue.close());
-  if (cachedActivityDeleteAnalyticsQueue) closePromises.push(cachedActivityDeleteAnalyticsQueue.close());
+  if (cachedActivityDeleteAnalyticsQueue)
+    closePromises.push(cachedActivityDeleteAnalyticsQueue.close());
   if (cachedImportQueue) closePromises.push(cachedImportQueue.close());
   if (cachedFitFileImportQueue) closePromises.push(cachedFitFileImportQueue.close());
   if (cachedFlowProducer) closePromises.push(cachedFlowProducer.close());
