@@ -58,9 +58,7 @@ function validateRedirectUris(redirectUris: readonly string[]): void {
   }
   for (const redirectUri of redirectUris) {
     if (!isAllowedMcpOAuthRedirectUri(redirectUri)) {
-      throw new InvalidClientMetadataError(
-        "redirect_uri must be https (or http on localhost / 127.0.0.1)",
-      );
+      throw new InvalidClientMetadataError("Invalid redirect_uri");
     }
   }
 }

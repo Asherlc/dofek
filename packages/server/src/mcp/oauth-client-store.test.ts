@@ -67,9 +67,7 @@ describe("McpOAuthClientsStore", () => {
       const client = makeClient({ redirect_uris: ["http://evil.example.com/callback"] });
 
       await expect(store.registerClient(client)).rejects.toThrow(InvalidClientMetadataError);
-      await expect(store.registerClient(client)).rejects.toThrow(
-        "redirect_uri must be https (or http on localhost / 127.0.0.1)",
-      );
+      await expect(store.registerClient(client)).rejects.toThrow("Invalid redirect_uri");
     });
 
     it("accepts valid Claude redirect URIs", async () => {
