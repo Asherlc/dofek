@@ -1,5 +1,4 @@
-import { RedisConnection } from "bullmq";
-import { getRedisConnection } from "dofek/jobs/queues";
+import { getSharedRedisConnection } from "dofek/jobs/queues";
 
 interface RedisRegistryClient {
   mget(...keys: string[]): Promise<Array<string | null>>;
@@ -10,8 +9,6 @@ interface RedisRegistryClient {
 const CACHE_KEY_REGISTRY = "query-cache:keys";
 const CACHE_KEY_PREFIX = "query-cache:data:";
 const CACHE_KEY_BATCH_SIZE = 1000;
-
-let sharedRedisConnection: RedisConnection | null = null;
 
 function supportsQueryCacheRegistry(client: object): client is RedisRegistryClient {
   return (
@@ -25,14 +22,8 @@ function supportsQueryCacheRegistry(client: object): client is RedisRegistryClie
 }
 
 async function getSharedRedisClient(): Promise<RedisRegistryClient> {
-  if (!sharedRedisConnection) {
-    sharedRedisConnection = new RedisConnection(getRedisConnection(), {
-      shared: true,
-      blocking: false,
-      skipVersionCheck: true,
-    });
-  }
-  const redisClient = await sharedRedisConnection.client;
+  const connection = getSharedRedisConnection();
+  const redisClient = await connection.client;
   if (!supportsQueryCacheRegistry(redisClient)) {
     throw new Error("Redis client does not support query-cache registry commands");
   }

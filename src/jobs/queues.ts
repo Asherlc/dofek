@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { CANONICAL_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { ConnectionOptions, JobsOptions } from "bullmq";
-import { FlowProducer, Queue } from "bullmq";
+import { FlowProducer, Queue, RedisConnection } from "bullmq";
 import { z } from "zod";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
@@ -176,6 +176,22 @@ export function getRedisConnection(): ConnectionOptions {
     connectTimeout: 5000,
     lazyConnect: true,
   };
+}
+
+// ── Shared Redis connection ──
+
+let sharedRedisConnection: RedisConnection | null = null;
+
+/** Get the singleton RedisConnection shared across all modules in this process. */
+export function getSharedRedisConnection(): RedisConnection {
+  if (!sharedRedisConnection) {
+    sharedRedisConnection = new RedisConnection(getRedisConnection(), {
+      shared: true,
+      blocking: false,
+      skipVersionCheck: true,
+    });
+  }
+  return sharedRedisConnection;
 }
 
 // ── Queue factories ──
@@ -424,4 +440,34 @@ export async function enqueueDebouncedUserRefit(
       removeOnComplete: true,
     },
   );
+}
+
+/** Close all cached queues, flow producers, and the shared Redis connection. */
+export async function closeAllQueueResources(): Promise<void> {
+  const closePromises: Array<Promise<unknown>> = [];
+
+  for (const queue of cachedProviderQueues.values()) {
+    closePromises.push(queue.close());
+  }
+  cachedProviderQueues.clear();
+
+  if (cachedPostSyncQueue) closePromises.push(cachedPostSyncQueue.close());
+  if (cachedActivityDeleteAnalyticsQueue)
+    closePromises.push(cachedActivityDeleteAnalyticsQueue.close());
+  if (cachedImportQueue) closePromises.push(cachedImportQueue.close());
+  if (cachedFitFileImportQueue) closePromises.push(cachedFitFileImportQueue.close());
+  if (cachedFlowProducer) closePromises.push(cachedFlowProducer.close());
+
+  cachedPostSyncQueue = null;
+  cachedActivityDeleteAnalyticsQueue = null;
+  cachedImportQueue = null;
+  cachedFitFileImportQueue = null;
+  cachedFlowProducer = null;
+
+  await Promise.allSettled(closePromises);
+
+  if (sharedRedisConnection) {
+    await sharedRedisConnection.close();
+    sharedRedisConnection = null;
+  }
 }

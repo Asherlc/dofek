@@ -676,4 +676,20 @@ describe("queues", () => {
       expect(firstCallOptions?.jobId).not.toBe(secondCallOptions?.jobId);
     });
   });
+
+  describe("closeAllQueueResources", () => {
+    it("closes all cached queues and flow producers", async () => {
+      const { createSyncQueue, createFlowProducer, closeAllQueueResources } = await import(
+        "./queues.ts"
+      );
+
+      createSyncQueue({ host: "test", port: 1234 });
+      createFlowProducer({ host: "test", port: 1234 });
+
+      await closeAllQueueResources();
+
+      expect(mockQueueClose).toHaveBeenCalled();
+      expect(mockFlowProducerClose).toHaveBeenCalled();
+    });
+  });
 });
