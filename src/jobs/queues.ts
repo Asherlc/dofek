@@ -464,7 +464,7 @@ export async function closeAllQueueResources(): Promise<void> {
   cachedFitFileImportQueue = null;
   cachedFlowProducer = null;
 
-  await Promise.all(closePromises);
+  await Promise.allSettled(closePromises);
 
   if (sharedRedisConnection) {
     await sharedRedisConnection.close();

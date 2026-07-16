@@ -59,7 +59,7 @@ describe("cache module environment selection", () => {
     await expect(store.get("user-1:dashboard")).resolves.toEqual({ ok: true });
     await store.invalidateAll();
 
-    expect(getSharedRedisConnection).toHaveBeenCalledTimes(1);
+    expect(getSharedRedisConnection).toHaveBeenCalledTimes(3);
     expect(client.set).toHaveBeenCalledWith(
       "query-cache:data:user-1:dashboard",
       JSON.stringify({ ok: true }),

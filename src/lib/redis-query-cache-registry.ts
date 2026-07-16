@@ -10,8 +10,6 @@ const CACHE_KEY_REGISTRY = "query-cache:keys";
 const CACHE_KEY_PREFIX = "query-cache:data:";
 const CACHE_KEY_BATCH_SIZE = 1000;
 
-let sharedRedisConnection: ReturnType<typeof getSharedRedisConnection> | null = null;
-
 function supportsQueryCacheRegistry(client: object): client is RedisRegistryClient {
   return (
     "mget" in client &&
@@ -24,10 +22,8 @@ function supportsQueryCacheRegistry(client: object): client is RedisRegistryClie
 }
 
 async function getSharedRedisClient(): Promise<RedisRegistryClient> {
-  if (!sharedRedisConnection) {
-    sharedRedisConnection = getSharedRedisConnection();
-  }
-  const redisClient = await sharedRedisConnection.client;
+  const connection = getSharedRedisConnection();
+  const redisClient = await connection.client;
   if (!supportsQueryCacheRegistry(redisClient)) {
     throw new Error("Redis client does not support query-cache registry commands");
   }
