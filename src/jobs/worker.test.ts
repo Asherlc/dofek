@@ -16,12 +16,18 @@ const hoisted = vi.hoisted(() => {
   const mockRun = vi.fn(() => Promise.resolve());
   const mockAddJobLog = vi.fn(() => Promise.resolve(1));
 
+  // Per-worker `on` mocks, keyed by queue name, so tests can find handlers
+  // registered by a specific worker rather than relying on call order.
+  const workerOnMocks: Record<string, ReturnType<typeof vi.fn>> = {};
+
   const mockReadinessListen = vi.fn();
   const mockReadinessClose = vi.fn((callback: (error?: Error) => void) => callback());
   const mockReadinessServer = {
     listen: mockReadinessListen,
     close: mockReadinessClose,
   };
+
+  class MockUnrecoverableError extends Error {}
 
   const mockObserveFitJob = vi.fn();
   const reconcileGarminProgressError = new Error("progress Redis unavailable");
@@ -49,17 +55,19 @@ const hoisted = vi.hoisted(() => {
     mockReconcileGarminProgress,
     mockCloseGarminProgress,
     mockGarminProgressCoordinator,
+    MockUnrecoverableError,
+    workerOnMocks,
   };
 });
 
 vi.mock("bullmq", () => ({
   Job: { addJobLog: hoisted.mockAddJobLog },
-  Worker: vi.fn((name: string) => ({
-    name,
-    on: hoisted.mockOn,
-    close: hoisted.mockClose,
-    run: hoisted.mockRun,
-  })),
+  UnrecoverableError: hoisted.MockUnrecoverableError,
+  Worker: vi.fn((name: string) => {
+    const on = vi.fn((...args: unknown[]) => hoisted.mockOn(...args));
+    hoisted.workerOnMocks[name] = on;
+    return { name, on, close: hoisted.mockClose, run: hoisted.mockRun };
+  }),
 }));
 
 vi.mock("../db/index.ts", () => ({
@@ -173,12 +181,11 @@ const {
   mockAddJobLog,
   mockReadinessListen,
   mockReadinessClose,
-  mockReadinessServer,
   mockObserveFitJob,
   reconcileGarminProgressError,
   mockReconcileGarminProgress,
   mockCloseGarminProgress,
-  mockGarminProgressCoordinator,
+  workerOnMocks,
 } = hoisted;
 
 // Static import ensures vitest `related` mode (used by Stryker in CI) detects this
@@ -186,7 +193,6 @@ const {
 import "./worker.ts";
 
 describe("worker module", () => {
-
   // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import
   // + 1 FIT batch + 1 ZIP extract + 1 export + 1 scheduled-sync + 1 post-sync
   // + 1 activity-delete-analytics = 11
@@ -472,6 +478,65 @@ describe("worker module", () => {
     expect(Sentry.captureException).toHaveBeenCalledOnce();
     expect(setTimeoutSpy.mock.calls.length).toBe(setTimeoutBefore);
     getWorkerHandler("completed")({ id: "active-job" });
+  });
+
+  // ── FIT batch child failure suppression tests ──
+  // Each worker gets its own `on` mock; we can find the FIT worker's handlers
+  // directly by looking up workerOnMocks by queue name.
+  function getFitWorkerFailedHandler(): (...args: unknown[]) => unknown {
+    const fitOn = workerOnMocks["fit-file-import-queue"];
+    if (!fitOn) throw new Error("FIT worker on mock was not registered");
+    const failedCall = fitOn.mock.calls.find((call) => call[0] === "failed");
+    if (!failedCall || typeof failedCall[1] !== "function") {
+      throw new Error("FIT worker failed handler was not registered");
+    }
+    return failedCall[1];
+  }
+
+  it("suppresses Sentry for FIT batch child failures with UnrecoverableError", async () => {
+    const Sentry = await import("@sentry/node");
+    const { UnrecoverableError } = await import("bullmq");
+    vi.mocked(Sentry.captureException).mockClear();
+
+    const job = { id: "fit-child-1", parentKey: "bull:fit-batch:batch-1" };
+    const error = new UnrecoverableError("invalid FIT file") as Error;
+    getFitWorkerFailedHandler()(job, error);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("does not suppress Sentry for FIT worker failures without UnrecoverableError", async () => {
+    const Sentry = await import("@sentry/node");
+    vi.mocked(Sentry.captureException).mockClear();
+
+    const job = { id: "fit-child-2", parentKey: "bull:fit-batch:batch-2" };
+    const error = new Error("transient connection error");
+    getFitWorkerFailedHandler()(job, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+  });
+
+  it("does not suppress Sentry for non-FIT worker UnrecoverableError failures", async () => {
+    const Sentry = await import("@sentry/node");
+    const { UnrecoverableError } = await import("bullmq");
+    vi.mocked(Sentry.captureException).mockClear();
+
+    const job = { id: "sync-child-1", parentKey: "bull:sync-batch:batch-1" };
+    const error = new UnrecoverableError("unrecoverable sync error") as Error;
+    getWorkerHandler("failed")(job, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+  });
+
+  it("does not suppress Sentry for FIT worker failures without a parent job", async () => {
+    const Sentry = await import("@sentry/node");
+    const { UnrecoverableError } = await import("bullmq");
+    vi.mocked(Sentry.captureException).mockClear();
+
+    const error = new UnrecoverableError("unrecoverable fit error") as Error;
+    getFitWorkerFailedHandler()(undefined, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
   });
 
   it("error event handler reports to Sentry and logs the error", async () => {
