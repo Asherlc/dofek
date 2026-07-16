@@ -199,7 +199,9 @@ const FIT_FILE_TYPE_WEIGHT = 9;
 function isWeightFit(messages: z.infer<typeof fitMessagesSchema>): boolean {
   const fileType = messages.fileIdMesgs?.find((message) => message.type)?.type;
   return (
-    fileType === "weight" || fileType === FIT_FILE_TYPE_WEIGHT || (messages.weightScaleMesgs?.length ?? 0) > 0
+    fileType === "weight" ||
+    fileType === FIT_FILE_TYPE_WEIGHT ||
+    (messages.weightScaleMesgs?.length ?? 0) > 0
   );
 }
 

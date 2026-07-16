@@ -155,8 +155,6 @@ describe("FileImportZone", () => {
       dataTransfer: { files: [new File(["zip-data"], "garmin-export.zip")] },
     });
 
-    await waitFor(() =>
-      expect(screen.getByText("15,418 files failed")).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByText("15,418 files failed")).toBeTruthy());
   });
 });
