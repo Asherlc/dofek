@@ -113,4 +113,50 @@ describe("FileImportZone", () => {
       }),
     );
   });
+
+  it("shows failedCount when progress reports file failures", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ jobId: "job-gh" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: "processing",
+            progress: 46,
+            message: "356 of 15774 complete, 15418 failed",
+            failedCount: 15418,
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchImpl);
+
+    render(
+      <FileImportZone
+        providerId="garmin-dump"
+        title="Garmin"
+        description=".zip from Garmin Connect"
+        accept=".zip"
+        uploadUrl="/api/upload/garmin-dump"
+        statusUrl="/api/upload/garmin-dump/status"
+        chunked
+      />,
+    );
+
+    fireEvent.drop(screen.getByRole("region", { name: "Garmin file drop zone" }), {
+      dataTransfer: { files: [new File(["zip-data"], "garmin-export.zip")] },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("15,418 files failed")).toBeTruthy(),
+    );
+  });
 });

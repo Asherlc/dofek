@@ -39,9 +39,12 @@ export function FileImportZone({
   recentLogs = [],
   showDetailsLink = true,
 }: FileImportZoneProps) {
-  const [state, setState] = useState<{ status: SyncStatus; progress?: number; message?: string }>({
-    status: "idle",
-  });
+  const [state, setState] = useState<{
+    status: SyncStatus;
+    progress?: number;
+    message?: string;
+    failedCount?: number;
+  }>({ status: "idle" });
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cancelledRef = useRef(false);
@@ -83,6 +86,7 @@ export function FileImportZone({
             status: "syncing",
             progress: data.progress ?? 0,
             message: data.message ?? "Processing...",
+            failedCount: typeof data.failedCount === "number" ? data.failedCount : undefined,
           });
 
           await new Promise<void>((resolve) => {
@@ -246,6 +250,11 @@ export function FileImportZone({
         {state.status === "syncing" ? (
           <div>
             <div className="text-xs text-subtle">{state.message}</div>
+            {typeof state.failedCount === "number" && state.failedCount > 0 && (
+              <div className="mt-1 text-xs text-amber-400">
+                {state.failedCount.toLocaleString()} file{state.failedCount === 1 ? "" : "s"} failed
+              </div>
+            )}
             {state.progress != null && (
               <div className="mt-2 w-full h-1.5 rounded-full bg-accent/10 overflow-hidden">
                 <div

@@ -158,6 +158,13 @@ async function getImportJobStatus(importQueue: Queue<ImportJobData>, jobId: stri
     typeof progress === "object" && progress !== null && "message" in progress
       ? String(progress.message)
       : undefined;
+  const failedCount =
+    typeof progress === "object" &&
+    progress !== null &&
+    "failedCount" in progress &&
+    typeof progress.failedCount === "number"
+      ? progress.failedCount
+      : undefined;
 
   let status: "uploading" | "assembling" | "processing" | "done" | "error";
   if (state === "completed") status = "done";
@@ -173,6 +180,7 @@ async function getImportJobStatus(importQueue: Queue<ImportJobData>, jobId: stri
     status,
     progress: status === "done" ? 100 : (percentage ?? 0),
     message: state === "failed" ? job.failedReason : msg,
+    failedCount,
     result: job.returnvalue,
     userId: jobUserId,
   };

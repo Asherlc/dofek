@@ -718,6 +718,42 @@ describe("createUploadRouter", () => {
       expect(data.progress).toBe(0);
     });
 
+    it("returns failedCount when progress includes it", async () => {
+      const { app, queue } = createTestApp();
+      const mockJob = {
+        data: { userId: "user-1" },
+        getState: vi.fn(() => Promise.resolve("active")),
+        progress: {
+          percentage: 46,
+          message: "356 of 15774 complete, 15418 failed",
+          failedCount: 15418,
+        },
+        failedReason: null,
+        returnvalue: null,
+      };
+      queue.getJob.mockResolvedValueOnce(mockJob);
+      const res = await request(app, "get", "/api/upload/apple-health/status/failed-count");
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.failedCount).toBe(15418);
+    });
+
+    it("omits failedCount when progress does not include it", async () => {
+      const { app, queue } = createTestApp();
+      const mockJob = {
+        data: { userId: "user-1" },
+        getState: vi.fn(() => Promise.resolve("active")),
+        progress: { percentage: 50, message: "Processing..." },
+        failedReason: null,
+        returnvalue: null,
+      };
+      queue.getJob.mockResolvedValueOnce(mockJob);
+      const res = await request(app, "get", "/api/upload/apple-health/status/no-failed-count");
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.failedCount).toBeUndefined();
+    });
+
     it("handles Redis unavailability gracefully", async () => {
       const { app, queue } = createTestApp();
       queue.getJob.mockRejectedValueOnce(new Error("ECONNREFUSED"));
