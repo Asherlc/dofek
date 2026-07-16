@@ -14,10 +14,8 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 
-const CLAUDE_REDIRECT_URIS = new Set([
-  "https://claude.ai/api/mcp/auth_callback",
-  "https://claude.com/api/mcp/auth_callback",
-]);
+/** Loopback hosts allowed to use http:// redirect URIs (OAuth 2.1 / RFC 8252). */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 const oauthClientRowSchema = z.object({
   client_id: z.string(),
@@ -35,12 +33,33 @@ function clientSecretContext(clientId: string) {
   };
 }
 
-function validateClaudeRedirectUris(redirectUris: readonly string[]): void {
-  if (
-    redirectUris.length === 0 ||
-    redirectUris.some((redirectUri) => !CLAUDE_REDIRECT_URIS.has(redirectUri))
-  ) {
-    throw new InvalidClientMetadataError("Only Claude OAuth callback URLs are supported");
+/**
+ * Accept any absolute https redirect URI, plus http on loopback hosts for local
+ * MCP clients. Reject dangerous schemes, fragments, and credentials in the URI.
+ */
+export function isAllowedMcpOAuthRedirectUri(redirectUri: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(redirectUri);
+  } catch {
+    return false;
+  }
+  if (url.username || url.password || url.hash) return false;
+  if (!url.hostname) return false;
+
+  if (url.protocol === "https:") return true;
+  if (url.protocol === "http:") return LOOPBACK_HOSTS.has(url.hostname);
+  return false;
+}
+
+function validateRedirectUris(redirectUris: readonly string[]): void {
+  if (redirectUris.length === 0) {
+    throw new InvalidClientMetadataError("At least one redirect_uri is required");
+  }
+  for (const redirectUri of redirectUris) {
+    if (!isAllowedMcpOAuthRedirectUri(redirectUri)) {
+      throw new InvalidClientMetadataError("Invalid redirect_uri");
+    }
   }
 }
 
@@ -77,7 +96,7 @@ export class McpOAuthClientsStore implements OAuthRegisteredClientsStore {
   }
 
   async registerClient(client: OAuthClientInformationFull): Promise<OAuthClientInformationFull> {
-    validateClaudeRedirectUris(client.redirect_uris);
+    validateRedirectUris(client.redirect_uris);
     const clientMetadata = OAuthClientMetadataSchema.parse(client);
     const encryptedClientSecret = client.client_secret
       ? await encryptCredentialValue(client.client_secret, clientSecretContext(client.client_id))

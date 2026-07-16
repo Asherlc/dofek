@@ -6,13 +6,12 @@ import {
   parseAdaptiveRateState,
   slideAdaptiveWindow,
 } from "@dofek/provider-http/adaptive-rate-limit";
-import { RedisConnection } from "bullmq";
 import { getConfiguredProviderIds, getProviderQueueConfig } from "../jobs/provider-queue-config.ts";
 import {
   type ProviderRateLimitCooldown,
   parseProviderRateLimitCooldown,
 } from "../jobs/provider-rate-limit-cooldown.ts";
-import { getRedisConnection } from "../jobs/queues.ts";
+import { getSharedRedisConnection } from "../jobs/queues.ts";
 
 const COOLDOWN_KEY_PREFIX = "provider-rate-limit";
 
@@ -223,18 +222,10 @@ export async function getProviderRateLimitStatus(
   return sortRows([...rows.values()]);
 }
 
-let sharedRedisConnection: RedisConnection | null = null;
-
 async function getSharedRedisReader(): Promise<RedisReader> {
-  if (!sharedRedisConnection) {
-    sharedRedisConnection = new RedisConnection(getRedisConnection(), {
-      shared: true,
-      blocking: false,
-      skipVersionCheck: true,
-    });
-  }
+  const connection = getSharedRedisConnection();
   // biome-ignore lint/suspicious/noExplicitAny: bullmq 5.79.2 narrowed IRedisClient; runtime is ioredis Redis
-  const redisClient: any = await sharedRedisConnection.client;
+  const redisClient: any = await connection.client;
   return {
     get: async (key) => redisClient.get(key),
     scan: async (cursor, matchKeyword, pattern, countKeyword, count) =>

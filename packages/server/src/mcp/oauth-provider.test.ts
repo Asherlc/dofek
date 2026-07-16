@@ -14,7 +14,11 @@ import type {
 import type { Database } from "dofek/db";
 import type { Response } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DofekOAuthServerProvider, MCP_OAUTH_SCOPES } from "./oauth-provider.ts";
+import {
+  DofekOAuthServerProvider,
+  MCP_OAUTH_SCOPES,
+  oauthAccessTokenName,
+} from "./oauth-provider.ts";
 
 const mocks = vi.hoisted(() => ({
   createAuthorizationCode: vi.fn(),
@@ -96,6 +100,21 @@ function makeResponse(locals: Record<string, unknown> = {}): {
 function s256(value: string): string {
   return createHash("sha256").update(value).digest("base64url");
 }
+
+describe("oauthAccessTokenName", () => {
+  it("prefers the registered client_name", () => {
+    expect(oauthAccessTokenName(makeClient({ client_name: "Claude" }))).toBe("Claude OAuth");
+    expect(oauthAccessTokenName(makeClient({ client_name: "ChatGPT" }))).toBe("ChatGPT OAuth");
+  });
+
+  it("trims whitespace from client_name", () => {
+    expect(oauthAccessTokenName(makeClient({ client_name: "  Claude  " }))).toBe("Claude OAuth");
+  });
+
+  it("falls back to MCP OAuth when client_name is missing", () => {
+    expect(oauthAccessTokenName(makeClient({ client_name: undefined }))).toBe("MCP OAuth");
+  });
+});
 
 function mockDb(): Pick<Database, "execute"> {
   return { execute: vi.fn() };
@@ -377,6 +396,7 @@ describe("DofekOAuthServerProvider", () => {
       expect(mocks.exchangeAuthorizationCode).toHaveBeenCalledWith(expect.anything(), {
         clientId: client.client_id,
         code: "code",
+        name: "Claude OAuth",
         redirectUri: exchangeRedirectUri,
         resource: resource.href,
       });
@@ -438,6 +458,7 @@ describe("DofekOAuthServerProvider", () => {
       expect(mocks.exchangeAuthorizationCode).toHaveBeenCalledWith(expect.anything(), {
         clientId: client.client_id,
         code: "code",
+        name: "Claude OAuth",
         redirectUri,
         resource: resource.href,
       });
@@ -496,6 +517,7 @@ describe("DofekOAuthServerProvider", () => {
 
       expect(mocks.rotateRefreshToken).toHaveBeenCalledWith(expect.anything(), {
         clientId: client.client_id,
+        name: "Claude OAuth",
         refreshToken: "refresh-token",
         requestedScopes: ["health:read"],
         resource: resource.href,

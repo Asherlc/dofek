@@ -677,15 +677,13 @@ describe("ProviderRateLimitCooldownStore", () => {
         .fn<(key: string, value: string, mode: "PX", ms: number) => Promise<string | null>>()
         .mockResolvedValue("OK"),
     };
-    vi.doMock("bullmq", () => ({
-      RedisConnection: vi.fn().mockImplementation(() => ({
+    vi.doMock("./queues.ts", () => ({
+      getRedisConnection: vi.fn().mockReturnValue({}),
+      getSharedRedisConnection: vi.fn().mockImplementation(() => ({
         get client() {
           return Promise.resolve(mockClient);
         },
       })),
-    }));
-    vi.doMock("./queues.ts", () => ({
-      getRedisConnection: vi.fn().mockReturnValue({}),
     }));
     vi.resetModules();
 

@@ -19,6 +19,7 @@ import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-que
 import {
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
   type ActivityAnalyticsJobData,
+  closeAllQueueResources,
   EXPORT_QUEUE,
   type ExportJobData,
   FIT_FILE_IMPORT_BATCH_QUEUE,
@@ -387,6 +388,8 @@ async function shutdown() {
     garminImportProgressCoordinator.close(),
     ...allWorkers.map((worker) => worker.close()),
   ]);
+  await closeAllQueueResources();
+  await db.$client.end();
   logger.info("[worker] Shutdown complete.");
   process.exit(0);
 }

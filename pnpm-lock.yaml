@@ -425,7 +425,7 @@ importers:
         specifier: 57.0.5
         version: 57.0.5(expo@57.0.6)
       expo-camera:
-        specifier: 57.0.3
+        specifier: ~57.0.3
         version: 57.0.3(@types/emscripten@1.41.5)(expo@57.0.6)(react-native-web@0.21.2(encoding@0.1.13)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       expo-dev-client:
         specifier: ~57.0.6

@@ -10,6 +10,7 @@ vi.mock("@sentry/node", () => ({
 vi.mock("../logger.ts", () => ({
   logger: {
     error: vi.fn(),
+    warn: vi.fn(),
   },
 }));
 
@@ -52,13 +53,16 @@ function makeWorker(
     listLength?: (key: string) => Promise<number>;
   } = {},
 ): TestWorker {
+  const commandClient = {
+    status: options.commandStatus ?? "ready",
+    llen: (key: string) => options.listLength?.(key) ?? Promise.resolve(0),
+  };
   return {
     name,
     isRunning: () => options.running ?? true,
-    client: Promise.resolve({
-      status: options.commandStatus ?? "ready",
-      llen: (key) => options.listLength?.(key) ?? Promise.resolve(0),
-    }),
+    get client() {
+      return Promise.resolve(commandClient);
+    },
     toKey: (type) => `bull:${name}:${type}`,
     waitUntilReady: () => Promise.resolve({ status: options.blockingStatus ?? "ready" }),
   };
@@ -152,8 +156,9 @@ describe("createWorkerReadinessServer", () => {
 
     expect(response.status).toBe(503);
     expect(listLength).not.toHaveBeenCalled();
-    expect(Sentry.captureException).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "BullMQ worker blocking connection is not ready: sync" }),
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[worker] Readiness check failed: BullMQ worker blocking connection (sync) is not ready",
     );
   });
 
@@ -166,9 +171,91 @@ describe("createWorkerReadinessServer", () => {
 
     expect(response.status).toBe(503);
     expect(listLength).not.toHaveBeenCalled();
-    expect(Sentry.captureException).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "BullMQ worker command connection is not ready: sync" }),
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[worker] Readiness check failed: BullMQ worker command connection (sync) is not ready",
     );
+  });
+
+  it("succeeds when blocking connection becomes ready after retries", async () => {
+    let callCount = 0;
+    const worker: TestWorker = {
+      name: "sync",
+      isRunning: () => true,
+      get client() {
+        return Promise.resolve({
+          status: "ready",
+          llen: () => Promise.resolve(0),
+        });
+      },
+      toKey: (type) => `bull:sync:${type}`,
+      waitUntilReady: () => {
+        callCount++;
+        return Promise.resolve({ status: callCount < 3 ? "reconnecting" : "ready" });
+      },
+    };
+
+    const response = await requestReadiness([worker]);
+
+    expect(response.status).toBe(200);
+    expect(callCount).toBe(3);
+  });
+
+  it("retries exactly CONNECTION_STATUS_RETRIES times and applies correct delays", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    let callCount = 0;
+    const worker: TestWorker = {
+      name: "sync",
+      isRunning: () => true,
+      get client() {
+        return Promise.resolve({
+          status: "ready",
+          llen: () => Promise.resolve(0),
+        });
+      },
+      toKey: (type) => `bull:sync:${type}`,
+      waitUntilReady: () => {
+        callCount++;
+        return Promise.resolve({ status: "reconnecting" });
+      },
+    };
+
+    const response = await requestReadiness([worker]);
+
+    expect(response.status).toBe(503);
+    expect(callCount).toBe(3);
+    const readinessDelays = setTimeoutSpy.mock.calls.filter(([, ms]) => ms === 200);
+    expect(readinessDelays).toHaveLength(2);
+  });
+
+  it("retries when getStatus throws an error", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    let callCount = 0;
+    const worker: TestWorker = {
+      name: "sync",
+      isRunning: () => true,
+      get client() {
+        return Promise.resolve({
+          status: "ready",
+          llen: () => Promise.resolve(0),
+        });
+      },
+      toKey: (type) => `bull:sync:${type}`,
+      waitUntilReady: () => {
+        callCount++;
+        if (callCount < 3) {
+          return Promise.reject(new Error("blocking connection is not ready"));
+        }
+        return Promise.resolve({ status: "ready" });
+      },
+    };
+
+    const response = await requestReadiness([worker]);
+
+    expect(response.status).toBe(200);
+    expect(callCount).toBe(3);
+    const readinessDelays = setTimeoutSpy.mock.calls.filter(([, ms]) => ms === 200);
+    expect(readinessDelays).toHaveLength(2);
   });
 
   it("reports unavailable when a Redis readiness command does not settle", async () => {
