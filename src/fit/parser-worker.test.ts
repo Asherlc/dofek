@@ -99,6 +99,19 @@ describe("parseFitFileInWorkerThread", () => {
     expect(worker.terminate).toHaveBeenCalledOnce();
   });
 
+  it("accepts worker messages with Invalid Date session startTime", async () => {
+    const { parseFitFileInWorkerThread } = await importParserWorkerWithMockWorker();
+    const activity = parsedFitActivityFixture();
+    activity.session.startTime = new Date("invalid");
+
+    const resultPromise = parseFitFileInWorkerThread(Buffer.from("fit"));
+    const worker = expectWorkerInstance();
+    worker.emit("message", { status: "ok", activity });
+
+    await expect(resultPromise).resolves.toStrictEqual(activity);
+    expect(worker.terminate).toHaveBeenCalledOnce();
+  });
+
   it("rejects malformed parsed activity messages", async () => {
     const { parseFitFileInWorkerThread } = await importParserWorkerWithMockWorker();
 

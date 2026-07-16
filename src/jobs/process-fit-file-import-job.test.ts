@@ -95,6 +95,17 @@ function createActivityFit(): Buffer {
   return Buffer.from(encoder.close());
 }
 
+function createActivityFitWithNumericFileType(): Buffer {
+  const timestamp = Utils.convertDateToDateTime(new Date("2026-07-01T12:00:00.000Z"));
+  const encoder = new Encoder();
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.FILE_ID,
+    type: 8,
+    timeCreated: timestamp,
+  });
+  return Buffer.from(encoder.close());
+}
+
 function createWeightFit(): Buffer {
   const timestamp = Utils.convertDateToDateTime(new Date("2026-07-01T12:00:00.000Z"));
   const encoder = new Encoder();
@@ -324,6 +335,32 @@ describe("processFitFileImportJob", () => {
       percentage: 100,
       message: "FIT file import complete.",
     });
+  });
+
+  it("accepts FIT files with numeric file_id.type from Garmin exports", async () => {
+    const filePath = await writeTempFit(createActivityFitWithNumericFileType());
+
+    const result = await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/unknown_filetype.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+        activitySummary: {
+          externalId: "12345",
+          activityType: "cycling",
+          startedAtIso: "2026-07-01T12:00:00.000Z",
+          endedAtIso: "2026-07-01T12:30:00.000Z",
+          name: "Morning Ride",
+          raw: { activityId: 12345 },
+        },
+      }),
+      mockDb,
+    );
+
+    expect(result).toEqual({ recordsSynced: 0, errors: [] });
+    expect(mockUpsertProviderActivity).toHaveBeenCalledOnce();
   });
 
   it("imports a FIT-only activity when no parent summary exists", async () => {
