@@ -2,11 +2,21 @@ import { formatTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import type { SyncLogEntry, SyncStatus } from "./DataSourcesSyncTypes.ts";
 import { FileImportButton } from "./FileImportButton.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown.tsx";
 import { StatusDot } from "./StatusDot.tsx";
+
+const importStatusResponseSchema = z
+  .object({
+    status: z.string(),
+    progress: z.number().optional(),
+    message: z.string().optional(),
+    failedCount: z.number().optional(),
+  })
+  .passthrough();
 
 export interface FileImportZoneProps {
   providerId?: string;
@@ -69,7 +79,7 @@ export function FileImportZone({
         try {
           const resp = await fetch(`${statusUrl}/${jobId}`);
           if (!resp.ok) throw new Error("Failed to get status");
-          const data = await resp.json();
+          const data = importStatusResponseSchema.parse(await resp.json());
 
           if (cancelledRef.current) return;
 
@@ -86,7 +96,7 @@ export function FileImportZone({
             status: "syncing",
             progress: data.progress ?? 0,
             message: data.message ?? "Processing...",
-            failedCount: typeof data.failedCount === "number" ? data.failedCount : undefined,
+            failedCount: data.failedCount,
           });
 
           await new Promise<void>((resolve) => {

@@ -481,16 +481,20 @@ describe("worker module", () => {
   });
 
   // ── FIT batch child failure suppression tests ──
-  // Each worker gets its own `on` mock; we can find the FIT worker's handlers
-  // directly by looking up workerOnMocks by queue name.
-  function getFitWorkerFailedHandler(): (...args: unknown[]) => unknown {
-    const fitOn = workerOnMocks["fit-file-import-queue"];
-    if (!fitOn) throw new Error("FIT worker on mock was not registered");
-    const failedCall = fitOn.mock.calls.find((call) => call[0] === "failed");
+  // Each worker gets its own `on` mock; tests resolve a specific worker's
+  // handler by queue name via workerOnMocks rather than relying on call order.
+  function getWorkerFailedHandler(queueName: string): (...args: unknown[]) => unknown {
+    const on = workerOnMocks[queueName];
+    if (!on) throw new Error(`${queueName} worker on mock was not registered`);
+    const failedCall = on.mock.calls.find((call) => call[0] === "failed");
     if (!failedCall || typeof failedCall[1] !== "function") {
-      throw new Error("FIT worker failed handler was not registered");
+      throw new Error(`${queueName} worker failed handler was not registered`);
     }
     return failedCall[1];
+  }
+
+  function getFitWorkerFailedHandler(): (...args: unknown[]) => unknown {
+    return getWorkerFailedHandler("fit-file-import-queue");
   }
 
   it("suppresses Sentry for FIT batch child failures with UnrecoverableError", async () => {
@@ -523,7 +527,7 @@ describe("worker module", () => {
 
     const job = { id: "sync-child-1", parentKey: "bull:sync-batch:batch-1" };
     const error = new UnrecoverableError("unrecoverable sync error");
-    getWorkerHandler("failed")(job, error);
+    getWorkerFailedHandler("sync-queue")(job, error);
 
     expect(Sentry.captureException).toHaveBeenCalledWith(error);
   });

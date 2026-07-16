@@ -9,6 +9,7 @@ import type { Database } from "dofek/db";
 import type { ImportJobData } from "dofek/jobs/queues";
 import { type Request, type Response, Router } from "express";
 import rateLimit from "express-rate-limit";
+import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { assembleChunks, MAX_UPLOAD_BYTES, streamToFile } from "../lib/server-utils.ts";
@@ -134,6 +135,17 @@ async function cleanupTempFile(filePath: string): Promise<void> {
   });
 }
 
+const jobProgressSchema = z.union([
+  z.number(),
+  z
+    .object({
+      percentage: z.number().optional(),
+      message: z.string().optional(),
+      failedCount: z.number().optional(),
+    })
+    .passthrough(),
+]);
+
 async function getImportJobStatus(importQueue: Queue<ImportJobData>, jobId: string) {
   let job: Awaited<ReturnType<Queue<ImportJobData>["getJob"]>> | undefined;
   try {
@@ -144,27 +156,12 @@ async function getImportJobStatus(importQueue: Queue<ImportJobData>, jobId: stri
   if (!job) return null;
 
   const state = await job.getState();
-  const progress: unknown = job.progress;
+  const parsedProgress = jobProgressSchema.safeParse(job.progress);
+  const progress = parsedProgress.success ? parsedProgress.data : undefined;
   const percentage =
-    typeof progress === "number"
-      ? progress
-      : typeof progress === "object" &&
-          progress !== null &&
-          "percentage" in progress &&
-          typeof progress.percentage === "number"
-        ? progress.percentage
-        : undefined;
-  const msg =
-    typeof progress === "object" && progress !== null && "message" in progress
-      ? String(progress.message)
-      : undefined;
-  const failedCount =
-    typeof progress === "object" &&
-    progress !== null &&
-    "failedCount" in progress &&
-    typeof progress.failedCount === "number"
-      ? progress.failedCount
-      : undefined;
+    typeof progress === "number" ? progress : progress?.percentage;
+  const msg = typeof progress === "object" ? progress?.message : undefined;
+  const failedCount = typeof progress === "object" ? progress?.failedCount : undefined;
 
   let status: "uploading" | "assembling" | "processing" | "done" | "error";
   if (state === "completed") status = "done";
