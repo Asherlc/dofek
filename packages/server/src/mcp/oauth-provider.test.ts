@@ -107,6 +107,10 @@ describe("oauthAccessTokenName", () => {
     expect(oauthAccessTokenName(makeClient({ client_name: "ChatGPT" }))).toBe("ChatGPT OAuth");
   });
 
+  it("trims whitespace from client_name", () => {
+    expect(oauthAccessTokenName(makeClient({ client_name: "  Claude  " }))).toBe("Claude OAuth");
+  });
+
   it("falls back to MCP OAuth when client_name is missing", () => {
     expect(oauthAccessTokenName(makeClient({ client_name: undefined }))).toBe("MCP OAuth");
   });
