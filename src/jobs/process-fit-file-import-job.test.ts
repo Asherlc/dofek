@@ -198,10 +198,7 @@ describe("processFitFileImportJob", () => {
     );
     expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
-    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
-      tags: { fitImportStep: "process" },
-      extra: { fitFileId: expect.stringMatching(/^[a-f0-9]{64}$/) },
-    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
   it("propagates unexpected extraction lookup failures for BullMQ retries", async () => {
@@ -878,14 +875,9 @@ describe("processFitFileImportJob", () => {
           "Failed to import FIT file [redacted]_broken-session.fit: FIT parser rejected [redacted]_broken-session.fit",
       }),
     );
-    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(privatePath);
-    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain("asher@example.com");
     expect(JSON.stringify(mockLoggerError.mock.calls)).not.toContain(privatePath);
     expect(JSON.stringify(mockLoggerError.mock.calls)).not.toContain("asher@example.com");
-    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
-      tags: { fitImportStep: "process" },
-      extra: { fitFileId: expect.stringMatching(/^[a-f0-9]{64}$/) },
-    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
   it("propagates transient database failures for BullMQ retries", async () => {

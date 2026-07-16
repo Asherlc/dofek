@@ -207,5 +207,13 @@ export async function processGarminDumpImportJob(
     job,
     `[phase] Finalized Garmin dump batch ${checkpoint.batchId}: ${result.recordsSynced} activities, ${result.errors.length} error groups`,
   );
+  // Report one Sentry event per unique error cause from the finalized result so
+  // operators can observe failures without flooding Sentry per file.
+  for (const error of result.errors) {
+    Sentry.captureException(
+      new Error(`Garmin dump import batch ${checkpoint.batchId}: ${error.message}`),
+      { tags: { garminDumpStep: "import-summary" } },
+    );
+  }
   return result;
 }

@@ -1,6 +1,5 @@
 /// <reference path="../activity-export/garmin-fitsdk.d.ts" />
 
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type { CanonicalActivityType } from "@dofek/training/training";
@@ -111,13 +110,8 @@ function sanitizedFitImportError(error: unknown, originalPath: string): Error {
 
 function fitFileImportErrorResult(data: unknown, error: unknown): FitFileImportJobResult {
   const originalPath = originalPathFromJobData(data);
-  const fitFileId = createHash("sha256").update(originalPath).digest("hex");
   const fileName = sanitizedFitFileName(originalPath);
   const sanitizedError = sanitizedFitImportError(error, originalPath);
-  Sentry.captureException(sanitizedError, {
-    tags: { fitImportStep: "process" },
-    extra: { fitFileId },
-  });
   logger.error("Failed to import FIT file %s: %s", fileName, sanitizedError.message);
   return {
     recordsSynced: 0,

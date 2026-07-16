@@ -447,6 +447,47 @@ describe("processGarminDumpImportJob", () => {
     expect(cleanupPreparedGarminDumpImport).not.toHaveBeenCalled();
   });
 
+  it("reports one Sentry event per unique error group at finalize", async () => {
+    const job = createJob(waitingCheckpoint());
+    job.moveToWaitingChildren.mockResolvedValue(false);
+    job.getChildrenValues.mockResolvedValue({
+      "bull:fit-file-import-batch:garmin-fit-batch-1": {
+        recordsSynced: 3,
+        errors: [
+          { message: "15000 FIT files failed: expected string, received number" },
+          { message: "200 FIT files failed: invalid session start time" },
+        ],
+      },
+    });
+
+    await processGarminDumpImportJob(job, mockDb);
+
+    // 1 base error + 2 FIT error groups = 3 events
+    expect(mockCaptureException).toHaveBeenCalledTimes(3);
+    for (const call of mockCaptureException.mock.calls) {
+      expect(call[0]).toBeInstanceOf(Error);
+      expect(call[1]).toEqual({ tags: { garminDumpStep: "import-summary" } });
+    }
+  });
+
+  it("does not capture Sentry at finalize when there are no errors", async () => {
+    const job = createJob({
+      ...waitingCheckpoint(),
+      baseResult: { recordsSynced: 2, errors: [] },
+    });
+    job.moveToWaitingChildren.mockResolvedValue(false);
+    job.getChildrenValues.mockResolvedValue({
+      "bull:fit-file-import-batch:garmin-fit-batch-1": {
+        recordsSynced: 3,
+        errors: [],
+      },
+    });
+
+    await processGarminDumpImportJob(job, mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
   it("computes duration from the saved orchestration start", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_784_073_600_500);
     const job = createJob(waitingCheckpoint());
