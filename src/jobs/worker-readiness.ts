@@ -15,6 +15,13 @@ interface ReadinessWorker {
   waitUntilReady(): Promise<{ status: string }>;
 }
 
+class WorkerReadinessError extends Error {
+  readonly code = "WORKER_READINESS_NOT_READY" as const;
+  constructor(label: string) {
+    super(`BullMQ worker ${label} is not ready`);
+  }
+}
+
 const WORKER_READINESS_TIMEOUT_MS = 2_500;
 const CONNECTION_STATUS_RETRIES = 3;
 const CONNECTION_STATUS_RETRY_DELAY_MS = 200;
@@ -23,17 +30,20 @@ async function waitForReadyStatus(
   label: string,
   getStatus: () => Promise<{ status: string }>,
 ): Promise<void> {
+  let lastError: unknown;
   for (let attempt = 0; attempt < CONNECTION_STATUS_RETRIES; attempt++) {
-    const connection = await getStatus();
-    if (connection.status === "ready") return;
+    try {
+      const connection = await getStatus();
+      if (connection.status === "ready") return;
+      lastError = new WorkerReadinessError(label);
+    } catch (error) {
+      lastError = error;
+    }
     if (attempt < CONNECTION_STATUS_RETRIES - 1) {
       await new Promise((resolve) => setTimeout(resolve, CONNECTION_STATUS_RETRY_DELAY_MS));
     }
   }
-  const connection = await getStatus();
-  if (connection.status !== "ready") {
-    throw new Error(`BullMQ worker ${label} is not ready`);
-  }
+  throw lastError instanceof WorkerReadinessError ? lastError : new WorkerReadinessError(label);
 }
 
 async function checkWorkerReadiness(workers: readonly ReadinessWorker[]): Promise<void> {
@@ -105,10 +115,7 @@ export function createWorkerReadinessServer(workers: readonly ReadinessWorker[])
       .then(() => sendJson(response, 200, { status: "ok", workers: workers.length }))
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        const isTransient =
-          (message.includes("blocking connection") && message.includes("is not ready")) ||
-          (message.includes("command connection") && message.includes("is not ready"));
-        if (isTransient) {
+        if (error instanceof WorkerReadinessError) {
           logger.warn(`[worker] Readiness check failed: ${message}`);
         } else {
           Sentry.captureException(error);
