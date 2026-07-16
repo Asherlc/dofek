@@ -444,18 +444,18 @@ export async function enqueueDebouncedUserRefit(
 
 /** Close all cached queues, flow producers, and the shared Redis connection. */
 export async function closeAllQueueResources(): Promise<void> {
-  const closables: Array<Promise<unknown>> = [];
+  const closePromises: Array<Promise<unknown>> = [];
 
   for (const queue of cachedProviderQueues.values()) {
-    closables.push(queue.close());
+    closePromises.push(queue.close());
   }
   cachedProviderQueues.clear();
 
-  if (cachedPostSyncQueue) closables.push(cachedPostSyncQueue.close());
-  if (cachedActivityDeleteAnalyticsQueue) closables.push(cachedActivityDeleteAnalyticsQueue.close());
-  if (cachedImportQueue) closables.push(cachedImportQueue.close());
-  if (cachedFitFileImportQueue) closables.push(cachedFitFileImportQueue.close());
-  if (cachedFlowProducer) closables.push(cachedFlowProducer.close());
+  if (cachedPostSyncQueue) closePromises.push(cachedPostSyncQueue.close());
+  if (cachedActivityDeleteAnalyticsQueue) closePromises.push(cachedActivityDeleteAnalyticsQueue.close());
+  if (cachedImportQueue) closePromises.push(cachedImportQueue.close());
+  if (cachedFitFileImportQueue) closePromises.push(cachedFitFileImportQueue.close());
+  if (cachedFlowProducer) closePromises.push(cachedFlowProducer.close());
 
   cachedPostSyncQueue = null;
   cachedActivityDeleteAnalyticsQueue = null;
@@ -463,7 +463,7 @@ export async function closeAllQueueResources(): Promise<void> {
   cachedFitFileImportQueue = null;
   cachedFlowProducer = null;
 
-  await Promise.all(closables);
+  await Promise.all(closePromises);
 
   if (sharedRedisConnection) {
     await sharedRedisConnection.close();
