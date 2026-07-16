@@ -1,33 +1,64 @@
-import { beforeAll, describe, expect, it, type MockInstance, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-// Mock dependencies before importing worker module
-const mockOn = vi.fn();
-const mockClose = vi.fn(() => Promise.resolve());
-const mockRun = vi.fn(() => Promise.resolve());
-const mockAddJobLog = vi.fn(() => Promise.resolve(1));
-const mockReadinessListen = vi.fn();
-const mockReadinessClose = vi.fn((callback: (error?: Error) => void) => callback());
-const mockReadinessServer = {
-  listen: mockReadinessListen,
-  close: mockReadinessClose,
-};
-const mockObserveFitJob = vi.fn();
-const reconcileGarminProgressError = new Error("progress Redis unavailable");
-const mockReconcileGarminProgress = vi.fn().mockRejectedValueOnce(reconcileGarminProgressError);
-const mockCloseGarminProgress = vi.fn().mockResolvedValue(undefined);
-const mockGarminProgressCoordinator = {
-  observeFitJob: mockObserveFitJob,
-  reconcile: mockReconcileGarminProgress,
-  close: mockCloseGarminProgress,
-};
+// All mock dependencies live inside vi.hoisted() so they are guaranteed to exist
+// before vi.mock() factories resolve and before the static import of worker.ts.
+// This satisfies vitest's "related" mode used by Stryker in CI, which requires a
+// static import dependency between the test and the source module.
+const hoisted = vi.hoisted(() => {
+  process.env.SENTRY_DSN = "https://test@sentry.io/123";
+
+  function noOpExit(): never {
+    throw new Error("process.exit called unexpectedly in test");
+  }
+
+  const mockOn = vi.fn();
+  const mockClose = vi.fn(() => Promise.resolve());
+  const mockRun = vi.fn(() => Promise.resolve());
+  const mockAddJobLog = vi.fn(() => Promise.resolve(1));
+
+  const mockReadinessListen = vi.fn();
+  const mockReadinessClose = vi.fn((callback: (error?: Error) => void) => callback());
+  const mockReadinessServer = {
+    listen: mockReadinessListen,
+    close: mockReadinessClose,
+  };
+
+  const mockObserveFitJob = vi.fn();
+  const reconcileGarminProgressError = new Error("progress Redis unavailable");
+  const mockReconcileGarminProgress = vi.fn().mockRejectedValueOnce(reconcileGarminProgressError);
+  const mockCloseGarminProgress = vi.fn().mockResolvedValue(undefined);
+  const mockGarminProgressCoordinator = {
+    observeFitJob: mockObserveFitJob,
+    reconcile: mockReconcileGarminProgress,
+    close: mockCloseGarminProgress,
+  };
+
+  return {
+    exitSpy: vi.spyOn(process, "exit").mockImplementation(noOpExit),
+    setTimeoutSpy: vi.spyOn(globalThis, "setTimeout"),
+    clearTimeoutSpy: vi.spyOn(globalThis, "clearTimeout"),
+    mockOn,
+    mockClose,
+    mockRun,
+    mockAddJobLog,
+    mockReadinessListen,
+    mockReadinessClose,
+    mockReadinessServer,
+    mockObserveFitJob,
+    reconcileGarminProgressError,
+    mockReconcileGarminProgress,
+    mockCloseGarminProgress,
+    mockGarminProgressCoordinator,
+  };
+});
 
 vi.mock("bullmq", () => ({
-  Job: { addJobLog: mockAddJobLog },
+  Job: { addJobLog: hoisted.mockAddJobLog },
   Worker: vi.fn((name: string) => ({
     name,
-    on: mockOn,
-    close: mockClose,
-    run: mockRun,
+    on: hoisted.mockOn,
+    close: hoisted.mockClose,
+    run: hoisted.mockRun,
   })),
 }));
 
@@ -88,11 +119,11 @@ vi.mock("./scheduled-sync.ts", () => ({
 }));
 
 vi.mock("./worker-readiness.ts", () => ({
-  createWorkerReadinessServer: vi.fn(() => mockReadinessServer),
+  createWorkerReadinessServer: vi.fn(() => hoisted.mockReadinessServer),
 }));
 
 vi.mock("./garmin-import-progress.ts", () => ({
-  createGarminImportProgressCoordinator: vi.fn(() => mockGarminProgressCoordinator),
+  createGarminImportProgressCoordinator: vi.fn(() => hoisted.mockGarminProgressCoordinator),
 }));
 
 vi.mock("./provider-queue-config.ts", () => ({
@@ -132,24 +163,29 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
-// Prevent process.exit from actually exiting — must return `never` to match the real signature.
-// The throw is unreachable because no test triggers SIGTERM/SIGINT.
-function noOpExit(): never {
-  throw new Error("process.exit called unexpectedly in test");
-}
-const exitSpy = vi.spyOn(process, "exit").mockImplementation(noOpExit);
+const {
+  exitSpy,
+  setTimeoutSpy,
+  clearTimeoutSpy,
+  mockOn,
+  mockClose,
+  mockRun,
+  mockAddJobLog,
+  mockReadinessListen,
+  mockReadinessClose,
+  mockReadinessServer,
+  mockObserveFitJob,
+  reconcileGarminProgressError,
+  mockReconcileGarminProgress,
+  mockCloseGarminProgress,
+  mockGarminProgressCoordinator,
+} = hoisted;
+
+// Static import ensures vitest `related` mode (used by Stryker in CI) detects this
+// test file as related to worker.ts, so mutations in worker.ts are covered.
+import "./worker.ts";
 
 describe("worker module", () => {
-  let setTimeoutSpy: MockInstance;
-  let clearTimeoutSpy: MockInstance;
-
-  beforeAll(async () => {
-    process.env.SENTRY_DSN = "https://test@sentry.io/123";
-    setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
-    clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
-    // Import the module to trigger its side effects
-    await import("./worker.ts");
-  });
 
   // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import
   // + 1 FIT batch + 1 ZIP extract + 1 export + 1 scheduled-sync + 1 post-sync
