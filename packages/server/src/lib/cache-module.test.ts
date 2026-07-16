@@ -43,13 +43,11 @@ describe("cache module environment selection", () => {
       smembers: vi.fn(async () => ["query-cache:data:user-1:dashboard"]),
       srem: vi.fn(async () => 1),
     };
-    const redisConnection = vi.fn().mockImplementation(() => ({
+    const getSharedRedisConnection = vi.fn().mockImplementation(() => ({
       client: Promise.resolve(client),
     }));
-    const getRedisConnection = vi.fn(() => ({ host: "redis" }));
 
-    vi.doMock("bullmq", () => ({ RedisConnection: redisConnection }));
-    vi.doMock("dofek/jobs/queues", () => ({ getRedisConnection }));
+    vi.doMock("dofek/jobs/queues", () => ({ getSharedRedisConnection }));
     process.env = { ...originalEnv, NODE_ENV: "production" };
 
     const module = await import("dofek/lib/cache");
@@ -61,16 +59,7 @@ describe("cache module environment selection", () => {
     await expect(store.get("user-1:dashboard")).resolves.toEqual({ ok: true });
     await store.invalidateAll();
 
-    expect(getRedisConnection).toHaveBeenCalledTimes(1);
-    expect(redisConnection).toHaveBeenCalledTimes(1);
-    expect(redisConnection).toHaveBeenCalledWith(
-      { host: "redis" },
-      {
-        shared: true,
-        blocking: false,
-        skipVersionCheck: true,
-      },
-    );
+    expect(getSharedRedisConnection).toHaveBeenCalledTimes(1);
     expect(client.set).toHaveBeenCalledWith(
       "query-cache:data:user-1:dashboard",
       JSON.stringify({ ok: true }),

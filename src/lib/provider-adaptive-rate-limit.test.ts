@@ -13,7 +13,7 @@ import {
 const sharedRedisMocks = vi.hoisted(() => ({
   set: vi.fn().mockResolvedValue("OK"),
   get: vi.fn().mockResolvedValue(null),
-  RedisConnection: vi.fn().mockImplementation(() => ({
+  sharedRedisConnection: vi.fn().mockImplementation(() => ({
     get client() {
       return Promise.resolve({
         set: (...args: unknown[]) => sharedRedisMocks.set(...args),
@@ -23,15 +23,12 @@ const sharedRedisMocks = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock("bullmq", () => ({
-  RedisConnection: sharedRedisMocks.RedisConnection,
-}));
-
 vi.mock("../jobs/queues.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../jobs/queues.ts")>();
   return {
     ...original,
     getRedisConnection: vi.fn().mockReturnValue({}),
+    getSharedRedisConnection: sharedRedisMocks.sharedRedisConnection,
   };
 });
 
@@ -677,15 +674,13 @@ describe("providerAdaptiveRateLimitStore", () => {
       set: vi.fn().mockResolvedValue("OK"),
       get: vi.fn().mockResolvedValue(null),
     };
-    vi.doMock("bullmq", () => ({
-      RedisConnection: vi.fn().mockImplementation(() => ({
+    vi.doMock("../jobs/queues.ts", () => ({
+      getRedisConnection: vi.fn().mockReturnValue({}),
+      getSharedRedisConnection: vi.fn().mockImplementation(() => ({
         get client() {
           return Promise.resolve(mockClient);
         },
       })),
-    }));
-    vi.doMock("../jobs/queues.ts", () => ({
-      getRedisConnection: vi.fn().mockReturnValue({}),
     }));
     vi.resetModules();
 
