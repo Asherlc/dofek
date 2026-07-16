@@ -177,6 +177,41 @@ describe("createGarminImportProgressCoordinator", () => {
     });
   });
 
+  it("reports missing checkpoint batch jobs instead of silently skipping progress", async () => {
+    const importJob = createImportJob();
+    importJob.data.checkpoint = {
+      ...waitingCheckpoint(),
+      batchIds: ["batch-1", "missing-batch"],
+    };
+    const batchJob = createBatchJob();
+    mockImportQueue.getJob.mockResolvedValue(importJob);
+    mockBatchQueue.getJob.mockImplementation(async (batchId: string) =>
+      batchId === "batch-1" ? batchJob : undefined,
+    );
+    const coordinator = createGarminImportProgressCoordinator();
+
+    coordinator.observeFitJob({
+      parent: { id: "batch-1", queueKey: "bull:fit-file-import-batch" },
+    });
+    await vi.runAllTimersAsync();
+
+    expect(mockCaptureException).toHaveBeenCalledOnce();
+    const [reportedError, context] = mockCaptureException.mock.calls[0] ?? [];
+    expect(reportedError).toEqual(
+      new Error("Garmin import import-1 is missing FIT batch jobs: missing-batch"),
+    );
+    expect(context).toEqual({
+      tags: { garminDumpStep: "progress-refresh" },
+      extra: { batchId: "batch-1" },
+    });
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "Failed to refresh Garmin import progress for batch %s: %s",
+      "batch-1",
+      reportedError,
+    );
+    expect(importJob.updateProgress).not.toHaveBeenCalled();
+  });
+
   it("ignores events that are not children of a FIT import batch", () => {
     const coordinator = createGarminImportProgressCoordinator();
 
@@ -348,6 +383,34 @@ describe("createGarminImportProgressCoordinator", () => {
     await vi.runAllTimersAsync();
 
     expect(mockBatchQueue.getJob).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads pending batch jobs concurrently", async () => {
+    const firstBatchLookup = deferred<ReturnType<typeof createBatchJob> | null>();
+    let firstBatchLookupSettled = false;
+    let secondBatchLookupStartedBeforeFirstSettled = false;
+    mockBatchQueue.getJob.mockImplementation((batchId: string) => {
+      if (batchId === "batch-1") {
+        return firstBatchLookup.promise;
+      }
+      secondBatchLookupStartedBeforeFirstSettled = !firstBatchLookupSettled;
+      return Promise.resolve(null);
+    });
+    const coordinator = createGarminImportProgressCoordinator();
+
+    coordinator.observeFitJob({
+      parent: { id: "batch-1", queueKey: "bull:fit-file-import-batch" },
+    });
+    coordinator.observeFitJob({
+      parent: { id: "batch-2", queueKey: "bull:fit-file-import-batch" },
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.waitFor(() => expect(mockBatchQueue.getJob).toHaveBeenCalledWith("batch-1"));
+    firstBatchLookupSettled = true;
+    firstBatchLookup.resolve(null);
+    await vi.runAllTimersAsync();
+
+    expect(secondBatchLookupStartedBeforeFirstSettled).toBe(true);
   });
 
   it("reconciles waiting Garmin imports after a worker restart", async () => {

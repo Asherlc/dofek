@@ -100,24 +100,42 @@ class GarminImportProgressCoordinator {
   }
 
   async #refreshBatchIds(batchIds: readonly string[]): Promise<void> {
-    const refreshedImportIds = new Set<string>();
-    for (const batchId of batchIds) {
-      try {
-        const batchJob = await this.#batchQueue.getJob(batchId);
-        const importJobId = batchJob?.parent?.id;
-        if (!importJobId || refreshedImportIds.has(importJobId)) {
-          continue;
+    const batchJobs = await Promise.all(
+      batchIds.map(async (batchId) => {
+        try {
+          return { batchId, batchJob: await this.#batchQueue.getJob(batchId) };
+        } catch (error) {
+          this.#reportRefreshFailure(batchId, error);
+          return { batchId, batchJob: undefined };
         }
-        refreshedImportIds.add(importJobId);
-        await this.#refreshImportProgress(batchJob);
-      } catch (error) {
-        Sentry.captureException(error, {
-          tags: { garminDumpStep: "progress-refresh" },
-          extra: { batchId },
-        });
-        logger.warn("Failed to refresh Garmin import progress for batch %s: %s", batchId, error);
+      }),
+    );
+    const refreshedImportIds = new Set<string>();
+    const refreshableBatches = batchJobs.flatMap(({ batchId, batchJob }) => {
+      const importJobId = batchJob?.parent?.id;
+      if (!batchJob || !importJobId || refreshedImportIds.has(importJobId)) {
+        return [];
       }
-    }
+      refreshedImportIds.add(importJobId);
+      return [{ batchId, batchJob }];
+    });
+    await Promise.all(
+      refreshableBatches.map(async ({ batchId, batchJob }) => {
+        try {
+          await this.#refreshImportProgress(batchJob);
+        } catch (error) {
+          this.#reportRefreshFailure(batchId, error);
+        }
+      }),
+    );
+  }
+
+  #reportRefreshFailure(batchId: string, error: unknown): void {
+    Sentry.captureException(error, {
+      tags: { garminDumpStep: "progress-refresh" },
+      extra: { batchId },
+    });
+    logger.warn("Failed to refresh Garmin import progress for batch %s: %s", batchId, error);
   }
 
   async #refreshImportProgress(observedBatchJob: FitImportBatchJob): Promise<void> {
@@ -140,8 +158,13 @@ class GarminImportProgressCoordinator {
           : this.#batchQueue.getJob(batchId),
       ),
     );
+    const missingBatchIds = batchIds.filter((_, index) => batchJobs[index] === undefined);
+    if (missingBatchIds.length > 0) {
+      throw new Error(
+        `Garmin import ${importJobId} is missing FIT batch jobs: ${missingBatchIds.join(", ")}`,
+      );
+    }
     const existingBatchJobs = batchJobs.filter((batchJob) => batchJob !== undefined);
-    if (existingBatchJobs.length !== batchIds.length) return;
     const dependencyCounts = await Promise.all(
       existingBatchJobs.map((batchJob) =>
         batchJob.getDependenciesCount({
