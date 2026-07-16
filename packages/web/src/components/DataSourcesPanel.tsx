@@ -36,6 +36,7 @@ export function DataSourcesPanel() {
 
   // Resume polling for any active sync jobs (e.g. navigated away and back)
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
+  const activeImports = trpc.sync.activeImports.useQuery(undefined, { staleTime: 0 });
   const resumedJobIds = useRef(new Set<string>());
 
   // Auth modal state
@@ -186,6 +187,9 @@ export function DataSourcesPanel() {
   }, [syncRows]);
 
   const allProviders = providers.data ?? [];
+  const activeImportByProvider = new Map(
+    (activeImports.data ?? []).map((activeImport) => [activeImport.providerId, activeImport]),
+  );
   const enabledSyncable = allProviders.filter((p) => !p.importOnly && !p.pushOnly);
 
   // Resume polling for sync jobs that were already running when the page loaded
@@ -369,6 +373,7 @@ export function DataSourcesPanel() {
                   {...entry.config}
                   stats={providerStats}
                   recentLogs={recentLogs}
+                  activeImport={activeImportByProvider.get(entry.id)}
                 />
               );
             }

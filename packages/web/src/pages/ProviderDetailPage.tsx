@@ -71,6 +71,13 @@ export function ProviderDetailPage() {
   const providerStats = (stats.data ?? []).find((s) => s.providerId === providerId);
   const importConfig = getFileImportConfig(providerId);
   const hasFileImportConfig = importConfig !== undefined;
+  const activeImports = trpc.sync.activeImports.useQuery(undefined, {
+    enabled: hasFileImportConfig,
+    staleTime: 0,
+  });
+  const activeImport = (activeImports.data ?? []).find(
+    (importJob) => importJob.providerId === providerId,
+  );
   const pushOnly = provider?.pushOnly === true;
   const lastSyncedRelative = hasValidDateInput(provider?.lastSyncedAt)
     ? formatRelativeTime(provider.lastSyncedAt)
@@ -277,6 +284,7 @@ export function ProviderDetailPage() {
             {...importConfig}
             stats={providerStats}
             showDetailsLink={false}
+            activeImport={activeImport}
           />
         </section>
       )}

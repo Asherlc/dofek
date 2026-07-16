@@ -45,6 +45,9 @@ const mockPollSyncJob = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
 const mockSyncStatusFetch = vi.hoisted(() => vi.fn());
 const mockFileImportProviderCard = vi.hoisted(() => vi.fn());
+const mockActiveImportsQuery = vi.hoisted(() =>
+  vi.fn(() => ({ data: [], isLoading: false, error: null })),
+);
 const mockProviderStatsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
     data: [],
@@ -62,6 +65,7 @@ vi.mock("../lib/trpc.ts", () => ({
       providerStats: { useQuery: mockProviderStatsQuery },
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
+      activeImports: { useQuery: mockActiveImportsQuery },
       dataHealth: { useQuery: mockDataHealthQuery },
       triggerSync: { useMutation: () => ({ mutateAsync: mockSyncMutateAsync, isPending: false }) },
       syncStatus: { fetch: vi.fn() },
@@ -102,6 +106,7 @@ vi.mock("./FileImportProviderCard.tsx", () => ({
     statusUrl: string;
     chunked?: boolean;
     stats?: Record<string, unknown>;
+    activeImport?: Record<string, unknown>;
   }) => {
     mockFileImportProviderCard(props);
     return (
@@ -191,6 +196,8 @@ describe("DataSourcesPanel", () => {
     mockInvalidate.mockReset();
     mockSyncStatusFetch.mockReset();
     mockFileImportProviderCard.mockClear();
+    mockActiveImportsQuery.mockReset();
+    mockActiveImportsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockProviderStatsQuery.mockReset();
     mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   });
@@ -411,6 +418,41 @@ describe("DataSourcesPanel", () => {
         providerId: "apple_health",
         stats: appleHealthStats,
       }),
+    );
+  });
+
+  it("passes active imports to the matching settings card after refresh", () => {
+    const activeImport = {
+      jobId: "job-kaya",
+      providerId: "kaya-export",
+      progress: 42,
+      message: "Importing climbs",
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "kaya-export",
+          name: "Kaya",
+          authorized: true,
+          authType: "file-import",
+          importOnly: true,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    mockActiveImportsQuery.mockReturnValue({
+      data: [activeImport],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: "kaya-export", activeImport }),
     );
   });
 
