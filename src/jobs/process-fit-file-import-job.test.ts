@@ -51,6 +51,17 @@ vi.mock("../fit/parser-worker.ts", () => ({
   parseFitFileInWorkerThread: (...args: unknown[]) => mockParseFitFileInWorkerThread(...args),
 }));
 
+const mockFitImportDroppedFieldOccurrencesTotalAdd = vi.fn();
+const mockFitImportFilesWithDroppedFieldTotalAdd = vi.fn();
+vi.mock("../sync-metrics.ts", () => ({
+  fitImportDroppedFieldOccurrencesTotal: {
+    add: (...args: unknown[]) => mockFitImportDroppedFieldOccurrencesTotalAdd(...args),
+  },
+  fitImportFilesWithDroppedFieldTotal: {
+    add: (...args: unknown[]) => mockFitImportFilesWithDroppedFieldTotalAdd(...args),
+  },
+}));
+
 const mockLoggerWarn = vi.fn();
 const mockLoggerError = vi.fn();
 vi.mock("../logger.ts", () => ({
@@ -155,6 +166,23 @@ function createNonWeightTypeWithScaleFit(): Buffer {
     boneMass: 3.1,
     muscleMass: 31.2,
     bmi: 24.1,
+  });
+  return Buffer.from(encoder.close());
+}
+
+function createMonitoringFit(): Buffer {
+  const timestamp = Utils.convertDateToDateTime(new Date("2020-05-21T03:31:00.000Z"));
+  const stressTimestamp = Utils.convertDateToDateTime(new Date("2020-05-21T03:32:00.000Z"));
+  const encoder = new Encoder();
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.FILE_ID,
+    type: "monitoringB",
+    timeCreated: timestamp,
+  });
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.STRESS_LEVEL,
+    stressLevelTime: stressTimestamp,
+    stressLevelValue: -1,
   });
   return Buffer.from(encoder.close());
 }
@@ -379,6 +407,40 @@ describe("processFitFileImportJob", () => {
 
     expect(result).toEqual({ recordsSynced: 0, errors: [] });
     expect(mockUpsertProviderActivity).toHaveBeenCalledOnce();
+  });
+
+  it("accepts monitoring FIT files without importing derived stress data", async () => {
+    const filePath = await writeTempFit(createMonitoringFit());
+
+    const result = await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/monitoring.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
+      mockDb,
+    );
+
+    expect(result).toEqual({ recordsSynced: 0, errors: [] });
+    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(mockWriteMetricStreamBatch).not.toHaveBeenCalled();
+    expect(mockFitImportDroppedFieldOccurrencesTotalAdd).toHaveBeenCalledWith(1, {
+      provider: "garmin-dump",
+      file_type: "monitoringB",
+      message_type: "stressLevelMesgs",
+      field: "stressLevelValue",
+      reason: "derived",
+    });
+    expect(mockFitImportFilesWithDroppedFieldTotalAdd).toHaveBeenCalledWith(1, {
+      provider: "garmin-dump",
+      file_type: "monitoringB",
+      message_type: "stressLevelMesgs",
+      field: "stressLevelValue",
+      reason: "derived",
+    });
   });
 
   it("imports a FIT-only activity when no parent summary exists", async () => {
@@ -733,7 +795,7 @@ describe("processFitFileImportJob", () => {
     expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
   });
 
-  it("imports Garmin weight FIT files as body measurement metric stream rows", async () => {
+  it("imports weight FIT files as body measurement metric stream rows", async () => {
     const filePath = await writeTempFit(createWeightFit());
     const job = createFitFileImportJob({
       filePath,
@@ -779,6 +841,13 @@ describe("processFitFileImportJob", () => {
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 100,
       message: "FIT file import complete.",
+    });
+    expect(mockFitImportDroppedFieldOccurrencesTotalAdd).toHaveBeenCalledWith(1, {
+      provider: "garmin-dump",
+      file_type: "weight",
+      message_type: "fileIdMesgs",
+      field: "timeCreated",
+      reason: "unsupported",
     });
   });
 
