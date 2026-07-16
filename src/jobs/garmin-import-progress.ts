@@ -21,6 +21,9 @@ interface ObservedFitJob {
   };
 }
 
+type FitImportBatchQueue = ReturnType<typeof createFitFileImportBatchQueue>;
+type FitImportBatchJob = NonNullable<Awaited<ReturnType<FitImportBatchQueue["getJob"]>>>;
+
 class GarminImportProgressCoordinator {
   readonly #importQueue;
   readonly #batchQueue;
@@ -97,27 +100,29 @@ class GarminImportProgressCoordinator {
   }
 
   async #refreshBatchIds(batchIds: readonly string[]): Promise<void> {
-    await Promise.all(
-      batchIds.map(async (batchId) => {
-        try {
-          await this.#refreshBatchProgress(batchId);
-        } catch (error) {
-          Sentry.captureException(error, {
-            tags: { garminDumpStep: "progress-refresh" },
-            extra: { batchId },
-          });
-          logger.warn("Failed to refresh Garmin import progress for batch %s: %s", batchId, error);
+    const refreshedImportIds = new Set<string>();
+    for (const batchId of batchIds) {
+      try {
+        const batchJob = await this.#batchQueue.getJob(batchId);
+        const importJobId = batchJob?.parent?.id;
+        if (!importJobId || refreshedImportIds.has(importJobId)) {
+          continue;
         }
-      }),
-    );
+        refreshedImportIds.add(importJobId);
+        await this.#refreshImportProgress(batchJob);
+      } catch (error) {
+        Sentry.captureException(error, {
+          tags: { garminDumpStep: "progress-refresh" },
+          extra: { batchId },
+        });
+        logger.warn("Failed to refresh Garmin import progress for batch %s: %s", batchId, error);
+      }
+    }
   }
 
-  async #refreshBatchProgress(batchId: string): Promise<void> {
-    const batchJob = await this.#batchQueue.getJob(batchId);
-    const importJobId = batchJob?.parent?.id;
-    if (!importJobId) {
-      return;
-    }
+  async #refreshImportProgress(observedBatchJob: FitImportBatchJob): Promise<void> {
+    const importJobId = observedBatchJob.parent?.id;
+    if (!importJobId) return;
     const importJob = await this.#importQueue.getJob(importJobId);
     if (!importJob || importJob.data.importType !== "garmin-dump") {
       return;
@@ -127,16 +132,37 @@ class GarminImportProgressCoordinator {
       return;
     }
 
-    const counts = await batchJob.getDependenciesCount({
-      failed: true,
-      ignored: true,
-      processed: true,
-      unprocessed: true,
-    });
+    const batchIds = checkpoint.data.batchIds ?? [checkpoint.data.batchId];
+    const batchJobs = await Promise.all(
+      batchIds.map((batchId) =>
+        batchId === observedBatchJob.id
+          ? Promise.resolve(observedBatchJob)
+          : this.#batchQueue.getJob(batchId),
+      ),
+    );
+    const existingBatchJobs = batchJobs.filter((batchJob) => batchJob !== undefined);
+    if (existingBatchJobs.length !== batchIds.length) return;
+    const dependencyCounts = await Promise.all(
+      existingBatchJobs.map((batchJob) =>
+        batchJob.getDependenciesCount({
+          failed: true,
+          ignored: true,
+          processed: true,
+          unprocessed: true,
+        }),
+      ),
+    );
     const total = checkpoint.data.totalFitFiles;
-    const processedCount = (counts.processed ?? 0) + (counts.ignored ?? 0);
-    const done = Math.min(total, processedCount + (counts.failed ?? 0));
-    const failedCount = Math.min(done, counts.failed ?? 0);
+    const processedCount = dependencyCounts.reduce(
+      (count, counts) => count + (counts.processed ?? 0) + (counts.ignored ?? 0),
+      0,
+    );
+    const totalFailedCount = dependencyCounts.reduce(
+      (count, counts) => count + (counts.failed ?? 0),
+      0,
+    );
+    const done = Math.min(total, processedCount + totalFailedCount);
+    const failedCount = Math.min(done, totalFailedCount);
     const succeededCount = done - failedCount;
     const percentage =
       total === 0
