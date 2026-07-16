@@ -46,7 +46,11 @@ const mockInvalidate = vi.hoisted(() => vi.fn());
 const mockSyncStatusFetch = vi.hoisted(() => vi.fn());
 const mockFileImportProviderCard = vi.hoisted(() => vi.fn());
 const mockActiveImportsQuery = vi.hoisted(() =>
-  vi.fn(() => ({ data: [], isLoading: false, error: null })),
+  vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  })),
 );
 const mockProviderStatsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
