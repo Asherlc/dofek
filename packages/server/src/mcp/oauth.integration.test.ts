@@ -145,11 +145,19 @@ describe("MCP OAuth", () => {
     expect(storedSecret ? isEncryptedCredentialValue(storedSecret) : false).toBe(true);
   });
 
-  it("rejects registrations with non-Claude callback URLs", async () => {
-    const response = await rawRegisterClient("https://attacker.example/callback");
+  it("rejects registrations with non-https remote callback URLs", async () => {
+    const response = await rawRegisterClient("http://attacker.example/callback");
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({ error: "invalid_client_metadata" });
+  });
+
+  it("accepts arbitrary https callback URLs during registration", async () => {
+    const response = await rawRegisterClient("https://mcp-client.example/oauth/callback");
+
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.redirect_uris).toEqual(["https://mcp-client.example/oauth/callback"]);
   });
 
   it("requires login before displaying consent", async () => {

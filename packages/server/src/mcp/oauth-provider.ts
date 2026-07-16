@@ -136,6 +136,12 @@ function redirectWithError(params: AuthorizationParams, error: string): string {
   return target.href;
 }
 
+/** Display name stored on MCP access tokens issued via OAuth. */
+export function oauthAccessTokenName(client: OAuthClientInformationFull): string {
+  const clientName = client.client_name?.trim();
+  return clientName ? `${clientName} OAuth` : "MCP OAuth";
+}
+
 export class DofekOAuthServerProvider implements OAuthServerProvider {
   readonly #db: Pick<Database, "execute">;
   readonly #resource: URL;
@@ -230,6 +236,7 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
     const tokens = await exchangeAuthorizationCode(this.#db, {
       clientId: client.client_id,
       code: authorizationCode,
+      name: oauthAccessTokenName(client),
       redirectUri: resolvedRedirectUri,
       resource: this.#resource.href,
     });
@@ -255,6 +262,7 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
     const scopes = requestedScopes ? parseScopes(requestedScopes) : undefined;
     const tokens = await rotateRefreshToken(this.#db, {
       clientId: client.client_id,
+      name: oauthAccessTokenName(client),
       refreshToken,
       requestedScopes: scopes,
       resource: this.#resource.href,
