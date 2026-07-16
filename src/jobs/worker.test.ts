@@ -499,7 +499,7 @@ describe("worker module", () => {
     vi.mocked(Sentry.captureException).mockClear();
 
     const job = { id: "fit-child-1", parentKey: "bull:fit-batch:batch-1" };
-    const error = new UnrecoverableError("invalid FIT file") as Error;
+    const error = new UnrecoverableError("invalid FIT file");
     getFitWorkerFailedHandler()(job, error);
 
     expect(Sentry.captureException).not.toHaveBeenCalled();
@@ -522,7 +522,7 @@ describe("worker module", () => {
     vi.mocked(Sentry.captureException).mockClear();
 
     const job = { id: "sync-child-1", parentKey: "bull:sync-batch:batch-1" };
-    const error = new UnrecoverableError("unrecoverable sync error") as Error;
+    const error = new UnrecoverableError("unrecoverable sync error");
     getWorkerHandler("failed")(job, error);
 
     expect(Sentry.captureException).toHaveBeenCalledWith(error);
@@ -533,7 +533,7 @@ describe("worker module", () => {
     const { UnrecoverableError } = await import("bullmq");
     vi.mocked(Sentry.captureException).mockClear();
 
-    const error = new UnrecoverableError("unrecoverable fit error") as Error;
+    const error = new UnrecoverableError("unrecoverable fit error");
     getFitWorkerFailedHandler()(undefined, error);
 
     expect(Sentry.captureException).toHaveBeenCalledWith(error);
