@@ -1,21 +1,32 @@
-/// <reference path="../activity-export/garmin-fitsdk.d.ts" />
-
-import { readFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { basename } from "node:path";
 import type { CanonicalActivityType } from "@dofek/training/training";
-import { Decoder, Stream } from "@garmin/fitsdk";
 import * as Sentry from "@sentry/node";
 import { UnrecoverableError } from "bullmq";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
-import { replaceMetricStreamBatch, writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import {
+  replaceMetricStreamBatch,
+  writeMetricStreamBatch,
+  writeMetricStreamBatchForScope,
+} from "../db/metric-stream-writer.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
-import { fitExternalId } from "../fit/external-id.ts";
-import { parseFitFileInWorkerThread } from "../fit/parser-worker.ts";
+import { fitExternalIdFromFile } from "../fit/external-id.ts";
+import type { ParsedFitSession } from "../fit/parser.ts";
 import { fitRecordsToSensorSamples } from "../fit/records.ts";
+import {
+  FitDecoderError,
+  type FitStreamMetadata,
+  type ParsedFitWeight,
+  streamFitFile,
+} from "../fit/stream-decoder.ts";
 import { logger } from "../logger.ts";
-import { type FitFileImportJobData, fitFileImportJobDataSchema } from "./queues.ts";
+import {
+  type FitFileImportJobData,
+  type FitFileImportJobResult,
+  fitFileImportJobDataSchema,
+} from "./queues.ts";
 
 interface FitFileImportJob {
   data: unknown;
@@ -24,57 +35,10 @@ interface FitFileImportJob {
   updateProgress: (data: FitFileImportProgressInfo) => Promise<void>;
 }
 
-export interface FitFileImportJobResult {
-  recordsSynced: number;
-  errors: Array<{ message: string }>;
-}
-
 export interface FitFileImportProgressInfo {
   percentage: number;
   message: string;
 }
-
-const fitDateSchema = z.union([z.string(), z.date()]).transform((value, context) => {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Expected a valid FIT timestamp",
-    });
-    return z.NEVER;
-  }
-  return date;
-});
-
-const weightScaleMessageSchema = z
-  .object({
-    timestamp: fitDateSchema,
-    weight: z.number().optional(),
-    percentFat: z.number().optional(),
-    percentHydration: z.number().optional(),
-    boneMass: z.number().optional(),
-    muscleMass: z.number().optional(),
-    bmi: z.number().optional(),
-  })
-  .passthrough();
-
-const fitMessagesSchema = z.object({
-  fileIdMesgs: z
-    .array(
-      z
-        .object({
-          type: z.union([z.string(), z.number()]).optional(),
-        })
-        .passthrough(),
-    )
-    .optional(),
-  weightScaleMesgs: z.array(weightScaleMessageSchema).optional(),
-});
-
-const decodedFitSchema = z.object({
-  errors: z.array(z.unknown()).optional(),
-  messages: fitMessagesSchema.optional(),
-});
 
 const zipEntryExtractJobResultSchema = z.object({
   filePath: z.string(),
@@ -147,9 +111,7 @@ function normalizedFitSport(value: string | undefined): string {
   );
 }
 
-function activityTypeFromFitSession(
-  session: Awaited<ReturnType<typeof parseFitFileInWorkerThread>>["session"],
-): CanonicalActivityType {
+function activityTypeFromFitSession(session: ParsedFitSession): CanonicalActivityType {
   const sport = normalizedFitSport(session.sport);
   const subSport = normalizedFitSport(session.subSport);
   const typeBySport: Record<string, CanonicalActivityType> = {
@@ -183,85 +145,53 @@ function activityTypeFromFitSession(
   return "other";
 }
 
-function decodeFitMessages(buffer: Buffer) {
-  const decoder = new Decoder(Stream.fromBuffer(buffer));
-  const decoded: unknown = decoder.read();
-  const parsed = decodedFitSchema.parse(decoded);
-  const decodedErrors = parsed.errors ?? [];
-  if (decodedErrors.length > 0) {
-    throw new Error(`FIT decoder reported ${decodedErrors.length} errors`);
-  }
-  return parsed.messages ?? {};
-}
-
-const FIT_FILE_TYPE_WEIGHT = 9;
-
-function isWeightFit(messages: z.infer<typeof fitMessagesSchema>): boolean {
-  const fileType = messages.fileIdMesgs?.find((message) => message.type !== undefined)?.type;
-  return (
-    fileType === "weight" ||
-    fileType === FIT_FILE_TYPE_WEIGHT ||
-    (messages.weightScaleMesgs?.length ?? 0) > 0
-  );
-}
-
-async function importWeightFit(
+async function writeWeightBatch(
   db: SyncDatabase,
   data: ResolvedFitFileImportJobData,
-  messages: z.infer<typeof fitMessagesSchema>,
-): Promise<FitFileImportJobResult> {
-  const rows = messages.weightScaleMesgs ?? [];
-  if (rows.length === 0) {
-    return { recordsSynced: 0, errors: [] };
-  }
-
+  weights: ParsedFitWeight[],
+): Promise<void> {
   await writeMetricStreamBatch(
     db,
-    rows.map((row) => ({
+    weights.map((weight) => ({
       providerId: data.providerId,
       userId: data.userId,
-      externalId: `weight:${data.originalPath}:${row.timestamp.toISOString()}`,
-      recordedAt: row.timestamp,
+      externalId: `weight:${data.originalPath}:${weight.timestamp.toISOString()}`,
+      recordedAt: weight.timestamp,
       sourceName: data.sourceName,
-      weightKg: row.weight,
-      bodyFatPct: row.percentFat,
-      waterPct: row.percentHydration,
-      boneMassKg: row.boneMass,
-      muscleMassKg: row.muscleMass,
-      bmi: row.bmi,
+      weightKg: weight.weight,
+      bodyFatPct: weight.percentFat,
+      waterPct: weight.percentHydration,
+      boneMassKg: weight.boneMass,
+      muscleMassKg: weight.muscleMass,
+      bmi: weight.bmi,
     })),
     SOURCE_TYPE_FILE,
   );
-
-  return { recordsSynced: rows.length, errors: [] };
 }
 
-async function importActivityFit(
+async function beginActivityImport(
   db: SyncDatabase,
   data: ResolvedFitFileImportJobData,
-  buffer: Buffer,
+  metadata: FitStreamMetadata,
   onProgress: (info: FitFileImportProgressInfo) => Promise<void>,
-): Promise<FitFileImportJobResult> {
-  let fitActivity: Awaited<ReturnType<typeof parseFitFileInWorkerThread>>;
-  try {
-    fitActivity = await parseFitFileInWorkerThread(buffer);
-  } catch (error) {
-    return fitFileImportErrorResult(data, error);
-  }
+): Promise<{ activityId: string | undefined; activityType: CanonicalActivityType }> {
+  const session = metadata.session;
   const summary = data.activitySummary;
-  const externalId = summary?.externalId ?? fitExternalId(data.originalPath, buffer);
-  const activityType = summary?.activityType ?? activityTypeFromFitSession(fitActivity.session);
-  const startedAt = summary ? new Date(summary.startedAtIso) : fitActivity.session.startTime;
+  const externalId =
+    summary?.externalId ?? (await fitExternalIdFromFile(data.originalPath, data.filePath));
+  const activityType =
+    summary?.activityType ?? (session ? activityTypeFromFitSession(session) : "other");
+  const startedAt = summary ? new Date(summary.startedAtIso) : session?.startTime;
   if (!startedAt || Number.isNaN(startedAt.getTime())) {
-    return fitFileImportErrorResult(
-      data,
-      new FitFileImportValidationError("missing a valid start time"),
-    );
+    throw new FitFileImportValidationError("missing a valid start time");
   }
   const endedAt = summary
-    ? new Date(summary.endedAtIso)
-    : new Date(startedAt.getTime() + fitActivity.session.totalElapsedTime * 1000);
+    ? summary.endedAtIso
+      ? new Date(summary.endedAtIso)
+      : new Date(startedAt.getTime() + (session?.totalElapsedTime ?? 0) * 1000)
+    : new Date(startedAt.getTime() + (session?.totalElapsedTime ?? 0) * 1000);
   const name = summary?.name ?? `FIT ${activityType.replace(/_/g, " ")}`;
+  const raw = summary?.raw ?? { fitPath: data.originalPath, session: session?.raw ?? null };
 
   await onProgress({ percentage: 80, message: "Writing FIT activity data..." });
   const activity = await upsertProviderActivity(
@@ -275,7 +205,7 @@ async function importActivityFit(
       endedAt,
       name,
       sourceName: data.sourceName,
-      raw: summary?.raw ?? { fitPath: data.originalPath, session: fitActivity.session.raw },
+      raw,
     },
     {
       activityType,
@@ -283,21 +213,14 @@ async function importActivityFit(
       endedAt,
       name,
       sourceName: data.sourceName,
-      raw: summary?.raw ?? { fitPath: data.originalPath, session: fitActivity.session.raw },
+      raw,
     },
   );
 
   if (activity?.id) {
-    const rows = fitRecordsToSensorSamples(
-      fitActivity.records,
-      data.providerId,
-      activity.id,
-      activityType,
-    ).map((row) => ({ ...row, userId: data.userId }));
-    await replaceMetricStreamBatch(db, { activityId: activity.id }, rows, SOURCE_TYPE_FILE);
+    await replaceMetricStreamBatch(db, { activityId: activity.id }, [], SOURCE_TYPE_FILE);
   }
-
-  return { recordsSynced: summary ? 0 : 1, errors: [] };
+  return { activityId: activity?.id, activityType };
 }
 
 async function resolveFlowChildFilePath(job: FitFileImportJob): Promise<string> {
@@ -341,32 +264,52 @@ export async function importFitFile(
   onProgress: (info: FitFileImportProgressInfo) => Promise<void>,
 ): Promise<FitFileImportJobResult> {
   await onProgress({ percentage: 10, message: "Reading FIT file..." });
-  const buffer = await readFile(data.filePath);
   await onProgress({ percentage: 25, message: "Decoding FIT file..." });
-  let messages: z.infer<typeof fitMessagesSchema>;
+  let importType: "activity" | "weight" | undefined;
+  let activityId: string | undefined;
+  let activityType: CanonicalActivityType | undefined;
+  let weightCount = 0;
   try {
-    messages = decodeFitMessages(buffer);
+    await streamFitFile(data.filePath, {
+      onMetadata: async (metadata) => {
+        if (metadata.isWeightFile) {
+          importType = "weight";
+          await onProgress({ percentage: 50, message: "Importing FIT weight data..." });
+          await onProgress({ percentage: 80, message: "Writing FIT weight data..." });
+          return;
+        }
+        importType = "activity";
+        await onProgress({ percentage: 50, message: "Importing FIT activity..." });
+        const activityImport = await beginActivityImport(db, data, metadata, onProgress);
+        activityId = activityImport.activityId;
+        activityType = activityImport.activityType;
+      },
+      onRecordBatch: async (records) => {
+        if (importType !== "activity" || !activityId || !activityType) return;
+        const rows = fitRecordsToSensorSamples(
+          records,
+          data.providerId,
+          activityId,
+          activityType,
+        ).map((row) => ({ ...row, userId: data.userId }));
+        await writeMetricStreamBatchForScope(db, { activityId }, rows, SOURCE_TYPE_FILE);
+      },
+      onWeightBatch: async (weights) => {
+        if (importType !== "weight") return;
+        await writeWeightBatch(db, data, weights);
+        weightCount += weights.length;
+      },
+    });
   } catch (error) {
-    return fitFileImportErrorResult(data, error);
+    if (error instanceof FitDecoderError || error instanceof FitFileImportValidationError) {
+      return fitFileImportErrorResult(data, error);
+    }
+    throw error;
   }
-  let result: FitFileImportJobResult;
-  if (isWeightFit(messages)) {
-    await onProgress({
-      percentage: 50,
-      message: "Importing FIT weight data...",
-    });
-    await onProgress({
-      percentage: 80,
-      message: "Writing FIT weight data...",
-    });
-    result = await importWeightFit(db, data, messages);
-  } else {
-    await onProgress({
-      percentage: 50,
-      message: "Importing FIT activity...",
-    });
-    result = await importActivityFit(db, data, buffer, onProgress);
-  }
+  const result: FitFileImportJobResult = {
+    recordsSynced: importType === "weight" ? weightCount : data.activitySummary ? 0 : 1,
+    errors: [],
+  };
   if (result.errors.length === 0) {
     await onProgress({
       percentage: 100,
@@ -395,7 +338,13 @@ export async function processFitFileImportJob(
   }
   const result = await importFitFile(db, data, (info) => updateFitFileImportProgress(job, info));
   if (result.errors.length > 0) {
+    if (data.deleteFileAfterImport) {
+      await rm(data.filePath, { force: true });
+    }
     throw unrecoverableErrorFromResult(result);
+  }
+  if (data.deleteFileAfterImport) {
+    await rm(data.filePath, { force: true });
   }
   return result;
 }

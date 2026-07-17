@@ -51,6 +51,7 @@ export class WahooProvider implements WebhookProvider {
   readonly id = "wahoo";
   readonly name = "Wahoo";
   readonly webhookScope = "app" as const;
+  readonly requiresWorkerForWebhookSync = true;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
@@ -169,18 +170,8 @@ export class WahooProvider implements WebhookProvider {
 
     const parsed = parseWorkoutSummary(workout);
     const client = new WahooClient("", this.#fetchFn);
-    const persister = new WahooActivityPersister(
-      this.id,
-      client,
-      db,
-      options?.metricStreamPublisher,
-      options?.userId,
-    );
-    const result = await persister.persist(parsed, {
-      deleteExistingSamples: true,
-      formatLogMessage: (rowCount, externalId) =>
-        `[wahoo] Webhook: inserted ${rowCount} metric stream rows for workout ${externalId}`,
-    });
+    const persister = new WahooActivityPersister(this.id, client, db, options?.userId);
+    const result = await persister.persist(parsed);
 
     if (result.synced) {
       recordsSynced++;
@@ -289,13 +280,7 @@ export class WahooProvider implements WebhookProvider {
     }
 
     const client = new WahooClient(tokens.accessToken, this.#fetchFn);
-    const persister = new WahooActivityPersister(
-      this.id,
-      client,
-      db,
-      options?.metricStreamPublisher,
-      options?.userId,
-    );
+    const persister = new WahooActivityPersister(this.id, client, db, options?.userId);
 
     const since = window.since;
     const syncWindowEnd = window.until;

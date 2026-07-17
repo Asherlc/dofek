@@ -7,10 +7,9 @@ vi.mock("../db/token-user-context.ts", () => ({
 
 import { ZodError } from "zod";
 import * as resolveTokensModule from "../auth/resolve-tokens.ts";
-import * as metricStreamWriterModule from "../db/metric-stream-writer.ts";
-import type { ParsedFitRecord, ParsedFitSession } from "../fit/parser.ts";
-import * as fitParserModule from "../fit/parser.ts";
+import type { ParsedFitRecord } from "../fit/parser.ts";
 import { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../fit/records.ts";
+import * as fitImportQueueModule from "../jobs/enqueue-fit-file-import.ts";
 import * as loggerModule from "../logger.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -48,16 +47,6 @@ const sampleWorkout: WahooWorkout = {
   created_at: "2025-03-01T10:00:00.000Z",
   updated_at: "2025-03-01T10:30:00.000Z",
   workout_summary: sampleWorkoutSummary,
-};
-
-const sampleParsedFitSession: ParsedFitSession = {
-  sport: "cycling",
-  startTime: new Date("2026-03-01T08:00:00Z"),
-  totalElapsedTime: 3600,
-  totalTimerTime: 3600,
-  totalDistance: 100,
-  totalCalories: 500,
-  raw: {},
 };
 
 describe("Wahoo Provider", () => {
@@ -1004,26 +993,10 @@ describe("WahooProvider.syncWebhookEvent", () => {
     expect(result.errors[0]?.message).toContain("FIT file");
   });
 
-  it("writes metric streams for FIT webhook payloads after clearing prior activity rows", async () => {
-    vi.spyOn(fitParserModule, "parseFitFile").mockResolvedValue({
-      session: sampleParsedFitSession,
-      records: [
-        {
-          recordedAt: new Date("2026-03-01T08:00:00Z"),
-          heartRate: 145,
-          power: 210,
-          cadence: 88,
-          speed: 8.5,
-          distance: 100,
-          raw: { heart_rate: 145, power: 210 },
-        },
-      ],
-      laps: [],
-      events: [],
-    });
-    const replaceMetricStreamSpy = vi
-      .spyOn(metricStreamWriterModule, "replaceMetricStreamBatch")
-      .mockResolvedValue(1);
+  it("hands FIT webhook payloads to the canonical import job", async () => {
+    const enqueueFitImportSpy = vi
+      .spyOn(fitImportQueueModule, "enqueueFitFileImportAndWait")
+      .mockResolvedValue({ recordsSynced: 0, errors: [] });
     const loggerInfoSpy = vi
       .spyOn(loggerModule.logger, "info")
       .mockImplementation(() => loggerModule.logger);
@@ -1040,23 +1013,6 @@ describe("WahooProvider.syncWebhookEvent", () => {
       }
       throw new Error(`Unexpected fetch: ${String(input)}`);
     });
-    vi.spyOn(fitParserModule, "parseFitFile").mockResolvedValue({
-      session: sampleParsedFitSession,
-      records: [
-        {
-          recordedAt: new Date("2026-03-01T08:00:00Z"),
-          heartRate: 145,
-          power: 210,
-          cadence: 88,
-          speed: 8.5,
-          distance: 100,
-          raw: { heart_rate: 145, power: 210 },
-        },
-      ],
-      laps: [],
-      events: [],
-    });
-
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "42",
       eventType: "create",
@@ -1085,22 +1041,19 @@ describe("WahooProvider.syncWebhookEvent", () => {
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
     expect(whereSpy).not.toHaveBeenCalled();
-    expect(replaceMetricStreamSpy).toHaveBeenCalledTimes(1);
-    expect(replaceMetricStreamSpy).toHaveBeenCalledWith(
-      mockDb,
-      { activityId: "10000000-0000-4000-8000-000000000001" },
-      expect.arrayContaining([
-        expect.objectContaining({
-          activityId: "10000000-0000-4000-8000-000000000001",
-          providerId: "wahoo",
-        }),
-      ]),
-      "file",
-      undefined,
-    );
-    expect(loggerInfoSpy).toHaveBeenCalledWith(
-      "[wahoo] Webhook: inserted 1 metric stream rows for workout 42",
-    );
+    expect(enqueueFitImportSpy).toHaveBeenCalledTimes(1);
+    expect(enqueueFitImportSpy).toHaveBeenCalledWith({
+      fitBuffer: Buffer.from([1, 2, 3]),
+      providerId: "wahoo",
+      sourceName: "Wahoo",
+      activitySummary: {
+        externalId: "42",
+        activityType: "cycling",
+        startedAtIso: "2026-03-01T08:00:00.000Z",
+        name: "Wahoo cycling",
+      },
+    });
+    expect(loggerInfoSpy).toHaveBeenCalledWith("[wahoo] Imported FIT file for workout 42");
   });
 
   it("returns early when activity insert returns no id", async () => {
@@ -1191,32 +1144,16 @@ describe("WahooProvider.syncWebhookEvent", () => {
 });
 
 describe("WahooProvider.sync", () => {
-  it("writes metric stream rows from FIT workouts during sync", async () => {
+  it("hands FIT workouts to the canonical import job during sync", async () => {
     vi.spyOn(resolveTokensModule, "resolveOAuthTokens").mockResolvedValue({
       accessToken: "access-token",
       refreshToken: "refresh-token",
       expiresAt: new Date("2026-03-02T00:00:00Z"),
       scopes: null,
     });
-    vi.spyOn(fitParserModule, "parseFitFile").mockResolvedValue({
-      session: sampleParsedFitSession,
-      records: [
-        {
-          recordedAt: new Date("2026-03-01T08:00:00Z"),
-          heartRate: 145,
-          power: 210,
-          cadence: 88,
-          speed: 8.5,
-          distance: 100,
-          raw: { heart_rate: 145, power: 210 },
-        },
-      ],
-      laps: [],
-      events: [],
-    });
-    const dualWriteSpy = vi
-      .spyOn(metricStreamWriterModule, "writeMetricStreamBatch")
-      .mockResolvedValue(0);
+    const enqueueFitImportSpy = vi
+      .spyOn(fitImportQueueModule, "enqueueFitFileImportAndWait")
+      .mockResolvedValue({ recordsSynced: 0, errors: [] });
     const loggerInfoSpy = vi
       .spyOn(loggerModule.logger, "info")
       .mockImplementation(() => loggerModule.logger);
@@ -1268,10 +1205,19 @@ describe("WahooProvider.sync", () => {
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
-    expect(dualWriteSpy).toHaveBeenCalledTimes(1);
-    expect(loggerInfoSpy).toHaveBeenCalledWith(
-      "[wahoo] Inserted 1 metric stream rows for workout 42",
-    );
+    expect(enqueueFitImportSpy).toHaveBeenCalledWith({
+      fitBuffer: Buffer.from([1, 2, 3]),
+      providerId: "wahoo",
+      sourceName: "Wahoo",
+      userId: "00000000-0000-0000-0000-000000000001",
+      activitySummary: {
+        externalId: "42",
+        activityType: "cycling",
+        startedAtIso: "2026-03-01T08:00:00.000Z",
+        name: "Wahoo cycling",
+      },
+    });
+    expect(loggerInfoSpy).toHaveBeenCalledWith("[wahoo] Imported FIT file for workout 42");
   });
 });
 

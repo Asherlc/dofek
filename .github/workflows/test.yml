@@ -556,6 +556,33 @@ jobs:
           name: coverage-unit
           path: coverage/
 
+  test-fit-decoder:
+    name: Native FIT Decoder
+    runs-on: ubuntu-latest
+    env:
+      VCPKG_ROOT: ${{ runner.temp }}/vcpkg
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg/downloads
+            ~/.cache/vcpkg/archives
+          key: vcpkg-fit-${{ hashFiles('native/fit-decoder/vcpkg.json', 'native/fit-decoder/vcpkg-configuration.json', 'native/fit-decoder/vcpkg-ports/**') }}
+      - name: Bootstrap vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" checkout ec62869cdd9f80413abb5e4c1d8b68688df932f4
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Build and test FIT decoder
+        working-directory: native/fit-decoder
+        run: |
+          cmake --preset release
+          cmake --build --preset release
+          ctest --test-dir ../../.build/fit-decoder --output-on-failure
+
   test-integration:
     name: Integration Tests (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
@@ -683,7 +710,7 @@ jobs:
 
   test-gate:
     name: Unit & Integration Tests
-    needs: [test-unit, test-integration, coverage]
+    needs: [test-unit, test-fit-decoder, test-integration, coverage]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -691,6 +718,7 @@ jobs:
         run: |
           for result in \
             "${{ needs.test-unit.result }}" \
+            "${{ needs.test-fit-decoder.result }}" \
             "${{ needs.test-integration.result }}" \
             "${{ needs.coverage.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then

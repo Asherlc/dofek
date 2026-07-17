@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { CANONICAL_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { ConnectionOptions, JobsOptions } from "bullmq";
-import { FlowProducer, Queue, RedisConnection } from "bullmq";
+import { FlowProducer, Queue, QueueEvents, RedisConnection } from "bullmq";
 import { z } from "zod";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
@@ -41,7 +41,7 @@ export const fitFileImportActivitySummarySchema = z.object({
   externalId: z.string(),
   activityType: z.enum(CANONICAL_ACTIVITY_TYPES),
   startedAtIso: z.string(),
-  endedAtIso: z.string(),
+  endedAtIso: z.string().optional(),
   name: z.string(),
   raw: z.unknown().optional(),
 });
@@ -53,10 +53,18 @@ export const fitFileImportJobDataSchema = z.object({
   providerId: z.string(),
   sourceName: z.string(),
   activitySummary: fitFileImportActivitySummarySchema.optional(),
+  deleteFileAfterImport: z.boolean().optional(),
 });
 
 export type FitFileImportActivitySummary = z.infer<typeof fitFileImportActivitySummarySchema>;
 export type FitFileImportJobData = z.infer<typeof fitFileImportJobDataSchema>;
+
+export const fitFileImportJobResultSchema = z.object({
+  recordsSynced: z.number().int().nonnegative(),
+  errors: z.array(z.object({ message: z.string() })),
+});
+
+export type FitFileImportJobResult = z.infer<typeof fitFileImportJobResultSchema>;
 
 export const zipEntryExtractJobDataSchema = z.object({
   archivePath: z.string(),
@@ -230,7 +238,7 @@ export function createImportQueue(connection?: ConnectionOptions): Queue<ImportJ
 
 export function createFitFileImportQueue(
   connection?: ConnectionOptions,
-): Queue<FitFileImportJobData> {
+): Queue<FitFileImportJobData, FitFileImportJobResult> {
   return new Queue(FIT_FILE_IMPORT_QUEUE, { connection: connection ?? getRedisConnection() });
 }
 
@@ -275,7 +283,8 @@ export function createActivityDeleteAnalyticsQueue(
 let cachedPostSyncQueue: Queue<PostSyncJobData> | null = null;
 let cachedActivityDeleteAnalyticsQueue: Queue<ActivityAnalyticsJobData> | null = null;
 let cachedImportQueue: Queue<ImportJobData> | null = null;
-let cachedFitFileImportQueue: Queue<FitFileImportJobData> | null = null;
+let cachedFitFileImportQueue: Queue<FitFileImportJobData, FitFileImportJobResult> | null = null;
+let cachedFitFileImportQueueEvents: QueueEvents | null = null;
 let cachedFlowProducer: FlowProducer | null = null;
 
 export function getImportQueue(): Queue<ImportJobData> {
@@ -285,11 +294,20 @@ export function getImportQueue(): Queue<ImportJobData> {
   return cachedImportQueue;
 }
 
-export function getFitFileImportQueue(): Queue<FitFileImportJobData> {
+export function getFitFileImportQueue(): Queue<FitFileImportJobData, FitFileImportJobResult> {
   if (!cachedFitFileImportQueue) {
     cachedFitFileImportQueue = createFitFileImportQueue();
   }
   return cachedFitFileImportQueue;
+}
+
+export function getFitFileImportQueueEvents(): QueueEvents {
+  if (!cachedFitFileImportQueueEvents) {
+    cachedFitFileImportQueueEvents = new QueueEvents(FIT_FILE_IMPORT_QUEUE, {
+      connection: getRedisConnection(),
+    });
+  }
+  return cachedFitFileImportQueueEvents;
 }
 
 export function getFlowProducer(): FlowProducer {
@@ -307,12 +325,16 @@ export async function closeFitFileImportQueueResources(): Promise<void> {
   if (queue) {
     closeOperations.push(queue.close());
   }
+  if (cachedFitFileImportQueueEvents) {
+    closeOperations.push(cachedFitFileImportQueueEvents.close());
+  }
   if (flowProducer) {
     closeOperations.push(flowProducer.close());
   }
   await Promise.all(closeOperations);
 
   cachedFitFileImportQueue = null;
+  cachedFitFileImportQueueEvents = null;
   cachedFlowProducer = null;
 }
 
@@ -456,12 +478,14 @@ export async function closeAllQueueResources(): Promise<void> {
     closePromises.push(cachedActivityDeleteAnalyticsQueue.close());
   if (cachedImportQueue) closePromises.push(cachedImportQueue.close());
   if (cachedFitFileImportQueue) closePromises.push(cachedFitFileImportQueue.close());
+  if (cachedFitFileImportQueueEvents) closePromises.push(cachedFitFileImportQueueEvents.close());
   if (cachedFlowProducer) closePromises.push(cachedFlowProducer.close());
 
   cachedPostSyncQueue = null;
   cachedActivityDeleteAnalyticsQueue = null;
   cachedImportQueue = null;
   cachedFitFileImportQueue = null;
+  cachedFitFileImportQueueEvents = null;
   cachedFlowProducer = null;
 
   await Promise.allSettled(closePromises);

@@ -15,12 +15,16 @@ const mockBatchQueue = {
   getJob: vi.fn(),
   close: vi.fn().mockResolvedValue(undefined),
 };
-vi.mock("./queues.ts", () => ({
-  FIT_FILE_IMPORT_BATCH_QUEUE: "fit-file-import-batch",
-  IMPORT_QUEUE: "import",
-  createImportQueue: vi.fn(() => mockImportQueue),
-  createFitFileImportBatchQueue: vi.fn(() => mockBatchQueue),
-}));
+vi.mock("./queues.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./queues.ts")>();
+  return {
+    ...actual,
+    FIT_FILE_IMPORT_BATCH_QUEUE: "fit-file-import-batch",
+    IMPORT_QUEUE: "import",
+    createImportQueue: vi.fn(() => mockImportQueue),
+    createFitFileImportBatchQueue: vi.fn(() => mockBatchQueue),
+  };
+});
 
 const { createGarminImportProgressCoordinator } = await import("./garmin-import-progress.ts");
 

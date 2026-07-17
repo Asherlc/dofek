@@ -8,10 +8,13 @@ import { parseSinceDays } from "./cli.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { runWithTokenUser } from "./db/token-user-context.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
+import { processFitFileImportJob } from "./jobs/process-fit-file-import-job.ts";
 import { processSyncJob } from "./jobs/process-sync-job.ts";
 import { ensureProvidersRegistered } from "./jobs/provider-registration.ts";
 import {
   createSyncQueue,
+  FIT_FILE_IMPORT_QUEUE,
+  type FitFileImportJobData,
   getRedisConnection,
   SYNC_QUEUE,
   type SyncJobData,
@@ -67,6 +70,11 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
   const worker = new Worker<SyncJobData>(SYNC_QUEUE, (j) => processSyncJob(j, db), {
     connection,
   });
+  const fitFileImportWorker = new Worker<FitFileImportJobData>(
+    FIT_FILE_IMPORT_QUEUE,
+    (job) => processFitFileImportJob(job, db),
+    { connection },
+  );
   const queueEvents = new QueueEvents(SYNC_QUEUE, { connection });
 
   try {
@@ -82,6 +90,7 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
     return 1;
   } finally {
     await worker.close();
+    await fitFileImportWorker.close();
     await queueEvents.close();
     await queue.close();
   }

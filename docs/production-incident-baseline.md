@@ -13336,3 +13336,78 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Removed only unused build cache and images. No active containers or Docker volumes were deleted.
 - **Validation:** The database became healthy and `SELECT pg_is_in_recovery();` returned `false`; the real-Postgres MCP OAuth integration suite then passed.
 - **Remaining risk / follow-up:** Docker still has many stopped Conductor-workspace volumes. Archive obsolete workspaces through their normal lifecycle rather than globally pruning volumes that may contain retained local databases.
+
+## 2026-07-16 — Garmin FIT Fan-Out Repeatedly Exhausted Worker Heap
+
+- **Symptoms:** Sentry issue
+  [`DOFEK-SERVER-4N`](https://east-bay-software.sentry.io/issues/7614315645/)
+  reported BullMQ jobs stalled across `zip-entry-extract`, `fit-file-import`,
+  Strava, and WHOOP queues. The worker restarted repeatedly with exit 139.
+- **User impact:** The Garmin dump import remained incomplete, unrelated
+  provider sync jobs were interrupted by each worker crash, and BullMQ had
+  1,639 ZIP-entry jobs still waiting at 2026-07-16 23:02 UTC. Redis contained
+  25,798 failed FIT-import jobs at 22:59 UTC.
+- **Evidence:** Production worker logs showed the first fatal line at
+  2026-07-16 21:20:18 UTC: `FATAL ERROR: Ineffective mark-compacts near heap
+  limit Allocation failed - JavaScript heap out of memory`. The same fatal line
+  recurred at 22:34:49 and 22:35:46 UTC. Immediately before each crash, many
+  unsummarized Garmin FIT jobs failed with `missing a valid start time`; after
+  restart, BullMQ marked active jobs from several queues stalled. The deployed
+  worker used commit `1839f8f4e` from
+  [PR #1639](https://github.com/Asherlc/dofek/pull/1639), had a 512 MiB cgroup
+  limit, and V8 fatal logs showed its old-space heap at roughly 250 MiB. The
+  exact uploaded archive contained 15,774 FIT paths but only 7,029 unique FIT
+  payloads: two nested exports were byte-for-byte identical. BullMQ job data
+  from both restart pairs identified the active stalled FIT job; hashing its
+  path and matching it locally, without exporting the path, mapped both job IDs
+  to the two copies of the same largest activity file. That 622,172-byte FIT
+  file expands to 21,276 parsed record objects. A bounded replay with the full
+  provider registry and the production 256 MiB V8 limit reached 175.9 MiB of
+  main-isolate heap and 553.1 MiB RSS after parsing the two copies concurrently.
+  The parser sends the complete activity object from its worker thread to the
+  main isolate through `postMessage`, which uses the structured clone algorithm
+  ([Node.js worker-thread documentation](https://nodejs.org/api/worker_threads.html#portpostmessagevalue-transferlist)),
+  and the main isolate then validates the complete returned graph with Zod.
+  Control replays remained bounded: 5,000 exact FIT parses, including 4,059
+  invalid-start failures, ended at 23.5 MiB heap; 20 nested ZIP extractions
+  stayed at approximately 43 MiB heap; and 3,000 actual BullMQ failures with
+  progress updates, job logs, failed-event logs, and an unreachable OTLP
+  exporter moved forced-GC heap only from 73.5 to 76.2 MiB.
+- **Root cause:** [PR #1633](https://github.com/Asherlc/dofek/pull/1633)
+  fanned out every FIT path in an archive containing a duplicated export and
+  allowed the two copies of a dense 21,276-record activity to reach the
+  concurrency-two FIT worker. The FIT parser materializes the activity in a
+  parser isolate, transfers the complete object graph to the shared main
+  isolate, and validates the complete graph there. With all provider workers,
+  telemetry, and concurrent jobs already resident, that per-activity expansion
+  exhausted the main isolate's approximately 256 MiB heap. The shared process
+  exited, so BullMQ subsequently reported unrelated ZIP, Strava, and WHOOP jobs
+  as stalled. The nearby `missing a valid start time` failures were a separate
+  file-classification bug and added workload, but their failure-handling path
+  was not the retained allocation that caused OOM.
+- **Fix / mitigation:** Replaced `fit-file-parser` and its parser worker with a
+  separate C++ decoder built from Garmin's official FIT SDK. The decoder first
+  validates and classifies the file without retaining record messages, then
+  makes a second pass that emits at most 250 messages and 512 KiB per batch. It
+  blocks for a Node acknowledgement after metadata and every batch, so database
+  persistence applies backpressure. File-import jobs now hash the input as a
+  stream and write each decoded batch directly instead of holding the raw file,
+  a complete parsed activity, a structured clone, and a second validated graph.
+  Activity and weight files are classified before persistence. No heap-limit,
+  concurrency, timeout, or retry increase was used. Garmin dump uploads and FIT
+  downloads from Wahoo, COROS, and Suunto now all hand off to the same canonical
+  `fit-file-import` queue instead of maintaining provider-specific decode paths.
+- **Validation:** Native CTest and TypeScript adapter/job regression tests pass.
+  The exact 622,172-byte incident file decoded successfully from the final
+  Alpine server image into 86 bounded batches containing exactly 21,276 records;
+  metadata resolved to `cycling` / `mountain` from Garmin's generated profile.
+  The native decoder's measured peak RSS for that file was 3,704 KiB. A clean
+  multi-stage server image build compiled the pinned SDK through vcpkg, ran the
+  native protocol test, and copied the executable into the non-root runtime.
+- **Remaining risk / follow-up:** This change still needs production deployment
+  and observation while the Garmin backlog drains. Confirm that worker RSS stays
+  below its 512 MiB cgroup limit, the queue completes, and unrelated provider
+  jobs no longer become stalled. The memory protocol is regression-tested by
+  native batch-size assertions and a 501-record job test that requires three
+  separate database writes; the private incident file remains an operator-only
+  validation fixture and is not committed to the repository.

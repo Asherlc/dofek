@@ -1,5 +1,4 @@
-import { z } from "zod";
-import type { FitFileImportJobResult } from "./process-fit-file-import-job.ts";
+import { type FitFileImportJobResult, fitFileImportJobResultSchema } from "./queues.ts";
 
 interface FitFileImportBatchJob {
   getChildrenValues: () => Promise<Record<string, unknown>>;
@@ -7,11 +6,6 @@ interface FitFileImportBatchJob {
 }
 
 const MAX_AGGREGATE_ERRORS = 10;
-
-const fitFileImportJobResultSchema = z.object({
-  recordsSynced: z.number(),
-  errors: z.array(z.object({ message: z.string() })),
-});
 
 function normalizeFitFailure(message: string): string {
   const normalized = message

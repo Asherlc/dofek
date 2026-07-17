@@ -2,6 +2,7 @@ node_modules
 **/node_modules
 dist
 **/dist
+.build
 web/dist
 web/node_modules
 .git

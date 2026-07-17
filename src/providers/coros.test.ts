@@ -56,6 +56,7 @@ import {
   dailyMetrics as dailyMetricsTable,
   sleepSession as sleepSessionTable,
 } from "../db/schema/activity.ts";
+import * as fitImportQueueModule from "../jobs/enqueue-fit-file-import.ts";
 import {
   CorosClient,
   CorosProvider,
@@ -432,6 +433,9 @@ describe("CorosProvider", () => {
         expiresAt: new Date("2099-01-01T00:00:00Z"),
         scopes: null,
       });
+      const enqueueFitImportSpy = vi
+        .spyOn(fitImportQueueModule, "enqueueFitFileImportAndWait")
+        .mockResolvedValue({ recordsSynced: 0, errors: [] });
 
       const mockFetch: typeof globalThis.fetch = async (
         input: RequestInfo | URL,
@@ -453,6 +457,7 @@ describe("CorosProvider", () => {
                 avgSpeed: 2.8,
                 maxSpeed: 3.5,
                 totalCalories: 500,
+                fitUrl: "https://cdn.coros.com/workout-w-1.fit",
               },
             ],
             message: "OK",
@@ -480,6 +485,9 @@ describe("CorosProvider", () => {
             message: "OK",
             result: "0000",
           });
+        }
+        if (url === "https://cdn.coros.com/workout-w-1.fit") {
+          return new Response(new Uint8Array([1, 2, 3]));
         }
         return new Response("Not Found", { status: 404 });
       };
@@ -514,6 +522,20 @@ describe("CorosProvider", () => {
 
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBeGreaterThanOrEqual(3);
+      expect(enqueueFitImportSpy).toHaveBeenCalledWith({
+        fitBuffer: Buffer.from([1, 2, 3]),
+        providerId: "coros",
+        sourceName: "COROS",
+        userId: "00000000-0000-0000-0000-000000000001",
+        activitySummary: {
+          externalId: "w-1",
+          activityType: "running",
+          startedAtIso: "2024-03-01T11:00:00.000Z",
+          endedAtIso: "2024-03-01T12:00:00.000Z",
+          name: "COROS running",
+          raw: expect.objectContaining({ distance: 10_000, duration: 3600 }),
+        },
+      });
 
       const targets = chain.onConflictDoUpdate.mock.calls
         .map((callArgs) => callArgs[0])
