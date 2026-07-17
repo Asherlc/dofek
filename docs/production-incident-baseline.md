@@ -13569,3 +13569,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   is required to validate the fix on an empty hosted runner.
 - **Remaining risk / follow-up:** Confirm the native FIT decoder job and the
   aggregate required-check job pass in the replacement run.
+
+## 2026-07-17 — Dependabot Mobile Builds Rejected Stale Expo Patches
+
+- **Symptoms:** npm Dependabot pull requests failed in `Build Mobile / Metro
+  Bundle` before Metro started.
+- **User impact:** No production impact. Dependabot PRs 1664, 1665, and 1666
+  could not receive passing CI results.
+- **Evidence:** The exact failing command was
+  `cd packages/mobile && pnpm expo install --check`. In
+  [job 87920870286](https://github.com/Asherlc/dofek/actions/runs/29591018278/job/87920870286),
+  the first fatal output was `Found outdated dependencies`; Expo listed ten
+  installed SDK 57 packages whose patch versions no longer matched its
+  compatibility map. Expo documents that `expo install --check` validates
+  installed packages against the versions recommended for the current SDK
+  ([Expo CLI dependency validation](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)).
+- **Root cause:** The committed Expo SDK 57 package pins lagged Expo's current
+  compatible patch set, so any Dependabot PR that caused the mobile build gate
+  to run failed the mandatory dependency validation.
+- **Fix / mitigation:** Updated the ten reported Expo packages to their current
+  SDK 57-compatible patch versions and regenerated `pnpm-lock.yaml` once on a
+  base-fix branch rather than duplicating the updates across each dependency
+  PR.
+- **Validation:** The previously failing `pnpm expo install --check` command
+  reports `Dependencies are up to date`; the iOS Metro export succeeds, all 843
+  mobile tests pass, the all-package TypeScript check passes, and the complete
+  lint suite passes against the healthy local stack.
+- **Remaining risk / follow-up:** Merge the base fix, let Dependabot rebase the
+  affected npm PRs, and confirm their replacement Metro Bundle jobs pass.
