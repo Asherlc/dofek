@@ -31,6 +31,34 @@ Sources:
 - PostgreSQL `CREATE DATABASE` template option: https://www.postgresql.org/docs/current/sql-createdatabase.html
 - Vitest `--shard` option for splitting CI test runs: https://vitest.dev/guide/cli.html#shard
 
+### Docker Disk Recovery
+
+If a required validation command fails with `No space left on device`, inspect usage before
+deleting anything:
+
+```bash
+docker system df -v
+```
+
+Remove disposable containers and volumes created by the current workspace, then prune the
+rebuildable build cache:
+
+```bash
+docker compose down -v
+docker builder prune -af
+```
+
+If that does not reclaim enough space, prune images that are not used by any container:
+
+```bash
+docker image prune -af
+```
+
+Preserve running containers and named volumes belonging to other workspaces. Do not run
+`docker volume prune` or `docker system prune --volumes` unless the user explicitly approves
+deleting unused cross-workspace data. Docker documents which object types each prune command
+removes in its [resource pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
+
 Router integration tests that exercise activity sensor analytics use ClickHouse-backed
 test stores. The test helper isolates ClickHouse databases per test database, creates
 the current ClickHouse schema/read models directly, syncs the seeded Postgres fixtures,

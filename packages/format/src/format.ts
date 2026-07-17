@@ -128,13 +128,14 @@ export function formatWeekdayShort(value: DateInput, options: DateFormatOptions 
   return formatDateInput(value, { weekday: "short" }, options);
 }
 
-/** Format a date and time for human display: "Jan 1, 2:30 PM" */
+/** Format a date and time for human display: "Jan 1, 2024, 2:30 PM" */
 export function formatDateTime(value: DateInput, options: DateFormatOptions = {}): string {
   return formatDateInput(
     value,
     {
       month: "short",
       day: "numeric",
+      year: "numeric",
       hour: "numeric",
       minute: "2-digit",
       hour12: true,

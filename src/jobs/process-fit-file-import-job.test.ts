@@ -30,7 +30,10 @@ vi.mock("../db/metric-stream-writer.ts", () => ({
 }));
 
 const mockUpsertProviderActivity = vi.fn().mockResolvedValue({ id: "activity-row-1" });
+const mockFindUniqueProviderActivityByExactIdentity = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/provider-activity-sync.ts", () => ({
+  findUniqueProviderActivityByExactIdentity: (...args: unknown[]) =>
+    mockFindUniqueProviderActivityByExactIdentity(...args),
   upsertProviderActivity: (...args: unknown[]) => mockUpsertProviderActivity(...args),
 }));
 
@@ -334,6 +337,7 @@ describe("processFitFileImportJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCaptureException.mockClear();
+    mockFindUniqueProviderActivityByExactIdentity.mockResolvedValue(undefined);
     mockUpsertProviderActivity.mockResolvedValue({ id: "activity-row-1" });
     mockReplaceMetricStreamBatch.mockResolvedValue(undefined);
     mockWriteMetricStreamBatch.mockResolvedValue(undefined);
@@ -509,6 +513,48 @@ describe("processFitFileImportJob", () => {
       percentage: 100,
       message: "FIT file import complete.",
     });
+  });
+
+  it("reuses the exact Garmin dump summary when its external id differs from the FIT filename", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    const activity = defaultFitActivity();
+    activity.session = {
+      ...activity.session,
+      sport: "hiking",
+      subSport: "generic",
+      startTime: new Date("2022-05-17T17:23:08.000Z"),
+      totalElapsedTime: 6011.201,
+    };
+    mockActivityStreamOnce(activity);
+    mockFindUniqueProviderActivityByExactIdentity.mockResolvedValueOnce({
+      id: "garmin-summary-row",
+    });
+
+    await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/asher@example.com_137399316854.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
+      mockDb,
+    );
+
+    expect(mockFindUniqueProviderActivityByExactIdentity).toHaveBeenCalledWith(mockDb, {
+      providerId: "garmin-dump",
+      userId: "user-1",
+      activityType: "hiking",
+      startedAt: new Date("2022-05-17T17:23:08.000Z"),
+      endedAt: new Date("2022-05-17T19:03:19.201Z"),
+    });
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
+      mockDb,
+      { activityId: "garmin-summary-row" },
+      [],
+      "file",
+    );
   });
 
   it("deletes a job-owned downloaded FIT file after a successful import", async () => {
