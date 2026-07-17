@@ -315,4 +315,3 @@ SELECT
   m.absent_source_external_ids
 FROM merged m
 ORDER BY m.started_at DESC;
-
