@@ -12,7 +12,9 @@ import {
 const PROGRESS_DEBOUNCE_MS = 2_000;
 const FIT_PROGRESS_START_PERCENTAGE = 45;
 const FIT_PROGRESS_END_PERCENTAGE = 90;
-const progressSchema = z.object({ percentage: z.number() }).passthrough();
+const progressSchema = z
+  .object({ percentage: z.number(), message: z.string().optional() })
+  .passthrough();
 
 interface ObservedFitJob {
   parent?: {
@@ -194,12 +196,16 @@ class GarminImportProgressCoordinator {
           Math.floor(
             (done / total) * (FIT_PROGRESS_END_PERCENTAGE - FIT_PROGRESS_START_PERCENTAGE),
           );
+    const message = `Importing Garmin FIT activities (${succeededCount} succeeded, ${failedCount} failed, ${done} of ${total} processed)...`;
     const currentProgress = progressSchema.safeParse(importJob.progress);
-    if (currentProgress.success && currentProgress.data.percentage >= percentage) {
+    if (
+      currentProgress.success &&
+      (currentProgress.data.percentage > percentage ||
+        (currentProgress.data.percentage === percentage &&
+          currentProgress.data.message === message))
+    ) {
       return;
     }
-
-    const message = `Importing Garmin FIT activities (${succeededCount} succeeded, ${failedCount} failed, ${done} of ${total} processed)...`;
 
     await importJob.updateProgress({
       percentage,
