@@ -1750,7 +1750,7 @@ describe("syncRouter", () => {
   });
 
   describe("activeImports", () => {
-    it("returns progress for current-user import jobs", async () => {
+    it("returns progress for current-user imports waiting on FIT children", async () => {
       mockImportQueueGetJobs.mockResolvedValueOnce([
         {
           id: "job-garmin",
@@ -1761,7 +1761,7 @@ describe("syncRouter", () => {
             since: "1970-01-01T00:00:00.000Z",
           },
           progress: { percentage: 64, message: "Importing activities" },
-          getState: vi.fn().mockResolvedValue("active"),
+          getState: vi.fn().mockResolvedValue("waiting-children"),
         },
         {
           id: "job-other-user",
@@ -1784,7 +1784,12 @@ describe("syncRouter", () => {
 
       const result = await caller.activeImports();
 
-      expect(mockImportQueueGetJobs).toHaveBeenCalledWith(["active", "waiting", "delayed"]);
+      expect(mockImportQueueGetJobs).toHaveBeenCalledWith([
+        "active",
+        "waiting",
+        "delayed",
+        "waiting-children",
+      ]);
       expect(result).toEqual([
         {
           jobId: "job-garmin",

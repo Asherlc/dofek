@@ -10,7 +10,7 @@ import {
 } from "./queues.ts";
 
 const PROGRESS_DEBOUNCE_MS = 2_000;
-const FIT_PROGRESS_START_PERCENTAGE = 45;
+const FIT_PROGRESS_START_PERCENTAGE = 0;
 const FIT_PROGRESS_END_PERCENTAGE = 90;
 const progressSchema = z
   .object({ percentage: z.number(), message: z.string().optional() })
@@ -193,9 +193,7 @@ class GarminImportProgressCoordinator {
       total === 0
         ? FIT_PROGRESS_END_PERCENTAGE
         : FIT_PROGRESS_START_PERCENTAGE +
-          Math.floor(
-            (done / total) * (FIT_PROGRESS_END_PERCENTAGE - FIT_PROGRESS_START_PERCENTAGE),
-          );
+          (done / total) * (FIT_PROGRESS_END_PERCENTAGE - FIT_PROGRESS_START_PERCENTAGE);
     const message = `Importing Garmin FIT activities (${succeededCount} succeeded, ${failedCount} failed, ${done} of ${total} processed)...`;
     const currentProgress = progressSchema.safeParse(importJob.progress);
     if (

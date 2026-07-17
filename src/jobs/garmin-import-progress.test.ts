@@ -65,7 +65,7 @@ interface TestProgressImportJob {
 }
 
 function createImportJob(
-  progress: unknown = { percentage: 45, message: "Preparing..." },
+  progress: unknown = { percentage: 0, message: "Preparing..." },
 ): TestProgressImportJob {
   return {
     id: "import-1",
@@ -132,7 +132,7 @@ describe("createGarminImportProgressCoordinator", () => {
       unprocessed: true,
     });
     expect(importJob.updateProgress).toHaveBeenCalledWith({
-      percentage: 63,
+      percentage: 36,
       message: "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...",
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
@@ -174,7 +174,7 @@ describe("createGarminImportProgressCoordinator", () => {
     await vi.runAllTimersAsync();
 
     expect(importJob.updateProgress).toHaveBeenCalledWith({
-      percentage: 74,
+      percentage: 58.5,
       message:
         "Importing Garmin FIT activities (630 succeeded, 20 failed, 650 of 1000 processed)...",
       failedCount: 20,
@@ -241,9 +241,9 @@ describe("createGarminImportProgressCoordinator", () => {
     expect(importJob.updateProgress).not.toHaveBeenCalled();
   });
 
-  it("updates processed counts when the percentage has not changed", async () => {
+  it("preserves fractional FIT progress for the UI", async () => {
     const importJob = createImportJob({
-      percentage: 46,
+      percentage: (353 / 15_774) * 90,
       message:
         "Importing Garmin FIT activities (353 succeeded, 0 failed, 353 of 15774 processed)...",
     });
@@ -265,7 +265,7 @@ describe("createGarminImportProgressCoordinator", () => {
     await vi.runAllTimersAsync();
 
     expect(importJob.updateProgress).toHaveBeenCalledWith({
-      percentage: 46,
+      percentage: (354 / 15_774) * 90,
       message:
         "Importing Garmin FIT activities (354 succeeded, 0 failed, 354 of 15774 processed)...",
     });
@@ -273,7 +273,7 @@ describe("createGarminImportProgressCoordinator", () => {
 
   it("does not rewrite progress when the dependency snapshot matches it exactly", async () => {
     const importJob = createImportJob({
-      percentage: 63,
+      percentage: 36,
       message: "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...",
     });
     mockImportQueue.getJob.mockResolvedValue(importJob);
@@ -401,7 +401,7 @@ describe("createGarminImportProgressCoordinator", () => {
     firstCounts.resolve({ processed: 4, ignored: 0, failed: 0, unprocessed: 6 });
     await vi.runAllTimersAsync();
 
-    expect(progressUpdates).toEqual([63, 81]);
+    expect(progressUpdates).toEqual([36, 72]);
   });
 
   it("schedules a new refresh after the previous refresh finished", async () => {
@@ -462,7 +462,7 @@ describe("createGarminImportProgressCoordinator", () => {
 
     expect(mockImportQueue.getJobs).toHaveBeenCalledWith(["waiting-children"], 0, -1, false);
     expect(importJob.updateProgress).toHaveBeenCalledWith({
-      percentage: 63,
+      percentage: 36,
       message: "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...",
     });
   });

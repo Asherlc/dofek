@@ -583,14 +583,14 @@ export async function prepareGarminDumpImport(
   const summaryByExternalId = new Map<string, GarminSummarizedActivity>();
 
   try {
-    await reportGarminDumpProgress(options, 5, "Reading Garmin dump...");
+    await reportGarminDumpProgress(options, 0, "Reading Garmin dump...");
     await cleanupUnrecordedGarminDumpDirectories(filePath, options.preserveTempDirectories);
     parsedDump = await parseGarminDumpFile(filePath);
     errors.push(...parsedDump.errors);
     const totalFitFileCount = parsedDump.fitFiles.length + parsedDump.weightFitFiles.length;
     await reportGarminDumpProgress(
       options,
-      25,
+      0,
       `Found ${parsedDump.summaries.length} activity summaries and ${totalFitFileCount} FIT files.`,
     );
 
@@ -669,7 +669,7 @@ export async function prepareGarminDumpImport(
     await extendGarminDumpImportLock(options);
     await reportGarminDumpProgress(
       options,
-      45,
+      0,
       `Importing Garmin FIT files (0/${fitJobEntries.length})...`,
     );
 

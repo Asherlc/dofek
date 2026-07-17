@@ -665,7 +665,7 @@ const syncRouterProcedures = {
   activeImports: protectedProcedure.output(activeImportsOutputSchema).query(async ({ ctx }) => {
     let jobs: Job<ImportJobData>[];
     try {
-      jobs = await getImportQueue().getJobs(["active", "waiting", "delayed"]);
+      jobs = await getImportQueue().getJobs(["active", "waiting", "delayed", "waiting-children"]);
     } catch (error: unknown) {
       captureException(error);
       throw new TRPCError({
