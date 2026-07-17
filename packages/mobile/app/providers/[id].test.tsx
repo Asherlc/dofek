@@ -105,7 +105,13 @@ vi.mock("react-native", () => ({
     visible?: boolean;
   } & Record<string, unknown>) => {
     if (!visible) return null;
-    const { animationType: _at, transparent: _t, presentationStyle: _ps, ...rest } = props;
+    const {
+      animationType: _at,
+      transparent: _t,
+      presentationStyle: _ps,
+      onRequestClose: _orc,
+      ...rest
+    } = props;
     return React.createElement("div", { role: "dialog", ...rest }, children);
   },
   Image: ({
@@ -183,6 +189,7 @@ const mockRecordsQuery = vi.fn();
 const mockLogsQuery = vi.fn();
 const mockSyncMutateAsync = vi.fn();
 const mockDisconnectMutateAsync = vi.fn();
+const mockDeleteAllDataMutateAsync = vi.fn();
 const mockInvalidateProviders = vi.fn();
 const mockInvalidateProviderStats = vi.fn();
 const mockInvalidateDataHealth = vi.fn();
@@ -219,6 +226,9 @@ vi.mock("../../lib/trpc", () => ({
       logs: { useQuery: (...args: unknown[]) => mockLogsQuery(...args) },
       disconnect: {
         useMutation: () => ({ mutateAsync: mockDisconnectMutateAsync, isPending: false }),
+      },
+      deleteAllData: {
+        useMutation: () => ({ mutateAsync: mockDeleteAllDataMutateAsync, isPending: false }),
       },
     },
     settings: {
@@ -769,6 +779,29 @@ describe("ProviderDetailScreen", () => {
       expect(mockInvalidateProviders).toHaveBeenCalled();
       expect(mockInvalidateProviderStats).toHaveBeenCalled();
       expect(mockInvalidateDataHealth).toHaveBeenCalled();
+    });
+  });
+
+  describe("Delete all data", () => {
+    it("requires typing DELETE before deleting provider records", async () => {
+      mockDeleteAllDataMutateAsync.mockResolvedValue({ success: true });
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Delete All Data"));
+      const confirmButton = screen.getByText("Permanently Delete Data").closest("button");
+      if (!confirmButton) throw new Error("Delete confirmation button not found");
+      expect(confirmButton).toHaveProperty("disabled", true);
+
+      fireEvent.change(screen.getByPlaceholderText("DELETE"), { target: { value: "DELETE" } });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockDeleteAllDataMutateAsync).toHaveBeenCalledWith({
+          providerId: "wahoo",
+          confirmation: "DELETE",
+        });
+      });
     });
   });
 

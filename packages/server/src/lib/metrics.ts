@@ -56,3 +56,10 @@ export const trpcSlowQueriesTotal = new Counter({
   labelNames: ["procedure", "type"] as const,
   registers: [registry],
 });
+
+export const providerDataDeletesTotal = new Counter({
+  name: "provider_data_deletes_total",
+  help: "Total number of completed provider data deletions",
+  labelNames: ["provider_id"] as const,
+  registers: [registry],
+});

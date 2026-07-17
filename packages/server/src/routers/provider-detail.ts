@@ -1,6 +1,10 @@
 import * as Sentry from "@sentry/node";
+import { TRPCError } from "@trpc/server";
 import type { SyncDatabase } from "dofek/db";
+import { replaceMetricStreamBatch } from "dofek/db/metric-stream-writer";
+import { enqueueProviderDeleteAnalyticsRefresh } from "dofek/jobs/queues";
 import { z } from "zod";
+import { providerDataDeletesTotal } from "../lib/metrics.ts";
 import { logger } from "../logger.ts";
 import {
   DISCONNECT_CHILD_TABLES,
@@ -8,6 +12,7 @@ import {
   getRecordDisplayColumns,
   getRecordFilterColumns,
   getRecordSelectFilterColumns,
+  PROVIDER_DATA_TABLES,
   ProviderDetailRepository,
   SYNC_LOG_FILTER_OPTION_FIELDS,
   tableInfo,
@@ -21,6 +26,7 @@ export {
   getRecordDisplayColumns,
   getRecordFilterColumns,
   getRecordSelectFilterColumns,
+  PROVIDER_DATA_TABLES,
   SYNC_LOG_FILTER_OPTION_FIELDS,
   tableInfo,
 };
@@ -232,6 +238,31 @@ export const providerDetailRouter = router({
       await revokeTokensOnDisconnect(ctx.db, ctx.userId, input.providerId);
 
       await repo.deleteProviderData(input.providerId);
+      return { success: true };
+    }),
+
+  /** Delete every record from a provider while preserving its connection credentials. */
+  deleteAllData: protectedProcedure
+    .input(z.object({ providerId: z.string(), confirmation: z.literal("DELETE") }))
+    .mutation(async ({ ctx, input }) => {
+      const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
+      const isOwner = await repo.verifyOwnership(input.providerId);
+      if (!isOwner) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Provider not found or not owned by user",
+        });
+      }
+
+      await replaceMetricStreamBatch(
+        ctx.db,
+        { userId: ctx.userId, providerId: input.providerId },
+        [],
+        "provider-data-delete",
+      );
+      await repo.deleteAllProviderRecords(input.providerId);
+      await enqueueProviderDeleteAnalyticsRefresh(ctx.userId, input.providerId);
+      providerDataDeletesTotal.inc({ provider_id: input.providerId });
       return { success: true };
     }),
 });

@@ -126,10 +126,17 @@ export interface ActivityRecomputeAnalyticsJobData {
   activityIds: string[];
 }
 
+export interface ProviderDeleteAnalyticsJobData {
+  type: "provider-delete-analytics-refresh";
+  userId: string;
+  providerId: string;
+}
+
 export type ActivityAnalyticsJobData =
   | ActivityDeleteAnalyticsJobData
   | ActivityRestoreAnalyticsJobData
-  | ActivityRecomputeAnalyticsJobData;
+  | ActivityRecomputeAnalyticsJobData
+  | ProviderDeleteAnalyticsJobData;
 
 // ── Queue names ──
 
@@ -156,6 +163,7 @@ const USER_REFIT_POST_SYNC_JOB_NAME = "user-refit";
 const ACTIVITY_DELETE_ANALYTICS_JOB_NAME = "activity-delete-analytics-refresh";
 const ACTIVITY_RESTORE_ANALYTICS_JOB_NAME = "activity-restore-analytics-refresh";
 const ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME = "activity-recompute-analytics-refresh";
+const PROVIDER_DELETE_ANALYTICS_JOB_NAME = "provider-delete-analytics-refresh";
 const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
 
 function activityRecomputeAnalyticsJobId(userId: string, activityIds: string[]): string {
@@ -366,6 +374,27 @@ export async function enqueueActivityDeleteAnalyticsRefresh(
       type: "activity-delete-analytics-refresh",
       userId,
       activityIds: uniqueActivityIds,
+    },
+    {
+      removeOnComplete: true,
+      removeOnFail: { age: 604_800, count: 100 },
+      attempts: 5,
+      backoff: { type: "fixed", delay: 30_000 },
+    },
+  );
+}
+
+export async function enqueueProviderDeleteAnalyticsRefresh(
+  userId: string,
+  providerId: string,
+  queue: Queue<ActivityAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
+): Promise<void> {
+  await queue.add(
+    PROVIDER_DELETE_ANALYTICS_JOB_NAME,
+    {
+      type: "provider-delete-analytics-refresh",
+      userId,
+      providerId,
     },
     {
       removeOnComplete: true,

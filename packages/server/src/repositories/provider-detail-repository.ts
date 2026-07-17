@@ -316,21 +316,27 @@ export function getRecordDisplayColumns(dataType: DataType): readonly string[] {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Tables to cascade-delete when disconnecting a provider, in deletion order. */
-export const DISCONNECT_CHILD_TABLES = [
+/** Provider-owned record tables, in foreign-key-safe deletion order. */
+export const PROVIDER_DATA_TABLES = [
   "fitness.daily_metrics",
   "fitness.sleep_session",
   "fitness.food_entry",
   "fitness.lab_result",
   "fitness.lab_panel",
+  "fitness.medication",
+  "fitness.condition",
+  "fitness.allergy_intolerance",
   "fitness.medication_dose_event",
   "fitness.health_event",
   "fitness.journal_entry",
   "fitness.dexa_scan",
+  "fitness.imu_session",
   "fitness.sync_log",
   "fitness.activity",
-  "fitness.oauth_token",
 ];
+
+/** Tables to cascade-delete when disconnecting a provider, including credentials. */
+export const DISCONNECT_CHILD_TABLES = [...PROVIDER_DATA_TABLES, "fitness.oauth_token"];
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -734,13 +740,22 @@ export class ProviderDetailRepository {
     return rows.length > 0;
   }
 
+  /** Delete provider-owned records while preserving connection credentials. */
+  async deleteAllProviderRecords(providerId: string): Promise<void> {
+    await this.#deleteProviderTables(providerId, PROVIDER_DATA_TABLES);
+  }
+
   /**
    * Disconnect a provider — removes all user-scoped child data and tokens.
    * Caller must verify ownership before calling this method.
    */
   async deleteProviderData(providerId: string): Promise<void> {
+    await this.#deleteProviderTables(providerId, DISCONNECT_CHILD_TABLES);
+  }
+
+  async #deleteProviderTables(providerId: string, tables: readonly string[]): Promise<void> {
     await this.#db.transaction(async (tx) => {
-      for (const table of DISCONNECT_CHILD_TABLES) {
+      for (const table of tables) {
         try {
           await tx.execute(
             sql`DELETE FROM ${sql.raw(table)}

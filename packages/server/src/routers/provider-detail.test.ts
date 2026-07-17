@@ -53,6 +53,9 @@ const {
   mockLoggerInfo,
   mockLoggerWarn,
   mockSentryCaptureException,
+  mockReplaceMetricStreamBatch,
+  mockEnqueueProviderDeleteAnalyticsRefresh,
+  mockProviderDataDeletesInc,
 } = vi.hoisted(() => ({
   mockLoadTokens: vi.fn(),
   mockGetAllProviders: vi.fn(),
@@ -61,6 +64,9 @@ const {
   mockLoggerInfo: vi.fn(),
   mockLoggerWarn: vi.fn(),
   mockSentryCaptureException: vi.fn(),
+  mockReplaceMetricStreamBatch: vi.fn(),
+  mockEnqueueProviderDeleteAnalyticsRefresh: vi.fn(),
+  mockProviderDataDeletesInc: vi.fn(),
 }));
 
 vi.mock("dofek/db/tokens", () => ({
@@ -85,6 +91,16 @@ vi.mock("../logger.ts", () => ({
 }));
 vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockSentryCaptureException(...args),
+}));
+vi.mock("dofek/db/metric-stream-writer", () => ({
+  replaceMetricStreamBatch: (...args: unknown[]) => mockReplaceMetricStreamBatch(...args),
+}));
+vi.mock("dofek/jobs/queues", () => ({
+  enqueueProviderDeleteAnalyticsRefresh: (...args: unknown[]) =>
+    mockEnqueueProviderDeleteAnalyticsRefresh(...args),
+}));
+vi.mock("../lib/metrics.ts", () => ({
+  providerDataDeletesTotal: { inc: (...args: unknown[]) => mockProviderDataDeletesInc(...args) },
 }));
 
 import {
@@ -328,8 +344,8 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 12 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(12);
+    it("contains 16 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(16);
     });
 
     it("includes all required child tables", () => {
@@ -1506,6 +1522,70 @@ describe("providerDetailRouter", () => {
         expect.objectContaining({ revokeUrl: "https://strava.com/revoke" }),
         "access-token",
       );
+    });
+  });
+
+  describe("deleteAllData", () => {
+    it("requires the exact DELETE confirmation", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn(), transaction: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteAllData({ providerId: "strava", confirmation: "delete" }),
+      ).rejects.toThrow();
+    });
+
+    it("rejects deletion when the provider is not owned by the user", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteAllData({ providerId: "strava", confirmation: "DELETE" }),
+      ).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Provider not found or not owned by user",
+      });
+      expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
+      expect(mockEnqueueProviderDeleteAnalyticsRefresh).not.toHaveBeenCalled();
+    });
+
+    it("tombstones metric stream data, deletes provider records, and queues ClickHouse reprocessing", async () => {
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValueOnce([{ id: "strava" }]);
+      mockReplaceMetricStreamBatch.mockResolvedValueOnce(0);
+      mockEnqueueProviderDeleteAnalyticsRefresh.mockResolvedValueOnce(undefined);
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteAllData({ providerId: "strava", confirmation: "DELETE" }),
+      ).resolves.toEqual({ success: true });
+
+      expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
+        expect.anything(),
+        { userId: "user-1", providerId: "strava" },
+        [],
+        "provider-data-delete",
+      );
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(mockEnqueueProviderDeleteAnalyticsRefresh).toHaveBeenCalledWith("user-1", "strava");
+      expect(mockProviderDataDeletesInc).toHaveBeenCalledWith({ provider_id: "strava" });
+      const deleteSql = txExecute.mock.calls.map((call) => extractSqlText(call[0])).join("\n");
+      expect(deleteSql).not.toContain("fitness.oauth_token");
     });
   });
 });

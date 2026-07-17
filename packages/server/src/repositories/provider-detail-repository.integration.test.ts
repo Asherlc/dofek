@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "dofek/db";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
+import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import {
   type MetricStreamSeedRow,
@@ -161,5 +164,77 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
     const repo = new ProviderDetailRepository(noopDb, testUserId, clickHouse);
     const detail = await repo.getRecordDetail("withings", "metricStream", supersededId);
     expect(detail).toMatchObject({ id: supersededId, scalar: 90, channel: "body_weight" });
+  });
+});
+
+describe("ProviderDetailRepository provider data deletion (integration)", () => {
+  const userId = "00000000-0000-0000-0000-0000000000b3";
+  const providerId = "provider-delete-integration";
+  let testContext: TestContext;
+
+  beforeAll(async () => {
+    testContext = await setupTestDatabase();
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES (${userId}, 'Provider Delete Integration User')
+          ON CONFLICT (id) DO NOTHING`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES (${providerId}, 'Provider Delete Integration', ${userId})`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.oauth_token (provider_id, user_id, access_token, expires_at)
+          VALUES (${providerId}, ${userId}, 'encrypted-test-token', now() + interval '1 hour')`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity
+            (provider_id, user_id, external_id, activity_type, started_at)
+          VALUES (${providerId}, ${userId}, 'activity-1', 'running', now())`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.daily_metrics (provider_id, user_id, date)
+          VALUES (${providerId}, ${userId}, '2026-07-17')`,
+    );
+  }, 120_000);
+
+  afterAll(async () => {
+    await testContext?.db.execute(
+      sql`DELETE FROM fitness.oauth_token WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+    );
+    await testContext?.db.execute(
+      sql`DELETE FROM fitness.provider WHERE id = ${providerId} AND user_id = ${userId}`,
+    );
+    await testContext?.cleanup();
+  });
+
+  it("deletes provider records and preserves the provider connection token", async () => {
+    const repository = new ProviderDetailRepository(testContext.db, userId);
+
+    await repository.deleteAllProviderRecords(providerId);
+
+    const countSchema = z.object({ count: z.coerce.number() });
+    const [activityCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.activity
+          WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+    );
+    const [dailyMetricsCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.daily_metrics
+          WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+    );
+    const [tokenCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.oauth_token
+          WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+    );
+
+    expect(activityCount?.count).toBe(0);
+    expect(dailyMetricsCount?.count).toBe(0);
+    expect(tokenCount?.count).toBe(1);
   });
 });
