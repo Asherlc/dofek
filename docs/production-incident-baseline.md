@@ -13628,3 +13628,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   production `server` image build pass without an ad-hoc wait.
 - **Remaining risk / follow-up:** Deploy the corrected image and retry the
   Garmin dump upload in production.
+
+## 2026-07-17 — Zepp Release Rejected an Older Target Across Workflow Changes
+
+- **Symptoms:** The Zepp package built and uploaded successfully, but the
+  `Create GitHub Release` job failed while publishing the release.
+- **User impact:** No production impact. The tested Zepp artifact remained
+  available in Actions but was not published as a GitHub release.
+- **Evidence:** The exact failing command was `gh release create` with
+  `--target 2aab912c1554bd95e88c12df818097ec508ea08c`; the first fatal line in
+  [job 87936565953](https://github.com/Asherlc/dofek/actions/runs/29595918750/job/87936565953)
+  was `HTTP 403: Resource not accessible by integration`. While that CI run was
+  active, `main` advanced to `8a09e4148792a53144d79d4beb3839501685e73f`,
+  and the intervening commits modified five GitHub Actions workflow files.
+  GitHub enforces workflow scope when a release targets history spanning
+  workflow changes
+  ([GitHub changelog](https://github.blog/changelog/2023-11-02-github-actions-enforcing-workflow-scope-when-creating-a-release/)).
+- **Root cause:** Creating a release with `target_commitish` set to an older
+  commit crossed newer workflow-file changes, so GitHub required workflow write
+  permission that the job's `GITHUB_TOKEN` cannot request.
+- **Fix / mitigation:** Create a lightweight tag directly at the CI-tested
+  commit using the Git refs API, then create the release from that existing tag
+  with `--verify-tag` instead of passing `--target`.
+- **Validation:** Local workflow syntax and lint validation pass. A replacement
+  GitHub Actions run is required to validate release creation with a hosted
+  runner token.
+- **Remaining risk / follow-up:** Confirm the replacement Zepp release workflow
+  creates both the tag and release when `main` advances during its triggering CI
+  run.
