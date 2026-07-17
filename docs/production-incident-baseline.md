@@ -13598,6 +13598,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge the base fix, let Dependabot rebase the
   affected npm PRs, and confirm their replacement Metro Bundle jobs pass.
 
+## 2026-07-17 — Garmin Dump Uploads Failed Before Queueing
+
+- **Symptoms:** Garmin dump uploads returned HTTP 500 from
+  `/api/upload/garmin-dump` after the file finished uploading.
+- **User impact:** Garmin account exports could not be queued for import.
+- **Evidence:** The exact failing request was `POST /api/upload/garmin-dump`.
+  The first fatal production log line at `2026-07-17T16:34:13Z` reported
+  `[garmin-dump] Upload failed: Error: [start-worker]`, followed by Docker's
+  `failed to start containers: dofek-worker`. Production had a healthy
+  `dofek_worker` Swarm service and a healthy task container named
+  `dofek_worker.1.<task-id>`; Swarm creates tasks to run service containers
+  rather than preserving a fixed Compose container name
+  ([Docker Swarm services](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/)).
+- **Root cause:** Commit `fc5d05a00` made import queueing await
+  `docker start dofek-worker` as a required precondition. That fixed container
+  name is from the old Compose topology and does not exist in the current
+  Swarm deployment, so the handler rejected the upload before adding its
+  BullMQ job even though the worker service was already running.
+- **Fix / mitigation:** Removed application-level container orchestration from
+  uploads, provider syncs, exports, webhooks, and MCP tools. These paths now
+  only enqueue BullMQ jobs, while Docker Swarm remains solely responsible for
+  the worker lifecycle. The obsolete Docker CLI installation was also removed
+  from the production image.
+- **Validation:** A route-level regression test first reproduced the failure as
+  HTTP 500 when no container-start dependency was supplied; it now passes with
+  all 94 upload-route tests. The other 200 affected unit tests, complete lint
+  suite, root/server/web TypeScript checks, native FIT decoder tests, and the
+  production `server` image build pass without an ad-hoc wait.
+- **Remaining risk / follow-up:** Deploy the corrected image and retry the
+  Garmin dump upload in production.
+
 ## 2026-07-17 — Zepp Release Rejected an Older Target Across Workflow Changes
 
 - **Symptoms:** The Zepp package built and uploaded successfully, but the

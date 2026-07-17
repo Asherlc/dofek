@@ -22,9 +22,7 @@ describe("Upload & Auth - extended coverage", () => {
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
-    const app = createApp(testCtx.db, makeMockSensorStore(), {
-      startWorker: async () => undefined,
-    });
+    const app = createApp(testCtx.db, makeMockSensorStore());
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

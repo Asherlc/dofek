@@ -42,10 +42,6 @@ vi.mock("dofek/lib/cache", () => ({
   },
 }));
 
-vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: vi.fn(),
-}));
-
 vi.mock("../lib/typed-sql.ts", () => ({
   executeWithSchema: vi.fn(),
 }));

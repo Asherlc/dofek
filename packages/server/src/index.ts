@@ -32,14 +32,12 @@ import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { checkReadiness } from "./lib/readiness.ts";
 import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
-import { startWorker } from "./lib/start-worker.ts";
 import { logger } from "./logger.ts";
 import { createMcpOAuthRouter, type McpAuthRateLimitOptions } from "./mcp/oauth-route.ts";
 import { createMcpRouter } from "./mcp/route.ts";
 import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activity-sensor-store.ts";
 import { LimitedActivitySensorStore } from "./repositories/limited-activity-sensor-store.ts";
-import { createAppRouter } from "./router.ts";
-import { createSyncRouter } from "./routers/sync.ts";
+import { appRouter } from "./router.ts";
 import { createActivityExportRouter } from "./routes/activity-export.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { authRateLimiter } from "./routes/auth/shared.ts";
@@ -86,7 +84,6 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
 export interface CreateAppOptions {
   metricStreamPublisher?: MetricStreamEventPublisher;
   mcpAuthRateLimit?: McpAuthRateLimitOptions;
-  startWorker?: () => Promise<void>;
 }
 
 export function createApp(
@@ -132,7 +129,6 @@ function setupRoutes(
   sensorStore: import("./repositories/activity-repository.ts").ActivitySensorStore,
   options: CreateAppOptions,
 ) {
-  const startNodeWorker = options.startWorker ?? startWorker;
   // ── Compression + Cookies ──
   // Z_SYNC_FLUSH ensures compressed chunks are flushed to the client immediately,
   // which is required for tRPC's httpBatchStreamLink to deliver results incrementally.
@@ -218,7 +214,7 @@ function setupRoutes(
   // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
   app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
-  app.use("/api/upload", createUploadRouter({ importQueue, db, startWorker: startNodeWorker }));
+  app.use("/api/upload", createUploadRouter({ importQueue, db }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
   app.use(createMcpOAuthRouter(db, options.mcpAuthRateLimit));
@@ -250,7 +246,7 @@ function setupRoutes(
   app.use(
     "/api/trpc",
     createExpressMiddleware({
-      router: createAppRouter(createSyncRouter(startNodeWorker)),
+      router: appRouter,
       createContext: async ({ req }): Promise<Context> => {
         const sessionId = getSessionIdFromRequest(req);
         const session = sessionId ? await validateSession(db, sessionId) : null;

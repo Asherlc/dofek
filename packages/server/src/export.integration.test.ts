@@ -101,10 +101,7 @@ describe("Data Export", () => {
     };
 
     const app = express();
-    app.use(
-      "/api/export",
-      createExportRouter({ db: testCtx.db, exportQueue, startExportWorker: () => undefined }),
-    );
+    app.use("/api/export", createExportRouter({ db: testCtx.db, exportQueue }));
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const address = server.address();

@@ -54,7 +54,6 @@ function createTestApp() {
     createUploadRouter({
       importQueue: queue,
       db: fakeDb,
-      startWorker: async () => undefined,
     }),
   );
   return { app, queue };

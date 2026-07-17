@@ -16,7 +16,6 @@ const {
   mockCaptureException,
   mockInvalidateByPrefix,
   mockVeloHeroProvider,
-  mockStartWorker,
   mockCachedProtectedQuery,
   mockProtectedQueryCache,
 } = vi.hoisted(() => ({
@@ -39,7 +38,6 @@ const {
   mockCaptureException: vi.fn(),
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   mockVeloHeroProvider: vi.fn(() => ({ id: "velohero" })),
-  mockStartWorker: vi.fn(),
   mockCachedProtectedQuery: vi.fn(),
   mockProtectedQueryCache: new Map<string, { data: unknown; expiresAt: number }>(),
 }));
@@ -137,10 +135,6 @@ vi.mock("dofek/providers/registry", () => ({
 
 vi.mock("dofek/providers/types", () => ({
   isSyncProvider: (p: { importOnly?: boolean }) => p.importOnly !== true,
-}));
-
-vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: mockStartWorker,
 }));
 
 vi.mock("dofek/lib/cache", () => ({
@@ -754,20 +748,6 @@ describe("syncRouter", () => {
         }),
         expect.objectContaining({ attempts: 288 }),
       );
-      expect(mockStartWorker).toHaveBeenCalledOnce();
-    });
-
-    it("propagates a worker startup failure after enqueueing", async () => {
-      mockGetAllProviders.mockReturnValue([{ id: "strava", name: "Strava", validate: () => null }]);
-      mockStartWorker.mockRejectedValueOnce(new Error("worker unavailable"));
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValueOnce([]) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-
-      await expect(caller.triggerSync({})).rejects.toThrow("worker unavailable");
-      expect(mockStartWorker).toHaveBeenCalledOnce();
     });
 
     it("returns per-provider outcomes when one sync-all provider is rate limited", async () => {
@@ -846,7 +826,6 @@ describe("syncRouter", () => {
       ]);
       expect(result.providerJobs).toEqual([]);
       expect(result.jobIds).toEqual([]);
-      expect(mockStartWorker).not.toHaveBeenCalled();
     });
 
     it("reports an already queued provider without failing sync all", async () => {

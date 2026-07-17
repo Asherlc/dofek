@@ -19,7 +19,6 @@ import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
-import { startWorker } from "../lib/start-worker.ts";
 import { logger } from "../logger.ts";
 import {
   type DataHealthSensorStore,
@@ -504,7 +503,7 @@ const syncRouterProcedures = {
     }),
 
   /** Trigger sync — enqueues a BullMQ job, returns immediately with jobId */
-  triggerSync: createTriggerSyncProcedure(startWorker),
+  triggerSync: createTriggerSyncProcedure(),
 
   queueBackpressure: adminProcedure.output(queueBackpressureOutputSchema).query(async () => {
     const providerIds = new Set([
@@ -787,7 +786,7 @@ const syncRouterProcedures = {
     }),
 };
 
-function createTriggerSyncProcedure(startSyncWorker: () => Promise<void>) {
+function createTriggerSyncProcedure() {
   return protectedProcedure
     .input(triggerSyncInput)
     .output(triggerSyncOutputSchema)
@@ -878,9 +877,6 @@ function createTriggerSyncProcedure(startSyncWorker: () => Promise<void>) {
         ];
       });
 
-      if (providerJobs.length > 0) {
-        await startSyncWorker();
-      }
       return {
         jobId: providerJobs[0]?.jobId,
         jobIds: providerJobs.map((job) => job.jobId),
@@ -890,11 +886,7 @@ function createTriggerSyncProcedure(startSyncWorker: () => Promise<void>) {
     });
 }
 
-export function createSyncRouter(startSyncWorker: () => Promise<void>) {
-  return router({
-    ...syncRouterProcedures,
-    triggerSync: createTriggerSyncProcedure(startSyncWorker),
-  });
-}
-
-export const syncRouter = createSyncRouter(startWorker);
+export const syncRouter = router({
+  ...syncRouterProcedures,
+  triggerSync: createTriggerSyncProcedure(),
+});

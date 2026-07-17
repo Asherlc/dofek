@@ -18,7 +18,6 @@ const toolTestMocks = vi.hoisted(() => {
     getLatestErrors: vi.fn(),
     getProviderSyncQueue: vi.fn(),
     queueAdd: vi.fn(),
-    startWorker: vi.fn(),
   };
   return {
     ...mocks,
@@ -53,10 +52,6 @@ vi.mock("../repositories/sync-repository.ts", () => ({
     getLastSyncTimes: toolTestMocks.getLastSyncTimes,
     getLatestErrors: toolTestMocks.getLatestErrors,
   })),
-}));
-
-vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: toolTestMocks.startWorker,
 }));
 
 vi.mock("../routers/sync-helpers.ts", async (importOriginal) => {
@@ -762,7 +757,6 @@ describe("createMcpRouter", () => {
       },
       expect.objectContaining({ attempts: expect.any(Number) }),
     );
-    expect(toolTestMocks.startWorker).toHaveBeenCalledTimes(1);
     expect(parseToolCallText(response.text)).toEqual({
       jobId: "wahoo:job-123",
       providerId: "wahoo",
@@ -792,7 +786,6 @@ describe("createMcpRouter", () => {
       "Provider wahoo sync skipped: rate-limit cooldown active",
     );
     expect(toolTestMocks.queueAdd).not.toHaveBeenCalled();
-    expect(toolTestMocks.startWorker).not.toHaveBeenCalled();
   });
 
   it("returns tool errors for unknown providers", async () => {

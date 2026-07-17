@@ -7,7 +7,6 @@ import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
-import { startWorker } from "../lib/start-worker.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
@@ -264,7 +263,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       if (!job) {
         throw new Error(`Provider ${providerId} sync skipped: rate-limit cooldown active`);
       }
-      await startWorker();
       return jsonContent({
         providerId,
         jobId: toJobId(job.id, providerId),

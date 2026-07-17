@@ -247,18 +247,16 @@ describe("createApp", () => {
     expect(createCompanionTokenHttpRouter).toHaveBeenCalledWith({ db: fakeDb });
   });
 
-  it("wires upload routes to the import queue, database, and injected worker starter", async () => {
+  it("wires upload routes to the import queue and database", async () => {
     const { createUploadRouter } = await import("./routes/upload.ts");
     const { createDatabaseFromEnv } = await import("dofek/db");
     const fakeDb = createDatabaseFromEnv();
-    const injectedStartWorker = vi.fn(async () => undefined);
 
-    createApp(fakeDb, makeMockSensorStore(), { startWorker: injectedStartWorker });
+    createApp(fakeDb, makeMockSensorStore());
 
     expect(createUploadRouter).toHaveBeenCalledWith({
       importQueue: mockQueue,
       db: fakeDb,
-      startWorker: injectedStartWorker,
     });
   });
 
