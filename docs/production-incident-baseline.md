@@ -13501,3 +13501,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Repeated multi-stage image validation can
   exhaust the Docker virtual disk again. Keep retained workspace volumes out of
   global cleanup and remove obsolete workspaces through their normal lifecycle.
+
+## 2026-07-16 — FIT Decoder CI Workflow Rejected Before Job Startup
+
+- **Symptoms:** Push and pull-request Actions runs failed immediately with no
+  jobs or downloadable logs after the native FIT decoder job was added.
+- **User impact:** No production impact. The PR's test workflow did not execute,
+  so the branch could not receive authoritative CI validation.
+- **Evidence:** Local `actionlint` reproduced the first fatal validation error at
+  `.github/workflows/test.yml:563:23`: `context "runner" is not allowed here`.
+  GitHub's context-availability table likewise excludes `runner` from job-level
+  `env` expressions
+  ([GitHub Actions contexts](https://docs.github.com/actions/learn-github-actions/contexts#context-availability)).
+- **Root cause:** The new job referenced `${{ runner.temp }}` from job-level
+  `env`, where the runner context does not exist, invalidating the reusable
+  workflow before GitHub could create any jobs.
+- **Fix / mitigation:** Moved `VCPKG_ROOT` into the bootstrap and build step
+  environments, where the runner context is available.
+- **Validation:** `actionlint` reports no findings, all local lint and TypeScript
+  checks pass, and replacement CI run `29551875939` successfully created and
+  started the complete job graph, including the Actionlint job.
+- **Remaining risk / follow-up:** Confirm the native FIT decoder job and the
+  aggregate required-check job pass in the replacement run.
