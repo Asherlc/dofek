@@ -24,7 +24,7 @@ dofek-export = "dofek_ml.export:main"
 
 [dependency-groups]
 dev = [
-    "mypy>=1.13.0",
+    "mypy>=2.2.0",
     "mutmut>=3.6.0",
     "pandas-stubs>=3.0.3.260530",
     "pytest>=9.1.1",
