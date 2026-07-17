@@ -115,6 +115,105 @@ export async function waitForPeerDbActivityRestores(
   );
 }
 
+export async function countActiveProviderMetricStreamRows(
+  client: ClickHouseClient,
+  userId: string,
+  providerId: string,
+): Promise<number> {
+  const rows = await client.query<{ active_count: string | number }>({
+    query: `SELECT count() AS active_count
+      FROM ingest.metric_stream FINAL
+      WHERE user_id = {userId:UUID}
+        AND provider_id = {providerId:String}
+        AND is_deleted = 0`,
+    format: "JSONEachRow",
+    query_params: { userId, providerId },
+  });
+  const row = (await rows.json())[0];
+  return Number(row?.active_count ?? 0);
+}
+
+export async function waitForMetricStreamProviderDeletes(
+  client: ClickHouseClient,
+  userId: string,
+  providerId: string,
+  options: WaitForPeerDbActivityDeletesOptions = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? 120_000;
+  const pollIntervalMs = options.pollIntervalMs ?? 2_000;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const activeCount = await countActiveProviderMetricStreamRows(client, userId, providerId);
+    if (activeCount === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  throw new Error(
+    `Timed out waiting for ClickHouse to reflect metric-stream deletion for provider ${providerId}`,
+  );
+}
+
+export async function countActivePeerDbProviderRows(
+  client: ClickHouseClient,
+  userId: string,
+  providerId: string,
+): Promise<number> {
+  const rows = await client.query<{ active_count: string | number }>({
+    query: `SELECT sum(active_count) AS active_count
+      FROM (
+        SELECT count() AS active_count FROM postgres_fitness.activity FINAL
+          WHERE user_id = {userId:UUID} AND provider_id = {providerId:String} AND _peerdb_is_deleted = 0
+        UNION ALL
+        SELECT count() AS active_count FROM postgres_fitness.daily_metrics FINAL
+          WHERE user_id = {userId:UUID} AND provider_id = {providerId:String} AND _peerdb_is_deleted = 0
+        UNION ALL
+        SELECT count() AS active_count FROM postgres_fitness.sleep_session FINAL
+          WHERE user_id = {userId:UUID} AND provider_id = {providerId:String} AND _peerdb_is_deleted = 0
+        UNION ALL
+        SELECT count() AS active_count FROM postgres_fitness.food_entry FINAL
+          WHERE user_id = {userId:UUID} AND provider_id = {providerId:String} AND _peerdb_is_deleted = 0
+        UNION ALL
+        SELECT count() AS active_count FROM postgres_fitness.health_event FINAL
+          WHERE user_id = {userId:UUID} AND provider_id = {providerId:String} AND _peerdb_is_deleted = 0
+        UNION ALL
+        SELECT count() AS active_count FROM postgres_fitness.lab_panel FINAL
+          WHERE user_id = {userId:UUID} AND provider_id = {providerId:String} AND _peerdb_is_deleted = 0
+        UNION ALL
+        SELECT count() AS active_count FROM postgres_fitness.lab_result FINAL
+          WHERE user_id = {userId:UUID} AND provider_id = {providerId:String} AND _peerdb_is_deleted = 0
+        UNION ALL
+        SELECT count() AS active_count FROM postgres_fitness.journal_entry FINAL
+          WHERE user_id = {userId:UUID} AND provider_id = {providerId:String} AND _peerdb_is_deleted = 0
+      )`,
+    format: "JSONEachRow",
+    query_params: { userId, providerId },
+  });
+  const row = (await rows.json())[0];
+  return Number(row?.active_count ?? 0);
+}
+
+export async function waitForPeerDbProviderDeletes(
+  client: ClickHouseClient,
+  userId: string,
+  providerId: string,
+  options: WaitForPeerDbActivityDeletesOptions = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? 120_000;
+  const pollIntervalMs = options.pollIntervalMs ?? 2_000;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const activeCount = await countActivePeerDbProviderRows(client, userId, providerId);
+    if (activeCount === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  throw new Error(
+    `Timed out waiting for PeerDB to reflect provider deletion for provider ${providerId}`,
+  );
+}
+
 export async function runActivityReadModelBuild(
   spawnImpl: ActivityReadModelSpawner = defaultActivityReadModelSpawner,
 ): Promise<void> {
@@ -152,6 +251,38 @@ export async function runActivityReadModelBuild(
       reject(
         new Error(
           `dbt build --select ${ACTIVITY_DELETE_DBT_SELECT} failed with exit code ${code ?? "unknown"}${stderr ? `: ${stderr.trim()}` : ""}`,
+        ),
+      );
+    });
+  });
+}
+
+export async function runProviderDeleteReadModelBuild(
+  spawnImpl: ActivityReadModelSpawner = defaultActivityReadModelSpawner,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawnImpl(
+      "dbt",
+      ["build", "--project-dir", "analytics", "--profiles-dir", "analytics", "--threads", "1"],
+      {
+        env: process.env,
+        stdio: ["ignore", "ignore", "pipe"],
+      },
+    );
+
+    let stderr = "";
+    child.stderr?.on("data", (chunk: Buffer | string) => {
+      stderr += String(chunk);
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          `dbt build after provider deletion failed with exit code ${code ?? "unknown"}${stderr ? `: ${stderr.trim()}` : ""}`,
         ),
       );
     });

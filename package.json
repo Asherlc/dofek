@@ -74,6 +74,7 @@
     "./providers/amazfit-zepp": "./src/providers/amazfit-zepp.ts",
     "./providers/zos-app/provider": "./src/providers/zos-app/provider.ts",
     "./db/migrate": "./src/db/migrate.ts",
+    "./db/metric-stream-writer": "./src/db/metric-stream-writer.ts",
     "./db/token-user-context": "./src/db/token-user-context.ts",
     "./db/tokens": "./src/db/tokens.ts",
     "./security/credential-encryption": "./src/security/credential-encryption.ts",

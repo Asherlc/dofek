@@ -624,6 +624,31 @@ describe("queues", () => {
     });
   });
 
+  describe("enqueueProviderDeleteAnalyticsRefresh", () => {
+    it("queues a provider-scoped ClickHouse refresh even when the provider has no activities", async () => {
+      const { enqueueProviderDeleteAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
+        await import("./queues.ts");
+      const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+
+      await enqueueProviderDeleteAnalyticsRefresh("user-123", "strava", queue);
+
+      expect(mockQueueAdd).toHaveBeenCalledWith(
+        "provider-delete-analytics-refresh",
+        {
+          type: "provider-delete-analytics-refresh",
+          userId: "user-123",
+          providerId: "strava",
+        },
+        {
+          removeOnComplete: true,
+          removeOnFail: { age: 604_800, count: 100 },
+          attempts: 5,
+          backoff: { type: "fixed", delay: 30_000 },
+        },
+      );
+    });
+  });
+
   describe("enqueueActivityRestoreAnalyticsRefresh", () => {
     it("adds an activity restore analytics refresh job with retries", async () => {
       const { enqueueActivityRestoreAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =

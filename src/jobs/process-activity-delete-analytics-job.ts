@@ -1,8 +1,11 @@
 import * as Sentry from "@sentry/node";
 import {
   runActivityReadModelBuild,
+  runProviderDeleteReadModelBuild,
+  waitForMetricStreamProviderDeletes,
   waitForPeerDbActivityDeletes,
   waitForPeerDbActivityRestores,
+  waitForPeerDbProviderDeletes,
 } from "../analytics/activity-read-model-build.ts";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { queryCache } from "../lib/cache.ts";
@@ -39,11 +42,32 @@ async function rebuildActivityAnalytics(
 }
 
 export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJob): Promise<void> {
-  const { userId, activityIds } = job.data;
+  const { userId } = job.data;
   const client = createClickHouseClientFromEnv();
 
   try {
     await updateActivityAnalyticsProgress(job, 0, "Starting activity analytics refresh...");
+    if (job.data.type === "provider-delete-analytics-refresh") {
+      await updateActivityAnalyticsProgress(
+        job,
+        20,
+        "Waiting for provider deletes to reach analytics...",
+      );
+      await Promise.all([
+        waitForMetricStreamProviderDeletes(client, userId, job.data.providerId),
+        waitForPeerDbProviderDeletes(client, userId, job.data.providerId),
+      ]);
+      await updateActivityAnalyticsProgress(job, 60, "Rebuilding provider analytics...");
+      await runProviderDeleteReadModelBuild();
+      await updateActivityAnalyticsProgress(job, 90, "Invalidating provider analytics cache...");
+      await queryCache.invalidateByPrefix(`${userId}:`);
+      logger.info(
+        `[provider-delete-analytics] Refreshed all read models after deleting provider ${job.data.providerId} for user ${userId}`,
+      );
+      await updateActivityAnalyticsProgress(job, 100, "Provider analytics refresh complete.");
+      return;
+    }
+    const { activityIds } = job.data;
     if (job.data.type === "activity-recompute-analytics-refresh") {
       await rebuildActivityAnalytics(
         job,

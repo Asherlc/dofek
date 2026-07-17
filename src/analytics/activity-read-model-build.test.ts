@@ -9,9 +9,12 @@ import {
   countActivePeerDbActivities,
   countProviderAbsentPeerDbActivities,
   runActivityReadModelBuild,
+  runProviderDeleteReadModelBuild,
   type SpawnedProcess,
+  waitForMetricStreamProviderDeletes,
   waitForPeerDbActivityDeletes,
   waitForPeerDbActivityRestores,
+  waitForPeerDbProviderDeletes,
 } from "./activity-read-model-build.ts";
 
 function createMockClickHouseClient(query: Mock): ClickHouseClient {
@@ -245,6 +248,61 @@ describe("activity-read-model-build", () => {
         env: process.env,
         stdio: ["ignore", "ignore", "pipe"],
       },
+    );
+  });
+
+  it("waits until provider metric-stream tombstones are visible in ClickHouse", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 2 }]) })
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 0 }]) });
+    const client = createMockClickHouseClient(query);
+
+    await waitForMetricStreamProviderDeletes(client, "user-1", "strava", {
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+    });
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        query_params: { userId: "user-1", providerId: "strava" },
+      }),
+    );
+  });
+
+  it("waits until every provider-scoped Postgres source is deleted in ClickHouse", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 3 }]) })
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 0 }]) });
+    const client = createMockClickHouseClient(query);
+
+    await waitForPeerDbProviderDeletes(client, "user-1", "strava", {
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+    });
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ query_params: { userId: "user-1", providerId: "strava" } }),
+    );
+    expect(query.mock.calls[0]?.[0].query).toContain("postgres_fitness.daily_metrics FINAL");
+    expect(query.mock.calls[0]?.[0].query).toContain("postgres_fitness.journal_entry FINAL");
+  });
+
+  it("runs every incremental dbt model after provider deletion", async () => {
+    const child = createMockChildProcess();
+    const spawnImpl = vi.fn<ActivityReadModelSpawner>().mockReturnValue(child);
+
+    const buildPromise = runProviderDeleteReadModelBuild(spawnImpl);
+    child.emit("close", 0);
+
+    await expect(buildPromise).resolves.toBeUndefined();
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "dbt",
+      ["build", "--project-dir", "analytics", "--profiles-dir", "analytics", "--threads", "1"],
+      { env: process.env, stdio: ["ignore", "ignore", "pipe"] },
     );
   });
 

@@ -30,6 +30,7 @@ import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals";
+import { ProviderDataDeleteControl } from "./provider-data-delete-control";
 import { ProviderDetailActionsCard } from "./provider-detail-actions-card";
 import { ProviderDetailExtras } from "./provider-detail-extras";
 import { useProviderDetailActions } from "./use-provider-detail-actions";
@@ -875,6 +876,7 @@ export default function ProviderDetailScreen() {
       />
 
       {/* Disconnect */}
+      <ProviderDataDeleteControl providerId={providerId} />
       {provider?.authorized && (
         <TouchableOpacity
           style={styles.disconnectButton}

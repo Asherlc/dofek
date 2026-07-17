@@ -8,6 +8,9 @@ vi.mock("@sentry/node", () => ({
 const mockWaitForPeerDbActivityDeletes = vi.fn().mockResolvedValue(undefined);
 const mockWaitForPeerDbActivityRestores = vi.fn().mockResolvedValue(undefined);
 const mockRunActivityReadModelBuild = vi.fn().mockResolvedValue(undefined);
+const mockRunProviderDeleteReadModelBuild = vi.fn().mockResolvedValue(undefined);
+const mockWaitForMetricStreamProviderDeletes = vi.fn().mockResolvedValue(undefined);
+const mockWaitForPeerDbProviderDeletes = vi.fn().mockResolvedValue(undefined);
 const mockInvalidateByPrefix = vi.fn().mockResolvedValue(undefined);
 const mockClose = vi.fn().mockResolvedValue(undefined);
 
@@ -19,6 +22,11 @@ vi.mock("../analytics/activity-read-model-build.ts", () => ({
   waitForPeerDbActivityDeletes: (...args: unknown[]) => mockWaitForPeerDbActivityDeletes(...args),
   waitForPeerDbActivityRestores: (...args: unknown[]) => mockWaitForPeerDbActivityRestores(...args),
   runActivityReadModelBuild: (...args: unknown[]) => mockRunActivityReadModelBuild(...args),
+  runProviderDeleteReadModelBuild: (...args: unknown[]) =>
+    mockRunProviderDeleteReadModelBuild(...args),
+  waitForMetricStreamProviderDeletes: (...args: unknown[]) =>
+    mockWaitForMetricStreamProviderDeletes(...args),
+  waitForPeerDbProviderDeletes: (...args: unknown[]) => mockWaitForPeerDbProviderDeletes(...args),
 }));
 
 vi.mock("../db/clickhouse.ts", () => ({
@@ -53,6 +61,17 @@ function createActivityAnalyticsJob(
   };
 }
 
+function createProviderDeleteAnalyticsJob() {
+  return {
+    data: {
+      type: "provider-delete-analytics-refresh" as const,
+      userId: "user-1",
+      providerId: "strava",
+    },
+    updateProgress: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe("processActivityDeleteAnalyticsJob", () => {
   beforeEach(() => {
     mockWaitForPeerDbActivityDeletes.mockClear();
@@ -64,6 +83,27 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockWaitForPeerDbActivityRestores.mockResolvedValue(undefined);
     mockRunActivityReadModelBuild.mockResolvedValue(undefined);
     mockCaptureException.mockClear();
+    mockRunProviderDeleteReadModelBuild.mockClear();
+    mockWaitForMetricStreamProviderDeletes.mockClear();
+    mockWaitForPeerDbProviderDeletes.mockClear();
+  });
+
+  it("waits for metric-stream and Postgres provider deletes before rebuilding every ClickHouse model", async () => {
+    await processActivityDeleteAnalyticsJob(createProviderDeleteAnalyticsJob());
+
+    expect(mockWaitForMetricStreamProviderDeletes).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-1",
+      "strava",
+    );
+    expect(mockWaitForPeerDbProviderDeletes).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-1",
+      "strava",
+    );
+    expect(mockRunProviderDeleteReadModelBuild).toHaveBeenCalledOnce();
+    expect(mockRunActivityReadModelBuild).not.toHaveBeenCalled();
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
   });
 
   it("waits for PeerDB, rebuilds activity read models, and invalidates user caches", async () => {

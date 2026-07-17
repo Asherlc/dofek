@@ -7,6 +7,7 @@ import {
   getRecordFilterColumns,
   getRecordSelectFilterColumns,
   isJournalQuestionSlugFilterColumn,
+  PROVIDER_DATA_TABLES,
   ProviderDetailRepository,
   SYNC_LOG_FILTER_OPTION_FIELDS,
   tableInfo,
@@ -79,8 +80,8 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("DISCONNECT_CHILD_TABLES", () => {
-  it("contains 12 child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).toHaveLength(12);
+  it("contains 16 child tables", () => {
+    expect(DISCONNECT_CHILD_TABLES).toHaveLength(16);
   });
 
   it("includes all required child tables", () => {
@@ -392,6 +393,26 @@ describe("ProviderDetailRepository", () => {
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
     });
 
+    it("deletes every provider-scoped record table while preserving credentials", async () => {
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const { repo } = makeRepository([], mockTransaction);
+
+      await repo.deleteAllProviderRecords("strava");
+
+      const deleteSql = txExecute.mock.calls.map((call) => stringifyQuery(call[0])).join("\n");
+      expect(deleteSql).toContain("fitness.medication");
+      expect(deleteSql).toContain("fitness.condition");
+      expect(deleteSql).toContain("fitness.allergy_intolerance");
+      expect(deleteSql).toContain("fitness.imu_session");
+      expect(deleteSql).not.toContain("fitness.oauth_token");
+      expect(txExecute).toHaveBeenCalledTimes(PROVIDER_DATA_TABLES.length);
+    });
+
     it("deletes from each child table in order", async () => {
       const txExecute = vi.fn().mockResolvedValue([]);
       const mockTransaction = vi
@@ -634,13 +655,13 @@ describe("ProviderDetailRepository", () => {
 
       await repo.deleteProviderData("test-provider");
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
-      expect(txExecute).toHaveBeenCalledTimes(12);
+      expect(txExecute).toHaveBeenCalledTimes(16);
     });
 
     it("DISCONNECT_CHILD_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(DISCONNECT_CHILD_TABLES.length).toBe(12);
+      expect(DISCONNECT_CHILD_TABLES.length).toBe(16);
       expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.daily_metrics");
-      expect(DISCONNECT_CHILD_TABLES[11]).toBe("fitness.oauth_token");
+      expect(DISCONNECT_CHILD_TABLES[15]).toBe("fitness.oauth_token");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {

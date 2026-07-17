@@ -2,16 +2,9 @@ import {
   formatDateYmd,
   formatDurationSeconds,
   formatRelativeTime,
-  formatTableCellValue,
   formatTime,
 } from "@dofek/format/format";
 import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
-import {
-  parseWhoopWearLocation,
-  WHOOP_WEAR_LOCATION_SETTING_KEY,
-  WHOOP_WEAR_LOCATIONS,
-  type WhoopWearLocation,
-} from "@dofek/providers/whoop";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
@@ -34,6 +27,11 @@ import {
   toFilterOptions,
 } from "../lib/provider-detail-filter-options.ts";
 import { trpc } from "../lib/trpc.ts";
+import { DateRangeFilterField } from "./DateRangeFilterField.tsx";
+import { ProviderDataDeleteControl } from "./ProviderDataDeleteControl.tsx";
+import { formatCellValue, formatColumnName } from "./provider-detail-format.ts";
+import { RecordDetailModal } from "./RecordDetailModal.tsx";
+import { WhoopWearLocationPicker } from "./WhoopWearLocationPicker.tsx";
 
 const oauthBroadcastMessage = z.object({
   type: z.literal("complete"),
@@ -432,6 +430,8 @@ export function ProviderDetailPage() {
         stats={providerStats}
         statsLoading={stats.isLoading}
       />
+
+      <ProviderDataDeleteControl providerId={providerId} />
     </PageLayout>
   );
 }
@@ -463,45 +463,6 @@ function pruneEmptyFilters(filters: Record<string, string>): Record<string, stri
 
 const FILTER_CONTROL_CLASS =
   "w-full px-2 py-1.5 text-xs bg-accent/10 border border-border rounded text-foreground placeholder:text-dim focus:outline-none focus:border-border-strong";
-
-function DateRangeFilterField({
-  column,
-  inputType,
-  fromValue,
-  toValue,
-  onFromChange,
-  onToChange,
-  className = FILTER_CONTROL_CLASS,
-}: {
-  column: { key: string; label: string };
-  inputType: "date" | "datetime-local";
-  fromValue: string;
-  toValue: string;
-  onFromChange: (value: string) => void;
-  onToChange: (value: string) => void;
-  className?: string;
-}) {
-  return (
-    <div className="flex min-w-[8rem] flex-col gap-1">
-      <input
-        type={inputType}
-        value={fromValue}
-        onChange={(event) => onFromChange(event.target.value)}
-        aria-label={`Filter ${column.label} from`}
-        placeholder="From"
-        className={className}
-      />
-      <input
-        type={inputType}
-        value={toValue}
-        onChange={(event) => onToChange(event.target.value)}
-        aria-label={`Filter ${column.label} to`}
-        placeholder="To"
-        className={className}
-      />
-    </div>
-  );
-}
 
 function FilterField({
   column,
@@ -1029,151 +990,4 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
       )}
     </>
   );
-}
-
-// ── Record Detail Modal ──
-
-export function RecordDetailModal({
-  record,
-  onClose,
-}: {
-  record: Record<string, unknown>;
-  onClose: () => void;
-}) {
-  const rawValue = record.raw;
-  const raw = typeof rawValue === "object" && rawValue !== null ? rawValue : null;
-
-  // All fields except raw and user_id
-  const fields = Object.entries(record).filter(([key]) => key !== "raw" && key !== "user_id");
-  // Split into non-null and null fields so populated data is easy to find
-  const populatedFields = fields.filter(([, value]) => value !== null && value !== undefined);
-  const nullFields = fields.filter(([, value]) => value === null || value === undefined);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <button
-        type="button"
-        className="absolute inset-0 w-full h-full cursor-default"
-        onClick={onClose}
-        aria-label="Close dialog"
-      />
-      <div className="relative bg-surface-solid border border-border-strong rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-foreground">Record Detail</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-subtle hover:text-foreground text-lg leading-none p-1"
-            aria-label="Close"
-          >
-            &times;
-          </button>
-        </div>
-
-        {/* Populated fields */}
-        <div className="mb-4">
-          <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">Fields</h4>
-          <div className="rounded-lg border border-border bg-page divide-y divide-border/50">
-            {populatedFields.map(([key, value]) => (
-              <div key={key} className="flex gap-4 px-3 py-1.5 text-xs">
-                <span className="text-subtle shrink-0 w-48">{formatColumnName(key)}</span>
-                <span className="text-foreground break-all whitespace-pre-wrap min-w-0">
-                  {formatCellValue(value)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Null fields — collapsed by default */}
-        {nullFields.length > 0 && (
-          <details className="mb-4">
-            <summary className="text-xs font-medium text-subtle uppercase tracking-wider mb-2 cursor-pointer hover:text-muted">
-              Empty Fields ({nullFields.length})
-            </summary>
-            <div className="text-xs text-dim flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
-              {nullFields.map(([key]) => (
-                <span key={key}>{formatColumnName(key)}</span>
-              ))}
-            </div>
-          </details>
-        )}
-
-        {/* Raw provider data */}
-        {raw && (
-          <details open>
-            <summary className="text-xs font-medium text-muted uppercase tracking-wider mb-2 cursor-pointer hover:text-foreground">
-              Raw Provider Data
-            </summary>
-            <pre className="text-xs text-muted bg-page rounded-lg p-3 overflow-x-auto overflow-y-auto max-h-[60vh]">
-              {JSON.stringify(raw, null, 2)}
-            </pre>
-          </details>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── WHOOP Wear Location Picker ──
-
-function WhoopWearLocationPicker() {
-  const setting = trpc.settings.get.useQuery({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
-  const setSettingMutation = trpc.settings.set.useMutation();
-  const trpcUtils = trpc.useUtils();
-
-  const currentLocation = parseWhoopWearLocation(setting.data?.value);
-
-  const handleChange = (location: WhoopWearLocation) => {
-    trpcUtils.settings.get.setData(
-      { key: WHOOP_WEAR_LOCATION_SETTING_KEY },
-      { key: WHOOP_WEAR_LOCATION_SETTING_KEY, value: location },
-    );
-    setSettingMutation.mutate(
-      { key: WHOOP_WEAR_LOCATION_SETTING_KEY, value: location },
-      {
-        onSettled: () => {
-          trpcUtils.settings.get.invalidate({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
-        },
-      },
-    );
-  };
-
-  return (
-    <section className="card p-4 space-y-3">
-      <div>
-        <h2 className="text-sm font-medium text-foreground">Wear Location</h2>
-        <p className="text-xs text-subtle mt-0.5">
-          Where do you wear your WHOOP? This helps us interpret your sensor data.
-        </p>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {WHOOP_WEAR_LOCATIONS.map((location) => (
-          <button
-            key={location.id}
-            type="button"
-            onClick={() => handleChange(location.id)}
-            className={`text-left px-3 py-2.5 rounded-lg border transition-colors ${
-              currentLocation === location.id
-                ? "border-emerald-500 bg-emerald-500/10"
-                : "border-border-strong bg-accent/5 hover:bg-surface-hover"
-            }`}
-          >
-            <div className="text-xs font-medium text-foreground">{location.label}</div>
-            <div className="text-xs text-subtle mt-0.5">{location.description}</div>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-// ── Helpers ──
-
-export function formatColumnName(col: string): string {
-  return col.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-export function formatCellValue(value: unknown): string {
-  return formatTableCellValue(value);
 }
