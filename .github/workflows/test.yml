@@ -588,7 +588,8 @@ jobs:
           cmake --preset release
           cmake --build --preset release
           ctest --preset release
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Upload FIT decoder binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fit-decoder-linux
           path: .build/fit-decoder/bin/dofek-fit-decoder
@@ -651,11 +652,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Download FIT decoder binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: fit-decoder-linux
           path: .build/fit-decoder/bin
-      - run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
+      - name: Make FIT decoder executable
+        run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
       - run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
         timeout-minutes: 12
         env:
@@ -1088,11 +1091,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Download FIT decoder binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: fit-decoder-linux
           path: .build/fit-decoder/bin
-      - run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
+      - name: Make FIT decoder executable
+        run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
       - name: Run Stryker
         env:
           MUTATE_FILES: ${{ matrix.files }}

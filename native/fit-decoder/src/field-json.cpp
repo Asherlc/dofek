@@ -16,7 +16,11 @@ namespace {
 constexpr std::int64_t kFitEpochUnixSeconds = 631065600;
 constexpr double kSemicirclesPerDegree = 2147483648.0 / 180.0;
 
-bool IsFitTimestampField(const std::string& name) {
+bool IsFitTimestampField(const fit::FieldBase& field) {
+  if (field.GetType() != FIT_BASE_TYPE_UINT32) {
+    return false;
+  }
+  const std::string name = field.GetName();
   return name == "timestamp" || name == "start_time" || name == "time_created";
 }
 
@@ -135,7 +139,7 @@ std::optional<std::string> JsonFieldValue(
     return std::nullopt;
   }
   const std::string field_name = field.GetName();
-  if (IsFitTimestampField(field_name)) {
+  if (IsFitTimestampField(field)) {
     return FitTimestampJson(field, value_index);
   }
   if (field.GetType() == FIT_BASE_TYPE_STRING) {

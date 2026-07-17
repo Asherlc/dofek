@@ -703,6 +703,9 @@ describe("processFitFileImportJob", () => {
     mockActivityStreamOnce(activity);
     const metricStreamPublisher = {
       publishRows: vi.fn(async () => []),
+      replaceRows: vi.fn(async () => {
+        throw new Error("replaceRows should be delegated");
+      }),
     };
 
     await processFitFileImportJob(
@@ -738,6 +741,27 @@ describe("processFitFileImportJob", () => {
       "file",
       metricStreamPublisher,
     );
+  });
+
+  it("rejects an activity publisher without scoped replacement before mutation", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockActivityStreamOnce(defaultFitActivity());
+
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: "DI_CONNECT/activity_12345.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        }),
+        mockDb,
+        { publishRows: vi.fn(async () => []) },
+      ),
+    ).rejects.toThrow("FIT activity imports require a scoped replacement publisher");
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
   });
 
   it("uses the supplied metric stream publisher for weight writes", async () => {
@@ -1204,8 +1228,7 @@ describe("processFitFileImportJob", () => {
         expect.objectContaining({
           providerId: "garmin-dump",
           userId: "user-1",
-          externalId:
-            "weight:DI_CONNECT/asher@example.com_20260701_weight.fit:2026-07-01T12:00:00.000Z",
+          externalId: expect.stringMatching(/^weight:[a-f0-9]{64}:2026-07-01T12:00:00\.000Z$/),
           recordedAt: new Date("2026-07-01T12:00:00.000Z"),
           sourceName: "Garmin Dump",
           weightKg: 72,
@@ -1218,6 +1241,9 @@ describe("processFitFileImportJob", () => {
       ],
       "file",
     );
+    const serializedWrite = JSON.stringify(mockWriteMetricStreamBatch.mock.calls[0]);
+    expect(serializedWrite).not.toContain("DI_CONNECT/asher@example.com_20260701_weight.fit");
+    expect(serializedWrite).not.toContain("asher@example.com");
     await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 50,

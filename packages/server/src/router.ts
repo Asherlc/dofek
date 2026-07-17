@@ -64,7 +64,7 @@ import { whoopAuthRouter } from "./routers/whoop-auth.ts";
 import { whoopBleSyncRouter } from "./routers/whoop-ble-sync.ts";
 import { router } from "./trpc.ts";
 
-export const appRouter = router({
+const appRouterProcedures = {
   admin: adminRouter,
   inertialMeasurementUnitSync: inertialMeasurementUnitSyncRouter,
   watchAltitudeSync: watchAltitudeSyncRouter,
@@ -129,6 +129,12 @@ export const appRouter = router({
   sportSettings: sportSettingsRouter,
   intervals: intervalsRouter,
   support: supportRouter,
-});
+};
+
+export function createAppRouter(syncRouterOverride: typeof syncRouter) {
+  return router({ ...appRouterProcedures, sync: syncRouterOverride });
+}
+
+export const appRouter = createAppRouter(syncRouter);
 
 export type AppRouter = typeof appRouter;

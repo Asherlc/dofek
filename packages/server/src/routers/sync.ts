@@ -407,7 +407,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export const syncRouter = router({
+const syncRouterProcedures = {
   /** Public list of configured providers that have a user-facing connection or import flow. */
   usableProviders: publicProcedure.query(async () => {
     await ensureProvidersRegistered();
@@ -504,106 +504,7 @@ export const syncRouter = router({
     }),
 
   /** Trigger sync — enqueues a BullMQ job, returns immediately with jobId */
-  triggerSync: protectedProcedure
-    .input(triggerSyncInput)
-    .output(triggerSyncOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      await ensureProvidersRegistered();
-      const repo = new SyncRepository(ctx.db, ctx.userId);
-
-      const providerIds: string[] = [];
-
-      // Validate provider exists and is configured before enqueuing.
-      // For "sync all", fan out into one BullMQ job per connected provider.
-      if (input.providerId) {
-        const provider = getAllProviders().find(
-          (registeredProvider) => registeredProvider.id === input.providerId,
-        );
-        if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
-        const validation = provider.validate();
-        if (validation) throw new Error(`Provider not configured: ${validation}`);
-        providerIds.push(provider.id);
-      } else {
-        // Check which providers have tokens to determine connectivity
-        const allTokens = await repo.getConnectedProviderIds();
-        const tokenSet = new Set(allTokens.map((row) => row.providerId));
-
-        for (const provider of getAllProviders()) {
-          if (provider.validate() !== null) continue;
-          const model = new ProviderModel(provider, tokenSet, undefined, CUSTOM_AUTH_PROVIDERS);
-          if (model.importOnly || !model.isConnected) continue;
-          providerIds.push(model.id);
-        }
-
-        if (providerIds.length === 0) throw new Error("No configured providers available for sync");
-      }
-
-      const syncWindow = syncWindowFromTriggerInput({
-        sinceDays: input.sinceDays,
-        sinceDate: input.sinceDate,
-        untilDate: input.untilDate,
-      });
-
-      const providerResults = await Promise.all(
-        providerIds.map(async (providerId): Promise<ProviderSyncResult> => {
-          try {
-            const job = await enqueueSyncJob(
-              providerId,
-              {
-                providerId,
-                userId: ctx.userId,
-                ...syncWindowToJobData(syncWindow, input.sinceDays),
-              },
-              { skipWhenRateLimited: true },
-            );
-            if (!job) {
-              return {
-                providerId,
-                status: "skippedCooldown",
-                message: "Provider sync skipped: rate-limit cooldown active",
-              };
-            }
-            const jobId = toJobId(job.id, providerId);
-            return {
-              providerId,
-              status: job.alreadyQueued ? "alreadyQueued" : "started",
-              jobId,
-              queueName: providerSyncQueueName(providerId),
-            };
-          } catch (error) {
-            captureException(error);
-            return {
-              providerId,
-              status: "failed",
-              message: errorMessage(error),
-            };
-          }
-        }),
-      );
-
-      const providerJobs = providerResults.flatMap((providerResult) => {
-        if (providerResult.status !== "started" && providerResult.status !== "alreadyQueued") {
-          return [];
-        }
-        return [
-          {
-            providerId: providerResult.providerId,
-            jobId: providerResult.jobId,
-            queueName: providerResult.queueName,
-          },
-        ];
-      });
-
-      if (providerJobs.length > 0) {
-        await startWorker();
-      }
-      return {
-        jobId: providerJobs[0]?.jobId,
-        jobIds: providerJobs.map((job) => job.jobId),
-        providerJobs,
-        providerResults,
-      };
-    }),
+  triggerSync: createTriggerSyncProcedure(startWorker),
 
   queueBackpressure: adminProcedure.output(queueBackpressureOutputSchema).query(async () => {
     const providerIds = new Set([
@@ -884,4 +785,116 @@ export const syncRouter = router({
         datasets,
       };
     }),
-});
+};
+
+function createTriggerSyncProcedure(startSyncWorker: () => Promise<void>) {
+  return protectedProcedure
+    .input(triggerSyncInput)
+    .output(triggerSyncOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvidersRegistered();
+      const repo = new SyncRepository(ctx.db, ctx.userId);
+
+      const providerIds: string[] = [];
+
+      // Validate provider exists and is configured before enqueuing.
+      // For "sync all", fan out into one BullMQ job per connected provider.
+      if (input.providerId) {
+        const provider = getAllProviders().find(
+          (registeredProvider) => registeredProvider.id === input.providerId,
+        );
+        if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
+        const validation = provider.validate();
+        if (validation) throw new Error(`Provider not configured: ${validation}`);
+        providerIds.push(provider.id);
+      } else {
+        // Check which providers have tokens to determine connectivity
+        const allTokens = await repo.getConnectedProviderIds();
+        const tokenSet = new Set(allTokens.map((row) => row.providerId));
+
+        for (const provider of getAllProviders()) {
+          if (provider.validate() !== null) continue;
+          const model = new ProviderModel(provider, tokenSet, undefined, CUSTOM_AUTH_PROVIDERS);
+          if (model.importOnly || !model.isConnected) continue;
+          providerIds.push(model.id);
+        }
+
+        if (providerIds.length === 0) throw new Error("No configured providers available for sync");
+      }
+
+      const syncWindow = syncWindowFromTriggerInput({
+        sinceDays: input.sinceDays,
+        sinceDate: input.sinceDate,
+        untilDate: input.untilDate,
+      });
+
+      const providerResults = await Promise.all(
+        providerIds.map(async (providerId): Promise<ProviderSyncResult> => {
+          try {
+            const job = await enqueueSyncJob(
+              providerId,
+              {
+                providerId,
+                userId: ctx.userId,
+                ...syncWindowToJobData(syncWindow, input.sinceDays),
+              },
+              { skipWhenRateLimited: true },
+            );
+            if (!job) {
+              return {
+                providerId,
+                status: "skippedCooldown",
+                message: "Provider sync skipped: rate-limit cooldown active",
+              };
+            }
+            const jobId = toJobId(job.id, providerId);
+            return {
+              providerId,
+              status: job.alreadyQueued ? "alreadyQueued" : "started",
+              jobId,
+              queueName: providerSyncQueueName(providerId),
+            };
+          } catch (error) {
+            captureException(error);
+            return {
+              providerId,
+              status: "failed",
+              message: errorMessage(error),
+            };
+          }
+        }),
+      );
+
+      const providerJobs = providerResults.flatMap((providerResult) => {
+        if (providerResult.status !== "started" && providerResult.status !== "alreadyQueued") {
+          return [];
+        }
+        return [
+          {
+            providerId: providerResult.providerId,
+            jobId: providerResult.jobId,
+            queueName: providerResult.queueName,
+          },
+        ];
+      });
+
+      if (providerJobs.length > 0) {
+        await startSyncWorker();
+      }
+      return {
+        jobId: providerJobs[0]?.jobId,
+        jobIds: providerJobs.map((job) => job.jobId),
+        providerJobs,
+        providerResults,
+      };
+    });
+}
+
+export function createSyncRouter(startSyncWorker: () => Promise<void>) {
+  return router({
+    ...syncRouterProcedures,
+    triggerSync: createTriggerSyncProcedure(startSyncWorker),
+  });
+}
+
+export const syncRouter = createSyncRouter(startWorker);

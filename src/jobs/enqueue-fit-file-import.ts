@@ -62,7 +62,7 @@ export async function enqueueFitFileImportAndWait(
       if (!options.db) {
         throw new Error("In-process FIT file import requires db");
       }
-      return processFitFileImportJob(
+      return await processFitFileImportJob(
         { data, updateProgress: async () => undefined },
         options.db,
         options.metricStreamPublisher,

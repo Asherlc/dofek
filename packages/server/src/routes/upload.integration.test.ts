@@ -49,7 +49,14 @@ function createTestApp() {
   const queue = createFakeQueue<ImportJobData>();
   const fakeDb = createFakeDb();
   const app = express();
-  app.use("/api/upload", createUploadRouter({ importQueue: queue, db: fakeDb }));
+  app.use(
+    "/api/upload",
+    createUploadRouter({
+      importQueue: queue,
+      db: fakeDb,
+      startWorker: async () => undefined,
+    }),
+  );
   return { app, queue };
 }
 

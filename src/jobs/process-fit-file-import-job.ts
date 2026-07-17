@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -56,7 +57,26 @@ const fitFileImportErrorPathSchema = z.looseObject({
 
 type ResolvedFitFileImportJobData = FitFileImportJobData & { filePath: string };
 
+type ReplacementCapableMetricStreamPublisher = MetricStreamEventPublisher & {
+  replaceRows: NonNullable<MetricStreamEventPublisher["replaceRows"]>;
+};
+
 class FitFileImportValidationError extends Error {}
+
+function isReplacementCapableMetricStreamPublisher(
+  publisher: MetricStreamEventPublisher,
+): publisher is ReplacementCapableMetricStreamPublisher {
+  return typeof publisher.replaceRows === "function";
+}
+
+function requireActivityMetricStreamPublisher(
+  publisher: MetricStreamEventPublisher | undefined,
+): ReplacementCapableMetricStreamPublisher | undefined {
+  if (publisher && !isReplacementCapableMetricStreamPublisher(publisher)) {
+    throw new Error("FIT activity imports require a scoped replacement publisher");
+  }
+  return publisher;
+}
 
 function originalPathFromJobData(data: unknown): string {
   const parsed = fitFileImportErrorPathSchema.safeParse(data);
@@ -310,10 +330,11 @@ async function writeWeightBatch(
   weights: ParsedFitWeight[],
   metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<void> {
+  const originalPathHash = createHash("sha256").update(data.originalPath).digest("hex");
   const rows = weights.map((weight) => ({
     providerId: data.providerId,
     userId: data.userId,
-    externalId: `weight:${data.originalPath}:${weight.timestamp.toISOString()}`,
+    externalId: `weight:${originalPathHash}:${weight.timestamp.toISOString()}`,
     recordedAt: weight.timestamp,
     sourceName: data.sourceName,
     weightKg: weight.weight,
@@ -335,7 +356,7 @@ async function beginActivityImport(
   data: ResolvedFitFileImportJobData,
   metadata: FitStreamMetadata,
   onProgress: (info: FitFileImportProgressInfo) => Promise<void>,
-  metricStreamPublisher?: MetricStreamEventPublisher,
+  metricStreamPublisher?: ReplacementCapableMetricStreamPublisher,
 ): Promise<{ activityId: string | undefined; activityType: CanonicalActivityType }> {
   const session = metadata.session;
   const summary = data.activitySummary;
@@ -488,6 +509,8 @@ export async function importFitFile(
       );
       recordDroppedFitFields(data.providerId, streamMetadata, weightConsumedFields);
     } else if (importType === "activity") {
+      const activityMetricStreamPublisher =
+        requireActivityMetricStreamPublisher(metricStreamPublisher);
       let activityImport: Awaited<ReturnType<typeof beginActivityImport>>;
       try {
         activityImport = await beginActivityImport(
@@ -495,7 +518,7 @@ export async function importFitFile(
           data,
           streamMetadata,
           onProgress,
-          metricStreamPublisher,
+          activityMetricStreamPublisher,
         );
       } catch (error) {
         if (error instanceof FitFileImportValidationError) {
@@ -513,13 +536,13 @@ export async function importFitFile(
             activityImport.activityType,
           ).map((row) => ({ ...row, userId: data.userId }));
           const scope = { activityId };
-          if (metricStreamPublisher) {
+          if (activityMetricStreamPublisher) {
             await writeMetricStreamBatchForScope(
               db,
               scope,
               rows,
               SOURCE_TYPE_FILE,
-              metricStreamPublisher,
+              activityMetricStreamPublisher,
             );
           } else {
             await writeMetricStreamBatchForScope(db, scope, rows, SOURCE_TYPE_FILE);

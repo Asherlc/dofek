@@ -36,7 +36,9 @@ describe("tRPC API", () => {
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
-    const app = createApp(testCtx.db, noopSensorStore);
+    const app = createApp(testCtx.db, noopSensorStore, {
+      startWorker: async () => undefined,
+    });
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

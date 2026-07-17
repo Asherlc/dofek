@@ -10,10 +10,6 @@ vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
 
-vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: vi.fn(),
-}));
-
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
@@ -72,11 +68,18 @@ function mockQueue() {
   };
 }
 
-function createTestApp() {
+function createTestApp(startWorker: () => Promise<void> = async () => undefined) {
   const queue = mockQueue();
   const fakeDb = {} satisfies import("dofek/db").Database;
   const app = express();
-  app.use("/api/upload", createUploadRouter({ importQueue: queue, db: fakeDb }));
+  app.use(
+    "/api/upload",
+    createUploadRouter({
+      importQueue: queue,
+      db: fakeDb,
+      startWorker,
+    }),
+  );
   return { app, queue };
 }
 
@@ -410,6 +413,18 @@ describe("createUploadRouter", () => {
         body: Buffer.from("data"),
       });
       expect(res.status).toBe(500);
+    });
+
+    it("returns 500 when the import worker fails to start", async () => {
+      const startWorker = vi.fn().mockRejectedValueOnce(new Error("worker unavailable"));
+      const { app } = createTestApp(startWorker);
+      const res = await request(app, "post", "/api/upload/apple-health", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("data"),
+      });
+
+      expect(res.status).toBe(500);
+      expect(startWorker).toHaveBeenCalledOnce();
     });
   });
 

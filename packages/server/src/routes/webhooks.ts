@@ -14,6 +14,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { captureException } from "@sentry/node";
 import { runWithTokenUser } from "dofek/db/token-user-context";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
@@ -194,9 +195,9 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
           if (syncWebhookEvent) {
             try {
               if (provider.requiresWorkerForWebhookSync && !workerStartRequested) {
+                workerStartRequested = true;
                 const { startWorker } = await import("../lib/start-worker.ts");
                 await startWorker();
-                workerStartRequested = true;
               }
               const result = await runWithTokenUser(user_id, () =>
                 syncWebhookEvent(db, event, { userId: user_id }),
@@ -207,6 +208,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
               processed++;
               continue;
             } catch (err) {
+              captureException(err);
               logger.warn(
                 `[webhook] ${providerName}: targeted sync failed, falling back to full sync: ${err}`,
               );
@@ -239,6 +241,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
           const { startWorker } = await import("../lib/start-worker.ts");
           await startWorker();
         } catch (err) {
+          captureException(err);
           logger.warn(`[webhook] Failed to start worker: ${err}`);
         }
       }

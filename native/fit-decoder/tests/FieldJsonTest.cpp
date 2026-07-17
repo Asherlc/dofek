@@ -2,6 +2,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <utility>
 
 #include "field-json.hpp"
 
@@ -9,12 +10,13 @@ namespace {
 
 class TestField final : public fit::FieldBase {
  public:
-  explicit TestField(FIT_UINT8 type) : type_(type) {}
+  explicit TestField(FIT_UINT8 type, std::string name = "precise_integer")
+      : name_(std::move(name)), type_(type) {}
 
   FIT_BOOL GetIsAccumulated() const override { return FIT_FALSE; }
   FIT_BOOL IsValid() const override { return FIT_TRUE; }
   FIT_UINT8 GetNum() const override { return 1; }
-  std::string GetName() const override { return "precise_integer"; }
+  std::string GetName() const override { return name_; }
   FIT_UINT8 GetType() const override { return type_; }
   std::string GetUnits() const override { return ""; }
   FIT_FLOAT64 GetScale() const override { return 1; }
@@ -25,6 +27,7 @@ class TestField final : public fit::FieldBase {
   FIT_UINT16 GetNumComponents() const override { return 0; }
 
  private:
+  std::string name_;
   FIT_UINT8 type_;
 };
 
@@ -37,6 +40,17 @@ int main() {
   const std::optional<std::string> json = dofek::fit_decoder::JsonFieldValue(field, 0);
   if (json != "\"18446744073709551614\"") {
     std::cerr << "Expected lossless uint64 JSON, received " << json.value_or("null") << '\n';
+    return 1;
+  }
+
+  TestField developer_timestamp(FIT_BASE_TYPE_STRING, "timestamp");
+  const std::string timestamp_value = "developer-defined";
+  developer_timestamp.Read(timestamp_value.c_str(), timestamp_value.size() + 1U);
+  const std::optional<std::string> developer_timestamp_json =
+      dofek::fit_decoder::JsonFieldValue(developer_timestamp, 0);
+  if (developer_timestamp_json != "\"developer-defined\"") {
+    std::cerr << "Expected a non-uint32 timestamp field to retain its raw value, received "
+              << developer_timestamp_json.value_or("null") << '\n';
     return 1;
   }
   return 0;

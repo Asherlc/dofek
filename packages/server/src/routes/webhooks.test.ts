@@ -9,6 +9,11 @@ const { mockEnqueueSyncJob } = vi.hoisted(() => ({
   mockEnqueueSyncJob: vi.fn(async () => ({ id: "job-1" })),
 }));
 
+const mockCaptureException = vi.fn();
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 vi.mock("dofek/jobs/enqueue-sync-job", () => ({
   enqueueSyncJob: (...args: unknown[]) => mockEnqueueSyncJob(...args),
 }));
@@ -700,6 +705,42 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
     // Should still return 200 even if worker start fails
     expect(res.status).toBe(200);
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "worker failed" }),
+    );
+  });
+
+  it("does not retry failed worker startup for later targeted events", async () => {
+    const events: WebhookEvent[] = [
+      { ownerExternalId: "ext-1", eventType: "create", objectType: "activity" },
+      { ownerExternalId: "ext-2", eventType: "update", objectType: "activity" },
+    ];
+    const provider = createMockWebhookProvider({
+      parseWebhookPayload: vi.fn(() => events),
+      requiresWorkerForWebhookSync: true,
+      syncWebhookEvent: vi.fn(async () => ({
+        provider: "test-provider",
+        recordsSynced: 1,
+        errors: [],
+        duration: 10,
+      })),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockStartWorker.mockRejectedValue(new Error("worker failed"));
+
+    let callCount = 0;
+    mockExecuteWithSchema.mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return [{ id: "sub-1", provider_id: "prov-1", verify_token: "tok", signing_secret: null }];
+      }
+      return [{ provider_id: "prov-1", user_id: "user-1" }];
+    });
+
+    const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
+
+    expect(res.status).toBe(200);
+    expect(mockStartWorker).toHaveBeenCalledOnce();
   });
 
   it("returns 200 even on unexpected top-level error to prevent retries", async () => {

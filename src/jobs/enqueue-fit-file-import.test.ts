@@ -95,6 +95,51 @@ describe("enqueueFitFileImportAndWait", () => {
     );
   });
 
+  it("keeps the staged file until an in-process import finishes", async () => {
+    let resolveImport: ((result: { recordsSynced: number; errors: never[] }) => void) | undefined;
+    const importPromise = new Promise<{ recordsSynced: number; errors: never[] }>((resolve) => {
+      resolveImport = resolve;
+    });
+    mocks.processFitFileImportJob.mockReturnValue(importPromise);
+
+    const enqueuePromise = enqueueFitFileImportAndWait({
+      fitBuffer: Buffer.from([1, 2, 3]),
+      providerId: "wahoo",
+      sourceName: "Wahoo",
+      userId: "user-1",
+      activitySummary: {
+        externalId: "workout-42",
+        activityType: "cycling",
+        startedAtIso: "2026-07-01T12:00:00.000Z",
+        endedAtIso: "2026-07-01T13:00:00.000Z",
+        name: "Morning ride",
+      },
+      db: {
+        select: vi.fn(),
+        insert: vi.fn(),
+        delete: vi.fn(),
+        execute: vi.fn(),
+      },
+      metricStreamPublisher: {
+        publishRows: vi.fn(async () => []),
+      },
+    });
+
+    await vi.waitFor(() => expect(mocks.processFitFileImportJob).toHaveBeenCalledOnce());
+    expect(mocks.rm).not.toHaveBeenCalled();
+
+    if (!resolveImport) {
+      throw new Error("expected in-process import to start");
+    }
+    resolveImport({ recordsSynced: 3, errors: [] });
+
+    await expect(enqueuePromise).resolves.toEqual({ recordsSynced: 3, errors: [] });
+    expect(mocks.rm).toHaveBeenCalledWith("/app/job-files/provider-fit-random", {
+      recursive: true,
+      force: true,
+    });
+  });
+
   it("stages a downloaded FIT file and waits for the canonical import job", async () => {
     const activitySummary = {
       externalId: "workout-42",
