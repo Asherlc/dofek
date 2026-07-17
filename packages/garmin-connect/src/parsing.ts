@@ -174,9 +174,8 @@ export function parseConnectActivity(raw: ConnectActivitySummary): ParsedConnect
   // Garmin labels times as "GMT" but doesn't include a Z suffix,
   // so new Date() would parse them as local time. Append Z to force UTC.
   const startedAt = new Date(ensureUtcSuffix(raw.startTimeGMT));
-  // duration is in milliseconds from the internal API
-  const durationMs = raw.duration;
-  const endedAt = new Date(startedAt.getTime() + durationMs);
+  const durationMilliseconds = raw.duration * 1000;
+  const endedAt = new Date(startedAt.getTime() + durationMilliseconds);
 
   return {
     externalId: String(raw.activityId),

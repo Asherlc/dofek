@@ -67,7 +67,7 @@ describe("parseConnectActivity", () => {
     startTimeGMT: "2024-01-15T07:30:00.000",
     startTimeLocal: "2024-01-15T09:30:00.000",
     distance: 10500.5,
-    duration: 3600000, // 1 hour in ms
+    duration: 3600, // 1 hour in seconds
     averageHR: 145,
     maxHR: 172,
     averageSpeed: 2.917,
@@ -99,7 +99,7 @@ describe("parseConnectActivity", () => {
     expect(parsed.startedAt.getUTCMinutes()).toBe(30);
   });
 
-  it("calculates end time from start + duration (ms)", () => {
+  it("calculates end time from Garmin's duration in seconds", () => {
     const parsed = parseConnectActivity(sampleActivity);
     const durationMs = parsed.endedAt.getTime() - parsed.startedAt.getTime();
     expect(durationMs).toBe(3600000);

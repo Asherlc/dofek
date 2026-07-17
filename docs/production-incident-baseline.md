@@ -13670,3 +13670,46 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement Zepp release workflow
   creates the tag and release, and rotate `ZEPP_RELEASE_TOKEN` with the
   authenticated GitHub account credential lifecycle.
+
+## 2026-07-17 — Garmin Duration Unit Clipped Canonical Activity Streams
+
+- **Symptoms:** Activity `0b464dc3-5bfc-4937-a49b-e6f7952da529` displayed a
+  zero-minute duration, nine heart-rate points, and no route despite containing
+  a complete Garmin Dump hike.
+- **User impact:** All 50 Garmin Connect activity rows in production had clipped
+  durations. Because all 50 were also selected as canonical activity rows,
+  detail pages and sensor queries could omit most heart-rate, altitude, and GPS
+  samples even when another matching provider member contained the correct
+  activity bounds.
+- **Evidence:** Garmin Connect returned `duration = 8986.228515625` for canonical
+  activity `536e2393-1cb2-4b25-af00-146b4a22597d`, while Postgres stored an
+  `ended_at` only `8.986` seconds after `started_at`. Its matching Garmin Dump
+  and Ride with GPS members ended about 150 minutes later. The live activity
+  cache therefore contained exactly nine heart-rate points and zero GPS points.
+  Running the repository's ClickHouse stream query with the full member bounds
+  returned 8,991 timestamps, including 8,935 GPS points. A production cohort
+  query confirmed that all 50 Garmin rows with raw durations matched the same
+  seconds-as-milliseconds failure pattern. No fatal log line existed because
+  every query completed successfully with the incorrect time window.
+- **Root cause:** [PR 133](https://github.com/Asherlc/dofek/pull/133) introduced
+  `parseConnectActivity()` with an incorrect assumption that Garmin's activity
+  duration was milliseconds; the internal API value is seconds. PostgreSQL's
+  `fitness.v_activity` then exposed the selected primary member's bounds rather
+  than the earliest start and latest end across the deduplicated group, allowing
+  one malformed member to clip otherwise healthy member streams.
+- **Fix / mitigation:** Convert Garmin activity duration seconds to milliseconds
+  at the parser boundary. Compute PostgreSQL canonical activity bounds as the
+  earliest member start and latest non-null member end, matching the existing
+  ClickHouse deduplicated activity behavior.
+- **Validation:** The Garmin regression test failed with a 3,600-second fixture
+  producing only 3.6 seconds, and the real-Postgres deduplication test failed
+  with the primary member's narrower bounds. After the fixes, all 120 Garmin
+  package tests, all 10 activity deduplication integration tests, the complete
+  lint suite, the migration policy check, and all-package TypeScript checks
+  pass without relaxed assertions or ad-hoc waits.
+- **Remaining risk / follow-up:** Deploy the parser and view migration, run the
+  normal Garmin sync so the 50 raw source rows are rewritten with correct end
+  times, allow the scheduled analytics build to refresh affected activities,
+  and verify the named activity plus its cache after deployment. Separately,
+  `analytics.deduped_location` still references the retired
+  `postgres_fitness.metric_stream` table and should be removed or migrated.

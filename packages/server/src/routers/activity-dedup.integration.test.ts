@@ -319,6 +319,62 @@ describe("Activity summary deduplication", () => {
     }
   });
 
+  it("uses the earliest start and latest end from every canonical activity member", async () => {
+    const activityIds = [
+      "00000000-0000-4000-8000-0000000000a1",
+      "00000000-0000-4000-8000-0000000000a2",
+    ];
+    const insertedIdArray = sql`ARRAY[${sql.join(
+      activityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    )}]`;
+
+    await testCtx.db.execute(sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`);
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.activity (
+            id, provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+          ) VALUES
+            (
+              ${activityIds[0]}::uuid,
+              'wahoo', ${TEST_USER_ID}, 'wahoo-expanded-bounds', 'cycling',
+              TIMESTAMPTZ '2026-01-14 10:00:05+00',
+              TIMESTAMPTZ '2026-01-14 11:00:00+00',
+              'Expanded Bounds Ride'
+            ),
+            (
+              ${activityIds[1]}::uuid,
+              'apple_health', ${TEST_USER_ID}, 'apple-expanded-bounds', 'cycling',
+              TIMESTAMPTZ '2026-01-14 10:00:00+00',
+              TIMESTAMPTZ '2026-01-14 11:05:00+00',
+              'Expanded Bounds Ride'
+            )`,
+    );
+
+    try {
+      const groupedRows = await testCtx.db.execute<{
+        started_at: string;
+        ended_at: string;
+        member_activity_ids: string[];
+      }>(
+        sql`SELECT
+              started_at::text AS started_at,
+              ended_at::text AS ended_at,
+              member_activity_ids::text[] AS member_activity_ids
+            FROM fitness.v_activity
+            WHERE member_activity_ids && ${insertedIdArray}`,
+      );
+
+      expect(groupedRows).toHaveLength(1);
+      expect(groupedRows[0]?.member_activity_ids.sort()).toEqual([...activityIds].sort());
+      expect(groupedRows[0]?.started_at).toBe("2026-01-14 10:00:00+00");
+      expect(groupedRows[0]?.ended_at).toBe("2026-01-14 11:05:00+00");
+    } finally {
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
+      );
+    }
+  });
+
   it("does not group active activities through a stale Apple tombstone", async () => {
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)

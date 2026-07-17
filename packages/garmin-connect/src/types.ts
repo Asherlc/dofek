@@ -325,6 +325,7 @@ export interface ConnectActivitySummary {
   startTimeGMT: string;
   startTimeLocal: string;
   distance?: number;
+  /** Activity duration in seconds. */
   duration: number;
   elapsedDuration?: number;
   movingDuration?: number;
