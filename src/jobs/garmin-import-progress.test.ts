@@ -65,7 +65,7 @@ interface TestProgressImportJob {
 }
 
 function createImportJob(
-  progress: unknown = { percentage: 45, message: "Preparing..." },
+  progress: unknown = { percentage: 0, message: "Preparing..." },
 ): TestProgressImportJob {
   return {
     id: "import-1",
@@ -132,7 +132,7 @@ describe("createGarminImportProgressCoordinator", () => {
       unprocessed: true,
     });
     expect(importJob.updateProgress).toHaveBeenCalledWith({
-      percentage: 63,
+      percentage: 36,
       message: "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...",
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
@@ -174,7 +174,7 @@ describe("createGarminImportProgressCoordinator", () => {
     await vi.runAllTimersAsync();
 
     expect(importJob.updateProgress).toHaveBeenCalledWith({
-      percentage: 74,
+      percentage: 58.5,
       message:
         "Importing Garmin FIT activities (630 succeeded, 20 failed, 650 of 1000 processed)...",
       failedCount: 20,
@@ -241,8 +241,41 @@ describe("createGarminImportProgressCoordinator", () => {
     expect(importJob.updateProgress).not.toHaveBeenCalled();
   });
 
+  it("preserves fractional FIT progress for the UI", async () => {
+    const importJob = createImportJob({
+      percentage: (353 / 15_774) * 90,
+      message:
+        "Importing Garmin FIT activities (353 succeeded, 0 failed, 353 of 15774 processed)...",
+    });
+    importJob.data.checkpoint = waitingCheckpoint(15_774);
+    const batchJob = createBatchJob();
+    batchJob.getDependenciesCount.mockResolvedValue({
+      processed: 354,
+      ignored: 0,
+      failed: 0,
+      unprocessed: 15_420,
+    });
+    mockImportQueue.getJob.mockResolvedValue(importJob);
+    mockBatchQueue.getJob.mockResolvedValue(batchJob);
+    const coordinator = createGarminImportProgressCoordinator();
+
+    coordinator.observeFitJob({
+      parent: { id: "batch-1", queueKey: "bull:fit-file-import-batch" },
+    });
+    await vi.runAllTimersAsync();
+
+    expect(importJob.updateProgress).toHaveBeenCalledWith({
+      percentage: (354 / 15_774) * 90,
+      message:
+        "Importing Garmin FIT activities (354 succeeded, 0 failed, 354 of 15774 processed)...",
+    });
+  });
+
   it("does not rewrite progress when the dependency snapshot matches it exactly", async () => {
-    const importJob = createImportJob({ percentage: 63, message: "Current progress" });
+    const importJob = createImportJob({
+      percentage: 36,
+      message: "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...",
+    });
     mockImportQueue.getJob.mockResolvedValue(importJob);
     mockBatchQueue.getJob.mockResolvedValue(createBatchJob());
     const coordinator = createGarminImportProgressCoordinator();
@@ -253,6 +286,41 @@ describe("createGarminImportProgressCoordinator", () => {
     await vi.runAllTimersAsync();
 
     expect(importJob.updateProgress).not.toHaveBeenCalled();
+  });
+
+  it("updates the processed counts when the percentage is unchanged", async () => {
+    const importJob = createImportJob({
+      percentage: 36,
+      message: "Importing Garmin FIT activities (3 succeeded, 1 failed, 4 of 10 processed)...",
+    });
+    mockImportQueue.getJob.mockResolvedValue(importJob);
+    mockBatchQueue.getJob.mockResolvedValue(createBatchJob());
+    const coordinator = createGarminImportProgressCoordinator();
+
+    coordinator.observeFitJob({
+      parent: { id: "batch-1", queueKey: "bull:fit-file-import-batch" },
+    });
+    await vi.runAllTimersAsync();
+
+    expect(importJob.updateProgress).toHaveBeenCalledWith({
+      percentage: 36,
+      message: "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...",
+    });
+  });
+
+  it("updates the percentage when the processed-count message is unchanged", async () => {
+    const message = "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...";
+    const importJob = createImportJob({ percentage: 0, message });
+    mockImportQueue.getJob.mockResolvedValue(importJob);
+    mockBatchQueue.getJob.mockResolvedValue(createBatchJob());
+    const coordinator = createGarminImportProgressCoordinator();
+
+    coordinator.observeFitJob({
+      parent: { id: "batch-1", queueKey: "bull:fit-file-import-batch" },
+    });
+    await vi.runAllTimersAsync();
+
+    expect(importJob.updateProgress).toHaveBeenCalledWith({ percentage: 36, message });
   });
 
   it("treats an empty FIT batch as fully imported", async () => {
@@ -368,7 +436,7 @@ describe("createGarminImportProgressCoordinator", () => {
     firstCounts.resolve({ processed: 4, ignored: 0, failed: 0, unprocessed: 6 });
     await vi.runAllTimersAsync();
 
-    expect(progressUpdates).toEqual([63, 81]);
+    expect(progressUpdates).toEqual([36, 72]);
   });
 
   it("schedules a new refresh after the previous refresh finished", async () => {
@@ -429,7 +497,7 @@ describe("createGarminImportProgressCoordinator", () => {
 
     expect(mockImportQueue.getJobs).toHaveBeenCalledWith(["waiting-children"], 0, -1, false);
     expect(importJob.updateProgress).toHaveBeenCalledWith({
-      percentage: 63,
+      percentage: 36,
       message: "Importing Garmin FIT activities (4 succeeded, 0 failed, 4 of 10 processed)...",
     });
   });

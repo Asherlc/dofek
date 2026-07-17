@@ -557,9 +557,9 @@ describe("Garmin dump provider", () => {
 
     expect(onProgress.mock.calls.map(([progress]) => progress)).toEqual([
       { percentage: 0, message: "Starting Garmin dump import..." },
-      { percentage: 5, message: "Reading Garmin dump..." },
-      { percentage: 25, message: "Found 0 activity summaries and 2 FIT files." },
-      { percentage: 45, message: "Importing Garmin FIT files (0/2)..." },
+      { percentage: 0, message: "Reading Garmin dump..." },
+      { percentage: 0, message: "Found 0 activity summaries and 2 FIT files." },
+      { percentage: 0, message: "Importing Garmin FIT files (0/2)..." },
     ]);
   });
 
