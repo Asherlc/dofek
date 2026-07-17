@@ -13629,10 +13629,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Deploy the corrected image and retry the
   Garmin dump upload in production.
 
-## 2026-07-17 — Zepp Release Rejected an Older Target Across Workflow Changes
+## 2026-07-17 — Zepp Release Failed Across Workflow Changes
 
-- **Symptoms:** The Zepp package built and uploaded successfully, but the
-  `Create GitHub Release` job failed while publishing the release.
+- **Symptoms:** The Zepp package built and uploaded successfully, but two
+  successive `Create GitHub Release` jobs failed while publishing the release.
 - **User impact:** No production impact. The tested Zepp artifact remained
   available in Actions but was not published as a GitHub release.
 - **Evidence:** The exact failing command was `gh release create` with
@@ -13644,15 +13644,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   GitHub enforces workflow scope when a release targets history spanning
   workflow changes
   ([GitHub changelog](https://github.blog/changelog/2023-11-02-github-actions-enforcing-workflow-scope-when-creating-a-release/)).
-- **Root cause:** Creating a release with `target_commitish` set to an older
-  commit crossed newer workflow-file changes, so GitHub required workflow write
-  permission that the job's `GITHUB_TOKEN` cannot request.
-- **Fix / mitigation:** Create a lightweight tag directly at the CI-tested
-  commit using the Git refs API, then create the release from that existing tag
-  with `--verify-tag` instead of passing `--target`.
+  The first workaround created
+  `refs/tags/zepp-v0.0.1784309478` successfully through the Git refs REST API,
+  but five milliseconds later `gh release create --verify-tag` failed in
+  [job 87950807707](https://github.com/Asherlc/dofek/actions/runs/29600319974/job/87950807707)
+  with `tag zepp-v0.0.1784309478 doesn't exist in the repo Asherlc/dofek`.
+  GitHub CLI documents that `--verify-tag` performs a separate remote tag
+  existence check before creating the release, and its implementation performs
+  that check through GraphQL
+  ([GitHub CLI manual](https://cli.github.com/manual/gh_release_create),
+  [GitHub CLI source](https://github.com/cli/cli/blob/v2.93.0/pkg/cmd/release/create/http.go#L43-L60)).
+- **Root cause:** The built-in `GITHUB_TOKEN` lacked the workflow permission
+  required to create the release tag at the tested commit, and the pre-created
+  tag workaround introduced a REST-to-GraphQL visibility race in the immediate
+  `--verify-tag` check.
+- **Fix / mitigation:** Added the `ZEPP_RELEASE_TOKEN` repository Actions secret
+  from an OAuth token with `repo` and `workflow` scopes, removed the separate tag
+  creation step, and restored the direct `gh release create --target` flow.
+  GitHub requires `workflow` scope or `workflows:write` permission when a release
+  targets a commit that modifies workflow files and lacks an existing ref
+  ([GitHub changelog](https://github.blog/changelog/2023-11-02-github-actions-enforcing-workflow-scope-when-creating-a-release/)).
 - **Validation:** Local workflow syntax and lint validation pass. A replacement
-  GitHub Actions run is required to validate release creation with a hosted
-  runner token.
+  GitHub Actions run is required to validate release creation with the scoped
+  token on a hosted runner.
 - **Remaining risk / follow-up:** Confirm the replacement Zepp release workflow
-  creates both the tag and release when `main` advances during its triggering CI
-  run.
+  creates the tag and release, and rotate `ZEPP_RELEASE_TOKEN` with the
+  authenticated GitHub account credential lifecycle.
