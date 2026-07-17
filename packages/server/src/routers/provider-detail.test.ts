@@ -1538,6 +1538,23 @@ describe("providerDetailRouter", () => {
       ).rejects.toThrow();
     });
 
+    it("rejects deletion when the provider is not owned by the user", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.deleteAllData({ providerId: "strava", confirmation: "DELETE" }),
+      ).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Provider not found or not owned by user",
+      });
+      expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
+      expect(mockEnqueueProviderDeleteAnalyticsRefresh).not.toHaveBeenCalled();
+    });
+
     it("tombstones metric stream data, deletes provider records, and queues ClickHouse reprocessing", async () => {
       const txExecute = vi.fn().mockResolvedValue([]);
       const mockTransaction = vi
