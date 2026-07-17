@@ -53,6 +53,17 @@ describe("queues", () => {
     });
   });
 
+  describe("fitFileImportJobResultSchema", () => {
+    it("requires the result fields and error messages", async () => {
+      const { fitFileImportJobResultSchema } = await import("./queues.ts");
+
+      expect(fitFileImportJobResultSchema.safeParse({}).success).toBe(false);
+      expect(
+        fitFileImportJobResultSchema.safeParse({ recordsSynced: 1, errors: [{}] }).success,
+      ).toBe(false);
+    });
+  });
+
   describe("getRedisConnection", () => {
     it("parses REDIS_URL environment variable with password", async () => {
       process.env.REDIS_URL = "redis://:secret@myredis.host:6380";
@@ -349,6 +360,18 @@ describe("queues", () => {
       expect(MockQueue).toHaveBeenCalledTimes(queueConstructorCallsBeforeClose + 1);
       expect(MockQueueEvents).toHaveBeenCalledTimes(queueEventsConstructorCallsBeforeClose + 1);
       expect(MockFlowProducer).toHaveBeenCalledTimes(flowProducerConstructorCallsBeforeClose + 1);
+    });
+
+    it("is safe when no FIT file import resources are cached", async () => {
+      const { closeFitFileImportQueueResources } = await import("./queues.ts");
+      await closeFitFileImportQueueResources();
+      vi.clearAllMocks();
+
+      await expect(closeFitFileImportQueueResources()).resolves.toBeUndefined();
+
+      expect(mockQueueClose).not.toHaveBeenCalled();
+      expect(mockQueueEventsClose).not.toHaveBeenCalled();
+      expect(mockFlowProducerClose).not.toHaveBeenCalled();
     });
   });
 
@@ -725,6 +748,18 @@ describe("queues", () => {
       expect(mockQueueClose).toHaveBeenCalled();
       expect(mockQueueEventsClose).toHaveBeenCalled();
       expect(mockFlowProducerClose).toHaveBeenCalled();
+    });
+
+    it("is safe when no queue resources are cached", async () => {
+      const { closeAllQueueResources } = await import("./queues.ts");
+      await closeAllQueueResources();
+      vi.clearAllMocks();
+
+      await expect(closeAllQueueResources()).resolves.toBeUndefined();
+
+      expect(mockQueueClose).not.toHaveBeenCalled();
+      expect(mockQueueEventsClose).not.toHaveBeenCalled();
+      expect(mockFlowProducerClose).not.toHaveBeenCalled();
     });
   });
 });

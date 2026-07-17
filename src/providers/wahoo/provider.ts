@@ -291,7 +291,7 @@ export class WahooProvider implements WebhookProvider {
       client,
       db,
       options?.userId,
-      options?.metricStreamPublisher,
+      options.metricStreamPublisher,
     );
 
     const since = window.since;
