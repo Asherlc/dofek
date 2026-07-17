@@ -119,13 +119,23 @@ jobs:
           name: zepp-zab
           path: dist
 
+      - name: Create Release Tag
+        if: github.event_name != 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$RELEASE_TAG" \
+            -f sha="$TARGET_SHA"
+
       - name: Create Release
         env:
           GH_TOKEN: ${{ github.token }}
           CI_RUN_ID: ${{ needs.build.outputs.ci_run_id }}
           VERSION: ${{ needs.build.outputs.version }}
           RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
-          TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           ZAB_FILE=$(ls dist/*.zab 2>/dev/null | head -1)
           if [ -z "$ZAB_FILE" ]; then
@@ -142,7 +152,7 @@ jobs:
           fi
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$TARGET_SHA" \
+            --verify-tag \
             --title "Dofek Zepp v$VERSION" \
             --notes-file "$NOTES_FILE" \
             "$ZAB_FILE"
