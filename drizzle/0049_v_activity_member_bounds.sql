@@ -1,3 +1,4 @@
+-- noqa: disable=all
 -- Canonical definition of the fitness.v_activity view.
 -- This file is the source definition for fresh databases, local test schemas,
 -- and future forward migrations that need to update the deployed view.

@@ -1,12 +1,20 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
+
+const groupedActivityBoundsRowSchema = z.object({
+  started_at: z.string(),
+  ended_at: z.string(),
+  member_activity_ids: z.array(z.string()),
+});
 
 /**
  * Integration test verifying that overlapping activities are deduplicated
@@ -312,6 +320,60 @@ describe("Activity summary deduplication", () => {
 
       expect(groupedRows).toHaveLength(1);
       expect(groupedRows[0]?.member_activity_ids.sort()).toEqual([...activityIds].sort());
+    } finally {
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
+      );
+    }
+  });
+
+  it("uses the earliest start and latest end from every canonical activity member", async () => {
+    const activityIds = [
+      "00000000-0000-4000-8000-0000000000a1",
+      "00000000-0000-4000-8000-0000000000a2",
+    ];
+    const insertedIdArray = sql`ARRAY[${sql.join(
+      activityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    )}]`;
+
+    await testCtx.db.execute(sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`);
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.activity (
+            id, provider_id, user_id, external_id, activity_type, started_at, ended_at, name
+          ) VALUES
+            (
+              ${activityIds[0]}::uuid,
+              'wahoo', ${TEST_USER_ID}, 'wahoo-expanded-bounds', 'cycling',
+              TIMESTAMPTZ '2026-01-14 10:00:05+00',
+              TIMESTAMPTZ '2026-01-14 11:00:00+00',
+              'Expanded Bounds Ride'
+            ),
+            (
+              ${activityIds[1]}::uuid,
+              'apple_health', ${TEST_USER_ID}, 'apple-expanded-bounds', 'cycling',
+              TIMESTAMPTZ '2026-01-14 10:00:00+00',
+              TIMESTAMPTZ '2026-01-14 11:05:00+00',
+              'Expanded Bounds Ride'
+            )`,
+    );
+
+    try {
+      const groupedRows = await executeWithSchema(
+        testCtx.db,
+        groupedActivityBoundsRowSchema,
+        sql`SELECT
+              started_at::text AS started_at,
+              ended_at::text AS ended_at,
+              member_activity_ids::text[] AS member_activity_ids
+            FROM fitness.v_activity
+            WHERE member_activity_ids && ${insertedIdArray}`,
+      );
+
+      expect(groupedRows).toHaveLength(1);
+      expect(groupedRows[0]?.member_activity_ids.sort()).toEqual([...activityIds].sort());
+      expect(groupedRows[0]?.started_at).toBe("2026-01-14 10:00:00+00");
+      expect(groupedRows[0]?.ended_at).toBe("2026-01-14 11:05:00+00");
     } finally {
       await testCtx.db.execute(
         sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
