@@ -40,7 +40,7 @@ export interface ProviderActivityExactIdentity {
   endedAt: Date;
 }
 
-const providerActivityIdSchema = z.object({ id: z.string() });
+const providerActivityIdSchema = z.object({ id: z.string().uuid() });
 
 /** Return an active activity only when the exact provider identity uniquely identifies one row. */
 export async function findUniqueProviderActivityByExactIdentity(

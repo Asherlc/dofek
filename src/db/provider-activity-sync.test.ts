@@ -38,7 +38,7 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
   });
 
   it("returns the activity when the exact identity matches one active row", async () => {
-    mockExecute.mockResolvedValueOnce([{ id: "garmin-summary-row" }]);
+    mockExecute.mockResolvedValueOnce([{ id: "11111111-1111-4111-8111-111111111111" }]);
 
     await expect(
       findUniqueProviderActivityByExactIdentity(makeMockDb(), {
@@ -48,7 +48,7 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
         startedAt: new Date("2022-05-17T17:23:08.000Z"),
         endedAt: new Date("2022-05-17T19:03:19.201Z"),
       }),
-    ).resolves.toEqual({ id: "garmin-summary-row" });
+    ).resolves.toEqual({ id: "11111111-1111-4111-8111-111111111111" });
   });
 
   it("does not choose an activity when the exact identity is absent or ambiguous", async () => {
@@ -64,7 +64,10 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
       undefined,
     );
 
-    mockExecute.mockResolvedValueOnce([{ id: "first-row" }, { id: "second-row" }]);
+    mockExecute.mockResolvedValueOnce([
+      { id: "11111111-1111-4111-8111-111111111111" },
+      { id: "22222222-2222-4222-8222-222222222222" },
+    ]);
     await expect(findUniqueProviderActivityByExactIdentity(makeMockDb(), identity)).resolves.toBe(
       undefined,
     );
