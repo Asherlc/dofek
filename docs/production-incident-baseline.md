@@ -13547,3 +13547,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Actionlint job.
 - **Remaining risk / follow-up:** Confirm the native FIT decoder job and the
   aggregate required-check job pass in the replacement run.
+
+## 2026-07-17 — FIT Decoder CI Bootstrap Failed After Cache Miss
+
+- **Symptoms:** The pull-request CI workflow created the native FIT decoder job,
+  but the job failed during `Bootstrap vcpkg` before compiling the decoder.
+- **User impact:** No production impact. PR 1649 could not receive a passing CI
+  result while the native decoder check failed.
+- **Evidence:** The first fatal line in
+  [job 87909401212](https://github.com/Asherlc/dofek/actions/runs/29587898200/job/87909401212)
+  was `VCPKG_DOWNLOADS was set to
+  '/home/runner/work/_temp/vcpkg/downloads', but that was not a directory.` The
+  preceding cache step reported a miss. Microsoft documents that
+  [`VCPKG_DOWNLOADS` must point to an existing absolute directory](https://learn.microsoft.com/vcpkg/users/config-environment#vcpkg_downloads).
+- **Root cause:** The workflow relied on the cache restore to create the custom
+  vcpkg downloads directory, so a cold cache left `VCPKG_DOWNLOADS` pointing to
+  a nonexistent path and bootstrap failed its prerequisite check.
+- **Fix / mitigation:** The bootstrap step now creates `VCPKG_DOWNLOADS` before
+  cloning and bootstrapping vcpkg.
+- **Validation:** Local workflow linting passes. A replacement GitHub Actions run
+  is required to validate the fix on an empty hosted runner.
+- **Remaining risk / follow-up:** Confirm the native FIT decoder job and the
+  aggregate required-check job pass in the replacement run.
