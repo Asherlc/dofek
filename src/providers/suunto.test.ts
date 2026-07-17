@@ -1,5 +1,7 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as resolveTokensModule from "../auth/resolve-tokens.ts";
+import * as fitImportQueueModule from "../jobs/enqueue-fit-file-import.ts";
 import {
   mapSuuntoActivityType,
   parseSuuntoWorkout,
@@ -15,6 +17,7 @@ vi.mock("../db/token-user-context.ts", () => ({
 }));
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
   upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
@@ -22,6 +25,7 @@ vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
   return {
     ...original,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
     upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
   };
 });
@@ -186,6 +190,80 @@ describe("SuuntoProvider", () => {
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("hands downloaded FIT workouts to the canonical import job", async () => {
+    process.env.SUUNTO_CLIENT_ID = "id";
+    process.env.SUUNTO_CLIENT_SECRET = "secret";
+    process.env.SUUNTO_SUBSCRIPTION_KEY = "key";
+    vi.spyOn(resolveTokensModule, "resolveOAuthTokens").mockResolvedValue({
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      scopes: null,
+    });
+    const enqueueFitImportSpy = vi
+      .spyOn(fitImportQueueModule, "enqueueFitFileImportAndWait")
+      .mockResolvedValue({ recordsSynced: 0, errors: [] });
+    const provider = new SuuntoProvider(async (input) => {
+      const url = String(input);
+      if (url.includes("/v2/workouts?since=")) {
+        return Response.json({
+          payload: [
+            {
+              workoutKey: "suunto-w-123",
+              activityId: 3,
+              workoutName: "Morning Ride",
+              startTime: 1_709_290_800_000,
+              stopTime: 1_709_294_400_000,
+              totalTime: 3600,
+              totalDistance: 30_000,
+              totalAscent: 300,
+              totalDescent: 280,
+              avgSpeed: 8.33,
+              maxSpeed: 12,
+              energyConsumption: 700,
+              stepCount: 0,
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/v2/workout/exportFit/suunto-w-123")) {
+        return new Response(new Uint8Array([1, 2, 3]));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const db = createWebhookDb();
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async () => []),
+    };
+    const result = await provider.sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromSince({ since: new Date("2024-03-01T00:00:00.000Z") }),
+        userId: "user-1",
+        metricStreamPublisher,
+      }),
+    );
+
+    expect(result).toEqual(expect.objectContaining({ recordsSynced: 1, errors: [] }));
+    expect(enqueueFitImportSpy).toHaveBeenCalledWith({
+      fitBuffer: Buffer.from([1, 2, 3]),
+      providerId: "suunto",
+      sourceName: "Suunto",
+      userId: "user-1",
+      db,
+      metricStreamPublisher,
+      activitySummary: {
+        externalId: "suunto-w-123",
+        activityType: "cycling",
+        startedAtIso: "2024-03-01T11:00:00.000Z",
+        endedAtIso: "2024-03-01T12:00:00.000Z",
+        name: "Morning Ride",
+        raw: expect.objectContaining({ totalDistance: 30_000, totalTime: 3600 }),
+      },
+    });
   });
 });
 

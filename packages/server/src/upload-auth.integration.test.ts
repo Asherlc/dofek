@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../src/db/test-helpers.ts";
 import { createSession } from "./auth/session.ts";
 import { createApp } from "./index.ts";
+import { makeMockSensorStore } from "./lib/test-helpers.ts";
 
 /**
  * Additional integration tests for upload endpoints and auth flows.
@@ -21,7 +22,9 @@ describe("Upload & Auth - extended coverage", () => {
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, makeMockSensorStore(), {
+      startWorker: async () => undefined,
+    });
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

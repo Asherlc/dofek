@@ -13,7 +13,6 @@ import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { assembleChunks, MAX_UPLOAD_BYTES, streamToFile } from "../lib/server-utils.ts";
-import { startWorker } from "../lib/start-worker.ts";
 import {
   getUploadStateStore,
   UPLOAD_SESSION_TTL_MS,
@@ -108,12 +107,14 @@ async function expireStaleUpload(uploadId: string, userId: string): Promise<Uplo
 
 async function enqueueImport(
   importQueue: Queue<ImportJobData>,
+  startImportWorker: () => Promise<void>,
   filePath: string,
   since: Date,
   importType: ImportJobData["importType"],
   userId: string,
   opts?: { weightUnit?: "kg" | "lbs"; jobId?: string },
 ): Promise<string> {
+  await startImportWorker();
   const job = await importQueue.add(
     importType,
     {
@@ -125,7 +126,6 @@ async function enqueueImport(
     },
     opts?.jobId ? { jobId: opts.jobId } : undefined,
   );
-  startWorker();
   return job.id ?? `job-${Date.now()}`;
 }
 
@@ -185,6 +185,7 @@ async function getImportJobStatus(importQueue: Queue<ImportJobData>, jobId: stri
 interface UploadRouteDeps {
   importQueue: Queue<ImportJobData>;
   db: Database;
+  startWorker: () => Promise<void>;
 }
 
 /** Validate session from cookie or Bearer header. Returns userId or null (sends 401). */
@@ -450,6 +451,7 @@ async function handleSingleFileUpload({
     }
     const jobId = await enqueueImport(
       deps.importQueue,
+      deps.startWorker,
       tmpFile,
       config.getSince(request),
       config.importType,
@@ -585,10 +587,18 @@ async function handleChunkedFileUpload({
     const assembledFile = createJobFilePath(config, fileExtension);
     try {
       await assembleChunks(chunkDir, assembledFile);
-      await enqueueImport(deps.importQueue, assembledFile, since, config.importType, userId, {
-        ...jobOptions,
-        jobId: uploadId,
-      });
+      await enqueueImport(
+        deps.importQueue,
+        deps.startWorker,
+        assembledFile,
+        since,
+        config.importType,
+        userId,
+        {
+          ...jobOptions,
+          jobId: uploadId,
+        },
+      );
       await uploadStateStore.deleteUploadSession(uploadId);
       await uploadStateStore.deleteUploadStatus(uploadId);
       await rm(chunkDir, { recursive: true, force: true }).catch((rmError: unknown) => {

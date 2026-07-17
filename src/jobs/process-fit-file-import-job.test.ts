@@ -1,10 +1,17 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Encoder, Profile, Utils } from "@garmin/fitsdk";
+import { Decoder, Encoder, Profile, Stream, Utils } from "@garmin/fitsdk";
 import { UnrecoverableError } from "bullmq";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
+import type { ParsedFitRecord, ParsedFitSession } from "../fit/parser.ts";
+import {
+  FitDecoderError,
+  type FitStreamConsumer,
+  type FitStreamResult,
+} from "../fit/stream-decoder.ts";
 import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
 
 const mockCaptureException = vi.fn();
@@ -14,9 +21,12 @@ vi.mock("@sentry/node", () => ({
 
 const mockReplaceMetricStreamBatch = vi.fn().mockResolvedValue(undefined);
 const mockWriteMetricStreamBatch = vi.fn().mockResolvedValue(undefined);
+const mockWriteMetricStreamBatchForScope = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/metric-stream-writer.ts", () => ({
   replaceMetricStreamBatch: (...args: unknown[]) => mockReplaceMetricStreamBatch(...args),
   writeMetricStreamBatch: (...args: unknown[]) => mockWriteMetricStreamBatch(...args),
+  writeMetricStreamBatchForScope: (...args: unknown[]) =>
+    mockWriteMetricStreamBatchForScope(...args),
 }));
 
 const mockUpsertProviderActivity = vi.fn().mockResolvedValue({ id: "activity-row-1" });
@@ -24,32 +34,14 @@ vi.mock("../db/provider-activity-sync.ts", () => ({
   upsertProviderActivity: (...args: unknown[]) => mockUpsertProviderActivity(...args),
 }));
 
-const mockParseFitFileInWorkerThread = vi.fn().mockResolvedValue({
-  session: {
-    sport: "cycling",
-    subSport: "indoor_cycling",
-    startTime: new Date("2026-07-01T12:00:00.000Z"),
-    totalElapsedTime: 1800,
-    totalTimerTime: 1800,
-    totalDistance: 5000,
-    totalCalories: 200,
-    raw: { sport: "cycling", sub_sport: "indoor_cycling" },
-  },
-  records: [
-    {
-      recordedAt: new Date("2026-07-01T12:01:00.000Z"),
-      heartRate: 130,
-      power: 180,
-      speed: 8.5,
-      raw: { heart_rate: 130, power: 180, enhanced_speed: 8.5 },
-    },
-  ],
-  laps: [],
-  events: [],
+const mockStreamFitFile = vi.fn();
+vi.mock("../fit/stream-decoder.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../fit/stream-decoder.ts")>();
+  return {
+    ...actual,
+    streamFitFile: (...arguments_: unknown[]) => mockStreamFitFile(...arguments_),
+  };
 });
-vi.mock("../fit/parser-worker.ts", () => ({
-  parseFitFileInWorkerThread: (...args: unknown[]) => mockParseFitFileInWorkerThread(...args),
-}));
 
 const mockFitImportDroppedFieldOccurrencesTotalAdd = vi.fn();
 const mockFitImportFilesWithDroppedFieldTotalAdd = vi.fn();
@@ -80,6 +72,13 @@ const mockDb: SyncDatabase = {
 
 const createdDirectories: string[] = [];
 
+interface TestFitActivity {
+  session: ParsedFitSession;
+  records: ParsedFitRecord[];
+  laps: Record<string, unknown>[];
+  events: Record<string, unknown>[];
+}
+
 function createFitFileImportJob(data: unknown) {
   return {
     data,
@@ -93,6 +92,10 @@ async function writeTempFit(buffer: Buffer): Promise<string> {
   const filePath = join(directory, "input.fit");
   await writeFile(filePath, buffer);
   return filePath;
+}
+
+async function fitImportSpoolDirectories(): Promise<string[]> {
+  return (await readdir(tmpdir())).filter((entry) => entry.startsWith("dofek-fit-import-")).sort();
 }
 
 function createActivityFit(): Buffer {
@@ -170,6 +173,146 @@ function createNonWeightTypeWithScaleFit(): Buffer {
   return Buffer.from(encoder.close());
 }
 
+const generatedFitSchema = z.object({
+  errors: z.array(z.unknown()).optional(),
+  messages: z
+    .object({
+      fileIdMesgs: z
+        .array(z.object({ type: z.union([z.string(), z.number()]).optional() }).passthrough())
+        .optional(),
+      weightScaleMesgs: z
+        .array(
+          z
+            .object({
+              timestamp: z.union([z.date(), z.string()]),
+              weight: z.number().optional(),
+              percentFat: z.number().optional(),
+              percentHydration: z.number().optional(),
+              boneMass: z.number().optional(),
+              muscleMass: z.number().optional(),
+              bmi: z.number().optional(),
+            })
+            .passthrough(),
+        )
+        .optional(),
+    })
+    .optional(),
+});
+
+function defaultFitActivity(): TestFitActivity {
+  return {
+    session: {
+      sport: "cycling",
+      subSport: "indoor_cycling",
+      startTime: new Date("2026-07-01T12:00:00.000Z"),
+      totalElapsedTime: 1800,
+      totalTimerTime: 1800,
+      totalDistance: 5000,
+      totalCalories: 200,
+      raw: { sport: "cycling", sub_sport: "indoor_cycling" },
+    },
+    records: [
+      {
+        recordedAt: new Date("2026-07-01T12:01:00.000Z"),
+        heartRate: 130,
+        power: 180,
+        speed: 8.5,
+        raw: { heart_rate: 130, power: 180, enhanced_speed: 8.5 },
+      },
+    ],
+    laps: [],
+    events: [],
+  };
+}
+
+async function streamActivity(
+  activity: TestFitActivity,
+  consumer: FitStreamConsumer,
+): Promise<FitStreamResult> {
+  await consumer.onMetadata({
+    fileType: 4,
+    fileTypeName: "activity",
+    fieldOccurrences: [],
+    isWeightFile: false,
+    session: activity.session,
+  });
+  for (let offset = 0; offset < activity.records.length; offset += 250) {
+    await consumer.onRecordBatch(activity.records.slice(offset, offset + 250));
+  }
+  return { messageCount: activity.records.length };
+}
+
+function mockActivityStreamOnce(activity: TestFitActivity): void {
+  mockStreamFitFile.mockImplementationOnce(async (_filePath: string, consumer: FitStreamConsumer) =>
+    streamActivity(activity, consumer),
+  );
+}
+
+async function streamGeneratedTestFit(
+  filePath: string,
+  consumer: FitStreamConsumer,
+): Promise<FitStreamResult> {
+  let decoded: z.infer<typeof generatedFitSchema>;
+  try {
+    decoded = generatedFitSchema.parse(
+      new Decoder(Stream.fromBuffer(await readFile(filePath))).read(),
+    );
+  } catch (error) {
+    throw new FitDecoderError("FIT decoder reported invalid data", { cause: error });
+  }
+  if ((decoded.errors?.length ?? 0) > 0) {
+    throw new FitDecoderError(`FIT decoder reported ${decoded.errors?.length ?? 0} errors`);
+  }
+  const fileType = decoded.messages?.fileIdMesgs?.find(
+    (message) => message.type !== undefined,
+  )?.type;
+  const weightRows = decoded.messages?.weightScaleMesgs ?? [];
+  const isWeightFile = fileType === "weight" || fileType === 9 || weightRows.length > 0;
+  if (fileType === "monitoringB") {
+    await consumer.onMetadata({
+      fileType: 32,
+      fileTypeName: "monitoring_b",
+      fieldOccurrences: [
+        { messageType: "file_id", field: "type", occurrences: 1 },
+        { messageType: "file_id", field: "time_created", occurrences: 1 },
+        { messageType: "stress_level", field: "stress_level_time", occurrences: 1 },
+        { messageType: "stress_level", field: "stress_level_value", occurrences: 1 },
+      ],
+      isWeightFile: false,
+      session: null,
+    });
+    return { messageCount: 0 };
+  }
+  if (!isWeightFile) {
+    return streamActivity(defaultFitActivity(), consumer);
+  }
+
+  await consumer.onMetadata({
+    fileType: typeof fileType === "number" ? fileType : 9,
+    fileTypeName: "weight",
+    fieldOccurrences: [
+      { messageType: "file_id", field: "type", occurrences: 1 },
+      { messageType: "file_id", field: "time_created", occurrences: 1 },
+    ],
+    isWeightFile: true,
+    session: null,
+  });
+  const weights = weightRows.map((weight) => ({
+    timestamp: weight.timestamp instanceof Date ? weight.timestamp : new Date(weight.timestamp),
+    weight: weight.weight,
+    percentFat: weight.percentFat,
+    percentHydration: weight.percentHydration,
+    boneMass: weight.boneMass,
+    muscleMass: weight.muscleMass,
+    bmi: weight.bmi,
+    raw: weight,
+  }));
+  if (weights.length > 0) {
+    await consumer.onWeightBatch(weights);
+  }
+  return { messageCount: weights.length };
+}
+
 function createMonitoringFit(): Buffer {
   const timestamp = Utils.convertDateToDateTime(new Date("2020-05-21T03:31:00.000Z"));
   const stressTimestamp = Utils.convertDateToDateTime(new Date("2020-05-21T03:32:00.000Z"));
@@ -194,29 +337,8 @@ describe("processFitFileImportJob", () => {
     mockUpsertProviderActivity.mockResolvedValue({ id: "activity-row-1" });
     mockReplaceMetricStreamBatch.mockResolvedValue(undefined);
     mockWriteMetricStreamBatch.mockResolvedValue(undefined);
-    mockParseFitFileInWorkerThread.mockResolvedValue({
-      session: {
-        sport: "cycling",
-        subSport: "indoor_cycling",
-        startTime: new Date("2026-07-01T12:00:00.000Z"),
-        totalElapsedTime: 1800,
-        totalTimerTime: 1800,
-        totalDistance: 5000,
-        totalCalories: 200,
-        raw: { sport: "cycling", sub_sport: "indoor_cycling" },
-      },
-      records: [
-        {
-          recordedAt: new Date("2026-07-01T12:01:00.000Z"),
-          heartRate: 130,
-          power: 180,
-          speed: 8.5,
-          raw: { heart_rate: 130, power: 180, enhanced_speed: 8.5 },
-        },
-      ],
-      laps: [],
-      events: [],
-    });
+    mockWriteMetricStreamBatchForScope.mockResolvedValue(undefined);
+    mockStreamFitFile.mockImplementation(streamGeneratedTestFit);
   });
 
   afterEach(async () => {
@@ -245,7 +367,7 @@ describe("processFitFileImportJob", () => {
           "Failed to import FIT file activity.fit: FIT import job is missing filePath and has no child extraction result",
       }),
     );
-    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    expect(mockStreamFitFile).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
@@ -265,7 +387,7 @@ describe("processFitFileImportJob", () => {
 
     await expect(processFitFileImportJob(job, mockDb)).rejects.toBe(redisError);
 
-    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    expect(mockStreamFitFile).not.toHaveBeenCalled();
   });
 
   it("retains parent-owned temp files when queue payload validation fails", async () => {
@@ -287,7 +409,7 @@ describe("processFitFileImportJob", () => {
       "activity.fit",
       expect.any(String),
     );
-    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    expect(mockStreamFitFile).not.toHaveBeenCalled();
     await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
   });
 
@@ -328,7 +450,7 @@ describe("processFitFileImportJob", () => {
     const result = await processFitFileImportJob(job, mockDb);
 
     expect(result).toEqual({ recordsSynced: 0, errors: [] });
-    expect(mockParseFitFileInWorkerThread).toHaveBeenCalledWith(createActivityFit());
+    expect(mockStreamFitFile).toHaveBeenCalledWith(filePath, expect.any(Object));
     expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({
@@ -342,6 +464,12 @@ describe("processFitFileImportJob", () => {
       expect.objectContaining({ name: "Morning Ride", raw: { activityId: 12345 } }),
     );
     expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
+      mockDb,
+      { activityId: "activity-row-1" },
+      [],
+      "file",
+    );
+    expect(mockWriteMetricStreamBatchForScope).toHaveBeenCalledWith(
       mockDb,
       { activityId: "activity-row-1" },
       [
@@ -381,6 +509,286 @@ describe("processFitFileImportJob", () => {
       percentage: 100,
       message: "FIT file import complete.",
     });
+  });
+
+  it("deletes a job-owned downloaded FIT file after a successful import", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+
+    await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "wahoo_workout-42.fit",
+        userId: "user-1",
+        providerId: "wahoo",
+        sourceName: "Wahoo",
+        deleteFileAfterImport: true,
+        activitySummary: {
+          externalId: "workout-42",
+          activityType: "cycling",
+          startedAtIso: "2026-07-01T12:00:00.000Z",
+          name: "Morning ride",
+        },
+      }),
+      mockDb,
+    );
+
+    await expect(readFile(filePath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        endedAt: new Date("2026-07-01T12:30:00.000Z"),
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("deletes a job-owned downloaded FIT file after an unrecoverable decode failure", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockStreamFitFile.mockRejectedValueOnce(new FitDecoderError("invalid FIT CRC"));
+
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: "coros_workout-7.fit",
+          userId: "user-1",
+          providerId: "coros",
+          sourceName: "COROS",
+          deleteFileAfterImport: true,
+        }),
+        mockDb,
+      ),
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+
+    await expect(readFile(filePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("retains a job-owned downloaded FIT file for a retryable persistence failure", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    const databaseError = new Error("Redpanda unavailable");
+    mockUpsertProviderActivity.mockRejectedValueOnce(databaseError);
+
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: "suunto_workout-9.fit",
+          userId: "user-1",
+          providerId: "suunto",
+          sourceName: "Suunto",
+          deleteFileAfterImport: true,
+        }),
+        mockDb,
+      ),
+    ).rejects.toBe(databaseError);
+
+    await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
+  });
+
+  it("does not mutate activity data when the decoder fails after a record batch", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    const activity = defaultFitActivity();
+    const spoolDirectoriesBefore = await fitImportSpoolDirectories();
+    mockStreamFitFile.mockImplementationOnce(
+      async (_filePath: string, consumer: FitStreamConsumer) => {
+        await consumer.onMetadata({
+          fileType: 4,
+          fileTypeName: "activity",
+          fieldOccurrences: [],
+          isWeightFile: false,
+          session: activity.session,
+        });
+        await consumer.onRecordBatch(activity.records);
+        throw new FitDecoderError("invalid final message count");
+      },
+    );
+
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: "DI_CONNECT/activity_12345.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        }),
+        mockDb,
+      ),
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
+    expect(mockWriteMetricStreamBatchForScope).not.toHaveBeenCalled();
+    await expect(fitImportSpoolDirectories()).resolves.toEqual(spoolDirectoriesBefore);
+  });
+
+  it("fails without mutations when the decoder completes without metadata", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockStreamFitFile.mockResolvedValueOnce({ messageCount: 0 });
+
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: "DI_CONNECT/activity_12345.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        }),
+        mockDb,
+      ),
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
+    expect(mockWriteMetricStreamBatchForScope).not.toHaveBeenCalled();
+  });
+
+  it("replaces activity sensor samples in bounded batches", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockActivityStreamOnce({
+      session: {
+        sport: "cycling",
+        subSport: "indoor_cycling",
+        startTime: new Date("2026-07-01T12:00:00.000Z"),
+        totalElapsedTime: 1800,
+        totalTimerTime: 1800,
+        totalDistance: 5000,
+        totalCalories: 200,
+        raw: { sport: "cycling", sub_sport: "indoor_cycling" },
+      },
+      records: Array.from({ length: 501 }, (_, index) => ({
+        recordedAt: new Date(1_783_425_660_000 + index * 1_000),
+        heartRate: 130,
+        raw: { heart_rate: 130 },
+      })),
+      laps: [],
+      events: [],
+    });
+
+    await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/activity_12345.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+        activitySummary: {
+          externalId: "12345",
+          activityType: "cycling",
+          startedAtIso: "2026-07-01T12:00:00.000Z",
+          endedAtIso: "2026-07-01T12:30:00.000Z",
+          name: "Morning Ride",
+          raw: { activityId: 12345 },
+        },
+      }),
+      mockDb,
+    );
+
+    expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
+      mockDb,
+      { activityId: "activity-row-1" },
+      [],
+      "file",
+    );
+    expect(mockWriteMetricStreamBatchForScope).toHaveBeenCalledTimes(3);
+    expect(mockWriteMetricStreamBatchForScope.mock.calls.map(([, , rows]) => rows.length)).toEqual([
+      250, 250, 1,
+    ]);
+  });
+
+  it("uses the supplied metric stream publisher for activity writes", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    const activity = defaultFitActivity();
+    mockActivityStreamOnce(activity);
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async () => []),
+      replaceRows: vi.fn(async () => {
+        throw new Error("replaceRows should be delegated");
+      }),
+    };
+
+    await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/activity_12345.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+        activitySummary: {
+          externalId: "12345",
+          activityType: "cycling",
+          startedAtIso: "2026-07-01T12:00:00.000Z",
+          endedAtIso: "2026-07-01T12:30:00.000Z",
+          name: "Morning Ride",
+        },
+      }),
+      mockDb,
+      metricStreamPublisher,
+    );
+
+    expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
+      mockDb,
+      { activityId: "activity-row-1" },
+      [],
+      "file",
+      metricStreamPublisher,
+    );
+    expect(mockWriteMetricStreamBatchForScope).toHaveBeenCalledWith(
+      mockDb,
+      { activityId: "activity-row-1" },
+      expect.any(Array),
+      "file",
+      metricStreamPublisher,
+    );
+  });
+
+  it("rejects an activity publisher without scoped replacement before mutation", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockActivityStreamOnce(defaultFitActivity());
+
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: "DI_CONNECT/activity_12345.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          sourceName: "Garmin Dump",
+        }),
+        mockDb,
+        { publishRows: vi.fn(async () => []) },
+      ),
+    ).rejects.toThrow("FIT activity imports require a scoped replacement publisher");
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
+  });
+
+  it("uses the supplied metric stream publisher for weight writes", async () => {
+    const filePath = await writeTempFit(createWeightFit());
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async () => []),
+    };
+
+    await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/weight.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
+      mockDb,
+      metricStreamPublisher,
+    );
+
+    expect(mockWriteMetricStreamBatch).toHaveBeenCalledWith(
+      mockDb,
+      expect.any(Array),
+      "file",
+      undefined,
+      metricStreamPublisher,
+    );
   });
 
   it("accepts FIT files with numeric file_id.type from Garmin exports", async () => {
@@ -424,7 +832,6 @@ describe("processFitFileImportJob", () => {
     );
 
     expect(result).toEqual({ recordsSynced: 0, errors: [] });
-    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
     expect(mockWriteMetricStreamBatch).not.toHaveBeenCalled();
     expect(mockFitImportDroppedFieldOccurrencesTotalAdd).toHaveBeenCalledWith(1, {
@@ -474,6 +881,12 @@ describe("processFitFileImportJob", () => {
       expect.objectContaining({ name: "FIT indoor cycling" }),
     );
     expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
+      mockDb,
+      { activityId: "activity-row-1" },
+      [],
+      "file",
+    );
+    expect(mockWriteMetricStreamBatchForScope).toHaveBeenCalledWith(
       mockDb,
       { activityId: "activity-row-1" },
       [
@@ -619,7 +1032,7 @@ describe("processFitFileImportJob", () => {
 
   it("normalizes FIT sport text and falls back to other for unknown sports", async () => {
     const virtualRideFilePath = await writeTempFit(createActivityFit());
-    mockParseFitFileInWorkerThread.mockResolvedValueOnce({
+    mockActivityStreamOnce({
       session: {
         sport: "cycling",
         subSport: "virtualActivity",
@@ -659,7 +1072,7 @@ describe("processFitFileImportJob", () => {
     );
 
     const trailRunFilePath = await writeTempFit(createActivityFit());
-    mockParseFitFileInWorkerThread.mockResolvedValueOnce({
+    mockActivityStreamOnce({
       session: {
         sport: "Trail  Running",
         startTime: new Date("2026-07-01T12:00:00.000Z"),
@@ -698,7 +1111,7 @@ describe("processFitFileImportJob", () => {
     );
 
     const unknownSportFilePath = await writeTempFit(createActivityFit());
-    mockParseFitFileInWorkerThread.mockResolvedValueOnce({
+    mockActivityStreamOnce({
       session: {
         sport: "pickleball",
         startTime: new Date("2026-07-01T13:00:00.000Z"),
@@ -739,7 +1152,7 @@ describe("processFitFileImportJob", () => {
 
   it("fails activity FIT files missing a valid start time without retrying", async () => {
     const filePath = await writeTempFit(createActivityFit());
-    mockParseFitFileInWorkerThread.mockResolvedValueOnce({
+    mockActivityStreamOnce({
       session: {
         sport: "cycling",
         startTime: new Date("invalid"),
@@ -808,15 +1221,14 @@ describe("processFitFileImportJob", () => {
     const result = await processFitFileImportJob(job, mockDb);
 
     expect(result).toEqual({ recordsSynced: 1, errors: [] });
-    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
     expect(mockWriteMetricStreamBatch).toHaveBeenCalledWith(
       mockDb,
       [
         expect.objectContaining({
           providerId: "garmin-dump",
           userId: "user-1",
-          externalId:
-            "weight:DI_CONNECT/asher@example.com_20260701_weight.fit:2026-07-01T12:00:00.000Z",
+          externalId: expect.stringMatching(/^weight:[a-f0-9]{64}:2026-07-01T12:00:00\.000Z$/),
           recordedAt: new Date("2026-07-01T12:00:00.000Z"),
           sourceName: "Garmin Dump",
           weightKg: 72,
@@ -829,6 +1241,9 @@ describe("processFitFileImportJob", () => {
       ],
       "file",
     );
+    const serializedWrite = JSON.stringify(mockWriteMetricStreamBatch.mock.calls[0]);
+    expect(serializedWrite).not.toContain("DI_CONNECT/asher@example.com_20260701_weight.fit");
+    expect(serializedWrite).not.toContain("asher@example.com");
     await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 50,
@@ -888,7 +1303,7 @@ describe("processFitFileImportJob", () => {
 
     expect(result).toEqual({ recordsSynced: 0, errors: [] });
     expect(mockWriteMetricStreamBatch).not.toHaveBeenCalled();
-    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
   });
 
   it("treats FIT files with weight scale data but non-weight file type as weight data", async () => {
@@ -907,7 +1322,7 @@ describe("processFitFileImportJob", () => {
 
     expect(result.recordsSynced).toBeGreaterThan(0);
     expect(mockWriteMetricStreamBatch).toHaveBeenCalled();
-    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
   });
 
   it("fails invalid FIT files without retrying before attempting activity parsing", async () => {
@@ -932,13 +1347,13 @@ describe("processFitFileImportJob", () => {
         ),
       }),
     );
-    expect(mockParseFitFileInWorkerThread).not.toHaveBeenCalled();
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
     await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);
   });
 
   it("fails FIT activity parser errors without retrying", async () => {
     const filePath = await writeTempFit(createActivityFit());
-    mockParseFitFileInWorkerThread.mockRejectedValueOnce(new Error("invalid FIT session"));
+    mockStreamFitFile.mockRejectedValueOnce(new FitDecoderError("invalid FIT session"));
     const job = createFitFileImportJob({
       filePath,
       originalPath: "DI_CONNECT/broken-session.fit",
@@ -962,8 +1377,8 @@ describe("processFitFileImportJob", () => {
   it("redacts Garmin paths from telemetry, logs, and persisted failures", async () => {
     const filePath = await writeTempFit(createActivityFit());
     const privatePath = "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_broken-session.fit";
-    mockParseFitFileInWorkerThread.mockRejectedValueOnce(
-      new Error(`FIT parser rejected ${privatePath}`),
+    mockStreamFitFile.mockRejectedValueOnce(
+      new FitDecoderError(`FIT parser rejected ${privatePath}`),
     );
 
     await expect(

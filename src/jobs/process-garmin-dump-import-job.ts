@@ -9,12 +9,7 @@ import {
 } from "../providers/garmin-dump.ts";
 import type { SyncResult } from "../providers/types.ts";
 import { attachGarminFitImportFlow, createBatchId, FLOW_BATCH_SIZE } from "./garmin-dump-flow.ts";
-import type { ImportJobData } from "./queues.ts";
-
-const importResultSchema = z.object({
-  recordsSynced: z.number().int().nonnegative(),
-  errors: z.array(z.object({ message: z.string() })),
-});
+import { fitFileImportJobResultSchema, type ImportJobData } from "./queues.ts";
 
 const MAX_GARMIN_IMPORT_ERRORS = 10;
 
@@ -24,7 +19,7 @@ export const garminImportCheckpointSchema = z.object({
   startedAtMs: z.number().int().nonnegative(),
   batchId: z.string().min(1),
   batchIds: z.array(z.string().min(1)).optional(),
-  baseResult: importResultSchema,
+  baseResult: fitFileImportJobResultSchema,
   tempDirectories: z.array(z.string()),
   totalFitFiles: z.number().int().nonnegative(),
 });
@@ -70,7 +65,7 @@ async function persistCheckpoint(
 function batchResultFromChildren(
   checkpoint: GarminImportCheckpoint,
   childValues: Record<string, unknown>,
-): z.infer<typeof importResultSchema> | null {
+): z.infer<typeof fitFileImportJobResultSchema> | null {
   const batchIds = checkpoint.batchIds ?? [checkpoint.batchId];
   const batchEntries = Object.entries(childValues).filter(([jobKey]) =>
     batchIds.some((id) => jobKey.endsWith(`:${id}`)),
@@ -80,7 +75,7 @@ function batchResultFromChildren(
   let totalRecordsSynced = 0;
   const allErrors: Array<{ message: string }> = [];
   for (const [, value] of batchEntries) {
-    const parsed = importResultSchema.parse(value);
+    const parsed = fitFileImportJobResultSchema.parse(value);
     totalRecordsSynced += parsed.recordsSynced;
     allErrors.push(...parsed.errors);
   }

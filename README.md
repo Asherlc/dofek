@@ -124,6 +124,7 @@ dofek/
 │   ├── velohero-client/           # RE'd VeloHero API client
 │   ├── garmin-connect/            # RE'd Garmin Connect SSO + API client
 │   └── trainingpeaks-connect/     # RE'd TrainingPeaks internal API client
+├── native/fit-decoder/             # C++ Garmin FIT streaming decoder (CMake + vcpkg)
 ├── cypress/                       # E2E tests (Cypress)
 ├── drizzle/                       # SQL migrations (0000_baseline.sql + forward migrations)
 │   └── _views/                    # Canonical materialized view definitions
@@ -225,16 +226,17 @@ A single image is built from a multi-stage Dockerfile:
 
 ```text
 Dockerfile (multi-stage)
+├── fit-decoder-build   — CMake/vcpkg build and CTest for the Garmin FIT decoder
 ├── workspace-manifests — lockfile and workspace package manifests only
 ├── workspace-deps      — full pnpm install for Vite build tooling
 ├── server-deps         — production pnpm install filtered to dofek-server
 ├── client-build        — full source + Vite build
-└── server target       — Node 26 runtime with TypeScript sources + built web assets + entrypoint
+└── server target       — Node 26 runtime with native decoder, TypeScript sources, web assets, and entrypoint
 ```
 
 Dependency layers are intentionally source-independent: `workspace-manifests` copies only package manifests, the lockfile, and patches, then `workspace-deps` and `server-deps` install from that stable input set. `server-deps` uses `pnpm install --prod --frozen-lockfile --filter dofek-server...` rather than `pnpm deploy`, keeping the image on pnpm's regular install path and avoiding `deploy --legacy`. See pnpm's docs for filtered installs and deploy behavior: https://pnpm.io/filtering, https://pnpm.io/cli/install, https://pnpm.io/cli/deploy.
 
-The server image copies the workspace source tree plus production dependencies from `server-deps`, then creates explicit symlinks for workspace packages so bare imports resolve at runtime. Built web assets from `packages/web/dist` are included in the server image — Express serves them directly with SPA fallback. BuildKit cache mounts keep the pnpm store warm across builds, and CI exports E2E/server build caches to GitHub Actions cache plus GHCR registry cache for reuse across PRs. See Docker's cache backend docs: https://docs.docker.com/build/cache/backends/gha/, https://docs.docker.com/build/cache/backends/registry/. Production runs TypeScript directly on Node 26; there is no separate server transpile step inside the container.
+The `fit-decoder-build` stage builds and tests the C++ decoder with Garmin's official [FIT C++ SDK](https://github.com/garmin/fit-cpp-sdk), [CMake presets](https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html), and [vcpkg manifest mode](https://learn.microsoft.com/vcpkg/concepts/manifest-mode). The server image copies only the resulting executable into the runtime. It then copies the workspace source tree plus production dependencies from `server-deps` and creates explicit symlinks for workspace packages so bare imports resolve at runtime. Built web assets from `packages/web/dist` are included in the server image — Express serves them directly with SPA fallback. BuildKit cache mounts keep the pnpm and vcpkg caches warm across builds, and CI exports E2E/server build caches to GitHub Actions cache plus GHCR registry cache for reuse across PRs. See Docker's cache backend docs: https://docs.docker.com/build/cache/backends/gha/, https://docs.docker.com/build/cache/backends/registry/. Production runs TypeScript directly on Node 26; there is no separate server transpile step inside the container.
 
 ### Building locally
 

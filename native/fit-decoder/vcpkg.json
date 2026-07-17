@@ -1,0 +1,7 @@
+{
+  "name": "dofek-fit-decoder",
+  "version-string": "1.0.0",
+  "dependencies": [
+    "garmin-fit-sdk"
+  ]
+}

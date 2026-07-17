@@ -4,17 +4,14 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import {
   finishProviderActivityListSync,
   upsertProviderActivity,
 } from "../db/provider-activity-sync.ts";
 import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
-import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import { parseFitFile } from "../fit/parser.ts";
-import { fitRecordsToSensorSamples } from "../fit/records.ts";
+import { enqueueFitFileImportAndWait } from "../jobs/enqueue-fit-file-import.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import { ProviderHttpClient } from "./http-client.ts";
@@ -388,26 +385,24 @@ export class CorosProvider implements WebhookProvider {
               if (activityId && raw.fitUrl) {
                 try {
                   const fitBuffer = await client.downloadFitFile(raw.fitUrl);
-                  const fitData = await parseFitFile(fitBuffer);
-                  const metricRows = fitRecordsToSensorSamples(
-                    fitData.records,
-                    this.id,
-                    activityId,
-                    parsed.activityType,
-                  );
-
-                  if (metricRows.length > 0) {
-                    await replaceMetricStreamBatch(
-                      db,
-                      { activityId },
-                      metricRows,
-                      SOURCE_TYPE_FILE,
-                      options.metricStreamPublisher,
-                    );
-                    logger.info(
-                      `[coros] Inserted ${metricRows.length} metric stream rows for workout ${parsed.externalId}`,
-                    );
-                  }
+                  await enqueueFitFileImportAndWait({
+                    fitBuffer,
+                    providerId: this.id,
+                    sourceName: this.name,
+                    userId: options.userId,
+                    ...(options.metricStreamPublisher
+                      ? { db, metricStreamPublisher: options.metricStreamPublisher }
+                      : {}),
+                    activitySummary: {
+                      externalId: parsed.externalId,
+                      activityType: parsed.activityType,
+                      startedAtIso: parsed.startedAt.toISOString(),
+                      endedAtIso: parsed.endedAt.toISOString(),
+                      name: parsed.name,
+                      raw: parsed.raw,
+                    },
+                  });
+                  logger.info(`[coros] Imported FIT file for workout ${parsed.externalId}`);
                 } catch (fitError) {
                   errors.push({
                     message: `FIT file for ${parsed.externalId}: ${fitError instanceof Error ? fitError.message : String(fitError)}`,

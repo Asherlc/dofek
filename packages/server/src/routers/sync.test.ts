@@ -754,6 +754,20 @@ describe("syncRouter", () => {
         }),
         expect.objectContaining({ attempts: 288 }),
       );
+      expect(mockStartWorker).toHaveBeenCalledOnce();
+    });
+
+    it("propagates a worker startup failure after enqueueing", async () => {
+      mockGetAllProviders.mockReturnValue([{ id: "strava", name: "Strava", validate: () => null }]);
+      mockStartWorker.mockRejectedValueOnce(new Error("worker unavailable"));
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValueOnce([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.triggerSync({})).rejects.toThrow("worker unavailable");
+      expect(mockStartWorker).toHaveBeenCalledOnce();
     });
 
     it("returns per-provider outcomes when one sync-all provider is rate limited", async () => {

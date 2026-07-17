@@ -133,9 +133,6 @@ importers:
       eight-sleep-client:
         specifier: workspace:*
         version: link:packages/eight-sleep
-      fit-file-parser:
-        specifier: 3.0.2
-        version: 3.0.2
       garmin-connect:
         specifier: workspace:*
         version: link:packages/garmin-connect
@@ -10174,9 +10171,6 @@ packages:
   first-chunk-stream@2.0.0:
     resolution: {integrity: sha512-X8Z+b/0L4lToKYq+lwnKqi9X/Zek0NibLpsJgVsSxpoYq7JtiCtRb5HqKVEjEw/qAb/4AKKRLOwwKHlWNpm2Eg==}
     engines: {node: '>=0.10.0'}
-
-  fit-file-parser@3.0.2:
-    resolution: {integrity: sha512-Yg7XfByuKh8CypgHqNcZSLyV9aWo14pkZ1oWR8VfdHBhuJN856PvlfYAkLSTD58USE5S+iSYE9f9diil043Xag==}
 
   flat-cache@2.0.1:
     resolution: {integrity: sha512-LoQe6yDuUMDzQAEH8sgmh4Md6oZnc/7PjtwjNFSzveXqSHt6ka9fPBuso7IGf9Rz4uqnSnWiFH2B/zj24a5ReA==}
@@ -25589,10 +25583,6 @@ snapshots:
   first-chunk-stream@2.0.0:
     dependencies:
       readable-stream: 2.3.8
-
-  fit-file-parser@3.0.2:
-    dependencies:
-      buffer: 6.0.3
 
   flat-cache@2.0.1:
     dependencies:

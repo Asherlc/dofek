@@ -89,13 +89,21 @@ vi.mock("./trpc.ts", async () => {
 });
 
 import type { AppRouter } from "./router.ts";
-import { appRouter } from "./router.ts";
+import { appRouter, createAppRouter } from "./router.ts";
+import { syncRouter } from "./routers/sync.ts";
 
 describe("appRouter", () => {
   it("is defined and exports AppRouter type", () => {
     expect(appRouter).toBeDefined();
     // Verify the router has _def with router metadata
     expect(appRouter._def).toBeDefined();
+  });
+
+  it("assembles the supplied sync router with the other application routers", () => {
+    const assembledRouter = createAppRouter(syncRouter);
+
+    expect(assembledRouter._def.record.sync).toEqual(syncRouter);
+    expect(assembledRouter._def.record).toHaveProperty("activity");
   });
 
   it("contains all expected sub-routers", () => {

@@ -30,6 +30,12 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+  - package-ecosystem: "vcpkg"
+    directory: "/native/fit-decoder"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
   - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:

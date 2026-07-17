@@ -8,10 +8,14 @@ const MockQueue = vi.fn(() => mockQueueInstance);
 const mockFlowProducerClose = vi.fn().mockResolvedValue(undefined);
 const mockFlowProducerInstance = { name: "mock-flow-producer", close: mockFlowProducerClose };
 const MockFlowProducer = vi.fn(() => mockFlowProducerInstance);
+const mockQueueEventsClose = vi.fn().mockResolvedValue(undefined);
+const mockQueueEventsInstance = { name: "mock-queue-events", close: mockQueueEventsClose };
+const MockQueueEvents = vi.fn(() => mockQueueEventsInstance);
 
 vi.mock("bullmq", () => ({
   FlowProducer: MockFlowProducer,
   Queue: MockQueue,
+  QueueEvents: MockQueueEvents,
 }));
 
 describe("queues", () => {
@@ -21,6 +25,7 @@ describe("queues", () => {
     mockQueueAdd.mockResolvedValue(undefined);
     mockQueueClose.mockResolvedValue(undefined);
     mockFlowProducerClose.mockResolvedValue(undefined);
+    mockQueueEventsClose.mockResolvedValue(undefined);
   });
 
   describe("constants", () => {
@@ -45,6 +50,17 @@ describe("queues", () => {
       expect(SCHEDULED_SYNC_QUEUE).toBe("scheduled-sync");
       expect(POST_SYNC_QUEUE).toBe("post-sync");
       expect(ACTIVITY_DELETE_ANALYTICS_QUEUE).toBe("activity-delete-analytics");
+    });
+  });
+
+  describe("fitFileImportJobResultSchema", () => {
+    it("requires the result fields and error messages", async () => {
+      const { fitFileImportJobResultSchema } = await import("./queues.ts");
+
+      expect(fitFileImportJobResultSchema.safeParse({}).success).toBe(false);
+      expect(
+        fitFileImportJobResultSchema.safeParse({ recordsSynced: 1, errors: [{}] }).success,
+      ).toBe(false);
     });
   });
 
@@ -282,6 +298,22 @@ describe("queues", () => {
     });
   });
 
+  describe("getFitFileImportQueueEvents", () => {
+    it("reuses one FIT file import queue-events listener", async () => {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      const { FIT_FILE_IMPORT_QUEUE, getFitFileImportQueueEvents } = await import("./queues.ts");
+
+      const first = getFitFileImportQueueEvents();
+      const second = getFitFileImportQueueEvents();
+
+      expect(first).toBe(second);
+      expect(MockQueueEvents).toHaveBeenCalledTimes(1);
+      expect(MockQueueEvents).toHaveBeenCalledWith(FIT_FILE_IMPORT_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+    });
+  });
+
   describe("getFlowProducer", () => {
     it("reuses one flow producer instance", async () => {
       process.env.REDIS_URL = "redis://localhost:6379";
@@ -301,24 +333,45 @@ describe("queues", () => {
   describe("closeFitFileImportQueueResources", () => {
     it("closes cached FIT file import queue resources and clears the cache", async () => {
       process.env.REDIS_URL = "redis://localhost:6379";
-      const { closeFitFileImportQueueResources, getFitFileImportQueue, getFlowProducer } =
-        await import("./queues.ts");
+      const {
+        closeFitFileImportQueueResources,
+        getFitFileImportQueue,
+        getFitFileImportQueueEvents,
+        getFlowProducer,
+      } = await import("./queues.ts");
 
       getFitFileImportQueue();
+      getFitFileImportQueueEvents();
       getFlowProducer();
       const queueConstructorCallsBeforeClose = MockQueue.mock.calls.length;
+      const queueEventsConstructorCallsBeforeClose = MockQueueEvents.mock.calls.length;
       const flowProducerConstructorCallsBeforeClose = MockFlowProducer.mock.calls.length;
 
       await closeFitFileImportQueueResources();
 
       expect(mockQueueClose).toHaveBeenCalledOnce();
+      expect(mockQueueEventsClose).toHaveBeenCalledOnce();
       expect(mockFlowProducerClose).toHaveBeenCalledOnce();
 
       getFitFileImportQueue();
+      getFitFileImportQueueEvents();
       getFlowProducer();
 
       expect(MockQueue).toHaveBeenCalledTimes(queueConstructorCallsBeforeClose + 1);
+      expect(MockQueueEvents).toHaveBeenCalledTimes(queueEventsConstructorCallsBeforeClose + 1);
       expect(MockFlowProducer).toHaveBeenCalledTimes(flowProducerConstructorCallsBeforeClose + 1);
+    });
+
+    it("is safe when no FIT file import resources are cached", async () => {
+      const { closeFitFileImportQueueResources } = await import("./queues.ts");
+      await closeFitFileImportQueueResources();
+      vi.clearAllMocks();
+
+      await expect(closeFitFileImportQueueResources()).resolves.toBeUndefined();
+
+      expect(mockQueueClose).not.toHaveBeenCalled();
+      expect(mockQueueEventsClose).not.toHaveBeenCalled();
+      expect(mockFlowProducerClose).not.toHaveBeenCalled();
     });
   });
 
@@ -679,17 +732,34 @@ describe("queues", () => {
 
   describe("closeAllQueueResources", () => {
     it("closes all cached queues and flow producers", async () => {
-      const { createSyncQueue, createFlowProducer, closeAllQueueResources } = await import(
-        "./queues.ts"
-      );
+      const {
+        closeAllQueueResources,
+        getFitFileImportQueue,
+        getFitFileImportQueueEvents,
+        getFlowProducer,
+      } = await import("./queues.ts");
 
-      createSyncQueue({ host: "test", port: 1234 });
-      createFlowProducer({ host: "test", port: 1234 });
+      getFitFileImportQueue();
+      getFitFileImportQueueEvents();
+      getFlowProducer();
 
       await closeAllQueueResources();
 
       expect(mockQueueClose).toHaveBeenCalled();
+      expect(mockQueueEventsClose).toHaveBeenCalled();
       expect(mockFlowProducerClose).toHaveBeenCalled();
+    });
+
+    it("is safe when no queue resources are cached", async () => {
+      const { closeAllQueueResources } = await import("./queues.ts");
+      await closeAllQueueResources();
+      vi.clearAllMocks();
+
+      await expect(closeAllQueueResources()).resolves.toBeUndefined();
+
+      expect(mockQueueClose).not.toHaveBeenCalled();
+      expect(mockQueueEventsClose).not.toHaveBeenCalled();
+      expect(mockFlowProducerClose).not.toHaveBeenCalled();
     });
   });
 });

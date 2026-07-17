@@ -217,6 +217,9 @@ export interface WebhookEvent {
  * - **Per-user** (Fitbit, Withings): subscription created per connected user
  */
 export interface WebhookProvider extends SyncProvider {
+  /** Whether targeted webhook syncs can wait for jobs handled by the worker process. */
+  readonly requiresWorkerForWebhookSync?: boolean;
+
   /**
    * Register a webhook subscription with the provider API.
    * For app-level webhooks: called once during setup.

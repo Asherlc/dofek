@@ -14,6 +14,35 @@ RUN apk add --no-cache build-base && \
     sqlfluff==4.2.2 \
     sqlfluff-templater-dbt==4.2.2
 
+# ── Native FIT decoder: CMake + vcpkg ────────────────────────────────
+FROM alpine:3.24 AS fit-decoder-build
+ENV VCPKG_ROOT=/opt/vcpkg
+ENV VCPKG_FORCE_SYSTEM_BINARIES=1
+ARG VCPKG_COMMIT=ec62869cdd9f80413abb5e4c1d8b68688df932f4
+RUN apk add --no-cache \
+      bash \
+      build-base \
+      cmake \
+      curl \
+      git \
+      linux-headers \
+      ninja \
+      pkgconfig \
+      tar \
+      unzip \
+      zip && \
+    git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT" && \
+    git -C "$VCPKG_ROOT" checkout "$VCPKG_COMMIT" && \
+    "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+WORKDIR /src/native/fit-decoder
+COPY native/fit-decoder ./
+COPY src/fit/fixtures/test.fit /src/src/fit/fixtures/test.fit
+RUN --mount=type=cache,id=vcpkg-downloads,target=/opt/vcpkg/downloads \
+    --mount=type=cache,id=vcpkg-archives,target=/root/.cache/vcpkg/archives \
+    cmake --preset release && \
+    cmake --build --preset release && \
+    ctest --preset release
+
 # ── Source stage: just copy files, no install ─────────────────────────
 FROM base AS source
 WORKDIR /app
@@ -80,7 +109,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 # Docker CLI for worker container management (startWorker)
-RUN apk add --no-cache curl ca-certificates libbz2 && \
+RUN apk add --no-cache curl ca-certificates libbz2 libstdc++ && \
     ARCH=$(uname -m) && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-29.5.3.tgz" | \
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
@@ -90,7 +119,7 @@ COPY --from=dbt-tools /usr/local/bin/dbt /usr/local/bin/dbt
 COPY --from=dbt-tools /usr/local/bin/sqlfluff /usr/local/bin/sqlfluff
 COPY --from=dbt-tools /usr/local/lib/python3.13 /usr/local/lib/python3.13
 COPY --from=dbt-tools /usr/local/lib/libpython3.13.so* /usr/local/lib/
-
+COPY --from=fit-decoder-build /src/.build/fit-decoder/bin/dofek-fit-decoder /usr/local/bin/
 
 COPY --from=source --chown=node:node /app/src ./src
 COPY --from=source --chown=node:node /app/analytics ./analytics

@@ -29,64 +29,61 @@ describe("startWorker", () => {
     );
   });
 
-  it("suppresses 'No such container' errors silently", () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("resolves only after docker confirms the worker started", async () => {
+    const startPromise = startWorker();
+    let resolved = false;
+    void startPromise.then(() => {
+      resolved = true;
+    });
 
-    startWorker();
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    getCallback()(null, "dofek-worker", "");
+
+    await expect(startPromise).resolves.toBeUndefined();
+    expect(resolved).toBe(true);
+  });
+
+  it("rejects when the worker container does not exist", async () => {
+    const startPromise = startWorker();
     getCallback()(new Error("failed"), "", "No such container: dofek-worker");
 
-    expect(consoleErrorSpy).not.toHaveBeenCalled();
-    consoleErrorSpy.mockRestore();
+    await expect(startPromise).rejects.toThrow("No such container: dofek-worker");
   });
 
-  it("suppresses 'is already started' errors silently", () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    startWorker();
+  it("resolves when the worker container is already started", async () => {
+    const startPromise = startWorker();
     getCallback()(new Error("failed"), "", "container is already started");
 
-    expect(consoleErrorSpy).not.toHaveBeenCalled();
-    consoleErrorSpy.mockRestore();
+    await expect(startPromise).resolves.toBeUndefined();
   });
 
-  it("logs other errors to console.error", () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    startWorker();
+  it("rejects other docker errors", async () => {
+    const startPromise = startWorker();
     getCallback()(new Error("permission denied"), "", "permission denied");
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("permission denied"));
-    expect(consoleErrorSpy).toHaveBeenCalledOnce();
-    consoleErrorSpy.mockRestore();
+    await expect(startPromise).rejects.toThrow("permission denied");
   });
 
-  it("falls back to err.message when stderr is empty", () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    startWorker();
+  it("falls back to err.message when stderr is empty", async () => {
+    const startPromise = startWorker();
     getCallback()(new Error("connection refused"), "", "");
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("connection refused"));
-    consoleErrorSpy.mockRestore();
+    await expect(startPromise).rejects.toThrow("connection refused");
   });
 
-  it("prefers stderr over err.message", () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    startWorker();
+  it("prefers stderr over err.message", async () => {
+    const startPromise = startWorker();
     getCallback()(new Error("generic error"), "", "specific stderr output");
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("specific stderr output"));
-    consoleErrorSpy.mockRestore();
+    await expect(startPromise).rejects.toThrow("specific stderr output");
   });
 
-  it("does nothing when no error occurs", () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    startWorker();
+  it("resolves when no error occurs", async () => {
+    const startPromise = startWorker();
     getCallback()(null, "started", "");
 
-    expect(consoleErrorSpy).not.toHaveBeenCalled();
-    consoleErrorSpy.mockRestore();
+    await expect(startPromise).resolves.toBeUndefined();
   });
 });

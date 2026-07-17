@@ -13337,6 +13337,103 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The database became healthy and `SELECT pg_is_in_recovery();` returned `false`; the real-Postgres MCP OAuth integration suite then passed.
 - **Remaining risk / follow-up:** Docker still has many stopped Conductor-workspace volumes. Archive obsolete workspaces through their normal lifecycle rather than globally pruning volumes that may contain retained local databases.
 
+## 2026-07-16 — Garmin FIT Fan-Out Repeatedly Exhausted Worker Heap
+
+- **Symptoms:** Sentry issue
+  [`DOFEK-SERVER-4N`](https://east-bay-software.sentry.io/issues/7614315645/)
+  reported BullMQ jobs stalled across `zip-entry-extract`, `fit-file-import`,
+  Strava, and WHOOP queues. The worker restarted repeatedly with exit 139.
+- **User impact:** The Garmin dump import remained incomplete, unrelated
+  provider sync jobs were interrupted by each worker crash, and BullMQ had
+  1,639 ZIP-entry jobs still waiting at 2026-07-16 23:02 UTC. Redis contained
+  25,798 failed FIT-import jobs at 22:59 UTC.
+- **Evidence:** Production worker logs showed the first fatal line at
+  2026-07-16 21:20:18 UTC: `FATAL ERROR: Ineffective mark-compacts near heap
+  limit Allocation failed - JavaScript heap out of memory`. The same fatal line
+  recurred at 22:34:49 and 22:35:46 UTC. Immediately before each crash, many
+  unsummarized Garmin FIT jobs failed with `missing a valid start time`; after
+  restart, BullMQ marked active jobs from several queues stalled. The deployed
+  worker used commit `1839f8f4e` from
+  [PR #1639](https://github.com/Asherlc/dofek/pull/1639), had a 512 MiB cgroup
+  limit, and V8 fatal logs showed its old-space heap at roughly 250 MiB. The
+  exact uploaded archive contained 15,774 FIT paths but only 7,029 unique FIT
+  payloads: two nested exports were byte-for-byte identical. BullMQ job data
+  from both restart pairs identified the active stalled FIT job; hashing its
+  path and matching it locally, without exporting the path, mapped both job IDs
+  to the two copies of the same largest activity file. That 622,172-byte FIT
+  file expands to 21,276 parsed record objects. A bounded replay with the full
+  provider registry and the production 256 MiB V8 limit reached 175.9 MiB of
+  main-isolate heap and 553.1 MiB RSS after parsing the two copies concurrently.
+  The parser sends the complete activity object from its worker thread to the
+  main isolate through `postMessage`, which uses the structured clone algorithm
+  ([Node.js worker-thread documentation](https://nodejs.org/api/worker_threads.html#portpostmessagevalue-transferlist)),
+  and the main isolate then validates the complete returned graph with Zod.
+  Control replays remained bounded: 5,000 exact FIT parses, including 4,059
+  invalid-start failures, ended at 23.5 MiB heap; 20 nested ZIP extractions
+  stayed at approximately 43 MiB heap; and 3,000 actual BullMQ failures with
+  progress updates, job logs, failed-event logs, and an unreachable OTLP
+  exporter moved forced-GC heap only from 73.5 to 76.2 MiB.
+  The production errors and restart sequence remain attached to the
+  [Sentry incident](https://east-bay-software.sentry.io/issues/7614315645/).
+- **Root cause:** [PR #1633](https://github.com/Asherlc/dofek/pull/1633)
+  fanned out every FIT path in an archive containing a duplicated export and
+  allowed the two copies of a dense 21,276-record activity to reach the
+  concurrency-two FIT worker. The FIT parser materializes the activity in a
+  parser isolate, transfers the complete object graph to the shared main
+  isolate, and validates the complete graph there. With all provider workers,
+  telemetry, and concurrent jobs already resident, that per-activity expansion
+  exhausted the main isolate's approximately 256 MiB heap. The shared process
+  exited, so BullMQ subsequently reported unrelated ZIP, Strava, and WHOOP jobs
+  as stalled. The nearby `missing a valid start time` failures were a separate
+  file-classification bug and added workload, but their failure-handling path
+  was not the retained allocation that caused OOM.
+- **Fix / mitigation:** Replaced `fit-file-parser` and its parser worker with a
+  separate C++ decoder built from Garmin's official FIT SDK. The
+  [native implementation](../native/fit-decoder/src/fit-decoder.cpp) first
+  validates and classifies the file without retaining record messages, then
+  makes a second pass that emits at most 250 messages and 512 KiB per batch. It
+  blocks for a Node acknowledgement after metadata and every batch. The
+  [Node adapter](../src/fit/stream-decoder.ts) applies backpressure and rejects
+  protocol messages after `end`. The
+  [file-import job](../src/jobs/process-fit-file-import-job.ts) hashes the input
+  as a stream and spools each decoded batch to temporary disk until the decoder
+  protocol completes, then replays one bounded batch at a time. Decoder failures
+  therefore cannot upsert an activity, clear prior activity samples, or publish
+  partial weight rows. Activity, weight, and unsupported file types are
+  classified before persistence. Dropped-field telemetry is derived from a
+  metadata table capped at 4,096 unique message/field pairs rather than retained
+  decoded messages. No heap-limit, concurrency, timeout, or retry increase was
+  used. Garmin dump uploads and FIT downloads from Wahoo, COROS, and Suunto now
+  all hand off to the same canonical
+  [FIT import job](../src/jobs/process-fit-file-import-job.ts) instead of
+  maintaining provider-specific decode paths. Provider sync workers invoke that
+  bounded job directly when they already own the database and metric publisher;
+  uploads continue through the isolated queue, as selected by
+  [`enqueueFitFileImportAndWait`](../src/jobs/enqueue-fit-file-import.ts).
+- **Validation:** The [native CTests](../native/fit-decoder/tests/VerifyProtocol.cmake),
+  [TypeScript adapter tests](../src/fit/stream-decoder.test.ts), and
+  [job regressions](../src/jobs/process-fit-file-import-job.test.ts) pass.
+  The exact 622,172-byte incident file decoded successfully from the final
+  Alpine server image into 86 bounded batches containing exactly 21,276 records;
+  metadata resolved to `cycling` / `mountain` from Garmin's generated profile.
+  The native decoder's measured peak RSS for that file was 3,448 KiB. A clean
+  multi-stage server image build compiled the pinned SDK through vcpkg, ran the
+  native protocol test, and copied the executable into the non-root runtime.
+  All 11,786 unit tests, the all-package TypeScript check, Biome, analytics SQL
+  lint, and analytics policy lint pass.
+- **Remaining risk / follow-up:** This change still needs production deployment
+  and observation while the Garmin backlog drains. Confirm that worker RSS stays
+  below its 512 MiB cgroup limit, the queue completes, and unrelated provider
+  jobs no longer become stalled. The memory protocol is regression-tested by
+  native batch-size assertions, lossless 64-bit raw-value coverage, a post-`end`
+  rejection test, a decoder-failure atomicity test, and a 501-record job test
+  that requires three separate bounded writes. These assertions live in the
+  [native tests](../native/fit-decoder/tests/FieldJsonTest.cpp),
+  [adapter tests](../src/fit/stream-decoder.test.ts), and
+  [job tests](../src/jobs/process-fit-file-import-job.test.ts). The private
+  incident file remains an operator-only validation fixture and is not committed
+  to the repository.
+
 ## 2026-07-16 — Monitoring FIT Files Misclassified as Activities
 
 - **Symptoms:** Garmin dump child jobs failed permanently with `missing a valid
@@ -13357,10 +13454,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   persisted records, and emits aggregate metrics for every decoded field that
   was not persisted. Derived stress fields are counted with reason `derived`;
   no stress values, filenames, or user identifiers are retained in metrics.
-- **Validation:** The regression test failed before the fix by reporting one
-  synced activity for a generated `monitoringB` file. After the fix, 29 focused
-  tests, the full TypeScript check, Biome, analytics SQL lint, and analytics
-  policy lint pass.
+- **Validation:** The
+  [classification regression](../src/jobs/process-fit-file-import-job.test.ts)
+  failed before the fix with `missing a
+  valid start time` for a generated `monitoringB` file. After the fix, 62
+  focused FIT/progress/metric tests and the complete 11,786-test unit suite
+  pass, along with the full TypeScript and lint checks.
 - **Remaining risk / follow-up:** Review
   `fit.import.dropped_field_occurrences.total` and
   `fit.import.files_with_dropped_field.total` after deployment to identify
@@ -13399,3 +13498,52 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   production deployment. FIT files rejected for `missing a valid start time`
   are a separate import-data failure and are not addressed by this progress
   fix.
+
+## 2026-07-16 — Local Docker Disk Exhaustion Recurred During FIT Validation
+
+- **Symptoms:** Local ClickHouse restarted while the complete lint suite was
+  validating the FIT decoder change.
+- **User impact:** No production impact. Analytics SQL lint could not start
+  until the local container recovered.
+- **Evidence:** The first fatal ClickHouse log line reported `No space left on
+  device` under `/var/lib/clickhouse`. Docker reported 14 GiB of images and 4.5
+  GiB of build cache, while retained workspace volumes accounted for another
+  30.7 GiB; these categories are the values exposed by
+  [`docker system df`](https://docs.docker.com/reference/cli/docker/system/df/).
+- **Root cause:** Repeated local production-image builds again exhausted Docker
+  Desktop's virtual disk with unused image layers and build cache.
+- **Fix / mitigation:** Removed only unused images and build cache, reclaiming
+  approximately 9.2 GiB. Active containers and all retained volumes were left
+  intact.
+- **Validation:** ClickHouse returned healthy, its restart policy was restored
+  to `unless-stopped`, and the complete lint suite passed without a degraded
+  fallback.
+- **Remaining risk / follow-up:** Repeated multi-stage image validation can
+  exhaust the Docker virtual disk again. Keep retained workspace volumes out of
+  global cleanup and remove obsolete workspaces through their normal lifecycle.
+
+## 2026-07-16 — FIT Decoder CI Workflow Rejected Before Job Startup
+
+- **Symptoms:** Push and pull-request Actions runs failed immediately with no
+  jobs or downloadable logs after the native FIT decoder job was added.
+- **User impact:** No production impact. The PR's test workflow did not execute,
+  so the branch could not receive authoritative CI validation.
+- **Evidence:** Local
+  [`actionlint`](https://github.com/rhysd/actionlint) reproduced the first fatal validation error at
+  `.github/workflows/test.yml:563:23`: `context "runner" is not allowed here`.
+  GitHub's context-availability table likewise excludes `runner` from job-level
+  `env` expressions
+  ([GitHub Actions contexts](https://docs.github.com/actions/learn-github-actions/contexts#context-availability)).
+- **Root cause:** The new job referenced `${{ runner.temp }}` from job-level
+  `env`, where the runner context does not exist, invalidating the reusable
+  workflow before GitHub could create any jobs.
+- **Fix / mitigation:** Moved `VCPKG_ROOT` into the bootstrap and build step
+  environments, where the runner context is available, in the
+  [test workflow](../.github/workflows/test.yml).
+- **Validation:** `actionlint` reports no findings, all local lint and TypeScript
+  checks pass, and
+  [replacement CI run 29551875939](https://github.com/Asherlc/dofek/actions/runs/29551875939)
+  successfully created and started the complete job graph, including the
+  Actionlint job.
+- **Remaining risk / follow-up:** Confirm the native FIT decoder job and the
+  aggregate required-check job pass in the replacement run.
