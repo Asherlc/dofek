@@ -43,6 +43,17 @@ vi.mock("../fit/stream-decoder.ts", async (importOriginal) => {
   };
 });
 
+const mockFitImportDroppedFieldOccurrencesTotalAdd = vi.fn();
+const mockFitImportFilesWithDroppedFieldTotalAdd = vi.fn();
+vi.mock("../sync-metrics.ts", () => ({
+  fitImportDroppedFieldOccurrencesTotal: {
+    add: (...args: unknown[]) => mockFitImportDroppedFieldOccurrencesTotalAdd(...args),
+  },
+  fitImportFilesWithDroppedFieldTotal: {
+    add: (...args: unknown[]) => mockFitImportFilesWithDroppedFieldTotalAdd(...args),
+  },
+}));
+
 const mockLoggerWarn = vi.fn();
 const mockLoggerError = vi.fn();
 vi.mock("../logger.ts", () => ({
@@ -214,7 +225,13 @@ async function streamActivity(
   activity: TestFitActivity,
   consumer: FitStreamConsumer,
 ): Promise<FitStreamResult> {
-  await consumer.onMetadata({ fileType: 4, isWeightFile: false, session: activity.session });
+  await consumer.onMetadata({
+    fileType: 4,
+    fileTypeName: "activity",
+    fieldOccurrences: [],
+    isWeightFile: false,
+    session: activity.session,
+  });
   for (let offset = 0; offset < activity.records.length; offset += 250) {
     await consumer.onRecordBatch(activity.records.slice(offset, offset + 250));
   }
@@ -247,12 +264,32 @@ async function streamGeneratedTestFit(
   )?.type;
   const weightRows = decoded.messages?.weightScaleMesgs ?? [];
   const isWeightFile = fileType === "weight" || fileType === 9 || weightRows.length > 0;
+  if (fileType === "monitoringB") {
+    await consumer.onMetadata({
+      fileType: 32,
+      fileTypeName: "monitoring_b",
+      fieldOccurrences: [
+        { messageType: "file_id", field: "type", occurrences: 1 },
+        { messageType: "file_id", field: "time_created", occurrences: 1 },
+        { messageType: "stress_level", field: "stress_level_time", occurrences: 1 },
+        { messageType: "stress_level", field: "stress_level_value", occurrences: 1 },
+      ],
+      isWeightFile: false,
+      session: null,
+    });
+    return { messageCount: 0 };
+  }
   if (!isWeightFile) {
     return streamActivity(defaultFitActivity(), consumer);
   }
 
   await consumer.onMetadata({
     fileType: typeof fileType === "number" ? fileType : 9,
+    fileTypeName: "weight",
+    fieldOccurrences: [
+      { messageType: "file_id", field: "type", occurrences: 1 },
+      { messageType: "file_id", field: "time_created", occurrences: 1 },
+    ],
     isWeightFile: true,
     session: null,
   });
@@ -270,6 +307,23 @@ async function streamGeneratedTestFit(
     await consumer.onWeightBatch(weights);
   }
   return { messageCount: weights.length };
+}
+
+function createMonitoringFit(): Buffer {
+  const timestamp = Utils.convertDateToDateTime(new Date("2020-05-21T03:31:00.000Z"));
+  const stressTimestamp = Utils.convertDateToDateTime(new Date("2020-05-21T03:32:00.000Z"));
+  const encoder = new Encoder();
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.FILE_ID,
+    type: "monitoringB",
+    timeCreated: timestamp,
+  });
+  encoder.writeMesg({
+    mesgNum: Profile.MesgNum.STRESS_LEVEL,
+    stressLevelTime: stressTimestamp,
+    stressLevelValue: -1,
+  });
+  return Buffer.from(encoder.close());
 }
 
 describe("processFitFileImportJob", () => {
@@ -604,6 +658,39 @@ describe("processFitFileImportJob", () => {
 
     expect(result).toEqual({ recordsSynced: 0, errors: [] });
     expect(mockUpsertProviderActivity).toHaveBeenCalledOnce();
+  });
+
+  it("accepts monitoring FIT files without importing derived stress data", async () => {
+    const filePath = await writeTempFit(createMonitoringFit());
+
+    const result = await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "DI_CONNECT/monitoring.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+        sourceName: "Garmin Dump",
+      }),
+      mockDb,
+    );
+
+    expect(result).toEqual({ recordsSynced: 0, errors: [] });
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(mockWriteMetricStreamBatch).not.toHaveBeenCalled();
+    expect(mockFitImportDroppedFieldOccurrencesTotalAdd).toHaveBeenCalledWith(1, {
+      provider: "garmin-dump",
+      file_type: "monitoringB",
+      message_type: "stressLevelMesgs",
+      field: "stressLevelValue",
+      reason: "derived",
+    });
+    expect(mockFitImportFilesWithDroppedFieldTotalAdd).toHaveBeenCalledWith(1, {
+      provider: "garmin-dump",
+      file_type: "monitoringB",
+      message_type: "stressLevelMesgs",
+      field: "stressLevelValue",
+      reason: "derived",
+    });
   });
 
   it("imports a FIT-only activity when no parent summary exists", async () => {
@@ -964,7 +1051,7 @@ describe("processFitFileImportJob", () => {
     expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
   });
 
-  it("imports Garmin weight FIT files as body measurement metric stream rows", async () => {
+  it("imports weight FIT files as body measurement metric stream rows", async () => {
     const filePath = await writeTempFit(createWeightFit());
     const job = createFitFileImportJob({
       filePath,
@@ -1010,6 +1097,13 @@ describe("processFitFileImportJob", () => {
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 100,
       message: "FIT file import complete.",
+    });
+    expect(mockFitImportDroppedFieldOccurrencesTotalAdd).toHaveBeenCalledWith(1, {
+      provider: "garmin-dump",
+      file_type: "weight",
+      message_type: "fileIdMesgs",
+      field: "timeCreated",
+      reason: "unsupported",
     });
   });
 

@@ -81,6 +81,7 @@ describe("streamFitFile", () => {
         decoder.send({
           type: "metadata",
           fileType: 4,
+          fileTypeName: "activity",
           hasWeightMessages: false,
           session: {
             sport: 2,
@@ -90,6 +91,7 @@ describe("streamFitFile", () => {
           },
           sportName: "cycling",
           subSportName: "mountain",
+          fieldOccurrences: [{ messageType: "file_id", field: "time_created", occurrences: 1 }],
         });
         await decoder.waitForAcknowledgement(1);
         decoder.send({
@@ -112,6 +114,9 @@ describe("streamFitFile", () => {
         expect(metadata.session).toEqual(
           expect.objectContaining({ sport: "cycling", subSport: "mountain" }),
         );
+        expect(metadata.fieldOccurrences).toEqual([
+          { messageType: "file_id", field: "time_created", occurrences: 1 },
+        ]);
       },
       onRecordBatch: async (records) => {
         expect(records).toEqual([
@@ -142,10 +147,12 @@ describe("streamFitFile", () => {
       decoder.send({
         type: "metadata",
         fileType: null,
+        fileTypeName: null,
         hasWeightMessages: false,
         session: null,
         sportName: null,
         subSportName: null,
+        fieldOccurrences: [],
       });
       await decoder.waitForAcknowledgement(1);
       decoder.child.stderr.write("FIT decode failed: invalid header\n");
@@ -196,10 +203,12 @@ describe("streamFitFile", () => {
       decoder.send({
         type: "metadata",
         fileType: 9,
+        fileTypeName: "weight",
         hasWeightMessages: true,
         session: null,
         sportName: null,
         subSportName: null,
+        fieldOccurrences: [],
       });
       await decoder.waitForAcknowledgement(1);
       decoder.send({
@@ -234,10 +243,12 @@ describe("streamFitFile", () => {
     decoder.send({
       type: "metadata",
       fileType: 4,
+      fileTypeName: "activity",
       hasWeightMessages: false,
       session: null,
       sportName: null,
       subSportName: null,
+      fieldOccurrences: [],
     });
     await decoder.waitForAcknowledgement(1);
     decoder.send({ type: "end", messageCount: 0 });

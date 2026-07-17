@@ -59,6 +59,18 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const ActiveImport: Story = {
+  args: {
+    statusUrl:
+      "data:application/json,%7B%22status%22%3A%22processing%22%2C%22progress%22%3A64%2C%22message%22%3A%22Importing%20activities%22%7D%23",
+    activeImport: {
+      jobId: "job-garmin",
+      progress: 64,
+      message: "Importing activities",
+    },
+  },
+};
+
 export const AppleHealth: Story = {
   args: {
     providerId: "apple_health",

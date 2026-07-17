@@ -35,6 +35,24 @@ export const syncErrorsTotal = meter.createCounter("sync.errors.total", {
   unit: "{errors}",
 });
 
+/** Total occurrences of decoded FIT fields that were intentionally not persisted. */
+export const fitImportDroppedFieldOccurrencesTotal = meter.createCounter(
+  "fit.import.dropped_field_occurrences.total",
+  {
+    description: "Total occurrences of decoded FIT fields that were not persisted",
+    unit: "{fields}",
+  },
+);
+
+/** Total FIT files containing each decoded field that was intentionally not persisted. */
+export const fitImportFilesWithDroppedFieldTotal = meter.createCounter(
+  "fit.import.files_with_dropped_field.total",
+  {
+    description: "Total FIT files containing each decoded field that was not persisted",
+    unit: "{files}",
+  },
+);
+
 /** Total number of records pushed via HealthKit sync (by endpoint, category). */
 export const healthKitRecordsTotal = meter.createCounter("healthkit.records.total", {
   description: "Total number of records pushed via HealthKit sync",

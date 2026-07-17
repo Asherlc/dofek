@@ -22,14 +22,21 @@ export class FitDecoderError extends Error {
 }
 
 const rawMessageSchema = z.record(z.string(), z.unknown());
+const fieldOccurrenceSchema = z.object({
+  messageType: z.string(),
+  field: z.string(),
+  occurrences: z.number().int().positive(),
+});
 
 const metadataMessageSchema = z.object({
   type: z.literal("metadata"),
   fileType: z.number().int().nonnegative().nullable(),
+  fileTypeName: z.string().nullable(),
   hasWeightMessages: z.boolean(),
   session: rawMessageSchema.nullable(),
   sportName: z.string().nullable(),
   subSportName: z.string().nullable(),
+  fieldOccurrences: z.array(fieldOccurrenceSchema).max(4096),
 });
 
 const recordBatchMessageSchema = z.object({
@@ -67,6 +74,8 @@ export interface ParsedFitWeight {
 
 export interface FitStreamMetadata {
   fileType: number | null;
+  fileTypeName: string | null;
+  fieldOccurrences: Array<z.infer<typeof fieldOccurrenceSchema>>;
   isWeightFile: boolean;
   session: ParsedFitSession | null;
 }
@@ -233,6 +242,8 @@ export async function streamFitFile(
             message.fileType === FIT_FILE_TYPE_WEIGHT || message.hasWeightMessages;
           await consumer.onMetadata({
             fileType: message.fileType,
+            fileTypeName: message.fileTypeName,
+            fieldOccurrences: message.fieldOccurrences,
             isWeightFile: metadataIsWeightFile,
             session: message.session
               ? parsedSession(message.session, message.sportName, message.subSportName)

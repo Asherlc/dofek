@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  fitImportDroppedFieldOccurrencesTotal,
+  fitImportFilesWithDroppedFieldTotal,
   healthKitPushTotal,
   healthKitRecordsTotal,
   syncDegradationsTotal,
@@ -16,6 +18,8 @@ describe("sync-metrics", () => {
     expect(syncDuration).toBeDefined();
     expect(syncDegradationsTotal).toBeDefined();
     expect(syncErrorsTotal).toBeDefined();
+    expect(fitImportDroppedFieldOccurrencesTotal).toBeDefined();
+    expect(fitImportFilesWithDroppedFieldTotal).toBeDefined();
   });
 
   it("exports all HealthKit metric instruments", () => {
@@ -33,6 +37,20 @@ describe("sync-metrics", () => {
         degradation_kind: "pagination_stalled",
       });
       syncErrorsTotal.add(1, { provider: "garmin", data_type: "sync" });
+      fitImportDroppedFieldOccurrencesTotal.add(4, {
+        provider: "fit-file",
+        file_type: "monitoringB",
+        message_type: "stressLevelMesgs",
+        field: "stressLevelValue",
+        reason: "derived",
+      });
+      fitImportFilesWithDroppedFieldTotal.add(1, {
+        provider: "fit-file",
+        file_type: "monitoringB",
+        message_type: "stressLevelMesgs",
+        field: "stressLevelValue",
+        reason: "derived",
+      });
       healthKitRecordsTotal.add(50, { endpoint: "pushQuantitySamples", category: "dailyMetric" });
       healthKitPushTotal.add(1, { endpoint: "pushQuantitySamples", status: "success" });
     }).not.toThrow();
@@ -71,6 +89,14 @@ describe("sync-metrics", () => {
     expect(createCounter).toHaveBeenCalledWith("sync.errors.total", {
       description: "Total number of errors during sync or import",
       unit: "{errors}",
+    });
+    expect(createCounter).toHaveBeenCalledWith("fit.import.dropped_field_occurrences.total", {
+      description: "Total occurrences of decoded FIT fields that were not persisted",
+      unit: "{fields}",
+    });
+    expect(createCounter).toHaveBeenCalledWith("fit.import.files_with_dropped_field.total", {
+      description: "Total FIT files containing each decoded field that was not persisted",
+      unit: "{files}",
     });
     expect(createCounter).toHaveBeenCalledWith("healthkit.records.total", {
       description: "Total number of records pushed via HealthKit sync",

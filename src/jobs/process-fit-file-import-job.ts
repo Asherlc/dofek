@@ -23,6 +23,10 @@ import {
 } from "../fit/stream-decoder.ts";
 import { logger } from "../logger.ts";
 import {
+  fitImportDroppedFieldOccurrencesTotal,
+  fitImportFilesWithDroppedFieldTotal,
+} from "../sync-metrics.ts";
+import {
   type FitFileImportJobData,
   type FitFileImportJobResult,
   fitFileImportJobDataSchema,
@@ -145,6 +149,65 @@ function activityTypeFromFitSession(session: ParsedFitSession): CanonicalActivit
   return "other";
 }
 
+const FIT_FILE_TYPE_ACTIVITY = 4;
+const routingConsumedFields = new Map<string, ReadonlySet<string>>([
+  ["fileIdMesgs", new Set(["type"])],
+]);
+const weightConsumedFields = new Map<string, ReadonlySet<string>>([
+  ...routingConsumedFields,
+  [
+    "weightScaleMesgs",
+    new Set([
+      "timestamp",
+      "weight",
+      "percentFat",
+      "percentHydration",
+      "boneMass",
+      "muscleMass",
+      "bmi",
+    ]),
+  ],
+]);
+
+function fitNameToCamelCase(value: string): string {
+  return value.replace(/_([a-z0-9])/g, (_match, character: string) => character.toUpperCase());
+}
+
+function fitFileTypeLabel(metadata: FitStreamMetadata): string {
+  if (metadata.fileTypeName !== null) {
+    return fitNameToCamelCase(metadata.fileTypeName);
+  }
+  return metadata.fileType === null ? "unknown" : String(metadata.fileType);
+}
+
+function droppedFitFieldReason(messageType: string): "derived" | "unsupported" {
+  return messageType === "stressLevelMesgs" ? "derived" : "unsupported";
+}
+
+function recordDroppedFitFields(
+  providerId: string,
+  metadata: FitStreamMetadata,
+  consumedFields: ReadonlyMap<string, ReadonlySet<string>>,
+): void {
+  const fileType = fitFileTypeLabel(metadata);
+  for (const occurrence of metadata.fieldOccurrences) {
+    const messageType = `${fitNameToCamelCase(occurrence.messageType)}Mesgs`;
+    const field = fitNameToCamelCase(occurrence.field);
+    if (consumedFields.get(messageType)?.has(field)) {
+      continue;
+    }
+    const attributes = {
+      provider: providerId,
+      file_type: fileType,
+      message_type: messageType,
+      field,
+      reason: droppedFitFieldReason(messageType),
+    };
+    fitImportDroppedFieldOccurrencesTotal.add(occurrence.occurrences, attributes);
+    fitImportFilesWithDroppedFieldTotal.add(1, attributes);
+  }
+}
+
 async function writeWeightBatch(
   db: SyncDatabase,
   data: ResolvedFitFileImportJobData,
@@ -265,18 +328,27 @@ export async function importFitFile(
 ): Promise<FitFileImportJobResult> {
   await onProgress({ percentage: 10, message: "Reading FIT file..." });
   await onProgress({ percentage: 25, message: "Decoding FIT file..." });
-  let importType: "activity" | "weight" | undefined;
+  let importType: "activity" | "unsupported" | "weight" | undefined;
+  let streamMetadata: FitStreamMetadata | undefined;
   let activityId: string | undefined;
   let activityType: CanonicalActivityType | undefined;
   let weightCount = 0;
   try {
     await streamFitFile(data.filePath, {
       onMetadata: async (metadata) => {
+        streamMetadata = metadata;
         if (metadata.isWeightFile) {
           importType = "weight";
           await onProgress({ percentage: 50, message: "Importing FIT weight data..." });
           await onProgress({ percentage: 80, message: "Writing FIT weight data..." });
           return;
+        }
+        if (data.activitySummary === undefined && metadata.fileType !== null) {
+          if (metadata.fileType !== FIT_FILE_TYPE_ACTIVITY) {
+            importType = "unsupported";
+            await onProgress({ percentage: 50, message: "Inspecting FIT data..." });
+            return;
+          }
         }
         importType = "activity";
         await onProgress({ percentage: 50, message: "Importing FIT activity..." });
@@ -306,8 +378,18 @@ export async function importFitFile(
     }
     throw error;
   }
+  if (streamMetadata && importType === "weight") {
+    recordDroppedFitFields(data.providerId, streamMetadata, weightConsumedFields);
+  } else if (streamMetadata && importType === "unsupported") {
+    recordDroppedFitFields(data.providerId, streamMetadata, routingConsumedFields);
+  }
   const result: FitFileImportJobResult = {
-    recordsSynced: importType === "weight" ? weightCount : data.activitySummary ? 0 : 1,
+    recordsSynced:
+      importType === "weight"
+        ? weightCount
+        : importType === "activity" && data.activitySummary === undefined
+          ? 1
+          : 0,
     errors: [],
   };
   if (result.errors.length === 0) {

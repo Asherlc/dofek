@@ -13393,17 +13393,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   persistence applies backpressure. File-import jobs now hash the input as a
   stream and write each decoded batch directly instead of holding the raw file,
   a complete parsed activity, a structured clone, and a second validated graph.
-  Activity and weight files are classified before persistence. No heap-limit,
-  concurrency, timeout, or retry increase was used. Garmin dump uploads and FIT
-  downloads from Wahoo, COROS, and Suunto now all hand off to the same canonical
-  `fit-file-import` queue instead of maintaining provider-specific decode paths.
+  Activity, weight, and unsupported file types are classified before
+  persistence. Dropped-field telemetry is derived from a metadata table capped
+  at 4,096 unique message/field pairs rather than retained decoded messages. No
+  heap-limit, concurrency, timeout, or retry increase was used. Garmin dump
+  uploads and FIT downloads from Wahoo, COROS, and Suunto now all hand off to
+  the same canonical `fit-file-import` queue instead of maintaining
+  provider-specific decode paths.
 - **Validation:** Native CTest and TypeScript adapter/job regression tests pass.
   The exact 622,172-byte incident file decoded successfully from the final
   Alpine server image into 86 bounded batches containing exactly 21,276 records;
   metadata resolved to `cycling` / `mountain` from Garmin's generated profile.
-  The native decoder's measured peak RSS for that file was 3,704 KiB. A clean
+  The native decoder's measured peak RSS for that file was 3,448 KiB. A clean
   multi-stage server image build compiled the pinned SDK through vcpkg, ran the
   native protocol test, and copied the executable into the non-root runtime.
+  All 11,786 unit tests, the all-package TypeScript check, Biome, analytics SQL
+  lint, and analytics policy lint pass.
 - **Remaining risk / follow-up:** This change still needs production deployment
   and observation while the Garmin backlog drains. Confirm that worker RSS stays
   below its 512 MiB cgroup limit, the queue completes, and unrelated provider
@@ -13411,3 +13416,88 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   native batch-size assertions and a 501-record job test that requires three
   separate database writes; the private incident file remains an operator-only
   validation fixture and is not committed to the repository.
+
+## 2026-07-16 — Monitoring FIT Files Misclassified as Activities
+
+- **Symptoms:** Garmin dump child jobs failed permanently with `missing a valid
+  start time` for valid FIT files.
+- **User impact:** Expected non-activity files in a Garmin export were reported
+  as import failures even when they contained no canonical raw samples to store.
+- **Evidence:** Decoding the original failing file produced file type
+  `monitoringB`, four derived stress-level messages, and no session, lap,
+  activity record, or event messages. The generic importer recognized only
+  weight files and sent every other decoded FIT file through the activity path,
+  which requires a session start time. The FIT specification defines the File
+  ID type as the file's intent and permits different message groupings by file
+  type: <https://developer.garmin.com/fit/file-types/>.
+- **Root cause:** The provider-agnostic FIT importer lacked file-type dispatch;
+  valid non-weight, non-activity files were assumed to be activities.
+- **Fix / mitigation:** The generic FIT decoder now routes activity and weight
+  files to their existing handlers, accepts other valid FIT types with zero
+  persisted records, and emits aggregate metrics for every decoded field that
+  was not persisted. Derived stress fields are counted with reason `derived`;
+  no stress values, filenames, or user identifiers are retained in metrics.
+- **Validation:** The regression test failed before the fix with `missing a
+  valid start time` for a generated `monitoringB` file. After the fix, 62
+  focused FIT/progress/metric tests and the complete 11,786-test unit suite
+  pass, along with the full TypeScript and lint checks.
+- **Remaining risk / follow-up:** Review
+  `fit.import.dropped_field_occurrences.total` and
+  `fit.import.files_with_dropped_field.total` after deployment to identify
+  common raw FIT fields that merit canonical ingestion support.
+
+## 2026-07-16 — Garmin Dump Import Progress Froze at 354 Files
+
+- **Symptoms:** Garmin dump import job `12` remained active at 46 percent with
+  `Importing Garmin FIT activities (354 of 15774 complete)...` even though the
+  worker continued consuming FIT extraction and import jobs.
+- **User impact:** The dashboard falsely presented a long-running import as
+  stalled. Data ingestion continued, but the user could not tell whether the
+  import was healthy or how much work remained.
+- **Evidence:** Production BullMQ state showed the parent in
+  `waiting-children`, with 22 of 32 FIT batch dependencies processed and 10
+  remaining. The worker was healthy at approximately 181 percent CPU and 248
+  MiB of its 512 MiB limit, while the extraction queue continued shrinking.
+  The progress coordinator read dependency counts from only the batch that
+  emitted the event, even though BullMQ exposes processed, ignored, failed, and
+  unprocessed dependency counts per parent job through
+  [`getDependenciesCount`](https://api.docs.bullmq.io/classes/v5.Job.html#getdependenciescount).
+- **Root cause:** Each batch contains at most 500 FIT files, but its completed
+  count was divided by the import-wide total of 15,774. The first batch reached
+  46 percent after 354 files; every later batch could calculate no more than 46
+  percent, so the monotonic progress guard rejected every later message update.
+- **Fix / mitigation:** The coordinator now loads every batch ID stored in the
+  import checkpoint, sums their terminal dependency counts, and refreshes each
+  parent import only once per debounce cycle. The focused change is
+  [commit `b48ec0647`](https://github.com/Asherlc/dofek/commit/b48ec0647).
+- **Validation:** The regression test first reproduced the defect by receiving
+  150 of 1,000 files at 51 percent instead of the cumulative 650 at 74 percent.
+  After the fix, all 45 related Garmin job tests passed, the all-package
+  TypeScript check passed, and the complete lint suite passed against local
+  ClickHouse.
+- **Remaining risk / follow-up:** The corrected progress calculation requires a
+  production deployment. FIT files rejected for `missing a valid start time`
+  are a separate import-data failure and are not addressed by this progress
+  fix.
+
+## 2026-07-16 — Local Docker Disk Exhaustion Recurred During FIT Validation
+
+- **Symptoms:** Local ClickHouse restarted while the complete lint suite was
+  validating the FIT decoder change.
+- **User impact:** No production impact. Analytics SQL lint could not start
+  until the local container recovered.
+- **Evidence:** The first fatal ClickHouse log line reported `No space left on
+  device` under `/var/lib/clickhouse`. Docker reported 14 GiB of images and 4.5
+  GiB of build cache, while retained workspace volumes accounted for another
+  30.7 GiB.
+- **Root cause:** Repeated local production-image builds again exhausted Docker
+  Desktop's virtual disk with unused image layers and build cache.
+- **Fix / mitigation:** Removed only unused images and build cache, reclaiming
+  approximately 9.2 GiB. Active containers and all retained volumes were left
+  intact.
+- **Validation:** ClickHouse returned healthy, its restart policy was restored
+  to `unless-stopped`, and the complete lint suite passed without a degraded
+  fallback.
+- **Remaining risk / follow-up:** Repeated multi-stage image validation can
+  exhaust the Docker virtual disk again. Keep retained workspace volumes out of
+  global cleanup and remove obsolete workspaces through their normal lifecycle.

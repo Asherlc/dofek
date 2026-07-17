@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <ctime>
@@ -8,6 +9,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -24,6 +27,7 @@ namespace {
 
 constexpr std::size_t kMaximumBatchMessages = 250;
 constexpr std::size_t kMaximumBatchBytes = 512 * 1024;
+constexpr std::size_t kMaximumFieldOccurrenceKeys = 4096;
 constexpr std::int64_t kFitEpochUnixSeconds = 631065600;
 constexpr double kSemicirclesPerDegree = 2147483648.0 / 180.0;
 
@@ -153,6 +157,15 @@ std::optional<std::string> JsonField(const fit::FieldBase& field) {
   return output.str();
 }
 
+bool HasValidFieldValue(const fit::FieldBase& field) {
+  for (FIT_UINT8 value_index = 0; value_index < field.GetNumValues(); ++value_index) {
+    if (field.IsValueValid(value_index)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string UniqueFieldName(
     const fit::FieldBase& field,
     std::unordered_set<std::string>& used_names,
@@ -217,11 +230,17 @@ void DecodeWithListener(const std::string& file_path, fit::Decode& decoder, fit:
 class MetadataListener final : public fit::MesgListener {
  public:
   void OnMesg(fit::Mesg& message) override {
+    RecordFieldOccurrences(message);
     switch (message.GetNum()) {
       case FIT_MESG_NUM_FILE_ID: {
         const fit::FileIdMesg file_id(message);
         if (!file_type_.has_value() && file_id.IsTypeValid()) {
           file_type_ = file_id.GetType();
+          const std::string_view file_type_name =
+              dofek::fit_profile_names::FileName(file_id.GetType());
+          if (!file_type_name.empty()) {
+            file_type_name_ = file_type_name;
+          }
         }
         break;
       }
@@ -255,17 +274,60 @@ class MetadataListener final : public fit::MesgListener {
   }
 
   std::optional<unsigned int> FileType() const { return file_type_; }
+  const std::optional<std::string>& FileTypeName() const { return file_type_name_; }
   bool HasWeightMessages() const { return has_weight_messages_; }
   const std::optional<std::string>& SessionJson() const { return session_json_; }
   const std::optional<std::string>& SportName() const { return sport_name_; }
   const std::optional<std::string>& SubSportName() const { return sub_sport_name_; }
+  const std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>>&
+  FieldOccurrences() const {
+    return field_occurrences_;
+  }
 
  private:
+  void RecordFieldOccurrences(fit::Mesg& message) {
+    std::string message_name = message.GetName();
+    if (message_name.empty()) {
+      message_name = "message_" + std::to_string(message.GetNum());
+    }
+    std::unordered_set<std::string> used_names;
+    const auto record_field = [&](const fit::FieldBase& field, bool developer_field) {
+      if (!HasValidFieldValue(field)) {
+        return;
+      }
+      const std::string field_name = UniqueFieldName(field, used_names, developer_field);
+      auto& message_fields = field_occurrences_[message_name];
+      const auto existing = message_fields.find(field_name);
+      if (existing != message_fields.end()) {
+        ++existing->second;
+        return;
+      }
+      if (field_occurrence_key_count_ == kMaximumFieldOccurrenceKeys) {
+        throw std::runtime_error("FIT file exceeds the field occurrence metadata limit");
+      }
+      message_fields.emplace(field_name, 1);
+      ++field_occurrence_key_count_;
+    };
+    for (FIT_UINT16 index = 0; index < message.GetNumFields(); ++index) {
+      const fit::Field* field = message.GetFieldByIndex(index);
+      if (field != nullptr) {
+        record_field(*field, false);
+      }
+    }
+    for (const fit::DeveloperField& field : message.GetDeveloperFields()) {
+      record_field(field, true);
+    }
+  }
+
   std::optional<unsigned int> file_type_;
+  std::optional<std::string> file_type_name_;
   bool has_weight_messages_ = false;
   std::optional<std::string> session_json_;
   std::optional<std::string> sport_name_;
   std::optional<std::string> sub_sport_name_;
+  std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>>
+      field_occurrences_;
+  std::size_t field_occurrence_key_count_ = 0;
 };
 
 void WaitForContinue();
@@ -331,32 +393,61 @@ void WaitForContinue() {
 }
 
 void WriteMetadata(const MetadataListener& metadata) {
-  std::cout << "{\"type\":\"metadata\",\"fileType\":";
+  std::ostringstream output;
+  output << "{\"type\":\"metadata\",\"fileType\":";
   if (metadata.FileType().has_value()) {
-    std::cout << *metadata.FileType();
+    output << *metadata.FileType();
   } else {
-    std::cout << "null";
+    output << "null";
   }
-  std::cout << ",\"hasWeightMessages\":"
-            << (metadata.HasWeightMessages() ? "true" : "false") << ",\"session\":";
+  output << ",\"fileTypeName\":";
+  if (metadata.FileTypeName().has_value()) {
+    output << JsonString(*metadata.FileTypeName());
+  } else {
+    output << "null";
+  }
+  output << ",\"hasWeightMessages\":"
+         << (metadata.HasWeightMessages() ? "true" : "false") << ",\"session\":";
   if (metadata.SessionJson().has_value()) {
-    std::cout << *metadata.SessionJson();
+    output << *metadata.SessionJson();
   } else {
-    std::cout << "null";
+    output << "null";
   }
-  std::cout << ",\"sportName\":";
+  output << ",\"sportName\":";
   if (metadata.SportName().has_value()) {
-    std::cout << JsonString(*metadata.SportName());
+    output << JsonString(*metadata.SportName());
   } else {
-    std::cout << "null";
+    output << "null";
   }
-  std::cout << ",\"subSportName\":";
+  output << ",\"subSportName\":";
   if (metadata.SubSportName().has_value()) {
-    std::cout << JsonString(*metadata.SubSportName());
+    output << JsonString(*metadata.SubSportName());
   } else {
-    std::cout << "null";
+    output << "null";
   }
-  std::cout << "}\n" << std::flush;
+  std::vector<std::tuple<std::string, std::string, std::size_t>> field_occurrences;
+  for (const auto& [message_type, message_fields] : metadata.FieldOccurrences()) {
+    for (const auto& [field, occurrences] : message_fields) {
+      field_occurrences.emplace_back(message_type, field, occurrences);
+    }
+  }
+  std::sort(field_occurrences.begin(), field_occurrences.end());
+  output << ",\"fieldOccurrences\":[";
+  for (std::size_t index = 0; index < field_occurrences.size(); ++index) {
+    if (index > 0) {
+      output << ',';
+    }
+    const auto& [message_type, field, occurrences] = field_occurrences[index];
+    output << "{\"messageType\":" << JsonString(message_type)
+           << ",\"field\":" << JsonString(field)
+           << ",\"occurrences\":" << occurrences << '}';
+  }
+  output << "]}\n";
+  const std::string protocol_message = output.str();
+  if (protocol_message.size() > kMaximumBatchBytes) {
+    throw std::runtime_error("FIT metadata exceeds the 512 KiB protocol limit");
+  }
+  std::cout << protocol_message << std::flush;
 }
 
 void WriteBatch(const std::string& type, const std::vector<std::string>& messages) {

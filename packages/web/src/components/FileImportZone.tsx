@@ -29,6 +29,12 @@ export interface FileImportZoneProps {
   stats?: ProviderStats;
   recentLogs?: SyncLogEntry[];
   showDetailsLink?: boolean;
+  activeImport?: {
+    jobId: string;
+    progress: number;
+    message: string;
+    failedCount?: number;
+  };
 }
 
 function selectedFileExtension(fileName: string): string | undefined {
@@ -48,6 +54,7 @@ export function FileImportZone({
   stats,
   recentLogs = [],
   showDetailsLink = true,
+  activeImport,
 }: FileImportZoneProps) {
   const [state, setState] = useState<{
     status: SyncStatus;
@@ -59,6 +66,7 @@ export function FileImportZone({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cancelledRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resumedJobIdRef = useRef<string | null>(null);
   const validProviderId =
     typeof providerId === "string" && providerId.length > 0 ? providerId : null;
 
@@ -123,6 +131,18 @@ export function FileImportZone({
     },
     [statusUrl],
   );
+
+  useEffect(() => {
+    if (!activeImport || resumedJobIdRef.current === activeImport.jobId) return;
+    resumedJobIdRef.current = activeImport.jobId;
+    setState({
+      status: "syncing",
+      progress: activeImport.progress,
+      message: activeImport.message,
+      failedCount: activeImport.failedCount,
+    });
+    void pollStatus(activeImport.jobId);
+  }, [activeImport, pollStatus]);
 
   const uploadFile = useCallback(
     async (file: File) => {

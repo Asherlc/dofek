@@ -2,9 +2,10 @@
 
 This directory is a self-contained C++ project that streams Garmin FIT messages to the Node
 application over newline-delimited JSON. It performs two constant-memory passes: the first emits
-file metadata, and the second emits record or weight messages in batches of at most 250 messages
-and 512 KiB. The decoder waits for a `continue` acknowledgement after every output message, so
-database persistence provides backpressure to native decoding.
+file metadata and a field-occurrence table capped at 4,096 unique message/field pairs, and the
+second emits record or weight messages in batches of at most 250 messages and 512 KiB. Every
+protocol message is capped at 512 KiB. The decoder waits for a `continue` acknowledgement after
+every output message, so database persistence provides backpressure to native decoding.
 
 The project builds against Garmin's official
 [FIT C++ SDK](https://github.com/garmin/fit-cpp-sdk). Manifest-mode

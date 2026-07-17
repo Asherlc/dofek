@@ -29,13 +29,21 @@ vi.mock("../components/FileImportProviderCard.tsx", () => ({
     title,
     description,
     showDetailsLink,
+    activeImport,
   }: {
     providerId: string;
     title: string;
     description: string;
     showDetailsLink?: boolean;
+    activeImport?: Record<string, unknown>;
   }) => {
-    mockFileImportProviderCard({ providerId, title, description, showDetailsLink });
+    mockFileImportProviderCard({
+      providerId,
+      title,
+      description,
+      showDetailsLink,
+      activeImport,
+    });
     return (
       <div data-testid="file-import-provider-card" data-show-details-link={String(showDetailsLink)}>
         <span>{title}</span>
@@ -61,6 +69,10 @@ const mockProviders: { data: MockProvider[]; isLoading: boolean } = {
 };
 
 const mockStats = { data: [], isLoading: false };
+const mockActiveImports: { data: Array<Record<string, unknown>>; isLoading: boolean } = {
+  data: [],
+  isLoading: false,
+};
 
 interface MockDataHealthSnapshot {
   overallStatus: "blocked";
@@ -100,6 +112,7 @@ vi.mock("../lib/trpc.ts", () => ({
     sync: {
       providers: { useQuery: () => mockProviders },
       providerStats: { useQuery: () => mockStats },
+      activeImports: { useQuery: () => mockActiveImports },
       dataHealth: { useQuery: () => mockDataHealth },
       triggerSync: { useMutation: () => mockSyncMutation },
       syncStatus: { fetch: vi.fn() },
@@ -142,6 +155,7 @@ beforeEach(() => {
   mockDataHealth.data = null;
   mockDataHealth.isLoading = false;
   mockDataHealth.error = null;
+  mockActiveImports.data = [];
 });
 
 afterEach(() => {
@@ -386,6 +400,24 @@ describe("ProviderDetailPage import-only providers", () => {
         title: "Apple Health",
         showDetailsLink: false,
       }),
+    );
+  });
+
+  it("passes the active import to the provider details card after refresh", async () => {
+    mockUseParams.mockReturnValue({ id: "strong-csv" });
+    const activeImport = {
+      jobId: "job-strong",
+      providerId: "strong-csv",
+      progress: 37,
+      message: "Importing workouts",
+    };
+    mockActiveImports.data = [activeImport];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: "strong-csv", activeImport }),
     );
   });
 

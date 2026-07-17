@@ -14,6 +14,36 @@ afterEach(() => {
 });
 
 describe("FileImportZone", () => {
+  it("resumes an active import after the page is refreshed", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(
+      () =>
+        new Promise<Response>(() => {
+          // Keep the resumed status request pending so the restored progress remains visible.
+        }),
+    );
+    vi.stubGlobal("fetch", fetchImpl);
+    const refreshedProps = {
+      providerId: "garmin-dump",
+      title: "Garmin",
+      description: ".zip from Garmin Connect",
+      accept: ".zip",
+      uploadUrl: "/api/upload/garmin-dump",
+      statusUrl: "/api/upload/garmin-dump/status",
+      activeImport: {
+        jobId: "job-garmin",
+        progress: 64,
+        message: "Importing activities",
+      },
+    };
+
+    render(<FileImportZone {...refreshedProps} />);
+
+    expect(screen.getByText("Importing activities")).toBeTruthy();
+    await waitFor(() =>
+      expect(fetchImpl).toHaveBeenCalledWith("/api/upload/garmin-dump/status/job-garmin"),
+    );
+  });
+
   it("renders an explicit file picker button", () => {
     render(
       <FileImportZone
