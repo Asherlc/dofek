@@ -417,7 +417,7 @@ describe("createUploadRouter", () => {
 
     it("returns 500 when the import worker fails to start", async () => {
       const startWorker = vi.fn().mockRejectedValueOnce(new Error("worker unavailable"));
-      const { app } = createTestApp(startWorker);
+      const { app, queue } = createTestApp(startWorker);
       const res = await request(app, "post", "/api/upload/apple-health", {
         headers: { "Content-Type": "application/zip" },
         body: Buffer.from("data"),
@@ -425,6 +425,7 @@ describe("createUploadRouter", () => {
 
       expect(res.status).toBe(500);
       expect(startWorker).toHaveBeenCalledOnce();
+      expect(queue.add).not.toHaveBeenCalled();
     });
   });
 

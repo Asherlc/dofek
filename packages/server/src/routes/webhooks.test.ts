@@ -715,15 +715,16 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
       { ownerExternalId: "ext-1", eventType: "create", objectType: "activity" },
       { ownerExternalId: "ext-2", eventType: "update", objectType: "activity" },
     ];
+    const syncWebhookEvent = vi.fn(async () => ({
+      provider: "test-provider",
+      recordsSynced: 1,
+      errors: [],
+      duration: 10,
+    }));
     const provider = createMockWebhookProvider({
       parseWebhookPayload: vi.fn(() => events),
       requiresWorkerForWebhookSync: true,
-      syncWebhookEvent: vi.fn(async () => ({
-        provider: "test-provider",
-        recordsSynced: 1,
-        errors: [],
-        duration: 10,
-      })),
+      syncWebhookEvent,
     });
     mockGetAllProviders.mockReturnValue([provider]);
     mockStartWorker.mockRejectedValue(new Error("worker failed"));
@@ -741,6 +742,7 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
 
     expect(res.status).toBe(200);
     expect(mockStartWorker).toHaveBeenCalledOnce();
+    expect(syncWebhookEvent).not.toHaveBeenCalled();
   });
 
   it("returns 200 even on unexpected top-level error to prevent retries", async () => {

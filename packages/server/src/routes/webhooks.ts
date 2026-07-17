@@ -160,7 +160,13 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
       // which determines whether the worker container needs to be started.
       let processed = 0;
       let fallbackJobsEnqueued = 0;
-      let workerStartRequested = false;
+      let workerStartPromise: Promise<void> | undefined;
+      const startWorkerOnce = (): Promise<void> => {
+        workerStartPromise ??= import("../lib/start-worker.ts").then(({ startWorker }) =>
+          startWorker(),
+        );
+        return workerStartPromise;
+      };
 
       for (const event of events) {
         try {
@@ -194,10 +200,8 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
           const syncWebhookEvent = provider.syncWebhookEvent;
           if (syncWebhookEvent) {
             try {
-              if (provider.requiresWorkerForWebhookSync && !workerStartRequested) {
-                workerStartRequested = true;
-                const { startWorker } = await import("../lib/start-worker.ts");
-                await startWorker();
+              if (provider.requiresWorkerForWebhookSync) {
+                await startWorkerOnce();
               }
               const result = await runWithTokenUser(user_id, () =>
                 syncWebhookEvent(db, event, { userId: user_id }),
@@ -236,10 +240,9 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
       }
 
       // Spin up the worker container if fallback sync jobs were enqueued
-      if (fallbackJobsEnqueued > 0 && !workerStartRequested) {
+      if (fallbackJobsEnqueued > 0 && !workerStartPromise) {
         try {
-          const { startWorker } = await import("../lib/start-worker.ts");
-          await startWorker();
+          await startWorkerOnce();
         } catch (err) {
           captureException(err);
           logger.warn(`[webhook] Failed to start worker: ${err}`);

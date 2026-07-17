@@ -114,6 +114,7 @@ async function enqueueImport(
   userId: string,
   opts?: { weightUnit?: "kg" | "lbs"; jobId?: string },
 ): Promise<string> {
+  await startImportWorker();
   const job = await importQueue.add(
     importType,
     {
@@ -125,7 +126,6 @@ async function enqueueImport(
     },
     opts?.jobId ? { jobId: opts.jobId } : undefined,
   );
-  await startImportWorker();
   return job.id ?? `job-${Date.now()}`;
 }
 
