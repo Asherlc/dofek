@@ -1,12 +1,20 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
+
+const groupedActivityBoundsRowSchema = z.object({
+  started_at: z.string(),
+  ended_at: z.string(),
+  member_activity_ids: z.array(z.string()),
+});
 
 /**
  * Integration test verifying that overlapping activities are deduplicated
@@ -351,11 +359,9 @@ describe("Activity summary deduplication", () => {
     );
 
     try {
-      const groupedRows = await testCtx.db.execute<{
-        started_at: string;
-        ended_at: string;
-        member_activity_ids: string[];
-      }>(
+      const groupedRows = await executeWithSchema(
+        testCtx.db,
+        groupedActivityBoundsRowSchema,
         sql`SELECT
               started_at::text AS started_at,
               ended_at::text AS ended_at,
