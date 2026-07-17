@@ -611,9 +611,46 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
 
     expect(mockStartWorker).toHaveBeenCalledOnce();
-    expect(mockStartWorker.mock.invocationCallOrder[0]).toBeLessThan(
-      syncWebhookEvent.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
-    );
+    expect(syncWebhookEvent).toHaveBeenCalledOnce();
+    const syncInvocationOrder = syncWebhookEvent.mock.invocationCallOrder[0];
+    expect(syncInvocationOrder).toBeDefined();
+    if (syncInvocationOrder === undefined) {
+      throw new Error("Expected targeted webhook sync to run");
+    }
+    expect(mockStartWorker.mock.invocationCallOrder[0]).toBeLessThan(syncInvocationOrder);
+  });
+
+  it("starts the worker once for multiple targeted events that require it", async () => {
+    const events: WebhookEvent[] = [
+      { ownerExternalId: "ext-1", eventType: "create", objectType: "activity" },
+      { ownerExternalId: "ext-2", eventType: "update", objectType: "activity" },
+    ];
+    const syncWebhookEvent = vi.fn(async () => ({
+      provider: "test-provider",
+      recordsSynced: 1,
+      errors: [],
+      duration: 10,
+    }));
+    const provider = createMockWebhookProvider({
+      parseWebhookPayload: vi.fn(() => events),
+      requiresWorkerForWebhookSync: true,
+      syncWebhookEvent,
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+
+    let callCount = 0;
+    mockExecuteWithSchema.mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return [{ id: "sub-1", provider_id: "prov-1", verify_token: "tok", signing_secret: null }];
+      }
+      return [{ provider_id: "prov-1", user_id: "user-1" }];
+    });
+
+    await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
+
+    expect(syncWebhookEvent).toHaveBeenCalledTimes(2);
+    expect(mockStartWorker).toHaveBeenCalledOnce();
   });
 
   it("starts worker when syncWebhookEvent throws and fallback sync is enqueued", async () => {

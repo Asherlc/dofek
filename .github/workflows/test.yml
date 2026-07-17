@@ -559,6 +559,8 @@ jobs:
   test-fit-decoder:
     name: Native FIT Decoder
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -571,7 +573,8 @@ jobs:
           key: vcpkg-fit-${{ hashFiles('native/fit-decoder/vcpkg.json', 'native/fit-decoder/vcpkg-configuration.json', 'native/fit-decoder/vcpkg-ports/**') }}
       - name: Bootstrap vcpkg
         env:
-          VCPKG_ROOT: ${{ runner.temp }}/vcpkg
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg/downloads
+          VCPKG_ROOT: ${{ runner.temp }}/vcpkg/repo
         run: |
           git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
           git -C "$VCPKG_ROOT" checkout ec62869cdd9f80413abb5e4c1d8b68688df932f4
@@ -579,14 +582,20 @@ jobs:
       - name: Build and test FIT decoder
         working-directory: native/fit-decoder
         env:
-          VCPKG_ROOT: ${{ runner.temp }}/vcpkg
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg/downloads
+          VCPKG_ROOT: ${{ runner.temp }}/vcpkg/repo
         run: |
           cmake --preset release
           cmake --build --preset release
-          ctest --test-dir ../../.build/fit-decoder --output-on-failure
+          ctest --preset release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fit-decoder-linux
+          path: .build/fit-decoder/bin/dofek-fit-decoder
 
   test-integration:
     name: Integration Tests (${{ matrix.shard }}/4)
+    needs: test-fit-decoder
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -642,6 +651,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fit-decoder-linux
+          path: .build/fit-decoder/bin
+      - run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
       - run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
         timeout-minutes: 12
         env:
@@ -1016,7 +1030,7 @@ jobs:
 
   mutation:
     name: Stryker (${{ strategy.job-index }})
-    needs: mutation-prep
+    needs: [mutation-prep, test-fit-decoder]
     if: needs.mutation-prep.outputs.shards != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 75
@@ -1074,6 +1088,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fit-decoder-linux
+          path: .build/fit-decoder/bin
+      - run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
       - name: Run Stryker
         env:
           MUTATE_FILES: ${{ matrix.files }}

@@ -1,5 +1,6 @@
-import { rm } from "node:fs/promises";
-import { basename } from "node:path";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import * as Sentry from "@sentry/node";
 import { UnrecoverableError } from "bullmq";
@@ -13,7 +14,7 @@ import {
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
 import { fitExternalIdFromFile } from "../fit/external-id.ts";
-import type { ParsedFitSession } from "../fit/parser.ts";
+import { type ParsedFitRecord, type ParsedFitSession, parseFitRecord } from "../fit/parser.ts";
 import { fitRecordsToSensorSamples } from "../fit/records.ts";
 import {
   FitDecoderError,
@@ -22,6 +23,7 @@ import {
   streamFitFile,
 } from "../fit/stream-decoder.ts";
 import { logger } from "../logger.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 import {
   fitImportDroppedFieldOccurrencesTotal,
   fitImportFilesWithDroppedFieldTotal,
@@ -150,6 +152,100 @@ function activityTypeFromFitSession(session: ParsedFitSession): CanonicalActivit
 }
 
 const FIT_FILE_TYPE_ACTIVITY = 4;
+const stagedRecordBatchSchema = z
+  .array(
+    z.object({
+      recordedAt: z.coerce.date(),
+      raw: z.record(z.string(), z.unknown()),
+    }),
+  )
+  .max(250);
+const stagedWeightBatchSchema = z
+  .array(
+    z.object({
+      timestamp: z.coerce.date(),
+      weight: z.number().finite().optional(),
+      percentFat: z.number().finite().optional(),
+      percentHydration: z.number().finite().optional(),
+      boneMass: z.number().finite().optional(),
+      muscleMass: z.number().finite().optional(),
+      bmi: z.number().finite().optional(),
+      raw: z.record(z.string(), z.unknown()),
+    }),
+  )
+  .max(250);
+
+interface FitImportSpool {
+  directory: string;
+  recordBatchCount: number;
+  weightBatchCount: number;
+  weightMessageCount: number;
+}
+
+async function createFitImportSpool(): Promise<FitImportSpool> {
+  return {
+    directory: await mkdtemp(join(tmpdir(), "dofek-fit-import-")),
+    recordBatchCount: 0,
+    weightBatchCount: 0,
+    weightMessageCount: 0,
+  };
+}
+
+function spoolBatchPath(
+  spool: FitImportSpool,
+  batchType: "records" | "weights",
+  batchIndex: number,
+): string {
+  return join(spool.directory, `${batchType}-${batchIndex}.json`);
+}
+
+async function stageRecordBatch(spool: FitImportSpool, records: ParsedFitRecord[]): Promise<void> {
+  await writeFile(
+    spoolBatchPath(spool, "records", spool.recordBatchCount),
+    JSON.stringify(records.map((record) => ({ recordedAt: record.recordedAt, raw: record.raw }))),
+  );
+  spool.recordBatchCount++;
+}
+
+async function stageWeightBatch(spool: FitImportSpool, weights: ParsedFitWeight[]): Promise<void> {
+  await writeFile(
+    spoolBatchPath(spool, "weights", spool.weightBatchCount),
+    JSON.stringify(weights),
+  );
+  spool.weightBatchCount++;
+  spool.weightMessageCount += weights.length;
+}
+
+async function replayRecordBatches(
+  spool: FitImportSpool,
+  writeBatch: (records: ParsedFitRecord[]) => Promise<void>,
+): Promise<void> {
+  for (let batchIndex = 0; batchIndex < spool.recordBatchCount; batchIndex++) {
+    const decoded: unknown = JSON.parse(
+      await readFile(spoolBatchPath(spool, "records", batchIndex), "utf8"),
+    );
+    const records = stagedRecordBatchSchema.parse(decoded).map((record) =>
+      parseFitRecord({
+        ...record.raw,
+        timestamp: record.raw.timestamp ?? record.recordedAt.toISOString(),
+      }),
+    );
+    await writeBatch(records);
+  }
+}
+
+async function replayWeightBatches(
+  spool: FitImportSpool,
+  writeBatch: (weights: ParsedFitWeight[]) => Promise<void>,
+): Promise<void> {
+  for (let batchIndex = 0; batchIndex < spool.weightBatchCount; batchIndex++) {
+    const decoded: unknown = JSON.parse(
+      await readFile(spoolBatchPath(spool, "weights", batchIndex), "utf8"),
+    );
+    await writeBatch(stagedWeightBatchSchema.parse(decoded));
+  }
+}
+
 const routingConsumedFields = new Map<string, ReadonlySet<string>>([
   ["fileIdMesgs", new Set(["type"])],
 ]);
@@ -212,24 +308,26 @@ async function writeWeightBatch(
   db: SyncDatabase,
   data: ResolvedFitFileImportJobData,
   weights: ParsedFitWeight[],
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<void> {
-  await writeMetricStreamBatch(
-    db,
-    weights.map((weight) => ({
-      providerId: data.providerId,
-      userId: data.userId,
-      externalId: `weight:${data.originalPath}:${weight.timestamp.toISOString()}`,
-      recordedAt: weight.timestamp,
-      sourceName: data.sourceName,
-      weightKg: weight.weight,
-      bodyFatPct: weight.percentFat,
-      waterPct: weight.percentHydration,
-      boneMassKg: weight.boneMass,
-      muscleMassKg: weight.muscleMass,
-      bmi: weight.bmi,
-    })),
-    SOURCE_TYPE_FILE,
-  );
+  const rows = weights.map((weight) => ({
+    providerId: data.providerId,
+    userId: data.userId,
+    externalId: `weight:${data.originalPath}:${weight.timestamp.toISOString()}`,
+    recordedAt: weight.timestamp,
+    sourceName: data.sourceName,
+    weightKg: weight.weight,
+    bodyFatPct: weight.percentFat,
+    waterPct: weight.percentHydration,
+    boneMassKg: weight.boneMass,
+    muscleMassKg: weight.muscleMass,
+    bmi: weight.bmi,
+  }));
+  if (metricStreamPublisher) {
+    await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE, undefined, metricStreamPublisher);
+    return;
+  }
+  await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE);
 }
 
 async function beginActivityImport(
@@ -237,6 +335,7 @@ async function beginActivityImport(
   data: ResolvedFitFileImportJobData,
   metadata: FitStreamMetadata,
   onProgress: (info: FitFileImportProgressInfo) => Promise<void>,
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<{ activityId: string | undefined; activityType: CanonicalActivityType }> {
   const session = metadata.session;
   const summary = data.activitySummary;
@@ -281,7 +380,12 @@ async function beginActivityImport(
   );
 
   if (activity?.id) {
-    await replaceMetricStreamBatch(db, { activityId: activity.id }, [], SOURCE_TYPE_FILE);
+    const scope = { activityId: activity.id };
+    if (metricStreamPublisher) {
+      await replaceMetricStreamBatch(db, scope, [], SOURCE_TYPE_FILE, metricStreamPublisher);
+    } else {
+      await replaceMetricStreamBatch(db, scope, [], SOURCE_TYPE_FILE);
+    }
   }
   return { activityId: activity?.id, activityType };
 }
@@ -325,85 +429,130 @@ export async function importFitFile(
   db: SyncDatabase,
   data: FitFileImportJobData & { filePath: string },
   onProgress: (info: FitFileImportProgressInfo) => Promise<void>,
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<FitFileImportJobResult> {
   await onProgress({ percentage: 10, message: "Reading FIT file..." });
   await onProgress({ percentage: 25, message: "Decoding FIT file..." });
-  let importType: "activity" | "unsupported" | "weight" | undefined;
-  let streamMetadata: FitStreamMetadata | undefined;
-  let activityId: string | undefined;
-  let activityType: CanonicalActivityType | undefined;
-  let weightCount = 0;
+  const spool = await createFitImportSpool();
   try {
-    await streamFitFile(data.filePath, {
-      onMetadata: async (metadata) => {
-        streamMetadata = metadata;
-        if (metadata.isWeightFile) {
-          importType = "weight";
-          await onProgress({ percentage: 50, message: "Importing FIT weight data..." });
-          await onProgress({ percentage: 80, message: "Writing FIT weight data..." });
-          return;
-        }
-        if (data.activitySummary === undefined && metadata.fileType !== null) {
-          if (metadata.fileType !== FIT_FILE_TYPE_ACTIVITY) {
-            importType = "unsupported";
-            await onProgress({ percentage: 50, message: "Inspecting FIT data..." });
+    let importType: "activity" | "unsupported" | "weight" | undefined;
+    let streamMetadata: FitStreamMetadata | undefined;
+    try {
+      await streamFitFile(data.filePath, {
+        onMetadata: async (metadata) => {
+          streamMetadata = metadata;
+          if (metadata.isWeightFile) {
+            importType = "weight";
+            await onProgress({ percentage: 50, message: "Importing FIT weight data..." });
             return;
           }
-        }
-        importType = "activity";
-        await onProgress({ percentage: 50, message: "Importing FIT activity..." });
-        const activityImport = await beginActivityImport(db, data, metadata, onProgress);
-        activityId = activityImport.activityId;
-        activityType = activityImport.activityType;
-      },
-      onRecordBatch: async (records) => {
-        if (importType !== "activity" || !activityId || !activityType) return;
-        const rows = fitRecordsToSensorSamples(
-          records,
-          data.providerId,
-          activityId,
-          activityType,
-        ).map((row) => ({ ...row, userId: data.userId }));
-        await writeMetricStreamBatchForScope(db, { activityId }, rows, SOURCE_TYPE_FILE);
-      },
-      onWeightBatch: async (weights) => {
-        if (importType !== "weight") return;
-        await writeWeightBatch(db, data, weights);
-        weightCount += weights.length;
-      },
-    });
-  } catch (error) {
-    if (error instanceof FitDecoderError || error instanceof FitFileImportValidationError) {
-      return fitFileImportErrorResult(data, error);
+          if (data.activitySummary === undefined && metadata.fileType !== null) {
+            if (metadata.fileType !== FIT_FILE_TYPE_ACTIVITY) {
+              importType = "unsupported";
+              await onProgress({ percentage: 50, message: "Inspecting FIT data..." });
+              return;
+            }
+          }
+          importType = "activity";
+          await onProgress({ percentage: 50, message: "Importing FIT activity..." });
+        },
+        onRecordBatch: async (records) => {
+          if (importType === "activity") {
+            await stageRecordBatch(spool, records);
+          }
+        },
+        onWeightBatch: async (weights) => {
+          if (importType === "weight") {
+            await stageWeightBatch(spool, weights);
+          }
+        },
+      });
+    } catch (error) {
+      if (error instanceof FitDecoderError || error instanceof FitFileImportValidationError) {
+        return fitFileImportErrorResult(data, error);
+      }
+      throw error;
     }
-    throw error;
-  }
-  if (streamMetadata && importType === "weight") {
-    recordDroppedFitFields(data.providerId, streamMetadata, weightConsumedFields);
-  } else if (streamMetadata && importType === "unsupported") {
-    recordDroppedFitFields(data.providerId, streamMetadata, routingConsumedFields);
-  }
-  const result: FitFileImportJobResult = {
-    recordsSynced:
-      importType === "weight"
-        ? weightCount
-        : importType === "activity" && data.activitySummary === undefined
-          ? 1
-          : 0,
-    errors: [],
-  };
-  if (result.errors.length === 0) {
+
+    if (!streamMetadata || !importType) {
+      return fitFileImportErrorResult(
+        data,
+        new FitDecoderError("Native FIT decoder returned no file metadata"),
+      );
+    }
+
+    if (importType === "weight") {
+      await onProgress({ percentage: 80, message: "Writing FIT weight data..." });
+      await replayWeightBatches(spool, (weights) =>
+        writeWeightBatch(db, data, weights, metricStreamPublisher),
+      );
+      recordDroppedFitFields(data.providerId, streamMetadata, weightConsumedFields);
+    } else if (importType === "activity") {
+      let activityImport: Awaited<ReturnType<typeof beginActivityImport>>;
+      try {
+        activityImport = await beginActivityImport(
+          db,
+          data,
+          streamMetadata,
+          onProgress,
+          metricStreamPublisher,
+        );
+      } catch (error) {
+        if (error instanceof FitFileImportValidationError) {
+          return fitFileImportErrorResult(data, error);
+        }
+        throw error;
+      }
+      const activityId = activityImport.activityId;
+      if (activityId) {
+        await replayRecordBatches(spool, async (records) => {
+          const rows = fitRecordsToSensorSamples(
+            records,
+            data.providerId,
+            activityId,
+            activityImport.activityType,
+          ).map((row) => ({ ...row, userId: data.userId }));
+          const scope = { activityId };
+          if (metricStreamPublisher) {
+            await writeMetricStreamBatchForScope(
+              db,
+              scope,
+              rows,
+              SOURCE_TYPE_FILE,
+              metricStreamPublisher,
+            );
+          } else {
+            await writeMetricStreamBatchForScope(db, scope, rows, SOURCE_TYPE_FILE);
+          }
+        });
+      }
+    } else {
+      recordDroppedFitFields(data.providerId, streamMetadata, routingConsumedFields);
+    }
+
+    const result: FitFileImportJobResult = {
+      recordsSynced:
+        importType === "weight"
+          ? spool.weightMessageCount
+          : importType === "activity" && data.activitySummary === undefined
+            ? 1
+            : 0,
+      errors: [],
+    };
     await onProgress({
       percentage: 100,
       message: "FIT file import complete.",
     });
+    return result;
+  } finally {
+    await rm(spool.directory, { recursive: true });
   }
-  return result;
 }
 
 export async function processFitFileImportJob(
   job: FitFileImportJob,
   db: SyncDatabase,
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<FitFileImportJobResult> {
   await updateFitFileImportProgress(job, {
     percentage: 0,
@@ -418,7 +567,12 @@ export async function processFitFileImportJob(
     }
     throw unrecoverableErrorFromResult(fitFileImportErrorResult(job.data, error));
   }
-  const result = await importFitFile(db, data, (info) => updateFitFileImportProgress(job, info));
+  const result = await importFitFile(
+    db,
+    data,
+    (info) => updateFitFileImportProgress(job, info),
+    metricStreamPublisher,
+  );
   if (result.errors.length > 0) {
     if (data.deleteFileAfterImport) {
       await rm(data.filePath, { force: true });

@@ -2,6 +2,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import { enqueueFitFileImportAndWait } from "../../jobs/enqueue-fit-file-import.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import type { SyncError } from "../types.ts";
 import type { WahooClient } from "./client.ts";
 import type { ParsedCardioActivity } from "./parsers.ts";
@@ -17,12 +18,20 @@ export class WahooActivityPersister {
   readonly #client: WahooClient;
   readonly #db: SyncDatabase;
   readonly #userId?: string;
+  readonly #metricStreamPublisher?: MetricStreamEventPublisher;
 
-  constructor(providerId: string, client: WahooClient, db: SyncDatabase, userId?: string) {
+  constructor(
+    providerId: string,
+    client: WahooClient,
+    db: SyncDatabase,
+    userId?: string,
+    metricStreamPublisher?: MetricStreamEventPublisher,
+  ) {
     this.#providerId = providerId;
     this.#client = client;
     this.#db = db;
     this.#userId = userId;
+    this.#metricStreamPublisher = metricStreamPublisher;
   }
 
   async persist(parsed: ParsedCardioActivity): Promise<PersistResult> {
@@ -60,6 +69,9 @@ export class WahooActivityPersister {
             providerId: this.#providerId,
             sourceName: "Wahoo",
             ...(this.#userId ? { userId: this.#userId } : {}),
+            ...(this.#metricStreamPublisher
+              ? { db: this.#db, metricStreamPublisher: this.#metricStreamPublisher }
+              : {}),
             activitySummary: {
               externalId: parsed.externalId,
               activityType: parsed.activityType,

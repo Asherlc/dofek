@@ -170,7 +170,13 @@ export class WahooProvider implements WebhookProvider {
 
     const parsed = parseWorkoutSummary(workout);
     const client = new WahooClient("", this.#fetchFn);
-    const persister = new WahooActivityPersister(this.id, client, db, options?.userId);
+    const persister = new WahooActivityPersister(
+      this.id,
+      client,
+      db,
+      options?.userId,
+      options?.metricStreamPublisher,
+    );
     const result = await persister.persist(parsed);
 
     if (result.synced) {
@@ -280,7 +286,13 @@ export class WahooProvider implements WebhookProvider {
     }
 
     const client = new WahooClient(tokens.accessToken, this.#fetchFn);
-    const persister = new WahooActivityPersister(this.id, client, db, options?.userId);
+    const persister = new WahooActivityPersister(
+      this.id,
+      client,
+      db,
+      options?.userId,
+      options?.metricStreamPublisher,
+    );
 
     const since = window.since;
     const syncWindowEnd = window.until;

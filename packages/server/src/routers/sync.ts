@@ -595,7 +595,7 @@ export const syncRouter = router({
       });
 
       if (providerJobs.length > 0) {
-        startWorker();
+        await startWorker();
       }
       return {
         jobId: providerJobs[0]?.jobId,

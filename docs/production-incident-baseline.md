@@ -13373,6 +13373,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   stayed at approximately 43 MiB heap; and 3,000 actual BullMQ failures with
   progress updates, job logs, failed-event logs, and an unreachable OTLP
   exporter moved forced-GC heap only from 73.5 to 76.2 MiB.
+  The production errors and restart sequence remain attached to the
+  [Sentry incident](https://east-bay-software.sentry.io/issues/7614315645/).
 - **Root cause:** [PR #1633](https://github.com/Asherlc/dofek/pull/1633)
   fanned out every FIT path in an archive containing a duplicated export and
   allowed the two copies of a dense 21,276-record activity to reach the
@@ -13386,21 +13388,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   file-classification bug and added workload, but their failure-handling path
   was not the retained allocation that caused OOM.
 - **Fix / mitigation:** Replaced `fit-file-parser` and its parser worker with a
-  separate C++ decoder built from Garmin's official FIT SDK. The decoder first
+  separate C++ decoder built from Garmin's official FIT SDK. The
+  [native implementation](../native/fit-decoder/src/fit-decoder.cpp) first
   validates and classifies the file without retaining record messages, then
   makes a second pass that emits at most 250 messages and 512 KiB per batch. It
-  blocks for a Node acknowledgement after metadata and every batch, so database
-  persistence applies backpressure. File-import jobs now hash the input as a
-  stream and write each decoded batch directly instead of holding the raw file,
-  a complete parsed activity, a structured clone, and a second validated graph.
-  Activity, weight, and unsupported file types are classified before
-  persistence. Dropped-field telemetry is derived from a metadata table capped
-  at 4,096 unique message/field pairs rather than retained decoded messages. No
-  heap-limit, concurrency, timeout, or retry increase was used. Garmin dump
-  uploads and FIT downloads from Wahoo, COROS, and Suunto now all hand off to
-  the same canonical `fit-file-import` queue instead of maintaining
-  provider-specific decode paths.
-- **Validation:** Native CTest and TypeScript adapter/job regression tests pass.
+  blocks for a Node acknowledgement after metadata and every batch. The
+  [Node adapter](../src/fit/stream-decoder.ts) applies backpressure and rejects
+  protocol messages after `end`. The
+  [file-import job](../src/jobs/process-fit-file-import-job.ts) hashes the input
+  as a stream and spools each decoded batch to temporary disk until the decoder
+  protocol completes, then replays one bounded batch at a time. Decoder failures
+  therefore cannot upsert an activity, clear prior activity samples, or publish
+  partial weight rows. Activity, weight, and unsupported file types are
+  classified before persistence. Dropped-field telemetry is derived from a
+  metadata table capped at 4,096 unique message/field pairs rather than retained
+  decoded messages. No heap-limit, concurrency, timeout, or retry increase was
+  used. Garmin dump uploads and FIT downloads from Wahoo, COROS, and Suunto now
+  all hand off to the same canonical
+  [FIT import job](../src/jobs/process-fit-file-import-job.ts) instead of
+  maintaining provider-specific decode paths. Provider sync workers invoke that
+  bounded job directly when they already own the database and metric publisher;
+  uploads continue through the isolated queue, as selected by
+  [`enqueueFitFileImportAndWait`](../src/jobs/enqueue-fit-file-import.ts).
+- **Validation:** The [native CTests](../native/fit-decoder/tests/VerifyProtocol.cmake),
+  [TypeScript adapter tests](../src/fit/stream-decoder.test.ts), and
+  [job regressions](../src/jobs/process-fit-file-import-job.test.ts) pass.
   The exact 622,172-byte incident file decoded successfully from the final
   Alpine server image into 86 bounded batches containing exactly 21,276 records;
   metadata resolved to `cycling` / `mountain` from Garmin's generated profile.
@@ -13413,9 +13425,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   and observation while the Garmin backlog drains. Confirm that worker RSS stays
   below its 512 MiB cgroup limit, the queue completes, and unrelated provider
   jobs no longer become stalled. The memory protocol is regression-tested by
-  native batch-size assertions and a 501-record job test that requires three
-  separate database writes; the private incident file remains an operator-only
-  validation fixture and is not committed to the repository.
+  native batch-size assertions, lossless 64-bit raw-value coverage, a post-`end`
+  rejection test, a decoder-failure atomicity test, and a 501-record job test
+  that requires three separate bounded writes. These assertions live in the
+  [native tests](../native/fit-decoder/tests/FieldJsonTest.cpp),
+  [adapter tests](../src/fit/stream-decoder.test.ts), and
+  [job tests](../src/jobs/process-fit-file-import-job.test.ts). The private
+  incident file remains an operator-only validation fixture and is not committed
+  to the repository.
 
 ## 2026-07-16 — Monitoring FIT Files Misclassified as Activities
 
@@ -13437,7 +13454,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   persisted records, and emits aggregate metrics for every decoded field that
   was not persisted. Derived stress fields are counted with reason `derived`;
   no stress values, filenames, or user identifiers are retained in metrics.
-- **Validation:** The regression test failed before the fix with `missing a
+- **Validation:** The
+  [classification regression](../src/jobs/process-fit-file-import-job.test.ts)
+  failed before the fix with `missing a
   valid start time` for a generated `monitoringB` file. After the fix, 62
   focused FIT/progress/metric tests and the complete 11,786-test unit suite
   pass, along with the full TypeScript and lint checks.
@@ -13489,7 +13508,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Evidence:** The first fatal ClickHouse log line reported `No space left on
   device` under `/var/lib/clickhouse`. Docker reported 14 GiB of images and 4.5
   GiB of build cache, while retained workspace volumes accounted for another
-  30.7 GiB.
+  30.7 GiB; these categories are the values exposed by
+  [`docker system df`](https://docs.docker.com/reference/cli/docker/system/df/).
 - **Root cause:** Repeated local production-image builds again exhausted Docker
   Desktop's virtual disk with unused image layers and build cache.
 - **Fix / mitigation:** Removed only unused images and build cache, reclaiming
@@ -13508,7 +13528,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   jobs or downloadable logs after the native FIT decoder job was added.
 - **User impact:** No production impact. The PR's test workflow did not execute,
   so the branch could not receive authoritative CI validation.
-- **Evidence:** Local `actionlint` reproduced the first fatal validation error at
+- **Evidence:** Local
+  [`actionlint`](https://github.com/rhysd/actionlint) reproduced the first fatal validation error at
   `.github/workflows/test.yml:563:23`: `context "runner" is not allowed here`.
   GitHub's context-availability table likewise excludes `runner` from job-level
   `env` expressions
@@ -13517,9 +13538,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `env`, where the runner context does not exist, invalidating the reusable
   workflow before GitHub could create any jobs.
 - **Fix / mitigation:** Moved `VCPKG_ROOT` into the bootstrap and build step
-  environments, where the runner context is available.
+  environments, where the runner context is available, in the
+  [test workflow](../.github/workflows/test.yml).
 - **Validation:** `actionlint` reports no findings, all local lint and TypeScript
-  checks pass, and replacement CI run `29551875939` successfully created and
-  started the complete job graph, including the Actionlint job.
+  checks pass, and
+  [replacement CI run 29551875939](https://github.com/Asherlc/dofek/actions/runs/29551875939)
+  successfully created and started the complete job graph, including the
+  Actionlint job.
 - **Remaining risk / follow-up:** Confirm the native FIT decoder job and the
   aggregate required-check job pass in the replacement run.

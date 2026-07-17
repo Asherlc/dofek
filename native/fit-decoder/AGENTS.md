@@ -1,7 +1,8 @@
 # Native FIT Decoder
 
-Read `README.md` before changing this package. It defines the build, dependency, protocol, and
-memory-bound contracts.
+Always read the repository root [`README.md`](../../README.md) first. Then read this package's
+`README.md` before changing it; it defines the build, dependency, protocol, and memory-bound
+contracts.
 
 ## Tooling
 

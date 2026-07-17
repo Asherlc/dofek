@@ -125,7 +125,7 @@ async function enqueueImport(
     },
     opts?.jobId ? { jobId: opts.jobId } : undefined,
   );
-  startWorker();
+  await startWorker();
   return job.id ?? `job-${Date.now()}`;
 }
 

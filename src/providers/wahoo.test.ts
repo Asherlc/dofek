@@ -781,7 +781,6 @@ describe("WahooProvider.syncWebhookEvent", () => {
       delete: vi.fn(),
       execute: vi.fn(),
     };
-
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "42",
       eventType: "create",
@@ -1163,6 +1162,9 @@ describe("WahooProvider.sync", () => {
       delete: vi.fn(),
       execute: vi.fn(),
     };
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async () => []),
+    };
     const provider = new WahooProvider(async (input): Promise<Response> => {
       const url = String(input);
       if (url.includes("/v1/workouts")) {
@@ -1200,6 +1202,7 @@ describe("WahooProvider.sync", () => {
         db: mockDb,
         window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
         userId: "00000000-0000-0000-0000-000000000001",
+        metricStreamPublisher,
       }),
     );
 
@@ -1210,6 +1213,8 @@ describe("WahooProvider.sync", () => {
       providerId: "wahoo",
       sourceName: "Wahoo",
       userId: "00000000-0000-0000-0000-000000000001",
+      db: mockDb,
+      metricStreamPublisher,
       activitySummary: {
         externalId: "42",
         activityType: "cycling",

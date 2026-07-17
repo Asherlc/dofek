@@ -1,9 +1,5 @@
 #include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <ctime>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -21,141 +17,16 @@
 #include "fit_profile.hpp"
 #include "fit_profile_enum_names.hpp"
 #include "fit_session_mesg.hpp"
-#include "fit_unicode.hpp"
+#include "field-json.hpp"
 
 namespace {
 
 constexpr std::size_t kMaximumBatchMessages = 250;
 constexpr std::size_t kMaximumBatchBytes = 512 * 1024;
 constexpr std::size_t kMaximumFieldOccurrenceKeys = 4096;
-constexpr std::int64_t kFitEpochUnixSeconds = 631065600;
-constexpr double kSemicirclesPerDegree = 2147483648.0 / 180.0;
 
-std::string JsonString(const std::string& value) {
-  std::ostringstream output;
-  output << '"';
-  for (const unsigned char character : value) {
-    switch (character) {
-      case '"':
-        output << "\\\"";
-        break;
-      case '\\':
-        output << "\\\\";
-        break;
-      case '\b':
-        output << "\\b";
-        break;
-      case '\f':
-        output << "\\f";
-        break;
-      case '\n':
-        output << "\\n";
-        break;
-      case '\r':
-        output << "\\r";
-        break;
-      case '\t':
-        output << "\\t";
-        break;
-      default:
-        if (character < 0x20) {
-          output << "\\u" << std::hex << std::setw(4) << std::setfill('0')
-                 << static_cast<int>(character) << std::dec << std::setfill(' ');
-        } else {
-          output << character;
-        }
-    }
-  }
-  output << '"';
-  return output.str();
-}
-
-std::string JsonNumber(double value) {
-  if (!std::isfinite(value)) {
-    throw std::runtime_error("FIT field contains a non-finite number");
-  }
-  std::ostringstream output;
-  output << std::setprecision(17) << value;
-  return output.str();
-}
-
-bool IsFitTimestampField(const std::string& name) {
-  return name == "timestamp" || name == "start_time" || name == "time_created";
-}
-
-std::string FitTimestampJson(const fit::FieldBase& field, FIT_UINT8 value_index) {
-  const auto unix_seconds =
-      static_cast<std::time_t>(field.GetUINT32Value(value_index) + kFitEpochUnixSeconds);
-  std::tm utc_time{};
-#if defined(_WIN32)
-  if (gmtime_s(&utc_time, &unix_seconds) != 0) {
-#else
-  if (gmtime_r(&unix_seconds, &utc_time) == nullptr) {
-#endif
-    throw std::runtime_error("Unable to convert FIT timestamp");
-  }
-  char timestamp[32];
-  if (std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S.000Z", &utc_time) == 0) {
-    throw std::runtime_error("Unable to format FIT timestamp");
-  }
-  return JsonString(timestamp);
-}
-
-std::optional<std::string> JsonFieldValue(
-    const fit::FieldBase& field,
-    FIT_UINT8 value_index) {
-  if (!field.IsValueValid(value_index)) {
-    return std::nullopt;
-  }
-  const std::string field_name = field.GetName();
-  if (IsFitTimestampField(field_name)) {
-    return FitTimestampJson(field, value_index);
-  }
-  if (field.GetType() == FIT_BASE_TYPE_STRING) {
-    return JsonString(fit::Unicode::Encode_BaseToUTF8(field.GetSTRINGValue(value_index)));
-  }
-
-  const double value = field.GetFLOAT64Value(value_index);
-  if (!std::isfinite(value)) {
-    return std::nullopt;
-  }
-  if (field.GetUnits() == "semicircles") {
-    return JsonNumber(value / kSemicirclesPerDegree);
-  }
-  if (field_name == "left_right_balance") {
-    const auto encoded_balance = static_cast<unsigned int>(field.GetRawValue(value_index));
-    return std::string("{\"value\":") + JsonNumber(encoded_balance & 0x7fU) +
-           ",\"right\":" + ((encoded_balance & 0x80U) == 0 ? "false" : "true") + "}";
-  }
-  return JsonNumber(value);
-}
-
-std::optional<std::string> JsonField(const fit::FieldBase& field) {
-  std::vector<std::string> values;
-  values.reserve(field.GetNumValues());
-  for (FIT_UINT8 value_index = 0; value_index < field.GetNumValues(); ++value_index) {
-    const std::optional<std::string> value = JsonFieldValue(field, value_index);
-    if (value.has_value()) {
-      values.push_back(*value);
-    }
-  }
-  if (values.empty()) {
-    return std::nullopt;
-  }
-  if (values.size() == 1) {
-    return values.front();
-  }
-  std::ostringstream output;
-  output << '[';
-  for (std::size_t index = 0; index < values.size(); ++index) {
-    if (index > 0) {
-      output << ',';
-    }
-    output << values[index];
-  }
-  output << ']';
-  return output.str();
-}
+using dofek::fit_decoder::JsonField;
+using dofek::fit_decoder::JsonString;
 
 bool HasValidFieldValue(const fit::FieldBase& field) {
   for (FIT_UINT8 value_index = 0; value_index < field.GetNumValues(); ++value_index) {

@@ -193,7 +193,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
           const syncWebhookEvent = provider.syncWebhookEvent;
           if (syncWebhookEvent) {
             try {
-              if (provider.requiresWorkerForWebhookSync) {
+              if (provider.requiresWorkerForWebhookSync && !workerStartRequested) {
                 const { startWorker } = await import("../lib/start-worker.ts");
                 await startWorker();
                 workerStartRequested = true;

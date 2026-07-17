@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SyncDatabase } from "../db/index.ts";
 
 const mocks = vi.hoisted(() => ({
   add: vi.fn(),
   mkdir: vi.fn(),
   mkdtemp: vi.fn(),
   rm: vi.fn(),
+  processFitFileImportJob: vi.fn(),
   waitUntilFinished: vi.fn(),
   writeFile: vi.fn(),
 }));
@@ -27,6 +29,10 @@ vi.mock("./queues.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("./process-fit-file-import-job.ts", () => ({
+  processFitFileImportJob: mocks.processFitFileImportJob,
+}));
+
 import { enqueueFitFileImportAndWait } from "./enqueue-fit-file-import.ts";
 
 describe("enqueueFitFileImportAndWait", () => {
@@ -36,8 +42,57 @@ describe("enqueueFitFileImportAndWait", () => {
     mocks.mkdtemp.mockResolvedValue("/app/job-files/provider-fit-random");
     mocks.writeFile.mockResolvedValue(undefined);
     mocks.rm.mockResolvedValue(undefined);
+    mocks.processFitFileImportJob.mockResolvedValue({ recordsSynced: 3, errors: [] });
     mocks.waitUntilFinished.mockResolvedValue({ recordsSynced: 0, errors: [] });
     mocks.add.mockResolvedValue({ waitUntilFinished: mocks.waitUntilFinished });
+  });
+
+  it("runs the import in-process when a metric stream publisher is supplied", async () => {
+    const db: SyncDatabase = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async () => []),
+    };
+    const activitySummary = {
+      externalId: "workout-42",
+      activityType: "cycling" as const,
+      startedAtIso: "2026-07-01T12:00:00.000Z",
+      endedAtIso: "2026-07-01T13:00:00.000Z",
+      name: "Morning ride",
+    };
+
+    await expect(
+      enqueueFitFileImportAndWait({
+        fitBuffer: Buffer.from([1, 2, 3]),
+        providerId: "wahoo",
+        sourceName: "Wahoo",
+        userId: "user-1",
+        activitySummary,
+        db,
+        metricStreamPublisher,
+      }),
+    ).resolves.toEqual({ recordsSynced: 3, errors: [] });
+
+    expect(mocks.add).not.toHaveBeenCalled();
+    expect(mocks.processFitFileImportJob).toHaveBeenCalledWith(
+      {
+        data: {
+          filePath: "/app/job-files/provider-fit-random/input.fit",
+          originalPath: "wahoo_workout-42.fit",
+          userId: "user-1",
+          providerId: "wahoo",
+          sourceName: "Wahoo",
+          activitySummary,
+        },
+        updateProgress: expect.any(Function),
+      },
+      db,
+      metricStreamPublisher,
+    );
   });
 
   it("stages a downloaded FIT file and waits for the canonical import job", async () => {

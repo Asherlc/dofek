@@ -234,11 +234,16 @@ describe("SuuntoProvider", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
+    const db = createWebhookDb();
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async () => []),
+    };
     const result = await provider.sync(
       new SyncRun({
-        db: createWebhookDb(),
+        db,
         window: SyncWindow.fromSince({ since: new Date("2024-03-01T00:00:00.000Z") }),
         userId: "user-1",
+        metricStreamPublisher,
       }),
     );
 
@@ -248,6 +253,8 @@ describe("SuuntoProvider", () => {
       providerId: "suunto",
       sourceName: "Suunto",
       userId: "user-1",
+      db,
+      metricStreamPublisher,
       activitySummary: {
         externalId: "suunto-w-123",
         activityType: "cycling",

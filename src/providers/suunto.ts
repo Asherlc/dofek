@@ -421,6 +421,9 @@ export class SuuntoProvider implements WebhookProvider {
                       providerId: this.id,
                       sourceName: this.name,
                       userId: options.userId,
+                      ...(options.metricStreamPublisher
+                        ? { db, metricStreamPublisher: options.metricStreamPublisher }
+                        : {}),
                       activitySummary: {
                         externalId: parsed.externalId,
                         activityType: parsed.activityType,

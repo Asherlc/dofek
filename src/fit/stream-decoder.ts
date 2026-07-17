@@ -1,8 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -127,7 +125,10 @@ function parsedSession(
 }
 
 function optionalNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  if (typeof value !== "number") {
+    return undefined;
+  }
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function parsedWeight(raw: Record<string, unknown>): ParsedFitWeight {
@@ -201,9 +202,6 @@ export async function streamFitFile(
   let consumedMessageCount = 0;
 
   child.stderr.on("data", (chunk: Buffer) => {
-    if (stderr.length >= MAXIMUM_STDERR_BYTES) {
-      return;
-    }
     stderr += chunk.toString("utf8", 0, MAXIMUM_STDERR_BYTES - stderr.length);
   });
 
@@ -225,6 +223,7 @@ export async function streamFitFile(
       child.once("exit", (code, signal) => resolvePromise({ code, signal }));
     },
   );
+  void exitPromise.catch(() => undefined);
 
   armIdleTimeout();
   try {
@@ -232,6 +231,13 @@ export async function streamFitFile(
     for await (const line of lines) {
       clearTimeout(timeoutId);
       const message = parseDecoderLine(line);
+      if (endMessageCount !== undefined) {
+        throw new FitDecoderError(
+          message.type === "end"
+            ? "Native FIT decoder returned duplicate end messages"
+            : `Native FIT decoder returned ${message.type} after its end message`,
+        );
+      }
       switch (message.type) {
         case "metadata":
           if (metadataReceived) {
@@ -286,9 +292,6 @@ export async function streamFitFile(
           if (!metadataReceived) {
             throw new FitDecoderError("Native FIT decoder returned end before file metadata");
           }
-          if (endMessageCount !== undefined) {
-            throw new FitDecoderError("Native FIT decoder returned duplicate end messages");
-          }
           endMessageCount = message.messageCount;
           armIdleTimeout();
           break;
@@ -317,19 +320,5 @@ export async function streamFitFile(
     child.kill("SIGKILL");
     await exitPromise.catch(() => undefined);
     throw error;
-  }
-}
-
-export async function streamFitBuffer(
-  buffer: Buffer,
-  consumer: FitStreamConsumer,
-): Promise<FitStreamResult> {
-  const directory = await mkdtemp(join(tmpdir(), "dofek-fit-decoder-"));
-  const filePath = join(directory, "input.fit");
-  try {
-    await writeFile(filePath, buffer);
-    return await streamFitFile(filePath, consumer);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
   }
 }

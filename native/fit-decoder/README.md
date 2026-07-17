@@ -1,11 +1,14 @@
 # Native FIT decoder
 
 This directory is a self-contained C++ project that streams Garmin FIT messages to the Node
-application over newline-delimited JSON. It performs two constant-memory passes: the first emits
+application over newline-delimited JSON. Its
+[decoder implementation](src/fit-decoder.cpp) performs two constant-memory passes: the first emits
 file metadata and a field-occurrence table capped at 4,096 unique message/field pairs, and the
 second emits record or weight messages in batches of at most 250 messages and 512 KiB. Every
-protocol message is capped at 512 KiB. The decoder waits for a `continue` acknowledgement after
-every output message, so database persistence provides backpressure to native decoding.
+protocol message is capped at 512 KiB, as enforced by the
+[native protocol test](tests/VerifyProtocol.cmake). The decoder waits for a `continue`
+acknowledgement after metadata and each record or weight batch, so persistence can apply
+backpressure without waiting after the final `end` message.
 
 The project builds against Garmin's official
 [FIT C++ SDK](https://github.com/garmin/fit-cpp-sdk). Manifest-mode
@@ -36,4 +39,7 @@ baseline.
 The executable accepts one FIT file path. It emits a `metadata` message, zero or more `records` or
 `weights` batches, and one `end` message. The caller must write `continue` followed by a newline to
 standard input after metadata and each batch. Any malformed file, oversized individual message,
-missing acknowledgement, or write failure terminates the process with a nonzero exit status.
+missing acknowledgement, or write failure terminates the process with a nonzero exit status. The
+[decoder source](src/fit-decoder.cpp), [protocol test](tests/VerifyProtocol.cmake), and
+[integer-fidelity test](tests/FieldJsonTest.cpp) are the authoritative contract and validation
+sources.

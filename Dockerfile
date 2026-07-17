@@ -41,7 +41,7 @@ RUN --mount=type=cache,id=vcpkg-downloads,target=/opt/vcpkg/downloads \
     --mount=type=cache,id=vcpkg-archives,target=/root/.cache/vcpkg/archives \
     cmake --preset release && \
     cmake --build --preset release && \
-    ctest --test-dir /src/.build/fit-decoder --output-on-failure
+    ctest --preset release
 
 # ── Source stage: just copy files, no install ─────────────────────────
 FROM base AS source

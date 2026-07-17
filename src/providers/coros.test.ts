@@ -511,12 +511,16 @@ describe("CorosProvider", () => {
         delete: deleteFn,
         execute: vi.fn(),
       };
+      const metricStreamPublisher = {
+        publishRows: vi.fn(async () => []),
+      };
 
       const result = await new CorosProvider(mockFetch).sync(
         new SyncRun({
           db: mockDb,
           window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
           userId: "00000000-0000-0000-0000-000000000001",
+          metricStreamPublisher,
         }),
       );
 
@@ -527,6 +531,8 @@ describe("CorosProvider", () => {
         providerId: "coros",
         sourceName: "COROS",
         userId: "00000000-0000-0000-0000-000000000001",
+        db: mockDb,
+        metricStreamPublisher,
         activitySummary: {
           externalId: "w-1",
           activityType: "running",
