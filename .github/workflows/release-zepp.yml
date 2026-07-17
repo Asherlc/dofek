@@ -126,6 +126,14 @@ jobs:
           RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
           TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
+          if EXISTING_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha' 2>/dev/null); then
+            if [ "$EXISTING_SHA" != "$TARGET_SHA" ]; then
+              echo "::error::Release tag $RELEASE_TAG points to $EXISTING_SHA instead of $TARGET_SHA"
+              exit 1
+            fi
+            echo "Release tag $RELEASE_TAG already points to $TARGET_SHA"
+            exit 0
+          fi
           gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
             -f ref="refs/tags/$RELEASE_TAG" \
             -f sha="$TARGET_SHA"
