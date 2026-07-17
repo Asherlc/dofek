@@ -12,7 +12,10 @@ import {
   writeMetricStreamBatch,
   writeMetricStreamBatchForScope,
 } from "../db/metric-stream-writer.ts";
-import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
+import {
+  findUniqueProviderActivityByExactIdentity,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
 import { fitExternalIdFromFile } from "../fit/external-id.ts";
 import { type ParsedFitRecord, type ParsedFitSession, parseFitRecord } from "../fit/parser.ts";
@@ -377,28 +380,40 @@ async function beginActivityImport(
   const raw = summary?.raw ?? { fitPath: data.originalPath, session: session?.raw ?? null };
 
   await onProgress({ percentage: 80, message: "Writing FIT activity data..." });
-  const activity = await upsertProviderActivity(
-    db,
-    {
-      providerId: data.providerId,
-      userId: data.userId,
-      externalId,
-      activityType,
-      startedAt,
-      endedAt,
-      name,
-      sourceName: data.sourceName,
-      raw,
-    },
-    {
-      activityType,
-      startedAt,
-      endedAt,
-      name,
-      sourceName: data.sourceName,
-      raw,
-    },
-  );
+  const exactGarminSummary =
+    data.providerId === "garmin-dump" && !summary
+      ? await findUniqueProviderActivityByExactIdentity(db, {
+          providerId: data.providerId,
+          userId: data.userId,
+          activityType,
+          startedAt,
+          endedAt,
+        })
+      : undefined;
+  const activity =
+    exactGarminSummary ??
+    (await upsertProviderActivity(
+      db,
+      {
+        providerId: data.providerId,
+        userId: data.userId,
+        externalId,
+        activityType,
+        startedAt,
+        endedAt,
+        name,
+        sourceName: data.sourceName,
+        raw,
+      },
+      {
+        activityType,
+        startedAt,
+        endedAt,
+        name,
+        sourceName: data.sourceName,
+        raw,
+      },
+    ));
 
   if (activity?.id) {
     const scope = { activityId: activity.id };

@@ -80,7 +80,7 @@ describe("date and time formatters", () => {
   it("formats human date-time and time-only labels", () => {
     const date = new Date(2026, 0, 5, 14, 30);
 
-    expect(formatDateTime(date)).toBe("Jan 5, 2:30 PM");
+    expect(formatDateTime(date)).toBe("Jan 5, 2026, 2:30 PM");
     expect(formatTimeOnly(date)).toBe("2:30 PM");
     expect(formatWeekdayTime(date)).toBe("Monday 2:30 PM");
   });

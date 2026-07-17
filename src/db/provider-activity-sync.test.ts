@@ -10,7 +10,9 @@ vi.mock("./provider-activity-absence.ts", () => ({
 
 import type { SyncDatabase } from "./index.ts";
 import {
+  findUniqueProviderActivityByExactIdentity,
   finishProviderActivityListSync,
+  type ProviderActivityExactIdentity,
   ProviderActivityListSync,
   upsertProviderActivity,
 } from "./provider-activity-sync.ts";
@@ -29,6 +31,48 @@ function makeMockDb(onConflictDoUpdate = vi.fn()): SyncDatabase {
     execute: mockExecute,
   };
 }
+
+describe("findUniqueProviderActivityByExactIdentity", () => {
+  beforeEach(() => {
+    mockExecute.mockReset();
+  });
+
+  it("returns the activity when the exact identity matches one active row", async () => {
+    mockExecute.mockResolvedValueOnce([{ id: "11111111-1111-4111-8111-111111111111" }]);
+
+    await expect(
+      findUniqueProviderActivityByExactIdentity(makeMockDb(), {
+        providerId: "garmin-dump",
+        userId: "00000000-0000-0000-0000-000000000001",
+        activityType: "hiking",
+        startedAt: new Date("2022-05-17T17:23:08.000Z"),
+        endedAt: new Date("2022-05-17T19:03:19.201Z"),
+      }),
+    ).resolves.toEqual({ id: "11111111-1111-4111-8111-111111111111" });
+  });
+
+  it("does not choose an activity when the exact identity is absent or ambiguous", async () => {
+    const identity: ProviderActivityExactIdentity = {
+      providerId: "garmin-dump",
+      userId: "00000000-0000-0000-0000-000000000001",
+      activityType: "hiking",
+      startedAt: new Date("2022-05-17T17:23:08.000Z"),
+      endedAt: new Date("2022-05-17T19:03:19.201Z"),
+    };
+    mockExecute.mockResolvedValueOnce([]);
+    await expect(findUniqueProviderActivityByExactIdentity(makeMockDb(), identity)).resolves.toBe(
+      undefined,
+    );
+
+    mockExecute.mockResolvedValueOnce([
+      { id: "11111111-1111-4111-8111-111111111111" },
+      { id: "22222222-2222-4222-8222-222222222222" },
+    ]);
+    await expect(findUniqueProviderActivityByExactIdentity(makeMockDb(), identity)).resolves.toBe(
+      undefined,
+    );
+  });
+});
 
 describe("upsertProviderActivity", () => {
   it("does not include providerAbsentAt in conflict updates", async () => {

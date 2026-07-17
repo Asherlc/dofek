@@ -1,4 +1,5 @@
-import type { SQL } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
+import { z } from "zod";
 import type { SyncDatabase } from "./index.ts";
 import {
   hasProviderActivityListSyncErrors,
@@ -9,6 +10,7 @@ import {
   reconcileProviderActivityAbsence,
 } from "./provider-activity-absence.ts";
 import { activity } from "./schema/activity.ts";
+import { executeWithSchema } from "./typed-sql.ts";
 
 export type ProviderActivityInsert = typeof activity.$inferInsert;
 
@@ -28,6 +30,38 @@ export interface ProviderActivityListSyncScope {
   windowStart: Date;
   windowEnd: Date;
   userId?: string;
+}
+
+export interface ProviderActivityExactIdentity {
+  providerId: string;
+  userId: string;
+  activityType: ProviderActivityInsert["activityType"];
+  startedAt: Date;
+  endedAt: Date;
+}
+
+const providerActivityIdSchema = z.object({ id: z.string().uuid() });
+
+/** Return an active activity only when the exact provider identity uniquely identifies one row. */
+export async function findUniqueProviderActivityByExactIdentity(
+  db: SyncDatabase,
+  identity: ProviderActivityExactIdentity,
+): Promise<{ id: string } | undefined> {
+  const rows = await executeWithSchema(
+    db,
+    providerActivityIdSchema,
+    sql`SELECT id::text AS id
+        FROM fitness.activity
+        WHERE provider_id = ${identity.providerId}
+          AND user_id = ${identity.userId}
+          AND activity_type = ${identity.activityType}
+          AND started_at = ${identity.startedAt}
+          AND ended_at = ${identity.endedAt}
+          AND provider_absent_at IS NULL
+          AND deleted_at IS NULL
+        LIMIT 2`,
+  );
+  return rows.length === 1 ? rows[0] : undefined;
 }
 
 function requireExternalId(externalId: string | null | undefined): string {
