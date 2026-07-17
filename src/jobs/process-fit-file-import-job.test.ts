@@ -455,6 +455,7 @@ describe("processFitFileImportJob", () => {
 
     expect(result).toEqual({ recordsSynced: 0, errors: [] });
     expect(mockStreamFitFile).toHaveBeenCalledWith(filePath, expect.any(Object));
+    expect(mockFindUniqueProviderActivityByExactIdentity).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({
@@ -555,6 +556,24 @@ describe("processFitFileImportJob", () => {
       [],
       "file",
     );
+  });
+
+  it("does not match non-Garmin FIT imports by Garmin summary identity", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+
+    await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "wahoo_workout-42.fit",
+        userId: "user-1",
+        providerId: "wahoo",
+        sourceName: "Wahoo",
+      }),
+      mockDb,
+    );
+
+    expect(mockFindUniqueProviderActivityByExactIdentity).not.toHaveBeenCalled();
+    expect(mockUpsertProviderActivity).toHaveBeenCalledOnce();
   });
 
   it("deletes a job-owned downloaded FIT file after a successful import", async () => {
