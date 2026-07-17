@@ -9,14 +9,14 @@ dependencies = [
     "numpy>=2.5.1",
     "pandas>=2.2.3",
     "psycopg[binary]>=3.3.4",
-    "pyarrow>=23.0.1",
+    "pyarrow>=25.0.0",
 ]
 
 [project.optional-dependencies]
 training = [
-    "boto3>=1.43.42",
+    "boto3>=1.43.45",
     "scikit-learn>=1.9.0",
-    "torch>=2.12.1",
+    "torch>=2.13.0",
 ]
 
 [project.scripts]
@@ -24,13 +24,13 @@ dofek-export = "dofek_ml.export:main"
 
 [dependency-groups]
 dev = [
-    "mypy>=1.13.0",
+    "mypy>=2.2.0",
     "mutmut>=3.6.0",
     "pandas-stubs>=3.0.3.260530",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=6.0.0",
-    "ruff>=0.15.20",
+    "ruff>=0.15.21",
 ]
 
 [build-system]
