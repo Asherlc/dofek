@@ -51,7 +51,6 @@ export class WahooProvider implements WebhookProvider {
   readonly id = "wahoo";
   readonly name = "Wahoo";
   readonly webhookScope = "app" as const;
-  readonly requiresWorkerForWebhookSync = true;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {

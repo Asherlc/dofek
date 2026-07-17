@@ -8,10 +8,6 @@ vi.mock("../auth/session.ts", () => ({
   validateSession: vi.fn(() => Promise.resolve(null)),
 }));
 
-vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: vi.fn(),
-}));
-
 vi.mock("../logger.ts", () => ({
   logger: { error: vi.fn(), warn: vi.fn() },
 }));

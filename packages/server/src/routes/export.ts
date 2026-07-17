@@ -8,7 +8,6 @@ import { Router } from "express";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
-import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 /**
@@ -69,14 +68,12 @@ interface ExportRouterDeps {
   db: import("dofek/db").Database;
   exportQueue: Pick<Queue<ExportJobData>, "add">;
   createSignedDownloadUrl?: SignedDownloadUrlFactory;
-  startExportWorker?: () => void;
 }
 
 export function createExportRouter({
   createSignedDownloadUrl = defaultCreateSignedDownloadUrl,
   db,
   exportQueue,
-  startExportWorker = startWorker,
 }: ExportRouterDeps): Router {
   const router = Router();
 
@@ -144,8 +141,6 @@ export function createExportRouter({
       userId: session.userId,
       outputPath,
     });
-
-    startExportWorker();
 
     res.json({ status: "queued", exportId });
   });

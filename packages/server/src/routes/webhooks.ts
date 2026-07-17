@@ -156,17 +156,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
 
       // Resolve external owner IDs → internal user+provider and process events
       // `processed` counts all successfully handled events (targeted or fallback) and is used for log summary.
-      // `fallbackJobsEnqueued` counts only events that fell back to full BullMQ sync,
-      // which determines whether the worker container needs to be started.
       let processed = 0;
-      let fallbackJobsEnqueued = 0;
-      let workerStartPromise: Promise<void> | undefined;
-      const startWorkerOnce = (): Promise<void> => {
-        workerStartPromise ??= import("../lib/start-worker.ts").then(({ startWorker }) =>
-          startWorker(),
-        );
-        return workerStartPromise;
-      };
 
       for (const event of events) {
         try {
@@ -200,9 +190,6 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
           const syncWebhookEvent = provider.syncWebhookEvent;
           if (syncWebhookEvent) {
             try {
-              if (provider.requiresWorkerForWebhookSync) {
-                await startWorkerOnce();
-              }
               const result = await runWithTokenUser(user_id, () =>
                 syncWebhookEvent(db, event, { userId: user_id }),
               );
@@ -227,7 +214,6 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
             userId: user_id,
           });
           processed++;
-          fallbackJobsEnqueued++;
 
           logger.info(
             `[webhook] ${providerName}: enqueued full sync for user ${user_id} (${event.eventType} ${event.objectType})`,
@@ -236,16 +222,6 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
           logger.error(
             `[webhook] ${providerName}: failed to process event for ${event.ownerExternalId}: ${err}`,
           );
-        }
-      }
-
-      // Spin up the worker container if fallback sync jobs were enqueued
-      if (fallbackJobsEnqueued > 0 && !workerStartPromise) {
-        try {
-          await startWorkerOnce();
-        } catch (err) {
-          captureException(err);
-          logger.warn(`[webhook] Failed to start worker: ${err}`);
         }
       }
 

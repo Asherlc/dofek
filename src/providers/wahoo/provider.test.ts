@@ -6,12 +6,6 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { WAHOO_API_BASE } from "./client.ts";
 import { WahooProvider, wahooOAuthConfig } from "./provider.ts";
 
-describe("WahooProvider", () => {
-  it("requires the worker for webhook sync", () => {
-    expect(new WahooProvider().requiresWorkerForWebhookSync).toBe(true);
-  });
-});
-
 describe("wahooOAuthConfig", () => {
   const originalEnv = { ...process.env };
 

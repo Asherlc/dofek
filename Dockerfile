@@ -108,12 +108,7 @@ FROM base AS server
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Docker CLI for worker container management (startWorker)
-RUN apk add --no-cache curl ca-certificates libbz2 libstdc++ && \
-    ARCH=$(uname -m) && \
-    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-29.5.3.tgz" | \
-      tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
-    apk del curl
+RUN apk add --no-cache ca-certificates libbz2 libstdc++
 COPY --from=dbt-tools /usr/local/bin/python3.13 /usr/local/bin/python3.13
 COPY --from=dbt-tools /usr/local/bin/dbt /usr/local/bin/dbt
 COPY --from=dbt-tools /usr/local/bin/sqlfluff /usr/local/bin/sqlfluff

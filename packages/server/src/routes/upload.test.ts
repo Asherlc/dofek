@@ -68,7 +68,7 @@ function mockQueue() {
   };
 }
 
-function createTestApp(startWorker: () => Promise<void> = async () => undefined) {
+function createTestApp() {
   const queue = mockQueue();
   const fakeDb = {} satisfies import("dofek/db").Database;
   const app = express();
@@ -77,7 +77,6 @@ function createTestApp(startWorker: () => Promise<void> = async () => undefined)
     createUploadRouter({
       importQueue: queue,
       db: fakeDb,
-      startWorker,
     }),
   );
   return { app, queue };
@@ -413,19 +412,6 @@ describe("createUploadRouter", () => {
         body: Buffer.from("data"),
       });
       expect(res.status).toBe(500);
-    });
-
-    it("returns 500 when the import worker fails to start", async () => {
-      const startWorker = vi.fn().mockRejectedValueOnce(new Error("worker unavailable"));
-      const { app, queue } = createTestApp(startWorker);
-      const res = await request(app, "post", "/api/upload/apple-health", {
-        headers: { "Content-Type": "application/zip" },
-        body: Buffer.from("data"),
-      });
-
-      expect(res.status).toBe(500);
-      expect(startWorker).toHaveBeenCalledOnce();
-      expect(queue.add).not.toHaveBeenCalled();
     });
   });
 
@@ -1381,6 +1367,17 @@ describe("createUploadRouter", () => {
   });
 
   describe("POST /api/upload/garmin-dump", () => {
+    it("queues the import without orchestrating a worker container", async () => {
+      const { app, queue } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(queue.add).toHaveBeenCalledOnce();
+    });
+
     it("accepts zip upload with a bounded stream size", async () => {
       const { app, queue } = createTestApp();
       const res = await request(app, "post", "/api/upload/garmin-dump", {
