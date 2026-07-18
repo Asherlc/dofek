@@ -13832,9 +13832,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   29655480888](https://github.com/Asherlc/dofek/actions/runs/29655480888), unit
   and mutation jobs first failed because database doubles returned no rows for
   the new batched lookup, while all four integration shards returned `Invalid
-  UUID` from the generation row parser. Locally, the Docker VM overlay reached
-  100% utilization and PostgreSQL emitted `No space left on device`; the current
-  workspace database contained about 160 disposable
+  UUID` from the generation row parser. In [GitHub Actions run
+  29657088198](https://github.com/Asherlc/dofek/actions/runs/29657088198), Stryker
+  shard 4 then reported 19 uncovered mutants in the periodic outbox dispatcher.
+  Locally, the Docker VM overlay reached 100% utilization and PostgreSQL emitted
+  `No space left on device`; the current workspace database contained about 160 disposable
   `dofek_integration_template_*` and `test_*` databases from integration runs.
 - **Root cause:** Tests had not been updated for the corrected scalar subqueries
   or projection-aware ClickHouse mutation semantics. Existing unit database
@@ -13842,22 +13844,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   database row parser used strict `z.uuid()` validation for the UUID-shaped
   integration fixture ID instead of the project's GUID-compatible boundary;
   Zod documents `z.guid()` for UUID-like identifiers that do not enforce RFC
-  variant bits ([Zod UUID documentation](https://zod.dev/api#uuids)). Separately,
-  completed integration runs left disposable template databases in the shared
-  Docker VM until its filesystem was exhausted.
+  variant bits ([Zod UUID documentation](https://zod.dev/api#uuids)). The outbox
+  tests covered one-shot dispatch but not the periodic dispatcher's interval,
+  overlap, recovery, and close lifecycle. Separately, completed integration runs
+  left disposable template databases in the shared Docker VM until its
+  filesystem was exhausted.
 - **Fix / mitigation:** Updated the SQL expectations, changed ClickHouse test
   cleanup to synchronous `ALTER TABLE ... DELETE` mutations, added a shared
   generation resolver for database doubles, and aligned the database row parser
-  with `z.guid()`. Dropped only the current workspace's disposable test/template
-  databases. The `health` database, running containers, and all named volumes
-  were preserved. Docker's official guidance distinguishes pruning rebuildable
-  caches and unused objects from explicit volume removal
+  with `z.guid()`. Added lifecycle tests for immediate and interval dispatch,
+  overlap suppression, error reporting and recovery, and shutdown fencing.
+  Dropped only the current workspace's disposable test/template databases. The
+  `health` database, running containers, and all named volumes were preserved.
+  Docker's official guidance distinguishes pruning rebuildable caches and unused objects from explicit volume removal
   ([Docker pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/)).
-- **Validation:** The full unit suite passes with 11,855 tests, the 19 provider
+- **Validation:** The full unit suite passes with 11,859 tests, the 19 provider
   integration files that failed in CI pass all 293 tests, and the focused 12
   PostgreSQL/ClickHouse deletion tests pass. The affected mutation shard's
   instrumented dry run passes 2,904 selected tests and kills all 11 covered
-  mutants for a 100% mutation score.
+  mutants for a 100% mutation score. The outbox dispatcher test file passes all
+  5 tests, and its exact CI mutation shard kills all 21 mutants for a 100% score.
 - **Remaining risk / follow-up:** The shared Docker VM has limited free space,
   so a non-sharded local full suite may still exceed capacity. Add deterministic
   integration-template cleanup and a Docker disk preflight to the testing
