@@ -1,5 +1,8 @@
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
-import { METRIC_STREAM_TABLE } from "./clickhouse-table.ts";
+import {
+  METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
+  METRIC_STREAM_TABLE,
+} from "./clickhouse-table.ts";
 import {
   isMetricStreamDeletedEvent,
   type MetricStreamDeleteScope,
@@ -99,38 +102,70 @@ export async function insertMetricStreamEventsIntoClickHouse(
   return rows.length;
 }
 
+interface ClickHouseDeleteScopeColumnExpressions {
+  activityId: string;
+  channel: string;
+  externalId: string;
+  providerId: string;
+  recordedAt: string;
+  userId: string;
+}
+
+const candidateDeleteScopeColumns = {
+  activityId: "candidate_row.activity_id",
+  channel: "candidate_row.channel",
+  externalId: "candidate_row.external_id",
+  providerId: "candidate_row.provider_id",
+  recordedAt: "candidate_row.recorded_at",
+  userId: "candidate_row.user_id",
+} satisfies ClickHouseDeleteScopeColumnExpressions;
+
+const latestDeleteScopeColumns = {
+  activityId: "latest_row.1",
+  channel: "latest_row.4",
+  externalId: "latest_row.6",
+  providerId: "latest_row.5",
+  recordedAt: "latest_row.3",
+  userId: "latest_row.2",
+} satisfies ClickHouseDeleteScopeColumnExpressions;
+
 function clickHouseDeleteScopeConditions(
   scope: MetricStreamDeleteScope,
   queryParams: Record<string, unknown>,
+  columns: ClickHouseDeleteScopeColumnExpressions,
 ): string[] {
   const conditions: string[] = [];
   if (scope.userId) {
     queryParams.user_id = scope.userId;
-    conditions.push("toString(user_id) = {user_id:String}");
+    conditions.push(`${columns.userId} = {user_id:UUID}`);
   }
   if (scope.providerId) {
     queryParams.provider_id = scope.providerId;
-    conditions.push("provider_id = {provider_id:String}");
+    conditions.push(`${columns.providerId} = {provider_id:String}`);
   }
-  if (scope.externalId !== undefined) {
+  if (scope.externalId === null) {
+    conditions.push(`${columns.externalId} IS NULL`);
+  } else if (scope.externalId !== undefined) {
     queryParams.external_id = scope.externalId;
-    conditions.push("external_id = {external_id:String}");
+    conditions.push(`${columns.externalId} = {external_id:String}`);
   }
   if (scope.channel) {
     queryParams.channel = scope.channel;
-    conditions.push("channel = {channel:String}");
+    conditions.push(`${columns.channel} = {channel:String}`);
   }
   if (scope.activityId) {
     queryParams.activity_id = scope.activityId;
-    conditions.push("toString(activity_id) = {activity_id:String}");
+    conditions.push(`${columns.activityId} = {activity_id:UUID}`);
   }
   if (scope.recordedAtStart) {
     queryParams.recorded_at_start = scope.recordedAtStart;
-    conditions.push("recorded_at >= parseDateTime64BestEffort({recorded_at_start:String})");
+    conditions.push(
+      `${columns.recordedAt} >= parseDateTime64BestEffort({recorded_at_start:String})`,
+    );
   }
   if (scope.recordedAtEnd) {
     queryParams.recorded_at_end = scope.recordedAtEnd;
-    conditions.push("recorded_at < parseDateTime64BestEffort({recorded_at_end:String})");
+    conditions.push(`${columns.recordedAt} < parseDateTime64BestEffort({recorded_at_end:String})`);
   }
   if (conditions.length === 0) {
     throw new Error("Metric stream delete scope produced no ClickHouse conditions");
@@ -141,38 +176,85 @@ function clickHouseDeleteScopeConditions(
 export async function markMetricStreamScopeDeletedInClickHouse(
   client: ClickHouseMetricStreamInsertClient,
   scope: MetricStreamDeleteScope,
+  eventId?: string,
 ): Promise<void> {
   if (!client.command) {
-    throw new Error("ClickHouse metric-stream replacement requires a command-capable client");
+    throw new Error("ClickHouse metric-stream deletion requires a command-capable client");
   }
   const queryParams: Record<string, unknown> = {
     delete_version: Date.now(),
   };
-  const conditions = clickHouseDeleteScopeConditions(scope, queryParams);
+  const candidateConditions = clickHouseDeleteScopeConditions(
+    scope,
+    queryParams,
+    candidateDeleteScopeColumns,
+  );
+  const latestConditions = clickHouseDeleteScopeConditions(
+    scope,
+    queryParams,
+    latestDeleteScopeColumns,
+  );
   await client.command({
     query: `INSERT INTO ${METRIC_STREAM_TABLE}
       SELECT
         id,
-        activity_id,
-        user_id,
-        recorded_at,
-        channel,
-        provider_id,
-        external_id,
-        device_id,
-        source_type,
-        scalar,
-        vector,
-        point,
-        metadata,
+        latest_row.1 AS activity_id,
+        latest_row.2 AS user_id,
+        latest_row.3 AS recorded_at,
+        latest_row.4 AS channel,
+        latest_row.5 AS provider_id,
+        latest_row.6 AS external_id,
+        latest_row.7 AS device_id,
+        latest_row.8 AS source_type,
+        latest_row.9 AS scalar,
+        latest_row.10 AS vector,
+        latest_row.11 AS point,
+        latest_row.12 AS metadata,
         now64(9) AS ingested_at,
         1 AS is_deleted,
-        greatest(version + 1, {delete_version:Int64}) AS version
-      FROM ${METRIC_STREAM_TABLE} FINAL
-      WHERE is_deleted = 0
-        AND ${conditions.join(" AND ")}`,
+        greatest(latest_row.14 + 1, {delete_version:Int64}) AS version
+      FROM (
+        SELECT
+          metric_stream_row.id AS id,
+          argMax(
+            tuple(
+              metric_stream_row.activity_id,
+              metric_stream_row.user_id,
+              metric_stream_row.recorded_at,
+              metric_stream_row.channel,
+              metric_stream_row.provider_id,
+              metric_stream_row.external_id,
+              metric_stream_row.device_id,
+              metric_stream_row.source_type,
+              metric_stream_row.scalar,
+              metric_stream_row.vector,
+              metric_stream_row.point,
+              metric_stream_row.metadata,
+              metric_stream_row.is_deleted,
+              metric_stream_row.version
+            ),
+            tuple(metric_stream_row.version, metric_stream_row.ingested_at)
+          ) AS latest_row
+        FROM ${METRIC_STREAM_TABLE} AS metric_stream_row
+        WHERE metric_stream_row.id IN (
+          SELECT candidate_row.id
+          FROM ${METRIC_STREAM_TABLE} AS candidate_row
+          WHERE ${candidateConditions.join(" AND ")}
+          GROUP BY candidate_row.id
+        )
+        GROUP BY metric_stream_row.id
+      )
+      WHERE latest_row.13 = 0
+        AND ${latestConditions.join(" AND ")}`,
     query_params: queryParams,
   });
+  if (eventId) {
+    await client.command({
+      query: `INSERT INTO ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (event_id)
+        VALUES ({event_id:UUID})`,
+      query_params: { event_id: eventId },
+    });
+  }
 }
 
 export async function applyMetricStreamEventsToClickHouse(
@@ -190,7 +272,11 @@ export async function applyMetricStreamEventsToClickHouse(
   for (const event of events) {
     if (isMetricStreamDeletedEvent(event)) {
       await flushRows();
-      await markMetricStreamScopeDeletedInClickHouse(client, event.scope);
+      await markMetricStreamScopeDeletedInClickHouse(
+        client,
+        event.scope,
+        "eventId" in event ? event.eventId : undefined,
+      );
       continue;
     }
     rowBuffer.push(event);

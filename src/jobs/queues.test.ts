@@ -630,7 +630,12 @@ describe("queues", () => {
         await import("./queues.ts");
       const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
 
-      await enqueueProviderDeleteAnalyticsRefresh("user-123", "strava", queue);
+      await enqueueProviderDeleteAnalyticsRefresh(
+        "user-123",
+        "strava",
+        "30000000-0000-4000-8000-000000000001",
+        queue,
+      );
 
       expect(mockQueueAdd).toHaveBeenCalledWith(
         "provider-delete-analytics-refresh",
@@ -638,6 +643,7 @@ describe("queues", () => {
           type: "provider-delete-analytics-refresh",
           userId: "user-123",
           providerId: "strava",
+          metricStreamDeleteEventId: "30000000-0000-4000-8000-000000000001",
         },
         {
           removeOnComplete: true,

@@ -6,7 +6,11 @@ import {
   markMetricStreamScopeDeletedInClickHouse,
 } from "./clickhouse-sink.ts";
 import { METRIC_STREAM_TABLE } from "./clickhouse-table.ts";
-import { createMetricStreamDeletedEvent, type MetricStreamEventV1 } from "./events.ts";
+import {
+  createMetricStreamDeletedEvent,
+  type MetricStreamDeletedEventV1,
+  type MetricStreamEventV1,
+} from "./events.ts";
 import type { RunMetricStreamEventConsumerOptions } from "./redpanda-consumer.ts";
 
 const heartRateEvent = {
@@ -135,19 +139,40 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
 });
 
 describe("applyMetricStreamEventsToClickHouse", () => {
+  it("replays archived v1 deletes without a v2 acknowledgement", async () => {
+    const command = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => undefined);
+    const archivedDeleteEvent = {
+      version: 1,
+      eventType: "metric_stream_deleted",
+      scope: { activityId: "20000000-0000-4000-8000-000000000001" },
+      partitionKey: "activity:20000000-0000-4000-8000-000000000001",
+    } satisfies MetricStreamDeletedEventV1;
+
+    const applied = await applyMetricStreamEventsToClickHouse({ command, insert }, [
+      archivedDeleteEvent,
+    ]);
+
+    expect(applied).toBe(0);
+    expect(command).toHaveBeenCalledTimes(1);
+    expect(firstCommandQuery(command)).toContain(`INSERT INTO ${METRIC_STREAM_TABLE}`);
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("marks matching ClickHouse rows deleted before inserting replacement rows", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
+    const deleteEvent = createMetricStreamDeletedEvent({
+      activityId: "20000000-0000-4000-8000-000000000001",
+    });
 
     const applied = await applyMetricStreamEventsToClickHouse({ command, insert }, [
-      createMetricStreamDeletedEvent({
-        activityId: "20000000-0000-4000-8000-000000000001",
-      }),
+      deleteEvent,
       { ...heartRateEvent, activityId: "20000000-0000-4000-8000-000000000001" },
     ]);
 
     expect(applied).toBe(1);
-    expect(command).toHaveBeenCalledWith({
+    expect(command).toHaveBeenNthCalledWith(1, {
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
         delete_version: expect.any(Number),
@@ -156,8 +181,13 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     });
     expect(String(firstCommandQuery(command))).toContain("1 AS is_deleted");
     expect(String(firstCommandQuery(command))).toContain(
-      "toString(activity_id) = {activity_id:String}",
+      "candidate_row.activity_id = {activity_id:UUID}",
     );
+    expect(String(firstCommandQuery(command))).toContain("latest_row.1 = {activity_id:UUID}");
+    expect(command).toHaveBeenNthCalledWith(2, {
+      query: expect.stringContaining("ingest.metric_stream_delete_acknowledgement"),
+      query_params: { event_id: deleteEvent.eventId },
+    });
     expect(insert).toHaveBeenCalledWith({
       table: METRIC_STREAM_TABLE,
       values: [expect.objectContaining({ id: heartRateEvent.id })],
@@ -197,7 +227,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       format: "JSONEachRow",
       clickhouse_settings: { date_time_input_format: "best_effort" },
     });
-    expect(command).toHaveBeenCalledOnce();
+    expect(command).toHaveBeenCalledTimes(2);
   });
 
   it("renders every supported replacement scope predicate into the tombstone insert", async () => {
@@ -223,7 +253,6 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         delete_version: expect.any(Number),
         user_id: "10000000-0000-4000-8000-000000000001",
         provider_id: "fitbit",
-        external_id: null,
         channel: "body_weight",
         activity_id: "20000000-0000-4000-8000-000000000001",
         recorded_at_start: "2026-03-01T00:00:00.000Z",
@@ -231,13 +260,47 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       },
     });
     const query = firstCommandQuery(command);
-    expect(query).toContain("toString(user_id) = {user_id:String}");
-    expect(query).toContain("provider_id = {provider_id:String}");
-    expect(query).toContain("external_id = {external_id:String}");
-    expect(query).toContain("channel = {channel:String}");
-    expect(query).toContain("toString(activity_id) = {activity_id:String}");
-    expect(query).toContain("recorded_at >= parseDateTime64BestEffort({recorded_at_start:String})");
-    expect(query).toContain("recorded_at < parseDateTime64BestEffort({recorded_at_end:String})");
+    expect(query).toContain("candidate_row.user_id = {user_id:UUID}");
+    expect(query).toContain("candidate_row.provider_id = {provider_id:String}");
+    expect(query).toContain("candidate_row.external_id IS NULL");
+    expect(query).toContain("candidate_row.channel = {channel:String}");
+    expect(query).toContain("candidate_row.activity_id = {activity_id:UUID}");
+    expect(query).toContain(
+      "candidate_row.recorded_at >= parseDateTime64BestEffort({recorded_at_start:String})",
+    );
+    expect(query).toContain(
+      "candidate_row.recorded_at < parseDateTime64BestEffort({recorded_at_end:String})",
+    );
+    expect(query).toContain("latest_row.2 = {user_id:UUID}");
+    expect(query).toContain("latest_row.5 = {provider_id:String}");
+    expect(query).toContain("latest_row.6 IS NULL");
+    expect(query).toContain("latest_row.4 = {channel:String}");
+    expect(query).toContain("latest_row.1 = {activity_id:UUID}");
+    expect(query).toContain(
+      "latest_row.3 >= parseDateTime64BestEffort({recorded_at_start:String})",
+    );
+    expect(query).toContain("latest_row.3 < parseDateTime64BestEffort({recorded_at_end:String})");
+  });
+
+  it("binds non-null external IDs in replacement scopes", async () => {
+    const command = vi.fn(async () => undefined);
+
+    await applyMetricStreamEventsToClickHouse({ command, insert: vi.fn(async () => undefined) }, [
+      createMetricStreamDeletedEvent({
+        providerId: "fitbit",
+        externalId: "measurement-1",
+      }),
+    ]);
+
+    expect(command).toHaveBeenCalledWith({
+      query: expect.stringContaining("candidate_row.external_id = {external_id:String}"),
+      query_params: {
+        delete_version: expect.any(Number),
+        provider_id: "fitbit",
+        external_id: "measurement-1",
+      },
+    });
+    expect(firstCommandQuery(command)).toContain("latest_row.6 = {external_id:String}");
   });
 
   it("rejects replacement delete scopes that produce no ClickHouse conditions", async () => {
@@ -256,7 +319,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
           activityId: "20000000-0000-4000-8000-000000000001",
         }),
       ]),
-    ).rejects.toThrow("ClickHouse metric-stream replacement requires a command-capable client");
+    ).rejects.toThrow("ClickHouse metric-stream deletion requires a command-capable client");
   });
 });
 

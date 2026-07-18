@@ -94,6 +94,11 @@ interface ReplacementCapableMetricStreamPublisher extends MetricStreamEventPubli
   ): Promise<MetricStreamReplacementPublishResult>;
 }
 
+export interface MetricStreamReplacementReceipt {
+  deletedEventId: string;
+  rowCount: number;
+}
+
 function hasReplacementPublisher(
   publisher: MetricStreamEventPublisher,
 ): publisher is ReplacementCapableMetricStreamPublisher {
@@ -217,7 +222,7 @@ export async function replaceMetricStreamBatch(
   metricRows: MetricStreamSourceRow[],
   sourceType: string,
   publisher?: MetricStreamEventPublisher,
-): Promise<number> {
+): Promise<MetricStreamReplacementReceipt> {
   const rows = metricRows.flatMap((row) => sourceRowToMetricStream(row, sourceType));
   const rowWithoutExternalId = rows.find((row) => !hasExternalId(row.externalId));
   if (rowWithoutExternalId) {
@@ -228,5 +233,8 @@ export async function replaceMetricStreamBatch(
     publisher ?? (await getDefaultMetricStreamEventPublisher()),
   );
   const result = await resolvedPublisher.replaceRows(scope, rows.map(toPublishRow));
-  return result.rows.length;
+  return {
+    deletedEventId: result.deleted.eventId,
+    rowCount: result.rows.length,
+  };
 }

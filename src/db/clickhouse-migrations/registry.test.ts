@@ -23,10 +23,11 @@ describe("clickHouseMigrations", () => {
       ),
     );
     expect(migrations.at(-1)).toMatchObject({
-      id: "0044_materialize_body_measurement_view",
+      id: "0045_metric_stream_delete_acknowledgement",
       statements: expect.arrayContaining([
-        "DROP VIEW IF EXISTS analytics.v_body_measurement",
-        "DROP TABLE IF EXISTS analytics.v_body_measurement",
+        expect.stringContaining(
+          "CREATE TABLE IF NOT EXISTS ingest.metric_stream_delete_acknowledgement",
+        ),
       ]),
     });
   });

@@ -1,5 +1,6 @@
 export const INGEST_DATABASE = "ingest";
 export const METRIC_STREAM_TABLE = `${INGEST_DATABASE}.metric_stream`;
+export const METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE = `${INGEST_DATABASE}.metric_stream_delete_acknowledgement`;
 export const LEGACY_METRIC_STREAM_TABLE = "postgres_fitness.metric_stream";
 export const METRIC_STREAM_ORDER_BY = "(user_id, activity_id, channel, recorded_at, id)";
 
@@ -31,4 +32,13 @@ export function buildIngestMetricStreamCreateTableSql(): string {
 ${metricStreamIngestMetadataColumnDefinitions}
 )
 ${metricStreamReplacingMergeTreeEngine()}`;
+}
+
+export function buildMetricStreamDeleteAcknowledgementTableSql(): string {
+  return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (
+  event_id UUID,
+  applied_at DateTime64(9) DEFAULT now64(9)
+)
+ENGINE = ReplacingMergeTree(applied_at)
+ORDER BY event_id`;
 }

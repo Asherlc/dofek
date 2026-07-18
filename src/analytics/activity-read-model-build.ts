@@ -1,5 +1,7 @@
 import { type SpawnOptions, spawn } from "node:child_process";
+import { z } from "zod";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
+import { METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE } from "../metric-stream/clickhouse-table.ts";
 
 export const ACTIVITY_DELETE_DBT_SELECT = "activity_source_records+";
 
@@ -29,6 +31,10 @@ export interface WaitForPeerDbActivityDeletesOptions {
   timeoutMs?: number;
   pollIntervalMs?: number;
 }
+
+const metricStreamDeleteAcknowledgementCountRowsSchema = z.array(
+  z.object({ acknowledgement_count: z.coerce.number().int().nonnegative() }),
+);
 
 export async function countActivePeerDbActivities(
   client: ClickHouseClient,
@@ -115,28 +121,24 @@ export async function waitForPeerDbActivityRestores(
   );
 }
 
-export async function countActiveProviderMetricStreamRows(
+async function countMetricStreamDeleteAcknowledgements(
   client: ClickHouseClient,
-  userId: string,
-  providerId: string,
+  eventId: string,
 ): Promise<number> {
-  const rows = await client.query<{ active_count: string | number }>({
-    query: `SELECT count() AS active_count
-      FROM ingest.metric_stream FINAL
-      WHERE user_id = {userId:UUID}
-        AND provider_id = {providerId:String}
-        AND is_deleted = 0`,
+  const result = await client.query({
+    query: `SELECT count() AS acknowledgement_count
+      FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE}
+      WHERE event_id = {eventId:UUID}`,
     format: "JSONEachRow",
-    query_params: { userId, providerId },
+    query_params: { eventId },
   });
-  const row = (await rows.json())[0];
-  return Number(row?.active_count ?? 0);
+  const rows = metricStreamDeleteAcknowledgementCountRowsSchema.parse(await result.json());
+  return rows[0]?.acknowledgement_count ?? 0;
 }
 
-export async function waitForMetricStreamProviderDeletes(
+export async function waitForMetricStreamDeleteAcknowledgement(
   client: ClickHouseClient,
-  userId: string,
-  providerId: string,
+  eventId: string,
   options: WaitForPeerDbActivityDeletesOptions = {},
 ): Promise<void> {
   const timeoutMs = options.timeoutMs ?? 120_000;
@@ -144,13 +146,13 @@ export async function waitForMetricStreamProviderDeletes(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const activeCount = await countActiveProviderMetricStreamRows(client, userId, providerId);
-    if (activeCount === 0) return;
+    const acknowledgementCount = await countMetricStreamDeleteAcknowledgements(client, eventId);
+    if (acknowledgementCount > 0) return;
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
 
   throw new Error(
-    `Timed out waiting for ClickHouse to reflect metric-stream deletion for provider ${providerId}`,
+    `Timed out waiting for ClickHouse to acknowledge metric-stream deletion event ${eventId}`,
   );
 }
 

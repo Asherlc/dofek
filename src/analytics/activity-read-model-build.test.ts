@@ -8,12 +8,11 @@ import {
   type ActivityReadModelSpawner,
   countActivePeerDbActivities,
   countActivePeerDbProviderRows,
-  countActiveProviderMetricStreamRows,
   countProviderAbsentPeerDbActivities,
   runActivityReadModelBuild,
   runProviderDeleteReadModelBuild,
   type SpawnedProcess,
-  waitForMetricStreamProviderDeletes,
+  waitForMetricStreamDeleteAcknowledgement,
   waitForPeerDbActivityDeletes,
   waitForPeerDbActivityRestores,
   waitForPeerDbProviderDeletes,
@@ -258,14 +257,14 @@ describe("activity-read-model-build", () => {
     );
   });
 
-  it("waits until provider metric-stream tombstones are visible in ClickHouse", async () => {
+  it("waits until the metric-stream delete event is acknowledged by the ClickHouse sink", async () => {
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 2 }]) })
-      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 0 }]) });
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ acknowledgement_count: 0 }]) })
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ acknowledgement_count: 1 }]) });
     const client = createMockClickHouseClient(query);
 
-    await waitForMetricStreamProviderDeletes(client, "user-1", "strava", {
+    await waitForMetricStreamDeleteAcknowledgement(client, "30000000-0000-4000-8000-000000000001", {
       pollIntervalMs: 0,
       timeoutMs: 100,
     });
@@ -273,17 +272,39 @@ describe("activity-read-model-build", () => {
     expect(query).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
-        query_params: { userId: "user-1", providerId: "strava" },
+        query_params: { eventId: "30000000-0000-4000-8000-000000000001" },
       }),
     );
   });
 
-  it("returns zero when the provider metric-stream count query returns no rows", async () => {
+  it("treats a missing metric-stream acknowledgement row as zero", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([]) })
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ acknowledgement_count: 1 }]) });
+    const client = createMockClickHouseClient(query);
+
+    await waitForMetricStreamDeleteAcknowledgement(client, "event-1", {
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+    });
+
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects malformed metric-stream acknowledgement counts", async () => {
     const client = createMockClickHouseClient(
-      vi.fn().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) }),
+      vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue([{ acknowledgement_count: "invalid" }]),
+      }),
     );
 
-    await expect(countActiveProviderMetricStreamRows(client, "user-1", "strava")).resolves.toBe(0);
+    await expect(
+      waitForMetricStreamDeleteAcknowledgement(client, "event-1", {
+        pollIntervalMs: 0,
+        timeoutMs: 100,
+      }),
+    ).rejects.toThrow("acknowledgement_count");
   });
 
   it("honors the metric-stream deletion timeout boundary", async () => {
@@ -292,7 +313,7 @@ describe("activity-read-model-build", () => {
     vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(10);
 
     await expect(
-      waitForMetricStreamProviderDeletes(client, "user-1", "strava", {
+      waitForMetricStreamDeleteAcknowledgement(client, "event-1", {
         pollIntervalMs: 0,
         timeoutMs: 10,
       }),
@@ -304,11 +325,11 @@ describe("activity-read-model-build", () => {
     vi.useFakeTimers();
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 1 }]) })
-      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 0 }]) });
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ acknowledgement_count: 0 }]) })
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ acknowledgement_count: 1 }]) });
     const client = createMockClickHouseClient(query);
 
-    const waitPromise = waitForMetricStreamProviderDeletes(client, "user-1", "strava", {
+    const waitPromise = waitForMetricStreamDeleteAcknowledgement(client, "event-1", {
       pollIntervalMs: 25,
       timeoutMs: 100,
     });
