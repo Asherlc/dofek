@@ -31,7 +31,9 @@ describe("HeartRateRepository (integration)", () => {
       await client.command({ query: statement });
     }
     await client.command({
-      query: "DELETE FROM ingest.metric_stream WHERE user_id = {userId:UUID}",
+      query: `ALTER TABLE ingest.metric_stream
+        DELETE WHERE user_id = {userId:UUID}
+        SETTINGS mutations_sync = 1`,
       query_params: { userId: testUserId },
     });
 
@@ -127,7 +129,9 @@ describe("HeartRateRepository (integration)", () => {
 
   afterAll(async () => {
     await client.command({
-      query: "DELETE FROM ingest.metric_stream WHERE user_id = {userId:UUID}",
+      query: `ALTER TABLE ingest.metric_stream
+        DELETE WHERE user_id = {userId:UUID}
+        SETTINGS mutations_sync = 1`,
       query_params: { userId: testUserId },
     });
     await client.close?.();
