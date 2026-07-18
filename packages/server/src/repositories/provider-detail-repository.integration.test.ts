@@ -55,7 +55,9 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
       await client.command({ query: statement });
     }
     await client.command({
-      query: "DELETE FROM ingest.metric_stream WHERE user_id = {userId:UUID}",
+      query: `ALTER TABLE ingest.metric_stream
+        DELETE WHERE user_id = {userId:UUID}
+        SETTINGS mutations_sync = 1`,
       query_params: { userId: testUserId },
     });
     await seed([
@@ -120,7 +122,9 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
 
   afterAll(async () => {
     await client.command({
-      query: "DELETE FROM ingest.metric_stream WHERE user_id = {userId:UUID}",
+      query: `ALTER TABLE ingest.metric_stream
+        DELETE WHERE user_id = {userId:UUID}
+        SETTINGS mutations_sync = 1`,
       query_params: { userId: testUserId },
     });
     await client.close?.();
@@ -168,7 +172,7 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
 });
 
 describe("ProviderDetailRepository provider data deletion (integration)", () => {
-  const userId = "00000000-0000-0000-0000-0000000000b3";
+  const userId = "00000000-0000-4000-8000-0000000000b3";
   const providerId = "provider-delete-integration";
   let testContext: TestContext;
 
@@ -211,7 +215,13 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
   it("deletes provider records and preserves the provider connection token", async () => {
     const repository = new ProviderDetailRepository(testContext.db, userId);
 
-    await repository.deleteAllProviderRecords(providerId);
+    const request = await repository.requestProviderDataDeletion(providerId);
+
+    expect(request).toMatchObject({
+      generation: 1,
+      providerId,
+      userId,
+    });
 
     const countSchema = z.object({ count: z.coerce.number() });
     const [activityCount] = await executeWithSchema(
@@ -236,5 +246,31 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
     expect(activityCount?.count).toBe(0);
     expect(dailyMetricsCount?.count).toBe(0);
     expect(tokenCount?.count).toBe(1);
+  });
+
+  it("fails with the missing-table error before writing another outbox event", async () => {
+    await testContext.db.execute(
+      sql`ALTER TABLE fitness.daily_metrics RENAME TO daily_metrics_unavailable`,
+    );
+    try {
+      const repository = new ProviderDetailRepository(testContext.db, userId);
+
+      await expect(repository.requestProviderDataDeletion(providerId)).rejects.toMatchObject({
+        cause: { code: "42P01" },
+      });
+
+      const [outboxCount] = await executeWithSchema(
+        testContext.db,
+        z.object({ count: z.coerce.number() }),
+        sql`SELECT count(*) AS count
+            FROM fitness.provider_data_deletion_outbox
+            WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+      );
+      expect(outboxCount?.count).toBe(1);
+    } finally {
+      await testContext.db.execute(
+        sql`ALTER TABLE fitness.daily_metrics_unavailable RENAME TO daily_metrics`,
+      );
+    }
   });
 });

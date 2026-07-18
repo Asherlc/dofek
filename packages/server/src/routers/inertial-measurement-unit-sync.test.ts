@@ -2,6 +2,13 @@ import * as Sentry from "@sentry/node";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 const { mockSpan, mockStartActiveSpan } = vi.hoisted(() => {
   const span = {
     end: vi.fn(),
@@ -122,7 +129,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       nowSpy.mockRestore();
 
       expect(result.inserted).toBe(2);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
       expect(mockStartActiveSpan).toHaveBeenCalledWith(
         "imu.pushSamples",
@@ -350,7 +357,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(7500);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(3);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(2);
       expect(metricStreamPublisher.publishRows.mock.calls[0]?.[0]).toHaveLength(5000);
       expect(metricStreamPublisher.publishRows.mock.calls[1]?.[0]).toHaveLength(2500);
@@ -378,7 +385,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(metricStreamPublisher)).toContainEqual(
         expect.objectContaining({
           channel: "imu",
@@ -412,7 +419,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(2);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
       const publishedRows = getPublishedRows(metricStreamPublisher);
       expect(publishedRows).toEqual(
         expect.arrayContaining([

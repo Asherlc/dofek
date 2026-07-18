@@ -1,22 +1,50 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportJobData } from "./queues.ts";
 
-const mockQueueAdd = vi.fn();
-const mockQueueClose = vi.fn().mockResolvedValue(undefined);
-const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd, close: mockQueueClose };
-const MockQueue = vi.fn(() => mockQueueInstance);
-const mockFlowProducerClose = vi.fn().mockResolvedValue(undefined);
-const mockFlowProducerInstance = { name: "mock-flow-producer", close: mockFlowProducerClose };
-const MockFlowProducer = vi.fn(() => mockFlowProducerInstance);
-const mockQueueEventsClose = vi.fn().mockResolvedValue(undefined);
-const mockQueueEventsInstance = { name: "mock-queue-events", close: mockQueueEventsClose };
-const MockQueueEvents = vi.fn(() => mockQueueEventsInstance);
+const {
+  mockQueueAdd,
+  mockQueueClose,
+  MockQueue,
+  mockFlowProducerClose,
+  MockFlowProducer,
+  mockQueueEventsClose,
+  MockQueueEvents,
+} = vi.hoisted(() => {
+  const mockQueueAdd = vi.fn();
+  const mockQueueClose = vi.fn().mockResolvedValue(undefined);
+  const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd, close: mockQueueClose };
+  const MockQueue = vi.fn(() => mockQueueInstance);
+  const mockFlowProducerClose = vi.fn().mockResolvedValue(undefined);
+  const mockFlowProducerInstance = { name: "mock-flow-producer", close: mockFlowProducerClose };
+  const MockFlowProducer = vi.fn(() => mockFlowProducerInstance);
+  const mockQueueEventsClose = vi.fn().mockResolvedValue(undefined);
+  const mockQueueEventsInstance = { name: "mock-queue-events", close: mockQueueEventsClose };
+  const MockQueueEvents = vi.fn(() => mockQueueEventsInstance);
+  return {
+    mockQueueAdd,
+    mockQueueClose,
+    MockQueue,
+    mockFlowProducerClose,
+    MockFlowProducer,
+    mockQueueEventsClose,
+    MockQueueEvents,
+  };
+});
 
 vi.mock("bullmq", () => ({
   FlowProducer: MockFlowProducer,
   Queue: MockQueue,
   QueueEvents: MockQueueEvents,
 }));
+
+import {
+  closeAllQueueResources,
+  createProviderDataDeletionQueue,
+  enqueueProviderDataDeletion,
+  getProviderDataDeletionQueue,
+  PROVIDER_DATA_DELETION_QUEUE,
+  providerDataDeletionJobDataSchema,
+} from "./queues.ts";
 
 describe("queues", () => {
   beforeEach(() => {
@@ -37,6 +65,7 @@ describe("queues", () => {
         FIT_FILE_IMPORT_QUEUE,
         IMPORT_QUEUE,
         POST_SYNC_QUEUE,
+        PROVIDER_DATA_DELETION_QUEUE,
         SCHEDULED_SYNC_QUEUE,
         SYNC_QUEUE,
         ZIP_ENTRY_EXTRACT_QUEUE,
@@ -49,6 +78,7 @@ describe("queues", () => {
       expect(EXPORT_QUEUE).toBe("export");
       expect(SCHEDULED_SYNC_QUEUE).toBe("scheduled-sync");
       expect(POST_SYNC_QUEUE).toBe("post-sync");
+      expect(PROVIDER_DATA_DELETION_QUEUE).toBe("provider-data-deletion");
       expect(ACTIVITY_DELETE_ANALYTICS_QUEUE).toBe("activity-delete-analytics");
     });
   });
@@ -60,6 +90,38 @@ describe("queues", () => {
       expect(fitFileImportJobResultSchema.safeParse({}).success).toBe(false);
       expect(
         fitFileImportJobResultSchema.safeParse({ recordsSynced: 1, errors: [{}] }).success,
+      ).toBe(false);
+    });
+  });
+
+  describe("providerDataDeletionJobDataSchema", () => {
+    it("validates the complete resumable deletion payload", () => {
+      const payload = {
+        type: "provider-data-deletion",
+        eventId: "10000000-0000-4000-8000-000000000001",
+        generation: 2,
+        providerId: "garmin",
+        userId: "20000000-0000-4000-8000-000000000002",
+        checkpoint: {
+          batches: 3,
+          deletedRows: 30_000,
+          lastId: "30000000-0000-4000-8000-000000000003",
+        },
+      };
+
+      expect(providerDataDeletionJobDataSchema.parse(payload)).toEqual(payload);
+      expect(
+        providerDataDeletionJobDataSchema.safeParse({
+          ...payload,
+          checkpoint: { ...payload.checkpoint, deletedRows: -1 },
+        }).success,
+      ).toBe(false);
+      expect(providerDataDeletionJobDataSchema.safeParse({}).success).toBe(false);
+      expect(
+        providerDataDeletionJobDataSchema.safeParse({ ...payload, providerId: "" }).success,
+      ).toBe(false);
+      expect(
+        providerDataDeletionJobDataSchema.safeParse({ ...payload, checkpoint: {} }).success,
       ).toBe(false);
     });
   });
@@ -643,15 +705,70 @@ describe("queues", () => {
           type: "provider-delete-analytics-refresh",
           userId: "user-123",
           providerId: "strava",
-          metricStreamDeleteEventId: "30000000-0000-4000-8000-000000000001",
+          deletionEventId: "30000000-0000-4000-8000-000000000001",
         },
         {
-          removeOnComplete: true,
+          jobId: "provider-delete-analytics-refresh-30000000-0000-4000-8000-000000000001",
+          removeOnComplete: { age: 604_800, count: 1_000 },
           removeOnFail: { age: 604_800, count: 100 },
           attempts: 5,
           backoff: { type: "fixed", delay: 30_000 },
         },
       );
+    });
+  });
+
+  describe("enqueueProviderDataDeletion", () => {
+    it("uses the outbox event id as the BullMQ idempotency key", async () => {
+      const connection = { host: "test", port: 9999 };
+      const queue = createProviderDataDeletionQueue(connection);
+
+      expect(MockQueue).toHaveBeenCalledWith(PROVIDER_DATA_DELETION_QUEUE, { connection });
+
+      await enqueueProviderDataDeletion(
+        {
+          eventId: "30000000-0000-4000-8000-000000000001",
+          generation: 2,
+          providerId: "strava",
+          userId: "user-123",
+        },
+        queue,
+      );
+
+      expect(mockQueueAdd).toHaveBeenCalledWith(
+        "provider-data-deletion",
+        {
+          type: "provider-data-deletion",
+          eventId: "30000000-0000-4000-8000-000000000001",
+          generation: 2,
+          providerId: "strava",
+          userId: "user-123",
+        },
+        {
+          attempts: 20,
+          backoff: { type: "fixed", delay: 30_000 },
+          jobId: "30000000-0000-4000-8000-000000000001",
+          removeOnComplete: { age: 604_800, count: 1_000 },
+          removeOnFail: { age: 2_592_000, count: 1_000 },
+        },
+      );
+    });
+
+    it("creates and closes one cached provider deletion queue", async () => {
+      await closeAllQueueResources();
+      vi.clearAllMocks();
+
+      const firstQueue = getProviderDataDeletionQueue();
+      const secondQueue = getProviderDataDeletionQueue();
+
+      expect(firstQueue).toBe(secondQueue);
+      expect(MockQueue).toHaveBeenCalledOnce();
+      expect(MockQueue).toHaveBeenCalledWith(PROVIDER_DATA_DELETION_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+
+      await closeAllQueueResources();
+      expect(mockQueueClose).toHaveBeenCalledOnce();
     });
   });
 

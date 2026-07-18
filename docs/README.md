@@ -66,6 +66,7 @@ Cross-provider reverse-engineering references:
 | [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md) | Deploy failures around ClickHouse CDC, analytics read models, and hot fitness views. |
 | [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering lost PeerDB CDC slots. |
 | [metric-stream-redpanda-r2-runbook.md](metric-stream-redpanda-r2-runbook.md) | Target Redpanda and R2 replay path for durable `metric_stream` rebuilds. |
+| [provider-data-deletion-runbook.md](provider-data-deletion-runbook.md) | Generation-fenced provider deletion, transactional outbox delivery, BullMQ checkpoints, and ClickHouse tombstone verification. |
 | [clickhouse-activity-dedup-runbook.md](clickhouse-activity-dedup-runbook.md) | Keeping ClickHouse activity read models on canonical deduped activity IDs. |
 | [production-incident-baseline.md](production-incident-baseline.md) | Baseline knowledge from production incidents and recurring failure patterns. |
 | [provider-sync-degradation-runbook.md](provider-sync-degradation-runbook.md) | Querying degraded provider sync rows and correlating pagination fingerprints with metrics and structured logs. |

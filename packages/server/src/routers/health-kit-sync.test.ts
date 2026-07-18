@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 const { mockInvalidateByPrefix, mockMetricStreamPublishRows, mockPublishedMetricStreamRowBatches } =
   vi.hoisted(() => {
     const mockPublishedMetricStreamRowBatches: unknown[][] = [];
@@ -3279,7 +3286,7 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("handles non-Error objects in catch blocks", async () => {
-      const execute = vi.fn();
+      const execute = vi.fn().mockResolvedValue([]);
       execute.mockResolvedValueOnce([]); // ensureProvider
       mockMetricStreamPublishRows.mockRejectedValueOnce("string error");
 

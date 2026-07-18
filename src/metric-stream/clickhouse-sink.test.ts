@@ -17,8 +17,9 @@ const heartRateEvent = {
   version: 1,
   id: "10000000-0000-4000-8000-000000000001",
   recordedAt: "2026-06-06T19:00:00.000Z",
-  userId: "00000000-0000-0000-0000-000000000001",
+  userId: "00000000-0000-4000-8000-000000000001",
   providerId: "apple_health",
+  generation: 0,
   externalId: "hk:heart-rate-1",
   deviceId: "Apple Watch",
   sourceType: "api",
@@ -42,6 +43,10 @@ function firstCommandQuery(command: ReturnType<typeof vi.fn>): string {
     throw new Error("expected command call");
   }
   return call.query;
+}
+
+function makeEmptyGenerationQuery() {
+  return vi.fn(async () => ({ json: async () => [] }));
 }
 
 afterEach(() => {
@@ -69,6 +74,7 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
           external_id: "hk:heart-rate-1",
           device_id: "Apple Watch",
           scalar: 72,
+          generation: 0,
           is_deleted: 0,
         }),
       ],
@@ -107,6 +113,7 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
     expect(row.activity_id).toBe("20000000-0000-4000-8000-000000000001");
     expect(row.scalar).toBe(72);
     expect(row.point).toBe('{"type":"Point","coordinates":[-122.4,37.8]}');
+    expect(row.generation).toBe(0);
     expect(row.version).toBe(0);
   });
 
@@ -126,6 +133,7 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
       recordedAt: "2026-06-06T19:00:00.000Z",
       userId: "00000000-0000-0000-0000-000000000001",
       providerId: "apple_health",
+      generation: 0,
       sourceType: "api",
       channel: "heart_rate",
     });
@@ -139,9 +147,81 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
 });
 
 describe("applyMetricStreamEventsToClickHouse", () => {
+  it("tombstones an event when the provider generation fence advances during insertion", async () => {
+    const command = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => undefined);
+    const query = vi.fn(async () => ({
+      json: async () => [
+        {
+          generation: "1",
+          provider_id: heartRateEvent.providerId,
+          user_id: heartRateEvent.userId,
+        },
+      ],
+    }));
+
+    const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
+      heartRateEvent,
+    ]);
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        values: [expect.objectContaining({ id: heartRateEvent.id, generation: 0 })],
+      }),
+    );
+    expect(insert.mock.invocationCallOrder[0]).toBeLessThan(query.mock.invocationCallOrder[0] ?? 0);
+    expect(command).toHaveBeenCalledWith({
+      query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
+      query_params: {
+        row_ids: [heartRateEvent.id],
+      },
+    });
+    expect(applied).toBe(0);
+  });
+
+  it("tombstones events older than the active provider generation fence", async () => {
+    const command = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => undefined);
+    const query = vi.fn(async () => ({
+      json: async () => [
+        {
+          generation: "2",
+          provider_id: heartRateEvent.providerId,
+          user_id: heartRateEvent.userId,
+        },
+      ],
+    }));
+
+    const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
+      { ...heartRateEvent, generation: 1 },
+      {
+        ...heartRateEvent,
+        generation: 2,
+        id: "10000000-0000-4000-8000-000000000005",
+      },
+    ]);
+
+    expect(applied).toBe(1);
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        values: [
+          expect.objectContaining({ generation: 1 }),
+          expect.objectContaining({ generation: 2 }),
+        ],
+      }),
+    );
+    expect(command).toHaveBeenCalledWith({
+      query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
+      query_params: {
+        row_ids: [heartRateEvent.id],
+      },
+    });
+  });
+
   it("replays archived v1 deletes without a v2 acknowledgement", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
+    const query = makeEmptyGenerationQuery();
     const archivedDeleteEvent = {
       version: 1,
       eventType: "metric_stream_deleted",
@@ -149,7 +229,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       partitionKey: "activity:20000000-0000-4000-8000-000000000001",
     } satisfies MetricStreamDeletedEventV1;
 
-    const applied = await applyMetricStreamEventsToClickHouse({ command, insert }, [
+    const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
       archivedDeleteEvent,
     ]);
 
@@ -162,11 +242,12 @@ describe("applyMetricStreamEventsToClickHouse", () => {
   it("marks matching ClickHouse rows deleted before inserting replacement rows", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
+    const query = makeEmptyGenerationQuery();
     const deleteEvent = createMetricStreamDeletedEvent({
       activityId: "20000000-0000-4000-8000-000000000001",
     });
 
-    const applied = await applyMetricStreamEventsToClickHouse({ command, insert }, [
+    const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
       deleteEvent,
       { ...heartRateEvent, activityId: "20000000-0000-4000-8000-000000000001" },
     ]);
@@ -175,7 +256,6 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(command).toHaveBeenNthCalledWith(1, {
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
-        delete_version: expect.any(Number),
         activity_id: "20000000-0000-4000-8000-000000000001",
       },
     });
@@ -199,13 +279,14 @@ describe("applyMetricStreamEventsToClickHouse", () => {
   it("flushes row batches on both sides of a replacement delete", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
+    const query = makeEmptyGenerationQuery();
     const secondHeartRateEvent = {
       ...heartRateEvent,
       id: "10000000-0000-4000-8000-000000000004",
       recordedAt: "2026-06-06T19:01:00.000Z",
     } satisfies MetricStreamEventV1;
 
-    const applied = await applyMetricStreamEventsToClickHouse({ command, insert }, [
+    const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
       heartRateEvent,
       createMetricStreamDeletedEvent({
         activityId: "20000000-0000-4000-8000-000000000001",
@@ -250,7 +331,6 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
-        delete_version: expect.any(Number),
         user_id: "10000000-0000-4000-8000-000000000001",
         provider_id: "fitbit",
         channel: "body_weight",
@@ -295,7 +375,6 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining("candidate_row.external_id = {external_id:String}"),
       query_params: {
-        delete_version: expect.any(Number),
         provider_id: "fitbit",
         external_id: "measurement-1",
       },
@@ -325,7 +404,10 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
 describe("runMetricStreamClickHouseSinkFromEnv", () => {
   it("consumes Redpanda events and inserts them into ClickHouse", async () => {
-    const client = { insert: vi.fn(async () => undefined) };
+    const client = {
+      insert: vi.fn(async () => undefined),
+      query: makeEmptyGenerationQuery(),
+    };
     const consumer = {
       connect: vi.fn(async () => undefined),
       subscribe: vi.fn(async () => undefined),

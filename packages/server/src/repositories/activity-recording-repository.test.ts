@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { SaveActivityInput } from "./activity-recording-repository.ts";
 import { ActivityRecordingRepository } from "./activity-recording-repository.ts";
 
+vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 describe("ActivityRecordingRepository", () => {
   function makePublisher() {
     return {
@@ -12,7 +19,7 @@ describe("ActivityRecordingRepository", () => {
   }
 
   function makeRepository(executeResults?: Record<string, unknown>[][]) {
-    const execute = vi.fn();
+    const execute = vi.fn().mockResolvedValue([]);
     if (executeResults) {
       for (const result of executeResults) {
         execute.mockResolvedValueOnce(result);
@@ -94,7 +101,7 @@ describe("ActivityRecordingRepository", () => {
 
       const activityId = await repository.saveActivity(makeInput({ samples }));
       expect(activityId).toBe("activity-456");
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(3);
       expect(publisher.publishRows).toHaveBeenCalledTimes(1);
       const publishedRows = publisher.publishRows.mock.calls[0]?.[0] ?? [];
       expect(publishedRows).toHaveLength(9);
@@ -129,7 +136,7 @@ describe("ActivityRecordingRepository", () => {
 
       const activityId = await repository.saveActivity(makeInput({ samples }));
       expect(activityId).toBe("activity-789");
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(4);
       expect(publisher.publishRows).toHaveBeenCalledTimes(2);
       expect(publisher.publishRows.mock.calls[0]?.[0]).toHaveLength(1500);
       expect(publisher.publishRows.mock.calls[1]?.[0]).toHaveLength(3);
@@ -151,7 +158,7 @@ describe("ActivityRecordingRepository", () => {
       ]);
 
       await repository.saveActivity(makeInput({ samples }));
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(3);
       expect(publisher.publishRows).toHaveBeenCalledTimes(1);
       expect(publisher.publishRows.mock.calls[0]?.[0]).toHaveLength(1500);
     });
@@ -182,6 +189,7 @@ describe("ActivityRecordingRepository", () => {
     it("publishes GPS samples through Redpanda without inserting metric stream rows into Postgres", async () => {
       const execute = vi
         .fn()
+        .mockResolvedValue([])
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ id: "activity-456" }]);
       const publisher = makePublisher();
@@ -206,7 +214,7 @@ describe("ActivityRecordingRepository", () => {
         }),
       );
 
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(3);
       expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
       expect(publisher.publishRows).toHaveBeenCalledWith([
         expect.objectContaining({

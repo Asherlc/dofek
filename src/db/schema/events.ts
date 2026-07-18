@@ -1,10 +1,13 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   date,
   index,
   integer,
   jsonb,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -13,6 +16,50 @@ import {
 } from "drizzle-orm/pg-core";
 import { fitness, resolveImplicitUserId } from "./core.ts";
 import { provider, userProfile } from "./reference.ts";
+
+// ============================================================
+// Provider data deletion — generation fence + transactional outbox
+// ============================================================
+
+export const providerDataGeneration = fitness.table(
+  "provider_data_generation",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    providerId: text("provider_id").notNull(),
+    currentGeneration: bigint("current_generation", { mode: "number" }).notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.providerId] }),
+    check("provider_data_generation_nonnegative", sql`${table.currentGeneration} >= 0`),
+  ],
+);
+
+export const providerDataDeletionOutbox = fitness.table(
+  "provider_data_deletion_outbox",
+  {
+    eventId: uuid("event_id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    providerId: text("provider_id").notNull(),
+    generation: bigint("generation", { mode: "number" }).notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("provider_data_deletion_outbox_dispatch_idx").on(table.status, table.createdAt),
+    check("provider_data_deletion_outbox_generation_positive", sql`${table.generation} > 0`),
+    check(
+      "provider_data_deletion_outbox_status_valid",
+      sql`${table.status} IN ('pending', 'dispatched', 'completed')`,
+    ),
+  ],
+);
 
 // ============================================================
 // Sync log — tracks reliability per provider per data type

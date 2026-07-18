@@ -13770,3 +13770,122 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployment, verify its event ID appears in
   `ingest.metric_stream_delete_acknowledgement`, confirm zero live logical IDs,
   and verify the rebuilt analytics plus user cache.
+
+## 2026-07-18 — Garmin Dump Tombstones Applied Without Acknowledgement
+
+- **Symptoms:** Re-emitting the Garmin Dump provider deletion after deploying
+  image `sha-cbacad2` caused the analytics refresh job to time out waiting for
+  deletion event `42712966-7550-4eb4-8347-7ee99b6230af`. The ClickHouse sink
+  continued retrying the preceding provider-scoped event at Redpanda partition
+  0 offset `604114013`.
+- **User impact:** The raw metric IDs were tombstoned, but the deletion workflow
+  did not reach its acknowledgement gate, so the requested analytics rebuild
+  and cache refresh did not complete.
+- **Evidence:** The exact failing operation was the sink's provider-scoped
+  `INSERT INTO ingest.metric_stream SELECT ...` for event
+  `4e9d0632-3bce-4174-b685-5380687ce040`. The first fatal sink log line was
+  `Error: Timeout error` at `2026-07-18T15:27:03.430Z`; the next attempt failed
+  with ClickHouse code 241 (`MEMORY_LIMIT_EXCEEDED`) at
+  `2026-07-18T15:27:06.513Z`. Sentry issue
+  [DOFEK-SERVER-4T](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4T)
+  recorded four analytics acknowledgement timeouts. Production contained
+  12,522,091 inserted Garmin Dump versions and 3,130,320 tombstone versions.
+  Low-memory distinct estimates matched at 3,122,004 source IDs and 3,122,004
+  tombstoned IDs, with the latest tombstone committed at
+  `2026-07-18T15:35:26.697Z`, while the target acknowledgement count remained
+  zero. The linked
+  [deployment job](https://github.com/Asherlc/dofek/actions/runs/29632718641/job/88049486344)
+  deployed the sink image successfully even though the overall job failed when
+  `dofek_worker` rolled back.
+- **Root cause:** The provider-wide tombstone query runs longer than the
+  ClickHouse client's 120-second request timeout. ClickHouse continues and
+  commits the server-side insert after the client disconnects, but the sink sees
+  a rejected command and therefore never writes the acknowledgement. Kafka then
+  retries the same expensive event, and the analytics job times out waiting for
+  a receipt that cannot be emitted by that attempt.
+- **Fix / mitigation:** No runtime behavior was changed during verification. A
+  diagnostic latest-state query was canceled so it would not compete with the
+  production deletion. The committed tombstones were verified directly. The
+  repository follow-up replaces provider-wide tombstone queries with a
+  generation-fenced transactional outbox and a BullMQ worker that checkpoints
+  bounded batches of 10,000 exact-ID tombstones before acknowledgement.
+- **Remaining risk / follow-up:** The bounded workflow is not active until its
+  PostgreSQL and ClickHouse migrations plus worker deployment complete. After
+  deployment, explicitly materialize the historical ClickHouse projection in
+  an approved maintenance window, resubmit the deletion request, and verify the
+  generation fence, acknowledgement, and zero active old-generation rows using
+  `docs/provider-data-deletion-runbook.md`.
+
+## 2026-07-18 — Deletion Workflow PR Validation Failures
+
+- **Symptoms:** The deletion workflow pull request failed its unit and
+  integration CI jobs. A subsequent CI run also failed provider sync and
+  mutation tests after the generation lookup was batched. Local full-suite
+  validation produced cascading PostgreSQL `No space left on device` failures.
+- **User impact:** No production impact; the failures blocked validation of the
+  replacement deletion workflow before deployment.
+- **Evidence:** In [GitHub Actions run
+  29654216514](https://github.com/Asherlc/dofek/actions/runs/29654216514), the
+  unit job first failed on stale `LIMIT 1` SQL assertions and integration shard
+  3 first failed because ClickHouse rejects lightweight `DELETE` on a table
+  with projections. In [GitHub Actions run
+  29655480888](https://github.com/Asherlc/dofek/actions/runs/29655480888), unit
+  and mutation jobs first failed because database doubles returned no rows for
+  the new batched lookup, while all four integration shards returned `Invalid
+  UUID` from the generation row parser. In [GitHub Actions run
+  29657088198](https://github.com/Asherlc/dofek/actions/runs/29657088198), Stryker
+  shard 4 then reported 19 uncovered mutants in the periodic outbox dispatcher.
+  In [GitHub Actions run
+  29657809726](https://github.com/Asherlc/dofek/actions/runs/29657809726), Stryker
+  shard 10 later reported six surviving result-shape guard mutants in
+  `executeWithSchema`. In [GitHub Actions run
+  29658563450](https://github.com/Asherlc/dofek/actions/runs/29658563450), Stryker
+  shards 2 and 3 then reported uncovered persistence edge cases and queue-cache
+  lifecycle paths.
+  Locally, the Docker VM overlay reached 100% utilization and PostgreSQL emitted
+  `No space left on device`; the current workspace database contained about 160
+  disposable `dofek_integration_template_*` and `test_*` databases from
+  integration runs. A later attempt to reproduce Stryker shards 2 and 3 in
+  parallel exceeded ClickHouse's 3 GiB memory limit during unrelated analytics
+  test setup.
+- **Root cause:** Tests had not been updated for the corrected scalar subqueries
+  or projection-aware ClickHouse mutation semantics. Existing unit database
+  doubles also did not model the new authoritative generation query, and the
+  database row parser used strict `z.uuid()` validation for the UUID-shaped
+  integration fixture ID instead of the project's GUID-compatible boundary;
+  Zod documents `z.guid()` for UUID-like identifiers that do not enforce RFC
+  variant bits ([Zod UUID documentation](https://zod.dev/api#uuids)). The outbox
+  tests covered one-shot dispatch but not the periodic dispatcher's interval,
+  overlap, recovery, and close lifecycle. The typed SQL tests covered valid row
+  arrays and Drizzle transaction results, but not invalid null, callable, or
+  record-without-rows results. The deletion persistence and queue tests did not
+  directly cover empty batches, malformed/missing rows, completion writes, or
+  cached queue creation and shutdown. Separately, completed integration runs
+  left disposable template databases in the shared Docker VM until its
+  filesystem was exhausted. The ClickHouse memory failure came from running two
+  broad Stryker related-test suites concurrently against the same local service,
+  not from the deletion implementation.
+- **Fix / mitigation:** Updated the SQL expectations, changed ClickHouse test
+  cleanup to synchronous `ALTER TABLE ... DELETE` mutations, added colocated
+  generation resolvers for database doubles, and aligned the database row
+  parser with `z.guid()`. Added lifecycle tests for immediate and interval
+  dispatch, overlap suppression, error reporting and recovery, and shutdown
+  fencing. Added public-interface result-shape tests for `executeWithSchema`,
+  deletion persistence edge cases, and the cached deletion queue lifecycle.
+  Re-ran the exact shared-dependency mutation shards serially after confirming
+  ClickHouse recovered.
+  Dropped only the current workspace's disposable test/template databases. The
+  `health` database, running containers, and all named volumes were preserved.
+  Docker's official guidance distinguishes pruning rebuildable caches and unused
+  objects from explicit volume removal
+  ([Docker pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/)).
+- **Validation:** The [GitHub Actions unit
+  job](https://github.com/Asherlc/dofek/actions/runs/29657498147/job/88114438457)
+  passed 11,859 tests, and [Stryker shard
+  4](https://github.com/Asherlc/dofek/actions/runs/29657498147/job/88114478758)
+  killed all 21 outbox-dispatcher mutants for a 100% mutation score.
+- **Remaining risk / follow-up:** The shared Docker VM has limited free space,
+  so a non-sharded local full suite may still exceed capacity. Add deterministic
+  integration-template cleanup and a Docker disk preflight to the testing
+  runbook, and keep broad local Stryker related-test runs serialized; use sharded
+  CI as the authoritative full-suite validation until then.

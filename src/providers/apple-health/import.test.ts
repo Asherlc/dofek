@@ -4,6 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
+vi.mock("../../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 const { metricStreamReplacementCalls, replaceMetricStreamBatchCalls } = vi.hoisted<{
   metricStreamReplacementCalls: Array<{ scope: unknown; rows: unknown[] }>;
   replaceMetricStreamBatchCalls: Array<{

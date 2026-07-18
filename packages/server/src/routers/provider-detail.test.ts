@@ -53,8 +53,6 @@ const {
   mockLoggerInfo,
   mockLoggerWarn,
   mockSentryCaptureException,
-  mockReplaceMetricStreamBatch,
-  mockEnqueueProviderDeleteAnalyticsRefresh,
   mockProviderDataDeletesInc,
 } = vi.hoisted(() => ({
   mockLoadTokens: vi.fn(),
@@ -64,8 +62,6 @@ const {
   mockLoggerInfo: vi.fn(),
   mockLoggerWarn: vi.fn(),
   mockSentryCaptureException: vi.fn(),
-  mockReplaceMetricStreamBatch: vi.fn(),
-  mockEnqueueProviderDeleteAnalyticsRefresh: vi.fn(),
   mockProviderDataDeletesInc: vi.fn(),
 }));
 
@@ -91,13 +87,6 @@ vi.mock("../logger.ts", () => ({
 }));
 vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockSentryCaptureException(...args),
-}));
-vi.mock("dofek/db/metric-stream-writer", () => ({
-  replaceMetricStreamBatch: (...args: unknown[]) => mockReplaceMetricStreamBatch(...args),
-}));
-vi.mock("dofek/jobs/queues", () => ({
-  enqueueProviderDeleteAnalyticsRefresh: (...args: unknown[]) =>
-    mockEnqueueProviderDeleteAnalyticsRefresh(...args),
 }));
 vi.mock("../lib/metrics.ts", () => ({
   providerDataDeletesTotal: { inc: (...args: unknown[]) => mockProviderDataDeletesInc(...args) },
@@ -1539,8 +1528,9 @@ describe("providerDetailRouter", () => {
     });
 
     it("rejects deletion when the provider is not owned by the user", async () => {
+      const transaction = vi.fn();
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+        db: { execute: vi.fn().mockResolvedValue([]), transaction },
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1551,26 +1541,28 @@ describe("providerDetailRouter", () => {
         code: "NOT_FOUND",
         message: "Provider not found or not owned by user",
       });
-      expect(mockReplaceMetricStreamBatch).not.toHaveBeenCalled();
-      expect(mockEnqueueProviderDeleteAnalyticsRefresh).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
     });
 
-    it("tombstones metric stream data, deletes provider records, and queues ClickHouse reprocessing", async () => {
-      const txExecute = vi.fn().mockResolvedValue([]);
+    it("atomically deletes provider records and writes a transactional outbox request", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const txExecute = vi.fn().mockResolvedValue([
+        {
+          event_id: "30000000-0000-4000-8000-000000000001",
+          generation: "1",
+          provider_id: "strava",
+          user_id: userId,
+        },
+      ]);
       const mockTransaction = vi
         .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<unknown>) => {
+          return fn({ execute: txExecute });
         });
       const mockExecute = vi.fn().mockResolvedValueOnce([{ id: "strava" }]);
-      mockReplaceMetricStreamBatch.mockResolvedValueOnce({
-        deletedEventId: "30000000-0000-4000-8000-000000000001",
-        rowCount: 0,
-      });
-      mockEnqueueProviderDeleteAnalyticsRefresh.mockResolvedValueOnce(undefined);
       const caller = createCaller({
         db: { execute: mockExecute, transaction: mockTransaction },
-        userId: "user-1",
+        userId,
         timezone: "UTC",
       });
 
@@ -1578,21 +1570,12 @@ describe("providerDetailRouter", () => {
         caller.deleteAllData({ providerId: "strava", confirmation: "DELETE" }),
       ).resolves.toEqual({ success: true });
 
-      expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
-        expect.anything(),
-        { userId: "user-1", providerId: "strava" },
-        [],
-        "provider-data-delete",
-      );
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(mockEnqueueProviderDeleteAnalyticsRefresh).toHaveBeenCalledWith(
-        "user-1",
-        "strava",
-        "30000000-0000-4000-8000-000000000001",
-      );
       expect(mockProviderDataDeletesInc).toHaveBeenCalledWith({ provider_id: "strava" });
       const deleteSql = txExecute.mock.calls.map((call) => extractSqlText(call[0])).join("\n");
       expect(deleteSql).not.toContain("fitness.oauth_token");
+      expect(deleteSql).toContain("fitness.provider_data_generation");
+      expect(deleteSql).toContain("fitness.provider_data_deletion_outbox");
     });
   });
 });

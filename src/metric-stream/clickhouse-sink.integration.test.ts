@@ -29,7 +29,9 @@ function assertInsertCapable(
 
 async function removeTestEvent(client: ClickHouseClient): Promise<void> {
   await client.command({
-    query: `DELETE FROM ${METRIC_STREAM_TABLE} WHERE id IN {ids:Array(UUID)}`,
+    query: `ALTER TABLE ${METRIC_STREAM_TABLE}
+      DELETE WHERE id IN {ids:Array(UUID)}
+      SETTINGS mutations_sync = 1`,
     query_params: { ids: [testEventId, latestScopeTestEventId, nullExternalIdTestEventId] },
   });
 }
@@ -93,20 +95,24 @@ describe("metric stream ClickHouse sink (integration)", () => {
       providerId: "withings",
     });
 
-    const result = await client.query<{ is_deleted: number }>({
-      query: `SELECT argMax(is_deleted, version) AS is_deleted
+    const result = await client.query<{ is_deleted: number; latest_version: number }>({
+      query: `SELECT
+          argMax(is_deleted, version) AS is_deleted,
+          max(version) AS latest_version
         FROM ${METRIC_STREAM_TABLE}
         WHERE id = {id:UUID}`,
       query_params: { id: testEventId },
       format: "JSONEachRow",
     });
     const row = (await result.json())[0];
-    expect(row?.is_deleted).toBe(1);
+    expect(row).toEqual({ is_deleted: 1, latest_version: 1 });
   });
 
   it("preserves the latest row when only an older version matches the delete scope", async () => {
     await client.command({
-      query: `DELETE FROM ${METRIC_STREAM_TABLE} WHERE id = {id:UUID}`,
+      query: `ALTER TABLE ${METRIC_STREAM_TABLE}
+        DELETE WHERE id = {id:UUID}
+        SETTINGS mutations_sync = 1`,
       query_params: { id: latestScopeTestEventId },
     });
     await client.command({ query: `SYSTEM STOP MERGES ${METRIC_STREAM_TABLE}` });

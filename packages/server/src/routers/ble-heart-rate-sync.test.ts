@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 // Mock logger
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -78,7 +85,7 @@ describe("bleHeartRateSyncRouter", () => {
         samples: [{ timestamp: "2026-03-30T12:00:00.000Z", heartRateBpm: 142, rrIntervalsMs: [] }],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(JSON.stringify(mockDb.execute.mock.calls)).toContain("ble_heart_rate");
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
       expect(mockDb.execute.mock.invocationCallOrder[0]).toBeLessThan(
@@ -190,7 +197,7 @@ describe("bleHeartRateSyncRouter", () => {
       });
 
       expect(result).toEqual({ inserted: 0 });
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
     });
 
     it("rejects heart rate values above the physiological ceiling", async () => {

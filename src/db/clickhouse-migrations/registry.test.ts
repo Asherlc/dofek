@@ -23,11 +23,10 @@ describe("clickHouseMigrations", () => {
       ),
     );
     expect(migrations.at(-1)).toMatchObject({
-      id: "0045_metric_stream_delete_acknowledgement",
+      id: "0046_provider_data_generation",
       statements: expect.arrayContaining([
-        expect.stringContaining(
-          "CREATE TABLE IF NOT EXISTS ingest.metric_stream_delete_acknowledgement",
-        ),
+        expect.stringContaining("ADD PROJECTION IF NOT EXISTS by_provider_generation"),
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS ingest.provider_data_generation"),
       ]),
     });
   });

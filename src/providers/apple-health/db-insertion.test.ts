@@ -21,6 +21,12 @@ import { type HealthRecord, parseRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
+vi.mock("../../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 const { metricStreamCapture } = vi.hoisted<{
   metricStreamCapture: {
     current: {
@@ -151,7 +157,7 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
     select: vi.fn().mockReturnValue(selectChain),
     insert: insertFn,
     delete: vi.fn().mockReturnValue(deleteChain),
-    execute: vi.fn(),
+    execute: vi.fn().mockResolvedValue([]),
   };
 
   return { db, capture };

@@ -22,6 +22,12 @@ import {
 import { WhoopProvider } from "./whoop/provider.ts";
 import { runWhoopOrchestratedSync } from "./whoop/sync-orchestrator.ts";
 
+vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
 }>(() => ({

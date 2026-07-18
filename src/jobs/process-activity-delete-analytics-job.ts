@@ -2,7 +2,6 @@ import * as Sentry from "@sentry/node";
 import {
   runActivityReadModelBuild,
   runProviderDeleteReadModelBuild,
-  waitForMetricStreamDeleteAcknowledgement,
   waitForPeerDbActivityDeletes,
   waitForPeerDbActivityRestores,
   waitForPeerDbProviderDeletes,
@@ -51,12 +50,9 @@ export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJo
       await updateActivityAnalyticsProgress(
         job,
         20,
-        "Waiting for provider deletes to reach analytics...",
+        "Waiting for provider records to reach analytics...",
       );
-      await Promise.all([
-        waitForMetricStreamDeleteAcknowledgement(client, job.data.metricStreamDeleteEventId),
-        waitForPeerDbProviderDeletes(client, userId, job.data.providerId),
-      ]);
+      await waitForPeerDbProviderDeletes(client, userId, job.data.providerId);
       await updateActivityAnalyticsProgress(job, 60, "Rebuilding provider analytics...");
       await runProviderDeleteReadModelBuild();
       await updateActivityAnalyticsProgress(job, 90, "Invalidating provider analytics cache...");

@@ -3,6 +3,7 @@ import { CANONICAL_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { ConnectionOptions, JobsOptions } from "bullmq";
 import { FlowProducer, Queue, QueueEvents, RedisConnection } from "bullmq";
 import { z } from "zod";
+import type { ProviderDataDeletionRequest } from "../db/provider-data-deletion.ts";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
 // ── Job payload types ──
@@ -130,7 +131,28 @@ export interface ProviderDeleteAnalyticsJobData {
   type: "provider-delete-analytics-refresh";
   userId: string;
   providerId: string;
-  metricStreamDeleteEventId: string;
+  deletionEventId: string;
+}
+
+export const providerDataDeletionJobDataSchema = z.object({
+  type: z.literal("provider-data-deletion"),
+  eventId: z.uuid(),
+  generation: z.number().int().positive(),
+  providerId: z.string().min(1),
+  userId: z.uuid(),
+  checkpoint: z
+    .object({
+      batches: z.number().int().nonnegative(),
+      deletedRows: z.number().int().nonnegative(),
+      lastId: z.uuid(),
+    })
+    .optional(),
+});
+
+export type ProviderDataDeletionJobData = z.infer<typeof providerDataDeletionJobDataSchema>;
+
+export interface ProviderDataDeletionQueue {
+  add(name: string, data: ProviderDataDeletionJobData, options?: JobsOptions): Promise<unknown>;
 }
 
 export type ActivityAnalyticsJobData =
@@ -150,6 +172,7 @@ export const ZIP_ENTRY_EXTRACT_QUEUE = "zip-entry-extract";
 export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 export const POST_SYNC_QUEUE = "post-sync";
+export const PROVIDER_DATA_DELETION_QUEUE = "provider-data-deletion";
 export const ACTIVITY_DELETE_ANALYTICS_QUEUE = "activity-delete-analytics";
 export const POST_SYNC_DEBOUNCE_MS = 10_000;
 export const SYNC_JOB_RETRY_OPTIONS = {
@@ -165,6 +188,7 @@ const ACTIVITY_DELETE_ANALYTICS_JOB_NAME = "activity-delete-analytics-refresh";
 const ACTIVITY_RESTORE_ANALYTICS_JOB_NAME = "activity-restore-analytics-refresh";
 const ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME = "activity-recompute-analytics-refresh";
 const PROVIDER_DELETE_ANALYTICS_JOB_NAME = "provider-delete-analytics-refresh";
+const PROVIDER_DATA_DELETION_JOB_NAME = "provider-data-deletion";
 const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
 
 function activityRecomputeAnalyticsJobId(userId: string, activityIds: string[]): string {
@@ -289,8 +313,17 @@ export function createActivityDeleteAnalyticsQueue(
   });
 }
 
+export function createProviderDataDeletionQueue(
+  connection?: ConnectionOptions,
+): Queue<ProviderDataDeletionJobData> {
+  return new Queue(PROVIDER_DATA_DELETION_QUEUE, {
+    connection: connection ?? getRedisConnection(),
+  });
+}
+
 let cachedPostSyncQueue: Queue<PostSyncJobData> | null = null;
 let cachedActivityDeleteAnalyticsQueue: Queue<ActivityAnalyticsJobData> | null = null;
+let cachedProviderDataDeletionQueue: Queue<ProviderDataDeletionJobData> | null = null;
 let cachedImportQueue: Queue<ImportJobData> | null = null;
 let cachedFitFileImportQueue: Queue<FitFileImportJobData, FitFileImportJobResult> | null = null;
 let cachedFitFileImportQueueEvents: QueueEvents | null = null;
@@ -361,6 +394,36 @@ export function getActivityDeleteAnalyticsQueue(): Queue<ActivityAnalyticsJobDat
   return cachedActivityDeleteAnalyticsQueue;
 }
 
+export function getProviderDataDeletionQueue(): Queue<ProviderDataDeletionJobData> {
+  if (!cachedProviderDataDeletionQueue) {
+    cachedProviderDataDeletionQueue = createProviderDataDeletionQueue();
+  }
+  return cachedProviderDataDeletionQueue;
+}
+
+export async function enqueueProviderDataDeletion(
+  request: ProviderDataDeletionRequest,
+  queue: ProviderDataDeletionQueue = getProviderDataDeletionQueue(),
+): Promise<void> {
+  await queue.add(
+    PROVIDER_DATA_DELETION_JOB_NAME,
+    {
+      type: "provider-data-deletion",
+      eventId: request.eventId,
+      generation: request.generation,
+      providerId: request.providerId,
+      userId: request.userId,
+    },
+    {
+      attempts: 20,
+      backoff: { type: "fixed", delay: 30_000 },
+      jobId: request.eventId,
+      removeOnComplete: { age: 604_800, count: 1_000 },
+      removeOnFail: { age: 2_592_000, count: 1_000 },
+    },
+  );
+}
+
 export async function enqueueActivityDeleteAnalyticsRefresh(
   userId: string,
   activityIds: string[],
@@ -388,7 +451,7 @@ export async function enqueueActivityDeleteAnalyticsRefresh(
 export async function enqueueProviderDeleteAnalyticsRefresh(
   userId: string,
   providerId: string,
-  metricStreamDeleteEventId: string,
+  deletionEventId: string,
   queue: Queue<ActivityAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
 ): Promise<void> {
   await queue.add(
@@ -397,10 +460,11 @@ export async function enqueueProviderDeleteAnalyticsRefresh(
       type: "provider-delete-analytics-refresh",
       userId,
       providerId,
-      metricStreamDeleteEventId,
+      deletionEventId,
     },
     {
-      removeOnComplete: true,
+      jobId: `${PROVIDER_DELETE_ANALYTICS_JOB_NAME}-${deletionEventId}`,
+      removeOnComplete: { age: 604_800, count: 1_000 },
       removeOnFail: { age: 604_800, count: 100 },
       attempts: 5,
       backoff: { type: "fixed", delay: 30_000 },
@@ -508,6 +572,7 @@ export async function closeAllQueueResources(): Promise<void> {
   if (cachedPostSyncQueue) closePromises.push(cachedPostSyncQueue.close());
   if (cachedActivityDeleteAnalyticsQueue)
     closePromises.push(cachedActivityDeleteAnalyticsQueue.close());
+  if (cachedProviderDataDeletionQueue) closePromises.push(cachedProviderDataDeletionQueue.close());
   if (cachedImportQueue) closePromises.push(cachedImportQueue.close());
   if (cachedFitFileImportQueue) closePromises.push(cachedFitFileImportQueue.close());
   if (cachedFitFileImportQueueEvents) closePromises.push(cachedFitFileImportQueueEvents.close());
@@ -515,6 +580,7 @@ export async function closeAllQueueResources(): Promise<void> {
 
   cachedPostSyncQueue = null;
   cachedActivityDeleteAnalyticsQueue = null;
+  cachedProviderDataDeletionQueue = null;
   cachedImportQueue = null;
   cachedFitFileImportQueue = null;
   cachedFitFileImportQueueEvents = null;

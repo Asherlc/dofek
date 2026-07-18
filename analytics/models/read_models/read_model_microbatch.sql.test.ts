@@ -433,10 +433,10 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("argMax(refreshed_at, refresh_version) AS refreshed_at");
     expect(normalizedSql).toContain("argMax(is_deleted, refresh_version) AS is_deleted");
     expect(normalizedSql).toContain("FROM existing_summary_state WHERE is_deleted = 0");
-    expect(normalizedSql).toContain("(SELECT is_empty FROM target_state LIMIT 1)");
-    expect(normalizedSql).toContain("NOT (SELECT is_empty FROM target_state LIMIT 1)");
+    expect(normalizedSql).toContain("(SELECT is_empty FROM target_state)");
+    expect(normalizedSql).toContain("NOT (SELECT is_empty FROM target_state)");
     expect(normalizedSql).toContain(
-      "sensor_sample.refreshed_at > (SELECT last_refreshed_at FROM target_state LIMIT 1)",
+      "sensor_sample.refreshed_at > (SELECT last_refreshed_at FROM target_state)",
     );
     expect(normalizedSql).toContain(
       "sensor_sample.refreshed_at > existing_summary.refreshed_at",

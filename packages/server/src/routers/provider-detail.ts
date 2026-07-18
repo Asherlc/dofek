@@ -1,8 +1,6 @@
 import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { SyncDatabase } from "dofek/db";
-import { replaceMetricStreamBatch } from "dofek/db/metric-stream-writer";
-import { enqueueProviderDeleteAnalyticsRefresh } from "dofek/jobs/queues";
 import { z } from "zod";
 import { providerDataDeletesTotal } from "../lib/metrics.ts";
 import { logger } from "../logger.ts";
@@ -254,18 +252,7 @@ export const providerDetailRouter = router({
         });
       }
 
-      const metricStreamReplacement = await replaceMetricStreamBatch(
-        ctx.db,
-        { userId: ctx.userId, providerId: input.providerId },
-        [],
-        "provider-data-delete",
-      );
-      await repo.deleteAllProviderRecords(input.providerId);
-      await enqueueProviderDeleteAnalyticsRefresh(
-        ctx.userId,
-        input.providerId,
-        metricStreamReplacement.deletedEventId,
-      );
+      await repo.requestProviderDataDeletion(input.providerId);
       providerDataDeletesTotal.inc({ provider_id: input.providerId });
       return { success: true };
     }),

@@ -393,16 +393,39 @@ describe("ProviderDetailRepository", () => {
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
     });
 
-    it("deletes every provider-scoped record table while preserving credentials", async () => {
-      const txExecute = vi.fn().mockResolvedValue([]);
+    it("atomically deletes provider records and writes the deletion request to the outbox", async () => {
+      const deletionEventId = "10000000-0000-4000-8000-000000000001";
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const txExecute = vi.fn().mockImplementation(async (_query: unknown) => {
+        if (txExecute.mock.calls.length === PROVIDER_DATA_TABLES.length + 1) {
+          return [
+            {
+              event_id: deletionEventId,
+              generation: "1",
+              provider_id: "strava",
+              user_id: userId,
+            },
+          ];
+        }
+        return [];
+      });
       const mockTransaction = vi
         .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<unknown>) => {
+          return fn({ execute: txExecute });
         });
-      const { repo } = makeRepository([], mockTransaction);
+      const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
+        execute: vi.fn(),
+        transaction: mockTransaction,
+      };
+      const repo = new ProviderDetailRepository(db, userId);
 
-      await repo.deleteAllProviderRecords("strava");
+      await expect(repo.requestProviderDataDeletion("strava")).resolves.toEqual({
+        eventId: deletionEventId,
+        generation: 1,
+        providerId: "strava",
+        userId,
+      });
 
       const deleteSql = txExecute.mock.calls.map((call) => stringifyQuery(call[0])).join("\n");
       expect(deleteSql).toContain("fitness.medication");
@@ -410,7 +433,10 @@ describe("ProviderDetailRepository", () => {
       expect(deleteSql).toContain("fitness.allergy_intolerance");
       expect(deleteSql).toContain("fitness.imu_session");
       expect(deleteSql).not.toContain("fitness.oauth_token");
-      expect(txExecute).toHaveBeenCalledTimes(PROVIDER_DATA_TABLES.length);
+      expect(deleteSql).toContain("fitness.provider_data_generation");
+      expect(deleteSql).toContain("fitness.provider_data_deletion_outbox");
+      expect(txExecute).toHaveBeenCalledTimes(PROVIDER_DATA_TABLES.length + 1);
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
     });
 
     it("deletes from each child table in order", async () => {
@@ -431,12 +457,9 @@ describe("ProviderDetailRepository", () => {
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
     });
 
-    it("continues when a provider child table does not exist", async () => {
-      const txExecute = vi
-        .fn()
-        .mockRejectedValueOnce({ code: "42P01" })
-        .mockRejectedValueOnce(new Error('relation "fitness.old_table" does not exist'))
-        .mockResolvedValue([]);
+    it("fails immediately when a provider child table does not exist", async () => {
+      const missingTableError = { code: "42P01" };
+      const txExecute = vi.fn().mockRejectedValueOnce(missingTableError);
       const mockTransaction = vi
         .fn()
         .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
@@ -444,8 +467,8 @@ describe("ProviderDetailRepository", () => {
         });
       const { repo } = makeRepository([], mockTransaction);
 
-      await expect(repo.deleteProviderData("strava")).resolves.toBeUndefined();
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+      await expect(repo.deleteProviderData("strava")).rejects.toBe(missingTableError);
+      expect(txExecute).toHaveBeenCalledTimes(1);
     });
 
     it("rethrows delete failures that are not missing-table errors", async () => {

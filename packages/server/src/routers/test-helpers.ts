@@ -1,10 +1,24 @@
 import type { AnyRouter } from "@trpc/server";
 import { initTRPC } from "@trpc/server";
+import { sql } from "drizzle-orm";
 import { vi } from "vitest";
+import type {
+  ProviderDataGeneration,
+  ProviderDataScope,
+} from "../../../../src/db/provider-data-deletion.ts";
+import type { Database } from "../../../../src/db/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { Context } from "../trpc.ts";
 
 const trpc = initTRPC.context<Context>().create();
+
+export async function resolveProviderDataGenerationsForTest(
+  database: Database,
+  scopes: readonly ProviderDataScope[],
+): Promise<ProviderDataGeneration[]> {
+  await database.execute(sql`SELECT 0 AS generation`);
+  return scopes.map((scope) => ({ ...scope, generation: 0 }));
+}
 
 export function createTestCallerFactory(router: AnyRouter) {
   return trpc.createCallerFactory(router);

@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
@@ -32,8 +39,11 @@ function makeMetricStreamPublisher() {
 function makeExecute() {
   // Drizzle execute returns an array-like QueryResult;
   // for RETURNING queries the result is an array of row objects.
-  const result = [{ id: "test-activity-id" }];
-  return vi.fn().mockResolvedValue(result);
+  return vi
+    .fn()
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([{ id: "test-activity-id" }])
+    .mockResolvedValue([]);
 }
 
 function makeCaller(execute: ReturnType<typeof makeExecute>) {
@@ -85,7 +95,7 @@ describe("activityRecordingRouter", () => {
       const result = await caller.save(makeValidInput());
 
       expect(result).toEqual({ activityId: expect.any(String) });
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(3);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
       expect(metricStreamPublisher.publishRows.mock.calls[0]?.[0]).toHaveLength(6);
     });
@@ -198,7 +208,7 @@ describe("activityRecordingRouter", () => {
       const result = await caller.save(makeValidInput({ samples }));
 
       expect(result).toEqual({ activityId: expect.any(String) });
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(4);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(2);
       expect(metricStreamPublisher.publishRows.mock.calls[0]?.[0]).toHaveLength(1500);
       expect(metricStreamPublisher.publishRows.mock.calls[1]?.[0]).toHaveLength(300);

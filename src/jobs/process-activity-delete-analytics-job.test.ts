@@ -67,7 +67,7 @@ function createProviderDeleteAnalyticsJob() {
       type: "provider-delete-analytics-refresh" as const,
       userId: "user-1",
       providerId: "strava",
-      metricStreamDeleteEventId: "30000000-0000-4000-8000-000000000001",
+      deletionEventId: "30000000-0000-4000-8000-000000000001",
     },
     updateProgress: vi.fn().mockResolvedValue(undefined),
   };
@@ -89,13 +89,10 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockWaitForPeerDbProviderDeletes.mockClear();
   });
 
-  it("waits for metric-stream and Postgres provider deletes before rebuilding every ClickHouse model", async () => {
+  it("waits only for Postgres CDC because metric-stream deletion is already acknowledged", async () => {
     await processActivityDeleteAnalyticsJob(createProviderDeleteAnalyticsJob());
 
-    expect(mockWaitForMetricStreamDeleteAcknowledgement).toHaveBeenCalledWith(
-      expect.anything(),
-      "30000000-0000-4000-8000-000000000001",
-    );
+    expect(mockWaitForMetricStreamDeleteAcknowledgement).not.toHaveBeenCalled();
     expect(mockWaitForPeerDbProviderDeletes).toHaveBeenCalledWith(
       expect.anything(),
       "user-1",

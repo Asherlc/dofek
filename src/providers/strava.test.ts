@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
   finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
@@ -1079,7 +1085,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       select: makeStravaSelectMock(validTokenRow),
       insert: mockInsert,
       delete: mockDelete,
-      execute: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
     };
 
     const provider = new StravaProvider(mockFetch);

@@ -125,7 +125,7 @@ async function upsertDailyAverageFromSamples(
 
 /** Process body measurement samples */
 export async function processBodyMeasurements(
-  _db: Database,
+  db: Database,
   userId: string,
   samples: HealthKitSample[],
   publisher?: MetricStreamEventPublisher,
@@ -157,7 +157,7 @@ export async function processBodyMeasurements(
       });
       inserted++;
     }
-    await writeMetricStreamRows({ publisher: resolvedPublisher, rows });
+    await writeMetricStreamRows({ database: db, publisher: resolvedPublisher, rows });
   }
   return inserted;
 }
@@ -305,7 +305,7 @@ export async function processDailyMetrics(
 
 /** Process metric streams */
 export async function processMetricStream(
-  _db: Database,
+  db: Database,
   userId: string,
   samples: HealthKitSample[],
   publisher?: MetricStreamEventPublisher,
@@ -335,7 +335,7 @@ export async function processMetricStream(
       });
       inserted++;
     }
-    await writeMetricStreamRows({ publisher: resolvedPublisher, rows });
+    await writeMetricStreamRows({ database: db, publisher: resolvedPublisher, rows });
   }
   return inserted;
 }
@@ -496,6 +496,7 @@ export async function processWorkoutRoutes(
     const flushPendingRows = async () => {
       if (pendingRows.length === 0) return;
       const events = await writeMetricStreamRows({
+        database: db,
         publisher: resolvedPublisher,
         rows: pendingRows,
       });

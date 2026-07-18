@@ -8,6 +8,13 @@ import {
 } from "./health-kit-sync-processors.ts";
 import type { HealthKitSample } from "./health-kit-sync-schemas.ts";
 
+vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 type ProviderActivityListSyncScope = {
   windowStart: Date;
   windowEnd: Date;
@@ -57,12 +64,13 @@ describe("processMetricStream", () => {
     );
 
     expect(inserted).toBe(1);
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledOnce();
     expect(publisher.publishRows).toHaveBeenCalledWith([
       {
         recordedAt: "2026-06-06T19:00:00.000Z",
         userId: "00000000-0000-0000-0000-000000000001",
         providerId: "apple_health",
+        generation: 0,
         externalId: "hk:heart-rate-1",
         deviceId: "Apple Watch",
         sourceType: "api",
@@ -95,12 +103,13 @@ describe("processBodyMeasurements", () => {
     );
 
     expect(inserted).toBe(1);
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledOnce();
     expect(publisher.publishRows).toHaveBeenCalledWith([
       {
         recordedAt: "2026-06-06T19:00:00.000Z",
         userId: "00000000-0000-0000-0000-000000000001",
         providerId: "apple_health",
+        generation: 0,
         externalId: "hk:body-mass-1",
         deviceId: "Apple Watch",
         sourceType: "api",

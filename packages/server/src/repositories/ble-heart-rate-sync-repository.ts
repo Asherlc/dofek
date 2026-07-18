@@ -101,7 +101,7 @@ export class BleHeartRateSyncRepository {
 
       if (rows.length > 0) {
         const publisher = await this.#publisher();
-        const result = await writeMetricStreamRows({ publisher, rows });
+        const result = await writeMetricStreamRows({ database: this.#database, publisher, rows });
         totalInserted += result.published;
       }
     }

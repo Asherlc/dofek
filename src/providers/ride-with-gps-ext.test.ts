@@ -13,6 +13,12 @@ import {
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
+vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
 }>(() => ({
@@ -648,7 +654,7 @@ function createSyncMockDb(
   db.delete = vi.fn().mockReturnValue({
     where: vi.fn().mockResolvedValue(undefined),
   });
-  db.execute = vi.fn();
+  db.execute = vi.fn().mockResolvedValue([]);
   return db;
 }
 
@@ -1098,7 +1104,7 @@ describe("RideWithGpsProvider — sync", () => {
       providerId: "ride-with-gps",
       sourceType: "api",
     });
-    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(db.execute).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("provider_absent_at = NULL");
     expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("42");
   });

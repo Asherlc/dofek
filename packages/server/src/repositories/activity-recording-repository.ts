@@ -154,7 +154,7 @@ export class ActivityRecordingRepository {
       }
       if (rows.length > 0) {
         const publisher = await this.#publisher();
-        await writeMetricStreamRows({ publisher, rows });
+        await writeMetricStreamRows({ database: this.#db, publisher, rows });
       }
     }
 

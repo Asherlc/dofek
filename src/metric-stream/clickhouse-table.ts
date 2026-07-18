@@ -1,17 +1,21 @@
 export const INGEST_DATABASE = "ingest";
 export const METRIC_STREAM_TABLE = `${INGEST_DATABASE}.metric_stream`;
 export const METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE = `${INGEST_DATABASE}.metric_stream_delete_acknowledgement`;
+export const PROVIDER_DATA_GENERATION_TABLE = `${INGEST_DATABASE}.provider_data_generation`;
 export const LEGACY_METRIC_STREAM_TABLE = "postgres_fitness.metric_stream";
 export const METRIC_STREAM_ORDER_BY = "(user_id, activity_id, channel, recorded_at, id)";
+export const METRIC_STREAM_PROVIDER_GENERATION_PROJECTION = "by_provider_generation";
+export const METRIC_STREAM_PROVIDER_GENERATION_ORDER_BY = "(user_id, provider_id, generation, id)";
 
 export const metricStreamIngestMetadataColumnDefinitions = `  ingested_at DateTime64(9) DEFAULT now(),
   is_deleted Int8 DEFAULT 0,
-  version Int64 DEFAULT 0`;
+  version Int64 DEFAULT 0,
+  generation UInt64 DEFAULT 0`;
 
 export function metricStreamReplacingMergeTreeEngine(): string {
   return `ENGINE = ReplacingMergeTree(version)
 ORDER BY ${METRIC_STREAM_ORDER_BY}
-SETTINGS allow_nullable_key = 1`;
+SETTINGS allow_nullable_key = 1, deduplicate_merge_projection_mode = 'rebuild'`;
 }
 
 export function buildIngestMetricStreamCreateTableSql(): string {
@@ -29,7 +33,11 @@ export function buildIngestMetricStreamCreateTableSql(): string {
   vector Array(Float32),
   point String,
   metadata String,
-${metricStreamIngestMetadataColumnDefinitions}
+${metricStreamIngestMetadataColumnDefinitions},
+  PROJECTION ${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION} (
+    SELECT user_id, provider_id, generation, id, _part_offset
+    ORDER BY ${METRIC_STREAM_PROVIDER_GENERATION_ORDER_BY}
+  )
 )
 ${metricStreamReplacingMergeTreeEngine()}`;
 }
@@ -41,4 +49,15 @@ export function buildMetricStreamDeleteAcknowledgementTableSql(): string {
 )
 ENGINE = ReplacingMergeTree(applied_at)
 ORDER BY event_id`;
+}
+
+export function buildProviderDataGenerationTableSql(): string {
+  return `CREATE TABLE IF NOT EXISTS ${PROVIDER_DATA_GENERATION_TABLE} (
+  user_id UUID,
+  provider_id String,
+  generation UInt64,
+  updated_at DateTime64(9) DEFAULT now64(9)
+)
+ENGINE = ReplacingMergeTree(generation)
+ORDER BY (user_id, provider_id)`;
 }
