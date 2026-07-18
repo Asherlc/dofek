@@ -95,7 +95,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       providerId: "withings",
     });
 
-    const result = await client.query<{ is_deleted: number; latest_version: string }>({
+    const result = await client.query<{ is_deleted: number; latest_version: number }>({
       query: `SELECT
           argMax(is_deleted, version) AS is_deleted,
           max(version) AS latest_version

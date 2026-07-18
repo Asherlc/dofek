@@ -14,7 +14,7 @@ import { createCapturingMetricStreamPublisher, createMockDatabase } from "./test
 
 vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
-  const { resolveProviderDataGenerationsForTest } = await import("../test/test-helpers.ts");
+  const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
   return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
 });
 

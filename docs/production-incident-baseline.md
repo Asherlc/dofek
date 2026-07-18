@@ -13836,8 +13836,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   29657088198](https://github.com/Asherlc/dofek/actions/runs/29657088198), Stryker
   shard 4 then reported 19 uncovered mutants in the periodic outbox dispatcher.
   Locally, the Docker VM overlay reached 100% utilization and PostgreSQL emitted
-  `No space left on device`; the current workspace database contained about 160 disposable
-  `dofek_integration_template_*` and `test_*` databases from integration runs.
+  `No space left on device`; the current workspace database contained about 160
+  disposable `dofek_integration_template_*` and `test_*` databases from
+  integration runs.
 - **Root cause:** Tests had not been updated for the corrected scalar subqueries
   or projection-aware ClickHouse mutation semantics. Existing unit database
   doubles also did not model the new authoritative generation query, and the
@@ -13850,20 +13851,20 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   left disposable template databases in the shared Docker VM until its
   filesystem was exhausted.
 - **Fix / mitigation:** Updated the SQL expectations, changed ClickHouse test
-  cleanup to synchronous `ALTER TABLE ... DELETE` mutations, added a shared
-  generation resolver for database doubles, and aligned the database row parser
-  with `z.guid()`. Added lifecycle tests for immediate and interval dispatch,
-  overlap suppression, error reporting and recovery, and shutdown fencing.
+  cleanup to synchronous `ALTER TABLE ... DELETE` mutations, added colocated
+  generation resolvers for database doubles, and aligned the database row
+  parser with `z.guid()`. Added lifecycle tests for immediate and interval
+  dispatch, overlap suppression, error reporting and recovery, and shutdown fencing.
   Dropped only the current workspace's disposable test/template databases. The
   `health` database, running containers, and all named volumes were preserved.
-  Docker's official guidance distinguishes pruning rebuildable caches and unused objects from explicit volume removal
+  Docker's official guidance distinguishes pruning rebuildable caches and unused
+  objects from explicit volume removal
   ([Docker pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/)).
-- **Validation:** The full unit suite passes with 11,859 tests, the 19 provider
-  integration files that failed in CI pass all 293 tests, and the focused 12
-  PostgreSQL/ClickHouse deletion tests pass. The affected mutation shard's
-  instrumented dry run passes 2,904 selected tests and kills all 11 covered
-  mutants for a 100% mutation score. The outbox dispatcher test file passes all
-  5 tests, and its exact CI mutation shard kills all 21 mutants for a 100% score.
+- **Validation:** The [GitHub Actions unit
+  job](https://github.com/Asherlc/dofek/actions/runs/29657498147/job/88114438457)
+  passed 11,859 tests, and [Stryker shard
+  4](https://github.com/Asherlc/dofek/actions/runs/29657498147/job/88114478758)
+  killed all 21 outbox-dispatcher mutants for a 100% mutation score.
 - **Remaining risk / follow-up:** The shared Docker VM has limited free space,
   so a non-sharded local full suite may still exceed capacity. Add deterministic
   integration-template cleanup and a Docker disk preflight to the testing

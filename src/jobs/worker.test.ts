@@ -15,6 +15,10 @@ const hoisted = vi.hoisted(() => {
   const mockClose = vi.fn(() => Promise.resolve());
   const mockRun = vi.fn(() => Promise.resolve());
   const mockAddJobLog = vi.fn(() => Promise.resolve(1));
+  const mockDatabase = {
+    $client: { end: vi.fn(() => Promise.resolve()) },
+  };
+  const mockClickHouseClient = {};
 
   // Per-worker `on` mocks, keyed by queue name, so tests can find handlers
   // registered by a specific worker rather than relying on call order.
@@ -49,6 +53,8 @@ const hoisted = vi.hoisted(() => {
     mockClose,
     mockRun,
     mockAddJobLog,
+    mockDatabase,
+    mockClickHouseClient,
     mockReadinessListen,
     mockReadinessClose,
     mockReadinessServer,
@@ -76,13 +82,11 @@ vi.mock("bullmq", () => ({
 }));
 
 vi.mock("../db/index.ts", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({
-    $client: { end: vi.fn(() => Promise.resolve()) },
-  })),
+  createDatabaseFromEnv: vi.fn(() => hoisted.mockDatabase),
 }));
 
 vi.mock("../db/clickhouse.ts", () => ({
-  createClickHouseClientFromEnv: vi.fn(() => ({})),
+  createClickHouseClientFromEnv: vi.fn(() => hoisted.mockClickHouseClient),
 }));
 
 vi.mock("../db/clickhouse-read-model-refresh.ts", () => ({
@@ -217,6 +221,8 @@ const {
   mockClose,
   mockRun,
   mockAddJobLog,
+  mockDatabase,
+  mockClickHouseClient,
   mockReadinessListen,
   mockReadinessClose,
   mockObserveFitJob,
@@ -308,7 +314,7 @@ describe("worker module", () => {
       updateProgress: vi.fn(async () => undefined),
     };
 
-    expect(() => processor(invalidJob)).toThrow();
+    expect(() => processor(invalidJob)).toThrow(hoisted.MockUnrecoverableError);
   });
 
   it("passes limiter config to per-provider workers", async () => {
@@ -600,6 +606,17 @@ describe("worker module", () => {
     getProviderDataDeletionRedriveHandler()(
       { attemptsMade: 19, opts: { attempts: 20 }, retry },
       new Error("ClickHouse unavailable"),
+    );
+
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it("does not redrive unrecoverable provider deletion failures", () => {
+    const retry = vi.fn(async () => undefined);
+
+    getProviderDataDeletionRedriveHandler()(
+      { attemptsMade: 20, opts: { attempts: 20 }, retry },
+      new hoisted.MockUnrecoverableError("Invalid provider data deletion job payload"),
     );
 
     expect(retry).not.toHaveBeenCalled();
@@ -1163,9 +1180,12 @@ describe("worker module", () => {
   });
 
   it("provider-data-deletion processor delegates to processProviderDataDeletionJob", async () => {
+    const { markProviderDataDeletionCompleted } = await import("../db/provider-data-deletion.ts");
     const { processProviderDataDeletionJob } = await import(
       "./process-provider-data-deletion-job.ts"
     );
+    const { enqueueProviderDeleteAnalyticsRefresh } = await import("./queues.ts");
+    vi.mocked(markProviderDataDeletionCompleted).mockClear();
     vi.mocked(processProviderDataDeletionJob).mockClear();
 
     await invokeProcessor("provider-data-deletion-queue", {
@@ -1176,7 +1196,21 @@ describe("worker module", () => {
       userId: "00000000-0000-4000-8000-000000000004",
     });
 
-    expect(processProviderDataDeletionJob).toHaveBeenCalled();
+    expect(processProviderDataDeletionJob).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        clickHouseClient: mockClickHouseClient,
+        enqueueAnalyticsRefresh: enqueueProviderDeleteAnalyticsRefresh,
+        markCompleted: expect.any(Function),
+      }),
+    );
+    const dependencies = vi.mocked(processProviderDataDeletionJob).mock.calls[0]?.[1];
+    if (!dependencies) throw new Error("provider deletion dependencies were not passed");
+    await dependencies.markCompleted("30000000-0000-4000-8000-000000000003");
+    expect(markProviderDataDeletionCompleted).toHaveBeenCalledWith(
+      mockDatabase,
+      "30000000-0000-4000-8000-000000000003",
+    );
   });
 
   it("closes readiness and Garmin progress resources during graceful shutdown", async () => {

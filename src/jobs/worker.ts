@@ -168,7 +168,11 @@ const activityDeleteAnalyticsWorker = new Worker<ActivityAnalyticsJobData>(
 const providerDataDeletionWorker = new Worker<ProviderDataDeletionJobData>(
   PROVIDER_DATA_DELETION_QUEUE,
   (job) => {
-    job.data = providerDataDeletionJobDataSchema.parse(job.data);
+    try {
+      job.data = providerDataDeletionJobDataSchema.parse(job.data);
+    } catch (error) {
+      throw new UnrecoverableError(error instanceof Error ? error.message : String(error));
+    }
     return jobContext.run(job, () =>
       processProviderDataDeletionJob(job, {
         clickHouseClient: getClickHouseClient(),
@@ -179,8 +183,8 @@ const providerDataDeletionWorker = new Worker<ProviderDataDeletionJobData>(
   },
   { autorun: false, connection, concurrency: 1 },
 );
-providerDataDeletionWorker.on("failed", (job) => {
-  if (!job) return;
+providerDataDeletionWorker.on("failed", (job, error) => {
+  if (!job || error instanceof UnrecoverableError) return;
   const configuredAttempts = job.opts.attempts ?? 1;
   if (job.attemptsMade < configuredAttempts) return;
 

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
-import type { ProviderDataGeneration, ProviderDataScope } from "../db/provider-data-deletion.ts";
-import type { Database } from "../db/typed-sql.ts";
+import type { ProviderDataGeneration, ProviderDataScope } from "../../db/provider-data-deletion.ts";
+import type { Database } from "../../db/typed-sql.ts";
 
 export async function resolveProviderDataGenerationsForTest(
   database: Database,

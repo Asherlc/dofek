@@ -5,8 +5,11 @@
  * `SyncDatabase` mock — eliminating the need for type suppression
  * comments throughout provider test files.
  */
+import { sql } from "drizzle-orm";
 import { vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import type { ProviderDataGeneration, ProviderDataScope } from "../db/provider-data-deletion.ts";
+import type { Database } from "../db/typed-sql.ts";
 import {
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
@@ -14,6 +17,14 @@ import {
   type MetricStreamRowInput,
 } from "../metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+
+export async function resolveProviderDataGenerationsForTest(
+  database: Database,
+  scopes: readonly ProviderDataScope[],
+): Promise<ProviderDataGeneration[]> {
+  await database.execute(sql`SELECT 0 AS generation`);
+  return scopes.map((scope) => ({ ...scope, generation: 0 }));
+}
 
 /**
  * Options for configuring the mock database behavior.
