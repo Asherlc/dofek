@@ -253,7 +253,6 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         delete_version: expect.any(Number),
         user_id: "10000000-0000-4000-8000-000000000001",
         provider_id: "fitbit",
-        external_id: null,
         channel: "body_weight",
         activity_id: "20000000-0000-4000-8000-000000000001",
         recorded_at_start: "2026-03-01T00:00:00.000Z",
@@ -263,7 +262,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     const query = firstCommandQuery(command);
     expect(query).toContain("candidate_row.user_id = {user_id:UUID}");
     expect(query).toContain("candidate_row.provider_id = {provider_id:String}");
-    expect(query).toContain("candidate_row.external_id = {external_id:String}");
+    expect(query).toContain("candidate_row.external_id IS NULL");
     expect(query).toContain("candidate_row.channel = {channel:String}");
     expect(query).toContain("candidate_row.activity_id = {activity_id:UUID}");
     expect(query).toContain(
@@ -274,13 +273,34 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     );
     expect(query).toContain("latest_row.2 = {user_id:UUID}");
     expect(query).toContain("latest_row.5 = {provider_id:String}");
-    expect(query).toContain("latest_row.6 = {external_id:String}");
+    expect(query).toContain("latest_row.6 IS NULL");
     expect(query).toContain("latest_row.4 = {channel:String}");
     expect(query).toContain("latest_row.1 = {activity_id:UUID}");
     expect(query).toContain(
       "latest_row.3 >= parseDateTime64BestEffort({recorded_at_start:String})",
     );
     expect(query).toContain("latest_row.3 < parseDateTime64BestEffort({recorded_at_end:String})");
+  });
+
+  it("binds non-null external IDs in replacement scopes", async () => {
+    const command = vi.fn(async () => undefined);
+
+    await applyMetricStreamEventsToClickHouse({ command, insert: vi.fn(async () => undefined) }, [
+      createMetricStreamDeletedEvent({
+        providerId: "fitbit",
+        externalId: "measurement-1",
+      }),
+    ]);
+
+    expect(command).toHaveBeenCalledWith({
+      query: expect.stringContaining("candidate_row.external_id = {external_id:String}"),
+      query_params: {
+        delete_version: expect.any(Number),
+        provider_id: "fitbit",
+        external_id: "measurement-1",
+      },
+    });
+    expect(firstCommandQuery(command)).toContain("latest_row.6 = {external_id:String}");
   });
 
   it("rejects replacement delete scopes that produce no ClickHouse conditions", async () => {

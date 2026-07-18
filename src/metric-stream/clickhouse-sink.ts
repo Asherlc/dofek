@@ -143,7 +143,9 @@ function clickHouseDeleteScopeConditions(
     queryParams.provider_id = scope.providerId;
     conditions.push(`${columns.providerId} = {provider_id:String}`);
   }
-  if (scope.externalId !== undefined) {
+  if (scope.externalId === null) {
+    conditions.push(`${columns.externalId} IS NULL`);
+  } else if (scope.externalId !== undefined) {
     queryParams.external_id = scope.externalId;
     conditions.push(`${columns.externalId} = {external_id:String}`);
   }

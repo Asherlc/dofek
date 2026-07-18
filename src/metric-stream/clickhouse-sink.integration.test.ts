@@ -17,6 +17,7 @@ import { createMetricStreamDeletedEvent, createMetricStreamEvent } from "./event
 const testUserId = "00000000-0000-0000-0000-000000000001";
 const testEventId = "5e6f7a8b-0c1d-4e2f-8a3b-4c5d6e7f8a90";
 const latestScopeTestEventId = "6f7a8b9c-1d2e-4f3a-9b4c-5d6e7f8a9b01";
+const nullExternalIdTestEventId = "7a8b9c0d-2e3f-404b-8c5d-6e7f8a9b0c12";
 
 function assertInsertCapable(
   client: ClickHouseClient,
@@ -29,7 +30,7 @@ function assertInsertCapable(
 async function removeTestEvent(client: ClickHouseClient): Promise<void> {
   await client.command({
     query: `DELETE FROM ${METRIC_STREAM_TABLE} WHERE id IN {ids:Array(UUID)}`,
-    query_params: { ids: [testEventId, latestScopeTestEventId] },
+    query_params: { ids: [testEventId, latestScopeTestEventId, nullExternalIdTestEventId] },
   });
 }
 
@@ -176,6 +177,34 @@ describe("metric stream ClickHouse sink (integration)", () => {
     } finally {
       await client.command({ query: `SYSTEM START MERGES ${METRIC_STREAM_TABLE}` });
     }
+  });
+
+  it("tombstones rows scoped to a null external ID", async () => {
+    const event = createMetricStreamEvent({
+      id: nullExternalIdTestEventId,
+      recordedAt: "2026-06-09T14:36:12.000Z",
+      userId: testUserId,
+      providerId: "withings",
+      sourceType: "api",
+      channel: "body_weight",
+      scalar: 84.862,
+    });
+    await insertMetricStreamEventsIntoClickHouse(client, [event]);
+
+    await markMetricStreamScopeDeletedInClickHouse(client, {
+      userId: testUserId,
+      providerId: "withings",
+      externalId: null,
+    });
+
+    const result = await client.query<{ is_deleted: number }>({
+      query: `SELECT argMax(is_deleted, version) AS is_deleted
+        FROM ${METRIC_STREAM_TABLE}
+        WHERE id = {id:UUID}`,
+      query_params: { id: nullExternalIdTestEventId },
+      format: "JSONEachRow",
+    });
+    expect((await result.json())[0]?.is_deleted).toBe(1);
   });
 
   it("acknowledges a deletion event only after applying it", async () => {
