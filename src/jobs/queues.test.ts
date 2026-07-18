@@ -1,22 +1,50 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportJobData } from "./queues.ts";
 
-const mockQueueAdd = vi.fn();
-const mockQueueClose = vi.fn().mockResolvedValue(undefined);
-const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd, close: mockQueueClose };
-const MockQueue = vi.fn(() => mockQueueInstance);
-const mockFlowProducerClose = vi.fn().mockResolvedValue(undefined);
-const mockFlowProducerInstance = { name: "mock-flow-producer", close: mockFlowProducerClose };
-const MockFlowProducer = vi.fn(() => mockFlowProducerInstance);
-const mockQueueEventsClose = vi.fn().mockResolvedValue(undefined);
-const mockQueueEventsInstance = { name: "mock-queue-events", close: mockQueueEventsClose };
-const MockQueueEvents = vi.fn(() => mockQueueEventsInstance);
+const {
+  mockQueueAdd,
+  mockQueueClose,
+  MockQueue,
+  mockFlowProducerClose,
+  MockFlowProducer,
+  mockQueueEventsClose,
+  MockQueueEvents,
+} = vi.hoisted(() => {
+  const mockQueueAdd = vi.fn();
+  const mockQueueClose = vi.fn().mockResolvedValue(undefined);
+  const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd, close: mockQueueClose };
+  const MockQueue = vi.fn(() => mockQueueInstance);
+  const mockFlowProducerClose = vi.fn().mockResolvedValue(undefined);
+  const mockFlowProducerInstance = { name: "mock-flow-producer", close: mockFlowProducerClose };
+  const MockFlowProducer = vi.fn(() => mockFlowProducerInstance);
+  const mockQueueEventsClose = vi.fn().mockResolvedValue(undefined);
+  const mockQueueEventsInstance = { name: "mock-queue-events", close: mockQueueEventsClose };
+  const MockQueueEvents = vi.fn(() => mockQueueEventsInstance);
+  return {
+    mockQueueAdd,
+    mockQueueClose,
+    MockQueue,
+    mockFlowProducerClose,
+    MockFlowProducer,
+    mockQueueEventsClose,
+    MockQueueEvents,
+  };
+});
 
 vi.mock("bullmq", () => ({
   FlowProducer: MockFlowProducer,
   Queue: MockQueue,
   QueueEvents: MockQueueEvents,
 }));
+
+import {
+  closeAllQueueResources,
+  createProviderDataDeletionQueue,
+  enqueueProviderDataDeletion,
+  getProviderDataDeletionQueue,
+  PROVIDER_DATA_DELETION_QUEUE,
+  providerDataDeletionJobDataSchema,
+} from "./queues.ts";
 
 describe("queues", () => {
   beforeEach(() => {
@@ -67,8 +95,7 @@ describe("queues", () => {
   });
 
   describe("providerDataDeletionJobDataSchema", () => {
-    it("validates the complete resumable deletion payload", async () => {
-      const { providerDataDeletionJobDataSchema } = await import("./queues.ts");
+    it("validates the complete resumable deletion payload", () => {
       const payload = {
         type: "provider-data-deletion",
         eventId: "10000000-0000-4000-8000-000000000001",
@@ -88,6 +115,13 @@ describe("queues", () => {
           ...payload,
           checkpoint: { ...payload.checkpoint, deletedRows: -1 },
         }).success,
+      ).toBe(false);
+      expect(providerDataDeletionJobDataSchema.safeParse({}).success).toBe(false);
+      expect(
+        providerDataDeletionJobDataSchema.safeParse({ ...payload, providerId: "" }).success,
+      ).toBe(false);
+      expect(
+        providerDataDeletionJobDataSchema.safeParse({ ...payload, checkpoint: {} }).success,
       ).toBe(false);
     });
   });
@@ -686,10 +720,10 @@ describe("queues", () => {
 
   describe("enqueueProviderDataDeletion", () => {
     it("uses the outbox event id as the BullMQ idempotency key", async () => {
-      const { createProviderDataDeletionQueue, enqueueProviderDataDeletion } = await import(
-        "./queues.ts"
-      );
-      const queue = createProviderDataDeletionQueue({ host: "test", port: 9999 });
+      const connection = { host: "test", port: 9999 };
+      const queue = createProviderDataDeletionQueue(connection);
+
+      expect(MockQueue).toHaveBeenCalledWith(PROVIDER_DATA_DELETION_QUEUE, { connection });
 
       await enqueueProviderDataDeletion(
         {
@@ -718,6 +752,23 @@ describe("queues", () => {
           removeOnFail: { age: 2_592_000, count: 1_000 },
         },
       );
+    });
+
+    it("creates and closes one cached provider deletion queue", async () => {
+      await closeAllQueueResources();
+      vi.clearAllMocks();
+
+      const firstQueue = getProviderDataDeletionQueue();
+      const secondQueue = getProviderDataDeletionQueue();
+
+      expect(firstQueue).toBe(secondQueue);
+      expect(MockQueue).toHaveBeenCalledOnce();
+      expect(MockQueue).toHaveBeenCalledWith(PROVIDER_DATA_DELETION_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+
+      await closeAllQueueResources();
+      expect(mockQueueClose).toHaveBeenCalledOnce();
     });
   });
 

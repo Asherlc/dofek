@@ -13838,11 +13838,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   In [GitHub Actions run
   29657809726](https://github.com/Asherlc/dofek/actions/runs/29657809726), Stryker
   shard 10 later reported six surviving result-shape guard mutants in
-  `executeWithSchema`.
+  `executeWithSchema`. In [GitHub Actions run
+  29658563450](https://github.com/Asherlc/dofek/actions/runs/29658563450), Stryker
+  shards 2 and 3 then reported uncovered persistence edge cases and queue-cache
+  lifecycle paths.
   Locally, the Docker VM overlay reached 100% utilization and PostgreSQL emitted
   `No space left on device`; the current workspace database contained about 160
   disposable `dofek_integration_template_*` and `test_*` databases from
-  integration runs.
+  integration runs. A later attempt to reproduce Stryker shards 2 and 3 in
+  parallel exceeded ClickHouse's 3 GiB memory limit during unrelated analytics
+  test setup.
 - **Root cause:** Tests had not been updated for the corrected scalar subqueries
   or projection-aware ClickHouse mutation semantics. Existing unit database
   doubles also did not model the new authoritative generation query, and the
@@ -13853,15 +13858,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   tests covered one-shot dispatch but not the periodic dispatcher's interval,
   overlap, recovery, and close lifecycle. The typed SQL tests covered valid row
   arrays and Drizzle transaction results, but not invalid null, callable, or
-  record-without-rows results. Separately, completed integration runs left
-  disposable template databases in the shared Docker VM until its filesystem
-  was exhausted.
+  record-without-rows results. The deletion persistence and queue tests did not
+  directly cover empty batches, malformed/missing rows, completion writes, or
+  cached queue creation and shutdown. Separately, completed integration runs
+  left disposable template databases in the shared Docker VM until its
+  filesystem was exhausted. The ClickHouse memory failure came from running two
+  broad Stryker related-test suites concurrently against the same local service,
+  not from the deletion implementation.
 - **Fix / mitigation:** Updated the SQL expectations, changed ClickHouse test
   cleanup to synchronous `ALTER TABLE ... DELETE` mutations, added colocated
   generation resolvers for database doubles, and aligned the database row
   parser with `z.guid()`. Added lifecycle tests for immediate and interval
   dispatch, overlap suppression, error reporting and recovery, and shutdown
-  fencing. Added public-interface result-shape tests for `executeWithSchema`.
+  fencing. Added public-interface result-shape tests for `executeWithSchema`,
+  deletion persistence edge cases, and the cached deletion queue lifecycle.
+  Re-ran the exact shared-dependency mutation shards serially after confirming
+  ClickHouse recovered.
   Dropped only the current workspace's disposable test/template databases. The
   `health` database, running containers, and all named volumes were preserved.
   Docker's official guidance distinguishes pruning rebuildable caches and unused
@@ -13875,4 +13887,5 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** The shared Docker VM has limited free space,
   so a non-sharded local full suite may still exceed capacity. Add deterministic
   integration-template cleanup and a Docker disk preflight to the testing
-  runbook; use sharded CI as the authoritative full-suite validation until then.
+  runbook, and keep broad local Stryker related-test runs serialized; use sharded
+  CI as the authoritative full-suite validation until then.
