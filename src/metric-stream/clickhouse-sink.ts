@@ -144,6 +144,7 @@ function clickHouseDeleteScopeConditions(
 export async function markMetricStreamScopeDeletedInClickHouse(
   client: ClickHouseMetricStreamInsertClient,
   scope: MetricStreamDeleteScope,
+  eventId?: string,
 ): Promise<void> {
   if (!client.command) {
     throw new Error("ClickHouse metric-stream replacement requires a command-capable client");
@@ -200,20 +201,13 @@ export async function markMetricStreamScopeDeletedInClickHouse(
       WHERE latest_row.13 = 0`,
     query_params: queryParams,
   });
-}
-
-async function acknowledgeMetricStreamDeletion(
-  client: ClickHouseMetricStreamInsertClient,
-  eventId: string,
-): Promise<void> {
-  if (!client.command) {
-    throw new Error("ClickHouse metric-stream replacement requires a command-capable client");
+  if (eventId) {
+    await client.command({
+      query: `INSERT INTO ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (event_id)
+        VALUES ({event_id:UUID})`,
+      query_params: { event_id: eventId },
+    });
   }
-  await client.command({
-    query: `INSERT INTO ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (event_id)
-      VALUES ({event_id:UUID})`,
-    query_params: { event_id: eventId },
-  });
 }
 
 export async function applyMetricStreamEventsToClickHouse(
@@ -231,10 +225,11 @@ export async function applyMetricStreamEventsToClickHouse(
   for (const event of events) {
     if (isMetricStreamDeletedEvent(event)) {
       await flushRows();
-      await markMetricStreamScopeDeletedInClickHouse(client, event.scope);
-      if ("eventId" in event) {
-        await acknowledgeMetricStreamDeletion(client, event.eventId);
-      }
+      await markMetricStreamScopeDeletedInClickHouse(
+        client,
+        event.scope,
+        "eventId" in event ? event.eventId : undefined,
+      );
       continue;
     }
     rowBuffer.push(event);

@@ -6,7 +6,11 @@ import {
   markMetricStreamScopeDeletedInClickHouse,
 } from "./clickhouse-sink.ts";
 import { METRIC_STREAM_TABLE } from "./clickhouse-table.ts";
-import { createMetricStreamDeletedEvent, type MetricStreamEventV1 } from "./events.ts";
+import {
+  createMetricStreamDeletedEvent,
+  type MetricStreamDeletedEventV1,
+  type MetricStreamEventV1,
+} from "./events.ts";
 import type { RunMetricStreamEventConsumerOptions } from "./redpanda-consumer.ts";
 
 const heartRateEvent = {
@@ -135,6 +139,26 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
 });
 
 describe("applyMetricStreamEventsToClickHouse", () => {
+  it("replays archived v1 deletes without a v2 acknowledgement", async () => {
+    const command = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => undefined);
+    const archivedDeleteEvent = {
+      version: 1,
+      eventType: "metric_stream_deleted",
+      scope: { activityId: "20000000-0000-4000-8000-000000000001" },
+      partitionKey: "activity:20000000-0000-4000-8000-000000000001",
+    } satisfies MetricStreamDeletedEventV1;
+
+    const applied = await applyMetricStreamEventsToClickHouse({ command, insert }, [
+      archivedDeleteEvent,
+    ]);
+
+    expect(applied).toBe(0);
+    expect(command).toHaveBeenCalledTimes(1);
+    expect(firstCommandQuery(command)).toContain(`INSERT INTO ${METRIC_STREAM_TABLE}`);
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("marks matching ClickHouse rows deleted before inserting replacement rows", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
