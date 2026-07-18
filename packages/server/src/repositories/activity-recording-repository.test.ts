@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { SaveActivityInput } from "./activity-recording-repository.ts";
 import { ActivityRecordingRepository } from "./activity-recording-repository.ts";
 
+vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import(
+    "../../../../src/test/test-helpers.ts"
+  );
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 describe("ActivityRecordingRepository", () => {
   function makePublisher() {
     return {

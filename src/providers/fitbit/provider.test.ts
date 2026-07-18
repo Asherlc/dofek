@@ -18,6 +18,12 @@ import type {
 } from "./client.ts";
 import { FitbitProvider, fitbitOAuthConfig } from "./provider.ts";
 
+vi.mock("../../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("../../test/test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 const { publishedMetricStreamBatches, replacementScopes } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
   replacementScopes: unknown[];

@@ -13819,31 +13819,45 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 ## 2026-07-18 — Deletion Workflow PR Validation Failures
 
 - **Symptoms:** The deletion workflow pull request failed its unit and
-  integration CI jobs. A subsequent local full-suite validation produced
-  cascading PostgreSQL `No space left on device` failures.
+  integration CI jobs. A subsequent CI run also failed provider sync and
+  mutation tests after the generation lookup was batched. Local full-suite
+  validation produced cascading PostgreSQL `No space left on device` failures.
 - **User impact:** No production impact; the failures blocked validation of the
   replacement deletion workflow before deployment.
 - **Evidence:** In [GitHub Actions run
   29654216514](https://github.com/Asherlc/dofek/actions/runs/29654216514), the
   unit job first failed on stale `LIMIT 1` SQL assertions and integration shard
   3 first failed because ClickHouse rejects lightweight `DELETE` on a table
-  with projections. Locally, the Docker VM overlay reached 100% utilization and
-  PostgreSQL emitted `No space left on device`; the current workspace database
-  contained about 160 disposable `dofek_integration_template_*` and `test_*`
-  databases from integration runs.
+  with projections. In [GitHub Actions run
+  29655480888](https://github.com/Asherlc/dofek/actions/runs/29655480888), unit
+  and mutation jobs first failed because database doubles returned no rows for
+  the new batched lookup, while all four integration shards returned `Invalid
+  UUID` from the generation row parser. Locally, the Docker VM overlay reached
+  100% utilization and PostgreSQL emitted `No space left on device`; the current
+  workspace database contained about 160 disposable
+  `dofek_integration_template_*` and `test_*` databases from integration runs.
 - **Root cause:** Tests had not been updated for the corrected scalar subqueries
-  or projection-aware ClickHouse mutation semantics. Separately, completed
-  integration runs left disposable template databases in the shared Docker VM
-  until its filesystem was exhausted.
+  or projection-aware ClickHouse mutation semantics. Existing unit database
+  doubles also did not model the new authoritative generation query, and the
+  database row parser used strict `z.uuid()` validation for the UUID-shaped
+  integration fixture ID instead of the project's GUID-compatible boundary;
+  Zod documents `z.guid()` for UUID-like identifiers that do not enforce RFC
+  variant bits ([Zod UUID documentation](https://zod.dev/api#uuids)). Separately,
+  completed integration runs left disposable template databases in the shared
+  Docker VM until its filesystem was exhausted.
 - **Fix / mitigation:** Updated the SQL expectations, changed ClickHouse test
-  cleanup to synchronous `ALTER TABLE ... DELETE` mutations, and dropped only
-  the current workspace's disposable test/template databases. The `health`
-  database, running containers, and all named volumes were preserved. Docker's
-  official guidance distinguishes pruning rebuildable caches and unused objects
-  from explicit volume removal
+  cleanup to synchronous `ALTER TABLE ... DELETE` mutations, added a shared
+  generation resolver for database doubles, and aligned the database row parser
+  with `z.guid()`. Dropped only the current workspace's disposable test/template
+  databases. The `health` database, running containers, and all named volumes
+  were preserved. Docker's official guidance distinguishes pruning rebuildable
+  caches and unused objects from explicit volume removal
   ([Docker pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/)).
-- **Validation:** The affected 256 unit tests and 12 real PostgreSQL/ClickHouse
-  integration tests pass after the fixes.
+- **Validation:** The full unit suite passes with 11,855 tests, the 19 provider
+  integration files that failed in CI pass all 293 tests, and the focused 12
+  PostgreSQL/ClickHouse deletion tests pass. The affected mutation shard's
+  instrumented dry run passes 2,904 selected tests and kills all 11 covered
+  mutants for a 100% mutation score.
 - **Remaining risk / follow-up:** The shared Docker VM has limited free space,
   so a non-sharded local full suite may still exceed capacity. Add deterministic
   integration-template cleanup and a Docker disk preflight to the testing

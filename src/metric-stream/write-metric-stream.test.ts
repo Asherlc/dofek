@@ -106,4 +106,20 @@ describe("writeMetricStreamRows", () => {
       expect.objectContaining({ generation: 2, providerId: "garmin" }),
     ]);
   });
+
+  it("does not publish when a provider generation is unresolved", async () => {
+    const publisher = makePublisher();
+    const database = {
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    await expect(
+      writeMetricStreamRows({
+        database,
+        publisher,
+        rows: metricStreamRows,
+      }),
+    ).rejects.toThrow("Provider data generation was not resolved");
+    expect(publisher.publishRows).not.toHaveBeenCalled();
+  });
 });

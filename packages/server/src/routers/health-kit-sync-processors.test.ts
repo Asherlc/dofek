@@ -8,6 +8,15 @@ import {
 } from "./health-kit-sync-processors.ts";
 import type { HealthKitSample } from "./health-kit-sync-schemas.ts";
 
+vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import(
+    "../../../../src/test/test-helpers.ts"
+  );
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 type ProviderActivityListSyncScope = {
   windowStart: Date;
   windowEnd: Date;

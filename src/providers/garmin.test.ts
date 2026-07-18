@@ -16,6 +16,12 @@ import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import type { SyncOptions } from "./types.ts";
 
+vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-data-deletion.ts")>();
+  const { resolveProviderDataGenerationsForTest } = await import("../test/test-helpers.ts");
+  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+});
+
 const drizzleMocks = vi.hoisted<{
   inArrayValues: unknown[];
 }>(() => ({

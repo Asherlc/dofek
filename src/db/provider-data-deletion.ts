@@ -5,7 +5,7 @@ import { type Database, executeWithSchema, type SchemaExecutionDatabase } from "
 const providerDataGenerationRowSchema = z.object({
   generation: z.coerce.number().int().nonnegative(),
   provider_id: z.string().min(1),
-  user_id: z.uuid(),
+  user_id: z.guid(),
 });
 const providerDataDeletionRequestRowSchema = z.object({
   event_id: z.uuid(),
