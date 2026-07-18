@@ -253,8 +253,8 @@ services:
     volumes:
       - /mnt/dofek-data/clickhouse:/var/lib/clickhouse
     configs:
-      - source: clickhouse_nullable_tuple_settings
-        target: /etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml
+      - source: clickhouse_default_query_guardrails_v2
+        target: /etc/clickhouse-server/users.d/default-query-guardrails.xml
         mode: 0444
       - source: clickhouse_system_log_ttl
         target: /etc/clickhouse-server/config.d/system-log-ttl.xml
@@ -701,8 +701,8 @@ networks:
     attachable: true
 
 configs:
-  clickhouse_nullable_tuple_settings:
-    file: ./clickhouse/users.d/allow-experimental-nullable-tuple-type.xml
+  clickhouse_default_query_guardrails_v2:
+    file: ./clickhouse/users.d/default-query-guardrails.xml
   clickhouse_system_log_ttl:
     file: ./clickhouse/config.d/system-log-ttl.xml
   clickhouse_memory_limits_13g:

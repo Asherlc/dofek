@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createMetricStreamDeletedEvent, createMetricStreamEvent } from "./events.ts";
+import {
+  createMetricStreamDeletedEvent,
+  createMetricStreamEvent,
+  metricStreamRedpandaEventSchema,
+} from "./events.ts";
 
 const baseMetricStreamRow = {
   recordedAt: "2026-06-06T19:00:00.000Z",
@@ -76,8 +80,11 @@ describe("createMetricStreamDeletedEvent", () => {
     });
 
     expect(event).toEqual({
-      version: 1,
+      version: 2,
       eventType: "metric_stream_deleted",
+      eventId: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      ),
       scope: {
         activityId: "20000000-0000-4000-8000-000000000001",
       },
@@ -112,5 +119,21 @@ describe("createMetricStreamDeletedEvent", () => {
     expect(() => createMetricStreamDeletedEvent({})).toThrow(
       "Metric stream delete scope must include activityId or providerId",
     );
+  });
+
+  it("accepts version-one delete events during archive replay", () => {
+    expect(
+      metricStreamRedpandaEventSchema.parse({
+        version: 1,
+        eventType: "metric_stream_deleted",
+        scope: { activityId: "20000000-0000-4000-8000-000000000001" },
+        partitionKey: "activity:20000000-0000-4000-8000-000000000001",
+      }),
+    ).toEqual({
+      version: 1,
+      eventType: "metric_stream_deleted",
+      scope: { activityId: "20000000-0000-4000-8000-000000000001" },
+      partitionKey: "activity:20000000-0000-4000-8000-000000000001",
+    });
   });
 });

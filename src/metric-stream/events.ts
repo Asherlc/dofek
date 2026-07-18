@@ -1,7 +1,8 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 export const METRIC_STREAM_EVENT_VERSION = 1;
+export const METRIC_STREAM_DELETE_EVENT_VERSION = 2;
 export const METRIC_STREAM_DELETED_EVENT_TYPE = "metric_stream_deleted";
 
 const nonEmptyStringSchema = z.string().min(1);
@@ -104,8 +105,19 @@ export const metricStreamDeletedEventV1Schema = z
   })
   .strict();
 
+export const metricStreamDeletedEventV2Schema = z
+  .object({
+    version: z.literal(METRIC_STREAM_DELETE_EVENT_VERSION),
+    eventType: z.literal(METRIC_STREAM_DELETED_EVENT_TYPE),
+    eventId: z.guid(),
+    scope: metricStreamDeleteScopeSchema,
+    partitionKey: nonEmptyStringSchema,
+  })
+  .strict();
+
 export const metricStreamRedpandaEventSchema = z.union([
   metricStreamDeletedEventV1Schema,
+  metricStreamDeletedEventV2Schema,
   metricStreamEventV1Schema,
 ]);
 
@@ -114,6 +126,8 @@ export type MetricStreamEventV1 = z.infer<typeof metricStreamEventV1Schema>;
 export type MetricStreamDeleteScopeInput = z.input<typeof metricStreamDeleteScopeSchema>;
 export type MetricStreamDeleteScope = z.infer<typeof metricStreamDeleteScopeSchema>;
 export type MetricStreamDeletedEventV1 = z.infer<typeof metricStreamDeletedEventV1Schema>;
+export type MetricStreamDeletedEventV2 = z.infer<typeof metricStreamDeletedEventV2Schema>;
+export type MetricStreamDeletedEvent = MetricStreamDeletedEventV1 | MetricStreamDeletedEventV2;
 export type MetricStreamRedpandaEvent = z.infer<typeof metricStreamRedpandaEventSchema>;
 
 function formatUuidFromBytes(bytes: Uint8Array): string {
@@ -192,11 +206,12 @@ function createDeletePartitionKey(scope: MetricStreamDeleteScope): string {
 
 export function createMetricStreamDeletedEvent(
   scope: MetricStreamDeleteScopeInput,
-): MetricStreamDeletedEventV1 {
+): MetricStreamDeletedEventV2 {
   const parsedScope = metricStreamDeleteScopeSchema.parse(scope);
-  return metricStreamDeletedEventV1Schema.parse({
-    version: METRIC_STREAM_EVENT_VERSION,
+  return metricStreamDeletedEventV2Schema.parse({
+    version: METRIC_STREAM_DELETE_EVENT_VERSION,
     eventType: METRIC_STREAM_DELETED_EVENT_TYPE,
+    eventId: randomUUID(),
     scope: parsedScope,
     partitionKey: createDeletePartitionKey(parsedScope),
   });
@@ -204,6 +219,6 @@ export function createMetricStreamDeletedEvent(
 
 export function isMetricStreamDeletedEvent(
   event: MetricStreamRedpandaEvent,
-): event is MetricStreamDeletedEventV1 {
+): event is MetricStreamDeletedEvent {
   return "eventType" in event && event.eventType === METRIC_STREAM_DELETED_EVENT_TYPE;
 }

@@ -1563,7 +1563,10 @@ describe("providerDetailRouter", () => {
           await fn({ execute: txExecute });
         });
       const mockExecute = vi.fn().mockResolvedValueOnce([{ id: "strava" }]);
-      mockReplaceMetricStreamBatch.mockResolvedValueOnce(0);
+      mockReplaceMetricStreamBatch.mockResolvedValueOnce({
+        deletedEventId: "30000000-0000-4000-8000-000000000001",
+        rowCount: 0,
+      });
       mockEnqueueProviderDeleteAnalyticsRefresh.mockResolvedValueOnce(undefined);
       const caller = createCaller({
         db: { execute: mockExecute, transaction: mockTransaction },
@@ -1582,7 +1585,11 @@ describe("providerDetailRouter", () => {
         "provider-data-delete",
       );
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(mockEnqueueProviderDeleteAnalyticsRefresh).toHaveBeenCalledWith("user-1", "strava");
+      expect(mockEnqueueProviderDeleteAnalyticsRefresh).toHaveBeenCalledWith(
+        "user-1",
+        "strava",
+        "30000000-0000-4000-8000-000000000001",
+      );
       expect(mockProviderDataDeletesInc).toHaveBeenCalledWith({ provider_id: "strava" });
       const deleteSql = txExecute.mock.calls.map((call) => extractSqlText(call[0])).join("\n");
       expect(deleteSql).not.toContain("fitness.oauth_token");

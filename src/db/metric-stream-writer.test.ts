@@ -14,8 +14,9 @@ const mockPublishRows = vi.fn(async (rows: readonly unknown[]) =>
 );
 const mockReplaceRows = vi.fn(async (_scope: unknown, rows: readonly unknown[]) => ({
   deleted: {
-    version: 1,
+    version: 2,
     eventType: "metric_stream_deleted",
+    eventId: "30000000-0000-4000-8000-000000000001",
     scope: _scope,
     partitionKey: "activity:20000000-0000-4000-8000-000000000001",
   },
@@ -315,7 +316,7 @@ describe("replaceMetricStreamBatch", () => {
   it("publishes a scoped Redpanda replacement instead of deleting directly from Postgres", async () => {
     const db = { insert: vi.fn(), delete: vi.fn() };
 
-    const count = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+    const result = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
       replaceMetricStreamBatch(
         db,
         { activityId: "20000000-0000-4000-8000-000000000001" },
@@ -332,7 +333,10 @@ describe("replaceMetricStreamBatch", () => {
       ),
     );
 
-    expect(count).toBe(1);
+    expect(result).toEqual({
+      deletedEventId: "30000000-0000-4000-8000-000000000001",
+      rowCount: 1,
+    });
     expect(db.delete).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
     expect(mockReplaceRows).toHaveBeenCalledWith(

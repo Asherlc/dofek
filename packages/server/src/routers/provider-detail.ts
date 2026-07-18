@@ -254,14 +254,18 @@ export const providerDetailRouter = router({
         });
       }
 
-      await replaceMetricStreamBatch(
+      const metricStreamReplacement = await replaceMetricStreamBatch(
         ctx.db,
         { userId: ctx.userId, providerId: input.providerId },
         [],
         "provider-data-delete",
       );
       await repo.deleteAllProviderRecords(input.providerId);
-      await enqueueProviderDeleteAnalyticsRefresh(ctx.userId, input.providerId);
+      await enqueueProviderDeleteAnalyticsRefresh(
+        ctx.userId,
+        input.providerId,
+        metricStreamReplacement.deletedEventId,
+      );
       providerDataDeletesTotal.inc({ provider_id: input.providerId });
       return { success: true };
     }),

@@ -130,6 +130,7 @@ export interface ProviderDeleteAnalyticsJobData {
   type: "provider-delete-analytics-refresh";
   userId: string;
   providerId: string;
+  metricStreamDeleteEventId: string;
 }
 
 export type ActivityAnalyticsJobData =
@@ -387,6 +388,7 @@ export async function enqueueActivityDeleteAnalyticsRefresh(
 export async function enqueueProviderDeleteAnalyticsRefresh(
   userId: string,
   providerId: string,
+  metricStreamDeleteEventId: string,
   queue: Queue<ActivityAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
 ): Promise<void> {
   await queue.add(
@@ -395,6 +397,7 @@ export async function enqueueProviderDeleteAnalyticsRefresh(
       type: "provider-delete-analytics-refresh",
       userId,
       providerId,
+      metricStreamDeleteEventId,
     },
     {
       removeOnComplete: true,

@@ -13713,3 +13713,60 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   and verify the named activity plus its cache after deployment. Separately,
   `analytics.deduped_location` still references the retired
   `postgres_fitness.metric_stream` table and should be removed or migrated.
+
+## 2026-07-17 — Provider Deletion Analytics Refresh Timed Out
+
+- **Symptoms:** After deleting every Garmin Dump provider record, Postgres was
+  empty and the PeerDB-backed ClickHouse mirrors had no live rows, but provider
+  ClickHouse reads did not complete and the provider deletion analytics job
+  remained at `Waiting for provider deletes to reach analytics...`.
+- **User impact:** Garmin Dump records were deleted from the source and raw
+  mirrors, but derived ClickHouse analytics and their cached API responses were
+  not rebuilt or invalidated.
+- **Evidence:** The exact failing operation was the provider deletion worker's
+  `SELECT count() FROM ingest.metric_stream FINAL WHERE user_id = ... AND
+  provider_id = 'garmin-dump' AND is_deleted = 0`. The first fatal worker log
+  line was `[worker] Job failed: Timeout error.` The BullMQ job for user
+  `f923fed7-d934-4cd9-8cb9-8e83020d0e69` remained active with progress at 20%.
+  ClickHouse query logs showed abandoned scans reading 86,789,817 rows and
+  later failing with code 210 (`I/O error: Broken pipe`) after their clients had
+  disconnected. `system.processes` contained 15 concurrent queries using 9.18
+  GiB, including six abandoned dbt power-curve builds running for 3.6 to 17.9
+  hours and repeated provider deletion scans. In contrast, the provider-scoped
+  PeerDB mirror check completed in about 0.5 seconds, Postgres contained zero
+  Garmin Dump rows, all three replication slots were active with `wal_status =
+  'reserved'`, the CDC health service reported healthy, and the Redpanda
+  ClickHouse sink consumer had zero lag after consuming the deletion event.
+  ClickHouse documents that `FINAL` applies merge-time deduplication during
+  query execution
+  ([ReplacingMergeTree query-time deduplication](https://clickhouse.com/docs/en/guides/replacing-merge-tree#querying-replacingmergetree)).
+  The deletion event itself was emitted and consumed at `2026-07-17 23:39:44`,
+  but its `INSERT INTO ingest.metric_stream SELECT ... FROM
+  ingest.metric_stream FINAL` finished in 11 ms after reading and writing zero
+  rows. A provider-filtered latest-version query subsequently found 3,130,320
+  live Garmin Dump IDs and zero tombstoned IDs. A real ClickHouse integration
+  test reproduced the same successful-command/no-tombstone behavior.
+- **Root cause:** The sink's self-referential `INSERT ... SELECT ... FINAL`
+  command did not produce tombstones, yet Kafka consumption completed. The
+  downstream worker then attempted to detect completion with repeated unbounded
+  `FINAL` scans over the 86.8-million-row table. Timed-out HTTP and dbt clients
+  did not cancel their server queries, so retries accumulated and saturated
+  ClickHouse before the worker could rebuild read models or invalidate caches.
+- **Fix / mitigation:** Canceled eight identified abandoned dbt queries,
+  reducing ClickHouse from 15 queries and 9.18 GiB to short-lived queries using
+  about 17 MiB. Replaced the no-op tombstone SQL with a provider-filtered
+  latest-version aggregation, added versioned deletion event IDs and a small
+  ClickHouse acknowledgement table, and changed the worker to poll that receipt
+  instead of rescanning `metric_stream`. The default ClickHouse profile now
+  cancels disconnected read-only HTTP queries and enforces a four-minute elapsed
+  execution ceiling below dbt's five-minute receive timeout.
+- **Validation:** The executable ClickHouse regression failed with
+  `is_deleted = 0` before the SQL change and passes with `is_deleted = 1` after
+  it. Three ClickHouse integration tests, 219 focused unit tests, the complete
+  changed-file test suite, all-package TypeScript checks, lint, analytics SQL
+  lint, analytics policy checks, XML validation, and diff validation pass.
+- **Remaining risk / follow-up:** Deploy the migration, sink, worker, and rotated
+  ClickHouse profile together. Re-emit the Garmin Dump provider deletion after
+  deployment, verify its event ID appears in
+  `ingest.metric_stream_delete_acknowledgement`, confirm zero live logical IDs,
+  and verify the rebuilt analytics plus user cache.

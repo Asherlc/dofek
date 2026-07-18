@@ -138,16 +138,17 @@ describe("applyMetricStreamEventsToClickHouse", () => {
   it("marks matching ClickHouse rows deleted before inserting replacement rows", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
+    const deleteEvent = createMetricStreamDeletedEvent({
+      activityId: "20000000-0000-4000-8000-000000000001",
+    });
 
     const applied = await applyMetricStreamEventsToClickHouse({ command, insert }, [
-      createMetricStreamDeletedEvent({
-        activityId: "20000000-0000-4000-8000-000000000001",
-      }),
+      deleteEvent,
       { ...heartRateEvent, activityId: "20000000-0000-4000-8000-000000000001" },
     ]);
 
     expect(applied).toBe(1);
-    expect(command).toHaveBeenCalledWith({
+    expect(command).toHaveBeenNthCalledWith(1, {
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
         delete_version: expect.any(Number),
@@ -158,6 +159,10 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(String(firstCommandQuery(command))).toContain(
       "toString(activity_id) = {activity_id:String}",
     );
+    expect(command).toHaveBeenNthCalledWith(2, {
+      query: expect.stringContaining("ingest.metric_stream_delete_acknowledgement"),
+      query_params: { event_id: deleteEvent.eventId },
+    });
     expect(insert).toHaveBeenCalledWith({
       table: METRIC_STREAM_TABLE,
       values: [expect.objectContaining({ id: heartRateEvent.id })],
@@ -197,7 +202,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       format: "JSONEachRow",
       clickhouse_settings: { date_time_input_format: "best_effort" },
     });
-    expect(command).toHaveBeenCalledOnce();
+    expect(command).toHaveBeenCalledTimes(2);
   });
 
   it("renders every supported replacement scope predicate into the tombstone insert", async () => {

@@ -2,7 +2,7 @@ import { Kafka } from "kafkajs";
 import {
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
-  type MetricStreamDeletedEventV1,
+  type MetricStreamDeletedEventV2,
   type MetricStreamDeleteScopeInput,
   type MetricStreamEventV1,
   type MetricStreamRowInput,
@@ -44,7 +44,7 @@ export interface MetricStreamEventPublisher {
 }
 
 export interface MetricStreamReplacementPublishResult {
-  deleted: MetricStreamDeletedEventV1;
+  deleted: MetricStreamDeletedEventV2;
   rows: MetricStreamEventV1[];
 }
 

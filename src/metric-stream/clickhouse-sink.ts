@@ -1,5 +1,8 @@
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
-import { METRIC_STREAM_TABLE } from "./clickhouse-table.ts";
+import {
+  METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
+  METRIC_STREAM_TABLE,
+} from "./clickhouse-table.ts";
 import {
   isMetricStreamDeletedEvent,
   type MetricStreamDeleteScope,
@@ -153,25 +156,63 @@ export async function markMetricStreamScopeDeletedInClickHouse(
     query: `INSERT INTO ${METRIC_STREAM_TABLE}
       SELECT
         id,
-        activity_id,
-        user_id,
-        recorded_at,
-        channel,
-        provider_id,
-        external_id,
-        device_id,
-        source_type,
-        scalar,
-        vector,
-        point,
-        metadata,
+        latest_row.1 AS activity_id,
+        latest_row.2 AS user_id,
+        latest_row.3 AS recorded_at,
+        latest_row.4 AS channel,
+        latest_row.5 AS provider_id,
+        latest_row.6 AS external_id,
+        latest_row.7 AS device_id,
+        latest_row.8 AS source_type,
+        latest_row.9 AS scalar,
+        latest_row.10 AS vector,
+        latest_row.11 AS point,
+        latest_row.12 AS metadata,
         now64(9) AS ingested_at,
         1 AS is_deleted,
-        greatest(version + 1, {delete_version:Int64}) AS version
-      FROM ${METRIC_STREAM_TABLE} FINAL
-      WHERE is_deleted = 0
-        AND ${conditions.join(" AND ")}`,
+        greatest(latest_row.14 + 1, {delete_version:Int64}) AS version
+      FROM (
+        SELECT
+          id,
+          argMax(
+            tuple(
+              activity_id,
+              user_id,
+              recorded_at,
+              channel,
+              provider_id,
+              external_id,
+              device_id,
+              source_type,
+              scalar,
+              vector,
+              point,
+              metadata,
+              is_deleted,
+              version
+            ),
+            tuple(version, ingested_at)
+          ) AS latest_row
+        FROM ${METRIC_STREAM_TABLE}
+        WHERE ${conditions.join(" AND ")}
+        GROUP BY id
+      )
+      WHERE latest_row.13 = 0`,
     query_params: queryParams,
+  });
+}
+
+async function acknowledgeMetricStreamDeletion(
+  client: ClickHouseMetricStreamInsertClient,
+  eventId: string,
+): Promise<void> {
+  if (!client.command) {
+    throw new Error("ClickHouse metric-stream replacement requires a command-capable client");
+  }
+  await client.command({
+    query: `INSERT INTO ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (event_id)
+      VALUES ({event_id:UUID})`,
+    query_params: { event_id: eventId },
   });
 }
 
@@ -191,6 +232,9 @@ export async function applyMetricStreamEventsToClickHouse(
     if (isMetricStreamDeletedEvent(event)) {
       await flushRows();
       await markMetricStreamScopeDeletedInClickHouse(client, event.scope);
+      if ("eventId" in event) {
+        await acknowledgeMetricStreamDeletion(client, event.eventId);
+      }
       continue;
     }
     rowBuffer.push(event);

@@ -9,7 +9,7 @@ const mockWaitForPeerDbActivityDeletes = vi.fn().mockResolvedValue(undefined);
 const mockWaitForPeerDbActivityRestores = vi.fn().mockResolvedValue(undefined);
 const mockRunActivityReadModelBuild = vi.fn().mockResolvedValue(undefined);
 const mockRunProviderDeleteReadModelBuild = vi.fn().mockResolvedValue(undefined);
-const mockWaitForMetricStreamProviderDeletes = vi.fn().mockResolvedValue(undefined);
+const mockWaitForMetricStreamDeleteAcknowledgement = vi.fn().mockResolvedValue(undefined);
 const mockWaitForPeerDbProviderDeletes = vi.fn().mockResolvedValue(undefined);
 const mockInvalidateByPrefix = vi.fn().mockResolvedValue(undefined);
 const mockClose = vi.fn().mockResolvedValue(undefined);
@@ -24,8 +24,8 @@ vi.mock("../analytics/activity-read-model-build.ts", () => ({
   runActivityReadModelBuild: (...args: unknown[]) => mockRunActivityReadModelBuild(...args),
   runProviderDeleteReadModelBuild: (...args: unknown[]) =>
     mockRunProviderDeleteReadModelBuild(...args),
-  waitForMetricStreamProviderDeletes: (...args: unknown[]) =>
-    mockWaitForMetricStreamProviderDeletes(...args),
+  waitForMetricStreamDeleteAcknowledgement: (...args: unknown[]) =>
+    mockWaitForMetricStreamDeleteAcknowledgement(...args),
   waitForPeerDbProviderDeletes: (...args: unknown[]) => mockWaitForPeerDbProviderDeletes(...args),
 }));
 
@@ -67,6 +67,7 @@ function createProviderDeleteAnalyticsJob() {
       type: "provider-delete-analytics-refresh" as const,
       userId: "user-1",
       providerId: "strava",
+      metricStreamDeleteEventId: "30000000-0000-4000-8000-000000000001",
     },
     updateProgress: vi.fn().mockResolvedValue(undefined),
   };
@@ -84,17 +85,16 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockRunActivityReadModelBuild.mockResolvedValue(undefined);
     mockCaptureException.mockClear();
     mockRunProviderDeleteReadModelBuild.mockClear();
-    mockWaitForMetricStreamProviderDeletes.mockClear();
+    mockWaitForMetricStreamDeleteAcknowledgement.mockClear();
     mockWaitForPeerDbProviderDeletes.mockClear();
   });
 
   it("waits for metric-stream and Postgres provider deletes before rebuilding every ClickHouse model", async () => {
     await processActivityDeleteAnalyticsJob(createProviderDeleteAnalyticsJob());
 
-    expect(mockWaitForMetricStreamProviderDeletes).toHaveBeenCalledWith(
+    expect(mockWaitForMetricStreamDeleteAcknowledgement).toHaveBeenCalledWith(
       expect.anything(),
-      "user-1",
-      "strava",
+      "30000000-0000-4000-8000-000000000001",
     );
     expect(mockWaitForPeerDbProviderDeletes).toHaveBeenCalledWith(
       expect.anything(),

@@ -3,7 +3,7 @@
 `metric_stream` samples publish to Redpanda first. Redpanda Connect archives the
 topic to Cloudflare R2 for long-term replay, and
 `metric-stream-clickhouse-sink` writes the analytics copy into
-`postgres_fitness.metric_stream`. Postgres is no longer the normal forward
+`ingest.metric_stream`. Postgres is no longer the normal forward
 ingestion path for metric-stream samples, and PeerDB does not mirror
 `fitness.metric_stream`.
 
@@ -13,7 +13,7 @@ Redpanda metric-stream-v1
         | R2 archive              | ClickHouse sink
         v                         v
 Cloudflare R2 replay archive
-ClickHouse postgres_fitness.metric_stream
+ClickHouse ingest.metric_stream
         |
         | dbt microbatch projection by recorded_at
         v
@@ -124,14 +124,18 @@ ClickHouse `Nullable(Point)` columns require
 `allow_experimental_nullable_tuple_type=1`. The app ClickHouse client sends
 that setting with its requests, and Docker deployments also load the checked-in
 server profile at
-`deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml`.
+`deploy/clickhouse/users.d/default-query-guardrails.xml`.
 
 ClickHouse migrations create and update the databases and read models:
 
-- `postgres_fitness.metric_stream`: a ClickHouse-native `MergeTree` copy of the
+- `ingest.metric_stream`: a ClickHouse-native `ReplacingMergeTree` copy of the
   raw metric stream populated by `metric-stream-clickhouse-sink`. Historical
   rows may still have been backfilled from Postgres, but new forward rows come
-  from Redpanda events.
+  from Redpanda events. Its `version` and `is_deleted` columns encode replacement
+  order and logical deletion so current-state queries can select the latest live
+  row ([ReplacingMergeTree](https://clickhouse.com/docs/en/guides/replacing-merge-tree)).
+- `ingest.metric_stream_delete_acknowledgement`: one receipt per version 2
+  deletion event, written only after the sink's tombstone insert completes.
 - `postgres_fitness`: app-managed native ClickHouse raw mirrors with PeerDB CDC
   metadata columns for lower-volume Postgres-backed raw tables, including
   activity, sleep, daily metrics, provider inventory, and sensor priority
@@ -148,8 +152,8 @@ ClickHouse migrations create and update the databases and read models:
 - `analytics.sensor_scalar_sample`: a narrow dbt `microbatch` incremental
   `ReplacingMergeTree` projection of activity sensor scalar channels. It uses
   `recorded_at` as its dbt event time, writes one current row per raw
-  `metric_stream.id`, and collapses row versions with `_peerdb_version`
-  inside the bounded batch query.
+  `metric_stream.id`, and maps the raw stream's `version` into its
+  `_peerdb_version` projection column inside the bounded batch query.
 - `analytics.deduped_sensor`: an activity-agnostic dbt `microbatch`
   incremental `ReplacingMergeTree` table containing the best live scalar sample
   per `(user_id, channel, recorded_at)` according to mirrored sensor
@@ -157,7 +161,7 @@ ClickHouse migrations create and update the databases and read models:
   and has no `activity_id`; activity reads join samples to activities by time
   window.
 - `analytics.deduped_location`: a normal view over
-  `postgres_fitness.metric_stream` location rows. The Redpanda ClickHouse sink
+  `ingest.metric_stream` location rows. The Redpanda ClickHouse sink
   converts EWKT point payloads into ClickHouse point-compatible values.
 - `analytics.activity_summary`: a normal view over `analytics.deduped_sensor`,
   `analytics.deduped_location`, and `analytics.v_activity`.
@@ -165,12 +169,17 @@ ClickHouse migrations create and update the databases and read models:
   sensor trend row per user and UTC day. It is derived from
   `analytics.deduped_sensor`.
 
-Because `postgres_fitness.metric_stream` is an existing app-managed ClickHouse
-table and several read models expect CDC-compatible metadata, it keeps the
-metadata columns even though PeerDB no longer feeds it:
-`_peerdb_synced_at`, `_peerdb_is_deleted`, and `_peerdb_version`. The deploy CDC
-setup command repairs these columns idempotently with `ALTER TABLE ... ADD
-COLUMN IF NOT EXISTS` before PeerDB validates the mirror.
+### Deletion protocol
+
+New metric-stream deletions are version 2 Redpanda events with a unique event
+ID. The ClickHouse sink first filters `ingest.metric_stream` to the deletion
+scope, selects the latest version of each matching ID, inserts a newer
+`is_deleted = 1` version, and then writes the event ID to
+`ingest.metric_stream_delete_acknowledgement`. The provider deletion worker
+waits for that acknowledgement before rebuilding dbt models and invalidating
+the user's analytics cache; it does not scan the full raw table to infer that
+the event was applied. Archived version 1 deletion events remain replayable,
+but do not have acknowledgement IDs.
 
 The native-table backfill is resumable within a successful migration attempt,
 but migration `0006_backfill_native_metric_stream` intentionally drops the

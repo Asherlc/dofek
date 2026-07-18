@@ -242,7 +242,13 @@ export async function applyRideWithGpsActivityBackfillPlan(
     `);
   }
 
-  return replaceMetricStreamBatch(db, { activityId: plan.id }, plan.metricRows, SOURCE_TYPE_API);
+  const result = await replaceMetricStreamBatch(
+    db,
+    { activityId: plan.id },
+    plan.metricRows,
+    SOURCE_TYPE_API,
+  );
+  return result.rowCount;
 }
 
 async function runBackfill(options: BackfillOptions): Promise<void> {
