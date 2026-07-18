@@ -1,4 +1,9 @@
+import { randomUUID } from "node:crypto";
 import type { Database } from "dofek/db";
+import {
+  createProviderDataDeletionRequest,
+  type ProviderDataDeletionRequest,
+} from "dofek/db/provider-data-deletion";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -28,6 +33,10 @@ export const dataTypeEnum = z.enum([
 ]);
 
 type DataType = z.infer<typeof dataTypeEnum>;
+
+interface ProviderDataDeletionTransaction {
+  execute(query: SQL): Promise<unknown>;
+}
 
 /** Map data type enum to SQL table name and ordering column */
 export function tableInfo(dataType: DataType): {
@@ -740,9 +749,13 @@ export class ProviderDetailRepository {
     return rows.length > 0;
   }
 
-  /** Delete provider-owned records while preserving connection credentials. */
-  async deleteAllProviderRecords(providerId: string): Promise<void> {
-    await this.#deleteProviderTables(providerId, PROVIDER_DATA_TABLES);
+  /** Atomically delete provider records, advance the generation fence, and write the outbox event. */
+  async requestProviderDataDeletion(providerId: string): Promise<ProviderDataDeletionRequest> {
+    const eventId = randomUUID();
+    return this.#db.transaction(async (transaction) => {
+      await this.#deleteProviderTablesInTransaction(transaction, providerId, PROVIDER_DATA_TABLES);
+      return createProviderDataDeletionRequest(transaction, this.#userId, providerId, eventId);
+    });
   }
 
   /**
@@ -754,19 +767,27 @@ export class ProviderDetailRepository {
   }
 
   async #deleteProviderTables(providerId: string, tables: readonly string[]): Promise<void> {
-    await this.#db.transaction(async (tx) => {
-      for (const table of tables) {
-        try {
-          await tx.execute(
-            sql`DELETE FROM ${sql.raw(table)}
-                WHERE provider_id = ${providerId} AND user_id = ${this.#userId}`,
-          );
-        } catch (error: unknown) {
-          if (!isUndefinedTableError(error)) {
-            throw error;
-          }
+    await this.#db.transaction((transaction) =>
+      this.#deleteProviderTablesInTransaction(transaction, providerId, tables),
+    );
+  }
+
+  async #deleteProviderTablesInTransaction(
+    transaction: ProviderDataDeletionTransaction,
+    providerId: string,
+    tables: readonly string[],
+  ): Promise<void> {
+    for (const table of tables) {
+      try {
+        await transaction.execute(
+          sql`DELETE FROM ${sql.raw(table)}
+              WHERE provider_id = ${providerId} AND user_id = ${this.#userId}`,
+        );
+      } catch (error: unknown) {
+        if (!isUndefinedTableError(error)) {
+          throw error;
         }
       }
-    });
+    }
   }
 }

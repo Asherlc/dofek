@@ -168,7 +168,7 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
 });
 
 describe("ProviderDetailRepository provider data deletion (integration)", () => {
-  const userId = "00000000-0000-0000-0000-0000000000b3";
+  const userId = "00000000-0000-4000-8000-0000000000b3";
   const providerId = "provider-delete-integration";
   let testContext: TestContext;
 
@@ -211,7 +211,13 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
   it("deletes provider records and preserves the provider connection token", async () => {
     const repository = new ProviderDetailRepository(testContext.db, userId);
 
-    await repository.deleteAllProviderRecords(providerId);
+    const request = await repository.requestProviderDataDeletion(providerId);
+
+    expect(request).toMatchObject({
+      generation: 1,
+      providerId,
+      userId,
+    });
 
     const countSchema = z.object({ count: z.coerce.number() });
     const [activityCount] = await executeWithSchema(

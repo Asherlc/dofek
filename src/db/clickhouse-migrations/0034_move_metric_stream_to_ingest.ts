@@ -63,7 +63,8 @@ async function copyLegacyMetricStreamToIngest(client: ClickHouseCommandClient): 
         metadata,
         _peerdb_synced_at AS ingested_at,
         _peerdb_is_deleted AS is_deleted,
-        _peerdb_version AS version
+        _peerdb_version AS version,
+        0 AS generation
       FROM ${LEGACY_METRIC_STREAM_TABLE}`,
   });
 }

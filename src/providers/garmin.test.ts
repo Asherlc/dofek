@@ -248,7 +248,7 @@ function createMockDb(): MockDb {
     onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
     returning: vi.fn().mockResolvedValue([{ id: "mock-session-id" }]),
     delete: vi.fn(),
-    execute: vi.fn().mockResolvedValue(undefined),
+    execute: vi.fn().mockResolvedValue([]),
   };
   const whereResult = Object.assign(Promise.resolve([]), {
     limit: (...args: unknown[]) => db.limit(...args),

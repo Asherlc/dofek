@@ -27,25 +27,33 @@ function makePublisher(): MetricStreamEventPublisher {
 describe("writeMetricStreamRows", () => {
   it("publishes rows through the supplied Redpanda publisher", async () => {
     const publisher = makePublisher();
+    const database = { execute: vi.fn().mockResolvedValue([{ generation: "4" }]) };
 
     const result = await writeMetricStreamRows({
+      database,
       publisher,
       rows: metricStreamRows,
     });
 
-    expect(publisher.publishRows).toHaveBeenCalledWith(metricStreamRows);
+    expect(publisher.publishRows).toHaveBeenCalledWith([
+      expect.objectContaining({ generation: 4 }),
+    ]);
     expect(result.published).toBe(1);
     expect(result.events[0]?.channel).toBe("heart_rate");
+    expect(result.events[0]?.generation).toBe(4);
   });
 
-  it("does not require or call a Postgres database dependency", async () => {
+  it("loads the provider generation before publishing", async () => {
     const publisher = makePublisher();
+    const database = { execute: vi.fn().mockResolvedValue([]) };
 
     await writeMetricStreamRows({
+      database,
       publisher,
       rows: metricStreamRows,
     });
 
+    expect(database.execute).toHaveBeenCalledTimes(1);
     expect(publisher.publishRows).toHaveBeenCalledTimes(1);
   });
 });

@@ -12,6 +12,7 @@ export interface ClickHouseCommandClient {
     table: string;
     values: readonly object[];
     format: "JSONEachRow";
+    clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<unknown>;
   query?<TRow extends object>(options: {
     query: string;

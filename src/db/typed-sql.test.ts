@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import type { Database } from "./typed-sql.ts";
+import type { Database, SchemaExecutionDatabase } from "./typed-sql.ts";
 import { dateStringSchema, executeWithSchema, timestampStringSchema } from "./typed-sql.ts";
 
 function createMockDb(rows: Record<string, unknown>[] = []): Database {
@@ -36,6 +36,16 @@ describe("executeWithSchema", () => {
     const db = createMockDb([]);
     const result = await executeWithSchema(db, rowSchema, sql`SELECT 1`);
     expect(result).toEqual([]);
+  });
+
+  it("parses rows returned by a Drizzle transaction", async () => {
+    const db: SchemaExecutionDatabase = {
+      execute: vi.fn().mockResolvedValue({ rows: [{ id: 1, name: "Alice" }] }),
+    };
+
+    await expect(executeWithSchema(db, rowSchema, sql`SELECT 1`)).resolves.toEqual([
+      { id: 1, name: "Alice" },
+    ]);
   });
 
   it("throws when a row does not match the schema", async () => {

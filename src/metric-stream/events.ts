@@ -7,6 +7,7 @@ export const METRIC_STREAM_DELETED_EVENT_TYPE = "metric_stream_deleted";
 
 const nonEmptyStringSchema = z.string().min(1);
 const optionalNullableTextSchema = nonEmptyStringSchema.nullable().optional();
+const generationSchema = z.number().int().nonnegative().default(0);
 
 export type JsonValue =
   | null
@@ -45,6 +46,7 @@ export const metricStreamRowInputSchema = z
     recordedAt: timestampInputSchema,
     userId: z.guid(),
     providerId: nonEmptyStringSchema,
+    generation: generationSchema,
     externalId: optionalNullableTextSchema,
     deviceId: optionalNullableTextSchema,
     sourceType: nonEmptyStringSchema,
@@ -64,6 +66,7 @@ export const metricStreamEventV1Schema = z
     recordedAt: z.string().datetime({ offset: true }),
     userId: z.guid(),
     providerId: nonEmptyStringSchema,
+    generation: generationSchema,
     externalId: optionalNullableTextSchema,
     deviceId: optionalNullableTextSchema,
     sourceType: nonEmptyStringSchema,
@@ -156,9 +159,12 @@ function createDeterministicMetricStreamId(
     .update("\0")
     .update(row.channel)
     .update("\0")
-    .update(row.recordedAt)
-    .digest();
-  const bytes = Uint8Array.from(hash.subarray(0, 16));
+    .update(row.recordedAt);
+  if (row.generation > 0) {
+    hash.update("\0generation:").update(String(row.generation));
+  }
+  const digest = hash.digest();
+  const bytes = Uint8Array.from(digest.subarray(0, 16));
   const versionByte = bytes[6];
   const variantByte = bytes[8];
   if (versionByte === undefined || variantByte === undefined) {
@@ -177,6 +183,7 @@ export function createMetricStreamEvent(row: MetricStreamRowInput): MetricStream
     recordedAt: parsedRow.recordedAt,
     userId: parsedRow.userId,
     providerId: parsedRow.providerId,
+    generation: parsedRow.generation,
     externalId: parsedRow.externalId ?? null,
     deviceId: parsedRow.deviceId ?? null,
     sourceType: parsedRow.sourceType,

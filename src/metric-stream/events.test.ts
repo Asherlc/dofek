@@ -26,6 +26,25 @@ describe("createMetricStreamEvent", () => {
     });
 
     expect(firstEvent.id).toBe(secondEvent.id);
+    expect(firstEvent.id).toBe("5f637125-4373-589f-a3bf-e3421d6ce6fc");
+    expect(firstEvent.generation).toBe(0);
+  });
+
+  it("fences reimported provider data with a new generation", () => {
+    const firstGeneration = createMetricStreamEvent({
+      ...baseMetricStreamRow,
+      externalId: "hk:heart-rate-1",
+      generation: 1,
+    });
+    const nextGeneration = createMetricStreamEvent({
+      ...baseMetricStreamRow,
+      externalId: "hk:heart-rate-1",
+      generation: 2,
+    });
+
+    expect(firstGeneration.generation).toBe(1);
+    expect(nextGeneration.generation).toBe(2);
+    expect(firstGeneration.id).not.toBe(nextGeneration.id);
   });
 
   it("preserves a caller-supplied id", () => {

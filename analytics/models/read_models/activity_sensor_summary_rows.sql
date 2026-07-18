@@ -71,7 +71,7 @@ initial_dirty_keys AS (
     FROM current_activity
     WHERE
         {% if is_incremental() %}
-            (SELECT is_empty FROM target_state LIMIT 1)
+            (SELECT is_empty FROM target_state)
             AND started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
         {% else %}
             started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
@@ -88,8 +88,8 @@ changed_sample_dirty_keys AS (
             ON existing_summary.activity_id = sensor_sample.activity_id
             AND existing_summary.user_id = sensor_sample.user_id
         WHERE
-            NOT (SELECT is_empty FROM target_state LIMIT 1)
-            AND sensor_sample.refreshed_at > (SELECT last_refreshed_at FROM target_state LIMIT 1)
+            NOT (SELECT is_empty FROM target_state)
+            AND sensor_sample.refreshed_at > (SELECT last_refreshed_at FROM target_state)
             AND (
                 existing_summary.activity_id IS null
                 OR sensor_sample.refreshed_at > existing_summary.refreshed_at

@@ -13,17 +13,35 @@ export interface Database {
   execute: (query: SQL) => Promise<Record<string, unknown>[]>;
 }
 
+export interface SchemaExecutionDatabase {
+  execute: (query: SQL) => Promise<unknown>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function extractRows(result: unknown): unknown[] {
+  if (Array.isArray(result)) {
+    return result;
+  }
+  if (isRecord(result) && Array.isArray(result.rows)) {
+    return result.rows;
+  }
+  throw new Error("Unexpected database execute result shape");
+}
+
 /**
  * Execute a raw SQL query and parse each row with a Zod schema.
  * Use this instead of `db.execute<T>()` generics — Zod validates at runtime,
  * catching schema drift, missing columns, and type mismatches that generics miss.
  */
 export async function executeWithSchema<T extends z.ZodType>(
-  db: Database,
+  db: SchemaExecutionDatabase,
   schema: T,
   query: SQL,
 ): Promise<z.infer<T>[]> {
-  const rows = await db.execute(query);
+  const rows = extractRows(await db.execute(query));
   return rows.map((row) => schema.parse(row));
 }
 

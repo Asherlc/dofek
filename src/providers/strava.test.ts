@@ -1079,7 +1079,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       select: makeStravaSelectMock(validTokenRow),
       insert: mockInsert,
       delete: mockDelete,
-      execute: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
     };
 
     const provider = new StravaProvider(mockFetch);

@@ -3,6 +3,7 @@ import { Job, UnrecoverableError, Worker } from "bullmq";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
+import { markProviderDataDeletionCompleted } from "../db/provider-data-deletion.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { jobContext, logger } from "../logger.ts";
 import { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
@@ -12,9 +13,11 @@ import { processFitFileImportBatchJob } from "./process-fit-file-import-batch-jo
 import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
 import { processImportJob } from "./process-import-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
+import { processProviderDataDeletionJob } from "./process-provider-data-deletion-job.ts";
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
 import { processZipEntryExtractJob } from "./process-zip-entry-extract-job.ts";
+import { startProviderDataDeletionOutboxDispatcher } from "./provider-data-deletion-outbox.ts";
 import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
 import {
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
@@ -22,15 +25,19 @@ import {
   closeAllQueueResources,
   EXPORT_QUEUE,
   type ExportJobData,
+  enqueueProviderDeleteAnalyticsRefresh,
   FIT_FILE_IMPORT_BATCH_QUEUE,
   FIT_FILE_IMPORT_QUEUE,
   type FitFileImportBatchJobData,
   type FitFileImportJobData,
+  getProviderDataDeletionQueue,
   getRedisConnection,
   IMPORT_QUEUE,
   type ImportJobData,
   POST_SYNC_QUEUE,
   type PostSyncJobData,
+  PROVIDER_DATA_DELETION_QUEUE,
+  type ProviderDataDeletionJobData,
   providerSyncQueueName,
   SCHEDULED_SYNC_QUEUE,
   type ScheduledSyncJobData,
@@ -157,6 +164,18 @@ const activityDeleteAnalyticsWorker = new Worker<ActivityAnalyticsJobData>(
   (job) => jobContext.run(job, () => processActivityDeleteAnalyticsJob(job)),
   { autorun: false, connection, concurrency: 1 },
 );
+const providerDataDeletionWorker = new Worker<ProviderDataDeletionJobData>(
+  PROVIDER_DATA_DELETION_QUEUE,
+  (job) =>
+    jobContext.run(job, () =>
+      processProviderDataDeletionJob(job, {
+        clickHouseClient: getClickHouseClient(),
+        enqueueAnalyticsRefresh: enqueueProviderDeleteAnalyticsRefresh,
+        markCompleted: (eventId) => markProviderDataDeletionCompleted(db, eventId),
+      }),
+    ),
+  { autorun: false, connection, concurrency: 1 },
+);
 // Training export jobs are processed by the standalone Python BullMQ worker
 // (packages/ml) — not by this Node.js worker.
 
@@ -221,8 +240,13 @@ const allWorkers: Worker[] = [
   scheduledSyncWorker,
   postSyncWorker,
   activityDeleteAnalyticsWorker,
+  providerDataDeletionWorker,
 ];
 const garminImportProgressCoordinator = createGarminImportProgressCoordinator(connection);
+const providerDataDeletionOutboxDispatcher = startProviderDataDeletionOutboxDispatcher(
+  db,
+  getProviderDataDeletionQueue(),
+);
 
 function importJobWithLockExtender(
   job: Job<ImportJobData>,
@@ -386,6 +410,7 @@ async function shutdown() {
       readinessServer.close((error) => (error ? reject(error) : resolve()));
     }),
     garminImportProgressCoordinator.close(),
+    providerDataDeletionOutboxDispatcher.close(),
     ...allWorkers.map((worker) => worker.close()),
   ]);
   await closeAllQueueResources();

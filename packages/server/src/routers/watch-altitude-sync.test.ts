@@ -78,7 +78,7 @@ describe("watchAltitudeSyncRouter", () => {
         samples: [{ timestamp: "2026-03-30T12:00:00.000Z", altitudeM: 12.5 }],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(JSON.stringify(mockDb.execute.mock.calls)).toContain("apple_motion");
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
     });

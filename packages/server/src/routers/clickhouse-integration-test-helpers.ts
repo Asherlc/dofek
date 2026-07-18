@@ -67,6 +67,7 @@ export interface ClickHouseMetricStreamSeedRow {
   vector?: readonly number[] | null;
   point?: string;
   metadata?: string;
+  generation?: number;
 }
 
 interface ClickHouseTestHandle {
@@ -437,6 +438,15 @@ function createIsolatedClickHouseClient(
         ...options,
         query: rewriteClickHouseDatabaseNames(options.query, databases),
       }),
+    insert: async (options) => {
+      if (!client.insert) {
+        throw new Error("ClickHouse integration test client does not support inserts");
+      }
+      return client.insert({
+        ...options,
+        table: rewriteClickHouseDatabaseNames(options.table, databases),
+      });
+    },
     close: () => client.close?.() ?? Promise.resolve(),
   };
 }
@@ -519,6 +529,14 @@ export async function createClickHouseTestActivitySensorStore(
   }
 
   return new ClickHouseActivitySensorStore(client);
+}
+
+export function getClickHouseTestClient(testContext: ClickHouseSyncTestContext): ClickHouseClient {
+  const handle = handlesByContext.get(testContext);
+  if (!handle) {
+    throw new Error("ClickHouse test activity sensor store has not been created");
+  }
+  return handle.client;
 }
 
 async function bootstrapClickHouseTestSchema(
@@ -728,7 +746,8 @@ function formatClickHouseMetricStreamSeedValue(row: ClickHouseMetricStreamSeedRo
     ${formatNullableClickHouseString(row.metadata ?? "")},
     now64(9),
     0,
-    1
+    1,
+    ${row.generation ?? 0}
   )`;
 }
 
@@ -762,7 +781,8 @@ export async function insertClickHouseMetricStreamRows(
       metadata,
       ingested_at,
       is_deleted,
-      version
+      version,
+      generation
     ) VALUES ${rows.map(formatClickHouseMetricStreamSeedValue).join(",\n")}`,
   });
 }

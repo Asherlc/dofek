@@ -13770,3 +13770,48 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployment, verify its event ID appears in
   `ingest.metric_stream_delete_acknowledgement`, confirm zero live logical IDs,
   and verify the rebuilt analytics plus user cache.
+
+## 2026-07-18 — Garmin Dump Tombstones Applied Without Acknowledgement
+
+- **Symptoms:** Re-emitting the Garmin Dump provider deletion after deploying
+  image `sha-cbacad2` caused the analytics refresh job to time out waiting for
+  deletion event `42712966-7550-4eb4-8347-7ee99b6230af`. The ClickHouse sink
+  continued retrying the preceding provider-scoped event at Redpanda partition
+  0 offset `604114013`.
+- **User impact:** The raw metric IDs were tombstoned, but the deletion workflow
+  did not reach its acknowledgement gate, so the requested analytics rebuild
+  and cache refresh did not complete.
+- **Evidence:** The exact failing operation was the sink's provider-scoped
+  `INSERT INTO ingest.metric_stream SELECT ...` for event
+  `4e9d0632-3bce-4174-b685-5380687ce040`. The first fatal sink log line was
+  `Error: Timeout error` at `2026-07-18T15:27:03.430Z`; the next attempt failed
+  with ClickHouse code 241 (`MEMORY_LIMIT_EXCEEDED`) at
+  `2026-07-18T15:27:06.513Z`. Sentry issue
+  [DOFEK-SERVER-4T](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4T)
+  recorded four analytics acknowledgement timeouts. Production contained
+  12,522,091 inserted Garmin Dump versions and 3,130,320 tombstone versions.
+  Low-memory distinct estimates matched at 3,122,004 source IDs and 3,122,004
+  tombstoned IDs, with the latest tombstone committed at
+  `2026-07-18T15:35:26.697Z`, while the target acknowledgement count remained
+  zero. The linked
+  [deployment job](https://github.com/Asherlc/dofek/actions/runs/29632718641/job/88049486344)
+  deployed the sink image successfully even though the overall job failed when
+  `dofek_worker` rolled back.
+- **Root cause:** The provider-wide tombstone query runs longer than the
+  ClickHouse client's 120-second request timeout. ClickHouse continues and
+  commits the server-side insert after the client disconnects, but the sink sees
+  a rejected command and therefore never writes the acknowledgement. Kafka then
+  retries the same expensive event, and the analytics job times out waiting for
+  a receipt that cannot be emitted by that attempt.
+- **Fix / mitigation:** No runtime behavior was changed during verification. A
+  diagnostic latest-state query was canceled so it would not compete with the
+  production deletion. The committed tombstones were verified directly. The
+  repository follow-up replaces provider-wide tombstone queries with a
+  generation-fenced transactional outbox and a BullMQ worker that checkpoints
+  bounded batches of 10,000 exact-ID tombstones before acknowledgement.
+- **Remaining risk / follow-up:** The bounded workflow is not active until its
+  PostgreSQL and ClickHouse migrations plus worker deployment complete. After
+  deployment, explicitly materialize the historical ClickHouse projection in
+  an approved maintenance window, resubmit the deletion request, and verify the
+  generation fence, acknowledgement, and zero active old-generation rows using
+  `docs/provider-data-deletion-runbook.md`.

@@ -121,7 +121,7 @@ function createMockDb() {
     select: vi.fn(),
     insert: insertFn,
     delete: deleteFn,
-    execute: vi.fn(),
+    execute: vi.fn().mockResolvedValue([]),
   };
 
   return Object.assign(db, chain);

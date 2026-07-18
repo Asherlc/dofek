@@ -78,7 +78,7 @@ describe("bleHeartRateSyncRouter", () => {
         samples: [{ timestamp: "2026-03-30T12:00:00.000Z", heartRateBpm: 142, rrIntervalsMs: [] }],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(JSON.stringify(mockDb.execute.mock.calls)).toContain("ble_heart_rate");
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
       expect(mockDb.execute.mock.invocationCallOrder[0]).toBeLessThan(
@@ -190,7 +190,7 @@ describe("bleHeartRateSyncRouter", () => {
       });
 
       expect(result).toEqual({ inserted: 0 });
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
     });
 
     it("rejects heart rate values above the physiological ceiling", async () => {

@@ -37,6 +37,7 @@ describe("queues", () => {
         FIT_FILE_IMPORT_QUEUE,
         IMPORT_QUEUE,
         POST_SYNC_QUEUE,
+        PROVIDER_DATA_DELETION_QUEUE,
         SCHEDULED_SYNC_QUEUE,
         SYNC_QUEUE,
         ZIP_ENTRY_EXTRACT_QUEUE,
@@ -49,6 +50,7 @@ describe("queues", () => {
       expect(EXPORT_QUEUE).toBe("export");
       expect(SCHEDULED_SYNC_QUEUE).toBe("scheduled-sync");
       expect(POST_SYNC_QUEUE).toBe("post-sync");
+      expect(PROVIDER_DATA_DELETION_QUEUE).toBe("provider-data-deletion");
       expect(ACTIVITY_DELETE_ANALYTICS_QUEUE).toBe("activity-delete-analytics");
     });
   });
@@ -643,13 +645,51 @@ describe("queues", () => {
           type: "provider-delete-analytics-refresh",
           userId: "user-123",
           providerId: "strava",
-          metricStreamDeleteEventId: "30000000-0000-4000-8000-000000000001",
+          deletionEventId: "30000000-0000-4000-8000-000000000001",
         },
         {
-          removeOnComplete: true,
+          jobId: "provider-delete-analytics-refresh-30000000-0000-4000-8000-000000000001",
+          removeOnComplete: { age: 604_800, count: 1_000 },
           removeOnFail: { age: 604_800, count: 100 },
           attempts: 5,
           backoff: { type: "fixed", delay: 30_000 },
+        },
+      );
+    });
+  });
+
+  describe("enqueueProviderDataDeletion", () => {
+    it("uses the outbox event id as the BullMQ idempotency key", async () => {
+      const { createProviderDataDeletionQueue, enqueueProviderDataDeletion } = await import(
+        "./queues.ts"
+      );
+      const queue = createProviderDataDeletionQueue({ host: "test", port: 9999 });
+
+      await enqueueProviderDataDeletion(
+        {
+          eventId: "30000000-0000-4000-8000-000000000001",
+          generation: 2,
+          providerId: "strava",
+          userId: "user-123",
+        },
+        queue,
+      );
+
+      expect(mockQueueAdd).toHaveBeenCalledWith(
+        "provider-data-deletion",
+        {
+          type: "provider-data-deletion",
+          eventId: "30000000-0000-4000-8000-000000000001",
+          generation: 2,
+          providerId: "strava",
+          userId: "user-123",
+        },
+        {
+          attempts: 20,
+          backoff: { type: "fixed", delay: 30_000 },
+          jobId: "30000000-0000-4000-8000-000000000001",
+          removeOnComplete: { age: 604_800, count: 1_000 },
+          removeOnFail: { age: 2_592_000, count: 1_000 },
         },
       );
     });

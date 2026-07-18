@@ -1093,7 +1093,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledOnce();
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({
           providerId: "apple_health",
@@ -1128,7 +1128,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledOnce();
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({ channel: "body_fat_percentage", scalar: 18.5 }),
       ]);
@@ -1145,7 +1145,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledOnce();
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({ channel: "body_mass_index", scalar: 23.4 }),
       ]);
@@ -1162,7 +1162,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledOnce();
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({ channel: "height", scalar: 175.5 }),
       ]);
@@ -1184,7 +1184,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(2);
-      expect(execute).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledOnce();
       expect(getPublishedRows(publisher)).toHaveLength(2);
     });
   });
@@ -1238,7 +1238,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      expect(execute).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledOnce();
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({ channel: "heart_rate", scalar: 72 }),
       ]);
@@ -1317,7 +1317,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      expect(execute).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledOnce();
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({ channel: "respiratory_rate", scalar: 14.5 }),
       ]);
@@ -2062,7 +2062,7 @@ describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)
     ];
     const result = await repo.processMetricStream(samples);
     expect(result).toBe(2);
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledOnce();
     expect(getPublishedRows(publisher)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ channel: "heart_rate", scalar: 72 }),
@@ -2485,7 +2485,7 @@ describe("HealthKitSyncRepository.processBodyMeasurements (mutation: batching)",
     }));
     const result = await repo.processBodyMeasurements(samples);
     expect(result).toBe(501);
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(publisher.publishRows).toHaveBeenCalledTimes(2);
     expect(publisher.publishRows.mock.calls[0]?.[0]).toHaveLength(500);
     expect(publisher.publishRows.mock.calls[1]?.[0]).toHaveLength(1);

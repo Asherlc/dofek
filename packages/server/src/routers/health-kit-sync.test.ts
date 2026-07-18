@@ -3279,7 +3279,7 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("handles non-Error objects in catch blocks", async () => {
-      const execute = vi.fn();
+      const execute = vi.fn().mockResolvedValue([]);
       execute.mockResolvedValueOnce([]); // ensureProvider
       mockMetricStreamPublishRows.mockRejectedValueOnce("string error");
 

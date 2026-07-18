@@ -239,7 +239,7 @@ describe("sourceRowToMetricStream", () => {
 
 describe("writeMetricStreamBatch", () => {
   it("publishes fanned-out provider rows to Redpanda without inserting into Postgres", async () => {
-    const db = { insert: vi.fn() };
+    const db = { execute: vi.fn().mockResolvedValue([]), insert: vi.fn() };
 
     const count = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
       writeMetricStreamBatch(
@@ -278,7 +278,7 @@ describe("writeMetricStreamBatch", () => {
   });
 
   it("fails fast when neither the row nor token context provides a user ID", async () => {
-    const db = { insert: vi.fn() };
+    const db = { execute: vi.fn().mockResolvedValue([]), insert: vi.fn() };
     const originalTestTokenUserId = process.env.TEST_TOKEN_USER_ID;
     delete process.env.TEST_TOKEN_USER_ID;
 
@@ -314,7 +314,7 @@ describe("writeMetricStreamBatch", () => {
 
 describe("replaceMetricStreamBatch", () => {
   it("publishes a scoped Redpanda replacement instead of deleting directly from Postgres", async () => {
-    const db = { insert: vi.fn(), delete: vi.fn() };
+    const db = { execute: vi.fn().mockResolvedValue([]), insert: vi.fn(), delete: vi.fn() };
 
     const result = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
       replaceMetricStreamBatch(
@@ -355,7 +355,7 @@ describe("replaceMetricStreamBatch", () => {
   });
 
   it("fails with a clear error when the publisher cannot replace rows", async () => {
-    const db = { insert: vi.fn() };
+    const db = { execute: vi.fn().mockResolvedValue([]), insert: vi.fn() };
 
     await expect(
       replaceMetricStreamBatch(
@@ -381,7 +381,7 @@ describe("replaceMetricStreamBatch", () => {
 
 describe("writeMetricStreamBatchForScope", () => {
   it("publishes rows with the delete scope partition key", async () => {
-    const db = { insert: vi.fn() };
+    const db = { execute: vi.fn().mockResolvedValue([]), insert: vi.fn() };
 
     const count = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
       writeMetricStreamBatchForScope(

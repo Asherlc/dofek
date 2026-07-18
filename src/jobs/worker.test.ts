@@ -33,6 +33,7 @@ const hoisted = vi.hoisted(() => {
   const reconcileGarminProgressError = new Error("progress Redis unavailable");
   const mockReconcileGarminProgress = vi.fn().mockRejectedValueOnce(reconcileGarminProgressError);
   const mockCloseGarminProgress = vi.fn().mockResolvedValue(undefined);
+  const mockCloseProviderDataDeletionOutbox = vi.fn().mockResolvedValue(undefined);
   const mockGarminProgressCoordinator = {
     observeFitJob: mockObserveFitJob,
     reconcile: mockReconcileGarminProgress,
@@ -54,6 +55,7 @@ const hoisted = vi.hoisted(() => {
     reconcileGarminProgressError,
     mockReconcileGarminProgress,
     mockCloseGarminProgress,
+    mockCloseProviderDataDeletionOutbox,
     mockGarminProgressCoordinator,
     MockUnrecoverableError,
     workerOnMocks,
@@ -82,6 +84,10 @@ vi.mock("../db/clickhouse.ts", () => ({
 
 vi.mock("../db/clickhouse-read-model-refresh.ts", () => ({
   refreshBodyMeasurementReadModel: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("../db/provider-data-deletion.ts", () => ({
+  markProviderDataDeletionCompleted: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../db/refit-sensor-store.ts", () => ({
@@ -124,6 +130,16 @@ vi.mock("./process-activity-delete-analytics-job.ts", () => ({
   processActivityDeleteAnalyticsJob: vi.fn(),
 }));
 
+vi.mock("./process-provider-data-deletion-job.ts", () => ({
+  processProviderDataDeletionJob: vi.fn(),
+}));
+
+vi.mock("./provider-data-deletion-outbox.ts", () => ({
+  startProviderDataDeletionOutboxDispatcher: vi.fn(() => ({
+    close: hoisted.mockCloseProviderDataDeletionOutbox,
+  })),
+}));
+
 vi.mock("./scheduled-sync.ts", () => ({
   setupScheduledSync: vi.fn(() => Promise.resolve()),
 }));
@@ -157,6 +173,9 @@ vi.mock("./queues.ts", () => ({
   SCHEDULED_SYNC_QUEUE: "scheduled-sync-queue",
   POST_SYNC_QUEUE: "post-sync-queue",
   ACTIVITY_DELETE_ANALYTICS_QUEUE: "activity-delete-analytics-queue",
+  PROVIDER_DATA_DELETION_QUEUE: "provider-data-deletion-queue",
+  enqueueProviderDeleteAnalyticsRefresh: vi.fn(() => Promise.resolve()),
+  getProviderDataDeletionQueue: vi.fn(() => ({})),
   closeAllQueueResources: vi.fn(() => Promise.resolve()),
 }));
 
@@ -188,6 +207,7 @@ const {
   reconcileGarminProgressError,
   mockReconcileGarminProgress,
   mockCloseGarminProgress,
+  mockCloseProviderDataDeletionOutbox,
   workerOnMocks,
 } = hoisted;
 
@@ -198,9 +218,9 @@ import "./worker.ts";
 describe("worker module", () => {
   // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 FIT import
   // + 1 FIT batch + 1 ZIP extract + 1 export + 1 scheduled-sync + 1 post-sync
-  // + 1 activity-delete-analytics = 11
+  // + 1 activity-delete-analytics + 1 provider-data-deletion = 12
   // Training export is handled by the standalone Python BullMQ worker (packages/ml).
-  const EXPECTED_WORKER_COUNT = 11;
+  const EXPECTED_WORKER_COUNT = 12;
 
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");
@@ -240,6 +260,11 @@ describe("worker module", () => {
     );
     expect(Worker).toHaveBeenCalledWith(
       "activity-delete-analytics-queue",
+      expect.any(Function),
+      expect.objectContaining({ concurrency: 1 }),
+    );
+    expect(Worker).toHaveBeenCalledWith(
+      "provider-data-deletion-queue",
       expect.any(Function),
       expect.objectContaining({ concurrency: 1 }),
     );
@@ -1028,6 +1053,23 @@ describe("worker module", () => {
     expect(processActivityDeleteAnalyticsJob).toHaveBeenCalled();
   });
 
+  it("provider-data-deletion processor delegates to processProviderDataDeletionJob", async () => {
+    const { processProviderDataDeletionJob } = await import(
+      "./process-provider-data-deletion-job.ts"
+    );
+    vi.mocked(processProviderDataDeletionJob).mockClear();
+
+    await invokeProcessor("provider-data-deletion-queue", {
+      type: "provider-data-deletion",
+      eventId: "30000000-0000-4000-8000-000000000003",
+      generation: 2,
+      providerId: "garmin",
+      userId: "00000000-0000-4000-8000-000000000004",
+    });
+
+    expect(processProviderDataDeletionJob).toHaveBeenCalled();
+  });
+
   it("closes readiness and Garmin progress resources during graceful shutdown", async () => {
     const { closeAllQueueResources } = await import("./queues.ts");
     const signalHandler = process.listeners("SIGTERM").at(-1);
@@ -1043,6 +1085,7 @@ describe("worker module", () => {
 
     expect(mockReadinessClose).toHaveBeenCalledOnce();
     expect(mockCloseGarminProgress).toHaveBeenCalledOnce();
+    expect(mockCloseProviderDataDeletionOutbox).toHaveBeenCalledOnce();
     expect(mockClose).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
     expect(closeAllQueueResources).toHaveBeenCalledOnce();
   });

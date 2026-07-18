@@ -196,6 +196,7 @@ describe("db-insertion deduplication (integration)", () => {
               row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
             userId: row.userId,
             providerId: row.providerId,
+            generation: row.generation ?? 0,
             externalId: row.externalId ?? null,
             deviceId: row.deviceId ?? null,
             sourceType: row.sourceType,

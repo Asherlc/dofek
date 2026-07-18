@@ -151,7 +151,7 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
     select: vi.fn().mockReturnValue(selectChain),
     insert: insertFn,
     delete: vi.fn().mockReturnValue(deleteChain),
-    execute: vi.fn(),
+    execute: vi.fn().mockResolvedValue([]),
   };
 
   return { db, capture };

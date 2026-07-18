@@ -89,7 +89,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
       expect(mockDb.execute.mock.invocationCallOrder[0]).toBeLessThan(
         metricStreamPublisher.publishRows.mock.invocationCallOrder[0] ?? 0,
@@ -114,7 +114,7 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(result).toEqual({ inserted: 2 });
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(JSON.stringify(mockDb.execute.mock.calls)).not.toContain("fitness.metric_stream");
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledWith([
         expect.objectContaining({
@@ -146,7 +146,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(metricStreamPublisher)).toEqual([
         expect.objectContaining({
           channel: "rr_interval_ms",
@@ -269,7 +269,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(metricStreamPublisher)).toEqual([
         expect.objectContaining({ channel: "rr_interval_ms" }),
       ]);
@@ -291,7 +291,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
 
       expect(getPublishedRows(metricStreamPublisher)).toEqual(
         expect.arrayContaining([
@@ -320,7 +320,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(metricStreamPublisher)).toEqual([
         expect.objectContaining({ channel: "orientation", vector: [0, 0.5, 0, 0] }),
       ]);
@@ -341,7 +341,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(metricStreamPublisher)).toEqual([
         expect.objectContaining({ channel: "orientation", vector: [0, 0, 0.5, 0] }),
       ]);
@@ -362,7 +362,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(metricStreamPublisher)).toEqual([
         expect.objectContaining({ channel: "orientation", vector: [0, 0, 0, 0.5] }),
       ]);
@@ -457,7 +457,7 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(result).toEqual({ inserted: 0 });
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
     });
 
     it("rejects invalid R-R interval values", async () => {
@@ -558,7 +558,7 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(result).toEqual({ inserted: 5000 });
-      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(2);
       expect(metricStreamPublisher.publishRows.mock.calls[0]?.[0]).toHaveLength(4000);
       expect(metricStreamPublisher.publishRows.mock.calls[1]?.[0]).toHaveLength(1000);

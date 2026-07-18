@@ -390,7 +390,7 @@ export class HealthKitSyncRepository {
 
       if (rows.length > 0) {
         const publisher = await this.#publisher();
-        const result = await writeMetricStreamRows({ publisher, rows });
+        const result = await writeMetricStreamRows({ database: this.#db, publisher, rows });
         inserted += result.published;
       }
     }
@@ -501,7 +501,7 @@ export class HealthKitSyncRepository {
 
       if (rows.length > 0) {
         const publisher = await this.#publisher();
-        const result = await writeMetricStreamRows({ publisher, rows });
+        const result = await writeMetricStreamRows({ database: this.#db, publisher, rows });
         inserted += result.published;
       }
     }

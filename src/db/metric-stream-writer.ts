@@ -9,8 +9,10 @@ import {
   type MetricStreamEventPublisher,
   type MetricStreamReplacementPublishResult,
 } from "../metric-stream/redpanda-producer.ts";
+import { addProviderDataGenerations } from "../metric-stream/write-metric-stream.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL, LOCATION } from "./sensor-channels.ts";
 import { getTokenUserId } from "./token-user-context.ts";
+import type { Database } from "./typed-sql.ts";
 
 export interface MetricStreamInsert {
   id?: string;
@@ -168,7 +170,7 @@ export function sourceRowToMetricStream(
  * and batch-inserts them.
  */
 export async function writeMetricStreamBatch(
-  _db: unknown,
+  db: Database,
   metricRows: MetricStreamSourceRow[],
   sourceType: string,
   batchSize = DEFAULT_BATCH_SIZE,
@@ -183,7 +185,7 @@ export async function writeMetricStreamBatch(
   }
 
   const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
-  const publishRows = rows.map(toPublishRow);
+  const publishRows = await addProviderDataGenerations(db, rows.map(toPublishRow));
 
   let published = 0;
   for (let offset = 0; offset < publishRows.length; offset += batchSize) {
@@ -196,7 +198,7 @@ export async function writeMetricStreamBatch(
 }
 
 export async function writeMetricStreamBatchForScope(
-  _db: unknown,
+  db: Database,
   scope: MetricStreamDeleteScopeInput,
   metricRows: MetricStreamSourceRow[],
   sourceType: string,
@@ -212,12 +214,13 @@ export async function writeMetricStreamBatchForScope(
 
   const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
   const partitionKey = createMetricStreamDeletedEvent(scope).partitionKey;
-  const events = await resolvedPublisher.publishRows(rows.map(toPublishRow), partitionKey);
+  const publishRows = await addProviderDataGenerations(db, rows.map(toPublishRow));
+  const events = await resolvedPublisher.publishRows(publishRows, partitionKey);
   return events.length;
 }
 
 export async function replaceMetricStreamBatch(
-  _db: unknown,
+  db: Database,
   scope: MetricStreamDeleteScopeInput,
   metricRows: MetricStreamSourceRow[],
   sourceType: string,
@@ -232,7 +235,8 @@ export async function replaceMetricStreamBatch(
   const resolvedPublisher = requireReplacementPublisher(
     publisher ?? (await getDefaultMetricStreamEventPublisher()),
   );
-  const result = await resolvedPublisher.replaceRows(scope, rows.map(toPublishRow));
+  const publishRows = await addProviderDataGenerations(db, rows.map(toPublishRow));
+  const result = await resolvedPublisher.replaceRows(scope, publishRows);
   return {
     deletedEventId: result.deleted.eventId,
     rowCount: result.rows.length,

@@ -1,6 +1,7 @@
 import {
   buildIngestMetricStreamCreateTableSql,
   buildMetricStreamDeleteAcknowledgementTableSql,
+  buildProviderDataGenerationTableSql,
   INGEST_DATABASE,
   METRIC_STREAM_TABLE,
 } from "../metric-stream/clickhouse-table.ts";
@@ -23,6 +24,7 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
     `CREATE DATABASE IF NOT EXISTS ${INGEST_DATABASE}`,
     buildIngestMetricStreamCreateTableSql(),
     buildMetricStreamDeleteAcknowledgementTableSql(),
+    buildProviderDataGenerationTableSql(),
     "CREATE DATABASE IF NOT EXISTS postgres_fitness",
     ...buildPostgresFitnessRawTableStatements(),
     ...buildBodyMeasurementSampleProjectionStatements(),
