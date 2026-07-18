@@ -277,6 +277,36 @@ describe("activity-read-model-build", () => {
     );
   });
 
+  it("treats a missing metric-stream acknowledgement row as zero", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([]) })
+      .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ acknowledgement_count: 1 }]) });
+    const client = createMockClickHouseClient(query);
+
+    await waitForMetricStreamDeleteAcknowledgement(client, "event-1", {
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+    });
+
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects malformed metric-stream acknowledgement counts", async () => {
+    const client = createMockClickHouseClient(
+      vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue([{ acknowledgement_count: "invalid" }]),
+      }),
+    );
+
+    await expect(
+      waitForMetricStreamDeleteAcknowledgement(client, "event-1", {
+        pollIntervalMs: 0,
+        timeoutMs: 100,
+      }),
+    ).rejects.toThrow("acknowledgement_count");
+  });
+
   it("honors the metric-stream deletion timeout boundary", async () => {
     const query = vi.fn();
     const client = createMockClickHouseClient(query);

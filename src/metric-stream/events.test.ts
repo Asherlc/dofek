@@ -136,4 +136,16 @@ describe("createMetricStreamDeletedEvent", () => {
       partitionKey: "activity:20000000-0000-4000-8000-000000000001",
     });
   });
+
+  it("rejects non-RFC UUIDs on version-two delete events", () => {
+    const result = metricStreamRedpandaEventSchema.safeParse({
+      version: 2,
+      eventType: "metric_stream_deleted",
+      eventId: "12345678-1234-1234-1234-123456789abc",
+      scope: { activityId: "20000000-0000-4000-8000-000000000001" },
+      partitionKey: "activity:20000000-0000-4000-8000-000000000001",
+    });
+
+    expect(result.success).toBe(false);
+  });
 });

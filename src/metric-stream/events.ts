@@ -109,7 +109,7 @@ export const metricStreamDeletedEventV2Schema = z
   .object({
     version: z.literal(METRIC_STREAM_DELETE_EVENT_VERSION),
     eventType: z.literal(METRIC_STREAM_DELETED_EVENT_TYPE),
-    eventId: z.guid(),
+    eventId: z.uuid(),
     scope: metricStreamDeleteScopeSchema,
     partitionKey: nonEmptyStringSchema,
   })

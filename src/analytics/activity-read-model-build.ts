@@ -1,5 +1,7 @@
 import { type SpawnOptions, spawn } from "node:child_process";
+import { z } from "zod";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
+import { METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE } from "../metric-stream/clickhouse-table.ts";
 
 export const ACTIVITY_DELETE_DBT_SELECT = "activity_source_records+";
 
@@ -29,6 +31,10 @@ export interface WaitForPeerDbActivityDeletesOptions {
   timeoutMs?: number;
   pollIntervalMs?: number;
 }
+
+const metricStreamDeleteAcknowledgementCountRowsSchema = z.array(
+  z.object({ acknowledgement_count: z.coerce.number().int().nonnegative() }),
+);
 
 export async function countActivePeerDbActivities(
   client: ClickHouseClient,
@@ -119,15 +125,15 @@ async function countMetricStreamDeleteAcknowledgements(
   client: ClickHouseClient,
   eventId: string,
 ): Promise<number> {
-  const rows = await client.query<{ acknowledgement_count: string | number }>({
+  const result = await client.query({
     query: `SELECT count() AS acknowledgement_count
-      FROM ingest.metric_stream_delete_acknowledgement
+      FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE}
       WHERE event_id = {eventId:UUID}`,
     format: "JSONEachRow",
     query_params: { eventId },
   });
-  const row = (await rows.json())[0];
-  return Number(row?.acknowledgement_count ?? 0);
+  const rows = metricStreamDeleteAcknowledgementCountRowsSchema.parse(await result.json());
+  return rows[0]?.acknowledgement_count ?? 0;
 }
 
 export async function waitForMetricStreamDeleteAcknowledgement(

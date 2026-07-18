@@ -181,8 +181,9 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     });
     expect(String(firstCommandQuery(command))).toContain("1 AS is_deleted");
     expect(String(firstCommandQuery(command))).toContain(
-      "toString(activity_id) = {activity_id:String}",
+      "candidate_row.activity_id = {activity_id:UUID}",
     );
+    expect(String(firstCommandQuery(command))).toContain("latest_row.1 = {activity_id:UUID}");
     expect(command).toHaveBeenNthCalledWith(2, {
       query: expect.stringContaining("ingest.metric_stream_delete_acknowledgement"),
       query_params: { event_id: deleteEvent.eventId },
@@ -260,13 +261,26 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       },
     });
     const query = firstCommandQuery(command);
-    expect(query).toContain("toString(user_id) = {user_id:String}");
-    expect(query).toContain("provider_id = {provider_id:String}");
-    expect(query).toContain("external_id = {external_id:String}");
-    expect(query).toContain("channel = {channel:String}");
-    expect(query).toContain("toString(activity_id) = {activity_id:String}");
-    expect(query).toContain("recorded_at >= parseDateTime64BestEffort({recorded_at_start:String})");
-    expect(query).toContain("recorded_at < parseDateTime64BestEffort({recorded_at_end:String})");
+    expect(query).toContain("candidate_row.user_id = {user_id:UUID}");
+    expect(query).toContain("candidate_row.provider_id = {provider_id:String}");
+    expect(query).toContain("candidate_row.external_id = {external_id:String}");
+    expect(query).toContain("candidate_row.channel = {channel:String}");
+    expect(query).toContain("candidate_row.activity_id = {activity_id:UUID}");
+    expect(query).toContain(
+      "candidate_row.recorded_at >= parseDateTime64BestEffort({recorded_at_start:String})",
+    );
+    expect(query).toContain(
+      "candidate_row.recorded_at < parseDateTime64BestEffort({recorded_at_end:String})",
+    );
+    expect(query).toContain("latest_row.2 = {user_id:UUID}");
+    expect(query).toContain("latest_row.5 = {provider_id:String}");
+    expect(query).toContain("latest_row.6 = {external_id:String}");
+    expect(query).toContain("latest_row.4 = {channel:String}");
+    expect(query).toContain("latest_row.1 = {activity_id:UUID}");
+    expect(query).toContain(
+      "latest_row.3 >= parseDateTime64BestEffort({recorded_at_start:String})",
+    );
+    expect(query).toContain("latest_row.3 < parseDateTime64BestEffort({recorded_at_end:String})");
   });
 
   it("rejects replacement delete scopes that produce no ClickHouse conditions", async () => {
@@ -285,7 +299,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
           activityId: "20000000-0000-4000-8000-000000000001",
         }),
       ]),
-    ).rejects.toThrow("ClickHouse metric-stream replacement requires a command-capable client");
+    ).rejects.toThrow("ClickHouse metric-stream deletion requires a command-capable client");
   });
 });
 
