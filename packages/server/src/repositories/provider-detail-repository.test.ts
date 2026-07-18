@@ -457,12 +457,9 @@ describe("ProviderDetailRepository", () => {
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
     });
 
-    it("continues when a provider child table does not exist", async () => {
-      const txExecute = vi
-        .fn()
-        .mockRejectedValueOnce({ code: "42P01" })
-        .mockRejectedValueOnce(new Error('relation "fitness.old_table" does not exist'))
-        .mockResolvedValue([]);
+    it("fails immediately when a provider child table does not exist", async () => {
+      const missingTableError = { code: "42P01" };
+      const txExecute = vi.fn().mockRejectedValueOnce(missingTableError);
       const mockTransaction = vi
         .fn()
         .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
@@ -470,8 +467,8 @@ describe("ProviderDetailRepository", () => {
         });
       const { repo } = makeRepository([], mockTransaction);
 
-      await expect(repo.deleteProviderData("strava")).resolves.toBeUndefined();
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+      await expect(repo.deleteProviderData("strava")).rejects.toBe(missingTableError);
+      expect(txExecute).toHaveBeenCalledTimes(1);
     });
 
     it("rethrows delete failures that are not missing-table errors", async () => {

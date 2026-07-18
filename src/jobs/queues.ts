@@ -134,18 +134,22 @@ export interface ProviderDeleteAnalyticsJobData {
   deletionEventId: string;
 }
 
-export interface ProviderDataDeletionJobData {
-  type: "provider-data-deletion";
-  eventId: string;
-  generation: number;
-  providerId: string;
-  userId: string;
-  checkpoint?: {
-    batches: number;
-    deletedRows: number;
-    lastId: string;
-  };
-}
+export const providerDataDeletionJobDataSchema = z.object({
+  type: z.literal("provider-data-deletion"),
+  eventId: z.uuid(),
+  generation: z.number().int().positive(),
+  providerId: z.string().min(1),
+  userId: z.uuid(),
+  checkpoint: z
+    .object({
+      batches: z.number().int().nonnegative(),
+      deletedRows: z.number().int().nonnegative(),
+      lastId: z.uuid(),
+    })
+    .optional(),
+});
+
+export type ProviderDataDeletionJobData = z.infer<typeof providerDataDeletionJobDataSchema>;
 
 export interface ProviderDataDeletionQueue {
   add(name: string, data: ProviderDataDeletionJobData, options?: JobsOptions): Promise<unknown>;

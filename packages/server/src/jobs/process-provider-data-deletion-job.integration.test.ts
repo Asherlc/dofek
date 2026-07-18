@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { processProviderDataDeletionJob } from "../../../../src/jobs/process-provider-data-deletion-job.ts";
 import type { ProviderDataDeletionJobData } from "../../../../src/jobs/queues.ts";
@@ -14,6 +15,12 @@ const userId = "10000000-0000-4000-8000-000000000001";
 const eventId = "20000000-0000-4000-8000-000000000002";
 const oldGenerationId = "30000000-0000-4000-8000-000000000003";
 const activeGenerationId = "40000000-0000-4000-8000-000000000004";
+const generationAggregateRowsSchema = z.array(
+  z.object({ generation: z.coerce.number().int().nonnegative() }),
+);
+const acknowledgementAggregateRowsSchema = z.array(
+  z.object({ acknowledgement_count: z.coerce.number().int().nonnegative() }),
+);
 
 describe("processProviderDataDeletionJob ClickHouse integration", () => {
   let testContext: TestContext;
@@ -102,23 +109,27 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
       { generation: 1, id: activeGenerationId, isDeleted: 0 },
     ]);
 
-    const generationResult = await clickHouseClient.query<{ generation: number }>({
+    const generationResult = await clickHouseClient.query({
       query: `SELECT max(generation) AS generation
         FROM ingest.provider_data_generation
         WHERE user_id = {user_id:UUID} AND provider_id = {provider_id:String}`,
       query_params: { provider_id: "garmin", user_id: userId },
       format: "JSONEachRow",
     });
-    await expect(generationResult.json()).resolves.toEqual([{ generation: 1 }]);
+    expect(generationAggregateRowsSchema.parse(await generationResult.json())).toEqual([
+      { generation: 1 },
+    ]);
 
-    const acknowledgementResult = await clickHouseClient.query<{ acknowledgement_count: number }>({
+    const acknowledgementResult = await clickHouseClient.query({
       query: `SELECT count() AS acknowledgement_count
         FROM ingest.metric_stream_delete_acknowledgement
         WHERE event_id = {event_id:UUID}`,
       query_params: { event_id: eventId },
       format: "JSONEachRow",
     });
-    await expect(acknowledgementResult.json()).resolves.toEqual([{ acknowledgement_count: 1 }]);
+    expect(acknowledgementAggregateRowsSchema.parse(await acknowledgementResult.json())).toEqual([
+      { acknowledgement_count: 1 },
+    ]);
     expect(enqueueAnalyticsRefresh).toHaveBeenCalledWith(userId, "garmin", eventId);
     expect(markCompleted).toHaveBeenCalledWith(eventId);
   });

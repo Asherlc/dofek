@@ -359,21 +359,6 @@ const distinctLabeledValueSchema = z.object({
   label: z.string().nullable(),
 });
 
-function isUndefinedTableError(error: unknown): boolean {
-  if (error instanceof Error) {
-    return error.message.includes("does not exist");
-  }
-  if (typeof error === "object" && error !== null) {
-    if ("code" in error && error.code === "42P01") {
-      return true;
-    }
-    if ("message" in error && typeof error.message === "string") {
-      return error.message.includes("does not exist");
-    }
-  }
-  return false;
-}
-
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -778,16 +763,10 @@ export class ProviderDetailRepository {
     tables: readonly string[],
   ): Promise<void> {
     for (const table of tables) {
-      try {
-        await transaction.execute(
-          sql`DELETE FROM ${sql.raw(table)}
-              WHERE provider_id = ${providerId} AND user_id = ${this.#userId}`,
-        );
-      } catch (error: unknown) {
-        if (!isUndefinedTableError(error)) {
-          throw error;
-        }
-      }
+      await transaction.execute(
+        sql`DELETE FROM ${sql.raw(table)}
+            WHERE provider_id = ${providerId} AND user_id = ${this.#userId}`,
+      );
     }
   }
 }

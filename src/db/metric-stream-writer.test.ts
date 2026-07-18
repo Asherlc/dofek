@@ -239,9 +239,18 @@ describe("sourceRowToMetricStream", () => {
 
 describe("writeMetricStreamBatch", () => {
   it("publishes fanned-out provider rows to Redpanda without inserting into Postgres", async () => {
-    const db = { execute: vi.fn().mockResolvedValue([]), insert: vi.fn() };
+    const db = {
+      execute: vi.fn().mockResolvedValue([
+        {
+          generation: 0,
+          provider_id: "withings",
+          user_id: "00000000-0000-4000-8000-000000000001",
+        },
+      ]),
+      insert: vi.fn(),
+    };
 
-    const count = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+    const count = await runWithTokenUser("00000000-0000-4000-8000-000000000001", () =>
       writeMetricStreamBatch(
         db,
         [
@@ -261,14 +270,14 @@ describe("writeMetricStreamBatch", () => {
     expect(db.insert).not.toHaveBeenCalled();
     expect(mockPublishRows).toHaveBeenCalledWith([
       expect.objectContaining({
-        userId: "00000000-0000-0000-0000-000000000001",
+        userId: "00000000-0000-4000-8000-000000000001",
         providerId: "withings",
         externalId: "withings-measure-1",
         channel: "body_weight",
         scalar: 72.5,
       }),
       expect.objectContaining({
-        userId: "00000000-0000-0000-0000-000000000001",
+        userId: "00000000-0000-4000-8000-000000000001",
         providerId: "withings",
         externalId: "withings-measure-1",
         channel: "body_fat_percentage",
@@ -314,9 +323,19 @@ describe("writeMetricStreamBatch", () => {
 
 describe("replaceMetricStreamBatch", () => {
   it("publishes a scoped Redpanda replacement instead of deleting directly from Postgres", async () => {
-    const db = { execute: vi.fn().mockResolvedValue([]), insert: vi.fn(), delete: vi.fn() };
+    const db = {
+      execute: vi.fn().mockResolvedValue([
+        {
+          generation: 0,
+          provider_id: "wahoo",
+          user_id: "00000000-0000-4000-8000-000000000001",
+        },
+      ]),
+      insert: vi.fn(),
+      delete: vi.fn(),
+    };
 
-    const result = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+    const result = await runWithTokenUser("00000000-0000-4000-8000-000000000001", () =>
       replaceMetricStreamBatch(
         db,
         { activityId: "20000000-0000-4000-8000-000000000001" },
@@ -343,7 +362,7 @@ describe("replaceMetricStreamBatch", () => {
       { activityId: "20000000-0000-4000-8000-000000000001" },
       [
         expect.objectContaining({
-          userId: "00000000-0000-0000-0000-000000000001",
+          userId: "00000000-0000-4000-8000-000000000001",
           providerId: "wahoo",
           externalId: "sample-1",
           activityId: "20000000-0000-4000-8000-000000000001",
@@ -381,13 +400,22 @@ describe("replaceMetricStreamBatch", () => {
 
 describe("writeMetricStreamBatchForScope", () => {
   it("publishes rows with the delete scope partition key", async () => {
-    const db = { execute: vi.fn().mockResolvedValue([]), insert: vi.fn() };
+    const db = {
+      execute: vi.fn().mockResolvedValue([
+        {
+          generation: 0,
+          provider_id: "apple_health",
+          user_id: "00000000-0000-4000-8000-000000000001",
+        },
+      ]),
+      insert: vi.fn(),
+    };
 
-    const count = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+    const count = await runWithTokenUser("00000000-0000-4000-8000-000000000001", () =>
       writeMetricStreamBatchForScope(
         db,
         {
-          userId: "00000000-0000-0000-0000-000000000001",
+          userId: "00000000-0000-4000-8000-000000000001",
           providerId: "apple_health",
           recordedAtStart: "2026-03-30T00:00:00.000Z",
         },
@@ -411,7 +439,7 @@ describe("writeMetricStreamBatchForScope", () => {
           scalar: 142,
         }),
       ],
-      "provider:00000000-0000-0000-0000-000000000001:apple_health:*:*:2026-03-30T00:00:00.000Z:*",
+      "provider:00000000-0000-4000-8000-000000000001:apple_health:*:*:2026-03-30T00:00:00.000Z:*",
     );
   });
 });

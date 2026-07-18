@@ -19,6 +19,7 @@ const hoisted = vi.hoisted(() => {
   // Per-worker `on` mocks, keyed by queue name, so tests can find handlers
   // registered by a specific worker rather than relying on call order.
   const workerOnMocks: Record<string, ReturnType<typeof vi.fn>> = {};
+  const workerProcessors: Record<string, (job: unknown) => unknown> = {};
 
   const mockReadinessListen = vi.fn();
   const mockReadinessClose = vi.fn((callback: (error?: Error) => void) => callback());
@@ -59,15 +60,17 @@ const hoisted = vi.hoisted(() => {
     mockGarminProgressCoordinator,
     MockUnrecoverableError,
     workerOnMocks,
+    workerProcessors,
   };
 });
 
 vi.mock("bullmq", () => ({
   Job: { addJobLog: hoisted.mockAddJobLog },
   UnrecoverableError: hoisted.MockUnrecoverableError,
-  Worker: vi.fn((name: string) => {
+  Worker: vi.fn((name: string, processor: (job: unknown) => unknown) => {
     const on = vi.fn((...args: unknown[]) => hoisted.mockOn(...args));
     hoisted.workerOnMocks[name] = on;
+    hoisted.workerProcessors[name] = processor;
     return { name, on, close: hoisted.mockClose, run: hoisted.mockRun };
   }),
 }));
@@ -162,6 +165,19 @@ vi.mock("./provider-queue-config.ts", () => ({
 }));
 
 vi.mock("./queues.ts", () => ({
+  providerDataDeletionJobDataSchema: {
+    parse: vi.fn((data: unknown) => {
+      if (
+        typeof data === "object" &&
+        data !== null &&
+        "generation" in data &&
+        typeof data.generation === "number"
+      ) {
+        return data;
+      }
+      throw new Error("Invalid provider data deletion job payload");
+    }),
+  },
   getRedisConnection: vi.fn(() => ({})),
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
   IMPORT_QUEUE: "import-queue",
@@ -209,6 +225,7 @@ const {
   mockCloseGarminProgress,
   mockCloseProviderDataDeletionOutbox,
   workerOnMocks,
+  workerProcessors,
 } = hoisted;
 
 // Static import ensures vitest `related` mode (used by Stryker in CI) detects this
@@ -270,6 +287,30 @@ describe("worker module", () => {
     );
   });
 
+  it("rejects invalid provider deletion jobs at the Redis boundary", () => {
+    const processor = workerProcessors["provider-data-deletion-queue"];
+    if (!processor) throw new Error("provider deletion processor was not registered");
+    const data = {
+      type: "provider-data-deletion",
+      eventId: "10000000-0000-4000-8000-000000000001",
+      generation: 2,
+      providerId: "garmin",
+      userId: "20000000-0000-4000-8000-000000000002",
+      checkpoint: {
+        batches: 1,
+        deletedRows: 10_000,
+        lastId: "30000000-0000-4000-8000-000000000003",
+      },
+    };
+    const invalidJob = {
+      data: { ...data, generation: "2" },
+      updateData: vi.fn(async () => undefined),
+      updateProgress: vi.fn(async () => undefined),
+    };
+
+    expect(() => processor(invalidJob)).toThrow();
+  });
+
   it("passes limiter config to per-provider workers", async () => {
     const { Worker } = await import("bullmq");
     expect(Worker).toHaveBeenCalledWith(
@@ -326,11 +367,11 @@ describe("worker module", () => {
   });
 
   it("registers standard handlers plus FIT progress observers", () => {
-    expect(mockOn).toHaveBeenCalledTimes(6 * EXPECTED_WORKER_COUNT + 2);
+    expect(mockOn).toHaveBeenCalledTimes(6 * EXPECTED_WORKER_COUNT + 3);
     const events = mockOn.mock.calls.map((call) => String(call[0]));
     expect(events.filter((e: string) => e === "active")).toHaveLength(EXPECTED_WORKER_COUNT);
     expect(events.filter((e: string) => e === "completed")).toHaveLength(EXPECTED_WORKER_COUNT + 1);
-    expect(events.filter((e: string) => e === "failed")).toHaveLength(EXPECTED_WORKER_COUNT + 1);
+    expect(events.filter((e: string) => e === "failed")).toHaveLength(EXPECTED_WORKER_COUNT + 2);
     expect(events.filter((e: string) => e === "stalled")).toHaveLength(EXPECTED_WORKER_COUNT);
     expect(events.filter((e: string) => e === "lockRenewalFailed")).toHaveLength(
       EXPECTED_WORKER_COUNT,
@@ -388,7 +429,9 @@ describe("worker module", () => {
   });
 
   function getWorkerHandler(eventName: string): (...args: unknown[]) => unknown {
-    const call = mockOn.mock.calls.find((mockCall) => mockCall[0] === eventName);
+    const on = workerOnMocks["sync-strava"];
+    if (!on) throw new Error("sync-strava worker on mock was not registered");
+    const call = on.mock.calls.find((mockCall) => mockCall[0] === eventName);
     expect(call).toBeDefined();
     const handler = call?.[1];
     if (typeof handler !== "function") {
@@ -524,6 +567,72 @@ describe("worker module", () => {
   function getFitWorkerFailedHandler(): (...args: unknown[]) => unknown {
     return getWorkerFailedHandler("fit-file-import-queue");
   }
+
+  function getProviderDataDeletionRedriveHandler(): (...args: unknown[]) => unknown {
+    const on = workerOnMocks["provider-data-deletion-queue"];
+    if (!on) throw new Error("provider deletion worker on mock was not registered");
+    const failedCall = on.mock.calls.find((call) => call[0] === "failed");
+    if (!failedCall || typeof failedCall[1] !== "function") {
+      throw new Error("provider deletion redrive handler was not registered");
+    }
+    return failedCall[1];
+  }
+
+  it("redrives provider deletion after BullMQ exhausts all attempts", async () => {
+    const retry = vi.fn(async () => undefined);
+
+    getProviderDataDeletionRedriveHandler()(
+      { attemptsMade: 20, opts: { attempts: 20 }, retry },
+      new Error("ClickHouse unavailable"),
+    );
+
+    await vi.waitFor(() => {
+      expect(retry).toHaveBeenCalledWith("failed", {
+        resetAttemptsMade: true,
+        resetAttemptsStarted: true,
+      });
+    });
+  });
+
+  it("lets BullMQ handle provider deletion failures before the terminal attempt", () => {
+    const retry = vi.fn(async () => undefined);
+
+    getProviderDataDeletionRedriveHandler()(
+      { attemptsMade: 19, opts: { attempts: 20 }, retry },
+      new Error("ClickHouse unavailable"),
+    );
+
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it("reports a provider deletion redrive failure with the deletion event context", async () => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    const redriveError = new Error("Redis unavailable");
+    const retry = vi.fn().mockRejectedValue(redriveError);
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
+
+    getProviderDataDeletionRedriveHandler()(
+      {
+        attemptsMade: 20,
+        data: { eventId: "10000000-0000-4000-8000-000000000001" },
+        opts: { attempts: 20 },
+        retry,
+      },
+      new Error("ClickHouse unavailable"),
+    );
+
+    await vi.waitFor(() =>
+      expect(Sentry.captureException).toHaveBeenCalledWith(redriveError, {
+        tags: { providerDataDeletionStep: "redrive" },
+        extra: { eventId: "10000000-0000-4000-8000-000000000001" },
+      }),
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      "[provider-data-deletion] Failed to redrive terminal job 10000000-0000-4000-8000-000000000001: Error: Redis unavailable",
+    );
+  });
 
   it("suppresses Sentry for FIT batch child failures with UnrecoverableError", async () => {
     const Sentry = await import("@sentry/node");

@@ -176,7 +176,7 @@ async function tombstoneMetricStreamIds(
         latest_row.12 AS metadata,
         now64(9) AS ingested_at,
         1 AS is_deleted,
-        greatest(latest_row.15 + 1, {delete_version:Int64}) AS version,
+        latest_row.15 + 1 AS version,
         latest_row.13 AS generation
       FROM (
         SELECT
@@ -207,7 +207,6 @@ async function tombstoneMetricStreamIds(
       )
       WHERE latest_row.14 = 0`,
     query_params: {
-      delete_version: Date.now(),
       row_ids: rowIds,
     },
   });
@@ -314,9 +313,7 @@ export async function markMetricStreamScopeDeletedInClickHouse(
   if (!client.command) {
     throw new Error("ClickHouse metric-stream deletion requires a command-capable client");
   }
-  const queryParams: Record<string, unknown> = {
-    delete_version: Date.now(),
-  };
+  const queryParams: Record<string, unknown> = {};
   const candidateConditions = clickHouseDeleteScopeConditions(
     scope,
     queryParams,
@@ -349,7 +346,7 @@ export async function markMetricStreamScopeDeletedInClickHouse(
         latest_row.12 AS metadata,
         now64(9) AS ingested_at,
         1 AS is_deleted,
-        greatest(latest_row.15 + 1, {delete_version:Int64}) AS version,
+        latest_row.15 + 1 AS version,
         latest_row.13 AS generation
       FROM (
         SELECT

@@ -66,6 +66,32 @@ describe("queues", () => {
     });
   });
 
+  describe("providerDataDeletionJobDataSchema", () => {
+    it("validates the complete resumable deletion payload", async () => {
+      const { providerDataDeletionJobDataSchema } = await import("./queues.ts");
+      const payload = {
+        type: "provider-data-deletion",
+        eventId: "10000000-0000-4000-8000-000000000001",
+        generation: 2,
+        providerId: "garmin",
+        userId: "20000000-0000-4000-8000-000000000002",
+        checkpoint: {
+          batches: 3,
+          deletedRows: 30_000,
+          lastId: "30000000-0000-4000-8000-000000000003",
+        },
+      };
+
+      expect(providerDataDeletionJobDataSchema.parse(payload)).toEqual(payload);
+      expect(
+        providerDataDeletionJobDataSchema.safeParse({
+          ...payload,
+          checkpoint: { ...payload.checkpoint, deletedRows: -1 },
+        }).success,
+      ).toBe(false);
+    });
+  });
+
   describe("getRedisConnection", () => {
     it("parses REDIS_URL environment variable with password", async () => {
       process.env.REDIS_URL = "redis://:secret@myredis.host:6380";

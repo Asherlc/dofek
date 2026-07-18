@@ -173,7 +173,6 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
-        delete_version: expect.any(Number),
         row_ids: [heartRateEvent.id],
       },
     });
@@ -214,7 +213,6 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
-        delete_version: expect.any(Number),
         row_ids: [heartRateEvent.id],
       },
     });
@@ -258,7 +256,6 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(command).toHaveBeenNthCalledWith(1, {
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
-        delete_version: expect.any(Number),
         activity_id: "20000000-0000-4000-8000-000000000001",
       },
     });
@@ -334,7 +331,6 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
-        delete_version: expect.any(Number),
         user_id: "10000000-0000-4000-8000-000000000001",
         provider_id: "fitbit",
         channel: "body_weight",
@@ -379,7 +375,6 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining("candidate_row.external_id = {external_id:String}"),
       query_params: {
-        delete_version: expect.any(Number),
         provider_id: "fitbit",
         external_id: "measurement-1",
       },

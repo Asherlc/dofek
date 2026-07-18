@@ -3,18 +3,17 @@ import { createMetricStreamEvent, type MetricStreamRowInput } from "./events.ts"
 import type { MetricStreamEventPublisher } from "./redpanda-producer.ts";
 import { writeMetricStreamRows } from "./write-metric-stream.ts";
 
-const metricStreamRows: MetricStreamRowInput[] = [
-  {
-    recordedAt: "2026-06-06T19:00:00.000Z",
-    userId: "00000000-0000-0000-0000-000000000001",
-    providerId: "apple_health",
-    externalId: "hk:heart-rate-1",
-    deviceId: "Apple Watch",
-    sourceType: "api",
-    channel: "heart_rate",
-    scalar: 72,
-  },
-];
+const metricStreamRow: MetricStreamRowInput = {
+  recordedAt: "2026-06-06T19:00:00.000Z",
+  userId: "00000000-0000-4000-8000-000000000001",
+  providerId: "apple_health",
+  externalId: "hk:heart-rate-1",
+  deviceId: "Apple Watch",
+  sourceType: "api",
+  channel: "heart_rate",
+  scalar: 72,
+};
+const metricStreamRows: MetricStreamRowInput[] = [metricStreamRow];
 
 function makePublisher(): MetricStreamEventPublisher {
   return {
@@ -27,7 +26,15 @@ function makePublisher(): MetricStreamEventPublisher {
 describe("writeMetricStreamRows", () => {
   it("publishes rows through the supplied Redpanda publisher", async () => {
     const publisher = makePublisher();
-    const database = { execute: vi.fn().mockResolvedValue([{ generation: "4" }]) };
+    const database = {
+      execute: vi.fn().mockResolvedValue([
+        {
+          generation: "4",
+          provider_id: "apple_health",
+          user_id: metricStreamRow.userId,
+        },
+      ]),
+    };
 
     const result = await writeMetricStreamRows({
       database,
@@ -45,7 +52,15 @@ describe("writeMetricStreamRows", () => {
 
   it("loads the provider generation before publishing", async () => {
     const publisher = makePublisher();
-    const database = { execute: vi.fn().mockResolvedValue([]) };
+    const database = {
+      execute: vi.fn().mockResolvedValue([
+        {
+          generation: "0",
+          provider_id: "apple_health",
+          user_id: metricStreamRow.userId,
+        },
+      ]),
+    };
 
     await writeMetricStreamRows({
       database,
@@ -55,5 +70,40 @@ describe("writeMetricStreamRows", () => {
 
     expect(database.execute).toHaveBeenCalledTimes(1);
     expect(publisher.publishRows).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads all provider generations in one authoritative query", async () => {
+    const publisher = makePublisher();
+    const database = {
+      execute: vi.fn().mockResolvedValue([
+        {
+          generation: "4",
+          provider_id: "apple_health",
+          user_id: metricStreamRow.userId,
+        },
+        {
+          generation: "2",
+          provider_id: "garmin",
+          user_id: metricStreamRow.userId,
+        },
+      ]),
+    };
+    const garminRow: MetricStreamRowInput = {
+      ...metricStreamRow,
+      externalId: "garmin:heart-rate-1",
+      providerId: "garmin",
+    };
+
+    await writeMetricStreamRows({
+      database,
+      publisher,
+      rows: [...metricStreamRows, garminRow],
+    });
+
+    expect(database.execute).toHaveBeenCalledTimes(1);
+    expect(publisher.publishRows).toHaveBeenCalledWith([
+      expect.objectContaining({ generation: 4, providerId: "apple_health" }),
+      expect.objectContaining({ generation: 2, providerId: "garmin" }),
+    ]);
   });
 });

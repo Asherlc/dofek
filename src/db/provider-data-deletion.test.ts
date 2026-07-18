@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createProviderDataDeletionRequest,
-  getProviderDataGeneration,
+  getProviderDataGenerations,
   listPendingProviderDataDeletionRequests,
 } from "./provider-data-deletion.ts";
 
@@ -10,9 +10,13 @@ const eventId = "10000000-0000-4000-8000-000000000001";
 
 describe("provider data deletion persistence", () => {
   it("uses generation zero until a deletion advances the fencing token", async () => {
-    const execute = vi.fn().mockResolvedValue([]);
+    const execute = vi
+      .fn()
+      .mockResolvedValue([{ generation: "0", provider_id: "garmin", user_id: userId }]);
 
-    await expect(getProviderDataGeneration({ execute }, userId, "garmin")).resolves.toBe(0);
+    await expect(
+      getProviderDataGenerations({ execute }, [{ providerId: "garmin", userId }]),
+    ).resolves.toEqual([{ generation: 0, providerId: "garmin", userId }]);
   });
 
   it("creates an outbox request with the newly active generation", async () => {

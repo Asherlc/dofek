@@ -13815,3 +13815,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   an approved maintenance window, resubmit the deletion request, and verify the
   generation fence, acknowledgement, and zero active old-generation rows using
   `docs/provider-data-deletion-runbook.md`.
+
+## 2026-07-18 — Deletion Workflow PR Validation Failures
+
+- **Symptoms:** The deletion workflow pull request failed its unit and
+  integration CI jobs. A subsequent local full-suite validation produced
+  cascading PostgreSQL `No space left on device` failures.
+- **User impact:** No production impact; the failures blocked validation of the
+  replacement deletion workflow before deployment.
+- **Evidence:** In [GitHub Actions run
+  29654216514](https://github.com/Asherlc/dofek/actions/runs/29654216514), the
+  unit job first failed on stale `LIMIT 1` SQL assertions and integration shard
+  3 first failed because ClickHouse rejects lightweight `DELETE` on a table
+  with projections. Locally, the Docker VM overlay reached 100% utilization and
+  PostgreSQL emitted `No space left on device`; the current workspace database
+  contained about 160 disposable `dofek_integration_template_*` and `test_*`
+  databases from integration runs.
+- **Root cause:** Tests had not been updated for the corrected scalar subqueries
+  or projection-aware ClickHouse mutation semantics. Separately, completed
+  integration runs left disposable template databases in the shared Docker VM
+  until its filesystem was exhausted.
+- **Fix / mitigation:** Updated the SQL expectations, changed ClickHouse test
+  cleanup to synchronous `ALTER TABLE ... DELETE` mutations, and dropped only
+  the current workspace's disposable test/template databases. The `health`
+  database, running containers, and all named volumes were preserved. Docker's
+  official guidance distinguishes pruning rebuildable caches and unused objects
+  from explicit volume removal
+  ([Docker pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/)).
+- **Validation:** The affected 256 unit tests and 12 real PostgreSQL/ClickHouse
+  integration tests pass after the fixes.
+- **Remaining risk / follow-up:** The shared Docker VM has limited free space,
+  so a non-sharded local full suite may still exceed capacity. Add deterministic
+  integration-template cleanup and a Docker disk preflight to the testing
+  runbook; use sharded CI as the authoritative full-suite validation until then.

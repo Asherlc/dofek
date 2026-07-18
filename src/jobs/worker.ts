@@ -38,6 +38,7 @@ import {
   type PostSyncJobData,
   PROVIDER_DATA_DELETION_QUEUE,
   type ProviderDataDeletionJobData,
+  providerDataDeletionJobDataSchema,
   providerSyncQueueName,
   SCHEDULED_SYNC_QUEUE,
   type ScheduledSyncJobData,
@@ -166,16 +167,35 @@ const activityDeleteAnalyticsWorker = new Worker<ActivityAnalyticsJobData>(
 );
 const providerDataDeletionWorker = new Worker<ProviderDataDeletionJobData>(
   PROVIDER_DATA_DELETION_QUEUE,
-  (job) =>
-    jobContext.run(job, () =>
+  (job) => {
+    job.data = providerDataDeletionJobDataSchema.parse(job.data);
+    return jobContext.run(job, () =>
       processProviderDataDeletionJob(job, {
         clickHouseClient: getClickHouseClient(),
         enqueueAnalyticsRefresh: enqueueProviderDeleteAnalyticsRefresh,
         markCompleted: (eventId) => markProviderDataDeletionCompleted(db, eventId),
       }),
-    ),
+    );
+  },
   { autorun: false, connection, concurrency: 1 },
 );
+providerDataDeletionWorker.on("failed", (job) => {
+  if (!job) return;
+  const configuredAttempts = job.opts.attempts ?? 1;
+  if (job.attemptsMade < configuredAttempts) return;
+
+  void job
+    .retry("failed", { resetAttemptsMade: true, resetAttemptsStarted: true })
+    .catch((error: unknown) => {
+      Sentry.captureException(error, {
+        tags: { providerDataDeletionStep: "redrive" },
+        extra: { eventId: job.data.eventId },
+      });
+      logger.error(
+        `[provider-data-deletion] Failed to redrive terminal job ${job.data.eventId}: ${String(error)}`,
+      );
+    });
+});
 // Training export jobs are processed by the standalone Python BullMQ worker
 // (packages/ml) — not by this Node.js worker.
 

@@ -247,4 +247,30 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
     expect(dailyMetricsCount?.count).toBe(0);
     expect(tokenCount?.count).toBe(1);
   });
+
+  it("fails with the missing-table error before writing another outbox event", async () => {
+    await testContext.db.execute(
+      sql`ALTER TABLE fitness.daily_metrics RENAME TO daily_metrics_unavailable`,
+    );
+    try {
+      const repository = new ProviderDetailRepository(testContext.db, userId);
+
+      await expect(repository.requestProviderDataDeletion(providerId)).rejects.toMatchObject({
+        cause: { code: "42P01" },
+      });
+
+      const [outboxCount] = await executeWithSchema(
+        testContext.db,
+        z.object({ count: z.coerce.number() }),
+        sql`SELECT count(*) AS count
+            FROM fitness.provider_data_deletion_outbox
+            WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+      );
+      expect(outboxCount?.count).toBe(1);
+    } finally {
+      await testContext.db.execute(
+        sql`ALTER TABLE fitness.daily_metrics_unavailable RENAME TO daily_metrics`,
+      );
+    }
+  });
 });

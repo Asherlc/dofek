@@ -1,4 +1,4 @@
-import { getProviderDataGeneration } from "../db/provider-data-deletion.ts";
+import { getProviderDataGenerations } from "../db/provider-data-deletion.ts";
 import type { Database } from "../db/typed-sql.ts";
 import type { MetricStreamEventV1, MetricStreamRowInput } from "./events.ts";
 import type { MetricStreamEventPublisher } from "./redpanda-producer.ts";
@@ -18,15 +18,18 @@ export async function addProviderDataGenerations(
   database: Database,
   rows: readonly MetricStreamRowInput[],
 ): Promise<MetricStreamRowInput[]> {
-  const generationsByProvider = new Map<string, number>();
+  const scopesByProvider = new Map<string, { providerId: string; userId: string }>();
   for (const row of rows) {
     const providerKey = `${row.userId}\0${row.providerId}`;
-    if (!generationsByProvider.has(providerKey)) {
-      generationsByProvider.set(
-        providerKey,
-        await getProviderDataGeneration(database, row.userId, row.providerId),
-      );
-    }
+    scopesByProvider.set(providerKey, { providerId: row.providerId, userId: row.userId });
+  }
+  const generations = await getProviderDataGenerations(database, [...scopesByProvider.values()]);
+  const generationsByProvider = new Map<string, number>();
+  for (const generation of generations) {
+    generationsByProvider.set(
+      `${generation.userId}\0${generation.providerId}`,
+      generation.generation,
+    );
   }
   return rows.map((row) => {
     const generation = generationsByProvider.get(`${row.userId}\0${row.providerId}`);

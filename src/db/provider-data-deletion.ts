@@ -2,7 +2,11 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { type Database, executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
-const generationRowSchema = z.object({ generation: z.coerce.number().int().nonnegative() });
+const providerDataGenerationRowSchema = z.object({
+  generation: z.coerce.number().int().nonnegative(),
+  provider_id: z.string().min(1),
+  user_id: z.uuid(),
+});
 const providerDataDeletionRequestRowSchema = z.object({
   event_id: z.uuid(),
   generation: z.coerce.number().int().positive(),
@@ -17,6 +21,15 @@ export interface ProviderDataDeletionRequest {
   userId: string;
 }
 
+export interface ProviderDataScope {
+  providerId: string;
+  userId: string;
+}
+
+export interface ProviderDataGeneration extends ProviderDataScope {
+  generation: number;
+}
+
 function mapProviderDataDeletionRequest(
   row: z.infer<typeof providerDataDeletionRequestRowSchema>,
 ): ProviderDataDeletionRequest {
@@ -28,19 +41,35 @@ function mapProviderDataDeletionRequest(
   };
 }
 
-export async function getProviderDataGeneration(
+export async function getProviderDataGenerations(
   database: Database,
-  userId: string,
-  providerId: string,
-): Promise<number> {
+  scopes: readonly ProviderDataScope[],
+): Promise<ProviderDataGeneration[]> {
+  if (scopes.length === 0) return [];
+  const requestedScopes = sql.join(
+    scopes.map((scope) => sql`(${scope.userId}::uuid, ${scope.providerId}::text)`),
+    sql`, `,
+  );
   const rows = await executeWithSchema(
     database,
-    generationRowSchema,
-    sql`SELECT current_generation AS generation
-        FROM fitness.provider_data_generation
-        WHERE user_id = ${userId} AND provider_id = ${providerId}`,
+    providerDataGenerationRowSchema,
+    sql`WITH requested_scope (user_id, provider_id) AS (
+          VALUES ${requestedScopes}
+        )
+        SELECT
+          requested_scope.user_id,
+          requested_scope.provider_id,
+          COALESCE(provider_data_generation.current_generation, 0) AS generation
+        FROM requested_scope
+        LEFT JOIN fitness.provider_data_generation
+          ON provider_data_generation.user_id = requested_scope.user_id
+          AND provider_data_generation.provider_id = requested_scope.provider_id`,
   );
-  return rows[0]?.generation ?? 0;
+  return rows.map((row) => ({
+    generation: row.generation,
+    providerId: row.provider_id,
+    userId: row.user_id,
+  }));
 }
 
 export async function createProviderDataDeletionRequest(
