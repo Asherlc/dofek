@@ -13835,6 +13835,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   UUID` from the generation row parser. In [GitHub Actions run
   29657088198](https://github.com/Asherlc/dofek/actions/runs/29657088198), Stryker
   shard 4 then reported 19 uncovered mutants in the periodic outbox dispatcher.
+  In [GitHub Actions run
+  29657809726](https://github.com/Asherlc/dofek/actions/runs/29657809726), Stryker
+  shard 10 later reported six surviving result-shape guard mutants in
+  `executeWithSchema`.
   Locally, the Docker VM overlay reached 100% utilization and PostgreSQL emitted
   `No space left on device`; the current workspace database contained about 160
   disposable `dofek_integration_template_*` and `test_*` databases from
@@ -13847,14 +13851,17 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Zod documents `z.guid()` for UUID-like identifiers that do not enforce RFC
   variant bits ([Zod UUID documentation](https://zod.dev/api#uuids)). The outbox
   tests covered one-shot dispatch but not the periodic dispatcher's interval,
-  overlap, recovery, and close lifecycle. Separately, completed integration runs
-  left disposable template databases in the shared Docker VM until its
-  filesystem was exhausted.
+  overlap, recovery, and close lifecycle. The typed SQL tests covered valid row
+  arrays and Drizzle transaction results, but not invalid null, callable, or
+  record-without-rows results. Separately, completed integration runs left
+  disposable template databases in the shared Docker VM until its filesystem
+  was exhausted.
 - **Fix / mitigation:** Updated the SQL expectations, changed ClickHouse test
   cleanup to synchronous `ALTER TABLE ... DELETE` mutations, added colocated
   generation resolvers for database doubles, and aligned the database row
   parser with `z.guid()`. Added lifecycle tests for immediate and interval
-  dispatch, overlap suppression, error reporting and recovery, and shutdown fencing.
+  dispatch, overlap suppression, error reporting and recovery, and shutdown
+  fencing. Added public-interface result-shape tests for `executeWithSchema`.
   Dropped only the current workspace's disposable test/template databases. The
   `health` database, running containers, and all named volumes were preserved.
   Docker's official guidance distinguishes pruning rebuildable caches and unused

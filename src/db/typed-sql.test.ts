@@ -48,6 +48,39 @@ describe("executeWithSchema", () => {
     ]);
   });
 
+  it("rejects null database results with the expected shape error", async () => {
+    const db: SchemaExecutionDatabase = {
+      execute: vi.fn().mockResolvedValue(null),
+    };
+
+    await expect(executeWithSchema(db, rowSchema, sql`SELECT 1`)).rejects.toThrow(
+      "Unexpected database execute result shape",
+    );
+  });
+
+  it("rejects callable database results even when they expose rows", async () => {
+    const callableResult = Object.assign(() => undefined, {
+      rows: [{ id: 1, name: "Alice" }],
+    });
+    const db: SchemaExecutionDatabase = {
+      execute: vi.fn().mockResolvedValue(callableResult),
+    };
+
+    await expect(executeWithSchema(db, rowSchema, sql`SELECT 1`)).rejects.toThrow(
+      "Unexpected database execute result shape",
+    );
+  });
+
+  it("rejects record database results without a rows array", async () => {
+    const db: SchemaExecutionDatabase = {
+      execute: vi.fn().mockResolvedValue({ rows: null }),
+    };
+
+    await expect(executeWithSchema(db, rowSchema, sql`SELECT 1`)).rejects.toThrow(
+      "Unexpected database execute result shape",
+    );
+  });
+
   it("throws when a row does not match the schema", async () => {
     const db = createMockDb([{ id: "not-a-number", name: "Alice" }]);
 
