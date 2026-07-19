@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createProviderDataDeletionRequest,
-  findProviderDataDeletionRequest,
   getProviderDataGenerations,
   listPendingProviderDataDeletionRequests,
   markProviderDataDeletionCompleted,
@@ -9,6 +8,12 @@ import {
 
 const userId = "00000000-0000-4000-8000-000000000001";
 const eventId = "10000000-0000-4000-8000-000000000001";
+
+async function findProviderDataDeletionRequestWithFreshSchema(execute: ReturnType<typeof vi.fn>) {
+  vi.resetModules();
+  const { findProviderDataDeletionRequest } = await import("./provider-data-deletion.ts");
+  return findProviderDataDeletionRequest({ execute }, userId, "garmin", eventId);
+}
 
 describe("provider data deletion persistence", () => {
   it("uses generation zero until a deletion advances the fencing token", async () => {
@@ -87,9 +92,7 @@ describe("provider data deletion persistence", () => {
       },
     ]);
 
-    await expect(
-      findProviderDataDeletionRequest({ execute }, userId, "garmin", eventId),
-    ).resolves.toEqual({
+    await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).resolves.toEqual({
       eventId,
       generation: 3,
       providerId: "garmin",
@@ -108,9 +111,7 @@ describe("provider data deletion persistence", () => {
       },
     ]);
 
-    await expect(
-      findProviderDataDeletionRequest({ execute }, userId, "garmin", eventId),
-    ).rejects.toThrow();
+    await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).rejects.toThrow();
   });
 
   it("rejects deletion request rows with an unsupported lifecycle status", async () => {
@@ -124,17 +125,13 @@ describe("provider data deletion persistence", () => {
       },
     ]);
 
-    await expect(
-      findProviderDataDeletionRequest({ execute }, userId, "garmin", eventId),
-    ).rejects.toThrow();
+    await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).rejects.toThrow();
   });
 
   it("returns null when a user-scoped deletion request does not exist", async () => {
     const execute = vi.fn().mockResolvedValue([]);
 
-    await expect(
-      findProviderDataDeletionRequest({ execute }, userId, "garmin", eventId),
-    ).resolves.toBeNull();
+    await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).resolves.toBeNull();
   });
 
   it("marks an outbox request completed", async () => {
