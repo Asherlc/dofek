@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import express from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import { generateCompanionToken, hashCompanionToken } from "../companion/token-repository.ts";
 
 const { createIngestZosHealthRouter } = await import("./ingest-zos-health.ts");
@@ -43,6 +44,7 @@ describe("POST /api/ingest/zos-health", () => {
   let testCtx: TestContext;
   let app: express.Express;
   let validToken: string;
+  let publishedMetricRows: MetricStreamRowInput[] = [];
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -59,12 +61,18 @@ describe("POST /api/ingest/zos-health", () => {
       "/api/ingest",
       createIngestZosHealthRouter({
         db: testCtx.db,
-        metricStreamPublisher: { publishRows: async () => [] },
+        metricStreamPublisher: {
+          publishRows: async (rows) => {
+            publishedMetricRows.push(...rows);
+            return [];
+          },
+        },
       }),
     );
   });
 
   beforeEach(async () => {
+    publishedMetricRows = [];
     await testCtx.db.execute(
       sql`DELETE FROM fitness.sleep_session WHERE user_id = ${TEST_USER_ID}`,
     );
@@ -462,6 +470,49 @@ describe("POST /api/ingest/zos-health", () => {
         [secondRecordedAt]: { recordedAt: secondRecordedAt, heartRate: 145 },
       },
     });
+  });
+
+  it("resolves repeated live workout samples through the batched activity lookup", async () => {
+    const externalId = "live-array-serialization";
+    const response = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: `Bearer ${validToken}` },
+      body: {
+        activities: [
+          {
+            externalId,
+            activityType: "other",
+            startedAt: "2026-06-26T10:00:00Z",
+            endedAt: "2026-06-26T10:10:00Z",
+          },
+        ],
+        liveWorkoutSamples: [
+          {
+            externalId,
+            recordedAt: "2026-06-26T10:05:00.000Z",
+            heartRate: 140,
+            metrics: { duration: 300 },
+          },
+          {
+            externalId,
+            recordedAt: "2026-06-26T10:06:00.000Z",
+            metrics: { duration: 360 },
+          },
+        ],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const activityRows = await testCtx.db.execute(sql`
+      SELECT id::text AS id
+      FROM fitness.activity
+      WHERE user_id = ${TEST_USER_ID} AND external_id = ${externalId}
+    `);
+    expect(activityRows).toHaveLength(1);
+    const activityId = String(activityRows[0]?.id);
+    expect(publishedMetricRows).toHaveLength(3);
+    expect(new Set(publishedMetricRows.map((row) => row.activityId))).toEqual(
+      new Set([activityId]),
+    );
   });
 
   it("rejects activity with invalid dates at schema validation", async () => {

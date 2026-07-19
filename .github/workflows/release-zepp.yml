@@ -84,9 +84,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Patch version files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CODE: ${{ steps.version.outputs.code }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          CODE=${{ steps.version.outputs.code }}
           pnpm tsx packages/zepp/src/patch-release-version.ts "$VERSION" "$CODE"
 
       - name: Print resolved version

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   appendBackgroundHealthSample,
   collectBackgroundHealthSample,
@@ -7,8 +7,10 @@ import {
 
 describe("collectBackgroundHealthSample", () => {
   it("collects low-power readings and completed workouts", () => {
+    const captureException = vi.fn();
     const result = collectBackgroundHealthSample(
       {
+        captureException,
         HeartRate: class {
           getLast() {
             return 72;
@@ -55,9 +57,11 @@ describe("collectBackgroundHealthSample", () => {
         },
       ],
     });
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("omits unavailable and non-positive sensor values without stopping collection", () => {
+    const captureException = vi.fn();
     const ThrowingSensor = class {
       getLast(): number {
         throw new Error("unavailable");
@@ -75,6 +79,7 @@ describe("collectBackgroundHealthSample", () => {
     expect(
       collectBackgroundHealthSample(
         {
+          captureException,
           HeartRate: ThrowingSensor,
           BloodOxygen: ThrowingSensor,
           BodyTemperature: ThrowingSensor,
@@ -87,11 +92,15 @@ describe("collectBackgroundHealthSample", () => {
       sample: { recordedAt: "2024-07-03T10:48:20.000Z" },
       activities: [],
     });
+    expect(captureException).toHaveBeenCalledTimes(5);
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error));
   });
 
   it("uses the latest positive stress reading and omits zero-valued readings", () => {
+    const captureException = vi.fn();
     const result = collectBackgroundHealthSample(
       {
+        captureException,
         HeartRate: class {
           getLast() {
             return 0;
@@ -125,6 +134,7 @@ describe("collectBackgroundHealthSample", () => {
       sample: { recordedAt: "2024-07-03T10:48:20.000Z", stress: 12 },
       activities: [],
     });
+    expect(captureException).not.toHaveBeenCalled();
   });
 });
 

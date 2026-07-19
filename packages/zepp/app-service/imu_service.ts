@@ -8,6 +8,7 @@ import {
   readBackgroundHealthBuffer,
   writeBackgroundHealthBuffer,
 } from "../src/background-health-storage.ts";
+import { captureException } from "./telemetry.ts";
 
 const logger = Logger.getLogger("imu-service");
 
@@ -18,6 +19,7 @@ AppService({
     time.onPerMinute(() => {
       try {
         const collected = collectBackgroundHealthSample({
+          captureException,
           HeartRate,
           BloodOxygen,
           BodyTemperature,
@@ -28,6 +30,7 @@ AppService({
         const updatedBuffer = appendBackgroundHealthSample(currentBuffer, collected);
         writeBackgroundHealthBuffer(updatedBuffer);
       } catch (error: unknown) {
+        captureException(error);
         logger.error("background health collection failed %j", error);
       }
     });

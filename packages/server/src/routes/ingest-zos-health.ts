@@ -436,6 +436,10 @@ export function createIngestZosHealthRouter(deps: {
         const externalIds = [
           ...new Set(data.liveWorkoutSamples.map((sample) => sample.externalId)),
         ];
+        const externalIdParameters = sql.join(
+          externalIds.map((externalId) => sql`${externalId}`),
+          sql`, `,
+        );
         const activityRows = await executeWithSchema(
           deps.db,
           z.object({ id: z.string().uuid(), externalId: z.string() }),
@@ -443,7 +447,7 @@ export function createIngestZosHealthRouter(deps: {
               FROM fitness.activity
               WHERE user_id = ${userId}
                 AND provider_id = ${PROVIDER_ID}
-                AND external_id = ANY(${externalIds}::text[])`,
+                AND external_id = ANY(ARRAY[${externalIdParameters}]::text[])`,
         );
         const activityIdByExternalId = new Map(
           activityRows.map((activityRow) => [activityRow.externalId, activityRow.id]),

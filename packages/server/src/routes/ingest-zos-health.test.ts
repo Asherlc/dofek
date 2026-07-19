@@ -414,6 +414,36 @@ describe("createIngestZosHealthRouter", () => {
     });
   });
 
+  it("reports a missing activity for live workout samples", async () => {
+    routeMocks.executeWithSchema.mockResolvedValue([]);
+    const { db } = createMockDatabase();
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async () => []),
+    } satisfies import("../../../../src/metric-stream/redpanda-producer.ts").MetricStreamEventPublisher;
+
+    const response = await post(
+      createTestApp(db, metricStreamPublisher),
+      {
+        liveWorkoutSamples: [
+          {
+            externalId: "missing-activity",
+            recordedAt: "2024-07-03T09:51:52.000Z",
+            metrics: { duration: 312 },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: "Failed to ingest health data." });
+    const capturedError = routeMocks.captureException.mock.calls[0]?.[0];
+    expect(capturedError).toEqual(
+      new Error("Zepp live workout activity missing-activity was not found."),
+    );
+    expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
+  });
+
   it("stores daily metrics, sleep sessions with stages, and activities for a valid payload", async () => {
     const { db, execute, insertedValues } = createMockDatabase({
       insertedSleepSessionId: "sleep-session-1",

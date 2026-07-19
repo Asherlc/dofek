@@ -74,6 +74,7 @@ export default defineConfig({
             "src/**/*.test.ts",
             "packages/*/src/**/*.test.{ts,tsx}",
             "packages/zepp/src/**/*.test.ts",
+            "packages/zepp/workout-extension/**/*.test.ts",
             "scripts/**/*.test.ts",
           ],
           exclude: ["**/*.integration.test.ts", "packages/mobile/**"],

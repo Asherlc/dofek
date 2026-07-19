@@ -15,7 +15,8 @@ export interface BackgroundHealthBuffer {
   activities: HealthActivity[];
 }
 
-interface BackgroundSensorConstructors {
+interface BackgroundHealthDependencies {
+  captureException(error: unknown): void;
   HeartRate: new () => { getLast(): number };
   BloodOxygen: new () => { getCurrent(): { value: number } };
   BodyTemperature: new () => { getCurrent(): { current: number } };
@@ -28,7 +29,7 @@ export function emptyBackgroundHealthBuffer(): BackgroundHealthBuffer {
 }
 
 export function collectBackgroundHealthSample(
-  sensors: BackgroundSensorConstructors,
+  sensors: BackgroundHealthDependencies,
   now = Date.now(),
 ): { sample: BackgroundHealthSample; activities: HealthActivity[] } {
   const sample: BackgroundHealthSample = { recordedAt: new Date(now).toISOString() };
@@ -36,17 +37,23 @@ export function collectBackgroundHealthSample(
   try {
     const heartRate = new sensors.HeartRate().getLast();
     if (heartRate > 0) sample.heartRate = heartRate;
-  } catch {}
+  } catch (error) {
+    sensors.captureException(error);
+  }
 
   try {
     const bloodOxygenPercent = new sensors.BloodOxygen().getCurrent().value;
     if (bloodOxygenPercent > 0) sample.bloodOxygenPercent = bloodOxygenPercent;
-  } catch {}
+  } catch (error) {
+    sensors.captureException(error);
+  }
 
   try {
     const bodyTemperatureCelsius = new sensors.BodyTemperature().getCurrent().current;
     if (bodyTemperatureCelsius > 0) sample.bodyTemperatureCelsius = bodyTemperatureCelsius;
-  } catch {}
+  } catch (error) {
+    sensors.captureException(error);
+  }
 
   try {
     const stressReadings = new sensors.Stress().getToday();
@@ -57,12 +64,16 @@ export function collectBackgroundHealthSample(
         break;
       }
     }
-  } catch {}
+  } catch (error) {
+    sensors.captureException(error);
+  }
 
   let activities: HealthActivity[] = [];
   try {
     activities = workoutHistoryToActivities(new sensors.Workout().getHistory());
-  } catch {}
+  } catch (error) {
+    sensors.captureException(error);
+  }
 
   return { sample, activities };
 }

@@ -24,7 +24,7 @@ describe("workout extension build", () => {
       JSON.stringify({ app: { appId: 0, version: { code: 1, name: "1.0.0" } } }),
     );
 
-    await import("../workout-extension/build.ts");
+    await import("./build.ts");
 
     expect(fileMocks.readFile).toHaveBeenCalledWith("workout-extension/app.template.json", "utf8");
     expect(fileMocks.writeFile).toHaveBeenCalledWith(
@@ -58,7 +58,7 @@ describe("workout extension build", () => {
   it("fails before writing when the extension app ID is invalid", async () => {
     process.env.ZEPP_WORKOUT_EXTENSION_APP_ID = "0";
 
-    await expect(import("../workout-extension/build.ts")).rejects.toThrow(
+    await expect(import("./build.ts")).rejects.toThrow(
       "ZEPP_WORKOUT_EXTENSION_APP_ID must be set",
     );
     expect(fileMocks.writeFile).not.toHaveBeenCalled();
@@ -68,25 +68,25 @@ describe("workout extension build", () => {
   it("rejects malformed manifest templates", async () => {
     process.env.ZEPP_WORKOUT_EXTENSION_APP_ID = "1234567";
     fileMocks.readFile.mockResolvedValueOnce("{}");
-    await expect(import("../workout-extension/build.ts")).rejects.toThrow(
+    await expect(import("./build.ts")).rejects.toThrow(
       "missing its app configuration",
     );
 
     vi.resetModules();
     fileMocks.readFile.mockResolvedValueOnce('{"app":null}');
-    await expect(import("../workout-extension/build.ts")).rejects.toThrow(
+    await expect(import("./build.ts")).rejects.toThrow(
       "invalid app configuration",
     );
 
     vi.resetModules();
     fileMocks.readFile.mockResolvedValueOnce("null");
-    await expect(import("../workout-extension/build.ts")).rejects.toThrow(
+    await expect(import("./build.ts")).rejects.toThrow(
       "missing its app configuration",
     );
 
     vi.resetModules();
     fileMocks.readFile.mockResolvedValueOnce('{"app":"invalid"}');
-    await expect(import("../workout-extension/build.ts")).rejects.toThrow(
+    await expect(import("./build.ts")).rejects.toThrow(
       "invalid app configuration",
     );
   });
