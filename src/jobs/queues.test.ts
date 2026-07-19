@@ -105,11 +105,18 @@ describe("queues", () => {
         checkpoint: {
           batches: 3,
           deletedRows: 30_000,
+          lastGeneration: 1,
           lastId: "30000000-0000-4000-8000-000000000003",
         },
       };
 
       expect(providerDataDeletionJobDataSchema.parse(payload)).toEqual(payload);
+      expect(
+        providerDataDeletionJobDataSchema.parse({
+          ...payload,
+          checkpoint: { ...payload.checkpoint, lastGeneration: undefined },
+        }).checkpoint?.lastGeneration,
+      ).toBe(0);
       expect(
         providerDataDeletionJobDataSchema.safeParse({
           ...payload,

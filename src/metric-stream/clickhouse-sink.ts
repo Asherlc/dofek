@@ -96,9 +96,30 @@ const providerDataGenerationRowsSchema = z.array(
     user_id: z.uuid(),
   }),
 );
+const deletionAcknowledgementRowsSchema = z.array(
+  z.object({ acknowledgement_count: z.coerce.number().int().nonnegative() }),
+);
 
 function providerGenerationKey(userId: string, providerId: string): string {
   return `${userId}\0${providerId}`;
+}
+
+async function isMetricStreamDeletionAcknowledged(
+  client: ClickHouseMetricStreamInsertClient,
+  eventId: string,
+): Promise<boolean> {
+  if (!client.query) return false;
+  const result = await client.query({
+    query: `SELECT 1 AS acknowledgement_count
+      FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE}
+      WHERE event_id = {event_id:UUID}
+      LIMIT 1`,
+    query_params: { event_id: eventId },
+    format: "JSONEachRow",
+  });
+  return deletionAcknowledgementRowsSchema
+    .parse(await result.json())
+    .some((row) => row.acknowledgement_count > 0);
 }
 
 async function filterEventsByProviderGeneration(
@@ -421,6 +442,9 @@ export async function applyMetricStreamEventsToClickHouse(
   for (const event of events) {
     if (isMetricStreamDeletedEvent(event)) {
       await flushRows();
+      if ("eventId" in event && (await isMetricStreamDeletionAcknowledged(client, event.eventId))) {
+        continue;
+      }
       await markMetricStreamScopeDeletedInClickHouse(
         client,
         event.scope,
