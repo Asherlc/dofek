@@ -36,12 +36,10 @@ describe("createHealthUploadBatches", () => {
       activityType: "other",
       startedAt: "2024-07-03T09:46:40.000Z",
       endedAt: "2024-07-03T09:51:52.000Z",
-      name: "Buffered workout",
     };
     const fresh: HealthActivity = {
       ...buffered,
       endedAt: "2024-07-03T10:46:40.000Z",
-      name: "Fresh workout",
     };
 
     expect(mergeHealthActivities([fresh], [buffered])).toEqual([fresh]);
