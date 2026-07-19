@@ -7,6 +7,59 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-18: Loading baseline found slow anomaly and provider-detail queries
+
+### Symptoms
+
+Current Axiom traces showed mobile readiness/provider tRPC batches lasting
+4.42 to 31.21 seconds and provider metric-stream record requests either timing
+out after 120 seconds or failing against ClickHouse's total memory limit.
+
+### User Impact
+
+The mobile batch could not return four fast sibling procedures until
+`anomalyDetection.check` completed. Provider detail requests returned timeout
+or memory-limit errors instead of the requested metric-stream rows.
+
+### Evidence
+
+Across the 24 hours ending approximately `2026-07-19T05:07:30Z`, three
+`anomalyDetection.check` spans lasted 4.41, 17.07, and 31.21 seconds. Their
+direct child ClickHouse POST spans lasted 4.32, 16.97, and 30.98 seconds, while
+the largest Postgres query in each trace was at most 101.83 ms. All 55
+ClickHouse queue waits remained below 96 ms.
+
+Separately, `providerDetail.records` had a 120.01-second ClickHouse socket
+timeout and two ClickHouse total-memory-limit errors while requesting 25
+Garmin metric-stream rows. Those requests waited no more than 0.28 ms for the
+regular queue. The complete queries and aggregates are in the
+[loading baseline](performance/loading-baseline-2026-07-18.md), and the live
+investigation checkpoint is recorded on
+[GitHub issue #1432](https://github.com/Asherlc/dofek/issues/1432#issuecomment-5014489586).
+
+### Root Cause
+
+For the mobile batch, the 35-day resting-heart-rate ClickHouse request owned by
+`anomalyDetection.check` consumed nearly all procedure time, and tRPC batching
+propagated that latency to four otherwise fast sibling procedures. For provider
+detail, the first-page metric-stream query directly timed out or encountered
+ClickHouse total-memory pressure. Queue wait and Postgres execution were not
+the cause in the observed traces.
+
+### Fix or Mitigation
+
+No production behavior changed during this evidence task. Backend changes stay
+gated on narrow follow-up work for the named anomaly and provider metric-stream
+query families, with executable tests and ClickHouse query-log or row-scan
+evidence before implementation.
+
+### Remaining Risk
+
+Mobile readiness batches can still inherit anomaly-query latency, and provider
+metric-stream detail can still time out or fail under ClickHouse memory
+pressure. The 24-hour window contained no samples for several historical
+loading suspects, so their current behavior remains unclassified.
+
 ## 2026-07-08: Migration hardening PR CI follow-up
 
 ### Symptoms
