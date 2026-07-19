@@ -2,9 +2,9 @@ import { Kafka } from "kafkajs";
 import {
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
-  type MetricStreamDeletedEventV2,
+  type MetricStreamDeletedEventV3,
   type MetricStreamDeleteScopeInput,
-  type MetricStreamEventV1,
+  type MetricStreamEventV2,
   type MetricStreamRowInput,
 } from "./events.ts";
 
@@ -35,17 +35,23 @@ export interface KafkaProducerLike {
 export interface MetricStreamEventPublisher {
   publishRows(
     rows: readonly MetricStreamRowInput[],
-    partitionKey?: string,
-  ): Promise<MetricStreamEventV1[]>;
+    options: MetricStreamPublishOptions,
+  ): Promise<MetricStreamEventV2[]>;
   replaceRows?(
     scope: MetricStreamDeleteScopeInput,
     rows: readonly MetricStreamRowInput[],
+    operationRevision: string,
   ): Promise<MetricStreamReplacementPublishResult>;
 }
 
+export interface MetricStreamPublishOptions {
+  operationRevision: string;
+  partitionKey?: string;
+}
+
 export interface MetricStreamReplacementPublishResult {
-  deleted: MetricStreamDeletedEventV2;
-  rows: MetricStreamEventV1[];
+  deleted: MetricStreamDeletedEventV3;
+  rows: MetricStreamEventV2[];
 }
 
 export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublisher {
@@ -98,16 +104,16 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
 
   async publishRows(
     rows: readonly MetricStreamRowInput[],
-    partitionKey?: string,
-  ): Promise<MetricStreamEventV1[]> {
-    const events = rows.map((row) => createMetricStreamEvent(row));
+    options: MetricStreamPublishOptions,
+  ): Promise<MetricStreamEventV2[]> {
+    const events = rows.map((row) => createMetricStreamEvent(row, options.operationRevision));
     if (events.length === 0) {
       return [];
     }
 
     await this.#sendChunked(
       events.map((event) => ({
-        key: partitionKey ?? event.id,
+        key: options.partitionKey ?? event.id,
         value: JSON.stringify(event),
       })),
     );
@@ -118,9 +124,10 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
   async replaceRows(
     scope: MetricStreamDeleteScopeInput,
     rows: readonly MetricStreamRowInput[],
+    operationRevision: string,
   ): Promise<MetricStreamReplacementPublishResult> {
-    const deleted = createMetricStreamDeletedEvent(scope);
-    const events = rows.map((row) => createMetricStreamEvent(row));
+    const deleted = createMetricStreamDeletedEvent(scope, operationRevision);
+    const events = rows.map((row) => createMetricStreamEvent(row, operationRevision));
 
     // Delete event first, then replacements — all on the same partition key, so
     // chunking into multiple ordered requests preserves delete-before-insert.

@@ -196,14 +196,17 @@ describe("inertialMeasurementUnitSyncRouter", () => {
 
       expect(result.inserted).toBe(1);
       expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
-      expect(metricStreamPublisher.publishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          userId: "00000000-0000-0000-0000-000000000001",
-          providerId: "apple_motion",
-          channel: "accel",
-          vector: [0.012, -0.981, 0.043],
-        }),
-      ]);
+      expect(metricStreamPublisher.publishRows).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            userId: "00000000-0000-0000-0000-000000000001",
+            providerId: "apple_motion",
+            channel: "accel",
+            vector: [0.012, -0.981, 0.043],
+          }),
+        ],
+        { operationRevision: "1000000000000000" },
+      );
     });
 
     it("writes deterministic external IDs and treats duplicate samples as no-ops", async () => {

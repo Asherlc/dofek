@@ -216,14 +216,17 @@ describe("ActivityRecordingRepository", () => {
 
       expect(execute).toHaveBeenCalledTimes(3);
       expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
-      expect(publisher.publishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          channel: "location",
-          point: "SRID=4326;POINT(34 32)",
-        }),
-        expect.objectContaining({ channel: "altitude", scalar: 100 }),
-        expect.objectContaining({ channel: "speed", scalar: 3.5 }),
-      ]);
+      expect(publisher.publishRows).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            channel: "location",
+            point: "SRID=4326;POINT(34 32)",
+          }),
+          expect.objectContaining({ channel: "altitude", scalar: 100 }),
+          expect.objectContaining({ channel: "speed", scalar: 3.5 }),
+        ],
+        { operationRevision: "1000000000000000" },
+      );
     });
   });
 });

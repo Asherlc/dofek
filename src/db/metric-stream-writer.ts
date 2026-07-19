@@ -1,5 +1,5 @@
 import {
-  createMetricStreamDeletedEvent,
+  createMetricStreamDeletePartitionKey,
   type MetricStreamDeleteScopeInput,
   type MetricStreamRowInput,
   metricStreamRowInputSchema,
@@ -9,7 +9,7 @@ import {
   type MetricStreamEventPublisher,
   type MetricStreamReplacementPublishResult,
 } from "../metric-stream/redpanda-producer.ts";
-import { addProviderDataGenerations } from "../metric-stream/write-metric-stream.ts";
+import { prepareMetricStreamRows } from "../metric-stream/write-metric-stream.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL, LOCATION } from "./sensor-channels.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 import type { Database } from "./typed-sql.ts";
@@ -93,6 +93,7 @@ interface ReplacementCapableMetricStreamPublisher extends MetricStreamEventPubli
   replaceRows(
     scope: MetricStreamDeleteScopeInput,
     rows: readonly MetricStreamRowInput[],
+    operationRevision: string,
   ): Promise<MetricStreamReplacementPublishResult>;
 }
 
@@ -185,12 +186,13 @@ export async function writeMetricStreamBatch(
   }
 
   const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
-  const publishRows = await addProviderDataGenerations(db, rows.map(toPublishRow));
+  const prepared = await prepareMetricStreamRows(db, rows.map(toPublishRow));
 
   let published = 0;
-  for (let offset = 0; offset < publishRows.length; offset += batchSize) {
+  for (let offset = 0; offset < prepared.rows.length; offset += batchSize) {
     const events = await resolvedPublisher.publishRows(
-      publishRows.slice(offset, offset + batchSize),
+      prepared.rows.slice(offset, offset + batchSize),
+      { operationRevision: prepared.operationRevision },
     );
     published += events.length;
   }
@@ -213,9 +215,12 @@ export async function writeMetricStreamBatchForScope(
   }
 
   const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
-  const partitionKey = createMetricStreamDeletedEvent(scope).partitionKey;
-  const publishRows = await addProviderDataGenerations(db, rows.map(toPublishRow));
-  const events = await resolvedPublisher.publishRows(publishRows, partitionKey);
+  const partitionKey = createMetricStreamDeletePartitionKey(scope);
+  const prepared = await prepareMetricStreamRows(db, rows.map(toPublishRow));
+  const events = await resolvedPublisher.publishRows(prepared.rows, {
+    operationRevision: prepared.operationRevision,
+    partitionKey,
+  });
   return events.length;
 }
 
@@ -235,8 +240,12 @@ export async function replaceMetricStreamBatch(
   const resolvedPublisher = requireReplacementPublisher(
     publisher ?? (await getDefaultMetricStreamEventPublisher()),
   );
-  const publishRows = await addProviderDataGenerations(db, rows.map(toPublishRow));
-  const result = await resolvedPublisher.replaceRows(scope, publishRows);
+  const prepared = await prepareMetricStreamRows(db, rows.map(toPublishRow));
+  const result = await resolvedPublisher.replaceRows(
+    scope,
+    prepared.rows,
+    prepared.operationRevision,
+  );
   return {
     deletedEventId: result.deleted.eventId,
     rowCount: result.rows.length,

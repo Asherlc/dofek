@@ -12,12 +12,30 @@ import {
   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_TABLE,
 } from "./clickhouse-table.ts";
-import { createMetricStreamDeletedEvent, createMetricStreamEvent } from "./events.ts";
+import {
+  createMetricStreamDeletedEvent,
+  createMetricStreamEvent,
+  type MetricStreamDeleteScopeInput,
+  type MetricStreamRowInput,
+} from "./events.ts";
 
 const testUserId = "00000000-0000-0000-0000-000000000001";
 const testEventId = "5e6f7a8b-0c1d-4e2f-8a3b-4c5d6e7f8a90";
 const latestScopeTestEventId = "6f7a8b9c-1d2e-4f3a-9b4c-5d6e7f8a9b01";
 const nullExternalIdTestEventId = "7a8b9c0d-2e3f-404b-8c5d-6e7f8a9b0c12";
+const replacementTestEventId = "8b9c0d1e-3f40-415c-9d6e-7f8a9b0c1d23";
+const operationRevision = "1000000000000000";
+
+function createCurrentMetricStreamEvent(row: MetricStreamRowInput, revision = operationRevision) {
+  return createMetricStreamEvent(row, revision);
+}
+
+function createCurrentMetricStreamDeletedEvent(
+  scope: MetricStreamDeleteScopeInput,
+  revision = operationRevision,
+) {
+  return createMetricStreamDeletedEvent(scope, revision);
+}
 
 function assertInsertCapable(
   client: ClickHouseClient,
@@ -32,7 +50,9 @@ async function removeTestEvent(client: ClickHouseClient): Promise<void> {
     query: `ALTER TABLE ${METRIC_STREAM_TABLE}
       DELETE WHERE id IN {ids:Array(UUID)}
       SETTINGS mutations_sync = 1`,
-    query_params: { ids: [testEventId, latestScopeTestEventId, nullExternalIdTestEventId] },
+    query_params: {
+      ids: [testEventId, latestScopeTestEventId, nullExternalIdTestEventId, replacementTestEventId],
+    },
   });
 }
 
@@ -55,7 +75,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
   it("inserts events whose recordedAt carries a UTC Z suffix", async () => {
     // recordedAt is canonical ISO-8601 with a trailing Z; ClickHouse rejects it
     // unless the insert parses each datetime value with best_effort.
-    const event = createMetricStreamEvent({
+    const event = createCurrentMetricStreamEvent({
       id: testEventId,
       recordedAt: "2026-06-07T14:36:12.000Z",
       userId: testUserId,
@@ -78,7 +98,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
   });
 
   it("tombstones the latest provider-scoped metric version", async () => {
-    const event = createMetricStreamEvent({
+    const event = createCurrentMetricStreamEvent({
       id: testEventId,
       recordedAt: "2026-06-07T14:36:12.000Z",
       userId: testUserId,
@@ -105,7 +125,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       format: "JSONEachRow",
     });
     const row = (await result.json())[0];
-    expect(row).toEqual({ is_deleted: 1, latest_version: 1 });
+    expect(row).toEqual({ is_deleted: 1, latest_version: 2_000_000_000_000_002 });
   });
 
   it("preserves the latest row when only an older version matches the delete scope", async () => {
@@ -116,7 +136,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       query_params: { id: latestScopeTestEventId },
     });
     await client.command({ query: `SYSTEM STOP MERGES ${METRIC_STREAM_TABLE}` });
-    const matchingEvent = createMetricStreamEvent({
+    const matchingEvent = createCurrentMetricStreamEvent({
       id: latestScopeTestEventId,
       recordedAt: "2026-06-08T14:36:12.000Z",
       userId: testUserId,
@@ -186,7 +206,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
   });
 
   it("tombstones rows scoped to a null external ID", async () => {
-    const event = createMetricStreamEvent({
+    const event = createCurrentMetricStreamEvent({
       id: nullExternalIdTestEventId,
       recordedAt: "2026-06-09T14:36:12.000Z",
       userId: testUserId,
@@ -213,8 +233,56 @@ describe("metric stream ClickHouse sink (integration)", () => {
     expect((await result.json())[0]?.is_deleted).toBe(1);
   });
 
+  it("reactivates the same deterministic row ID after a scoped replacement", async () => {
+    const initialEvent = createCurrentMetricStreamEvent(
+      {
+        id: replacementTestEventId,
+        recordedAt: "2026-06-10T14:36:12.000Z",
+        userId: testUserId,
+        providerId: "garmin-dump",
+        externalId: "integration-scoped-replacement",
+        sourceType: "file",
+        channel: "heart_rate",
+        scalar: 94,
+      },
+      "1000000000000001",
+    );
+    await applyMetricStreamEventsToClickHouse(client, [initialEvent]);
+
+    const replacementEvent = createCurrentMetricStreamEvent(
+      {
+        id: replacementTestEventId,
+        recordedAt: "2026-06-10T14:36:12.000Z",
+        userId: testUserId,
+        providerId: "garmin-dump",
+        externalId: "integration-scoped-replacement",
+        sourceType: "file",
+        channel: "heart_rate",
+        scalar: 94,
+      },
+      "1000000000000002",
+    );
+
+    await applyMetricStreamEventsToClickHouse(client, [
+      createCurrentMetricStreamDeletedEvent(
+        { providerId: "garmin-dump", userId: testUserId },
+        "1000000000000002",
+      ),
+      replacementEvent,
+    ]);
+
+    const result = await client.query<{ is_deleted: number; scalar: number }>({
+      query: `SELECT is_deleted, scalar
+        FROM ${METRIC_STREAM_TABLE} FINAL
+        WHERE id = {id:UUID}`,
+      query_params: { id: replacementTestEventId },
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ is_deleted: 0, scalar: 94 }]);
+  });
+
   it("acknowledges a deletion event only after applying it", async () => {
-    const deletedEvent = createMetricStreamDeletedEvent({
+    const deletedEvent = createCurrentMetricStreamDeletedEvent({
       userId: testUserId,
       providerId: "withings",
     });

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { drizzleSchema as schema } from "../../db/drizzle-schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { runWithTokenUser } from "../../db/token-user-context.ts";
-import type { MetricStreamEventV1, MetricStreamRowInput } from "../../metric-stream/events.ts";
+import type { MetricStreamEventV2, MetricStreamRowInput } from "../../metric-stream/events.ts";
 import {
   aggregateSkinTempToDailyMetrics,
   aggregateSpO2ToDailyMetrics,
@@ -187,10 +187,11 @@ describe("db-insertion deduplication (integration)", () => {
 
       const publishedRows: MetricStreamRowInput[] = [];
       const count = await upsertMetricStreamBatch(ctx.db, PROVIDER_ID, records, undefined, {
-        publishRows: async (rows): Promise<MetricStreamEventV1[]> => {
+        publishRows: async (rows, options): Promise<MetricStreamEventV2[]> => {
           publishedRows.push(...rows);
           return rows.map((row, index) => ({
-            version: 1,
+            version: 2,
+            operationRevision: options.operationRevision,
             id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
             recordedAt:
               row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,

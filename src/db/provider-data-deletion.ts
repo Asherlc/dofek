@@ -4,6 +4,7 @@ import { type Database, executeWithSchema, type SchemaExecutionDatabase } from "
 
 const providerDataGenerationRowSchema = z.object({
   generation: z.coerce.number().int().nonnegative(),
+  operation_revision: z.string().regex(/^[1-9]\d*$/),
   provider_id: z.string().min(1),
   user_id: z.guid(),
 });
@@ -39,6 +40,11 @@ export interface ProviderDataGeneration extends ProviderDataScope {
   generation: number;
 }
 
+export interface ProviderDataGenerationContext {
+  generations: ProviderDataGeneration[];
+  operationRevision: string;
+}
+
 function mapProviderDataDeletionRequest(
   row: z.infer<typeof providerDataDeletionRequestRowSchema>,
 ): ProviderDataDeletionRequest {
@@ -53,8 +59,19 @@ function mapProviderDataDeletionRequest(
 export async function getProviderDataGenerations(
   database: Database,
   scopes: readonly ProviderDataScope[],
-): Promise<ProviderDataGeneration[]> {
-  if (scopes.length === 0) return [];
+): Promise<ProviderDataGenerationContext> {
+  if (scopes.length === 0) {
+    const rows = await executeWithSchema(
+      database,
+      z.object({ operation_revision: z.string().regex(/^[1-9]\d*$/) }),
+      sql`SELECT nextval('fitness.metric_ingest_operation_revision_seq')::text AS operation_revision`,
+    );
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Metric stream operation revision was not allocated");
+    }
+    return { generations: [], operationRevision: row.operation_revision };
+  }
   const requestedScopes = sql.join(
     scopes.map((scope) => sql`(${scope.userId}::uuid, ${scope.providerId}::text)`),
     sql`, `,
@@ -62,23 +79,35 @@ export async function getProviderDataGenerations(
   const rows = await executeWithSchema(
     database,
     providerDataGenerationRowSchema,
-    sql`WITH requested_scope (user_id, provider_id) AS (
+    sql`WITH operation_revision AS (
+          SELECT nextval('fitness.metric_ingest_operation_revision_seq')::text AS operation_revision
+        ),
+        requested_scope (user_id, provider_id) AS (
           VALUES ${requestedScopes}
         )
         SELECT
           requested_scope.user_id,
           requested_scope.provider_id,
-          COALESCE(provider_data_generation.current_generation, 0) AS generation
+          COALESCE(provider_data_generation.current_generation, 0) AS generation,
+          operation_revision.operation_revision
         FROM requested_scope
+        CROSS JOIN operation_revision
         LEFT JOIN fitness.provider_data_generation
           ON provider_data_generation.user_id = requested_scope.user_id
           AND provider_data_generation.provider_id = requested_scope.provider_id`,
   );
-  return rows.map((row) => ({
-    generation: row.generation,
-    providerId: row.provider_id,
-    userId: row.user_id,
-  }));
+  const firstRow = rows[0];
+  if (!firstRow) {
+    throw new Error("Metric stream operation revision was not allocated");
+  }
+  return {
+    generations: rows.map((row) => ({
+      generation: row.generation,
+      providerId: row.provider_id,
+      userId: row.user_id,
+    })),
+    operationRevision: firstRow.operation_revision,
+  };
 }
 
 export async function createProviderDataDeletionRequest(

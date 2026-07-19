@@ -9,6 +9,7 @@ import {
 
 const userId = "00000000-0000-4000-8000-000000000001";
 const eventId = "10000000-0000-4000-8000-000000000001";
+const operationRevision = "1000000000000000";
 
 async function findProviderDataDeletionRequestWithFreshSchema(execute: ReturnType<typeof vi.fn>) {
   vi.resetModules();
@@ -18,20 +19,31 @@ async function findProviderDataDeletionRequestWithFreshSchema(execute: ReturnTyp
 
 describe("provider data deletion persistence", () => {
   it("uses generation zero until a deletion advances the fencing token", async () => {
-    const execute = vi
-      .fn()
-      .mockResolvedValue([{ generation: "0", provider_id: "garmin", user_id: userId }]);
+    const execute = vi.fn().mockResolvedValue([
+      {
+        generation: "0",
+        operation_revision: operationRevision,
+        provider_id: "garmin",
+        user_id: userId,
+      },
+    ]);
 
     await expect(
       getProviderDataGenerations({ execute }, [{ providerId: "garmin", userId }]),
-    ).resolves.toEqual([{ generation: 0, providerId: "garmin", userId }]);
+    ).resolves.toEqual({
+      generations: [{ generation: 0, providerId: "garmin", userId }],
+      operationRevision,
+    });
   });
 
-  it("does not query generations for an empty scope batch", async () => {
-    const execute = vi.fn();
+  it("allocates a revision for an empty replacement batch", async () => {
+    const execute = vi.fn().mockResolvedValue([{ operation_revision: operationRevision }]);
 
-    await expect(getProviderDataGenerations({ execute }, [])).resolves.toEqual([]);
-    expect(execute).not.toHaveBeenCalled();
+    await expect(getProviderDataGenerations({ execute }, [])).resolves.toEqual({
+      generations: [],
+      operationRevision,
+    });
+    expect(execute).toHaveBeenCalledOnce();
   });
 
   it("rejects malformed provider generation rows", async () => {
