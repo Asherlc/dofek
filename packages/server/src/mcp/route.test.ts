@@ -569,6 +569,7 @@ describe("createMcpRouter", () => {
   it("returns weekly health metric aggregates for an exact date range", async () => {
     authorizeMcpToken();
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([
+      { date: "2026-05-17", hrv: 40, resting_hr: 57, steps: 6_000 },
       { date: "2026-05-18", hrv: 50, resting_hr: 55, steps: 8_000 },
       { date: "2026-05-19", hrv: 60, resting_hr: 53, steps: 10_000 },
     ]);
@@ -586,6 +587,14 @@ describe("createMcpRouter", () => {
     expect(parseToolCallText(response.text)).toEqual([
       {
         metrics: {
+          hrv: { avg: 40, max: 40, min: 40 },
+          resting_hr: { avg: 57, max: 57, min: 57 },
+          steps: { avg: 6_000, max: 6_000, min: 6_000 },
+        },
+        week: "2026-W20",
+      },
+      {
+        metrics: {
           hrv: { avg: 55, max: 60, min: 50 },
           resting_hr: { avg: 54, max: 55, min: 53 },
           steps: { avg: 9_000, max: 10_000, min: 8_000 },
@@ -598,6 +607,50 @@ describe("createMcpRouter", () => {
       "2026-05-19",
       expect.anything(),
     );
+  });
+
+  it("returns default daily health trends and omits unavailable metrics", async () => {
+    authorizeMcpToken();
+    const sensorStore = makeMockSensorStore();
+    toolTestMocks.dailyMetricsListRange.mockResolvedValue([
+      { date: "2026-05-18", hrv: 50, steps: null },
+      { date: "2026-05-19", hrv: null, steps: 10_000 },
+    ]);
+
+    const response = await request(createTestApp(sensorStore), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_health_trends", {
+        end_date: "2026-05-19",
+        start_date: "2026-05-18",
+        timezone: "America/Los_Angeles",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      { date: "2026-05-18", metrics: { hrv: { avg: 50, max: 50, min: 50 } } },
+      { date: "2026-05-19", metrics: { steps: { avg: 10_000, max: 10_000, min: 10_000 } } },
+    ]);
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
+      rhrEndDate: "2026-05-19",
+      rhrWindowStart: "2026-05-17",
+      timezone: "America/Los_Angeles",
+    });
+  });
+
+  it("rejects reversed longitudinal date ranges", async () => {
+    authorizeMcpToken();
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_health_trends", {
+        end_date: "2026-05-18",
+        start_date: "2026-05-19",
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe("start_date must be on or before end_date");
   });
 
   it("returns sleep summaries with stages and local sleep times", async () => {
@@ -693,6 +746,54 @@ describe("createMcpRouter", () => {
     ]);
   });
 
+  it("supports activity-type and week grouping with missing measurements", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        activity_type: "running",
+        avg_hr: null,
+        avg_power: null,
+        ended_at: null,
+        max_hr: null,
+        max_power: null,
+        started_at: "2026-05-18T10:00:00.000Z",
+      },
+    ]);
+
+    const activityTypeResponse = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_summary", {
+        end_date: "2026-05-18",
+        start_date: "2026-05-18",
+      }),
+    });
+    expect(parseToolCallText(activityTypeResponse.text)).toEqual([
+      {
+        activity_type: "running",
+        avg_duration_minutes: null,
+        avg_hr: null,
+        avg_power: null,
+        count: 1,
+        max_hr_peak: null,
+        max_power_peak: null,
+        total_calories: null,
+        total_duration_minutes: 0,
+      },
+    ]);
+
+    const weekResponse = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_summary", {
+        end_date: "2026-05-18",
+        group_by: "week",
+        start_date: "2026-05-18",
+      }),
+    });
+    expect(parseToolCallText(weekResponse.text)).toEqual([
+      expect.objectContaining({ week: "2026-W21" }),
+    ]);
+  });
+
   it("returns daily nutrition totals using the nutrition read scope", async () => {
     authorizeMcpToken(["nutrition:read"]);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([
@@ -731,6 +832,38 @@ describe("createMcpRouter", () => {
     ]);
   });
 
+  it("reports no single nutrition provider when a day combines sources", async () => {
+    authorizeMcpToken(["nutrition:read"]);
+    toolTestMocks.foodDailyTotalsRange.mockResolvedValue([
+      {
+        calories: 2_450,
+        carbsGrams: 280,
+        date: "2026-05-18",
+        fatGrams: 85,
+        fiberGrams: 32,
+        mealCount: 4,
+        proteinGrams: 165,
+        sourceProviders: ["cronometer", "fatsecret"],
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_nutrition_summary", {
+        end_date: "2026-05-18",
+        start_date: "2026-05-18",
+        timezone: "America/Los_Angeles",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      expect.objectContaining({
+        source_provider: null,
+        source_providers: ["cronometer", "fatsecret"],
+      }),
+    ]);
+  });
+
   it("returns body metrics and computes lean mass on the server", async () => {
     authorizeMcpToken();
     toolTestMocks.bodyListRange.mockResolvedValue([
@@ -760,6 +893,42 @@ describe("createMcpRouter", () => {
         source_provider: "withings",
         weight_kg: 80,
       },
+    ]);
+  });
+
+  it("requires the body analytics store and preserves unavailable composition", async () => {
+    authorizeMcpToken();
+    const missingStoreResponse = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_body_metrics", {
+        end_date: "2026-05-18",
+        start_date: "2026-05-18",
+      }),
+    });
+    const parsedError = toolCallResponseSchema.parse(parseJsonRpcEvent(missingStoreResponse.text));
+    expect(parsedError.result.isError).toBe(true);
+    expect(parsedError.result.content[0]?.text).toBe(
+      "get_body_metrics requires the ClickHouse analytics store",
+    );
+
+    toolTestMocks.bodyListRange.mockResolvedValue([
+      {
+        bmi: null,
+        bodyFatPct: null,
+        providerId: "withings",
+        recordedAt: "2026-05-18T08:00:00.000Z",
+        weightKg: 80,
+      },
+    ]);
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_body_metrics", {
+        end_date: "2026-05-18",
+        start_date: "2026-05-18",
+      }),
+    });
+    expect(parseToolCallText(response.text)).toEqual([
+      expect.objectContaining({ body_fat_pct: null, lean_mass_kg: null, weight_kg: 80 }),
     ]);
   });
 
