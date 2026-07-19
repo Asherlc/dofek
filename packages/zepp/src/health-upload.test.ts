@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createHealthUploadBatches } from "./health-upload.ts";
+import type { HealthActivity } from "./health-collector.ts";
+import { createHealthUploadBatches, mergeHealthActivities } from "./health-upload.ts";
 
 describe("createHealthUploadBatches", () => {
   it("sends the summary once and splits the durable background buffer", () => {
@@ -8,10 +9,10 @@ describe("createHealthUploadBatches", () => {
       date: "2024-07-03",
       timezoneOffsetMinutes: 0,
     };
-    const activities = [
+    const activities: HealthActivity[] = [
       {
         externalId: "1720000000",
-        activityType: "other" as const,
+        activityType: "other",
         startedAt: "2024-07-03T09:46:40.000Z",
         endedAt: "2024-07-03T10:46:40.000Z",
       },
@@ -27,6 +28,23 @@ describe("createHealthUploadBatches", () => {
     expect(batches[0]).toMatchObject({ watchSummary, activities });
     expect(batches[1]?.watchSummary).toBeUndefined();
     expect(batches[1]?.activities).toBeUndefined();
+  });
+
+  it("keeps fresh workout history when it overlaps the background buffer", () => {
+    const buffered: HealthActivity = {
+      externalId: "1720000000",
+      activityType: "other",
+      startedAt: "2024-07-03T09:46:40.000Z",
+      endedAt: "2024-07-03T09:51:52.000Z",
+      name: "Buffered workout",
+    };
+    const fresh: HealthActivity = {
+      ...buffered,
+      endedAt: "2024-07-03T10:46:40.000Z",
+      name: "Fresh workout",
+    };
+
+    expect(mergeHealthActivities([fresh], [buffered])).toEqual([fresh]);
   });
 
   it("still uploads a summary when the background buffer is empty", () => {

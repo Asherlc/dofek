@@ -36,7 +36,7 @@ import {
 import { log as Logger, px } from "@zos/utils";
 import { readBackgroundHealthBuffer } from "../src/background-health-storage.ts";
 import { collectHealthData } from "../src/health-collector.ts";
-import { createHealthUploadBatches } from "../src/health-upload.ts";
+import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import { appendSamples, finalizeSessionFile, resetSessionFile } from "../src/session-file.ts";
 import {
@@ -716,14 +716,10 @@ Page(
           Workout,
         });
         const backgroundBuffer = readBackgroundHealthBuffer();
-        const activities = [
-          ...new Map(
-            [...(watchSummary.activities ?? []), ...backgroundBuffer.activities].map((activity) => [
-              activity.externalId,
-              activity,
-            ]),
-          ).values(),
-        ];
+        const activities = mergeHealthActivities(
+          watchSummary.activities ?? [],
+          backgroundBuffer.activities,
+        );
         const uploadBatches = createHealthUploadBatches(
           watchSummary,
           activities,

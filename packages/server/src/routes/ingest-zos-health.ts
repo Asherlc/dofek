@@ -128,7 +128,7 @@ type WatchSummary = z.infer<typeof watchSummarySchema>;
 function watchSummaryRecordedAt(summary: WatchSummary, minuteOfDay: number): string {
   const [year, month, day] = summary.date.split("-").map(Number);
   return new Date(
-    Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, 0, minuteOfDay) +
+    Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, 0, minuteOfDay) -
       summary.timezoneOffsetMinutes * 60_000,
   ).toISOString();
 }
@@ -304,6 +304,8 @@ export function createIngestZosHealthRouter(deps: {
       }
 
       if (data.backgroundSamples && data.backgroundSamples.length > 0) {
+        const publisher =
+          deps.metricStreamPublisher ?? (await getDefaultMetricStreamEventPublisher());
         await writeMetricStreamBatch(
           deps.db,
           data.backgroundSamples.map((sample) => ({
@@ -319,6 +321,8 @@ export function createIngestZosHealthRouter(deps: {
             stress: sample.stress,
           })),
           SOURCE_TYPE_API,
+          undefined,
+          publisher,
         );
       }
 
@@ -411,12 +415,15 @@ export function createIngestZosHealthRouter(deps: {
                   source_name = EXCLUDED.source_name,
                   raw = CASE
                     WHEN EXCLUDED.raw IS NULL THEN activity.raw
-                    ELSE jsonb_set(
-                      COALESCE(activity.raw, '{}'::jsonb),
+                    WHEN COALESCE(activity.raw, '{}'::jsonb) ? 'liveSnapshotsByRecordedAt'
+                      OR EXCLUDED.raw ? 'liveSnapshotsByRecordedAt'
+                    THEN jsonb_set(
+                      COALESCE(activity.raw, '{}'::jsonb) || EXCLUDED.raw,
                       '{liveSnapshotsByRecordedAt}',
                       COALESCE(activity.raw->'liveSnapshotsByRecordedAt', '{}'::jsonb)
                         || COALESCE(EXCLUDED.raw->'liveSnapshotsByRecordedAt', '{}'::jsonb)
                     )
+                    ELSE COALESCE(activity.raw, '{}'::jsonb) || EXCLUDED.raw
                   END`,
           );
         }
@@ -426,17 +433,23 @@ export function createIngestZosHealthRouter(deps: {
         const publisher =
           deps.metricStreamPublisher ?? (await getDefaultMetricStreamEventPublisher());
         const rows: MetricStreamRowInput[] = [];
+        const externalIds = [
+          ...new Set(data.liveWorkoutSamples.map((sample) => sample.externalId)),
+        ];
+        const activityRows = await executeWithSchema(
+          deps.db,
+          z.object({ id: z.string().uuid(), externalId: z.string() }),
+          sql`SELECT id::text AS id, external_id AS "externalId"
+              FROM fitness.activity
+              WHERE user_id = ${userId}
+                AND provider_id = ${PROVIDER_ID}
+                AND external_id = ANY(${externalIds}::text[])`,
+        );
+        const activityIdByExternalId = new Map(
+          activityRows.map((activityRow) => [activityRow.externalId, activityRow.id]),
+        );
         for (const sample of data.liveWorkoutSamples) {
-          const activityRows = await executeWithSchema(
-            deps.db,
-            z.object({ id: z.string().uuid() }),
-            sql`SELECT id::text AS id FROM fitness.activity
-                WHERE user_id = ${userId}
-                  AND provider_id = ${PROVIDER_ID}
-                  AND external_id = ${sample.externalId}
-                LIMIT 1`,
-          );
-          const activityId = activityRows[0]?.id;
+          const activityId = activityIdByExternalId.get(sample.externalId);
           if (!activityId) {
             throw new Error(`Zepp live workout activity ${sample.externalId} was not found.`);
           }

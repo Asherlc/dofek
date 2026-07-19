@@ -421,9 +421,9 @@ describe("POST /api/ingest/zos-health", () => {
   it("merges retry-safe live snapshots and extends an existing activity", async () => {
     const firstRecordedAt = "2026-06-26T10:05:00.000Z";
     const secondRecordedAt = "2026-06-26T10:06:00.000Z";
-    for (const [recordedAt, endedAt, heartRate] of [
-      [firstRecordedAt, "2026-06-26T10:05:00Z", 140],
-      [secondRecordedAt, "2026-06-26T10:06:00Z", 145],
+    for (const [recordedAt, endedAt, heartRate, rawMetadata] of [
+      [firstRecordedAt, "2026-06-26T10:05:00Z", 140, { device: { model: "Balance" } }],
+      [secondRecordedAt, "2026-06-26T10:06:00Z", 145, { workout: { source: "extension" } }],
     ] as const) {
       const response = await post(app, "/api/ingest/zos-health", {
         headers: { Authorization: `Bearer ${validToken}` },
@@ -435,6 +435,7 @@ describe("POST /api/ingest/zos-health", () => {
               startedAt: "2026-06-26T10:00:00Z",
               endedAt,
               raw: {
+                ...rawMetadata,
                 liveSnapshotsByRecordedAt: {
                   [recordedAt]: { recordedAt, heartRate },
                 },
@@ -454,6 +455,8 @@ describe("POST /api/ingest/zos-health", () => {
     expect(rows).toHaveLength(1);
     expect(String(rows[0]?.ended_at)).toContain("2026-06-26 10:06:00");
     expect(rows[0]?.raw).toEqual({
+      device: { model: "Balance" },
+      workout: { source: "extension" },
       liveSnapshotsByRecordedAt: {
         [firstRecordedAt]: { recordedAt: firstRecordedAt, heartRate: 140 },
         [secondRecordedAt]: { recordedAt: secondRecordedAt, heartRate: 145 },

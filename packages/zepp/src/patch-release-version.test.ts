@@ -32,7 +32,7 @@ describe("patch-release-version", () => {
     fileMocks.readFile.mockImplementation(async (path: string) =>
       JSON.stringify(
         path.endsWith("app.json") || path.endsWith("app.template.json")
-          ? { app: { version: { code: 1, name: "1.0.0" } }, preserved: true }
+          ? { app: { appId: 123456, version: { code: 1, name: "1.0.0" } }, preserved: true }
           : { name: "fixture", version: "1.0.0", preserved: true },
       ),
     );
@@ -42,7 +42,7 @@ describe("patch-release-version", () => {
     expect(fileMocks.writeFile).toHaveBeenCalledTimes(4);
     expect(fileMocks.writeFile).toHaveBeenCalledWith(
       "packages/zepp/app.json",
-      expect.stringContaining('"code": 304050'),
+      expect.stringContaining('"appId": 123456'),
     );
     expect(fileMocks.writeFile).toHaveBeenCalledWith(
       "packages/zepp/workout-extension/package.json",
@@ -79,7 +79,7 @@ describe("patch-release-version", () => {
 
   it("updates both independently released Zepp packages", () => {
     const workspace = mkdtempSync(join(tmpdir(), "dofek-zepp-version-"));
-    const manifest = { app: { version: { code: 1, name: "1.0.0" } } };
+    const manifest = { app: { appId: 123456, version: { code: 1, name: "1.0.0" } } };
     const packageJson = { name: "fixture", version: "1.0.0" };
     writeJson(join(workspace, "packages/zepp/app.json"), manifest);
     writeJson(join(workspace, "packages/zepp/package.json"), packageJson);
@@ -96,7 +96,7 @@ describe("patch-release-version", () => {
       "packages/zepp/workout-extension/app.template.json",
     ]) {
       expect(JSON.parse(readFileSync(join(workspace, path), "utf8"))).toMatchObject({
-        app: { version: { code: 20304, name: "2.3.4" } },
+        app: { appId: 123456, version: { code: 20304, name: "2.3.4" } },
       });
     }
     for (const path of [

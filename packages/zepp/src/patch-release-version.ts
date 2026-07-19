@@ -7,9 +7,11 @@ const argumentsSchema = z.tuple([
 ]);
 const manifestSchema = z
   .object({
-    app: z.object({
-      version: z.object({ code: z.number().int(), name: z.string() }),
-    }),
+    app: z
+      .object({
+        version: z.object({ code: z.number().int(), name: z.string() }),
+      })
+      .passthrough(),
   })
   .passthrough();
 const packageSchema = z.object({ version: z.string() }).passthrough();

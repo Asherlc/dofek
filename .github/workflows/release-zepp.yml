@@ -90,7 +90,10 @@ jobs:
           pnpm tsx packages/zepp/src/patch-release-version.ts "$VERSION" "$CODE"
 
       - name: Print resolved version
-        run: echo "Building Dofek Zepp v${{ steps.version.outputs.version }} (code ${{ steps.version.outputs.code }})"
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CODE: ${{ steps.version.outputs.code }}
+        run: echo "Building Dofek Zepp v${VERSION} (code ${CODE})"
 
       - name: Build Zepp watch app ZAB
         uses: ./.github/actions/build-zepp

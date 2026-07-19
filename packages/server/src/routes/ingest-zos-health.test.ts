@@ -6,7 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const routeMocks = vi.hoisted(() => ({
   captureException: vi.fn<(error: unknown) => void>(),
-  executeWithSchema: vi.fn<(...args: unknown[]) => Promise<Array<{ id: string }>>>(async () => []),
+  executeWithSchema: vi.fn<
+    (...args: unknown[]) => Promise<Array<{ id: string; externalId?: string }>>
+  >(async () => []),
   loggerError: vi.fn<(message: string) => void>(),
   loggerWarn: vi.fn<(message: string) => void>(),
   validateCompanionToken: vi.fn<(_db: unknown, token: string) => Promise<string | null>>(),
@@ -240,7 +242,7 @@ describe("createIngestZosHealthRouter", () => {
         watchSummary: {
           collectedAt: 1_720_001_200_000,
           date: "2024-07-03",
-          timezoneOffsetMinutes: 0,
+          timezoneOffsetMinutes: 120,
           steps: 4321,
           calories: 345,
           standHours: 8,
@@ -268,17 +270,17 @@ describe("createIngestZosHealthRouter", () => {
         database: db,
         rows: expect.arrayContaining([
           expect.objectContaining({
-            recordedAt: "2024-07-03T00:01:00.000Z",
+            recordedAt: "2024-07-02T22:01:00.000Z",
             channel: "heart_rate",
             scalar: 61,
           }),
           expect.objectContaining({
-            recordedAt: "2024-07-03T00:10:00.000Z",
+            recordedAt: "2024-07-02T22:10:00.000Z",
             channel: "skin_temperature",
             scalar: 35.3,
           }),
           expect.objectContaining({
-            recordedAt: "2024-07-03T00:02:00.000Z",
+            recordedAt: "2024-07-02T22:02:00.000Z",
             channel: "stress",
             scalar: 20,
           }),
@@ -312,9 +314,12 @@ describe("createIngestZosHealthRouter", () => {
 
   it("publishes background health samples to the metric stream", async () => {
     const { db } = createMockDatabase();
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async () => []),
+    } satisfies import("../../../../src/metric-stream/redpanda-producer.ts").MetricStreamEventPublisher;
 
     const response = await post(
-      createTestApp(db),
+      createTestApp(db, metricStreamPublisher),
       {
         backgroundSamples: [
           {
@@ -346,12 +351,17 @@ describe("createIngestZosHealthRouter", () => {
         },
       ],
       "api",
+      undefined,
+      metricStreamPublisher,
     );
   });
 
   it("retains every live workout metric as an activity-linked metric-stream row", async () => {
     routeMocks.executeWithSchema.mockResolvedValue([
-      { id: "00000000-0000-4000-8000-000000000002" },
+      {
+        id: "00000000-0000-4000-8000-000000000002",
+        externalId: "1720000000",
+      },
     ]);
     const { db } = createMockDatabase();
     const metricStreamPublisher = {
@@ -376,16 +386,22 @@ describe("createIngestZosHealthRouter", () => {
             heartRate: 148,
             metrics: { speed: 3.5, distance: 1000, duration: 312 },
           },
+          {
+            externalId: "1720000000",
+            recordedAt: "2024-07-03T09:52:02.000Z",
+            metrics: { duration: 322 },
+          },
         ],
       },
       { authorization: "Bearer token-123" },
     );
 
     expect(response.status).toBe(200);
+    expect(routeMocks.executeWithSchema).toHaveBeenCalledOnce();
     expect(routeMocks.writeMetricStreamRows).toHaveBeenCalledWith({
       database: db,
       publisher: metricStreamPublisher,
-      rows: [
+      rows: expect.arrayContaining([
         expect.objectContaining({
           activityId: "00000000-0000-4000-8000-000000000002",
           channel: "heart_rate",
@@ -394,7 +410,7 @@ describe("createIngestZosHealthRouter", () => {
         expect.objectContaining({ channel: "zepp_sport_speed", scalar: 3.5 }),
         expect.objectContaining({ channel: "zepp_sport_distance", scalar: 1000 }),
         expect.objectContaining({ channel: "zepp_sport_duration", scalar: 312 }),
-      ],
+      ]),
     });
   });
 

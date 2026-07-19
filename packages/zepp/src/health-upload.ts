@@ -9,6 +9,20 @@ export interface HealthUploadPayload {
   backgroundSamples?: BackgroundHealthSample[];
 }
 
+export function mergeHealthActivities(
+  freshActivities: HealthActivity[],
+  bufferedActivities: HealthActivity[],
+): HealthActivity[] {
+  return [
+    ...new Map(
+      [...bufferedActivities, ...freshActivities].map((activity) => [
+        activity.externalId,
+        activity,
+      ]),
+    ).values(),
+  ];
+}
+
 export function createHealthUploadBatches(
   watchSummary: HealthDataPayload,
   activities: HealthActivity[],
