@@ -144,6 +144,7 @@ export const providerDataDeletionJobDataSchema = z.object({
     .object({
       batches: z.number().int().nonnegative(),
       deletedRows: z.number().int().nonnegative(),
+      lastGeneration: z.number().int().nonnegative().default(0),
       lastId: z.uuid(),
     })
     .optional(),

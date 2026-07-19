@@ -73,6 +73,33 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
     const enqueueAnalyticsRefresh = vi.fn(async () => undefined);
     const markCompleted = vi.fn(async () => undefined);
     const clickHouseClient = getClickHouseTestClient(testContext);
+    await clickHouseClient.command({
+      query: `INSERT INTO ingest.metric_stream (
+          id, activity_id, user_id, recorded_at, channel, provider_id, external_id,
+          device_id, source_type, scalar, vector, point, metadata, ingested_at,
+          is_deleted, version, generation
+        )
+        SELECT
+          generateUUIDv4(),
+          NULL,
+          {user_id:UUID},
+          addMicroseconds(toDateTime64('2026-01-01 00:00:00', 6, 'UTC'), number),
+          'noise',
+          'unrelated-provider',
+          NULL,
+          NULL,
+          'integration-test',
+          toFloat32(number),
+          [],
+          'null',
+          '{}',
+          now64(9),
+          0,
+          1,
+          0
+        FROM numbers(20_000)`,
+      query_params: { user_id: userId },
+    });
 
     await processProviderDataDeletionJob(job, {
       clickHouseClient,

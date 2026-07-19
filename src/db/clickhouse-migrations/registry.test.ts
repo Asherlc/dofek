@@ -23,10 +23,11 @@ describe("clickHouseMigrations", () => {
       ),
     );
     expect(migrations.at(-1)).toMatchObject({
-      id: "0046_provider_data_generation",
+      id: "0047_cover_provider_generation_projection",
       statements: expect.arrayContaining([
+        expect.stringContaining("DROP PROJECTION IF EXISTS by_provider_generation"),
         expect.stringContaining("ADD PROJECTION IF NOT EXISTS by_provider_generation"),
-        expect.stringContaining("CREATE TABLE IF NOT EXISTS ingest.provider_data_generation"),
+        expect.stringContaining("source_type"),
       ]),
     });
   });

@@ -13889,3 +13889,65 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   integration-template cleanup and a Docker disk preflight to the testing
   runbook, and keep broad local Stryker related-test runs serialized; use sharded
   CI as the authoritative full-suite validation until then.
+
+## 2026-07-18 — Garmin Provider Deletion Exceeded ClickHouse Memory
+
+- **Symptoms:** A Garmin provider deletion surfaced ClickHouse code 241,
+  `(total) memory limit exceeded`, and the newly deployed provider-deletion
+  worker later logged `Timeout error` and `HTML Form Exception: Field value too
+  long` while retrying the deletion.
+- **User impact:** Two Garmin deletion outbox requests reached `dispatched` but
+  not `completed`, so their older metric-stream generations remained pending.
+  The Redpanda ClickHouse sink also remained pinned to the historical Garmin
+  Dump delete event at partition 0 offset `604114013`, delaying later stream
+  events on that partition.
+- **Evidence:** The exact memory-failing operation was query
+  `09c6fc59-26e2-4529-a4b4-9b3218f32b4b`, the legacy provider-wide
+  self-referential `INSERT INTO ingest.metric_stream SELECT ...` for
+  `garmin-dump`. It read 97,610,875 rows and 4.08 GB, retained 4.11 GB for the
+  query, and failed after 82.6 seconds when total ClickHouse memory would exceed
+  its limit. The first fatal sink condition was ClickHouse code 241; subsequent
+  retries logged `Error: Timeout error`. The new BullMQ worker's ID-selection
+  queries separately read 88,838,830 rows in 207 seconds and 18,008,490 rows in
+  39 seconds, then a 10,000-UUID HTTP query parameter was rejected as an
+  overlong form field. Production had 12 active `ingest.metric_stream` parts
+  containing 88,844,310 rows (2.51 GiB compressed), while
+  `system.projection_parts` contained zero active
+  `by_provider_generation` parts. PostgreSQL showed Garmin generations 1 and 2
+  as `dispatched` and the resubmitted Garmin Dump generation 1 request as
+  `completed`. The data volume had 57 GiB free, enough to build a covering
+  projection without increasing the host volume.
+- **Root cause:** The historical projection materialization required by the
+  deployment runbook had not run, and the original projection was only a narrow
+  `_part_offset` index. Real ClickHouse integration testing proved that the
+  narrow projection could paginate IDs but could not cover the latest-row read
+  used to construct tombstones, so the second phase still scanned the base
+  table. The 10,000-ID application batch also exceeded ClickHouse's HTTP form
+  field limit. Independently, the sink retried an already-applied historical
+  delete because it did not check the durable acknowledgement before
+  redelivery.
+- **Fix / mitigation:** Migration
+  `0047_cover_provider_generation_projection` replaces the narrow definition
+  with a covering projection ordered by user, provider, generation, ID,
+  version, and ingest time; historical materialization remains an explicit
+  maintenance operation. The BullMQ worker now fails before scanning when any
+  active base part lacks that projection, uses 1,000-row keyset batches over
+  `(generation, id)`, forces the real engine to use the named projection, reads
+  a bounded latest-row batch, and inserts those tombstones separately instead
+  of sending a self-referential insert or a 10,000-ID command. The Redpanda sink
+  now treats the acknowledgement table as an idempotent-consumer receipt and
+  skips acknowledged version-2 delete events on redelivery.
+- **Validation:** The focused unit suites pass 80 tests. Real ClickHouse
+  integration tests seed 20,000 same-user rows from an unrelated provider and
+  prove the covering projection can delete the target older generation while
+  preserving the active generation; all seven focused ClickHouse deletion and
+  sink integration tests pass.
+- **Remaining risk / follow-up:** Deploy the covering-projection migration and
+  worker/sink changes, then run `MATERIALIZE PROJECTION
+  by_provider_generation` in an approved maintenance window and verify every
+  active part reports the projection before allowing BullMQ redrive. The
+  historical event at offset `604114013` still needs its already-proven
+  tombstone receipt inserted after the acknowledgement pre-check is deployed;
+  then verify consumer lag clears, both Garmin outbox rows complete, and no
+  active pre-fence generations remain. No retry, timeout, or memory-limit knob
+  is part of this fix.
