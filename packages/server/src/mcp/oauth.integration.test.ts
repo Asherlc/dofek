@@ -270,6 +270,23 @@ describe("MCP OAuth", () => {
     expect((await rawRefreshResponse(attackerTokens.refresh_token)).status).toBe(400);
   });
 
+  it("revokes the refresh-token family when concurrent rotations race", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const originalTokens = await completeAuthorization(codeVerifier);
+
+    const responses = await Promise.all([
+      rawRefreshResponse(originalTokens.refresh_token),
+      rawRefreshResponse(originalTokens.refresh_token),
+    ]);
+    expect(responses.map(({ status }) => status).sort()).toEqual([200, 400]);
+
+    const successfulResponse = responses.find(({ status }) => status === 200);
+    if (!successfulResponse) throw new Error("Concurrent rotation did not return tokens");
+    const rotatedTokens = tokenResponseSchema.parse(await successfulResponse.json());
+    expect(await requestMcp(rotatedTokens.access_token)).toBe(401);
+    expect((await rawRefreshResponse(rotatedTokens.refresh_token)).status).toBe(400);
+  });
+
   it("rejects refresh token rotation with mismatched resource", async () => {
     const codeVerifier = randomBytes(32).toString("base64url");
     const tokens = await completeAuthorization(codeVerifier);

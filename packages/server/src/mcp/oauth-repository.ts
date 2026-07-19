@@ -40,8 +40,6 @@ const tokenGrantRowSchema = z.object({
 const refreshTokenRowSchema = z.object({
   access_token_id: z.string(),
   id: z.string(),
-  is_active: z.boolean(),
-  is_revoked: z.boolean(),
   resource: z.string(),
   scopes: z.array(mcpScopeSchema),
   user_id: z.string(),
@@ -195,9 +193,7 @@ export async function rotateRefreshToken(
   const refreshRows = await executeWithSchema(
     db,
     refreshTokenRowSchema,
-    sql`SELECT id, user_id, access_token_id, scopes, resource,
-               revoked_at IS NOT NULL AS is_revoked,
-               expires_at > NOW() AS is_active
+    sql`SELECT id, user_id, access_token_id, scopes, resource
         FROM fitness.mcp_oauth_refresh_token
         WHERE token_hash = ${refreshTokenHash}
           AND client_id = ${input.clientId}
@@ -205,11 +201,6 @@ export async function rotateRefreshToken(
   );
   const existingToken = refreshRows[0];
   if (!existingToken || existingToken.resource !== input.resource) return null;
-  if (existingToken.is_revoked) {
-    await revokeRefreshTokenFamily(db, existingToken.id);
-    return null;
-  }
-  if (!existingToken.is_active) return null;
 
   const scopes = input.requestedScopes ?? existingToken.scopes;
   if (scopes.some((scope) => !existingToken.scopes.includes(scope))) return null;
