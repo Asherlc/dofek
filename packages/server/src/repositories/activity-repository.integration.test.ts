@@ -54,5 +54,18 @@ describe("ActivityRepository exact-range search", () => {
     expect(result.items).toHaveLength(1);
     expect(result.items[0]?.name).toBe("Evening Ride");
     expect(result.totalCount).toBe(2);
+
+    const walkingItems = await repository.listRange("2026-05-10", "2026-05-18", ["walking"]);
+    expect(walkingItems.map((item) => item.name)).toEqual(["Lunch Walk"]);
+
+    const allItems = await repository.listRange("2026-05-10", "2026-05-18", []);
+    expect(allItems).toHaveLength(3);
+
+    const emptyResult = await repository.search({
+      startDate: "2027-05-10",
+      endDate: "2027-05-18",
+      limit: 1,
+    });
+    expect(emptyResult).toEqual({ items: [], totalCount: 0 });
   });
 });
