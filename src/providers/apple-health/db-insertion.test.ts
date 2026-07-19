@@ -46,9 +46,12 @@ const providerActivityAbsenceMocks = vi.hoisted(() => ({
 
 vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[], partitionKey?: string) => {
+    publishRows: async (
+      rows: readonly Record<string, unknown>[],
+      options: { partitionKey?: string },
+    ) => {
       metricStreamCapture.current?.values.push([...rows]);
-      metricStreamCapture.current?.partitionKeys.push(partitionKey);
+      metricStreamCapture.current?.partitionKeys.push(options.partitionKey);
       return rows.map((row, index) => ({
         version: 1,
         id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,

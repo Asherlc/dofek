@@ -123,18 +123,21 @@ describe("whoopBleSyncRouter", () => {
       expect(result).toEqual({ inserted: 2 });
       expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(JSON.stringify(mockDb.execute.mock.calls)).not.toContain("fitness.metric_stream");
-      expect(metricStreamPublisher.publishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          providerId: "whoop_ble",
-          channel: "rr_interval_ms",
-          scalar: 812,
-        }),
-        expect.objectContaining({
-          providerId: "whoop_ble",
-          channel: "orientation",
-          vector: [0.02, 0.68, -0.71, 0.2],
-        }),
-      ]);
+      expect(metricStreamPublisher.publishRows).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            providerId: "whoop_ble",
+            channel: "rr_interval_ms",
+            scalar: 812,
+          }),
+          expect.objectContaining({
+            providerId: "whoop_ble",
+            channel: "orientation",
+            vector: [0.02, 0.68, -0.71, 0.2],
+          }),
+        ],
+        { operationRevision: "1000000000000000" },
+      );
     });
 
     it("stores R-R intervals without requiring or inserting device heart rate", async () => {

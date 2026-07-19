@@ -14112,3 +14112,48 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   compare the same structured `trpc.procedure` and ClickHouse spans against the
   baseline above and record p50/p95/max latency in issue #1431. The change has
   not yet been measured in production.
+
+## 2026-07-19 — Garmin FIT Replacement Hid Activity Streams
+
+- **Symptoms:** Activity `ef62e61c-80a2-439f-a0b7-6c37d9756cd4` showed no
+  heart-rate-over-time data while a Garmin dump import was running.
+- **User impact:** The activity detail page had summary metadata and route data,
+  but its stream chart contained zero usable heart-rate points.
+- **Evidence:** `ingest.metric_stream` contained 12,026 Garmin heart-rate samples
+  for the member activity, but their latest versions were tombstones. After the
+  Redpanda consumer reached zero lag, all 29,892 generation-1 rows for the
+  reimported activity still finalized as deleted: live rows were version `0`
+  and the later scoped-replacement tombstones were version `1`. The
+  canonical deduplicated activity was `a6a3b5eb-4bd9-4cd3-bca7-b99ee3dcfee6`;
+  its finalized `analytics.activity_sensor_sample` rows were all deleted and its
+  `activity_stream_points` row had 5,852 location points but zero heart-rate
+  points. At investigation time the `metric-stream-clickhouse-sink` consumer
+  had 65,760 events of lag. Its first fatal log line was `The coordinator is not
+  aware of this member` at `2026-07-19T06:00:51.215Z`; it rejoined the group at
+  `06:00:51.231Z`.
+- **Root cause:** FIT replacement publishes an activity-scoped delete before the
+  replacement rows on the same Redpanda partition. The delete increments each
+  deterministic row ID to version `1`, but
+  `mapMetricStreamEventToClickHouseRow()` hard-codes every replacement row to
+  version `0`. `ReplacingMergeTree(version)` therefore keeps the tombstone even
+  after the sink is fully caught up. Provider generation fencing gives a full
+  delete/reimport new deterministic IDs, but a repeated activity replacement in
+  that same generation reuses its IDs and cannot resurrect them.
+- **Fix / mitigation:** The code fix adds a durable Postgres operation-revision
+  sequence and allocates one revision in the same query that resolves provider
+  generation fencing. Current delete events use ClickHouse version `2R`, while
+  their replacement rows use `2R + 1`; later operations therefore win even if
+  Redpanda delivery is replayed or arrives out of order. Legacy row and delete
+  event versions remain parseable for archive replay. No production service or
+  affected activity data was mutated during the implementation.
+- **Validation:** The real-ClickHouse regression failed before the fix with the
+  reinserted deterministic ID still finalized as deleted, then passed after the
+  version change. The focused Postgres and ClickHouse integration suites pass 9
+  tests, all 4,072 changed unit tests pass, and lint, TypeScript, and migration
+  policy checks pass.
+- **Remaining risk / follow-up:** Deploy the migration and producer/sink changes
+  together, then reimport or repair this activity's tombstoned generation-1 rows
+  and verify a completed analytics cycle repopulates
+  `activity_stream_points`. Separately investigate why bulk sink processing lost
+  consumer-group membership and whether scoped replacements need a serving-state
+  strategy that avoids exposing delete-before-insert gaps.

@@ -36,6 +36,7 @@
     "peerflow",
     "pgcrypto",
     "btrim",
+    "nextval",
     "postgis",
     "reltuples",
     "PGDATA",

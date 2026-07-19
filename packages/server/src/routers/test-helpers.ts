@@ -3,7 +3,7 @@ import { initTRPC } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { vi } from "vitest";
 import type {
-  ProviderDataGeneration,
+  ProviderDataGenerationContext,
   ProviderDataScope,
 } from "../../../../src/db/provider-data-deletion.ts";
 import type { Database } from "../../../../src/db/typed-sql.ts";
@@ -15,9 +15,12 @@ const trpc = initTRPC.context<Context>().create();
 export async function resolveProviderDataGenerationsForTest(
   database: Database,
   scopes: readonly ProviderDataScope[],
-): Promise<ProviderDataGeneration[]> {
+): Promise<ProviderDataGenerationContext> {
   await database.execute(sql`SELECT 0 AS generation`);
-  return scopes.map((scope) => ({ ...scope, generation: 0 }));
+  return {
+    generations: scopes.map((scope) => ({ ...scope, generation: 0 })),
+    operationRevision: "1000000000000000",
+  };
 }
 
 export function createTestCallerFactory(router: AnyRouter) {

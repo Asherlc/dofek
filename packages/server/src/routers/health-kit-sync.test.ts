@@ -254,12 +254,15 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          channel: "body_fat_percentage",
-          scalar: 18,
-        }),
-      ]);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            channel: "body_fat_percentage",
+            scalar: 18,
+          }),
+        ],
+        { operationRevision: "1000000000000000" },
+      );
     });
 
     it("applies distance transform (value / 1000)", async () => {
@@ -409,12 +412,10 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          channel: "heart_rate",
-          scalar: 81,
-        }),
-      ]);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [expect.objectContaining({ channel: "heart_rate", scalar: 81 })],
+        { operationRevision: "1000000000000000" },
+      );
     });
 
     it("does not round real-valued columns (active_energy_kcal, distance_km)", async () => {
@@ -471,13 +472,16 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          externalId: "hk:hr1",
-          channel: "heart_rate",
-          scalar: 120,
-        }),
-      ]);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            externalId: "hk:hr1",
+            channel: "heart_rate",
+            scalar: 120,
+          }),
+        ],
+        { operationRevision: "1000000000000000" },
+      );
     });
 
     it("does not touch the retired Postgres metric_stream table after inserting heart-rate metrics", async () => {
@@ -3190,12 +3194,10 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          channel: "heart_rate",
-          deviceId: "Apple Watch",
-        }),
-      ]);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [expect.objectContaining({ channel: "heart_rate", deviceId: "Apple Watch" })],
+        { operationRevision: "1000000000000000" },
+      );
     });
   });
 
@@ -3218,12 +3220,10 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          channel: "body_weight",
-          externalId: "hk:body-ext-id",
-        }),
-      ]);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [expect.objectContaining({ channel: "body_weight", externalId: "hk:body-ext-id" })],
+        { operationRevision: "1000000000000000" },
+      );
       const serialized = serializePublishedMetricStreamRows();
       expect(serialized).not.toContain("body_measurement");
     });
@@ -3247,13 +3247,16 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
-        expect.objectContaining({
-          channel: "body_mass_index",
-          externalId: "hk:bmi-1",
-          scalar: 23.5,
-        }),
-      ]);
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            channel: "body_mass_index",
+            externalId: "hk:bmi-1",
+            scalar: 23.5,
+          }),
+        ],
+        { operationRevision: "1000000000000000" },
+      );
     });
   });
 

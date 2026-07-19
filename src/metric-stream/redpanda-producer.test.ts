@@ -38,6 +38,7 @@ const metricStreamRow = {
   channel: "heart_rate",
   scalar: 72,
 };
+const operationRevision = "1000000000000000";
 
 function makeProducer() {
   const connect = vi.fn(async () => undefined);
@@ -52,10 +53,11 @@ describe("KafkaMetricStreamEventPublisher", () => {
     const { producer, send } = makeProducer();
     const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
 
-    const events = await publisher.publishRows([metricStreamRow]);
+    const events = await publisher.publishRows([metricStreamRow], { operationRevision });
 
     expect(events).toHaveLength(1);
-    expect(events[0]?.version).toBe(1);
+    expect(events[0]?.version).toBe(2);
+    expect(events[0]?.operationRevision).toBe(operationRevision);
     expect(events[0]?.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
@@ -75,7 +77,7 @@ describe("KafkaMetricStreamEventPublisher", () => {
     const { producer, send } = makeProducer();
     const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
 
-    await expect(publisher.publishRows([])).resolves.toEqual([]);
+    await expect(publisher.publishRows([], { operationRevision })).resolves.toEqual([]);
 
     expect(send).not.toHaveBeenCalled();
   });
@@ -84,10 +86,11 @@ describe("KafkaMetricStreamEventPublisher", () => {
     const { producer, send } = makeProducer();
     const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
 
-    const events = await publisher.publishRows(
-      [metricStreamRow],
-      "provider:00000000-0000-0000-0000-000000000001:apple_health:*:*:2026-06-01T00:00:00.000Z:*",
-    );
+    const events = await publisher.publishRows([metricStreamRow], {
+      operationRevision,
+      partitionKey:
+        "provider:00000000-0000-0000-0000-000000000001:apple_health:*:*:2026-06-01T00:00:00.000Z:*",
+    });
 
     expect(send).toHaveBeenCalledWith({
       topic: "metric-stream-v1",
@@ -107,6 +110,7 @@ describe("KafkaMetricStreamEventPublisher", () => {
     const events = await publisher.replaceRows(
       { activityId: "20000000-0000-4000-8000-000000000001" },
       [metricStreamRow],
+      operationRevision,
     );
 
     expect(events.deleted.partitionKey).toBe("activity:20000000-0000-4000-8000-000000000001");
@@ -138,7 +142,7 @@ describe("KafkaMetricStreamEventPublisher", () => {
       metadata: bigMetadata,
     }));
 
-    const events = await publisher.publishRows(rows);
+    const events = await publisher.publishRows(rows, { operationRevision });
 
     expect(events).toHaveLength(3);
     // Cap forces one event per request here (2 x 500KB > 900KB).
@@ -157,7 +161,7 @@ describe("KafkaMetricStreamEventPublisher", () => {
     // One event whose JSON alone exceeds the cap — atomic, so it can never be sent.
     const oversized = { ...metricStreamRow, metadata: { blob: "x".repeat(1_000_000) } };
 
-    await expect(publisher.publishRows([oversized])).rejects.toThrow(
+    await expect(publisher.publishRows([oversized], { operationRevision })).rejects.toThrow(
       /over the \d+-byte produce limit/,
     );
     expect(send).not.toHaveBeenCalled();
@@ -174,7 +178,11 @@ describe("KafkaMetricStreamEventPublisher", () => {
       metadata: bigMetadata,
     }));
 
-    await publisher.replaceRows({ activityId: "20000000-0000-4000-8000-000000000001" }, rows);
+    await publisher.replaceRows(
+      { activityId: "20000000-0000-4000-8000-000000000001" },
+      rows,
+      operationRevision,
+    );
 
     expect(send.mock.calls.length).toBeGreaterThan(1);
     const firstMessage = send.mock.calls[0]?.[0].messages[0];
@@ -195,12 +203,15 @@ describe("KafkaMetricStreamEventPublisher", () => {
     const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
 
     await expect(
-      publisher.publishRows([
-        {
-          ...metricStreamRow,
-          externalId: "",
-        },
-      ]),
+      publisher.publishRows(
+        [
+          {
+            ...metricStreamRow,
+            externalId: "",
+          },
+        ],
+        { operationRevision },
+      ),
     ).rejects.toThrow();
   });
 });
