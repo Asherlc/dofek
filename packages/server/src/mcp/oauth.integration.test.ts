@@ -256,6 +256,20 @@ describe("MCP OAuth", () => {
     expect(body.error).toBe("invalid_grant");
   });
 
+  it("revokes the refresh-token family when a rotated token is reused", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const originalTokens = await completeAuthorization(codeVerifier);
+    const attackerTokens = await refreshTokens(originalTokens.refresh_token);
+
+    expect(await requestMcp(attackerTokens.access_token)).toBe(200);
+
+    const replayResponse = await rawRefreshResponse(originalTokens.refresh_token);
+    expect(replayResponse.status).toBe(400);
+    expect(await replayResponse.json()).toMatchObject({ error: "invalid_grant" });
+    expect(await requestMcp(attackerTokens.access_token)).toBe(401);
+    expect((await rawRefreshResponse(attackerTokens.refresh_token)).status).toBe(400);
+  });
+
   it("rejects refresh token rotation with mismatched resource", async () => {
     const codeVerifier = randomBytes(32).toString("base64url");
     const tokens = await completeAuthorization(codeVerifier);

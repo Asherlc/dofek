@@ -39,10 +39,40 @@ const tokenGrantRowSchema = z.object({
 });
 const refreshTokenRowSchema = z.object({
   access_token_id: z.string(),
+  id: z.string(),
+  is_active: z.boolean(),
+  is_revoked: z.boolean(),
   resource: z.string(),
   scopes: z.array(mcpScopeSchema),
   user_id: z.string(),
 });
+
+async function revokeRefreshTokenFamily(
+  db: ExecutableDatabase,
+  refreshTokenId: string,
+): Promise<void> {
+  await db.execute(
+    sql`WITH RECURSIVE refresh_token_family AS (
+          SELECT id, access_token_id
+          FROM fitness.mcp_oauth_refresh_token
+          WHERE id = ${refreshTokenId}::uuid
+            AND revoked_at IS NOT NULL
+          UNION ALL
+          SELECT child.id, child.access_token_id
+          FROM fitness.mcp_oauth_refresh_token child
+          JOIN refresh_token_family parent
+            ON child.parent_refresh_token_id = parent.id
+        ), revoked_refresh_tokens AS (
+          UPDATE fitness.mcp_oauth_refresh_token
+          SET revoked_at = COALESCE(revoked_at, NOW())
+          WHERE id IN (SELECT id FROM refresh_token_family)
+          RETURNING access_token_id
+        )
+        UPDATE fitness.mcp_access_token
+        SET revoked_at = COALESCE(revoked_at, NOW())
+        WHERE id IN (SELECT access_token_id FROM revoked_refresh_tokens)`,
+  );
+}
 
 function generateAuthorizationCode(): string {
   return `dofek_mcp_code_${randomBytes(32).toString("base64url")}`;
@@ -165,16 +195,21 @@ export async function rotateRefreshToken(
   const refreshRows = await executeWithSchema(
     db,
     refreshTokenRowSchema,
-    sql`SELECT user_id, access_token_id, scopes, resource
+    sql`SELECT id, user_id, access_token_id, scopes, resource,
+               revoked_at IS NOT NULL AS is_revoked,
+               expires_at > NOW() AS is_active
         FROM fitness.mcp_oauth_refresh_token
         WHERE token_hash = ${refreshTokenHash}
           AND client_id = ${input.clientId}
-          AND revoked_at IS NULL
-          AND expires_at > NOW()
         LIMIT 1`,
   );
   const existingToken = refreshRows[0];
   if (!existingToken || existingToken.resource !== input.resource) return null;
+  if (existingToken.is_revoked) {
+    await revokeRefreshTokenFamily(db, existingToken.id);
+    return null;
+  }
+  if (!existingToken.is_active) return null;
 
   const scopes = input.requestedScopes ?? existingToken.scopes;
   if (scopes.some((scope) => !existingToken.scopes.includes(scope))) return null;
@@ -194,7 +229,7 @@ export async function rotateRefreshToken(
             AND resource = ${input.resource}
             AND revoked_at IS NULL
             AND expires_at > NOW()
-          RETURNING user_id, access_token_id
+          RETURNING id, user_id, access_token_id
         ), revoked_access_token AS (
           UPDATE fitness.mcp_access_token
           SET revoked_at = COALESCE(revoked_at, NOW())
@@ -209,17 +244,23 @@ export async function rotateRefreshToken(
           RETURNING id, user_id, scopes
         ), new_refresh_token AS (
           INSERT INTO fitness.mcp_oauth_refresh_token (
-            token_hash, client_id, user_id, access_token_id, scopes, resource, expires_at
+            token_hash, client_id, user_id, access_token_id, parent_refresh_token_id,
+            scopes, resource, expires_at
           )
-          SELECT ${hashMcpToken(nextRefreshToken)}, ${input.clientId}, user_id, id, scopes,
+          SELECT ${hashMcpToken(nextRefreshToken)}, ${input.clientId}, new_access_token.user_id,
+                 new_access_token.id, consumed_refresh_token.id, new_access_token.scopes,
                  ${input.resource}, ${refreshTokenExpiresAt}
           FROM new_access_token
+          CROSS JOIN consumed_refresh_token
           RETURNING user_id, scopes
         )
         SELECT user_id, scopes FROM new_refresh_token`,
   );
   const grant = rows[0];
-  if (!grant) return null;
+  if (!grant) {
+    await revokeRefreshTokenFamily(db, existingToken.id);
+    return null;
+  }
   return {
     accessToken,
     accessTokenExpiresInSeconds: ACCESS_TOKEN_LIFETIME_SECONDS,
