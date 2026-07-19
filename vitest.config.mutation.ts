@@ -58,6 +58,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": "./src",
+      "@zos/app-access": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
       "@zos/sensor": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
       "@zos/fs": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),
       "@zos/utils": path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js"),

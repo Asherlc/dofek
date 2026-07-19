@@ -5,6 +5,7 @@ import { defineConfig } from "vitest/config";
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const zeppStubPath = path.resolve(dirname, "packages/zepp/src/__mocks__/zos-stub.js");
 const zeppModules = [
+  "@zos/app-access",
   "@zos/sensor",
   "@zos/fs",
   "@zos/utils",

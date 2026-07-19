@@ -6,6 +6,7 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 const stubPath = path.resolve(dirname, "src/__mocks__/zos-stub.js");
 
 const zeppModules = [
+  "@zos/app-access",
   "@zos/sensor",
   "@zos/fs",
   "@zos/utils",
