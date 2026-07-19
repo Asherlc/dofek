@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import {
   createMetricStreamEvent,
-  type MetricStreamEventV1,
+  type MetricStreamEventV2,
   type MetricStreamRowInput,
 } from "../../../../src/metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
@@ -22,7 +22,7 @@ describe("HealthKit sync router", () => {
   let testCtx: TestContext;
   let sessionCookie: string;
   let metricStreamPublisher: MetricStreamEventPublisher;
-  const publishedMetricStreamEvents: MetricStreamEventV1[] = [];
+  const publishedMetricStreamEvents: MetricStreamEventV2[] = [];
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -31,8 +31,8 @@ describe("HealthKit sync router", () => {
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
     metricStreamPublisher = {
-      publishRows: async (rows: readonly MetricStreamRowInput[]) => {
-        const events = rows.map((row) => createMetricStreamEvent(row));
+      publishRows: async (rows: readonly MetricStreamRowInput[], options) => {
+        const events = rows.map((row) => createMetricStreamEvent(row, options.operationRevision));
         publishedMetricStreamEvents.push(...events);
         return events;
       },
