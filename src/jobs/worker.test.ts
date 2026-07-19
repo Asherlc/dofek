@@ -1277,6 +1277,13 @@ describe("worker module", () => {
 
   it("closes readiness and Garmin progress resources during graceful shutdown", async () => {
     const { closeAllQueueResources } = await import("./queues.ts");
+    const shutdownOrder: string[] = [];
+    mockClose.mockImplementation(async () => {
+      shutdownOrder.push("worker");
+    });
+    mockCloseGarminProgress.mockImplementation(async () => {
+      shutdownOrder.push("Garmin progress");
+    });
     const signalHandler = process.listeners("SIGTERM").at(-1);
     if (!signalHandler) {
       throw new Error("SIGTERM handler was not registered");
@@ -1293,5 +1300,9 @@ describe("worker module", () => {
     expect(mockCloseProviderDataDeletionOutbox).toHaveBeenCalledOnce();
     expect(mockClose).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
     expect(closeAllQueueResources).toHaveBeenCalledOnce();
+    expect(shutdownOrder).toEqual([
+      ...Array.from({ length: EXPECTED_WORKER_COUNT }, () => "worker"),
+      "Garmin progress",
+    ]);
   });
 });

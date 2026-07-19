@@ -663,4 +663,17 @@ describe("createGarminImportProgressCoordinator", () => {
 
     expect(mockBatchQueue.getJob).not.toHaveBeenCalled();
   });
+
+  it("ignores FIT terminal events after closing", async () => {
+    const coordinator = createGarminImportProgressCoordinator();
+
+    await coordinator.close();
+    coordinator.observeFitJob({
+      parent: { id: "batch-1", queueKey: "bull:fit-file-import-batch" },
+    });
+    await vi.runAllTimersAsync();
+
+    expect(mockBatchQueue.getJob).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
 });

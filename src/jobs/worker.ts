@@ -463,10 +463,10 @@ async function shutdown() {
     new Promise<void>((resolve, reject) => {
       readinessServer.close((error) => (error ? reject(error) : resolve()));
     }),
-    garminImportProgressCoordinator.close(),
     providerDataDeletionOutboxDispatcher.close(),
     ...allWorkers.map((worker) => worker.close()),
   ]);
+  await garminImportProgressCoordinator.close();
   await closeAllQueueResources();
   await db.$client.end();
   logger.info("[worker] Shutdown complete.");
