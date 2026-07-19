@@ -645,14 +645,14 @@ const syncRouterProcedures = {
       const jobData = syncJobDataSchema.safeParse(job.data);
       if (!jobData.success || jobData.data.userId !== ctx.userId) continue;
       const operationProgress = await readOperationProgress(job);
+      if (operationProgress.status !== "queued" && operationProgress.status !== "running") {
+        continue;
+      }
       const parsed = progressSchema.safeParse(job.progress);
       const progress = parsed.success ? parsed.data : undefined;
       results.push({
         jobId: toJobId(job.id, jobData.data.providerId ?? "unknown"),
-        status:
-          operationProgress.status === "queued" || operationProgress.status === "running"
-            ? operationProgress.status
-            : "running",
+        status: operationProgress.status,
         percentage: operationProgress.percentage,
         providers: progress?.providers ?? {},
       });

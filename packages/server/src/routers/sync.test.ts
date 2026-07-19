@@ -1695,6 +1695,25 @@ describe("syncRouter", () => {
       expect(result[0]?.providers).toEqual({});
     });
 
+    it("omits jobs that finish after the active jobs query", async () => {
+      mockGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-completed",
+          data: { userId: "user-1" },
+          getState: vi.fn().mockResolvedValue("completed"),
+          progress: { percentage: 100 },
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.activeSyncs()).resolves.toEqual([]);
+    });
+
     it("generates fallback jobId when BullMQ job has no id", async () => {
       mockGetJobs.mockResolvedValueOnce([
         {
