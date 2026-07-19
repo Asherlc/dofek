@@ -26,7 +26,7 @@ export interface ProviderDataDeletionJob {
   updateProgress(data: {
     checkpoint?: ProviderDataDeletionJobData["checkpoint"];
     message: string;
-    percentage: number;
+    percentage?: number;
   }): Promise<void>;
 }
 
@@ -42,14 +42,16 @@ export interface ProviderDataDeletionDependencies {
 
 async function updateProgress(
   job: ProviderDataDeletionJob,
-  percentage: number,
+  percentage: number | undefined,
   message: string,
   checkpoint?: ProviderDataDeletionJobData["checkpoint"],
 ): Promise<void> {
-  await job.updateProgress({ percentage, message, checkpoint }).catch((error: unknown) => {
-    Sentry.captureException(error, { tags: { providerDataDeletionStep: "updateProgress" } });
-    logger.warn(`[provider-data-deletion] Failed to update progress: ${String(error)}`);
-  });
+  await job
+    .updateProgress({ ...(percentage === undefined ? {} : { percentage }), message, checkpoint })
+    .catch((error: unknown) => {
+      Sentry.captureException(error, { tags: { providerDataDeletionStep: "updateProgress" } });
+      logger.warn(`[provider-data-deletion] Failed to update progress: ${String(error)}`);
+    });
 }
 
 async function advanceClickHouseGenerationFence(
@@ -208,7 +210,7 @@ export async function processProviderDataDeletionJob(
     await job.updateData({ ...job.data, checkpoint });
     await updateProgress(
       job,
-      50,
+      undefined,
       `Tombstoned ${checkpoint.deletedRows} metric stream rows...`,
       checkpoint,
     );

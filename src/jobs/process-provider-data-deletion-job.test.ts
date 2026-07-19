@@ -60,6 +60,10 @@ describe("processProviderDataDeletionJob", () => {
         checkpoint: { batches: 1, deletedRows: 2, lastId: secondId },
       }),
     );
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      checkpoint: { batches: 1, deletedRows: 2, lastId: secondId },
+      message: "Tombstoned 2 metric stream rows...",
+    });
     expect(enqueueAnalyticsRefresh).toHaveBeenCalledWith(
       job.data.userId,
       job.data.providerId,

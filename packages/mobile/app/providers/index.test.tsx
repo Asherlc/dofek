@@ -1569,7 +1569,8 @@ describe("ProvidersScreen", () => {
         {
           jobId: "job-garmin",
           providerId: "garmin-dump",
-          progress: 64,
+          status: "running",
+          percentage: 64,
           message: "Importing activities",
         },
       ],
@@ -2006,7 +2007,8 @@ describe("ProvidersScreen", () => {
         {
           jobId: "job-apple-health",
           providerId: "apple_health",
-          progress: 42,
+          status: "running",
+          percentage: 42,
           message: "Importing Apple Health data",
         },
       ],

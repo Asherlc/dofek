@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createProviderDataDeletionRequest,
+  findProviderDataDeletionRequest,
   getProviderDataGenerations,
   listPendingProviderDataDeletionRequests,
   markProviderDataDeletionCompleted,
@@ -73,6 +74,36 @@ describe("provider data deletion persistence", () => {
     await expect(listPendingProviderDataDeletionRequests({ execute }, 25)).resolves.toEqual([
       { eventId, generation: 3, providerId: "garmin", userId },
     ]);
+  });
+
+  it("finds a user-scoped deletion request with its lifecycle status", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        event_id: eventId,
+        generation: "3",
+        provider_id: "garmin",
+        status: "dispatched",
+        user_id: userId,
+      },
+    ]);
+
+    await expect(
+      findProviderDataDeletionRequest({ execute }, userId, "garmin", eventId),
+    ).resolves.toEqual({
+      eventId,
+      generation: 3,
+      providerId: "garmin",
+      status: "dispatched",
+      userId,
+    });
+  });
+
+  it("returns null when a user-scoped deletion request does not exist", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+
+    await expect(
+      findProviderDataDeletionRequest({ execute }, userId, "garmin", eventId),
+    ).resolves.toBeNull();
   });
 
   it("marks an outbox request completed", async () => {

@@ -131,10 +131,10 @@ export function useProviderDetailActions(
           setSyncMessage(providerStatus.message);
         }
 
-        if (status.status === "done" || status.status === "error") {
+        if (status.status === "completed" || status.status === "failed") {
           pollingRef.current = false;
           setIsSyncing(false);
-          setSyncMessage(status.status === "done" ? "Sync complete" : "Sync failed");
+          setSyncMessage(status.status === "completed" ? "Sync complete" : "Sync failed");
           invalidateProviderData();
           return;
         }

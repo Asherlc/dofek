@@ -2,38 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   importTypeFromJobData,
   isJobDataForUser,
-  mapBullMqStateToSyncStatus,
   providerIdForImportType,
   providerIdFromSyncJobData,
 } from "./sync-helpers.ts";
-
-describe("mapBullMqStateToSyncStatus", () => {
-  it("maps 'completed' to 'done'", () => {
-    expect(mapBullMqStateToSyncStatus("completed")).toBe("done");
-  });
-
-  it("maps 'failed' to 'error'", () => {
-    expect(mapBullMqStateToSyncStatus("failed")).toBe("error");
-  });
-
-  it("maps 'active' to 'running' (default)", () => {
-    expect(mapBullMqStateToSyncStatus("active")).toBe("running");
-  });
-
-  it("maps 'waiting' to 'running' (default)", () => {
-    expect(mapBullMqStateToSyncStatus("waiting")).toBe("running");
-  });
-
-  it("maps unknown states to 'running' (default)", () => {
-    expect(mapBullMqStateToSyncStatus("delayed")).toBe("running");
-    expect(mapBullMqStateToSyncStatus("")).toBe("running");
-  });
-
-  it("does not swap 'completed' and 'failed' mappings", () => {
-    expect(mapBullMqStateToSyncStatus("completed")).not.toBe("error");
-    expect(mapBullMqStateToSyncStatus("failed")).not.toBe("done");
-  });
-});
 
 describe("providerIdForImportType", () => {
   it("maps known import types to provider ids", () => {

@@ -13,12 +13,19 @@ const providerDataDeletionRequestRowSchema = z.object({
   provider_id: z.string().min(1),
   user_id: z.uuid(),
 });
+const providerDataDeletionRequestStatusRowSchema = providerDataDeletionRequestRowSchema.extend({
+  status: z.enum(["pending", "dispatched", "completed"]),
+});
 
 export interface ProviderDataDeletionRequest {
   eventId: string;
   generation: number;
   providerId: string;
   userId: string;
+}
+
+export interface ProviderDataDeletionRequestStatus extends ProviderDataDeletionRequest {
+  status: "pending" | "dispatched" | "completed";
 }
 
 export interface ProviderDataScope {
@@ -120,6 +127,27 @@ export async function listPendingProviderDataDeletionRequests(
         LIMIT ${parsedLimit}`,
   );
   return rows.map(mapProviderDataDeletionRequest);
+}
+
+export async function findProviderDataDeletionRequest(
+  database: Database,
+  userId: string,
+  providerId: string,
+  eventId: string,
+): Promise<ProviderDataDeletionRequestStatus | null> {
+  const rows = await executeWithSchema(
+    database,
+    providerDataDeletionRequestStatusRowSchema,
+    sql`SELECT event_id, user_id, provider_id, generation, status
+        FROM fitness.provider_data_deletion_outbox
+        WHERE event_id = ${eventId}::uuid
+          AND user_id = ${userId}::uuid
+          AND provider_id = ${providerId}
+        LIMIT 1`,
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return { ...mapProviderDataDeletionRequest(row), status: row.status };
 }
 
 export async function markProviderDataDeletionDispatched(

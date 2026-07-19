@@ -196,7 +196,7 @@ export function DataSourcesPanel() {
   useEffect(() => {
     if (!activeSyncs.data) return;
     for (const activeJob of activeSyncs.data) {
-      if (activeJob.status !== "running") continue;
+      if (activeJob.status !== "running" && activeJob.status !== "queued") continue;
       if (resumedJobIds.current.has(activeJob.jobId)) continue;
       resumedJobIds.current.add(activeJob.jobId);
 

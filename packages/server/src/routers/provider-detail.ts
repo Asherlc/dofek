@@ -1,8 +1,10 @@
 import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { SyncDatabase } from "dofek/db";
+import { getProviderDataDeletionQueue } from "dofek/jobs/queues";
 import { z } from "zod";
 import { providerDataDeletesTotal } from "../lib/metrics.ts";
+import { operationStatusOutputSchema, readOperationProgress } from "../lib/operation-progress.ts";
 import { logger } from "../logger.ts";
 import {
   DISCONNECT_CHILD_TABLES,
@@ -252,8 +254,47 @@ export const providerDetailRouter = router({
         });
       }
 
-      await repo.requestProviderDataDeletion(input.providerId);
+      const request = await repo.requestProviderDataDeletion(input.providerId);
       providerDataDeletesTotal.inc({ provider_id: input.providerId });
-      return { success: true };
+      return { success: true, operationId: request.eventId };
+    }),
+
+  deletionStatus: protectedProcedure
+    .input(z.object({ providerId: z.string(), operationId: z.uuid() }))
+    .output(operationStatusOutputSchema)
+    .query(async ({ ctx, input }) => {
+      const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
+      const request = await repo.findProviderDataDeletionRequest(
+        input.providerId,
+        input.operationId,
+      );
+      if (!request) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Provider data deletion operation not found",
+        });
+      }
+
+      if (request.status === "pending") {
+        return { status: "queued", message: "Waiting to delete provider data..." };
+      }
+      if (request.status === "completed") {
+        return { status: "completed", percentage: 100, message: "Provider data deleted" };
+      }
+
+      try {
+        const job = await getProviderDataDeletionQueue().getJob(input.operationId);
+        if (!job) {
+          return { status: "queued", message: "Waiting for the deletion worker..." };
+        }
+        return readOperationProgress(job);
+      } catch (error: unknown) {
+        Sentry.captureException(error, { tags: { operation: "providerDataDeletionStatus" } });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Unable to check provider data deletion progress",
+          cause: error,
+        });
+      }
     }),
 });

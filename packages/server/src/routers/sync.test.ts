@@ -1460,7 +1460,7 @@ describe("syncRouter", () => {
       });
     });
 
-    it("returns done status for completed job", async () => {
+    it("returns completed status for completed job", async () => {
       mockGetJob.mockResolvedValueOnce({
         data: { userId: "user-1" },
         getState: vi.fn().mockResolvedValue("completed"),
@@ -1474,11 +1474,11 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.syncStatus({ jobId: "done-job" });
-      expect(result?.status).toBe("done");
+      expect(result?.status).toBe("completed");
       expect(result?.message).toBe("Sync complete");
     });
 
-    it("returns error status with failedReason for failed job", async () => {
+    it("returns failed status with failedReason for failed job", async () => {
       mockGetJob.mockResolvedValueOnce({
         data: { userId: "user-1" },
         getState: vi.fn().mockResolvedValue("failed"),
@@ -1493,7 +1493,7 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.syncStatus({ jobId: "failed-job" });
-      expect(result?.status).toBe("error");
+      expect(result?.status).toBe("failed");
       expect(result?.message).toBe("Connection timeout");
     });
 
@@ -1582,7 +1582,7 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.syncStatus({ jobId: "waiting-job" });
-      expect(result?.status).toBe("running");
+      expect(result?.status).toBe("queued");
       expect(result?.providers).toEqual({});
     });
   });
@@ -1794,7 +1794,8 @@ describe("syncRouter", () => {
         {
           jobId: "job-garmin",
           providerId: "garmin-dump",
-          progress: 64,
+          status: "queued",
+          percentage: 64,
           message: "Importing activities",
         },
       ]);
@@ -1831,7 +1832,7 @@ describe("syncRouter", () => {
         {
           jobId: "job-waiting",
           providerId: "garmin-dump",
-          progress: 0,
+          status: "queued",
           message: "Waiting to import...",
         },
       ]);
@@ -1868,7 +1869,8 @@ describe("syncRouter", () => {
         {
           jobId: "job-ongoing",
           providerId: "garmin-dump",
-          progress: 46,
+          status: "running",
+          percentage: 46,
           message: "356 of 15774 complete, 15418 failed",
           failedCount: 15418,
         },

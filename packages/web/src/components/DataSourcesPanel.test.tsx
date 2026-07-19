@@ -429,7 +429,8 @@ describe("DataSourcesPanel", () => {
     const activeImport = {
       jobId: "job-kaya",
       providerId: "kaya-export",
-      progress: 42,
+      status: "running",
+      percentage: 42,
       message: "Importing climbs",
     };
     mockProvidersQuery.mockReturnValue({

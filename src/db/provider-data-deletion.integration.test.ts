@@ -1,11 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { getProviderDataGenerations } from "./provider-data-deletion.ts";
-import { providerDataGeneration } from "./schema/events.ts";
+import {
+  findProviderDataDeletionRequest,
+  getProviderDataGenerations,
+} from "./provider-data-deletion.ts";
+import { providerDataDeletionOutbox, providerDataGeneration } from "./schema/events.ts";
 import { userProfile } from "./schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
 const firstUserId = "10000000-0000-4000-8000-000000000001";
 const secondUserId = "20000000-0000-4000-8000-000000000001";
+const deletionEventId = "30000000-0000-4000-8000-000000000001";
 
 describe("provider data deletion persistence (integration)", () => {
   let context: TestContext;
@@ -19,6 +23,13 @@ describe("provider data deletion persistence (integration)", () => {
     await context.db.insert(providerDataGeneration).values({
       currentGeneration: 4,
       providerId: "garmin",
+      userId: firstUserId,
+    });
+    await context.db.insert(providerDataDeletionOutbox).values({
+      eventId: deletionEventId,
+      generation: 5,
+      providerId: "garmin",
+      status: "dispatched",
       userId: firstUserId,
     });
   }, 120_000);
@@ -39,5 +50,20 @@ describe("provider data deletion persistence (integration)", () => {
         { generation: 0, providerId: "coros", userId: secondUserId },
       ]),
     );
+  });
+
+  it("loads deletion status only for the owning user and provider", async () => {
+    await expect(
+      findProviderDataDeletionRequest(context.db, firstUserId, "garmin", deletionEventId),
+    ).resolves.toEqual({
+      eventId: deletionEventId,
+      generation: 5,
+      providerId: "garmin",
+      status: "dispatched",
+      userId: firstUserId,
+    });
+    await expect(
+      findProviderDataDeletionRequest(context.db, secondUserId, "garmin", deletionEventId),
+    ).resolves.toBeNull();
   });
 });

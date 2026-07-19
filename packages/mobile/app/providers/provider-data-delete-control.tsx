@@ -1,6 +1,7 @@
 import { statusColors } from "@dofek/scoring/colors";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
@@ -10,28 +11,71 @@ export function ProviderDataDeleteControl({ providerId }: { providerId: string }
   const deleteAllDataMutation = trpc.providerDetail.deleteAllData.useMutation();
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmation, setConfirmation] = useState("");
+  const [operationId, setOperationId] = useState<string | null>(null);
+  const completionStarted = useRef(false);
+  const deletionStatus = trpc.providerDetail.deletionStatus.useQuery(
+    { providerId, operationId: operationId ?? "00000000-0000-0000-0000-000000000000" },
+    {
+      enabled: operationId !== null,
+      refetchInterval: operationId === null ? false : 1000,
+      staleTime: 0,
+    },
+  );
 
-  const closeConfirm = () => {
+  const closeConfirm = useCallback(() => {
     setConfirmation("");
     setShowConfirm(false);
-  };
+  }, []);
+
+  const finishDeletion = useCallback(async () => {
+    await Promise.all([
+      trpcUtils.sync.providers.invalidate(),
+      trpcUtils.sync.providerStats.invalidate(),
+      trpcUtils.sync.dataHealth.invalidate(),
+      trpcUtils.providerDetail.records.invalidate({ providerId }),
+      trpcUtils.providerDetail.logs.invalidate({ providerId }),
+    ]);
+    setOperationId(null);
+    closeConfirm();
+    Alert.alert("Data Deleted", "Provider data deletion completed.");
+  }, [closeConfirm, providerId, trpcUtils]);
+
+  useEffect(() => {
+    if (!operationId) return;
+    if (deletionStatus.data?.status === "completed") {
+      if (completionStarted.current) return;
+      completionStarted.current = true;
+      void finishDeletion().catch((error: unknown) => {
+        captureException(error, { context: "provider-delete-finish" });
+        Alert.alert(
+          "Refresh Failed",
+          error instanceof Error ? error.message : "Failed to refresh provider data",
+        );
+        setOperationId(null);
+      });
+      return;
+    }
+    if (deletionStatus.data?.status === "failed") {
+      Alert.alert("Delete Failed", deletionStatus.data.message ?? "Provider data deletion failed");
+      setOperationId(null);
+      return;
+    }
+    if (deletionStatus.error) {
+      captureException(deletionStatus.error, { context: "provider-delete-status" });
+      Alert.alert("Delete Failed", deletionStatus.error.message);
+      setOperationId(null);
+    }
+  }, [deletionStatus.data, deletionStatus.error, finishDeletion, operationId]);
 
   const deleteAllData = async () => {
     if (confirmation !== "DELETE") return;
     try {
-      await deleteAllDataMutation.mutateAsync({ providerId, confirmation: "DELETE" });
-      await Promise.all([
-        trpcUtils.sync.providers.invalidate(),
-        trpcUtils.sync.providerStats.invalidate(),
-        trpcUtils.sync.dataHealth.invalidate(),
-        trpcUtils.providerDetail.records.invalidate({ providerId }),
-        trpcUtils.providerDetail.logs.invalidate({ providerId }),
-      ]);
-      closeConfirm();
-      Alert.alert(
-        "Data Deleted",
-        "Provider records were deleted. ClickHouse analytics are reprocessing.",
-      );
+      const result = await deleteAllDataMutation.mutateAsync({
+        providerId,
+        confirmation: "DELETE",
+      });
+      completionStarted.current = false;
+      setOperationId(result.operationId);
     } catch (error: unknown) {
       captureException(error, { context: "provider-delete-all-data" });
       Alert.alert(
@@ -53,47 +97,58 @@ export function ProviderDataDeleteControl({ providerId }: { providerId: string }
       <Modal visible={showConfirm} transparent animationType="fade" onRequestClose={closeConfirm}>
         <View style={styles.backdrop}>
           <View style={styles.card}>
-            <Text style={styles.title}>Delete All Provider Data?</Text>
-            <Text style={styles.description}>
-              This permanently deletes metric stream samples, activities, daily metrics, sleep,
-              nutrition, clinical records, and derived analytics. The provider stays connected.
+            <Text style={styles.title}>
+              {operationId ? "Deleting Provider Data..." : "Delete All Provider Data?"}
             </Text>
-            <Text style={styles.label}>Type DELETE to confirm</Text>
-            <TextInput
-              value={confirmation}
-              onChangeText={setConfirmation}
-              placeholder="DELETE"
-              placeholderTextColor={colors.textTertiary}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              style={styles.input}
-            />
-            <View style={styles.actions}>
-              <TouchableOpacity
-                onPress={closeConfirm}
-                disabled={deleteAllDataMutation.isPending}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => void deleteAllData()}
-                disabled={confirmation !== "DELETE" || deleteAllDataMutation.isPending}
-                accessibilityState={{
-                  disabled: confirmation !== "DELETE" || deleteAllDataMutation.isPending,
-                }}
-                activeOpacity={0.7}
-                style={[
-                  styles.confirmButton,
-                  (confirmation !== "DELETE" || deleteAllDataMutation.isPending) &&
-                    styles.confirmButtonDisabled,
-                ]}
-              >
-                <Text style={styles.confirmText}>
-                  {deleteAllDataMutation.isPending ? "Deleting..." : "Permanently Delete Data"}
+            {operationId ? (
+              <OperationProgressBar
+                percentage={deletionStatus.data?.percentage}
+                message={deletionStatus.data?.message ?? "Preparing provider data deletion..."}
+              />
+            ) : (
+              <>
+                <Text style={styles.description}>
+                  This permanently deletes metric stream samples, activities, daily metrics, sleep,
+                  nutrition, clinical records, and derived analytics. The provider stays connected.
                 </Text>
-              </TouchableOpacity>
-            </View>
+                <Text style={styles.label}>Type DELETE to confirm</Text>
+                <TextInput
+                  value={confirmation}
+                  onChangeText={setConfirmation}
+                  placeholder="DELETE"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  style={styles.input}
+                />
+                <View style={styles.actions}>
+                  <TouchableOpacity
+                    onPress={closeConfirm}
+                    disabled={deleteAllDataMutation.isPending}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.cancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => void deleteAllData()}
+                    disabled={confirmation !== "DELETE" || deleteAllDataMutation.isPending}
+                    accessibilityState={{
+                      disabled: confirmation !== "DELETE" || deleteAllDataMutation.isPending,
+                    }}
+                    activeOpacity={0.7}
+                    style={[
+                      styles.confirmButton,
+                      (confirmation !== "DELETE" || deleteAllDataMutation.isPending) &&
+                        styles.confirmButtonDisabled,
+                    ]}
+                  >
+                    <Text style={styles.confirmText}>
+                      {deleteAllDataMutation.isPending ? "Deleting..." : "Permanently Delete Data"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import type { SyncLogEntry, SyncStatus } from "./DataSourcesSyncTypes.ts";
 import { FileImportButton } from "./FileImportButton.tsx";
+import { OperationProgressBar } from "./OperationProgressBar.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown.tsx";
 import { StatusDot } from "./StatusDot.tsx";
@@ -31,8 +32,9 @@ export interface FileImportZoneProps {
   showDetailsLink?: boolean;
   activeImport?: {
     jobId: string;
-    progress: number;
-    message: string;
+    status: "queued" | "running" | "completed" | "failed";
+    percentage?: number;
+    message?: string;
     failedCount?: number;
   };
 }
@@ -137,7 +139,7 @@ export function FileImportZone({
     resumedJobIdRef.current = activeImport.jobId;
     setState({
       status: "syncing",
-      progress: activeImport.progress,
+      progress: activeImport.percentage,
       message: activeImport.message,
       failedCount: activeImport.failedCount,
     });
@@ -287,18 +289,10 @@ export function FileImportZone({
         />
         {state.status === "syncing" ? (
           <div>
-            <div className="text-xs text-subtle">{state.message}</div>
+            <OperationProgressBar percentage={state.progress} message={state.message} />
             {typeof state.failedCount === "number" && state.failedCount > 0 && (
               <div className="mt-1 text-xs text-amber-400">
                 {state.failedCount.toLocaleString()} file{state.failedCount === 1 ? "" : "s"} failed
-              </div>
-            )}
-            {state.progress != null && (
-              <div className="mt-2 w-full h-1.5 rounded-full bg-accent/10 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-                  style={{ width: `${state.progress}%` }}
-                />
               </div>
             )}
           </div>

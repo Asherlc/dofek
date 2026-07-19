@@ -96,18 +96,6 @@ export const styles = StyleSheet.create({
   shareImportError: {
     color: colors.danger,
   },
-  shareProgressTrack: {
-    marginTop: 8,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: colors.surfaceSecondary,
-    overflow: "hidden",
-  },
-  shareProgressFill: {
-    height: "100%",
-    backgroundColor: colors.accent,
-  },
-
   // Section titles
   sectionTitle: {
     fontSize: 13,
@@ -182,20 +170,6 @@ export const styles = StyleSheet.create({
   syncProgressContainer: {
     marginTop: 8,
     gap: 4,
-  },
-  syncProgressTrack: {
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: colors.surfaceSecondary,
-    overflow: "hidden" as const,
-  },
-  syncProgressFill: {
-    height: "100%" as const,
-    backgroundColor: colors.accent,
-  },
-  syncProgressMessage: {
-    fontSize: 12,
-    color: colors.textSecondary,
   },
   syncProgressFailedCount: {
     fontSize: 12,

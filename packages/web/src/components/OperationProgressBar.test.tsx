@@ -1,0 +1,32 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { OperationProgressBar } from "./OperationProgressBar.tsx";
+
+afterEach(cleanup);
+
+describe("OperationProgressBar", () => {
+  it("renders determinate progress with an accessible value", () => {
+    render(<OperationProgressBar percentage={42} message="Deleting records..." />);
+
+    const progressBar = screen.getByRole("progressbar");
+    expect(progressBar.getAttribute("aria-valuenow")).toBe("42");
+    expect(screen.getByText("Deleting records...")).not.toBeNull();
+  });
+
+  it("renders indeterminate progress without inventing a percentage", () => {
+    render(<OperationProgressBar message="Waiting for deletion worker..." />);
+
+    const progressBar = screen.getByRole("progressbar");
+    expect(progressBar.hasAttribute("aria-valuenow")).toBe(false);
+    expect(screen.getByText("Waiting for deletion worker...")).not.toBeNull();
+  });
+
+  it("clamps visual progress to the supported range", () => {
+    const { rerender } = render(<OperationProgressBar percentage={-5} />);
+    expect(screen.getByTestId("operation-progress-fill").getAttribute("style")).toContain("0%");
+
+    rerender(<OperationProgressBar percentage={150} />);
+    expect(screen.getByTestId("operation-progress-fill").getAttribute("style")).toContain("100%");
+  });
+});

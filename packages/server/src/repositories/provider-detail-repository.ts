@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { Database } from "dofek/db";
 import {
   createProviderDataDeletionRequest,
+  findProviderDataDeletionRequest,
   type ProviderDataDeletionRequest,
+  type ProviderDataDeletionRequestStatus,
 } from "dofek/db/provider-data-deletion";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -741,6 +743,13 @@ export class ProviderDetailRepository {
       await this.#deleteProviderTablesInTransaction(transaction, providerId, PROVIDER_DATA_TABLES);
       return createProviderDataDeletionRequest(transaction, this.#userId, providerId, eventId);
     });
+  }
+
+  async findProviderDataDeletionRequest(
+    providerId: string,
+    eventId: string,
+  ): Promise<ProviderDataDeletionRequestStatus | null> {
+    return findProviderDataDeletionRequest(this.#db, this.#userId, providerId, eventId);
   }
 
   /**

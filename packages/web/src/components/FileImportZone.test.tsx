@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FileImportZone } from "./FileImportZone.tsx";
+import { FileImportZone, type FileImportZoneProps } from "./FileImportZone.tsx";
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="/providers/strong-csv">{children}</a>,
@@ -31,10 +31,11 @@ describe("FileImportZone", () => {
       statusUrl: "/api/upload/garmin-dump/status",
       activeImport: {
         jobId: "job-garmin",
-        progress: 64,
+        status: "running",
+        percentage: 64,
         message: "Importing activities",
       },
-    };
+    } satisfies FileImportZoneProps;
 
     render(<FileImportZone {...refreshedProps} />);
 

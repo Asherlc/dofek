@@ -1,6 +1,7 @@
 import { formatDurationSeconds, formatRelativeTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
+import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { useAuth } from "../../lib/auth-context";
@@ -142,22 +143,11 @@ export function ProviderCard({
 
       {showingProgress ? (
         <View style={styles.syncProgressContainer}>
-          {syncProgress.percentage != null && (
-            <View style={styles.syncProgressTrack}>
-              <View
-                testID={`provider-card-${provider.id}-progress-fill`}
-                style={[
-                  styles.syncProgressFill,
-                  {
-                    width: `${Math.max(0, Math.min(100, syncProgress.percentage))}%`,
-                  },
-                ]}
-              />
-            </View>
-          )}
-          {syncProgress.message ? (
-            <Text style={styles.syncProgressMessage}>{syncProgress.message}</Text>
-          ) : null}
+          <OperationProgressBar
+            fillTestID={`provider-card-${provider.id}-progress-fill`}
+            percentage={syncProgress.percentage}
+            message={syncProgress.message}
+          />
           {typeof syncProgress.failedCount === "number" && syncProgress.failedCount > 0 && (
             <Text style={styles.syncProgressFailedCount}>
               {syncProgress.failedCount.toLocaleString()} file

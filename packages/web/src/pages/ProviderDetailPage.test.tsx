@@ -120,6 +120,7 @@ vi.mock("../lib/trpc.ts", () => ({
     providerDetail: {
       disconnect: { useMutation: () => mockDisconnectMutation },
       deleteAllData: { useMutation: () => mockDeleteAllDataMutation },
+      deletionStatus: { useQuery: () => ({ data: undefined, error: null }) },
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
       logFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
       records: { useQuery: () => ({ data: { rows: [] }, isLoading: false }) },
@@ -270,7 +271,8 @@ describe("ProviderDetailPage import-only providers", () => {
     const activeImport = {
       jobId: "job-strong",
       providerId: "strong-csv",
-      progress: 37,
+      status: "running",
+      percentage: 37,
       message: "Importing workouts",
     };
     mockActiveImports.data = [activeImport];
