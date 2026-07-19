@@ -13953,3 +13953,42 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   then verify consumer lag clears, both Garmin outbox rows complete, and no
   active pre-fence generations remain. No retry, timeout, or memory-limit knob
   is part of this fix.
+
+## 2026-07-18 — Garmin Progress Refresh Ran After Worker Queue Shutdown
+
+- **Symptoms:** Sentry issue
+  [DOFEK-SERVER-4X](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4X)
+  captured one handled `Error: Connection is closed.` from
+  `GarminImportProgressCoordinator.#refreshBatchIds()` while reading FIT batch
+  job `garmin-dump-fit-batch-7a16f09ca34cdd81b46453c25b6e41733becdfeaddb0bca00e04a871c11434ad-batch-4`.
+- **User impact:** No Sentry user was associated with the event. One Garmin
+  import progress refresh was skipped; the durable BullMQ import work remained
+  available to the replacement worker's startup reconciliation.
+- **Evidence:** The event occurred at `2026-07-19T04:19:28.385Z` on the old
+  worker container `96378ce66ab0`. Axiom showed replacement worker container
+  `0c32b1672841` starting at `04:19:20Z`. The production
+  [Deploy Web run](https://github.com/Asherlc/dofek/actions/runs/29673036295)
+  began its stack-deploy step at `04:19:05Z`. The coordinator's two-second
+  debounce places the triggering FIT completion after its queues had begun
+  closing. Sentry found only this one production `Connection is closed.` event
+  in the preceding seven days.
+- **Root cause:** Graceful shutdown closes the Garmin progress coordinator and
+  all BullMQ workers concurrently. The coordinator can finish closing its two
+  queues while the FIT worker is still draining an active job; that worker then
+  emits `completed` or `failed`, `observeFitJob()` accepts the event despite
+  shutdown, and its debounced refresh calls `getJob()` on the closed queue.
+  The lifecycle was introduced with the restart-safe Garmin import coordinator
+  in [PR #1630](https://github.com/Asherlc/dofek/pull/1630).
+- **Fix / mitigation:** Graceful shutdown now drains every BullMQ worker before
+  closing the Garmin progress coordinator, and the coordinator rejects FIT
+  observations once its own closure begins. This preserves terminal events
+  while their queue dependencies are open and prevents late callbacks from
+  scheduling work afterward. No retry or timeout change was added.
+- **Validation:** The regression tests first reproduced both failure modes: a
+  post-close FIT event queried the closed batch queue, and the coordinator
+  closed before the workers. After the fix, both focused suites pass all 82
+  tests; Biome passes for the four changed TypeScript files, and the root
+  TypeScript typecheck reports no errors.
+- **Remaining risk / follow-up:** Deploy the fix, verify worker replacement does
+  not create another `garminDumpStep=progress-refresh` closed-connection event,
+  and resolve DOFEK-SERVER-4X after the normal monitoring window.

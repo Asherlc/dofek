@@ -31,6 +31,7 @@ class GarminImportProgressCoordinator {
   readonly #pendingBatchIds = new Set<string>();
   #refreshTimer: ReturnType<typeof setTimeout> | null = null;
   #refreshInFlight: Promise<void> | null = null;
+  #closing = false;
 
   constructor(connection?: ConnectionOptions) {
     this.#importQueue = createImportQueue(connection);
@@ -38,6 +39,7 @@ class GarminImportProgressCoordinator {
   }
 
   observeFitJob(job: ObservedFitJob): void {
+    if (this.#closing) return;
     const parent = job.parent;
     if (!parent?.id || !parent.queueKey.endsWith(`:${FIT_FILE_IMPORT_BATCH_QUEUE}`)) {
       return;
@@ -72,6 +74,7 @@ class GarminImportProgressCoordinator {
   }
 
   async close(): Promise<void> {
+    this.#closing = true;
     clearTimeout(this.#refreshTimer ?? undefined);
     this.#refreshTimer = null;
     this.#pendingBatchIds.clear();
