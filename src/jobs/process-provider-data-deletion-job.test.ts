@@ -83,9 +83,14 @@ describe("processProviderDataDeletionJob", () => {
     });
     expect(query.mock.calls[2]?.[0]).toEqual({
       query: expect.stringMatching(
-        /ORDER BY generation, id, source_version DESC, ingested_at DESC[\s\S]*LIMIT 1 BY generation, id/,
+        /tuple\(generation, id\) IN \{batch_keys:Array\(Tuple\(UInt64, UUID\)\)\}[\s\S]*ORDER BY generation, id, source_version DESC, ingested_at DESC[\s\S]*LIMIT 1 BY generation, id/,
       ),
-      query_params: expect.objectContaining({ row_ids: [firstId, secondId] }),
+      query_params: expect.objectContaining({
+        batch_keys: [
+          expect.objectContaining({ values: [0, firstId] }),
+          expect.objectContaining({ values: [1, secondId] }),
+        ],
+      }),
       format: "JSONEachRow",
     });
     expect(insert).toHaveBeenCalledWith({

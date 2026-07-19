@@ -242,7 +242,13 @@ describe("applyMetricStreamEventsToClickHouse", () => {
   it("skips an acknowledged v2 delete during consumer redelivery", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
-    const query = vi.fn(async () => ({ json: async () => [{ acknowledgement_count: 1 }] }));
+    const query = vi.fn(
+      async (_options: {
+        query: string;
+        query_params?: Record<string, unknown>;
+        format: "JSONEachRow";
+      }) => ({ json: async () => [{ acknowledgement_count: 1 }] }),
+    );
     const deleteEvent = createMetricStreamDeletedEvent({
       userId: heartRateEvent.userId,
       providerId: "garmin-dump",
@@ -254,18 +260,21 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
     expect(applied).toBe(0);
     expect(query).toHaveBeenCalledWith({
-      query: expect.stringContaining("ingest.metric_stream_delete_acknowledgement"),
+      query: expect.stringMatching(
+        /SELECT 1 AS acknowledgement_count[\s\S]+metric_stream_delete_acknowledgement[\s\S]+LIMIT 1/,
+      ),
       query_params: { event_id: deleteEvent.eventId },
       format: "JSONEachRow",
     });
+    expect(query.mock.calls[0]?.[0]?.query).not.toContain("FINAL");
     expect(command).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it("applies a v2 delete when its acknowledgement count is zero", async () => {
+  it("applies a v2 delete when no acknowledgement exists", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
-    const query = vi.fn(async () => ({ json: async () => [{ acknowledgement_count: 0 }] }));
+    const query = vi.fn(async () => ({ json: async () => [] }));
     const deleteEvent = createMetricStreamDeletedEvent({
       activityId: "20000000-0000-4000-8000-000000000001",
     });

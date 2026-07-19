@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import { processProviderDataDeletionJob } from "../../../../src/jobs/process-provider-data-deletion-job.ts";
+import {
+  type ProviderDataDeletionClickHouseClient,
+  processProviderDataDeletionJob,
+} from "../../../../src/jobs/process-provider-data-deletion-job.ts";
 import type { ProviderDataDeletionJobData } from "../../../../src/jobs/queues.ts";
 import { applyMetricStreamEventsToClickHouse } from "../../../../src/metric-stream/clickhouse-sink.ts";
 import { createMetricStreamEvent } from "../../../../src/metric-stream/events.ts";
@@ -15,6 +18,7 @@ const userId = "10000000-0000-4000-8000-000000000001";
 const eventId = "20000000-0000-4000-8000-000000000002";
 const oldGenerationId = "30000000-0000-4000-8000-000000000003";
 const activeGenerationId = "40000000-0000-4000-8000-000000000004";
+const reusedGenerationId = "50000000-0000-4000-8000-000000000005";
 const generationAggregateRowsSchema = z.array(
   z.object({ generation: z.coerce.number().int().nonnegative() }),
 );
@@ -206,5 +210,105 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
       format: "JSONEachRow",
     });
     await expect(result.json()).resolves.toEqual([{ id: staleEvent.id, is_deleted: 1 }]);
+  });
+
+  it("keeps each tombstone insert bounded to its selected generation and ID keys", async () => {
+    const providerId = "reused-id-provider";
+    const clickHouseClient = getClickHouseTestClient(testContext);
+    await clickHouseClient.command({
+      query: `INSERT INTO ingest.metric_stream (
+          id, activity_id, user_id, recorded_at, channel, provider_id, external_id,
+          device_id, source_type, scalar, vector, point, metadata, ingested_at,
+          is_deleted, version, generation
+        )
+        SELECT
+          generateUUIDv4(),
+          NULL,
+          {user_id:UUID},
+          addMicroseconds(toDateTime64('2026-02-01 00:00:00', 6, 'UTC'), number),
+          'heart_rate',
+          {provider_id:String},
+          NULL,
+          NULL,
+          'integration-test',
+          toFloat32(number),
+          [],
+          'null',
+          '{}',
+          now64(9),
+          0,
+          1,
+          0
+        FROM numbers(999)`,
+      query_params: { provider_id: providerId, user_id: userId },
+    });
+    await insertClickHouseMetricStreamRows(testContext, [
+      {
+        id: reusedGenerationId,
+        userId,
+        recordedAt: "2026-02-02T00:00:00.000Z",
+        channel: "heart_rate",
+        providerId,
+        scalar: 140,
+        generation: 0,
+      },
+      {
+        id: reusedGenerationId,
+        userId,
+        recordedAt: "2026-02-03T00:00:00.000Z",
+        channel: "heart_rate",
+        providerId,
+        scalar: 141,
+        generation: 1,
+      },
+    ]);
+
+    const insertedBatchKeys: Array<Array<{ generation: number; id: string }>> = [];
+    const deletionClient: ProviderDataDeletionClickHouseClient = {
+      command: (options) => clickHouseClient.command(options),
+      query: async (options) => {
+        const result = await clickHouseClient.query(options);
+        return { json: () => result.json() };
+      },
+      insert: async (options) => {
+        insertedBatchKeys.push(
+          z
+            .array(
+              z.object({
+                generation: z.coerce.number().int().nonnegative(),
+                id: z.uuid(),
+              }),
+            )
+            .parse(options.values),
+        );
+        return clickHouseClient.insert(options);
+      },
+    };
+    const data: ProviderDataDeletionJobData = {
+      type: "provider-data-deletion",
+      eventId: "60000000-0000-4000-8000-000000000006",
+      generation: 2,
+      providerId,
+      userId,
+    };
+    const job = {
+      data,
+      updateData: vi.fn(async (nextData: ProviderDataDeletionJobData) => {
+        Object.assign(data, nextData);
+      }),
+      updateProgress: vi.fn(async () => undefined),
+    };
+
+    await processProviderDataDeletionJob(job, {
+      clickHouseClient: deletionClient,
+      enqueueAnalyticsRefresh: vi.fn(async () => undefined),
+      markCompleted: vi.fn(async () => undefined),
+    });
+
+    expect(insertedBatchKeys).toHaveLength(2);
+    expect(insertedBatchKeys[0]).toHaveLength(1_000);
+    expect(insertedBatchKeys[0]).toContainEqual({ generation: 0, id: reusedGenerationId });
+    expect(insertedBatchKeys[0]).not.toContainEqual({ generation: 1, id: reusedGenerationId });
+    expect(insertedBatchKeys[1]).toEqual([{ generation: 1, id: reusedGenerationId }]);
   });
 });

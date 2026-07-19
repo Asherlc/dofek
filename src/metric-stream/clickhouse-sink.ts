@@ -110,9 +110,10 @@ async function isMetricStreamDeletionAcknowledged(
 ): Promise<boolean> {
   if (!client.query) return false;
   const result = await client.query({
-    query: `SELECT count() AS acknowledgement_count
-      FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} FINAL
-      WHERE event_id = {event_id:UUID}`,
+    query: `SELECT 1 AS acknowledgement_count
+      FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE}
+      WHERE event_id = {event_id:UUID}
+      LIMIT 1`,
     query_params: { event_id: eventId },
     format: "JSONEachRow",
   });

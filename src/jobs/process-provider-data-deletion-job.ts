@@ -1,3 +1,4 @@
+import { TupleParam } from "@clickhouse/client";
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
 import { logger } from "../logger.ts";
@@ -19,12 +20,12 @@ const metricStreamCursorRowsSchema = z.array(
 );
 const metricStreamTombstoneRowsSchema = z.array(
   z.object({
-    activity_id: z.guid().nullable(),
+    activity_id: z.uuid().nullable(),
     channel: z.string().min(1),
     device_id: z.string().nullable(),
     external_id: z.string().nullable(),
     generation: z.coerce.number().int().nonnegative(),
-    id: z.guid(),
+    id: z.uuid(),
     ingested_at: z.string().min(1),
     is_deleted: z.literal(1),
     metadata: z.string(),
@@ -33,7 +34,7 @@ const metricStreamTombstoneRowsSchema = z.array(
     recorded_at: z.string().min(1),
     scalar: z.number().nullable(),
     source_type: z.string().nullable(),
-    user_id: z.guid(),
+    user_id: z.uuid(),
     vector: z.array(z.number()),
     version: z.coerce.number().int().nonnegative(),
   }),
@@ -178,7 +179,7 @@ async function loadNextMetricStreamBatch(
 async function tombstoneMetricStreamBatch(
   client: ProviderDataDeletionClickHouseClient,
   data: ProviderDataDeletionJobData,
-  rowIds: readonly string[],
+  batchKeys: z.infer<typeof metricStreamCursorRowsSchema>,
 ): Promise<number> {
   if (!client.insert) {
     throw new Error("Provider data deletion requires an insert-capable ClickHouse client");
@@ -221,7 +222,7 @@ async function tombstoneMetricStreamBatch(
           version AS source_version,
           generation
         FROM ${METRIC_STREAM_TABLE}
-        WHERE id IN {row_ids:Array(UUID)}
+        WHERE tuple(generation, id) IN {batch_keys:Array(Tuple(UInt64, UUID))}
           AND user_id = {user_id:UUID}
           AND provider_id = {provider_id:String}
           AND generation < {generation:UInt64}
@@ -234,10 +235,10 @@ async function tombstoneMetricStreamBatch(
         force_optimize_projection_name = '${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION}',
         preferred_optimize_projection_name = '${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION}'`,
     query_params: {
+      batch_keys: batchKeys.map((batchKey) => new TupleParam([batchKey.generation, batchKey.id])),
       delete_version: Date.now(),
       generation: data.generation,
       provider_id: data.providerId,
-      row_ids: rowIds,
       user_id: data.userId,
     },
     format: "JSONEachRow",
@@ -279,8 +280,7 @@ export async function processProviderDataDeletionJob(
     const rows = await loadNextMetricStreamBatch(clickHouseClient, job.data, checkpoint);
     if (rows.length === 0) break;
 
-    const rowIds = rows.map((row) => row.id);
-    const deletedRows = await tombstoneMetricStreamBatch(clickHouseClient, job.data, rowIds);
+    const deletedRows = await tombstoneMetricStreamBatch(clickHouseClient, job.data, rows);
     const lastRow = rows.at(-1);
     if (!lastRow) {
       throw new Error("Provider data deletion batch did not produce a checkpoint cursor");

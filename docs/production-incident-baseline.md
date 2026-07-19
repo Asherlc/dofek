@@ -13940,7 +13940,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The focused unit suites pass 80 tests. Real ClickHouse
   integration tests seed 20,000 same-user rows from an unrelated provider and
   prove the covering projection can delete the target older generation while
-  preserving the active generation; all seven focused ClickHouse deletion and
+  preserving the active generation. A batch-boundary regression fixture also
+  reuses one ID across generations and proves each insert contains only its
+  selected `(generation, id)` keys; all eight focused ClickHouse deletion and
   sink integration tests pass.
 - **Remaining risk / follow-up:** Deploy the covering-projection migration and
   worker/sink changes, then run `MATERIALIZE PROJECTION
