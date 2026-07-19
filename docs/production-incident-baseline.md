@@ -13953,3 +13953,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   then verify consumer lag clears, both Garmin outbox rows complete, and no
   active pre-fence generations remain. No retry, timeout, or memory-limit knob
   is part of this fix.
+
+## 2026-07-18 — Zepp Release Workflow Retriggered Itself
+
+- **Symptoms:** The Zepp release workflow completed successfully after CI, then
+  immediately ran again for the tag created by that release and failed its
+  `Create Release` step.
+- **User impact:** The Zepp release and ZAB asset were published successfully,
+  but the redundant workflow run reported a failure on `main` after every
+  release.
+- **Evidence:** The exact failing command was `gh release create` in GitHub
+  Actions job
+  [88155517694](https://github.com/Asherlc/dofek/actions/runs/29673069952/job/88155517694).
+  The first fatal line was `a release with the same tag name already exists:
+  zepp-v0.0.1784434557`. The preceding
+  [workflow-triggered run](https://github.com/Asherlc/dofek/actions/runs/29673036189)
+  had already published that release for the same commit. Recent run history
+  showed the same successful `workflow_run` followed by a failing tag `push`
+  for each release.
+- **Root cause:** The workflow used `ZEPP_RELEASE_TOKEN` to create a release and
+  its tag while also subscribing to `push` events for `zepp-v*` tags. Unlike
+  events created with the repository `GITHUB_TOKEN`, events created with a
+  personal or GitHub App token can start new workflow runs, so the release's own
+  tag creation recursively invoked the release workflow. GitHub documents this
+  event behavior in
+  [Triggering a workflow](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
+- **Fix / mitigation:** Removed the `zepp-v*` tag-push trigger and its job
+  condition. A successful CI `workflow_run` is now the single automatic release
+  path, while `workflow_dispatch` remains the explicit manual path.
+- **Validation:** `git diff --check` passes, and the workflow diff removes both
+  the tag-push subscription and its matching job condition. The next successful
+  CI run on `main` must produce exactly one Zepp release workflow run and no
+  tag-triggered duplicate.
+- **Remaining risk / follow-up:** The fix intentionally removes automatic
+  releases from manually pushed Zepp tags. Use `workflow_dispatch` for manual
+  releases. Confirm the next production release creates one tag, one release,
+  and one successful workflow run.
