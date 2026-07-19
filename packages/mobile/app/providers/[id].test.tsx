@@ -230,6 +230,7 @@ vi.mock("../../lib/trpc", () => ({
       deleteAllData: {
         useMutation: () => ({ mutateAsync: mockDeleteAllDataMutateAsync, isPending: false }),
       },
+      deletionStatus: { useQuery: () => ({ data: undefined, error: null }) },
     },
     settings: {
       get: { useQuery: (...args: unknown[]) => mockSettingsGetQuery(...args) },
@@ -784,7 +785,10 @@ describe("ProviderDetailScreen", () => {
 
   describe("Delete all data", () => {
     it("requires typing DELETE before deleting provider records", async () => {
-      mockDeleteAllDataMutateAsync.mockResolvedValue({ success: true });
+      mockDeleteAllDataMutateAsync.mockResolvedValue({
+        success: true,
+        operationId: "30000000-0000-4000-8000-000000000001",
+      });
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 

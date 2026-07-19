@@ -4,7 +4,7 @@ export interface ProviderStatus {
 }
 
 export interface SyncJobStatus {
-  status: "running" | "done" | "error";
+  status: "queued" | "running" | "completed" | "failed";
   providers: Record<string, ProviderStatus>;
   percentage?: number;
   message?: string;
@@ -60,7 +60,7 @@ export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
       }
     }
 
-    if (job.status === "done" || job.status === "error") {
+    if (job.status === "completed" || job.status === "failed") {
       onComplete();
       return;
     }

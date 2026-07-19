@@ -4,10 +4,17 @@ import {
   getProviderDataGenerations,
   listPendingProviderDataDeletionRequests,
   markProviderDataDeletionCompleted,
+  markProviderDataDeletionFailed,
 } from "./provider-data-deletion.ts";
 
 const userId = "00000000-0000-4000-8000-000000000001";
 const eventId = "10000000-0000-4000-8000-000000000001";
+
+async function findProviderDataDeletionRequestWithFreshSchema(execute: ReturnType<typeof vi.fn>) {
+  vi.resetModules();
+  const { findProviderDataDeletionRequest } = await import("./provider-data-deletion.ts");
+  return findProviderDataDeletionRequest({ execute }, userId, "garmin", eventId);
+}
 
 describe("provider data deletion persistence", () => {
   it("uses generation zero until a deletion advances the fencing token", async () => {
@@ -75,10 +82,95 @@ describe("provider data deletion persistence", () => {
     ]);
   });
 
+  it("finds a user-scoped deletion request with its lifecycle status", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        event_id: eventId,
+        failure_reason: null,
+        generation: "3",
+        provider_id: "garmin",
+        status: "dispatched",
+        user_id: userId,
+      },
+    ]);
+
+    await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).resolves.toEqual({
+      eventId,
+      failureReason: null,
+      generation: 3,
+      providerId: "garmin",
+      status: "dispatched",
+      userId,
+    });
+  });
+
+  it("rejects deletion request rows without a lifecycle status", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        event_id: eventId,
+        generation: "3",
+        provider_id: "garmin",
+        user_id: userId,
+      },
+    ]);
+
+    await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).rejects.toThrow();
+  });
+
+  it("rejects deletion request rows with an unsupported lifecycle status", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        event_id: eventId,
+        generation: "3",
+        provider_id: "garmin",
+        status: "cancelled",
+        user_id: userId,
+      },
+    ]);
+
+    await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).rejects.toThrow();
+  });
+
+  it("finds a failed deletion request with its durable failure reason", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        event_id: eventId,
+        failure_reason: "ClickHouse rejected the deletion",
+        generation: "3",
+        provider_id: "garmin",
+        status: "failed",
+        user_id: userId,
+      },
+    ]);
+
+    await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).resolves.toEqual({
+      eventId,
+      failureReason: "ClickHouse rejected the deletion",
+      generation: 3,
+      providerId: "garmin",
+      status: "failed",
+      userId,
+    });
+  });
+
+  it("returns null when a user-scoped deletion request does not exist", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+
+    await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).resolves.toBeNull();
+  });
+
   it("marks an outbox request completed", async () => {
     const execute = vi.fn().mockResolvedValue([]);
 
     await markProviderDataDeletionCompleted({ execute }, eventId);
+
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("marks an outbox request failed with its reason", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+
+    await markProviderDataDeletionFailed({ execute }, eventId, "ClickHouse unavailable");
 
     expect(execute).toHaveBeenCalledOnce();
   });

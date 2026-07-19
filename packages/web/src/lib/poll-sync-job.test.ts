@@ -42,7 +42,7 @@ describe("pollSyncJob", () => {
   it("updates provider states from job and calls onComplete when done", async () => {
     const updateState = vi.fn();
     const doneJob: SyncJobStatus = {
-      status: "done",
+      status: "completed",
       providers: {
         wahoo: { status: "done", message: "5 synced" },
         whoop: { status: "error", message: "Auth failed" },
@@ -73,7 +73,7 @@ describe("pollSyncJob", () => {
       providers: { wahoo: { status: "running" } },
     };
     const doneJob: SyncJobStatus = {
-      status: "done",
+      status: "completed",
       providers: { wahoo: { status: "done", message: "3 synced" } },
     };
 
@@ -113,7 +113,7 @@ describe("pollSyncJob", () => {
   it("maps provider done status to 'done' not 'error'", async () => {
     const updateState = vi.fn();
     const fetchStatus = vi.fn().mockResolvedValue({
-      status: "done",
+      status: "completed",
       providers: { p1: { status: "done" } },
     });
 
@@ -131,7 +131,7 @@ describe("pollSyncJob", () => {
   it("maps provider error status to 'error' and passes message", async () => {
     const updateState = vi.fn();
     const fetchStatus = vi.fn().mockResolvedValue({
-      status: "done",
+      status: "completed",
       providers: { p1: { status: "error", message: "Auth expired" } },
     });
 
@@ -155,7 +155,7 @@ describe("pollSyncJob", () => {
         providers: { p1: { status: "running" } },
       })
       .mockResolvedValueOnce({
-        status: "done",
+        status: "completed",
         providers: { p1: { status: "done" } },
       });
 
@@ -185,7 +185,7 @@ describe("pollSyncJob", () => {
         providers: { p1: { status: "running", message: "Fetching activities..." } },
       })
       .mockResolvedValueOnce({
-        status: "done",
+        status: "completed",
         providers: { p1: { status: "done" } },
       });
 
@@ -208,7 +208,7 @@ describe("pollSyncJob", () => {
   it("does not include percentage for done/error states", async () => {
     const updateState = vi.fn();
     const fetchStatus = vi.fn().mockResolvedValue({
-      status: "done",
+      status: "completed",
       percentage: 100,
       providers: {
         p1: { status: "done", message: "5 synced" },
@@ -231,7 +231,7 @@ describe("pollSyncJob", () => {
   it("does not call updateState for pending providers", async () => {
     const updateState = vi.fn();
     const fetchStatus = vi.fn().mockResolvedValue({
-      status: "done",
+      status: "completed",
       providers: { p1: { status: "pending" } },
     });
 
@@ -246,10 +246,10 @@ describe("pollSyncJob", () => {
     expect(updateState).not.toHaveBeenCalled();
   });
 
-  it("calls onComplete when job status is error", async () => {
+  it("calls onComplete when job status is failed", async () => {
     const onComplete = vi.fn();
     const fetchStatus = vi.fn().mockResolvedValue({
-      status: "error",
+      status: "failed",
       providers: {},
     });
 
@@ -267,7 +267,7 @@ describe("pollSyncJob", () => {
   it("passes through undefined message when provider has no message", async () => {
     const updateState = vi.fn();
     const fetchStatus = vi.fn().mockResolvedValue({
-      status: "done",
+      status: "completed",
       providers: { p1: { status: "done", message: undefined } },
     });
 

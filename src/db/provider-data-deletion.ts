@@ -13,12 +13,21 @@ const providerDataDeletionRequestRowSchema = z.object({
   provider_id: z.string().min(1),
   user_id: z.uuid(),
 });
+const providerDataDeletionRequestStatusRowSchema = providerDataDeletionRequestRowSchema.extend({
+  failure_reason: z.string().min(1).nullable(),
+  status: z.enum(["pending", "dispatched", "completed", "failed"]),
+});
 
 export interface ProviderDataDeletionRequest {
   eventId: string;
   generation: number;
   providerId: string;
   userId: string;
+}
+
+export interface ProviderDataDeletionRequestStatus extends ProviderDataDeletionRequest {
+  failureReason: string | null;
+  status: "pending" | "dispatched" | "completed" | "failed";
 }
 
 export interface ProviderDataScope {
@@ -122,6 +131,31 @@ export async function listPendingProviderDataDeletionRequests(
   return rows.map(mapProviderDataDeletionRequest);
 }
 
+export async function findProviderDataDeletionRequest(
+  database: Database,
+  userId: string,
+  providerId: string,
+  eventId: string,
+): Promise<ProviderDataDeletionRequestStatus | null> {
+  const rows = await executeWithSchema(
+    database,
+    providerDataDeletionRequestStatusRowSchema,
+    sql`SELECT event_id, user_id, provider_id, generation, status, failure_reason
+        FROM fitness.provider_data_deletion_outbox
+        WHERE event_id = ${eventId}::uuid
+          AND user_id = ${userId}::uuid
+          AND provider_id = ${providerId}
+        LIMIT 1`,
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ...mapProviderDataDeletionRequest(row),
+    failureReason: row.failure_reason,
+    status: row.status,
+  };
+}
+
 export async function markProviderDataDeletionDispatched(
   database: Database,
   eventId: string,
@@ -139,7 +173,19 @@ export async function markProviderDataDeletionCompleted(
 ): Promise<void> {
   await database.execute(
     sql`UPDATE fitness.provider_data_deletion_outbox
-        SET status = 'completed', completed_at = now()
+        SET status = 'completed', completed_at = now(), failure_reason = NULL, failed_at = NULL
+        WHERE event_id = ${eventId}::uuid AND status <> 'completed'`,
+  );
+}
+
+export async function markProviderDataDeletionFailed(
+  database: Database,
+  eventId: string,
+  failureReason: string,
+): Promise<void> {
+  await database.execute(
+    sql`UPDATE fitness.provider_data_deletion_outbox
+        SET status = 'failed', failure_reason = ${failureReason}, failed_at = now()
         WHERE event_id = ${eventId}::uuid AND status <> 'completed'`,
   );
 }

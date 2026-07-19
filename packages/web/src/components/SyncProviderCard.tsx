@@ -2,6 +2,7 @@ import { formatRelativeTime, formatTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { Link } from "@tanstack/react-router";
 import type { ProviderState, SyncLogEntry, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
+import { OperationProgressBar } from "./OperationProgressBar.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown.tsx";
 import { StatusDot } from "./StatusDot.tsx";
@@ -73,18 +74,9 @@ export function SyncProviderCard({
         <span className="text-xs text-subtle mt-1">{provider.description}</span>
       )}
 
-      {/* Progress bar during sync */}
       {!pushOnly && state.status === "syncing" && (
         <div className="mt-2">
-          {state.percentage != null && (
-            <div className="w-full h-1.5 rounded-full bg-accent/10 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-                style={{ width: `${state.percentage}%` }}
-              />
-            </div>
-          )}
-          {state.message && <span className="text-xs text-subtle mt-1 block">{state.message}</span>}
+          <OperationProgressBar percentage={state.percentage} message={state.message} />
         </div>
       )}
 

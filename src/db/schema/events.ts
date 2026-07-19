@@ -50,13 +50,15 @@ export const providerDataDeletionOutbox = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    failureReason: text("failure_reason"),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
   },
   (table) => [
     index("provider_data_deletion_outbox_dispatch_idx").on(table.status, table.createdAt),
     check("provider_data_deletion_outbox_generation_positive", sql`${table.generation} > 0`),
     check(
       "provider_data_deletion_outbox_status_valid",
-      sql`${table.status} IN ('pending', 'dispatched', 'completed')`,
+      sql`${table.status} IN ('pending', 'dispatched', 'completed', 'failed')`,
     ),
   ],
 );

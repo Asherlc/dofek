@@ -100,6 +100,7 @@ const mockDataHealth: {
 };
 
 const mockSyncMutation = { mutateAsync: vi.fn(), isPending: false };
+const mockCaptureException = vi.fn();
 const mockDisconnectMutation = { mutateAsync: vi.fn(), isPending: false };
 const mockDeleteAllDataMutation = { mutateAsync: vi.fn(), isPending: false };
 const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: false });
@@ -120,6 +121,7 @@ vi.mock("../lib/trpc.ts", () => ({
     providerDetail: {
       disconnect: { useMutation: () => mockDisconnectMutation },
       deleteAllData: { useMutation: () => mockDeleteAllDataMutation },
+      deletionStatus: { useQuery: () => ({ data: undefined, error: null }) },
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
       logFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
       records: { useQuery: () => ({ data: { rows: [] }, isLoading: false }) },
@@ -149,6 +151,10 @@ vi.mock("../lib/trpc.ts", () => ({
 
 vi.mock("../lib/poll-sync-job.ts", () => ({
   pollSyncJob: vi.fn(),
+}));
+
+vi.mock("../lib/telemetry.ts", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
 beforeEach(() => {
@@ -270,7 +276,8 @@ describe("ProviderDetailPage import-only providers", () => {
     const activeImport = {
       jobId: "job-strong",
       providerId: "strong-csv",
-      progress: 37,
+      status: "running",
+      percentage: 37,
       message: "Importing workouts",
     };
     mockActiveImports.data = [activeImport];
@@ -378,6 +385,32 @@ describe("ProviderDetailPage import-only providers", () => {
 
     expect(screen.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
     expect(pollSyncJob).not.toHaveBeenCalled();
+  });
+
+  it("reports unexpected provider sync failures", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    const syncError = new Error("Queue unavailable");
+    mockSyncMutation.mutateAsync.mockRejectedValue(syncError);
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+
+    expect(mockCaptureException).toHaveBeenCalledWith(syncError, { context: "sync-provider" });
+    expect(screen.getByText("Queue unavailable")).toBeTruthy();
   });
 
   it("does not trigger sync for an inverted date range", async () => {

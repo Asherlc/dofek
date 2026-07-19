@@ -17,6 +17,7 @@ import { queryCache } from "dofek/lib/cache";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
+import { operationStatusOutputSchema, readOperationProgress } from "../lib/operation-progress.ts";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 import { logger } from "../logger.ts";
@@ -40,7 +41,6 @@ import {
   getAllConfiguredProviderIds,
   importTypeFromJobData,
   isJobDataForUser,
-  mapBullMqStateToSyncStatus,
   parseJobId,
   providerIdForImportType,
   providerIdFromSyncJobData,
@@ -127,11 +127,9 @@ const providerStatsOutputSchema = z.array(
 );
 
 const activeImportsOutputSchema = z.array(
-  z.object({
+  operationStatusOutputSchema.extend({
     jobId: z.string(),
     providerId: z.string(),
-    progress: z.number(),
-    message: z.string(),
     failedCount: z.number().optional(),
   }),
 );
@@ -569,7 +567,7 @@ const syncRouterProcedures = {
     const jobData = syncJobDataSchema.safeParse(job.data);
     if (!jobData.success || jobData.data.userId !== ctx.userId) return null;
 
-    const state = await job.getState();
+    const operationProgress = await readOperationProgress(job);
 
     const progressSchema = z.object({
       providers: z
@@ -589,16 +587,15 @@ const syncRouterProcedures = {
     // When a sync job finishes, invalidate ALL cached data for this user.
     // ClickHouse read models update outside the API server, but the API
     // server's in-memory cache can still hold stale results until TTL expiry.
-    if (state === "completed" || state === "failed") {
+    if (operationProgress.status === "completed" || operationProgress.status === "failed") {
       await queryCache.invalidateByPrefix(`${ctx.userId}:`);
     }
 
     return {
-      status: mapBullMqStateToSyncStatus(state),
+      ...operationProgress,
       providers: progress?.providers ?? {},
-      percentage: progress?.percentage,
       message:
-        state === "failed" ? job.failedReason : state === "completed" ? "Sync complete" : undefined,
+        operationProgress.status === "completed" ? "Sync complete" : operationProgress.message,
     };
   }),
 
@@ -636,7 +633,7 @@ const syncRouterProcedures = {
 
     const results: Array<{
       jobId: string;
-      status: "running" | "done" | "error";
+      status: "queued" | "running";
       percentage?: number;
       providers: Record<
         string,
@@ -647,13 +644,16 @@ const syncRouterProcedures = {
     for (const job of jobs) {
       const jobData = syncJobDataSchema.safeParse(job.data);
       if (!jobData.success || jobData.data.userId !== ctx.userId) continue;
-      const state = await job.getState();
+      const operationProgress = await readOperationProgress(job);
+      if (operationProgress.status !== "queued" && operationProgress.status !== "running") {
+        continue;
+      }
       const parsed = progressSchema.safeParse(job.progress);
       const progress = parsed.success ? parsed.data : undefined;
       results.push({
         jobId: toJobId(job.id, jobData.data.providerId ?? "unknown"),
-        status: mapBullMqStateToSyncStatus(state),
-        percentage: progress?.percentage,
+        status: operationProgress.status,
+        percentage: operationProgress.percentage,
         providers: progress?.providers ?? {},
       });
     }
@@ -682,15 +682,17 @@ const syncRouterProcedures = {
       const providerId = providerIdForImportType(importType);
       if (!providerId) continue;
 
-      const state = await job.getState();
       const parsedProgress = importJobProgressSchema.safeParse(job.progress);
       const progressValue = parsedProgress.success ? parsedProgress.data : undefined;
-      const progress =
-        typeof progressValue === "number" ? progressValue : (progressValue?.percentage ?? 0);
+      const operationProgress = await readOperationProgress({
+        failedReason: job.failedReason,
+        getState: () => job.getState(),
+        progress: progressValue,
+      });
       const message =
         typeof progressValue === "object" && progressValue.message
           ? progressValue.message
-          : state === "waiting" || state === "delayed"
+          : operationProgress.status === "queued"
             ? "Waiting to import..."
             : "Processing import...";
       const failedCount = typeof progressValue === "object" ? progressValue.failedCount : undefined;
@@ -698,7 +700,7 @@ const syncRouterProcedures = {
       results.push({
         jobId: String(job.id ?? `job-${providerId}`),
         providerId,
-        progress,
+        ...operationProgress,
         message,
         ...(failedCount !== undefined ? { failedCount } : {}),
       });

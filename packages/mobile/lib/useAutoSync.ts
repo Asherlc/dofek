@@ -69,7 +69,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
           if (!jobId) return;
           const pollUntilDone = async (): Promise<void> => {
             const status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
-            if (!status || status.status === "done" || status.status === "error") {
+            if (!status || status.status === "completed" || status.status === "failed") {
               await invalidateSyncedHealthData(trpcUtils);
               return;
             }

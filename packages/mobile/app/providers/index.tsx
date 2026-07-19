@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { DataReadinessBanner } from "../../components/DataReadinessBanner";
+import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { useAuth } from "../../lib/auth-context";
@@ -244,7 +245,7 @@ export default function ProvidersScreen() {
           return next;
         });
 
-        if (status.status === "done" || status.status === "error") {
+        if (status.status === "completed" || status.status === "failed") {
           pollingJobIds.current.delete(jobId);
           if (pollingJobIds.current.size === 0) {
             setAnySyncing(false);
@@ -266,7 +267,7 @@ export default function ProvidersScreen() {
   useEffect(() => {
     if (!activeSyncs.data) return;
     for (const activeJob of activeSyncs.data) {
-      if (activeJob.status !== "running") continue;
+      if (activeJob.status !== "running" && activeJob.status !== "queued") continue;
       if (resumedJobIds.current.has(activeJob.jobId)) continue;
       resumedJobIds.current.add(activeJob.jobId);
 
@@ -555,7 +556,7 @@ export default function ProvidersScreen() {
   const appleHealthActiveImport = activeImportByProvider.get("apple_health");
   const appleHealthActiveImportProgress = appleHealthActiveImport
     ? {
-        percentage: appleHealthActiveImport.progress,
+        percentage: appleHealthActiveImport.percentage,
         message: appleHealthActiveImport.message,
         failedCount: appleHealthActiveImport.failedCount,
       }
@@ -633,23 +634,15 @@ export default function ProvidersScreen() {
                 ? `${importProviderLabel(sharedImportState.providerId)} import complete`
                 : `${importProviderLabel(sharedImportState.providerId)} import ${sharedImportState.status}`}
             </Text>
-            <Text
-              style={[
-                styles.shareImportMessage,
-                sharedImportState.status === "error" && styles.shareImportError,
-              ]}
-            >
-              {sharedImportState.message}
-            </Text>
-            {sharedImportState.status !== "error" && (
-              <View style={styles.shareProgressTrack}>
-                <View
-                  style={[
-                    styles.shareProgressFill,
-                    { width: `${Math.max(0, Math.min(100, sharedImportState.progress))}%` },
-                  ]}
-                />
-              </View>
+            {sharedImportState.status === "error" ? (
+              <Text style={[styles.shareImportMessage, styles.shareImportError]}>
+                {sharedImportState.message}
+              </Text>
+            ) : (
+              <OperationProgressBar
+                percentage={sharedImportState.progress}
+                message={sharedImportState.message}
+              />
             )}
           </View>
         ) : null}
@@ -712,7 +705,7 @@ export default function ProvidersScreen() {
         const activeImport = activeImportByProvider.get(provider.id);
         const activeImportProgress = activeImport
           ? {
-              percentage: activeImport.progress,
+              percentage: activeImport.percentage,
               message: activeImport.message,
               failedCount: activeImport.failedCount,
             }

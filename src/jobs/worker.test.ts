@@ -95,6 +95,7 @@ vi.mock("../db/clickhouse-read-model-refresh.ts", () => ({
 
 vi.mock("../db/provider-data-deletion.ts", () => ({
   markProviderDataDeletionCompleted: vi.fn(() => Promise.resolve()),
+  markProviderDataDeletionFailed: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../db/refit-sensor-store.ts", () => ({
@@ -611,23 +612,79 @@ describe("worker module", () => {
     expect(retry).not.toHaveBeenCalled();
   });
 
-  it("does not redrive unrecoverable provider deletion failures", () => {
+  it("ignores provider deletion failure events without a job", async () => {
+    const { markProviderDataDeletionFailed } = await import("../db/provider-data-deletion.ts");
+    vi.mocked(markProviderDataDeletionFailed).mockClear();
+
+    expect(
+      getProviderDataDeletionRedriveHandler()(undefined, new Error("Missing BullMQ job")),
+    ).toBeUndefined();
+    expect(markProviderDataDeletionFailed).not.toHaveBeenCalled();
+  });
+
+  it("persists unrecoverable provider deletion failures", async () => {
+    const { markProviderDataDeletionFailed } = await import("../db/provider-data-deletion.ts");
     const retry = vi.fn(async () => undefined);
+    vi.mocked(markProviderDataDeletionFailed).mockClear();
 
     getProviderDataDeletionRedriveHandler()(
-      { attemptsMade: 20, opts: { attempts: 20 }, retry },
+      {
+        attemptsMade: 20,
+        data: { eventId: "10000000-0000-4000-8000-000000000001" },
+        opts: { attempts: 20 },
+        retry,
+      },
       new hoisted.MockUnrecoverableError("Invalid provider data deletion job payload"),
     );
 
     expect(retry).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(markProviderDataDeletionFailed).toHaveBeenCalledWith(
+        hoisted.mockDatabase,
+        "10000000-0000-4000-8000-000000000001",
+        "Invalid provider data deletion job payload",
+      ),
+    );
+  });
+
+  it("reports provider deletion failure persistence errors", async () => {
+    const Sentry = await import("@sentry/node");
+    const { markProviderDataDeletionFailed } = await import("../db/provider-data-deletion.ts");
+    const { logger } = await import("../logger.ts");
+    const persistenceError = new Error("Postgres unavailable");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(markProviderDataDeletionFailed).mockRejectedValueOnce(persistenceError);
+    vi.mocked(logger.error).mockClear();
+
+    getProviderDataDeletionRedriveHandler()(
+      {
+        attemptsMade: 20,
+        data: { eventId: "10000000-0000-4000-8000-000000000001" },
+        opts: { attempts: 20 },
+        retry: vi.fn(async () => undefined),
+      },
+      new hoisted.MockUnrecoverableError("Invalid provider data deletion job payload"),
+    );
+
+    await vi.waitFor(() =>
+      expect(Sentry.captureException).toHaveBeenCalledWith(persistenceError, {
+        tags: { providerDataDeletionStep: "persistFailure" },
+        extra: { eventId: "10000000-0000-4000-8000-000000000001" },
+      }),
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      "[provider-data-deletion] Failed to persist terminal failure for 10000000-0000-4000-8000-000000000001: Error: Postgres unavailable",
+    );
   });
 
   it("reports a provider deletion redrive failure with the deletion event context", async () => {
     const Sentry = await import("@sentry/node");
+    const { markProviderDataDeletionFailed } = await import("../db/provider-data-deletion.ts");
     const { logger } = await import("../logger.ts");
     const redriveError = new Error("Redis unavailable");
     const retry = vi.fn().mockRejectedValue(redriveError);
     vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(markProviderDataDeletionFailed).mockClear();
     vi.mocked(logger.error).mockClear();
 
     getProviderDataDeletionRedriveHandler()(
@@ -648,6 +705,11 @@ describe("worker module", () => {
     );
     expect(logger.error).toHaveBeenCalledWith(
       "[provider-data-deletion] Failed to redrive terminal job 10000000-0000-4000-8000-000000000001: Error: Redis unavailable",
+    );
+    expect(markProviderDataDeletionFailed).toHaveBeenCalledWith(
+      hoisted.mockDatabase,
+      "10000000-0000-4000-8000-000000000001",
+      "ClickHouse unavailable",
     );
   });
 

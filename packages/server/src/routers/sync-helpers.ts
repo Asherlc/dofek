@@ -131,17 +131,6 @@ async function doRegisterProviders() {
   }
 }
 
-export function mapBullMqStateToSyncStatus(state: string): "running" | "done" | "error" {
-  switch (state) {
-    case "completed":
-      return "done";
-    case "failed":
-      return "error";
-    default:
-      return "running";
-  }
-}
-
 export function getAllConfiguredProviderIds(): Set<string> {
   return new Set(getConfiguredProviderIds());
 }
