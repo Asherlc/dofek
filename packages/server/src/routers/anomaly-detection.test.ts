@@ -25,7 +25,9 @@ function makeDb(rows: Record<string, unknown>[]) {
 function makeSensorStore(sleepRows: Record<string, unknown>[] = []) {
   return {
     query: vi.fn(async (_schema: unknown, query: string) =>
-      query.includes("analytics.v_sleep") ? sleepRows : [{ date: "2024-01-14", resting_hr: 52 }],
+      query.includes("analytics.daily_sleep") || query.includes("analytics.v_sleep")
+        ? sleepRows
+        : [{ date: "2024-01-14", resting_hr: 52 }],
     ),
   };
 }
@@ -51,6 +53,7 @@ function sleepRowsForBaseline({
 }) {
   const baselineRows = Array.from({ length: baselineCount }, (_unused, index) => ({
     date: dateDaysBefore(targetDate, baselineCount - index),
+    provider_id: "whoop",
     started_at: `${dateDaysBefore(targetDate, baselineCount - index)}T23:00:00Z`,
     ended_at: `${dateDaysBefore(targetDate, baselineCount - index - 1)}T07:00:00Z`,
     duration_minutes:
@@ -65,6 +68,7 @@ function sleepRowsForBaseline({
     ...baselineRows,
     {
       date: targetDate,
+      provider_id: "whoop",
       started_at: `${targetDate}T23:00:00Z`,
       ended_at: `${dateDaysBefore(targetDate, -1)}T07:00:00Z`,
       duration_minutes: targetDuration,

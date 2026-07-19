@@ -6,7 +6,7 @@ import { dateWindowEnd } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
+import { fetchDailySleepPerformanceNights } from "./clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -278,13 +278,11 @@ export class AnomalyDetectionRepository {
           LEFT JOIN hrv_baseline h ON h.date = target_date.date
           LIMIT 1`,
       ),
-      fetchSleepNights({
+      fetchDailySleepPerformanceNights({
         sensorStore: this.#sensorStore,
         userId: this.#userId,
-        timezone: this.#timezone,
         endDate,
         days: BASELINE_LOOKBACK_DAYS,
-        order: "asc",
       }),
     ]);
 
