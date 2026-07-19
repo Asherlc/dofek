@@ -66,6 +66,14 @@ export class SleepRepository extends BaseRepository {
     });
   }
 
+  /** Sleep sessions inside an exact inclusive date range. */
+  async listRange(startDate: string, endDate: string) {
+    const start = new Date(`${startDate}T00:00:00Z`);
+    const end = new Date(`${endDate}T00:00:00Z`);
+    const days = Math.round((end.getTime() - start.getTime()) / 86_400_000);
+    return this.list(days, endDate);
+  }
+
   /** Sleep stages for a specific session. */
   async getStages(sessionId: string) {
     return this.query(

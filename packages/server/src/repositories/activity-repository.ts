@@ -34,6 +34,22 @@ const activityListRowSchema = z.object({
   total_count: z.coerce.number(),
 });
 
+const activityListColumns = sql`
+  a.id,
+  a.activity_type,
+  a.started_at::text AS started_at,
+  a.ended_at::text AS ended_at,
+  a.name,
+  a.provider_id,
+  a.source_providers,
+  a.member_activity_ids,
+  NULL::double precision AS avg_hr,
+  NULL::smallint AS max_hr,
+  NULL::double precision AS avg_power,
+  NULL::double precision AS distance_meters,
+  COUNT(*) OVER()::int AS total_count
+`;
+
 const activityDetailRowSchema = z.object({
   id: z.string(),
   activity_type: z.string(),
@@ -245,6 +261,13 @@ export interface ListInput {
   activityTypes?: string[];
 }
 
+export interface SearchInput {
+  startDate: string;
+  endDate: string;
+  query?: string;
+  limit: number;
+}
+
 export interface CountVisibleInWindowInput {
   days: RangeDays;
   activityTypes?: string[];
@@ -367,6 +390,70 @@ export class ActivityRepository extends BaseRepository {
     return { items, totalCount };
   }
 
+  /** Activities inside an exact inclusive local-date range, optionally filtered before paging. */
+  async search(
+    input: SearchInput,
+  ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
+    const escapedQuery = input.query?.replace(/[%_\\]/g, (character) => `\\${character}`);
+    const queryPattern = escapedQuery ? `%${escapedQuery}%` : null;
+    const rows = await this.#exactRangeRows(
+      input.startDate,
+      input.endDate,
+      undefined,
+      queryPattern,
+      input.limit,
+    );
+    const hydratedRows = await this.#withActivitySummaries(rows);
+    const totalCount = hydratedRows[0]?.total_count ?? 0;
+    const items = hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => rest);
+    return { items, totalCount };
+  }
+
+  /** All activities inside an exact inclusive local-date range for server-side aggregation. */
+  async listRange(
+    startDate: string,
+    endDate: string,
+    activityTypes?: string[],
+  ): Promise<Array<Record<string, unknown>>> {
+    const rows = await this.#exactRangeRows(startDate, endDate, activityTypes);
+    const hydratedRows = await this.#withActivitySummaries(rows);
+    return hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => rest);
+  }
+
+  #exactRangeRows(
+    startDate: string,
+    endDate: string,
+    activityTypes?: string[],
+    queryPattern: string | null = null,
+    limit?: number,
+  ) {
+    const typeFilter =
+      activityTypes && activityTypes.length > 0
+        ? sql`AND a.activity_type IN (${sql.join(
+            activityTypes.map((activityType) => sql`${activityType}`),
+            sql`, `,
+          )})`
+        : sql``;
+    const queryFilter = queryPattern
+      ? sql`AND (a.name ILIKE ${queryPattern} OR a.activity_type::text ILIKE ${queryPattern})`
+      : sql``;
+    const limitClause = limit == null ? sql`` : sql`LIMIT ${limit}`;
+    return this.query(
+      activityListRowSchema,
+      sql`SELECT
+            ${activityListColumns}
+          FROM fitness.v_activity a
+          WHERE a.user_id = ${this.userId}
+            AND a.started_at >= (${startDate}::date AT TIME ZONE ${this.timezone})
+            AND a.started_at < ((${endDate}::date + 1) AT TIME ZONE ${this.timezone})
+            ${typeFilter}
+            ${queryFilter}
+            ${this.timestampAccessPredicate(sql`a.started_at`)}
+          ORDER BY a.started_at DESC
+          ${limitClause}`,
+    );
+  }
+
   #listRawRows(input: ListInput) {
     const typeFilter =
       input.activityTypes && input.activityTypes.length > 0
@@ -383,19 +470,7 @@ export class ActivityRepository extends BaseRepository {
     return this.query(
       activityListRowSchema,
       sql`SELECT
-            a.id,
-            a.activity_type,
-            a.started_at::text AS started_at,
-            a.ended_at::text AS ended_at,
-            a.name,
-            a.provider_id,
-            a.source_providers,
-            a.member_activity_ids,
-            NULL::double precision AS avg_hr,
-            NULL::smallint AS max_hr,
-            NULL::double precision AS avg_power,
-            NULL::double precision AS distance_meters,
-            COUNT(*) OVER()::int AS total_count
+            ${activityListColumns}
           FROM fitness.v_activity a
           WHERE a.user_id = ${this.userId}
             ${rangeFilter}

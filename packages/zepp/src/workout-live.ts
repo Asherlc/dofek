@@ -42,6 +42,7 @@ function durationSeconds(value: string): number | undefined {
   const parts = value.split(":").map(Number);
   if (parts.some((part) => !Number.isFinite(part))) return undefined;
   if (parts.length === 3) return (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
+  if (parts.length === 2) return (parts[0] ?? 0) * 60 + (parts[1] ?? 0);
   return undefined;
 }
 

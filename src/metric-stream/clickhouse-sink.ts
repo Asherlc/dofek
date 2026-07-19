@@ -8,8 +8,8 @@ import {
 import {
   isMetricStreamDeletedEvent,
   type MetricStreamDeleteScope,
-  type MetricStreamEventV1,
   type MetricStreamRedpandaEvent,
+  type MetricStreamRowEvent,
 } from "./events.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
@@ -46,10 +46,10 @@ export interface ClickHouseMetricStreamRow {
   id: string;
   ingested_at: string;
   is_deleted: 0 | 1;
-  version: number;
+  version: number | string;
 }
 
-function isClickHouseReplicatedEvent(event: MetricStreamEventV1): boolean {
+function isClickHouseReplicatedEvent(event: MetricStreamRowEvent): boolean {
   return event.channel !== "imu";
 }
 
@@ -68,7 +68,7 @@ function normalizePointForClickHouse(point: string | null | undefined): string |
 }
 
 export function mapMetricStreamEventToClickHouseRow(
-  event: MetricStreamEventV1,
+  event: MetricStreamRowEvent,
 ): ClickHouseMetricStreamRow {
   return {
     recorded_at: event.recordedAt,
@@ -85,7 +85,7 @@ export function mapMetricStreamEventToClickHouseRow(
     id: event.id,
     ingested_at: new Date().toISOString(),
     is_deleted: 0,
-    version: 0,
+    version: event.version === 1 ? 0 : (BigInt(event.operationRevision) * 2n + 1n).toString(),
   };
 }
 
@@ -124,8 +124,8 @@ async function isMetricStreamDeletionAcknowledged(
 
 async function filterEventsByProviderGeneration(
   client: ClickHouseMetricStreamInsertClient,
-  events: readonly MetricStreamEventV1[],
-): Promise<MetricStreamEventV1[]> {
+  events: readonly MetricStreamRowEvent[],
+): Promise<MetricStreamRowEvent[]> {
   if (events.length === 0) return [];
   if (!client.query) {
     throw new Error("ClickHouse metric-stream ingestion requires a query-capable client");
@@ -235,7 +235,7 @@ async function tombstoneMetricStreamIds(
 
 export async function insertMetricStreamEventsIntoClickHouse(
   client: ClickHouseMetricStreamInsertClient,
-  events: readonly MetricStreamEventV1[],
+  events: readonly MetricStreamRowEvent[],
 ): Promise<number> {
   const rows = events.filter(isClickHouseReplicatedEvent).map(mapMetricStreamEventToClickHouseRow);
 
@@ -330,11 +330,18 @@ export async function markMetricStreamScopeDeletedInClickHouse(
   client: ClickHouseMetricStreamInsertClient,
   scope: MetricStreamDeleteScope,
   eventId?: string,
+  operationRevision?: string,
 ): Promise<void> {
   if (!client.command) {
     throw new Error("ClickHouse metric-stream deletion requires a command-capable client");
   }
   const queryParams: Record<string, unknown> = {};
+  const replacementVersionExpression = operationRevision
+    ? "{replacement_version:UInt64}"
+    : "latest_row.15 + 1";
+  if (operationRevision) {
+    queryParams.replacement_version = (BigInt(operationRevision) * 2n).toString();
+  }
   const candidateConditions = clickHouseDeleteScopeConditions(
     scope,
     queryParams,
@@ -367,7 +374,7 @@ export async function markMetricStreamScopeDeletedInClickHouse(
         latest_row.12 AS metadata,
         now64(9) AS ingested_at,
         1 AS is_deleted,
-        latest_row.15 + 1 AS version,
+        ${replacementVersionExpression} AS version,
         latest_row.13 AS generation
       FROM (
         SELECT
@@ -419,7 +426,7 @@ export async function applyMetricStreamEventsToClickHouse(
   events: readonly MetricStreamRedpandaEvent[],
 ): Promise<number> {
   let inserted = 0;
-  let rowBuffer: MetricStreamEventV1[] = [];
+  let rowBuffer: MetricStreamRowEvent[] = [];
   const flushRows = async () => {
     if (rowBuffer.length === 0) return;
     const replicatedEvents = rowBuffer.filter(isClickHouseReplicatedEvent);
@@ -449,6 +456,7 @@ export async function applyMetricStreamEventsToClickHouse(
         client,
         event.scope,
         "eventId" in event ? event.eventId : undefined,
+        "operationRevision" in event ? event.operationRevision : undefined,
       );
       continue;
     }

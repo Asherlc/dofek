@@ -6,6 +6,7 @@ import { trpc } from "../lib/trpc.ts";
 type McpScope =
   | "health:read"
   | "activity:read"
+  | "nutrition:read"
   | "nutrition:write"
   | "providers:read"
   | "sync:write";
@@ -13,6 +14,7 @@ type McpScope =
 const mcpScopeOptions: Array<{ value: McpScope; label: string }> = [
   { value: "health:read", label: "Health summaries" },
   { value: "activity:read", label: "Activity history" },
+  { value: "nutrition:read", label: "Nutrition summaries" },
   { value: "nutrition:write", label: "Log food" },
   { value: "providers:read", label: "Provider status" },
   { value: "sync:write", label: "Start sync jobs" },

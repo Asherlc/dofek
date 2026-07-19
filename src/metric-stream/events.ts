@@ -1,13 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 
-export const METRIC_STREAM_EVENT_VERSION = 1;
-export const METRIC_STREAM_DELETE_EVENT_VERSION = 2;
+export const METRIC_STREAM_EVENT_VERSION = 2;
+export const METRIC_STREAM_DELETE_EVENT_VERSION = 3;
 export const METRIC_STREAM_DELETED_EVENT_TYPE = "metric_stream_deleted";
 
 const nonEmptyStringSchema = z.string().min(1);
 const optionalNullableTextSchema = nonEmptyStringSchema.nullable().optional();
 const generationSchema = z.number().int().nonnegative().default(0);
+export const metricStreamOperationRevisionSchema = z.string().regex(/^[1-9]\d*$/);
 
 export type JsonValue =
   | null
@@ -61,7 +62,7 @@ export const metricStreamRowInputSchema = z
 
 export const metricStreamEventV1Schema = z
   .object({
-    version: z.literal(METRIC_STREAM_EVENT_VERSION),
+    version: z.literal(1),
     id: z.guid(),
     recordedAt: z.string().datetime({ offset: true }),
     userId: z.guid(),
@@ -76,6 +77,14 @@ export const metricStreamEventV1Schema = z
     vector: z.array(z.number().finite()).min(1).nullable().optional(),
     point: optionalNullableTextSchema,
     metadata: jsonValueSchema.optional(),
+  })
+  .strict();
+
+export const metricStreamEventV2Schema = metricStreamEventV1Schema
+  .omit({ version: true })
+  .extend({
+    version: z.literal(METRIC_STREAM_EVENT_VERSION),
+    operationRevision: metricStreamOperationRevisionSchema,
   })
   .strict();
 
@@ -101,7 +110,7 @@ export const metricStreamDeleteScopeSchema = z
 
 export const metricStreamDeletedEventV1Schema = z
   .object({
-    version: z.literal(METRIC_STREAM_EVENT_VERSION),
+    version: z.literal(1),
     eventType: z.literal(METRIC_STREAM_DELETED_EVENT_TYPE),
     scope: metricStreamDeleteScopeSchema,
     partitionKey: nonEmptyStringSchema,
@@ -110,7 +119,7 @@ export const metricStreamDeletedEventV1Schema = z
 
 export const metricStreamDeletedEventV2Schema = z
   .object({
-    version: z.literal(METRIC_STREAM_DELETE_EVENT_VERSION),
+    version: z.literal(2),
     eventType: z.literal(METRIC_STREAM_DELETED_EVENT_TYPE),
     eventId: z.uuid(),
     scope: metricStreamDeleteScopeSchema,
@@ -118,19 +127,35 @@ export const metricStreamDeletedEventV2Schema = z
   })
   .strict();
 
+export const metricStreamDeletedEventV3Schema = metricStreamDeletedEventV2Schema
+  .omit({ version: true })
+  .extend({
+    version: z.literal(METRIC_STREAM_DELETE_EVENT_VERSION),
+    operationRevision: metricStreamOperationRevisionSchema,
+  })
+  .strict();
+
 export const metricStreamRedpandaEventSchema = z.union([
   metricStreamDeletedEventV1Schema,
   metricStreamDeletedEventV2Schema,
+  metricStreamDeletedEventV3Schema,
   metricStreamEventV1Schema,
+  metricStreamEventV2Schema,
 ]);
 
 export type MetricStreamRowInput = z.input<typeof metricStreamRowInputSchema>;
 export type MetricStreamEventV1 = z.infer<typeof metricStreamEventV1Schema>;
+export type MetricStreamEventV2 = z.infer<typeof metricStreamEventV2Schema>;
+export type MetricStreamRowEvent = MetricStreamEventV1 | MetricStreamEventV2;
 export type MetricStreamDeleteScopeInput = z.input<typeof metricStreamDeleteScopeSchema>;
 export type MetricStreamDeleteScope = z.infer<typeof metricStreamDeleteScopeSchema>;
 export type MetricStreamDeletedEventV1 = z.infer<typeof metricStreamDeletedEventV1Schema>;
 export type MetricStreamDeletedEventV2 = z.infer<typeof metricStreamDeletedEventV2Schema>;
-export type MetricStreamDeletedEvent = MetricStreamDeletedEventV1 | MetricStreamDeletedEventV2;
+export type MetricStreamDeletedEventV3 = z.infer<typeof metricStreamDeletedEventV3Schema>;
+export type MetricStreamDeletedEvent =
+  | MetricStreamDeletedEventV1
+  | MetricStreamDeletedEventV2
+  | MetricStreamDeletedEventV3;
 export type MetricStreamRedpandaEvent = z.infer<typeof metricStreamRedpandaEventSchema>;
 
 function formatUuidFromBytes(bytes: Uint8Array): string {
@@ -175,10 +200,14 @@ function createDeterministicMetricStreamId(
   return formatUuidFromBytes(bytes);
 }
 
-export function createMetricStreamEvent(row: MetricStreamRowInput): MetricStreamEventV1 {
+export function createMetricStreamEvent(
+  row: MetricStreamRowInput,
+  operationRevision: string,
+): MetricStreamEventV2 {
   const parsedRow = metricStreamRowInputSchema.parse(row);
-  return metricStreamEventV1Schema.parse({
+  return metricStreamEventV2Schema.parse({
     version: METRIC_STREAM_EVENT_VERSION,
+    operationRevision,
     id: parsedRow.id ?? createDeterministicMetricStreamId(parsedRow),
     recordedAt: parsedRow.recordedAt,
     userId: parsedRow.userId,
@@ -196,7 +225,10 @@ export function createMetricStreamEvent(row: MetricStreamRowInput): MetricStream
   });
 }
 
-function createDeletePartitionKey(scope: MetricStreamDeleteScope): string {
+export function createMetricStreamDeletePartitionKey(
+  scopeInput: MetricStreamDeleteScopeInput,
+): string {
+  const scope = metricStreamDeleteScopeSchema.parse(scopeInput);
   if (scope.activityId) {
     return `activity:${scope.activityId}`;
   }
@@ -213,14 +245,16 @@ function createDeletePartitionKey(scope: MetricStreamDeleteScope): string {
 
 export function createMetricStreamDeletedEvent(
   scope: MetricStreamDeleteScopeInput,
-): MetricStreamDeletedEventV2 {
+  operationRevision: string,
+): MetricStreamDeletedEventV3 {
   const parsedScope = metricStreamDeleteScopeSchema.parse(scope);
-  return metricStreamDeletedEventV2Schema.parse({
+  return metricStreamDeletedEventV3Schema.parse({
     version: METRIC_STREAM_DELETE_EVENT_VERSION,
     eventType: METRIC_STREAM_DELETED_EVENT_TYPE,
     eventId: randomUUID(),
+    operationRevision,
     scope: parsedScope,
-    partitionKey: createDeletePartitionKey(parsedScope),
+    partitionKey: createMetricStreamDeletePartitionKey(parsedScope),
   });
 }
 

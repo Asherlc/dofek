@@ -19,6 +19,7 @@ const eventId = "20000000-0000-4000-8000-000000000002";
 const oldGenerationId = "30000000-0000-4000-8000-000000000003";
 const activeGenerationId = "40000000-0000-4000-8000-000000000004";
 const reusedGenerationId = "50000000-0000-4000-8000-000000000005";
+const operationRevision = "1000000000000000";
 const generationAggregateRowsSchema = z.array(
   z.object({ generation: z.coerce.number().int().nonnegative() }),
 );
@@ -171,16 +172,19 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
     if (!insert) {
       throw new Error("ClickHouse integration test client does not support inserts");
     }
-    const staleEvent = createMetricStreamEvent({
-      channel: "heart_rate",
-      externalId: "late-event",
-      generation: 0,
-      providerId: "race-provider",
-      recordedAt: "2026-07-18T12:30:00.000Z",
-      scalar: 142,
-      sourceType: "integration-test",
-      userId,
-    });
+    const staleEvent = createMetricStreamEvent(
+      {
+        channel: "heart_rate",
+        externalId: "late-event",
+        generation: 0,
+        providerId: "race-provider",
+        recordedAt: "2026-07-18T12:30:00.000Z",
+        scalar: 142,
+        sourceType: "integration-test",
+        userId,
+      },
+      operationRevision,
+    );
 
     const applied = await applyMetricStreamEventsToClickHouse(
       {

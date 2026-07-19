@@ -128,7 +128,7 @@ type WatchSummary = z.infer<typeof watchSummarySchema>;
 function watchSummaryRecordedAt(summary: WatchSummary, minuteOfDay: number): string {
   const [year, month, day] = summary.date.split("-").map(Number);
   return new Date(
-    Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, 0, minuteOfDay) -
+    Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, 0, minuteOfDay) +
       summary.timezoneOffsetMinutes * 60_000,
   ).toISOString();
 }

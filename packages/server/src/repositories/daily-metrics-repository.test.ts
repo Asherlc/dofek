@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DailyMetricsRepository } from "./daily-metrics-repository.ts";
 
@@ -161,6 +162,19 @@ describe("DailyMetricsRepository", () => {
       const result = await repo.list(30, "2025-03-15");
       expect(result).toEqual([]);
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("listRange", () => {
+    it("returns resting heart rate alongside exact-range daily metrics", async () => {
+      const { repo, execute } = makeRepository([makeDailyMetricsRow({ resting_hr: "52" })]);
+
+      const result = await repo.listRange("2025-03-10", "2025-03-15");
+
+      expect(result[0]?.resting_hr).toBe(52);
+      const compiledQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("WHERE false");
+      expect(compiledQuery.params).toEqual(["user-1", "2025-03-10", "2025-03-15"]);
     });
   });
 

@@ -50,6 +50,7 @@ export default defineConfig({
       "packages/provider-http/src/**/*.test.ts",
       "packages/mobile/**/*.test.{ts,tsx}",
       "packages/zepp/src/**/*.test.ts",
+      "packages/zepp/workout-extension/**/*.test.ts",
     ],
     exclude: ["**/node_modules/**"],
     setupFiles: ["packages/mobile/test-setup.ts"],

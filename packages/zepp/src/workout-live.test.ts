@@ -96,6 +96,22 @@ describe("collectLiveWorkoutSnapshot", () => {
     });
   });
 
+  it("parses short workout durations in minutes and seconds", async () => {
+    const snapshot = await collectLiveWorkoutSnapshot(
+      (options, callback) => {
+        callback({
+          code: 0,
+          data: JSON.stringify([{ [options.type]: options.type === "duration" ? "05:12" : null }]),
+        });
+        return true;
+      },
+      () => 0,
+      1_720_000_312_000,
+    );
+
+    expect(snapshot.metrics.duration).toBe(312);
+  });
+
   it("rejects invalid sport-data response containers", async () => {
     for (const data of ["{}", "[]", "[null]"] as const) {
       const snapshot = await collectLiveWorkoutSnapshot(

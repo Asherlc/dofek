@@ -14,22 +14,36 @@ const metricStreamRow: MetricStreamRowInput = {
   scalar: 72,
 };
 const metricStreamRows: MetricStreamRowInput[] = [metricStreamRow];
+const operationRevision = "1000000000000000";
 
 function makePublisher(): MetricStreamEventPublisher {
   return {
-    publishRows: vi.fn(async (rows: readonly MetricStreamRowInput[]) =>
-      rows.map((row) => createMetricStreamEvent(row)),
+    publishRows: vi.fn(async (rows: readonly MetricStreamRowInput[], options) =>
+      rows.map((row) => createMetricStreamEvent(row, options.operationRevision)),
     ),
   };
 }
 
 describe("writeMetricStreamRows", () => {
+  it("returns without allocating a revision or publishing when there are no rows", async () => {
+    const publisher = makePublisher();
+    const database = { execute: vi.fn() };
+
+    await expect(writeMetricStreamRows({ database, publisher, rows: [] })).resolves.toEqual({
+      events: [],
+      published: 0,
+    });
+    expect(database.execute).not.toHaveBeenCalled();
+    expect(publisher.publishRows).not.toHaveBeenCalled();
+  });
+
   it("publishes rows through the supplied Redpanda publisher", async () => {
     const publisher = makePublisher();
     const database = {
-      execute: vi.fn().mockResolvedValue([
+      execute: vi.fn().mockResolvedValueOnce([
         {
           generation: "4",
+          operation_revision: operationRevision,
           provider_id: "apple_health",
           user_id: metricStreamRow.userId,
         },
@@ -42,9 +56,10 @@ describe("writeMetricStreamRows", () => {
       rows: metricStreamRows,
     });
 
-    expect(publisher.publishRows).toHaveBeenCalledWith([
-      expect.objectContaining({ generation: 4 }),
-    ]);
+    expect(publisher.publishRows).toHaveBeenCalledWith(
+      [expect.objectContaining({ generation: 4 })],
+      { operationRevision },
+    );
     expect(result.published).toBe(1);
     expect(result.events[0]?.channel).toBe("heart_rate");
     expect(result.events[0]?.generation).toBe(4);
@@ -53,9 +68,10 @@ describe("writeMetricStreamRows", () => {
   it("loads the provider generation before publishing", async () => {
     const publisher = makePublisher();
     const database = {
-      execute: vi.fn().mockResolvedValue([
+      execute: vi.fn().mockResolvedValueOnce([
         {
           generation: "0",
+          operation_revision: operationRevision,
           provider_id: "apple_health",
           user_id: metricStreamRow.userId,
         },
@@ -75,14 +91,16 @@ describe("writeMetricStreamRows", () => {
   it("loads all provider generations in one authoritative query", async () => {
     const publisher = makePublisher();
     const database = {
-      execute: vi.fn().mockResolvedValue([
+      execute: vi.fn().mockResolvedValueOnce([
         {
           generation: "4",
+          operation_revision: operationRevision,
           provider_id: "apple_health",
           user_id: metricStreamRow.userId,
         },
         {
           generation: "2",
+          operation_revision: operationRevision,
           provider_id: "garmin",
           user_id: metricStreamRow.userId,
         },
@@ -101,16 +119,26 @@ describe("writeMetricStreamRows", () => {
     });
 
     expect(database.execute).toHaveBeenCalledTimes(1);
-    expect(publisher.publishRows).toHaveBeenCalledWith([
-      expect.objectContaining({ generation: 4, providerId: "apple_health" }),
-      expect.objectContaining({ generation: 2, providerId: "garmin" }),
-    ]);
+    expect(publisher.publishRows).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({ generation: 4, providerId: "apple_health" }),
+        expect.objectContaining({ generation: 2, providerId: "garmin" }),
+      ],
+      { operationRevision },
+    );
   });
 
   it("does not publish when a provider generation is unresolved", async () => {
     const publisher = makePublisher();
     const database = {
-      execute: vi.fn().mockResolvedValue([]),
+      execute: vi.fn().mockResolvedValue([
+        {
+          generation: "0",
+          operation_revision: operationRevision,
+          provider_id: "garmin",
+          user_id: metricStreamRow.userId,
+        },
+      ]),
     };
 
     await expect(

@@ -34,7 +34,11 @@ import {
   widget,
 } from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
-import { readBackgroundHealthBuffer } from "../src/background-health-storage.ts";
+import {
+  readBackgroundHealthBuffer,
+  removeUploadedBackgroundHealthBufferEntries,
+  writeBackgroundHealthBuffer,
+} from "../src/background-health-storage.ts";
 import { collectHealthData } from "../src/health-collector.ts";
 import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
@@ -733,6 +737,17 @@ Page(
               ),
             Promise.resolve<unknown>(undefined),
           )
+          .then(() => {
+            if (backgroundBuffer.samples.length === 0 && backgroundBuffer.activities.length === 0) {
+              return;
+            }
+            writeBackgroundHealthBuffer(
+              removeUploadedBackgroundHealthBufferEntries(
+                readBackgroundHealthBuffer(),
+                backgroundBuffer,
+              ),
+            );
+          })
           .catch((err: unknown) => {
             logger.error("health data upload request failed %j", err);
           });

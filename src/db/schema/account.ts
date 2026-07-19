@@ -1,5 +1,6 @@
 import {
   bigint,
+  foreignKey,
   index,
   jsonb,
   primaryKey,
@@ -160,6 +161,7 @@ export const mcpOauthRefreshToken = fitness.table(
     accessTokenId: uuid("access_token_id")
       .notNull()
       .references(() => mcpAccessToken.id, { onDelete: "cascade" }),
+    parentRefreshTokenId: uuid("parent_refresh_token_id"),
     scopes: text("scopes").array().notNull(),
     resource: text("resource").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -167,11 +169,17 @@ export const mcpOauthRefreshToken = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    foreignKey({
+      columns: [table.parentRefreshTokenId],
+      foreignColumns: [table.id],
+      name: "mcp_oauth_refresh_token_parent_fk",
+    }).onDelete("cascade"),
     index("mcp_oauth_refresh_token_active_idx").on(
       table.clientId,
       table.revokedAt,
       table.expiresAt,
     ),
+    index("mcp_oauth_refresh_token_parent_idx").on(table.parentRefreshTokenId),
   ],
 );
 

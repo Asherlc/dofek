@@ -242,7 +242,7 @@ describe("createIngestZosHealthRouter", () => {
         watchSummary: {
           collectedAt: 1_720_001_200_000,
           date: "2024-07-03",
-          timezoneOffsetMinutes: 120,
+          timezoneOffsetMinutes: -120,
           steps: 4321,
           calories: 345,
           standHours: 8,

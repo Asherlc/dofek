@@ -55,7 +55,7 @@ Input:
 ```json
 {
   "name": "Codex",
-  "scopes": ["health:read", "activity:read", "nutrition:write", "providers:read", "sync:write"],
+  "scopes": ["health:read", "activity:read", "nutrition:read", "nutrition:write", "providers:read", "sync:write"],
   "expiresAt": null
 }
 ```
@@ -70,16 +70,24 @@ List existing token metadata with `mcp.listTokens`. Revoke a token with `mcp.rev
 |-------|--------|
 | `health:read` | Read daily health summaries. |
 | `activity:read` | Search activity summaries. |
+| `nutrition:read` | Read daily nutrition summaries. |
 | `nutrition:write` | Log food entries. |
 | `providers:read` | List configured providers and connection status. |
 | `sync:write` | Enqueue provider sync jobs. |
 
 ## Tools
 
+The canonical tool names, schemas, and scope checks are defined in the [MCP tool implementation](../packages/server/src/mcp/tools.ts).
+
 | Tool | Scope | Purpose |
 |------|-------|---------|
 | `get_daily_health_summary` | `health:read` | Returns server-computed metrics for one date. |
-| `search_activities` | `activity:read` | Searches recent activities. |
+| `get_health_trends` | `health:read` | Returns daily or weekly health metric aggregates for a date range. |
+| `get_sleep_summary` | `health:read` | Returns nightly sleep duration, efficiency, stages, and timing. |
+| `search_activities` | `activity:read` | Searches activities inside exact date boundaries. |
+| `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type or ISO week. |
+| `get_nutrition_summary` | `nutrition:read` | Returns daily calorie, macronutrient, fiber, and meal totals. |
+| `get_body_metrics` | `health:read` | Returns weight and body-composition measurements. |
 | `log_food` | `nutrition:write` | Creates a Dofek food entry from text. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |

@@ -7,23 +7,28 @@ import {
 } from "./metric-stream-writer.ts";
 import { runWithTokenUser } from "./token-user-context.ts";
 
+const operationRevision = "1000000000000000";
+
 const mockPublishRows = vi.fn(async (rows: readonly unknown[]) =>
   rows.map((_, index) => ({
     id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
   })),
 );
-const mockReplaceRows = vi.fn(async (_scope: unknown, rows: readonly unknown[]) => ({
-  deleted: {
-    version: 2,
-    eventType: "metric_stream_deleted",
-    eventId: "30000000-0000-4000-8000-000000000001",
-    scope: _scope,
-    partitionKey: "activity:20000000-0000-4000-8000-000000000001",
-  },
-  rows: rows.map((_, index) => ({
-    id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-  })),
-}));
+const mockReplaceRows = vi.fn(
+  async (_scope: unknown, rows: readonly unknown[], revision: string) => ({
+    deleted: {
+      version: 3,
+      eventType: "metric_stream_deleted",
+      eventId: "30000000-0000-4000-8000-000000000001",
+      operationRevision: revision,
+      scope: _scope,
+      partitionKey: "activity:20000000-0000-4000-8000-000000000001",
+    },
+    rows: rows.map((_, index) => ({
+      id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    })),
+  }),
+);
 
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: vi.fn(async () => ({
@@ -240,9 +245,10 @@ describe("sourceRowToMetricStream", () => {
 describe("writeMetricStreamBatch", () => {
   it("publishes fanned-out provider rows to Redpanda without inserting into Postgres", async () => {
     const db = {
-      execute: vi.fn().mockResolvedValue([
+      execute: vi.fn().mockResolvedValueOnce([
         {
           generation: 0,
+          operation_revision: operationRevision,
           provider_id: "withings",
           user_id: "00000000-0000-4000-8000-000000000001",
         },
@@ -268,22 +274,25 @@ describe("writeMetricStreamBatch", () => {
 
     expect(count).toBe(2);
     expect(db.insert).not.toHaveBeenCalled();
-    expect(mockPublishRows).toHaveBeenCalledWith([
-      expect.objectContaining({
-        userId: "00000000-0000-4000-8000-000000000001",
-        providerId: "withings",
-        externalId: "withings-measure-1",
-        channel: "body_weight",
-        scalar: 72.5,
-      }),
-      expect.objectContaining({
-        userId: "00000000-0000-4000-8000-000000000001",
-        providerId: "withings",
-        externalId: "withings-measure-1",
-        channel: "body_fat_percentage",
-        scalar: 18.4,
-      }),
-    ]);
+    expect(mockPublishRows).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          userId: "00000000-0000-4000-8000-000000000001",
+          providerId: "withings",
+          externalId: "withings-measure-1",
+          channel: "body_weight",
+          scalar: 72.5,
+        }),
+        expect.objectContaining({
+          userId: "00000000-0000-4000-8000-000000000001",
+          providerId: "withings",
+          externalId: "withings-measure-1",
+          channel: "body_fat_percentage",
+          scalar: 18.4,
+        }),
+      ],
+      { operationRevision },
+    );
   });
 
   it("fails fast when neither the row nor token context provides a user ID", async () => {
@@ -324,9 +333,10 @@ describe("writeMetricStreamBatch", () => {
 describe("replaceMetricStreamBatch", () => {
   it("publishes a scoped Redpanda replacement instead of deleting directly from Postgres", async () => {
     const db = {
-      execute: vi.fn().mockResolvedValue([
+      execute: vi.fn().mockResolvedValueOnce([
         {
           generation: 0,
+          operation_revision: operationRevision,
           provider_id: "wahoo",
           user_id: "00000000-0000-4000-8000-000000000001",
         },
@@ -370,6 +380,7 @@ describe("replaceMetricStreamBatch", () => {
           scalar: 142,
         }),
       ],
+      operationRevision,
     );
   });
 
@@ -401,9 +412,10 @@ describe("replaceMetricStreamBatch", () => {
 describe("writeMetricStreamBatchForScope", () => {
   it("publishes rows with the delete scope partition key", async () => {
     const db = {
-      execute: vi.fn().mockResolvedValue([
+      execute: vi.fn().mockResolvedValueOnce([
         {
           generation: 0,
+          operation_revision: operationRevision,
           provider_id: "apple_health",
           user_id: "00000000-0000-4000-8000-000000000001",
         },
@@ -439,7 +451,11 @@ describe("writeMetricStreamBatchForScope", () => {
           scalar: 142,
         }),
       ],
-      "provider:00000000-0000-4000-8000-000000000001:apple_health:*:*:2026-03-30T00:00:00.000Z:*",
+      {
+        operationRevision,
+        partitionKey:
+          "provider:00000000-0000-4000-8000-000000000001:apple_health:*:*:2026-03-30T00:00:00.000Z:*",
+      },
     );
   });
 });

@@ -9,6 +9,7 @@ import { METRIC_STREAM_TABLE } from "./clickhouse-table.ts";
 import {
   createMetricStreamDeletedEvent,
   type MetricStreamDeletedEventV1,
+  type MetricStreamDeleteScopeInput,
   type MetricStreamEventV1,
 } from "./events.ts";
 import type { RunMetricStreamEventConsumerOptions } from "./redpanda-consumer.ts";
@@ -36,6 +37,12 @@ const imuEvent = {
   id: "10000000-0000-4000-8000-000000000002",
   channel: "imu",
 } satisfies MetricStreamEventV1;
+
+const operationRevision = "1000000000000000";
+
+function createCurrentMetricStreamDeletedEvent(scope: MetricStreamDeleteScopeInput) {
+  return createMetricStreamDeletedEvent(scope, operationRevision);
+}
 
 function firstCommandQuery(command: ReturnType<typeof vi.fn>): string {
   const call = command.mock.calls[0]?.[0];
@@ -239,7 +246,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it("skips an acknowledged v2 delete during consumer redelivery", async () => {
+  it("skips an acknowledged current delete during consumer redelivery", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
     const query = vi.fn(
@@ -249,7 +256,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         format: "JSONEachRow";
       }) => ({ json: async () => [{ acknowledgement_count: 1 }] }),
     );
-    const deleteEvent = createMetricStreamDeletedEvent({
+    const deleteEvent = createCurrentMetricStreamDeletedEvent({
       userId: heartRateEvent.userId,
       providerId: "garmin-dump",
     });
@@ -271,11 +278,11 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it("applies a v2 delete when no acknowledgement exists", async () => {
+  it("applies a current delete when no acknowledgement exists", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
     const query = vi.fn(async () => ({ json: async () => [] }));
-    const deleteEvent = createMetricStreamDeletedEvent({
+    const deleteEvent = createCurrentMetricStreamDeletedEvent({
       activityId: "20000000-0000-4000-8000-000000000001",
     });
 
@@ -289,7 +296,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
     const query = makeEmptyGenerationQuery();
-    const deleteEvent = createMetricStreamDeletedEvent({
+    const deleteEvent = createCurrentMetricStreamDeletedEvent({
       activityId: "20000000-0000-4000-8000-000000000001",
     });
 
@@ -303,6 +310,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
         activity_id: "20000000-0000-4000-8000-000000000001",
+        replacement_version: "2000000000000000",
       },
     });
     expect(String(firstCommandQuery(command))).toContain("1 AS is_deleted");
@@ -334,7 +342,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
     const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
       heartRateEvent,
-      createMetricStreamDeletedEvent({
+      createCurrentMetricStreamDeletedEvent({
         activityId: "20000000-0000-4000-8000-000000000001",
       }),
       secondHeartRateEvent,
@@ -362,7 +370,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     const insert = vi.fn(async () => undefined);
 
     await applyMetricStreamEventsToClickHouse({ command, insert }, [
-      createMetricStreamDeletedEvent({
+      createCurrentMetricStreamDeletedEvent({
         userId: "10000000-0000-4000-8000-000000000001",
         providerId: "fitbit",
         externalId: null,
@@ -383,6 +391,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         activity_id: "20000000-0000-4000-8000-000000000001",
         recorded_at_start: "2026-03-01T00:00:00.000Z",
         recorded_at_end: "2026-03-02T00:00:00.000Z",
+        replacement_version: "2000000000000000",
       },
     });
     const query = firstCommandQuery(command);
@@ -412,7 +421,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     const command = vi.fn(async () => undefined);
 
     await applyMetricStreamEventsToClickHouse({ command, insert: vi.fn(async () => undefined) }, [
-      createMetricStreamDeletedEvent({
+      createCurrentMetricStreamDeletedEvent({
         providerId: "fitbit",
         externalId: "measurement-1",
       }),
@@ -423,6 +432,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       query_params: {
         provider_id: "fitbit",
         external_id: "measurement-1",
+        replacement_version: "2000000000000000",
       },
     });
     expect(firstCommandQuery(command)).toContain("latest_row.6 = {external_id:String}");
@@ -440,7 +450,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
   it("requires a command-capable client before applying replacement deletes", async () => {
     await expect(
       applyMetricStreamEventsToClickHouse({ insert: vi.fn(async () => undefined) }, [
-        createMetricStreamDeletedEvent({
+        createCurrentMetricStreamDeletedEvent({
           activityId: "20000000-0000-4000-8000-000000000001",
         }),
       ]),

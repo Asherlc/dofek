@@ -1,15 +1,59 @@
 import { readFileSync, writeFileSync } from "@zos/fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { BackgroundHealthBuffer } from "./background-health.ts";
 import {
   parseBackgroundHealthBuffer,
   readBackgroundHealthBuffer,
+  removeUploadedBackgroundHealthBufferEntries,
   writeBackgroundHealthBuffer,
 } from "./background-health-storage.ts";
+import type { HealthActivity } from "./health-collector.ts";
 
 vi.mock("@zos/fs", () => ({ readFileSync: vi.fn(), writeFileSync: vi.fn() }));
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("removeUploadedBackgroundHealthBufferEntries", () => {
+  it("removes confirmed uploads while preserving records collected or updated during upload", () => {
+    const uploadedSample = { recordedAt: "2024-07-03T10:48:20.000Z", heartRate: 72 };
+    const uploadedActivity: HealthActivity = {
+      externalId: "1720000000",
+      activityType: "other",
+      startedAt: "2024-07-03T09:46:40.000Z",
+      endedAt: "2024-07-03T10:46:40.000Z",
+    };
+    const current: BackgroundHealthBuffer = {
+      samples: [uploadedSample, { recordedAt: "2024-07-03T10:49:20.000Z", heartRate: 74 }],
+      activities: [
+        { ...uploadedActivity, endedAt: "2024-07-03T10:47:40.000Z" },
+        {
+          externalId: "1720003600",
+          activityType: "other",
+          startedAt: "2024-07-03T10:46:40.000Z",
+          endedAt: "2024-07-03T11:46:40.000Z",
+        },
+      ],
+    };
+
+    expect(
+      removeUploadedBackgroundHealthBufferEntries(current, {
+        samples: [uploadedSample],
+        activities: [uploadedActivity],
+      }),
+    ).toEqual({
+      samples: [{ recordedAt: "2024-07-03T10:49:20.000Z", heartRate: 74 }],
+      activities: current.activities,
+    });
+
+    expect(
+      removeUploadedBackgroundHealthBufferEntries(
+        { samples: [uploadedSample], activities: [uploadedActivity] },
+        { samples: [uploadedSample], activities: [uploadedActivity] },
+      ),
+    ).toEqual({ samples: [], activities: [] });
+  });
 });
 
 describe("parseBackgroundHealthBuffer", () => {

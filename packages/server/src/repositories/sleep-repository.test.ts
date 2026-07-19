@@ -91,6 +91,17 @@ describe("SleepRepository", () => {
       expect(execute).not.toHaveBeenCalled();
       expect(sensorStore.query).toHaveBeenCalledOnce();
     });
+
+    it("converts an exact inclusive range to the ClickHouse day window", async () => {
+      const { repo, sensorStore } = makeRepository();
+
+      await repo.listRange("2026-03-20", "2026-03-28");
+
+      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
+        days: 8,
+        endDate: "2026-03-28",
+      });
+    });
   });
 
   describe("getStages", () => {

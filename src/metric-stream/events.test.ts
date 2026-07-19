@@ -2,8 +2,20 @@ import { describe, expect, it } from "vitest";
 import {
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
+  type MetricStreamDeleteScopeInput,
+  type MetricStreamRowInput,
   metricStreamRedpandaEventSchema,
 } from "./events.ts";
+
+const operationRevision = "1000000000000000";
+
+function createCurrentMetricStreamEvent(row: MetricStreamRowInput) {
+  return createMetricStreamEvent(row, operationRevision);
+}
+
+function createCurrentMetricStreamDeletedEvent(scope: MetricStreamDeleteScopeInput) {
+  return createMetricStreamDeletedEvent(scope, operationRevision);
+}
 
 const baseMetricStreamRow = {
   recordedAt: "2026-06-06T19:00:00.000Z",
@@ -15,11 +27,11 @@ const baseMetricStreamRow = {
 
 describe("createMetricStreamEvent", () => {
   it("derives a stable id from the metric stream natural key when no id is supplied", () => {
-    const firstEvent = createMetricStreamEvent({
+    const firstEvent = createCurrentMetricStreamEvent({
       ...baseMetricStreamRow,
       externalId: "hk:heart-rate-1",
     });
-    const secondEvent = createMetricStreamEvent({
+    const secondEvent = createCurrentMetricStreamEvent({
       ...baseMetricStreamRow,
       recordedAt: "2026-06-06T12:00:00-07:00",
       externalId: "hk:heart-rate-1",
@@ -31,12 +43,12 @@ describe("createMetricStreamEvent", () => {
   });
 
   it("fences reimported provider data with a new generation", () => {
-    const firstGeneration = createMetricStreamEvent({
+    const firstGeneration = createCurrentMetricStreamEvent({
       ...baseMetricStreamRow,
       externalId: "hk:heart-rate-1",
       generation: 1,
     });
-    const nextGeneration = createMetricStreamEvent({
+    const nextGeneration = createCurrentMetricStreamEvent({
       ...baseMetricStreamRow,
       externalId: "hk:heart-rate-1",
       generation: 2,
@@ -48,7 +60,7 @@ describe("createMetricStreamEvent", () => {
   });
 
   it("preserves a caller-supplied id", () => {
-    const event = createMetricStreamEvent({
+    const event = createCurrentMetricStreamEvent({
       ...baseMetricStreamRow,
       id: "10000000-0000-4000-8000-000000000001",
     });
@@ -58,7 +70,7 @@ describe("createMetricStreamEvent", () => {
 
   it("rejects invalid recordedAt timestamps", () => {
     expect(() =>
-      createMetricStreamEvent({
+      createCurrentMetricStreamEvent({
         ...baseMetricStreamRow,
         externalId: "hk:heart-rate-1",
         recordedAt: "not-a-date",
@@ -67,7 +79,7 @@ describe("createMetricStreamEvent", () => {
   });
 
   it("preserves optional metric stream fields when they are present", () => {
-    const event = createMetricStreamEvent({
+    const event = createCurrentMetricStreamEvent({
       ...baseMetricStreamRow,
       externalId: "hk:heart-rate-1",
       deviceId: "Apple Watch",
@@ -86,7 +98,7 @@ describe("createMetricStreamEvent", () => {
   });
 
   it("requires externalId when no explicit id is supplied", () => {
-    expect(() => createMetricStreamEvent(baseMetricStreamRow)).toThrow(
+    expect(() => createCurrentMetricStreamEvent(baseMetricStreamRow)).toThrow(
       "Metric stream rows without id must include externalId",
     );
   });
@@ -94,16 +106,17 @@ describe("createMetricStreamEvent", () => {
 
 describe("createMetricStreamDeletedEvent", () => {
   it("creates a scoped delete event with a stable partition key", () => {
-    const event = createMetricStreamDeletedEvent({
+    const event = createCurrentMetricStreamDeletedEvent({
       activityId: "20000000-0000-4000-8000-000000000001",
     });
 
     expect(event).toEqual({
-      version: 2,
+      version: 3,
       eventType: "metric_stream_deleted",
       eventId: expect.stringMatching(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
       ),
+      operationRevision,
       scope: {
         activityId: "20000000-0000-4000-8000-000000000001",
       },
@@ -112,7 +125,7 @@ describe("createMetricStreamDeletedEvent", () => {
   });
 
   it("creates provider-scoped partition keys from every optional predicate", () => {
-    const event = createMetricStreamDeletedEvent({
+    const event = createCurrentMetricStreamDeletedEvent({
       userId: "10000000-0000-4000-8000-000000000001",
       providerId: "fitbit",
       externalId: null,
@@ -135,7 +148,7 @@ describe("createMetricStreamDeletedEvent", () => {
   });
 
   it("rejects empty delete scopes", () => {
-    expect(() => createMetricStreamDeletedEvent({})).toThrow(
+    expect(() => createCurrentMetricStreamDeletedEvent({})).toThrow(
       "Metric stream delete scope must include activityId or providerId",
     );
   });

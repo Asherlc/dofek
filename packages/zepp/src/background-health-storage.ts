@@ -82,3 +82,39 @@ export function readBackgroundHealthBuffer(): BackgroundHealthBuffer {
 export function writeBackgroundHealthBuffer(buffer: BackgroundHealthBuffer): void {
   writeFileSync({ path: BACKGROUND_HEALTH_FILE, data: JSON.stringify(buffer) });
 }
+
+function samplesMatch(left: BackgroundHealthSample, right: BackgroundHealthSample): boolean {
+  return (
+    left.recordedAt === right.recordedAt &&
+    left.heartRate === right.heartRate &&
+    left.bloodOxygenPercent === right.bloodOxygenPercent &&
+    left.bodyTemperatureCelsius === right.bodyTemperatureCelsius &&
+    left.stress === right.stress
+  );
+}
+
+function activitiesMatch(left: HealthActivity, right: HealthActivity): boolean {
+  return (
+    left.externalId === right.externalId &&
+    left.activityType === right.activityType &&
+    left.startedAt === right.startedAt &&
+    left.endedAt === right.endedAt
+  );
+}
+
+export function removeUploadedBackgroundHealthBufferEntries(
+  current: BackgroundHealthBuffer,
+  uploaded: BackgroundHealthBuffer,
+): BackgroundHealthBuffer {
+  return {
+    samples: current.samples.filter(
+      (sample) => !uploaded.samples.some((uploadedSample) => samplesMatch(sample, uploadedSample)),
+    ),
+    activities: current.activities.filter(
+      (activity) =>
+        !uploaded.activities.some((uploadedActivity) =>
+          activitiesMatch(activity, uploadedActivity),
+        ),
+    ),
+  };
+}

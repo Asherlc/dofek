@@ -75,6 +75,11 @@ const dailyTotalsRowSchema = z.object({
   fiber_g: z.coerce.number().nullable(),
 });
 
+const dailyNutritionSummaryRowSchema = dailyTotalsRowSchema.extend({
+  meal_count: z.coerce.number(),
+  source_providers: z.array(z.string()),
+});
+
 const foodSearchRowSchema = z.object({
   food_name: z.string(),
   food_description: z.string().nullable(),
@@ -105,6 +110,7 @@ const idRowSchema = z.object({ id: z.string() });
 
 export type FoodEntryRow = z.infer<typeof foodEntryRowSchema>;
 export type DailyTotalsRow = z.infer<typeof dailyTotalsRowSchema>;
+export type DailyNutritionSummaryRow = z.infer<typeof dailyNutritionSummaryRowSchema>;
 export type FoodSearchRow = z.infer<typeof foodSearchRowSchema>;
 export type HealthKitWriteBackFoodEntryRow = z.infer<typeof healthKitWriteBackFoodEntryRowSchema>;
 
@@ -171,6 +177,46 @@ export class DailyTotals {
 
   toDetail(): DailyTotalsRow {
     return { ...this.#row };
+  }
+}
+
+export class DailyNutritionSummary {
+  readonly #row: DailyNutritionSummaryRow;
+
+  constructor(row: DailyNutritionSummaryRow) {
+    this.#row = row;
+  }
+
+  get date(): string {
+    return this.#row.date;
+  }
+
+  get calories(): number | null {
+    return this.#row.calories;
+  }
+
+  get proteinGrams(): number | null {
+    return this.#row.protein_g;
+  }
+
+  get carbsGrams(): number | null {
+    return this.#row.carbs_g;
+  }
+
+  get fatGrams(): number | null {
+    return this.#row.fat_g;
+  }
+
+  get fiberGrams(): number | null {
+    return this.#row.fiber_g;
+  }
+
+  get mealCount(): number {
+    return this.#row.meal_count;
+  }
+
+  get sourceProviders(): string[] {
+    return this.#row.source_providers;
   }
 }
 
@@ -433,6 +479,31 @@ export class FoodRepository {
           ORDER BY date ASC`,
     );
     return rows.map((row) => new DailyTotals(row));
+  }
+
+  /** Daily nutrition totals inside an exact inclusive date range. */
+  async dailyTotalsRange(startDate: string, endDate: string): Promise<DailyNutritionSummary[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      dailyNutritionSummaryRowSchema,
+      sql`SELECT
+            date,
+            SUM(calories) AS calories,
+            SUM(protein_g)::numeric(10,1) AS protein_g,
+            SUM(carbs_g)::numeric(10,1) AS carbs_g,
+            SUM(fat_g)::numeric(10,1) AS fat_g,
+            SUM(fiber_g)::numeric(10,1) AS fiber_g,
+            COUNT(*)::int AS meal_count,
+            ARRAY_AGG(DISTINCT provider_id ORDER BY provider_id) AS source_providers
+          FROM fitness.v_food_entry_with_nutrition
+          WHERE user_id = ${this.#userId}
+            AND confirmed = true
+            AND date >= ${startDate}::date
+            AND date <= ${endDate}::date
+          GROUP BY date
+          ORDER BY date ASC`,
+    );
+    return rows.map((row) => new DailyNutritionSummary(row));
   }
 
   /** Search food entries by name for quick re-logging. */

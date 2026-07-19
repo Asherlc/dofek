@@ -45,12 +45,13 @@ describe("provider data deletion persistence (integration)", () => {
         { providerId: "garmin", userId: firstUserId },
         { providerId: "coros", userId: secondUserId },
       ]),
-    ).resolves.toEqual(
-      expect.arrayContaining([
+    ).resolves.toEqual({
+      generations: expect.arrayContaining([
         { generation: 4, providerId: "garmin", userId: firstUserId },
         { generation: 0, providerId: "coros", userId: secondUserId },
       ]),
-    );
+      operationRevision: expect.stringMatching(/^[1-9]\d*$/),
+    });
   });
 
   it("loads deletion status only for the owning user and provider", async () => {
