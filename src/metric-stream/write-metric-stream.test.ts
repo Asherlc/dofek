@@ -25,6 +25,18 @@ function makePublisher(): MetricStreamEventPublisher {
 }
 
 describe("writeMetricStreamRows", () => {
+  it("returns without allocating a revision or publishing when there are no rows", async () => {
+    const publisher = makePublisher();
+    const database = { execute: vi.fn() };
+
+    await expect(writeMetricStreamRows({ database, publisher, rows: [] })).resolves.toEqual({
+      events: [],
+      published: 0,
+    });
+    expect(database.execute).not.toHaveBeenCalled();
+    expect(publisher.publishRows).not.toHaveBeenCalled();
+  });
+
   it("publishes rows through the supplied Redpanda publisher", async () => {
     const publisher = makePublisher();
     const database = {

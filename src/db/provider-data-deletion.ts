@@ -1,10 +1,11 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { metricStreamOperationRevisionSchema } from "../metric-stream/events.ts";
 import { type Database, executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
 const providerDataGenerationRowSchema = z.object({
   generation: z.coerce.number().int().nonnegative(),
-  operation_revision: z.string().regex(/^[1-9]\d*$/),
+  operation_revision: metricStreamOperationRevisionSchema,
   provider_id: z.string().min(1),
   user_id: z.guid(),
 });
@@ -63,7 +64,7 @@ export async function getProviderDataGenerations(
   if (scopes.length === 0) {
     const rows = await executeWithSchema(
       database,
-      z.object({ operation_revision: z.string().regex(/^[1-9]\d*$/) }),
+      z.object({ operation_revision: metricStreamOperationRevisionSchema }),
       sql`SELECT nextval('fitness.metric_ingest_operation_revision_seq')::text AS operation_revision`,
     );
     const row = rows[0];

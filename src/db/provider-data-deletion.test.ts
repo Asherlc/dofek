@@ -46,6 +46,22 @@ describe("provider data deletion persistence", () => {
     expect(execute).toHaveBeenCalledOnce();
   });
 
+  it("fails when an empty replacement batch cannot allocate a revision", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+
+    await expect(getProviderDataGenerations({ execute }, [])).rejects.toThrow(
+      "Metric stream operation revision was not allocated",
+    );
+  });
+
+  it("fails when requested provider scopes return no generation rows", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+
+    await expect(
+      getProviderDataGenerations({ execute }, [{ providerId: "garmin", userId }]),
+    ).rejects.toThrow("Metric stream operation revision was not allocated");
+  });
+
   it("rejects malformed provider generation rows", async () => {
     const execute = vi.fn().mockResolvedValue([{}]);
 
