@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { OperationProgressBar } from "./OperationProgressBar.tsx";
+import { OperationProgressBar, OperationProgressBars } from "./OperationProgressBar.tsx";
 
 afterEach(cleanup);
 
@@ -28,5 +28,20 @@ describe("OperationProgressBar", () => {
 
     rerender(<OperationProgressBar percentage={150} />);
     expect(screen.getByTestId("operation-progress-fill").getAttribute("style")).toContain("100%");
+  });
+
+  it("renders simultaneous operations as independent progress bars", () => {
+    render(
+      <OperationProgressBars
+        operations={[
+          { id: "sync", label: "Provider sync", percentage: 64, message: "Syncing activities" },
+          { id: "delete", label: "Provider data deletion", message: "Deleting records" },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByRole("progressbar")).toHaveLength(2);
+    expect(screen.getByText("Provider sync")).not.toBeNull();
+    expect(screen.getByText("Provider data deletion")).not.toBeNull();
   });
 });

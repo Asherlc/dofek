@@ -1,12 +1,21 @@
 import { statusColors } from "@dofek/scoring/colors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { OperationProgressBar } from "../../components/OperationProgressBar";
+import {
+  OperationProgressBars,
+  type OperationProgressItem,
+} from "../../components/OperationProgressBar";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 
-export function ProviderDataDeleteControl({ providerId }: { providerId: string }) {
+export function ProviderDataDeleteControl({
+  additionalOperations = [],
+  providerId,
+}: {
+  additionalOperations?: readonly OperationProgressItem[];
+  providerId: string;
+}) {
   const trpcUtils = trpc.useUtils();
   const deleteAllDataMutation = trpc.providerDetail.deleteAllData.useMutation();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -85,6 +94,18 @@ export function ProviderDataDeleteControl({ providerId }: { providerId: string }
     }
   };
 
+  const progressOperations: readonly OperationProgressItem[] = operationId
+    ? [
+        ...additionalOperations,
+        {
+          id: `provider-data-deletion-${operationId}`,
+          label: "Provider data deletion",
+          percentage: deletionStatus.data?.percentage,
+          message: deletionStatus.data?.message ?? "Preparing provider data deletion...",
+        },
+      ]
+    : additionalOperations;
+
   return (
     <>
       <TouchableOpacity
@@ -101,10 +122,7 @@ export function ProviderDataDeleteControl({ providerId }: { providerId: string }
               {operationId ? "Deleting Provider Data..." : "Delete All Provider Data?"}
             </Text>
             {operationId ? (
-              <OperationProgressBar
-                percentage={deletionStatus.data?.percentage}
-                message={deletionStatus.data?.message ?? "Preparing provider data deletion..."}
-              />
+              <OperationProgressBars operations={progressOperations} />
             ) : (
               <>
                 <Text style={styles.description}>

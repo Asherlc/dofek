@@ -59,4 +59,25 @@ describe("ProviderDataDeleteControl", () => {
       confirmation: "DELETE",
     });
   });
+
+  it("keeps concurrent sync and deletion progress visible", async () => {
+    render(
+      <ProviderDataDeleteControl
+        providerId="strava"
+        additionalOperations={[
+          { id: "sync", label: "Provider sync", percentage: 35, message: "Syncing workouts" },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete all data" }));
+    fireEvent.change(screen.getByLabelText('Type "DELETE" to confirm'), {
+      target: { value: "DELETE" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Permanently delete data" }));
+
+    await waitFor(() => expect(screen.getAllByRole("progressbar")).toHaveLength(2));
+    expect(screen.getByText("Provider sync")).not.toBeNull();
+    expect(screen.getByText("Provider data deletion")).not.toBeNull();
+  });
 });

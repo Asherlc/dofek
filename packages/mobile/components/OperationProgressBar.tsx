@@ -7,6 +7,11 @@ export interface OperationProgressBarProps {
   percentage?: number;
 }
 
+export interface OperationProgressItem extends OperationProgressBarProps {
+  id: string;
+  label: string;
+}
+
 function clampPercentage(percentage: number): number {
   return Math.max(0, Math.min(100, percentage));
 }
@@ -45,7 +50,35 @@ export function OperationProgressBar({
   );
 }
 
+export function OperationProgressBars({
+  operations,
+}: {
+  operations: readonly OperationProgressItem[];
+}) {
+  return (
+    <View style={styles.operations}>
+      {operations.map((operation) => (
+        <View key={operation.id} style={styles.operation}>
+          <Text style={styles.label}>{operation.label}</Text>
+          <OperationProgressBar message={operation.message} percentage={operation.percentage} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  operations: {
+    gap: 12,
+  },
+  operation: {
+    gap: 4,
+  },
+  label: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
   container: {
     gap: 4,
   },

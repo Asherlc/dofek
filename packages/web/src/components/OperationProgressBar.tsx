@@ -3,6 +3,11 @@ export interface OperationProgressBarProps {
   percentage?: number;
 }
 
+export interface OperationProgressItem extends OperationProgressBarProps {
+  id: string;
+  label: string;
+}
+
 function clampPercentage(percentage: number): number {
   return Math.max(0, Math.min(100, percentage));
 }
@@ -29,6 +34,23 @@ export function OperationProgressBar({ message, percentage }: OperationProgressB
         />
       </div>
       {message && <span className="block text-xs text-subtle">{message}</span>}
+    </div>
+  );
+}
+
+export function OperationProgressBars({
+  operations,
+}: {
+  operations: readonly OperationProgressItem[];
+}) {
+  return (
+    <div className="space-y-3">
+      {operations.map((operation) => (
+        <div className="space-y-1" key={operation.id}>
+          <span className="block text-xs font-medium text-foreground">{operation.label}</span>
+          <OperationProgressBar message={operation.message} percentage={operation.percentage} />
+        </div>
+      ))}
     </div>
   );
 }

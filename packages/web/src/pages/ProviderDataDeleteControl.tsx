@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { OperationProgressBar } from "../components/OperationProgressBar.tsx";
+import {
+  OperationProgressBars,
+  type OperationProgressItem,
+} from "../components/OperationProgressBar.tsx";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
-export function ProviderDataDeleteControl({ providerId }: { providerId: string }) {
+export function ProviderDataDeleteControl({
+  additionalOperations = [],
+  providerId,
+}: {
+  additionalOperations?: readonly OperationProgressItem[];
+  providerId: string;
+}) {
   const trpcUtils = trpc.useUtils();
   const deleteAllDataMutation = trpc.providerDetail.deleteAllData.useMutation();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -80,6 +89,18 @@ export function ProviderDataDeleteControl({ providerId }: { providerId: string }
     }
   };
 
+  const progressOperations: readonly OperationProgressItem[] = operationId
+    ? [
+        ...additionalOperations,
+        {
+          id: `provider-data-deletion-${operationId}`,
+          label: "Provider data deletion",
+          percentage: deletionStatus.data?.percentage,
+          message: deletionStatus.data?.message ?? "Preparing provider data deletion...",
+        },
+      ]
+    : additionalOperations;
+
   return (
     <section className="card border border-red-500/30 p-4 space-y-3">
       <div>
@@ -128,10 +149,7 @@ export function ProviderDataDeleteControl({ providerId }: { providerId: string }
               )}
             </div>
             {operationId ? (
-              <OperationProgressBar
-                percentage={deletionStatus.data?.percentage}
-                message={deletionStatus.data?.message ?? "Preparing provider data deletion..."}
-              />
+              <OperationProgressBars operations={progressOperations} />
             ) : (
               <div>
                 <label

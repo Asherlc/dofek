@@ -1,4 +1,5 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { colors } from "../../theme";
 
 export function ProviderDetailActionsCard({
@@ -44,14 +45,10 @@ export function ProviderDetailActionsCard({
         )}
       </View>
       {isSyncing && (
-        <View style={styles.syncProgressContainer}>
-          {syncProgress != null && (
-            <View style={styles.syncProgressTrack}>
-              <View style={[styles.syncProgressFill, { width: `${syncProgress}%` }]} />
-            </View>
-          )}
-          {syncMessage != null && <Text style={styles.syncMessageText}>{syncMessage}</Text>}
-        </View>
+        <OperationProgressBar
+          percentage={syncProgress ?? undefined}
+          message={syncMessage ?? undefined}
+        />
       )}
       {!isSyncing && syncMessage != null && (
         <Text style={styles.syncMessageText}>{syncMessage}</Text>
@@ -109,20 +106,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.text,
-  },
-  syncProgressContainer: {
-    gap: 4,
-  },
-  syncProgressTrack: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.surfaceSecondary,
-    overflow: "hidden",
-  },
-  syncProgressFill: {
-    height: "100%",
-    borderRadius: 2,
-    backgroundColor: colors.accent,
   },
   syncMessageText: {
     fontSize: 12,

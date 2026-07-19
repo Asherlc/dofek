@@ -876,7 +876,21 @@ export default function ProviderDetailScreen() {
       />
 
       {/* Disconnect */}
-      <ProviderDataDeleteControl providerId={providerId} />
+      <ProviderDataDeleteControl
+        providerId={providerId}
+        additionalOperations={
+          isSyncing
+            ? [
+                {
+                  id: "provider-sync",
+                  label: "Provider sync",
+                  percentage: syncProgress ?? undefined,
+                  message: syncMessage ?? "Syncing provider data...",
+                },
+              ]
+            : []
+        }
+      />
       {provider?.authorized && (
         <TouchableOpacity
           style={styles.disconnectButton}

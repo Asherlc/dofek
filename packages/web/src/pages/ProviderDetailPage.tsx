@@ -11,6 +11,7 @@ import { z } from "zod";
 import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { FileImportProviderCard } from "../components/FileImportProviderCard.tsx";
 import { getFileImportConfig } from "../components/file-import-configs.ts";
+import { OperationProgressBar } from "../components/OperationProgressBar.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
@@ -85,6 +86,7 @@ export function ProviderDetailPage() {
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncPercentage, setSyncPercentage] = useState<number | undefined>(undefined);
 
   // Date range sync
   const [sinceDays, setSinceDays] = useState("30");
@@ -99,6 +101,7 @@ export function ProviderDetailPage() {
     async (input: { sinceDays?: number; sinceDate?: string; untilDate?: string }) => {
       setSyncStatus("syncing");
       setSyncMessage(null);
+      setSyncPercentage(undefined);
       try {
         const result = await syncMutation.mutateAsync({
           providerId,
@@ -127,11 +130,15 @@ export function ProviderDetailPage() {
           providerIds: [providerId],
           fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
           updateState: (_id, state) => {
+            setSyncPercentage(state.percentage);
+            if (state.message) setSyncMessage(state.message);
             if (state.status === "done") {
               setSyncStatus("done");
+              setSyncPercentage(undefined);
               setSyncMessage("Sync complete");
             } else if (state.status === "error") {
               setSyncStatus("error");
+              setSyncPercentage(undefined);
               setSyncMessage(state.message ?? "Sync failed");
             }
           },
@@ -144,6 +151,7 @@ export function ProviderDetailPage() {
         });
       } catch (err: unknown) {
         setSyncStatus("error");
+        setSyncPercentage(undefined);
         setSyncMessage(err instanceof Error ? err.message : "Sync failed");
       }
     },
@@ -406,11 +414,16 @@ export function ProviderDetailPage() {
               />
             </div>
           </div>
-          {syncMessage && (
+          {syncStatus === "syncing" ? (
+            <OperationProgressBar
+              percentage={syncPercentage}
+              message={syncMessage ?? "Syncing provider data..."}
+            />
+          ) : syncMessage ? (
             <div className={`text-xs ${syncStatus === "error" ? "text-red-400" : "text-accent"}`}>
               {syncMessage}
             </div>
-          )}
+          ) : null}
         </section>
       )}
 
@@ -431,7 +444,21 @@ export function ProviderDetailPage() {
         statsLoading={stats.isLoading}
       />
 
-      <ProviderDataDeleteControl providerId={providerId} />
+      <ProviderDataDeleteControl
+        providerId={providerId}
+        additionalOperations={
+          syncStatus === "syncing"
+            ? [
+                {
+                  id: "provider-sync",
+                  label: "Provider sync",
+                  percentage: syncPercentage,
+                  message: syncMessage ?? "Syncing provider data...",
+                },
+              ]
+            : []
+        }
+      />
     </PageLayout>
   );
 }

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { OperationProgressBar } from "./OperationProgressBar.tsx";
+import { OperationProgressBar, OperationProgressBars } from "./OperationProgressBar.tsx";
 
 const meta = {
   title: "State/OperationProgressBar",
@@ -35,4 +35,19 @@ export const Complete: Story = {
     percentage: 100,
     message: "Operation complete",
   },
+};
+
+export const MultipleOperations: Story = {
+  render: () => (
+    <OperationProgressBars
+      operations={[
+        { id: "sync", label: "Provider sync", percentage: 64, message: "Syncing activities..." },
+        {
+          id: "deletion",
+          label: "Provider data deletion",
+          message: "Deleting provider records...",
+        },
+      ]}
+    />
+  ),
 };
