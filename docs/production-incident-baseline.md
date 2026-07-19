@@ -14113,6 +14113,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   baseline above and record p50/p95/max latency in issue #1431. The change has
   not yet been measured in production.
 
+## 2026-07-19 — Zepp Workout Extension Build Lacked Its Registered App ID
+
+- **Symptoms:** The PR CI `Build Zepp packages` job built the standard watch ZAB,
+  then stopped at `Validate Workout Extension app ID` before building the
+  Workout Extension ZAB.
+- **User impact:** PR #1687 could not pass its CI gate or produce a validated
+  Workout Extension artifact.
+- **Evidence:** The exact failing step was `Validate Workout Extension app ID`
+  in GitHub Actions job
+  [88207614710](https://github.com/Asherlc/dofek/actions/runs/29692477018/job/88207614710).
+  The first fatal line was `Repository variable ZEPP_WORKOUT_EXTENSION_APP_ID
+  must contain the numeric app ID provisioned in the Zepp developer console.`
+- **Root cause:** The repository did not define
+  `ZEPP_WORKOUT_EXTENSION_APP_ID`, although Zepp requires a Workout Extension to
+  be registered as an independent application with its own app ID
+  ([Zepp Workout Extension quick start](https://docs.zepp.com/docs/guides/workout-extension/quick-start/)).
+- **Fix / mitigation:** Registered Workout Extension app ID `1120920` was added
+  as the public GitHub repository variable
+  `ZEPP_WORKOUT_EXTENSION_APP_ID`. The required-prerequisite check remains
+  fail-fast; no fallback ID or warn-and-continue behavior was added.
+- **Validation:** Attempt 2 of
+  [CI run 29692477018](https://github.com/Asherlc/dofek/actions/runs/29692477018)
+  built both Zepp packages successfully and completed the overall CI gate with
+  `success`.
+- **Remaining risk / follow-up:** The generated Workout Extension ZAB must use
+  app ID `1120920` when it is uploaded to that registered application in the
+  Zepp Developer Console
+  ([Zepp Workout Extension submission](https://docs.zepp.com/docs/guides/workout-extension/distribute/)).
+
 ## 2026-07-19 — Garmin FIT Replacement Hid Activity Streams
 
 - **Symptoms:** Activity `ef62e61c-80a2-439f-a0b7-6c37d9756cd4` showed no
@@ -14157,3 +14186,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `activity_stream_points`. Separately investigate why bulk sink processing lost
   consumer-group membership and whether scoped replacements need a serving-state
   strategy that avoids exposing delete-before-insert gaps.
+
+## 2026-07-19 — Zepp Workout Extension Mutation Shards Found No Tests
+
+- **Symptoms:** PR #1687 passed its Zepp builds and regular test suites, but
+  mutation shards 6 and 7 stopped during Stryker's initial dry run.
+- **User impact:** The PR's mutation, test, and overall CI gates remained red,
+  blocking release of the watch app and Workout Extension.
+- **Evidence:** The exact failing commands were `pnpm exec stryker run
+  stryker.ci.config.json --mutate "$MUTATE_FILES"` in jobs
+  [88214420044](https://github.com/Asherlc/dofek/actions/runs/29695086272/job/88214420044)
+  and
+  [88214420034](https://github.com/Asherlc/dofek/actions/runs/29695086272/job/88214420034).
+  The first fatal line in both was `ERROR Stryker No tests were executed.
+  Stryker will exit prematurely. Please check your configuration.` Vitest's
+  preceding warning named the two mutated entrypoints and reported that no
+  related tests were found.
+- **Root cause:** The root mutation-test Vitest configuration included
+  `packages/zepp/src/**/*.test.ts` but omitted the colocated tests under
+  `packages/zepp/workout-extension/`. The settings entrypoint also lacked a
+  colocated test, so neither changed Workout Extension file had a discoverable
+  test-to-source dependency.
+- **Fix / mitigation:** Added the Workout Extension test glob to
+  `vitest.config.mutation.ts` and added a colocated settings-entrypoint suite
+  covering persisted state, malformed state, rendering, edits, and login command
+  creation. No mutation threshold, timeout, retry, or source exclusion changed.
+- **Validation:** Both exact mutation targets pass locally: `setting/index.ts`
+  scores 87.50% and `build.ts` scores 97.62%, above the unchanged 75% breaking
+  threshold.
+- **Remaining risk / follow-up:** Confirm the replacement GitHub Actions run
+  discovers the same tests on both mutation shards and completes the aggregate
+  mutation, test, and CI gates successfully.

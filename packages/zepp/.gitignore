@@ -20,3 +20,11 @@ page/index.js
 app-side/index.js
 setting/index.js
 app-service/imu_service.js
+workout-extension/app.json
+workout-extension/assets/
+workout-extension/icon.png
+workout-extension/app.js
+workout-extension/data-widget/index.js
+workout-extension/app-side/index.js
+workout-extension/setting/index.js
+workout-extension/dist/

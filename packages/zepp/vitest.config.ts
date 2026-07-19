@@ -6,6 +6,7 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 const stubPath = path.resolve(dirname, "src/__mocks__/zos-stub.js");
 
 const zeppModules = [
+  "@zos/app-access",
   "@zos/sensor",
   "@zos/fs",
   "@zos/utils",
@@ -32,7 +33,7 @@ for (const mod of zeppModules) {
 export default defineConfig({
   test: {
     globals: false,
-    include: ["src/*.test.ts"],
+    include: ["src/*.test.ts", "workout-extension/**/*.test.ts"],
   },
   resolve: {
     alias,

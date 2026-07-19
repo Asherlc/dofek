@@ -100,6 +100,14 @@ function makeSensors(overrides?: Partial<SensorConstructors>): SensorConstructor
         return 30;
       }
     },
+    Workout: class {
+      getHistory() {
+        return [
+          { startTime: 1_720_000_000, duration: 3_600 },
+          { startTime: 1_720_086_400, duration: 1_800 },
+        ];
+      }
+    },
     ...overrides,
   };
 }
@@ -114,6 +122,7 @@ describe("collectHealthData", () => {
 
     expect(result.collectedAt).toBeGreaterThan(0);
     expect(result.date).toBe(formatLocalDate(new Date(result.collectedAt)));
+    expect(result.timezoneOffsetMinutes).toBe(new Date(result.collectedAt).getTimezoneOffset());
     expect(result.steps).toBe(8432);
     expect(result.calories).toBe(420);
     expect(result.distance).toBe(6500);
@@ -133,6 +142,20 @@ describe("collectHealthData", () => {
     expect(result.standHours).toBe(10);
     expect(result.pai).toBe(85);
     expect(result.fatBurning).toBe(30);
+    expect(result.activities).toEqual([
+      {
+        externalId: "1720000000",
+        activityType: "other",
+        startedAt: "2024-07-03T09:46:40.000Z",
+        endedAt: "2024-07-03T10:46:40.000Z",
+      },
+      {
+        externalId: "1720086400",
+        activityType: "other",
+        startedAt: "2024-07-04T09:46:40.000Z",
+        endedAt: "2024-07-04T10:16:40.000Z",
+      },
+    ]);
   });
 
   it("handles missing sleep data gracefully", () => {
@@ -303,6 +326,9 @@ describe("collectHealthData", () => {
       getLastWeek(): number[] {
         return [];
       }
+      getHistory(): [] {
+        return [];
+      }
     }
     const result = collectHealthData(
       makeSensors({
@@ -317,6 +343,7 @@ describe("collectHealthData", () => {
         Stand: ThrowingSensor,
         Pai: ThrowingSensor,
         FatBurning: ThrowingSensor,
+        Workout: ThrowingSensor,
       } satisfies Partial<SensorConstructors>),
     );
 
@@ -324,5 +351,6 @@ describe("collectHealthData", () => {
     expect(result.steps).toBeUndefined();
     expect(result.calories).toBeUndefined();
     expect(result.sleep).toBeUndefined();
+    expect(result.activities).toBeUndefined();
   });
 });

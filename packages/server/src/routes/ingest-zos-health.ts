@@ -4,6 +4,20 @@ import { sleepSession, sleepStage } from "dofek/db/schema/activity";
 import { sql } from "drizzle-orm";
 import express, { Router } from "express";
 import { z } from "zod";
+import { writeMetricStreamBatch } from "../../../../src/db/metric-stream-writer.ts";
+import {
+  HEART_RATE,
+  SKIN_TEMPERATURE,
+  SOURCE_TYPE_API,
+  SPO2,
+  STRESS,
+} from "../../../../src/db/sensor-channels.ts";
+import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
+import {
+  getDefaultMetricStreamEventPublisher,
+  type MetricStreamEventPublisher,
+} from "../../../../src/metric-stream/redpanda-producer.ts";
+import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { validateCompanionToken } from "../companion/token-repository.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
@@ -55,13 +69,115 @@ const activitySchema = z.object({
   startedAt: datetimeString,
   endedAt: datetimeString,
   name: z.string().trim().min(1).optional(),
+  raw: z.record(z.string(), z.unknown()).optional(),
+});
+
+const backgroundHealthSampleSchema = z.object({
+  recordedAt: datetimeString,
+  heartRate: z.number().positive().optional(),
+  bloodOxygenPercent: z.number().positive().max(100).optional(),
+  bodyTemperatureCelsius: z.number().optional(),
+  stress: z.number().nonnegative().optional(),
+});
+
+const liveWorkoutSampleSchema = z.object({
+  externalId: z.string().trim().min(1),
+  recordedAt: datetimeString,
+  heartRate: z.number().positive().optional(),
+  metrics: z.record(z.string(), z.number()),
+});
+
+const watchSummarySchema = z.object({
+  collectedAt: z.number().int(),
+  date: z.iso.date(),
+  timezoneOffsetMinutes: z
+    .number()
+    .int()
+    .min(-14 * 60)
+    .max(14 * 60),
+  steps: z.number().int().nonnegative().optional(),
+  stepsTarget: z.number().int().nonnegative().optional(),
+  calories: z.number().nonnegative().optional(),
+  caloriesTarget: z.number().nonnegative().optional(),
+  distance: z.number().nonnegative().optional(),
+  heartRate: z.array(z.number()).optional(),
+  restingHeartRate: z.number().positive().optional(),
+  bloodOxygenCurrent: z.number().positive().max(100).optional(),
+  spo2Recent: z
+    .array(z.object({ spo2: z.number().positive().max(100), time: z.number().int() }))
+    .optional(),
+  bodyTemperatureCurrent: z.number().optional(),
+  bodyTemperature: z.array(z.number()).optional(),
+  stress: z.array(z.number()).optional(),
+  standHours: z.number().int().nonnegative().optional(),
+  pai: z.number().nonnegative().optional(),
+  fatBurning: z.number().int().nonnegative().optional(),
 });
 
 const ingestPayloadSchema = z.object({
   dailyMetrics: z.record(z.string(), dailyMetricsDataSchema).optional(),
   sleepSessions: z.array(sleepSessionSchema).optional(),
   activities: z.array(activitySchema).optional(),
+  backgroundSamples: z.array(backgroundHealthSampleSchema).optional(),
+  liveWorkoutSamples: z.array(liveWorkoutSampleSchema).optional(),
+  watchSummary: watchSummarySchema.optional(),
 });
+
+type WatchSummary = z.infer<typeof watchSummarySchema>;
+
+function watchSummaryRecordedAt(summary: WatchSummary, minuteOfDay: number): string {
+  const [year, month, day] = summary.date.split("-").map(Number);
+  return new Date(
+    Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, 0, minuteOfDay) +
+      summary.timezoneOffsetMinutes * 60_000,
+  ).toISOString();
+}
+
+function watchSummaryMetricRows(summary: WatchSummary, userId: string): MetricStreamRowInput[] {
+  const rows: MetricStreamRowInput[] = [];
+  const addRow = (recordedAt: string, channel: string, scalar: number) => {
+    rows.push({
+      recordedAt,
+      userId,
+      providerId: PROVIDER_ID,
+      externalId: `zepp-summary-${recordedAt}-${channel}`,
+      deviceId: "zepp-watch",
+      sourceType: SOURCE_TYPE_API,
+      channel,
+      scalar,
+    });
+  };
+
+  summary.heartRate?.forEach((value, minute) => {
+    if (value > 0) addRow(watchSummaryRecordedAt(summary, minute), HEART_RATE, value);
+  });
+  summary.stress?.forEach((value, minute) => {
+    if (value > 0) addRow(watchSummaryRecordedAt(summary, minute), STRESS, value);
+  });
+  summary.bodyTemperature?.forEach((value, interval) => {
+    if (value > -1000) {
+      addRow(watchSummaryRecordedAt(summary, interval * 5), SKIN_TEMPERATURE, value);
+    }
+  });
+  summary.spo2Recent?.forEach((reading) => {
+    addRow(new Date(reading.time * 1000).toISOString(), SPO2, reading.spo2 / 100);
+  });
+
+  const collectedAt = new Date(summary.collectedAt).toISOString();
+  const currentMetrics: Array<[string, number | undefined]> = [
+    ["zepp_resting_heart_rate", summary.restingHeartRate],
+    ["zepp_daily_steps_target", summary.stepsTarget],
+    ["zepp_daily_calories_target", summary.caloriesTarget],
+    ["zepp_daily_distance", summary.distance],
+    [SPO2, summary.bloodOxygenCurrent === undefined ? undefined : summary.bloodOxygenCurrent / 100],
+    [SKIN_TEMPERATURE, summary.bodyTemperatureCurrent],
+    ["zepp_pai", summary.pai],
+  ];
+  for (const [channel, value] of currentMetrics) {
+    if (value !== undefined) addRow(collectedAt, channel, value);
+  }
+  return rows;
+}
 
 function bearerTokenFromHeader(value: string | undefined): string | null {
   if (!value?.startsWith("Bearer ")) {
@@ -75,7 +191,10 @@ function sendJson(res: import("express").Response, status: number, body: unknown
   res.status(status).json(body);
 }
 
-export function createIngestZosHealthRouter(deps: { db: Database }): Router {
+export function createIngestZosHealthRouter(deps: {
+  db: Database;
+  metricStreamPublisher?: MetricStreamEventPublisher;
+}): Router {
   const router = Router();
 
   router.post("/zos-health", express.json(), async (req, res) => {
@@ -111,9 +230,17 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
 
     const data = parseResult.data;
 
-    if (!data.dailyMetrics && !data.sleepSessions && !data.activities) {
+    if (
+      !data.dailyMetrics &&
+      !data.sleepSessions &&
+      !data.activities &&
+      !data.backgroundSamples &&
+      !data.liveWorkoutSamples &&
+      !data.watchSummary
+    ) {
       sendJson(res, 400, {
-        error: "At least one of dailyMetrics, sleepSessions, or activities is required.",
+        error:
+          "At least one of dailyMetrics, sleepSessions, activities, backgroundSamples, liveWorkoutSamples, or watchSummary is required.",
       });
       return;
     }
@@ -128,8 +255,20 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
 
       // Process daily metrics — upsert with raw SQL since the unique
       // constraint is a NULLS NOT DISTINCT index on (user_id, date, provider_id, source_name)
-      if (data.dailyMetrics) {
-        for (const [dateStr, metrics] of Object.entries(data.dailyMetrics)) {
+      const normalizedDailyMetrics = { ...data.dailyMetrics };
+      if (data.watchSummary) {
+        const summary = data.watchSummary;
+        const existing = normalizedDailyMetrics[summary.date] ?? {};
+        normalizedDailyMetrics[summary.date] = {
+          ...existing,
+          steps: summary.steps ?? existing.steps,
+          calories: summary.calories ?? existing.calories,
+          standHours: summary.standHours ?? existing.standHours,
+          exerciseMinutes: summary.fatBurning ?? existing.exerciseMinutes,
+        };
+      }
+      if (Object.keys(normalizedDailyMetrics).length > 0) {
+        for (const [dateStr, metrics] of Object.entries(normalizedDailyMetrics)) {
           const date = new Date(dateStr);
           if (Number.isNaN(date.getTime())) {
             logger.warn(`[ingest-zos] Invalid date: ${dateStr}, skipping`);
@@ -153,6 +292,38 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
                   source_name = 'zepp-companion'`,
           );
         }
+      }
+
+      if (data.watchSummary) {
+        const rows = watchSummaryMetricRows(data.watchSummary, userId);
+        if (rows.length > 0) {
+          const publisher =
+            deps.metricStreamPublisher ?? (await getDefaultMetricStreamEventPublisher());
+          await writeMetricStreamRows({ database: deps.db, publisher, rows });
+        }
+      }
+
+      if (data.backgroundSamples && data.backgroundSamples.length > 0) {
+        const publisher =
+          deps.metricStreamPublisher ?? (await getDefaultMetricStreamEventPublisher());
+        await writeMetricStreamBatch(
+          deps.db,
+          data.backgroundSamples.map((sample) => ({
+            recordedAt: new Date(sample.recordedAt),
+            providerId: PROVIDER_ID,
+            userId,
+            externalId: `zepp-background-${sample.recordedAt}`,
+            sourceName: "zepp-companion-background",
+            heartRate: sample.heartRate,
+            spo2:
+              sample.bloodOxygenPercent === undefined ? undefined : sample.bloodOxygenPercent / 100,
+            temperatureC: sample.bodyTemperatureCelsius,
+            stress: sample.stress,
+          })),
+          SOURCE_TYPE_API,
+          undefined,
+          publisher,
+        );
       }
 
       // Process sleep sessions — skip duplicates by unique (user_id, provider_id, external_id)
@@ -233,13 +404,89 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
             continue;
           }
 
+          const raw = act.raw === undefined ? null : JSON.stringify(act.raw);
           await deps.db.execute(
             sql`INSERT INTO fitness.activity
-                (provider_id, user_id, external_id, activity_type, started_at, ended_at, name, source_name)
-                VALUES (${PROVIDER_ID}, ${userId}, ${act.externalId}, ${act.activityType}, ${activityStartedAt}, ${activityEndedAt}, ${act.name ?? null}, 'zepp-companion')
-                ON CONFLICT (user_id, provider_id, external_id) DO NOTHING`,
+                (provider_id, user_id, external_id, activity_type, started_at, ended_at, name, source_name, raw)
+                VALUES (${PROVIDER_ID}, ${userId}, ${act.externalId}, ${act.activityType}, ${activityStartedAt}, ${activityEndedAt}, ${act.name ?? null}, 'zepp-companion', ${raw}::jsonb)
+                ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
+                  ended_at = GREATEST(activity.ended_at, EXCLUDED.ended_at),
+                  name = COALESCE(EXCLUDED.name, activity.name),
+                  source_name = EXCLUDED.source_name,
+                  raw = CASE
+                    WHEN EXCLUDED.raw IS NULL THEN activity.raw
+                    WHEN COALESCE(activity.raw, '{}'::jsonb) ? 'liveSnapshotsByRecordedAt'
+                      OR EXCLUDED.raw ? 'liveSnapshotsByRecordedAt'
+                    THEN jsonb_set(
+                      COALESCE(activity.raw, '{}'::jsonb) || EXCLUDED.raw,
+                      '{liveSnapshotsByRecordedAt}',
+                      COALESCE(activity.raw->'liveSnapshotsByRecordedAt', '{}'::jsonb)
+                        || COALESCE(EXCLUDED.raw->'liveSnapshotsByRecordedAt', '{}'::jsonb)
+                    )
+                    ELSE COALESCE(activity.raw, '{}'::jsonb) || EXCLUDED.raw
+                  END`,
           );
         }
+      }
+
+      if (data.liveWorkoutSamples && data.liveWorkoutSamples.length > 0) {
+        const publisher =
+          deps.metricStreamPublisher ?? (await getDefaultMetricStreamEventPublisher());
+        const rows: MetricStreamRowInput[] = [];
+        const externalIds = [
+          ...new Set(data.liveWorkoutSamples.map((sample) => sample.externalId)),
+        ];
+        const externalIdParameters = sql.join(
+          externalIds.map((externalId) => sql`${externalId}`),
+          sql`, `,
+        );
+        const activityRows = await executeWithSchema(
+          deps.db,
+          z.object({ id: z.string().uuid(), externalId: z.string() }),
+          sql`SELECT id::text AS id, external_id AS "externalId"
+              FROM fitness.activity
+              WHERE user_id = ${userId}
+                AND provider_id = ${PROVIDER_ID}
+                AND external_id = ANY(ARRAY[${externalIdParameters}]::text[])`,
+        );
+        const activityIdByExternalId = new Map(
+          activityRows.map((activityRow) => [activityRow.externalId, activityRow.id]),
+        );
+        for (const sample of data.liveWorkoutSamples) {
+          const activityId = activityIdByExternalId.get(sample.externalId);
+          if (!activityId) {
+            throw new Error(`Zepp live workout activity ${sample.externalId} was not found.`);
+          }
+          const baseExternalId = `zepp-live-${sample.externalId}-${sample.recordedAt}`;
+          if (sample.heartRate !== undefined) {
+            rows.push({
+              recordedAt: sample.recordedAt,
+              userId,
+              providerId: PROVIDER_ID,
+              externalId: `${baseExternalId}-${HEART_RATE}`,
+              activityId,
+              deviceId: "zepp-workout-extension",
+              sourceType: SOURCE_TYPE_API,
+              channel: HEART_RATE,
+              scalar: sample.heartRate,
+            });
+          }
+          for (const [metric, value] of Object.entries(sample.metrics)) {
+            const channel = `zepp_sport_${metric}`;
+            rows.push({
+              recordedAt: sample.recordedAt,
+              userId,
+              providerId: PROVIDER_ID,
+              externalId: `${baseExternalId}-${channel}`,
+              activityId,
+              deviceId: "zepp-workout-extension",
+              sourceType: SOURCE_TYPE_API,
+              channel,
+              scalar: value,
+            });
+          }
+        }
+        await writeMetricStreamRows({ database: deps.db, publisher, rows });
       }
 
       sendJson(res, 200, { status: "ok" });

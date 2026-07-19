@@ -1,13 +1,39 @@
+import { BloodOxygen, BodyTemperature, HeartRate, Stress, Time, Workout } from "@zos/sensor";
 import { log as Logger } from "@zos/utils";
+import {
+  appendBackgroundHealthSample,
+  collectBackgroundHealthSample,
+} from "../src/background-health.ts";
+import {
+  readBackgroundHealthBuffer,
+  writeBackgroundHealthBuffer,
+} from "../src/background-health-storage.ts";
+import { captureException } from "./telemetry.ts";
 
 const logger = Logger.getLogger("imu-service");
 
-// Zepp OS requires an App Service to keep the process alive while the
-// page is not active. This is a minimal anchor — IMU sampling and file
-// transfers are driven by the page directly (page/index.ts), not here.
 AppService({
   onInit(this: AppServiceContext) {
     logger.log("imu_service onInit");
+    const time = new Time();
+    time.onPerMinute(() => {
+      try {
+        const collected = collectBackgroundHealthSample({
+          captureException,
+          HeartRate,
+          BloodOxygen,
+          BodyTemperature,
+          Stress,
+          Workout,
+        });
+        const currentBuffer = readBackgroundHealthBuffer();
+        const updatedBuffer = appendBackgroundHealthSample(currentBuffer, collected);
+        writeBackgroundHealthBuffer(updatedBuffer);
+      } catch (error: unknown) {
+        captureException(error);
+        logger.error("background health collection failed %j", error);
+      }
+    });
   },
 
   onDestroy(this: AppServiceContext) {

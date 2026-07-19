@@ -13,6 +13,10 @@ declare module "@zos/fs" {
   export const O_CREAT: number;
 }
 
+declare module "@zos/app-access" {
+  export const getSportData: import("./workout-live.ts").GetSportData;
+}
+
 declare module "@zos/sensor" {
   export const FREQ_MODE_LOW: 0;
   export const FREQ_MODE_NORMAL: 1;
@@ -99,6 +103,14 @@ declare module "@zos/sensor" {
 
   export class FatBurning {
     getCurrent(): number;
+  }
+
+  export class Workout {
+    getHistory(): Array<{ startTime: number; duration: number }>;
+  }
+
+  export class Time {
+    onPerMinute(callback: () => void): void;
   }
 
   export function checkSensor(sensor: new () => Accelerometer | Gyroscope): boolean;
@@ -234,6 +246,7 @@ declare module "@zeppos/zml/3.0/module/messaging/plugin/side" {
 
 declare function App<T>(config: T): void;
 declare function Page<T>(config: T): void;
+declare function DataWidget<T>(config: T): void;
 declare function AppService<T>(config: T): void;
 declare function AppSideService<T>(config: T): void;
 declare function AppSettingsPage<T>(config: T): void;

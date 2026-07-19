@@ -20,9 +20,22 @@ export interface DailyHeartRateSummary {
   maxHrTime?: number;
 }
 
+export interface WorkoutHistoryEntry {
+  startTime: number;
+  duration: number;
+}
+
+export interface HealthActivity {
+  externalId: string;
+  activityType: "other";
+  startedAt: string;
+  endedAt: string;
+}
+
 export interface HealthDataPayload {
   collectedAt: number;
   date: string;
+  timezoneOffsetMinutes: number;
   steps?: number;
   stepsTarget?: number;
   calories?: number;
@@ -51,6 +64,14 @@ export interface HealthDataPayload {
   standHours?: number;
   pai?: number;
   fatBurning?: number;
+  activities?: HealthActivity[];
+  backgroundSamples?: Array<{
+    recordedAt: string;
+    heartRate?: number;
+    bloodOxygenPercent?: number;
+    bodyTemperatureCelsius?: number;
+    stress?: number;
+  }>;
 }
 
 export interface SensorConstructors {
@@ -89,6 +110,19 @@ export interface SensorConstructors {
   Stand: new () => { getCurrent(): number };
   Pai: new () => { getCurrent(): number };
   FatBurning: new () => { getCurrent(): number };
+  Workout: new () => { getHistory(): WorkoutHistoryEntry[] };
+}
+
+export function workoutHistoryToActivities(history: WorkoutHistoryEntry[]): HealthActivity[] {
+  return history.map((historyEntry) => {
+    const startedAtMilliseconds = historyEntry.startTime * 1000;
+    return {
+      externalId: String(historyEntry.startTime),
+      activityType: "other",
+      startedAt: new Date(startedAtMilliseconds).toISOString(),
+      endedAt: new Date(startedAtMilliseconds + historyEntry.duration * 1000).toISOString(),
+    };
+  });
 }
 
 export function collectHealthData(sensors: SensorConstructors): HealthDataPayload {
@@ -99,6 +133,7 @@ export function collectHealthData(sensors: SensorConstructors): HealthDataPayloa
   const payload: HealthDataPayload = {
     collectedAt: now,
     date: today,
+    timezoneOffsetMinutes: currentDate.getTimezoneOffset(),
   };
 
   try {
@@ -215,6 +250,13 @@ export function collectHealthData(sensors: SensorConstructors): HealthDataPayloa
     payload.fatBurning = fatBurning.getCurrent();
   } catch {
     // FatBurning sensor unavailable
+  }
+
+  try {
+    const workout = new sensors.Workout();
+    payload.activities = workoutHistoryToActivities(workout.getHistory());
+  } catch {
+    // Workout sensor unavailable
   }
 
   return payload;

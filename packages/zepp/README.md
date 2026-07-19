@@ -1,6 +1,8 @@
 # Dofek Zepp
 
-Zepp OS mini program that captures raw accelerometer (and optional gyroscope) samples on the watch, buffers them to a watch-side binary file, and exports the file to the phone over BLE. It can also collect supported Zepp health summaries on the watch and upload them from the phone-side Side Service to Dofek using the stored connection credential. Zepp documents Side Service as the phone-side runtime; this app uses `@zeppos/zml` messaging between the watch app and Side Service, and the Side Service uses Fetch API for Dofek server calls ([Side Service intro](https://docs.zepp.com/docs/guides/framework/side-service/intro/), [Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/)).
+Zepp OS mini program that captures raw accelerometer (and optional gyroscope) samples on the watch, buffers them to a watch-side binary file, and exports the file to the phone over BLE. It also uploads daily totals and timestamped heart-rate, stress, body-surface-temperature, and blood-oxygen history through the phone-side Side Service. Zepp documents Side Service as the phone-side runtime; this app uses `@zeppos/zml` messaging between the watch app and Side Service, and the Side Service uses Fetch API for Dofek server calls ([Side Service intro](https://docs.zepp.com/docs/guides/framework/side-service/intro/), [Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/), [HeartRate history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/HeartRate/), [BodyTemperature history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/BodyTemperature/), [BloodOxygen history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/BloodOxygen/)).
+
+The normal watch app also pulls completed workout start times and durations through Zepp's official [`Workout.getHistory()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/Workout/) API. A separately packaged Workout Extension captures the richer live metrics exposed by [`getSportData()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-access/getSportData/) on API_LEVEL 3.6+ devices.
 
 ## Target devices
 
@@ -24,7 +26,8 @@ Configured in `app.json` as screen-width target groups.
 │  • writes data://imu/session.bin              │
 ├───────────────────────────────────────────────┤
 │ App Service (app-service/imu_service.ts)      │
-│  • started with logging for persistence hook  │
+│  • persists low-power health samples/minute   │
+│  • reconciles completed workout history       │
 │  • CANNOT access IMU sensors (platform limit) │
 └───────────────────────┬───────────────────────┘
                         │ TransferFile (BLE)
@@ -40,14 +43,20 @@ Configured in `app.json` as screen-width target groups.
 └───────────────────────────────────────────────┘
 ```
 
+The separately packaged Workout Extension runs inside Zepp's system Workout app on API_LEVEL 3.6+ devices. It samples every field exposed by `getSportData()`—speed, pace, distance, duration, calories, cadence, altitude, ascent, vertical speed, and supported count/downhill fields—plus current heart rate. Samples are batched once per minute, retried after transient phone/network failures, and ingested as activity-linked metric-stream rows. Zepp pauses extension callbacks while its page is not focused, so the normal app and continuous App Service provide historical reconciliation and low-power background continuity ([Workout Extension lifecycle](https://docs.zepp.com/docs/guides/workout-extension/quick-start/), [`getSportData()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-access/getSportData/)).
+
+### Background collection
+
+The normal watch app starts a continuously running App Service after the user grants `device:os.bg_service`. The service uses `Time.onPerMinute()`—which Zepp supports even though ordinary `setTimeout`/`setInterval` calls are unavailable—to persist minute-level heart rate, blood oxygen, body temperature, stress, and completed workout history. The foreground app uploads the durable rolling seven-day buffer; stable sample identifiers make repeated catch-up uploads idempotent. On API_LEVEL 4.0+ watches, `reload: true` also asks Zepp to restart the service after system restarts, power-mode changes, app updates, and related system-state changes; API_LEVEL 3.x watches restart collection whenever Dofek is reopened. Accelerometer, gyroscope, and geolocation remain foreground-only because Zepp explicitly blocks high-power sensors in App Service ([App Service capabilities and limitations](https://docs.zepp.com/docs/guides/framework/device/app-service/), [App Service `start`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-service/start/)).
+
 ### Why TransferFile instead of BLE messaging?
 
 Bulk IMU logs are megabytes, while BLE messaging is oriented toward small binary payloads and manual framing. **TransferFile** (API 3.0+) provides queued file transfer, progress events, and completion/error states — better backpressure handling for large exports. Control commands (start/stop/export) still use lightweight Side Service ↔ Device App messages via `@zeppos/zml`.
 
 ### Documented platform limits (called out in code)
 
-1. **App Service cannot use Accelerometer/Gyroscope** — high-power sensors are blocked in background service ([App Service guide](https://docs.zepp.com/docs/guides/framework/device/app-service/)). IMU sampling runs in the Device App page; App Service is used for lifecycle/transfer hooks only.
-2. **App Service has no timers** — `setTimeout` / `setInterval` are unavailable; polling loops cannot run there.
+1. **App Service cannot use Accelerometer/Gyroscope** — high-power sensors are blocked in background service ([App Service guide](https://docs.zepp.com/docs/guides/framework/device/app-service/)). IMU sampling runs in the Device App page; App Service collects only supported low-power health sensors and completed workout history.
+2. **App Service has no ordinary JavaScript timers** — `setTimeout` / `setInterval` are unavailable. Background collection uses the supported `Time.onPerMinute()` sensor callback instead ([App Service guide](https://docs.zepp.com/docs/guides/framework/device/app-service/)).
 3. **App Service `@zos/fs` writes** are only guaranteed when the screen is off or in AOD; the page performs normal chunked flushes while logging.
 4. **Sample rate is not specified in Hz by Zepp docs** — only `FREQ_MODE_LOW | NORMAL | HIGH`. The app selects the highest mode ≤ user preference and records the **measured delivered rate** from `onChange` callbacks.
 5. **`onChange` delivery** — treated as one sample per callback (per API examples). The header stores measured Hz; verify on hardware.
@@ -105,14 +114,16 @@ pnpm build
 
 ## Release (Zepp Store)
 
-CI builds and attaches the `.zab` package as a GitHub Release artifact.
-There's no Zepp Store submission API — the final upload is manual.
+CI builds and attaches both `.zab` packages as GitHub Release artifacts. Zepp's documented publication flow requires uploading each ZAB through the developer console and submitting it for review, so CI prepares the packages while the final store uploads remain manual ([Zepp app submission](https://docs.zepp.com/docs/distribute/)).
 
 ### Automatic builds (every main push)
 
-Every push to `main` triggers `release-zepp.yml`: patches an auto-generated version into `app.json` and `package.json`, runs `pnpm build` with the local Zeus wrapper, and uploads the `.zab` artifact (retained 90 days). The built artifact is always available at:
+Every successful `main` CI run triggers `release-zepp.yml`: it patches an auto-generated version, builds both independently submitted Zepp packages with the local Zeus wrapper, and uploads both `.zab` artifacts for 90 days. Configure the public GitHub repository variable `ZEPP_WORKOUT_EXTENSION_APP_ID` with the numeric app ID provisioned for the independent Workout Extension before enabling these builds.
 
-> GitHub → Actions → Release Dofek Zepp (Zepp Store) → latest run → Artifacts → `zepp-zab`
+The artifacts are:
+
+- `dofek-zepp-app-zab` — the normal API_LEVEL 3.0+ watch app.
+- `dofek-zepp-workout-extension-zab` — the independent API_LEVEL 3.6+ Workout Extension.
 
 **Version scheme:**
 - Tagged push (`zepp-v1.2.3`) → version `1.2.3`, code `10203`
@@ -129,10 +140,10 @@ git tag zepp-v1.0.1
 git push origin zepp-v1.0.1
 ```
 
-1. CI builds the `.zab` with version `1.0.1` and creates a GitHub Release.
-2. Download the `.zab` from the Release page (or from workflow artifacts for untagged builds).
-3. Go to [console.zepp.com](https://console.zepp.com/) → your app → **Version Upgrade**.
-4. Upload the `.zab`, fill in screenshots/description if needed, submit for review (1-5 business days).
+1. The tag-triggered workflow builds both `.zab` files with version `1.0.1` and creates one GitHub Release containing both files.
+2. Download both `.zab` files from the Release page.
+3. Upload the normal watch app package to its existing listing in [console.zepp.com](https://console.zepp.com/).
+4. Upload the Workout Extension package to its independent Workout Extension listing and submit both upgrades for review. Zepp requires a separate app ID and submission for a Workout Extension ([Workout Extension quick start](https://docs.zepp.com/docs/guides/workout-extension/quick-start/)).
 
 Tag pattern: `zepp-v<semver>`.
 
@@ -182,6 +193,7 @@ zepp/
   app.ts                # app entry
   page/index.ts         # watch UI + sensor collector
   app-service/imu_service.ts
+  workout-extension/    # independently packaged live Workout app extension
   app-side/index.ts     # phone BLE receiver
   setting/index.ts      # phone controls
   src/                  # library modules (codec, collector, file flush, tests)

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import express from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import { generateCompanionToken, hashCompanionToken } from "../companion/token-repository.ts";
 
 const { createIngestZosHealthRouter } = await import("./ingest-zos-health.ts");
@@ -43,6 +44,7 @@ describe("POST /api/ingest/zos-health", () => {
   let testCtx: TestContext;
   let app: express.Express;
   let validToken: string;
+  let publishedMetricRows: MetricStreamRowInput[] = [];
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -55,10 +57,22 @@ describe("POST /api/ingest/zos-health", () => {
     `);
 
     app = express();
-    app.use("/api/ingest", createIngestZosHealthRouter({ db: testCtx.db }));
+    app.use(
+      "/api/ingest",
+      createIngestZosHealthRouter({
+        db: testCtx.db,
+        metricStreamPublisher: {
+          publishRows: async (rows) => {
+            publishedMetricRows.push(...rows);
+            return [];
+          },
+        },
+      }),
+    );
   });
 
   beforeEach(async () => {
+    publishedMetricRows = [];
     await testCtx.db.execute(
       sql`DELETE FROM fitness.sleep_session WHERE user_id = ${TEST_USER_ID}`,
     );
@@ -127,7 +141,8 @@ describe("POST /api/ingest/zos-health", () => {
     });
     expect(res.status).toBe(400);
     expect(JSON.parse(res.body)).toEqual({
-      error: "At least one of dailyMetrics, sleepSessions, or activities is required.",
+      error:
+        "At least one of dailyMetrics, sleepSessions, activities, backgroundSamples, liveWorkoutSamples, or watchSummary is required.",
     });
   });
 
@@ -185,6 +200,70 @@ describe("POST /api/ingest/zos-health", () => {
     );
     expect(rows.length).toBe(1);
     expect(rows[0].steps).toBe(8000);
+  });
+
+  it("stores daily totals from the raw watch summary", async () => {
+    const response = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: `Bearer ${validToken}` },
+      body: {
+        watchSummary: {
+          collectedAt: 1_720_001_200_000,
+          date: "2024-07-03",
+          timezoneOffsetMinutes: 0,
+          steps: 4321,
+          calories: 345,
+          standHours: 8,
+          fatBurning: 22,
+        },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const rows = await testCtx.db.execute(
+      sql`SELECT steps, active_energy_kcal, stand_hours, exercise_minutes
+          FROM fitness.daily_metrics
+          WHERE date = '2024-07-03' AND user_id = ${TEST_USER_ID}`,
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({
+        steps: 4321,
+        active_energy_kcal: 345,
+        stand_hours: 8,
+        exercise_minutes: 22,
+      }),
+    ]);
+  });
+
+  it("preserves daily metric fields omitted from the watch summary", async () => {
+    const response = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: `Bearer ${validToken}` },
+      body: {
+        dailyMetrics: {
+          "2024-07-04": { calories: 456, distanceKm: 7.5, standHours: 10 },
+        },
+        watchSummary: {
+          collectedAt: 1_720_087_600_000,
+          date: "2024-07-04",
+          timezoneOffsetMinutes: 0,
+          steps: 5432,
+        },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const rows = await testCtx.db.execute(
+      sql`SELECT steps, active_energy_kcal, distance_km, stand_hours
+          FROM fitness.daily_metrics
+          WHERE date = '2024-07-04' AND user_id = ${TEST_USER_ID}`,
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({
+        steps: 5432,
+        active_energy_kcal: 456,
+        distance_km: 7.5,
+        stand_hours: 10,
+      }),
+    ]);
   });
 
   it("skips dailyMetrics with invalid date key", async () => {
@@ -345,6 +424,95 @@ describe("POST /api/ingest/zos-health", () => {
       sql`SELECT * FROM fitness.activity WHERE user_id = ${TEST_USER_ID}`,
     );
     expect(rows.length).toBe(1);
+  });
+
+  it("merges retry-safe live snapshots and extends an existing activity", async () => {
+    const firstRecordedAt = "2026-06-26T10:05:00.000Z";
+    const secondRecordedAt = "2026-06-26T10:06:00.000Z";
+    for (const [recordedAt, endedAt, heartRate, rawMetadata] of [
+      [firstRecordedAt, "2026-06-26T10:05:00Z", 140, { device: { model: "Balance" } }],
+      [secondRecordedAt, "2026-06-26T10:06:00Z", 145, { workout: { source: "extension" } }],
+    ] as const) {
+      const response = await post(app, "/api/ingest/zos-health", {
+        headers: { Authorization: `Bearer ${validToken}` },
+        body: {
+          activities: [
+            {
+              externalId: "live-act-1",
+              activityType: "other",
+              startedAt: "2026-06-26T10:00:00Z",
+              endedAt,
+              raw: {
+                ...rawMetadata,
+                liveSnapshotsByRecordedAt: {
+                  [recordedAt]: { recordedAt, heartRate },
+                },
+              },
+            },
+          ],
+        },
+      });
+      expect(response.status).toBe(200);
+    }
+
+    const rows = await testCtx.db.execute(sql`
+      SELECT ended_at::text AS ended_at, raw
+      FROM fitness.activity
+      WHERE user_id = ${TEST_USER_ID} AND external_id = 'live-act-1'
+    `);
+    expect(rows).toHaveLength(1);
+    expect(String(rows[0]?.ended_at)).toContain("2026-06-26 10:06:00");
+    expect(rows[0]?.raw).toEqual({
+      device: { model: "Balance" },
+      workout: { source: "extension" },
+      liveSnapshotsByRecordedAt: {
+        [firstRecordedAt]: { recordedAt: firstRecordedAt, heartRate: 140 },
+        [secondRecordedAt]: { recordedAt: secondRecordedAt, heartRate: 145 },
+      },
+    });
+  });
+
+  it("resolves repeated live workout samples through the batched activity lookup", async () => {
+    const externalId = "live-array-serialization";
+    const response = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: `Bearer ${validToken}` },
+      body: {
+        activities: [
+          {
+            externalId,
+            activityType: "other",
+            startedAt: "2026-06-26T10:00:00Z",
+            endedAt: "2026-06-26T10:10:00Z",
+          },
+        ],
+        liveWorkoutSamples: [
+          {
+            externalId,
+            recordedAt: "2026-06-26T10:05:00.000Z",
+            heartRate: 140,
+            metrics: { duration: 300 },
+          },
+          {
+            externalId,
+            recordedAt: "2026-06-26T10:06:00.000Z",
+            metrics: { duration: 360 },
+          },
+        ],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const activityRows = await testCtx.db.execute(sql`
+      SELECT id::text AS id
+      FROM fitness.activity
+      WHERE user_id = ${TEST_USER_ID} AND external_id = ${externalId}
+    `);
+    expect(activityRows).toHaveLength(1);
+    const activityId = String(activityRows[0]?.id);
+    expect(publishedMetricRows).toHaveLength(3);
+    expect(new Set(publishedMetricRows.map((row) => row.activityId))).toEqual(
+      new Set([activityId]),
+    );
   });
 
   it("rejects activity with invalid dates at schema validation", async () => {

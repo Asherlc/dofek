@@ -102,9 +102,14 @@
         "app-side/index.ts",
         "setting/index.ts",
         "app-service/imu_service.ts",
-        "tools/zeus.ts"
+        "tools/zeus.ts",
+        "workout-extension/app.ts",
+        "workout-extension/build.ts",
+        "workout-extension/data-widget/index.ts",
+        "workout-extension/setting/index.ts",
+        "workout-extension/zeus.ts"
       ],
-      "ignoreDependencies": ["@zeppos/device-types", "@zos/ui"],
+      "ignoreDependencies": ["@zeppos/device-types", "@zos/app-access", "@zos/ui"],
       "vitest": {
         "config": ["vitest.config.ts"],
         "entry": ["src/**/*.test.ts"]

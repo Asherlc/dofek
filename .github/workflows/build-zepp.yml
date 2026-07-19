@@ -46,7 +46,7 @@ jobs:
           fi
 
   build:
-    name: Build Zepp ZAB
+    name: Build Zepp packages
     needs: check-zepp-changes
     if: needs.check-zepp-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
@@ -58,5 +58,20 @@ jobs:
       - name: Set up Node.js and pnpm
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Build Zepp ZAB
+      - name: Build Zepp watch app ZAB
         uses: ./.github/actions/build-zepp
+
+      - name: Validate Workout Extension app ID
+        env:
+          ZEPP_WORKOUT_EXTENSION_APP_ID: ${{ vars.ZEPP_WORKOUT_EXTENSION_APP_ID }}
+        run: |
+          if ! [[ "$ZEPP_WORKOUT_EXTENSION_APP_ID" =~ ^[1-9][0-9]*$ ]] || [ "$ZEPP_WORKOUT_EXTENSION_APP_ID" -lt 1000000 ]; then
+            echo "::error::Repository variable ZEPP_WORKOUT_EXTENSION_APP_ID must contain the numeric app ID provisioned in the Zepp developer console."
+            exit 1
+          fi
+
+      - name: Build Zepp Workout Extension ZAB
+        working-directory: packages/zepp
+        env:
+          ZEPP_WORKOUT_EXTENSION_APP_ID: ${{ vars.ZEPP_WORKOUT_EXTENSION_APP_ID }}
+        run: pnpm build:workout-extension

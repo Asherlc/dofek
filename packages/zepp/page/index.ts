@@ -21,6 +21,7 @@ import {
   Stand,
   Step,
   Stress,
+  Workout,
 } from "@zos/sensor";
 import {
   align,
@@ -33,8 +34,13 @@ import {
   widget,
 } from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
-
+import {
+  readBackgroundHealthBuffer,
+  removeUploadedBackgroundHealthBufferEntries,
+  writeBackgroundHealthBuffer,
+} from "../src/background-health-storage.ts";
 import { collectHealthData } from "../src/health-collector.ts";
+import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import { appendSamples, finalizeSessionFile, resetSessionFile } from "../src/session-file.ts";
 import {
@@ -699,7 +705,7 @@ Page(
       }
 
       if (method === "health.collect") {
-        const data = collectHealthData({
+        const watchSummary = collectHealthData({
           HeartRate,
           Step,
           Calorie,
@@ -711,13 +717,40 @@ Page(
           Stand,
           Pai,
           FatBurning,
+          Workout,
         });
-        this.request({
-          method: "health.upload",
-          params: { data },
-        }).catch((err: unknown) => {
-          logger.error("health data upload request failed %j", err);
-        });
+        const backgroundBuffer = readBackgroundHealthBuffer();
+        const activities = mergeHealthActivities(
+          watchSummary.activities ?? [],
+          backgroundBuffer.activities,
+        );
+        const uploadBatches = createHealthUploadBatches(
+          watchSummary,
+          activities,
+          backgroundBuffer.samples,
+        );
+        uploadBatches
+          .reduce(
+            (previousUpload, data) =>
+              previousUpload.then(() =>
+                this.request({ method: "health.upload", params: { data } }),
+              ),
+            Promise.resolve<unknown>(undefined),
+          )
+          .then(() => {
+            if (backgroundBuffer.samples.length === 0 && backgroundBuffer.activities.length === 0) {
+              return;
+            }
+            writeBackgroundHealthBuffer(
+              removeUploadedBackgroundHealthBufferEntries(
+                readBackgroundHealthBuffer(),
+                backgroundBuffer,
+              ),
+            );
+          })
+          .catch((err: unknown) => {
+            logger.error("health data upload request failed %j", err);
+          });
       }
     },
 

@@ -10,6 +10,14 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "*.ts", "page", "app-side", "setting", "app-service"],
+  "include": [
+    "src",
+    "*.ts",
+    "page",
+    "app-side",
+    "setting",
+    "app-service",
+    "workout-extension"
+  ],
   "exclude": ["node_modules", "dist"]
 }
