@@ -239,6 +239,52 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
+  it("skips an acknowledged v2 delete during consumer redelivery", async () => {
+    const command = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => undefined);
+    const query = vi.fn(
+      async (_options: {
+        query: string;
+        query_params?: Record<string, unknown>;
+        format: "JSONEachRow";
+      }) => ({ json: async () => [{ acknowledgement_count: 1 }] }),
+    );
+    const deleteEvent = createMetricStreamDeletedEvent({
+      userId: heartRateEvent.userId,
+      providerId: "garmin-dump",
+    });
+
+    const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
+      deleteEvent,
+    ]);
+
+    expect(applied).toBe(0);
+    expect(query).toHaveBeenCalledWith({
+      query: expect.stringMatching(
+        /SELECT 1 AS acknowledgement_count[\s\S]+metric_stream_delete_acknowledgement[\s\S]+LIMIT 1/,
+      ),
+      query_params: { event_id: deleteEvent.eventId },
+      format: "JSONEachRow",
+    });
+    expect(query.mock.calls[0]?.[0]?.query).not.toContain("FINAL");
+    expect(command).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("applies a v2 delete when no acknowledgement exists", async () => {
+    const command = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => undefined);
+    const query = vi.fn(async () => ({ json: async () => [] }));
+    const deleteEvent = createMetricStreamDeletedEvent({
+      activityId: "20000000-0000-4000-8000-000000000001",
+    });
+
+    await applyMetricStreamEventsToClickHouse({ command, insert, query }, [deleteEvent]);
+
+    expect(command).toHaveBeenCalledTimes(2);
+    expect(firstCommandQuery(command)).toContain(`INSERT INTO ${METRIC_STREAM_TABLE}`);
+  });
+
   it("marks matching ClickHouse rows deleted before inserting replacement rows", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);

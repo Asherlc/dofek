@@ -433,11 +433,23 @@ function createIsolatedClickHouseClient(
       query: string;
       format: "JSONEachRow";
       query_params?: Record<string, unknown>;
-    }) =>
-      client.query<TRow>({
+    }) => {
+      const queryParams = options.query_params ? { ...options.query_params } : undefined;
+      if (queryParams?.database_name === "ingest") {
+        queryParams.database_name = databases.ingest;
+      }
+      if (queryParams?.database_name === "analytics") {
+        queryParams.database_name = databases.analytics;
+      }
+      if (queryParams?.database_name === "postgres_fitness") {
+        queryParams.database_name = databases.postgresFitness;
+      }
+      return client.query<TRow>({
         ...options,
         query: rewriteClickHouseDatabaseNames(options.query, databases),
-      }),
+        query_params: queryParams,
+      });
+    },
     insert: async (options) => {
       if (!client.insert) {
         throw new Error("ClickHouse integration test client does not support inserts");

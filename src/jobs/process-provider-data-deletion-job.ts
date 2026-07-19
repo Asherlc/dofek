@@ -1,18 +1,59 @@
+import { TupleParam } from "@clickhouse/client";
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
 import { logger } from "../logger.ts";
 import {
+  INGEST_DATABASE,
   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
+  METRIC_STREAM_PROVIDER_GENERATION_PROJECTION,
   METRIC_STREAM_TABLE,
   PROVIDER_DATA_GENERATION_TABLE,
 } from "../metric-stream/clickhouse-table.ts";
 import type { ProviderDataDeletionJobData } from "./queues.ts";
 
-const PROVIDER_DATA_DELETION_BATCH_SIZE = 10_000;
-const metricStreamIdRowsSchema = z.array(z.object({ id: z.uuid() }));
+const PROVIDER_DATA_DELETION_BATCH_SIZE = 1_000;
+const metricStreamCursorRowsSchema = z.array(
+  z.object({
+    generation: z.coerce.number().int().nonnegative(),
+    id: z.uuid(),
+  }),
+);
+const metricStreamTombstoneRowsSchema = z.array(
+  z.object({
+    activity_id: z.uuid().nullable(),
+    channel: z.string().min(1),
+    device_id: z.string().nullable(),
+    external_id: z.string().nullable(),
+    generation: z.coerce.number().int().nonnegative(),
+    id: z.uuid(),
+    ingested_at: z.string().min(1),
+    is_deleted: z.literal(1),
+    metadata: z.string(),
+    point: z.string(),
+    provider_id: z.string().min(1),
+    recorded_at: z.string().min(1),
+    scalar: z.number().nullable(),
+    source_type: z.string().nullable(),
+    user_id: z.uuid(),
+    vector: z.array(z.number()),
+    version: z.coerce.number().int().nonnegative(),
+  }),
+);
+const projectionReadinessRowsSchema = z.tuple([
+  z.object({
+    active_parts: z.coerce.number().int().nonnegative(),
+    missing_projection_parts: z.coerce.number().int().nonnegative(),
+  }),
+]);
 
 export interface ProviderDataDeletionClickHouseClient {
   command(options: { query: string; query_params?: Record<string, unknown> }): Promise<unknown>;
+  insert?(options: {
+    table: string;
+    values: readonly object[];
+    format: "JSONEachRow";
+    clickhouse_settings?: Record<string, string | number | boolean>;
+  }): Promise<unknown>;
   query(options: {
     query: string;
     query_params?: Record<string, unknown>;
@@ -70,105 +111,147 @@ async function advanceClickHouseGenerationFence(
   });
 }
 
+async function assertProviderGenerationProjectionReady(
+  client: ProviderDataDeletionClickHouseClient,
+): Promise<void> {
+  const result = await client.query({
+    query: `SELECT
+        count() AS active_parts,
+        countIf(NOT has(projections, {projection_name:String})) AS missing_projection_parts
+      FROM system.parts
+      WHERE active
+        AND database = {database_name:String}
+        AND table = {table_name:String}`,
+    query_params: {
+      database_name: INGEST_DATABASE,
+      projection_name: METRIC_STREAM_PROVIDER_GENERATION_PROJECTION,
+      table_name: "metric_stream",
+    },
+    format: "JSONEachRow",
+  });
+  const [readiness] = projectionReadinessRowsSchema.parse(await result.json());
+  if (readiness.missing_projection_parts > 0) {
+    throw new Error(
+      `Provider data deletion requires the ${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION} projection on all active ${METRIC_STREAM_TABLE} parts; ${readiness.missing_projection_parts} of ${readiness.active_parts} parts are missing it. Materialize the projection using docs/provider-data-deletion-runbook.md before retrying.`,
+    );
+  }
+}
+
 async function loadNextMetricStreamBatch(
   client: ProviderDataDeletionClickHouseClient,
   data: ProviderDataDeletionJobData,
-  lastId: string | undefined,
-): Promise<string[]> {
+  checkpoint: ProviderDataDeletionJobData["checkpoint"],
+): Promise<z.infer<typeof metricStreamCursorRowsSchema>> {
   const queryParams: Record<string, unknown> = {
     batch_size: PROVIDER_DATA_DELETION_BATCH_SIZE,
     generation: data.generation,
     provider_id: data.providerId,
     user_id: data.userId,
   };
-  const checkpointCondition = lastId ? "AND id > {last_id:UUID}" : "";
-  if (lastId) queryParams.last_id = lastId;
+  const checkpointCondition = checkpoint
+    ? "AND tuple(generation, id) > tuple({last_generation:UInt64}, {last_id:UUID})"
+    : "";
+  if (checkpoint) {
+    queryParams.last_generation = checkpoint.lastGeneration;
+    queryParams.last_id = checkpoint.lastId;
+  }
 
   const result = await client.query({
-    query: `SELECT id
+    query: `SELECT generation, id
       FROM ${METRIC_STREAM_TABLE}
       WHERE user_id = {user_id:UUID}
         AND provider_id = {provider_id:String}
         AND generation < {generation:UInt64}
         ${checkpointCondition}
-      GROUP BY id
-      HAVING argMax(is_deleted, tuple(version, ingested_at)) = 0
-      ORDER BY id
-      LIMIT {batch_size:UInt64}`,
+      ORDER BY generation, id
+      LIMIT 1 BY generation, id
+      LIMIT {batch_size:UInt64}
+      SETTINGS
+        force_optimize_projection = 1,
+        force_optimize_projection_name = '${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION}',
+        preferred_optimize_projection_name = '${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION}'`,
     query_params: queryParams,
     format: "JSONEachRow",
   });
-  return metricStreamIdRowsSchema.parse(await result.json()).map((row) => row.id);
+  return metricStreamCursorRowsSchema.parse(await result.json());
 }
 
 async function tombstoneMetricStreamBatch(
   client: ProviderDataDeletionClickHouseClient,
   data: ProviderDataDeletionJobData,
-  rowIds: readonly string[],
-): Promise<void> {
-  await client.command({
-    query: `INSERT INTO ${METRIC_STREAM_TABLE} (
-        id, activity_id, user_id, recorded_at, channel, provider_id, external_id,
-        device_id, source_type, scalar, vector, point, metadata, ingested_at,
-        is_deleted, version, generation
-      )
-      SELECT
+  batchKeys: z.infer<typeof metricStreamCursorRowsSchema>,
+): Promise<number> {
+  if (!client.insert) {
+    throw new Error("Provider data deletion requires an insert-capable ClickHouse client");
+  }
+  const result = await client.query({
+    query: `SELECT
         id,
-        latest_row.1 AS activity_id,
-        latest_row.2 AS user_id,
-        latest_row.3 AS recorded_at,
-        latest_row.4 AS channel,
-        latest_row.5 AS provider_id,
-        latest_row.6 AS external_id,
-        latest_row.7 AS device_id,
-        latest_row.8 AS source_type,
-        latest_row.9 AS scalar,
-        latest_row.10 AS vector,
-        latest_row.11 AS point,
-        latest_row.12 AS metadata,
+        activity_id,
+        user_id,
+        recorded_at,
+        channel,
+        provider_id,
+        external_id,
+        device_id,
+        source_type,
+        scalar,
+        vector,
+        point,
+        metadata,
         now64(9) AS ingested_at,
-        1 AS is_deleted,
-        greatest(latest_row.15 + 1, {delete_version:Int64}) AS version,
-        latest_row.13 AS generation
+        toInt8(1) AS is_deleted,
+        greatest(source_version + 1, {delete_version:Int64}) AS version,
+        generation
       FROM (
         SELECT
           id,
-          argMax(
-            tuple(
-              activity_id,
-              user_id,
-              recorded_at,
-              channel,
-              provider_id,
-              external_id,
-              device_id,
-              source_type,
-              scalar,
-              vector,
-              point,
-              metadata,
-              generation,
-              is_deleted,
-              version
-            ),
-            tuple(version, ingested_at)
-          ) AS latest_row
+          activity_id,
+          user_id,
+          recorded_at,
+          channel,
+          provider_id,
+          external_id,
+          device_id,
+          source_type,
+          scalar,
+          vector,
+          point,
+          metadata,
+          is_deleted AS source_is_deleted,
+          version AS source_version,
+          generation
         FROM ${METRIC_STREAM_TABLE}
-        WHERE id IN {row_ids:Array(UUID)}
+        WHERE tuple(generation, id) IN {batch_keys:Array(Tuple(UInt64, UUID))}
           AND user_id = {user_id:UUID}
           AND provider_id = {provider_id:String}
           AND generation < {generation:UInt64}
-        GROUP BY id
+        ORDER BY generation, id, source_version DESC, ingested_at DESC
+        LIMIT 1 BY generation, id
       )
-      WHERE latest_row.14 = 0`,
+      WHERE source_is_deleted = 0
+      SETTINGS
+        force_optimize_projection = 1,
+        force_optimize_projection_name = '${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION}',
+        preferred_optimize_projection_name = '${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION}'`,
     query_params: {
+      batch_keys: batchKeys.map((batchKey) => new TupleParam([batchKey.generation, batchKey.id])),
       delete_version: Date.now(),
       generation: data.generation,
       provider_id: data.providerId,
-      row_ids: rowIds,
       user_id: data.userId,
     },
+    format: "JSONEachRow",
   });
+  const tombstones = metricStreamTombstoneRowsSchema.parse(await result.json());
+  if (tombstones.length === 0) return 0;
+  await client.insert({
+    table: METRIC_STREAM_TABLE,
+    values: tombstones,
+    format: "JSONEachRow",
+    clickhouse_settings: { date_time_input_format: "best_effort" },
+  });
+  return tombstones.length;
 }
 
 async function acknowledgeProviderDataDeletion(
@@ -189,21 +272,24 @@ export async function processProviderDataDeletionJob(
   const { clickHouseClient } = dependencies;
   await updateProgress(job, 0, "Advancing provider generation fence...");
   await advanceClickHouseGenerationFence(clickHouseClient, job.data);
+  await updateProgress(job, 5, "Verifying provider deletion projection...");
+  await assertProviderGenerationProjectionReady(clickHouseClient);
 
   let checkpoint = job.data.checkpoint;
   while (true) {
-    const rowIds = await loadNextMetricStreamBatch(clickHouseClient, job.data, checkpoint?.lastId);
-    if (rowIds.length === 0) break;
+    const rows = await loadNextMetricStreamBatch(clickHouseClient, job.data, checkpoint);
+    if (rows.length === 0) break;
 
-    await tombstoneMetricStreamBatch(clickHouseClient, job.data, rowIds);
-    const lastId = rowIds.at(-1);
-    if (!lastId) {
-      throw new Error("Provider data deletion batch did not produce a checkpoint id");
+    const deletedRows = await tombstoneMetricStreamBatch(clickHouseClient, job.data, rows);
+    const lastRow = rows.at(-1);
+    if (!lastRow) {
+      throw new Error("Provider data deletion batch did not produce a checkpoint cursor");
     }
     checkpoint = {
       batches: (checkpoint?.batches ?? 0) + 1,
-      deletedRows: (checkpoint?.deletedRows ?? 0) + rowIds.length,
-      lastId,
+      deletedRows: (checkpoint?.deletedRows ?? 0) + deletedRows,
+      lastGeneration: lastRow.generation,
+      lastId: lastRow.id,
     };
     await job.updateData({ ...job.data, checkpoint });
     await updateProgress(

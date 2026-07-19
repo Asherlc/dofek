@@ -9,9 +9,9 @@ Provider deletion is an asynchronous, generation-fenced workflow. It does not pu
 | Transactional outbox | The provider record deletion, generation increment, and deletion request are committed in one PostgreSQL transaction. PostgreSQL transactions make those steps an all-or-nothing operation: <https://www.postgresql.org/docs/current/tutorial-transactions.html>. |
 | Generation / fencing token | A monotonically increasing number for one `(user_id, provider_id)`. Events from an older generation are stale and cannot become active after deletion. |
 | Idempotency key | The outbox `event_id`, also used as the BullMQ `jobId`. BullMQ custom job IDs prevent a second job with the same ID while the retained job exists: <https://docs.bullmq.io/guide/jobs/job-ids>. |
-| Checkpoint | BullMQ job data containing the last processed metric-stream ID and cumulative batch/row counts. A retry resumes after the last durable checkpoint. |
+| Checkpoint | BullMQ job data containing the last processed generation and metric-stream ID plus cumulative batch/row counts. A retry resumes after the last durable checkpoint. |
 | Tombstone | A new version of an existing metric-stream row with `is_deleted = 1`. Raw history remains available while current-state queries treat the ID as deleted. |
-| Projection | ClickHouse's hidden, query-optimized ordering of the same table data. `by_provider_generation` orders IDs by user, provider, and generation so deletion scans do not require a full table scan. ClickHouse maintains projections for new inserts automatically: <https://clickhouse.com/docs/data-modeling/projections>. |
+| Covering projection | ClickHouse's hidden, query-optimized ordering of the same table data. `by_provider_generation` contains every column required to create a tombstone and orders rows by user, provider, generation, ID, and version so neither deletion phase falls back to the base table. ClickHouse maintains projections for new inserts automatically: <https://clickhouse.com/docs/data-modeling/projections>. |
 | Acknowledgement | A durable ClickHouse row proving the metric-stream deletion batches finished before downstream analytics refresh begins. |
 
 ## Control Flow
@@ -21,14 +21,15 @@ Provider deletion is an asynchronous, generation-fenced workflow. It does not pu
 3. It increments `fitness.provider_data_generation.current_generation` and inserts one row into `fitness.provider_data_deletion_outbox` in the same transaction.
 4. The outbox dispatcher adds a `provider-data-deletion` BullMQ job using `event_id` as the idempotency key, then marks the outbox row `dispatched`.
 5. The worker advances the ClickHouse generation fence in `ingest.provider_data_generation`.
-6. The worker scans active rows from older generations in batches of 10,000 IDs, writes exact-ID tombstones, and persists a checkpoint after every batch.
-7. When no older active rows remain, the worker writes `ingest.metric_stream_delete_acknowledgement`, enqueues the provider analytics refresh, and marks the outbox row `completed`.
+6. The worker verifies that every active base-table part has the covering projection. It fails before scanning if historical parts have not been materialized.
+7. The worker uses keyset pagination over `(generation, id)` in batches of 1,000 IDs, reads the latest projected rows, inserts exact-ID tombstones, and persists a checkpoint after every batch. The 1,000-row transport bound keeps ClickHouse HTTP parameters below the server field-size limit.
+8. When no older rows remain, the worker writes `ingest.metric_stream_delete_acknowledgement`, enqueues the provider analytics refresh, and marks the outbox row `completed`.
 
 Metric-stream writers stamp every new event with the provider's current generation. After inserting a batch, the ClickHouse sink checks the generation fence and immediately tombstones exact IDs from older generations. The post-insert check closes the race between an in-flight sink batch and a newly advanced fence: either the deletion worker sees the row in its scan, or the sink sees the fence after insertion. The jobs are intentionally idempotent because BullMQ can deliver a job again after a worker failure; BullMQ documents this retry-safe design as idempotent jobs: <https://docs.bullmq.io/patterns/idempotent-jobs>.
 
 ## Deployment And Historical Projection
 
-The ClickHouse migration adds `generation`, the generation-fence table, and the `by_provider_generation` projection definition. New parts populate the projection automatically. Existing parts remain correct but do not receive the reordered projection until an operator explicitly materializes it. ClickHouse requires `MATERIALIZE PROJECTION` for existing data: <https://clickhouse.com/docs/data-modeling/projections#filtering-on-columns-which-arent-in-the-primary-key>.
+The ClickHouse migrations add `generation`, the generation-fence table, and the covering `by_provider_generation` projection definition. Migration `0047_cover_provider_generation_projection` replaces the original narrow projection because the deletion worker must retrieve the full latest row without returning to the base-table order. New parts populate the projection automatically. Existing parts remain correct but do not receive the reordered projection until an operator explicitly materializes it. ClickHouse requires `MATERIALIZE PROJECTION` for existing data: <https://clickhouse.com/docs/data-modeling/projections#filtering-on-columns-which-arent-in-the-primary-key>.
 
 Materialization rewrites historical data, so do not put it in the deploy migration. Run it only in an approved maintenance window:
 
@@ -117,6 +118,8 @@ FROM
 ```
 
 The count must be zero before treating the metric-stream deletion as complete. Analytics can lag behind that acknowledgement while its refresh job runs.
+
+The Redpanda sink checks this acknowledgement before replaying a version-2 delete event. During incident recovery, insert a missing acknowledgement manually only after query evidence proves that the event's tombstones committed; the receipt causes redelivery to skip the already-applied delete and lets the consumer advance.
 
 ## Deployment Transition
 
