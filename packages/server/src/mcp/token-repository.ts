@@ -7,6 +7,7 @@ import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 export const mcpScopeSchema = z.enum([
   "health:read",
   "activity:read",
+  "nutrition:read",
   "nutrition:write",
   "providers:read",
   "sync:write",

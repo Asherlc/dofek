@@ -43,13 +43,21 @@ describe("MCP token repository (integration)", () => {
     const created = await createMcpToken(ctx.db, {
       userId: testUserId,
       name: "Codex",
-      scopes: ["health:read", "activity:read", "nutrition:write", "providers:read", "sync:write"],
+      scopes: [
+        "health:read",
+        "activity:read",
+        "nutrition:read",
+        "nutrition:write",
+        "providers:read",
+        "sync:write",
+      ],
       expiresAt: null,
     });
 
     expect(created.metadata.scopes).toEqual([
       "health:read",
       "activity:read",
+      "nutrition:read",
       "nutrition:write",
       "providers:read",
       "sync:write",
@@ -63,6 +71,7 @@ describe("MCP token repository (integration)", () => {
     expect(raw[0]?.scopes).toEqual([
       "health:read",
       "activity:read",
+      "nutrition:read",
       "nutrition:write",
       "providers:read",
       "sync:write",
