@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,9 +8,15 @@ const mockUseParams = vi.fn().mockReturnValue({ id: "strong-csv" });
 
 vi.mock("@tanstack/react-router", () => ({
   useParams: (...args: unknown[]) => mockUseParams(...args),
-  Link: ({ children, ...props }: { children: ReactNode; to: string }) => (
-    <a href={props.to}>{children}</a>
-  ),
+  Link: ({
+    children,
+    to,
+    params,
+  }: {
+    children: ReactNode;
+    to: string;
+    params?: { id: string };
+  }) => <a href={params ? to.replace("$id", params.id) : to}>{children}</a>,
 }));
 
 vi.mock("../components/AppHeader.tsx", () => ({
@@ -62,12 +69,28 @@ interface MockProvider {
   importOnly: boolean;
 }
 
+type MockProviderStats = ProviderStats & { providerId: string };
+
 const mockProviders: { data: MockProvider[]; isLoading: boolean } = {
   data: [],
   isLoading: false,
 };
 
-const mockStats = { data: [], isLoading: false };
+const mockStats: { data: MockProviderStats[]; isLoading: boolean } = {
+  data: [],
+  isLoading: false,
+};
+const mockRecords: {
+  data: { rows: Array<Record<string, unknown>>; columns: string[] };
+  isLoading: boolean;
+  isError: boolean;
+  error: null;
+} = {
+  data: { rows: [], columns: [] },
+  isLoading: false,
+  isError: false,
+  error: null,
+};
 const mockActiveImports: { data: Array<Record<string, unknown>>; isLoading: boolean } = {
   data: [],
   isLoading: false,
@@ -124,7 +147,7 @@ vi.mock("../lib/trpc.ts", () => ({
       deletionStatus: { useQuery: () => ({ data: undefined, error: null }) },
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
       logFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
-      records: { useQuery: () => ({ data: { rows: [] }, isLoading: false }) },
+      records: { useQuery: () => mockRecords },
       recordFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
     },
     settings: {
@@ -164,6 +187,11 @@ beforeEach(() => {
   mockDataHealth.isLoading = false;
   mockDataHealth.error = null;
   mockActiveImports.data = [];
+  mockStats.data = [];
+  mockRecords.data = { rows: [], columns: [] };
+  mockRecords.isLoading = false;
+  mockRecords.isError = false;
+  mockRecords.error = null;
 });
 
 afterEach(() => {
@@ -495,6 +523,52 @@ describe("ProviderDetailPage delete all data", () => {
       providerId: "wahoo",
       confirmation: "DELETE",
     });
+  });
+});
+
+describe("ProviderDetailPage activity records", () => {
+  it("links from an activity record modal to the activity detail page", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockStats.data = [
+      {
+        providerId: "wahoo",
+        totalRecords: 1,
+        activities: 1,
+        metricStream: 0,
+        dailyMetrics: 0,
+        sleepSessions: 0,
+        bodyMeasurements: 0,
+        foodEntries: 0,
+        nutritionDaily: 0,
+        healthEvents: 0,
+        labPanels: 0,
+        labResults: 0,
+        journalEntries: 0,
+      },
+    ];
+    mockRecords.data = {
+      rows: [{ id: "activity-123", name: "Morning Ride" }],
+      columns: ["id", "name"],
+    };
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    fireEvent.click(screen.getByText("Morning Ride"));
+
+    expect(screen.getByRole("link", { name: "Open activity" }).getAttribute("href")).toBe(
+      "/activity/activity-123",
+    );
   });
 });
 

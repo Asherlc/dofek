@@ -17,20 +17,17 @@ import { ProviderDisconnectControl } from "../components/ProviderDisconnectContr
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
-import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
-import {
-  type FilterInputType,
-  type FilterOption,
-  filterRangeBoundKey,
-  getFilterInputType,
-  isRangeFilterInputType,
-  toFilterOptions,
-} from "../lib/provider-detail-filter-options.ts";
+import { toFilterOptions } from "../lib/provider-detail-filter-options.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
-import { DateRangeFilterField } from "./DateRangeFilterField.tsx";
 import { ProviderDataDeleteControl } from "./ProviderDataDeleteControl.tsx";
+import {
+  pruneEmptyFilters,
+  RecordFiltersGrid,
+  TableFilterRow,
+  useDebouncedFilters,
+} from "./ProviderDetailFilters.tsx";
 import { formatCellValue, formatColumnName } from "./provider-detail-format.ts";
 import { RecordDetailModal } from "./RecordDetailModal.tsx";
 import { WhoopWearLocationPicker } from "./WhoopWearLocationPicker.tsx";
@@ -478,150 +475,6 @@ const SYNC_HISTORY_FILTER_COLUMNS = [
   { key: "id", label: "Id" },
 ] as const;
 
-function useDebouncedFilters(filters: Record<string, string>, delayMs = 300) {
-  return useDebouncedValue(filters, delayMs);
-}
-
-function pruneEmptyFilters(filters: Record<string, string>): Record<string, string> {
-  const pruned: Record<string, string> = {};
-  for (const [key, value] of Object.entries(filters)) {
-    if (value.trim()) pruned[key] = value.trim();
-  }
-  return pruned;
-}
-
-const FILTER_CONTROL_CLASS =
-  "w-full px-2 py-1.5 text-xs bg-accent/10 border border-border rounded text-foreground placeholder:text-dim focus:outline-none focus:border-border-strong";
-
-function FilterField({
-  column,
-  filters,
-  options,
-  inputType = "text",
-  onFilterChange,
-  align = "left",
-  className = FILTER_CONTROL_CLASS,
-}: {
-  column: { key: string; label: string };
-  filters: Record<string, string>;
-  options?: readonly FilterOption[];
-  inputType?: FilterInputType;
-  onFilterChange: (key: string, value: string) => void;
-  align?: "left" | "right";
-  className?: string;
-}) {
-  if (options && options.length > 0) {
-    return (
-      <select
-        value={filters[column.key] ?? ""}
-        onChange={(event) => onFilterChange(column.key, event.target.value)}
-        aria-label={`Filter ${column.label}`}
-        className={`${className} ${align === "right" ? "text-right" : "text-left"}`}
-      >
-        <option value="">All</option>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
-  if (isRangeFilterInputType(inputType)) {
-    return (
-      <DateRangeFilterField
-        column={column}
-        inputType={inputType}
-        fromValue={filters[filterRangeBoundKey(column.key, "from")] ?? ""}
-        toValue={filters[filterRangeBoundKey(column.key, "to")] ?? ""}
-        onFromChange={(value) => onFilterChange(filterRangeBoundKey(column.key, "from"), value)}
-        onToChange={(value) => onFilterChange(filterRangeBoundKey(column.key, "to"), value)}
-        className={className}
-      />
-    );
-  }
-
-  return (
-    <input
-      type="text"
-      value={filters[column.key] ?? ""}
-      onChange={(event) => onFilterChange(column.key, event.target.value)}
-      placeholder={`Filter ${column.label}`}
-      aria-label={`Filter ${column.label}`}
-      className={`${className} ${align === "right" ? "text-right" : "text-left"}`}
-    />
-  );
-}
-
-function TableFilterRow({
-  columns,
-  filters,
-  onFilterChange,
-  getOptions,
-  align = "left",
-  trailingCells = 0,
-}: {
-  columns: ReadonlyArray<{ key: string; label: string }>;
-  filters: Record<string, string>;
-  onFilterChange: (key: string, value: string) => void;
-  getOptions?: (columnKey: string) => readonly FilterOption[] | undefined;
-  align?: "left" | "right";
-  trailingCells?: number;
-}) {
-  return (
-    <tr className="border-b border-border/50 bg-page/40">
-      {columns.map((column) => (
-        <th key={column.key} scope="col" className="px-2 py-1.5 font-normal">
-          <FilterField
-            column={column}
-            filters={filters}
-            options={getOptions?.(column.key)}
-            inputType={getFilterInputType(column.key)}
-            onFilterChange={onFilterChange}
-            align={align}
-            className={`${FILTER_CONTROL_CLASS} min-w-[5rem] py-1`}
-          />
-        </th>
-      ))}
-      {trailingCells > 0 && <th key="raw-data-column" scope="col" className="px-2 py-1.5" />}
-    </tr>
-  );
-}
-
-function RecordFiltersGrid({
-  columns,
-  filters,
-  onFilterChange,
-  getOptions,
-}: {
-  columns: ReadonlyArray<{ key: string; label: string }>;
-  filters: Record<string, string>;
-  onFilterChange: (key: string, value: string) => void;
-  getOptions?: (columnKey: string) => readonly FilterOption[] | undefined;
-}) {
-  if (columns.length === 0) return null;
-
-  return (
-    <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {columns.map((column) => (
-        <div key={column.key} className="block">
-          <span className="mb-1 block text-[10px] uppercase tracking-wider text-subtle">
-            {column.label}
-          </span>
-          <FilterField
-            column={column}
-            filters={filters}
-            options={getOptions?.(column.key)}
-            inputType={getFilterInputType(column.key)}
-            onFilterChange={onFilterChange}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function SyncHistory({ providerId }: { providerId: string }) {
   const [page, setPage] = useState(0);
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -1015,7 +868,15 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
 
       {/* Record detail modal */}
       {selectedRecord && (
-        <RecordDetailModal record={selectedRecord} onClose={() => setSelectedRecord(null)} />
+        <RecordDetailModal
+          record={selectedRecord}
+          onClose={() => setSelectedRecord(null)}
+          activityId={
+            dataType === "activities" && typeof selectedRecord.id === "string"
+              ? selectedRecord.id
+              : undefined
+          }
+        />
       )}
     </>
   );
