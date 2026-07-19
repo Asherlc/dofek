@@ -66,6 +66,23 @@ export function parseLiveWorkoutBuffer(serialized: string): LiveWorkoutBuffer {
   }
 }
 
+export function removeUploadedLiveWorkoutSnapshots(
+  buffer: LiveWorkoutBuffer,
+  externalId: string,
+  uploadedSnapshots: LiveWorkoutSnapshot[],
+): LiveWorkoutBuffer {
+  const uploadedSnapshotSet = new Set(uploadedSnapshots);
+  return {
+    batches: buffer.batches.flatMap((batch) => {
+      if (batch.externalId !== externalId) return [batch];
+      const remainingSnapshots = batch.snapshots.filter(
+        (snapshot) => !uploadedSnapshotSet.has(snapshot),
+      );
+      return remainingSnapshots.length > 0 ? [{ ...batch, snapshots: remainingSnapshots }] : [];
+    }),
+  };
+}
+
 export function readLiveWorkoutBuffer(): LiveWorkoutBuffer {
   try {
     const contents = readFileSync({

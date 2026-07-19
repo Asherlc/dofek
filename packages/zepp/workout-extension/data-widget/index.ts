@@ -11,6 +11,7 @@ import {
 import {
   type LiveWorkoutBatch,
   readLiveWorkoutBuffer,
+  removeUploadedLiveWorkoutSnapshots,
   writeLiveWorkoutBuffer,
 } from "../../src/workout-live-storage.ts";
 
@@ -107,7 +108,8 @@ DataWidget(
       this.state.flushing = true;
       try {
         for (const batch of [...this.state.pendingBatches]) {
-          const latestSnapshot = batch.snapshots.at(-1);
+          const snapshotsToUpload = [...batch.snapshots];
+          const latestSnapshot = snapshotsToUpload.at(-1);
           if (!latestSnapshot) continue;
           const durationSeconds = latestSnapshot.metrics.duration ?? 0;
           const startedAt = new Date(Number(batch.externalId) * 1000).toISOString();
@@ -126,21 +128,23 @@ DataWidget(
                     endedAt,
                     raw: {
                       liveSnapshotsByRecordedAt: Object.fromEntries(
-                        batch.snapshots.map((snapshot) => [snapshot.recordedAt, snapshot]),
+                        snapshotsToUpload.map((snapshot) => [snapshot.recordedAt, snapshot]),
                       ),
                     },
                   },
                 ],
-                liveWorkoutSamples: batch.snapshots.map((snapshot) => ({
+                liveWorkoutSamples: snapshotsToUpload.map((snapshot) => ({
                   externalId: batch.externalId,
                   ...snapshot,
                 })),
               },
             },
           });
-          this.state.pendingBatches = this.state.pendingBatches.filter(
-            (pendingBatch) => pendingBatch.externalId !== batch.externalId,
-          );
+          this.state.pendingBatches = removeUploadedLiveWorkoutSnapshots(
+            { batches: this.state.pendingBatches },
+            batch.externalId,
+            snapshotsToUpload,
+          ).batches;
           writeLiveWorkoutBuffer({ batches: this.state.pendingBatches });
         }
         this.state.statusWidget?.setProperty(prop.TEXT, "Live workout data synced");

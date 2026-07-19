@@ -257,12 +257,14 @@ export function createIngestZosHealthRouter(deps: {
       // constraint is a NULLS NOT DISTINCT index on (user_id, date, provider_id, source_name)
       const normalizedDailyMetrics = { ...data.dailyMetrics };
       if (data.watchSummary) {
-        normalizedDailyMetrics[data.watchSummary.date] = {
-          ...normalizedDailyMetrics[data.watchSummary.date],
-          steps: data.watchSummary.steps,
-          calories: data.watchSummary.calories,
-          standHours: data.watchSummary.standHours,
-          exerciseMinutes: data.watchSummary.fatBurning,
+        const summary = data.watchSummary;
+        const existing = normalizedDailyMetrics[summary.date] ?? {};
+        normalizedDailyMetrics[summary.date] = {
+          ...existing,
+          steps: summary.steps ?? existing.steps,
+          calories: summary.calories ?? existing.calories,
+          standHours: summary.standHours ?? existing.standHours,
+          exerciseMinutes: summary.fatBurning ?? existing.exerciseMinutes,
         };
       }
       if (Object.keys(normalizedDailyMetrics).length > 0) {

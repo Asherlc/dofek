@@ -1,6 +1,5 @@
 import { BloodOxygen, BodyTemperature, HeartRate, Stress, Time, Workout } from "@zos/sensor";
 import { log as Logger } from "@zos/utils";
-import type { BackgroundHealthBuffer } from "../src/background-health.ts";
 import {
   appendBackgroundHealthSample,
   collectBackgroundHealthSample,
@@ -11,12 +10,10 @@ import {
 } from "../src/background-health-storage.ts";
 
 const logger = Logger.getLogger("imu-service");
-let backgroundHealthBuffer: BackgroundHealthBuffer;
 
 AppService({
   onInit(this: AppServiceContext) {
     logger.log("imu_service onInit");
-    backgroundHealthBuffer = readBackgroundHealthBuffer();
     const time = new Time();
     time.onPerMinute(() => {
       try {
@@ -27,8 +24,9 @@ AppService({
           Stress,
           Workout,
         });
-        backgroundHealthBuffer = appendBackgroundHealthSample(backgroundHealthBuffer, collected);
-        writeBackgroundHealthBuffer(backgroundHealthBuffer);
+        const currentBuffer = readBackgroundHealthBuffer();
+        const updatedBuffer = appendBackgroundHealthSample(currentBuffer, collected);
+        writeBackgroundHealthBuffer(updatedBuffer);
       } catch (error: unknown) {
         logger.error("background health collection failed %j", error);
       }

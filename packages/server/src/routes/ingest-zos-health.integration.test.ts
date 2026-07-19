@@ -226,6 +226,38 @@ describe("POST /api/ingest/zos-health", () => {
     ]);
   });
 
+  it("preserves daily metric fields omitted from the watch summary", async () => {
+    const response = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: `Bearer ${validToken}` },
+      body: {
+        dailyMetrics: {
+          "2024-07-04": { calories: 456, distanceKm: 7.5, standHours: 10 },
+        },
+        watchSummary: {
+          collectedAt: 1_720_087_600_000,
+          date: "2024-07-04",
+          timezoneOffsetMinutes: 0,
+          steps: 5432,
+        },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const rows = await testCtx.db.execute(
+      sql`SELECT steps, active_energy_kcal, distance_km, stand_hours
+          FROM fitness.daily_metrics
+          WHERE date = '2024-07-04' AND user_id = ${TEST_USER_ID}`,
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({
+        steps: 5432,
+        active_energy_kcal: 456,
+        distance_km: 7.5,
+        stand_hours: 10,
+      }),
+    ]);
+  });
+
   it("skips dailyMetrics with invalid date key", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
