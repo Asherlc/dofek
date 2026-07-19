@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_DOFEK_SERVER_URL, STORAGE_KEYS } from "../../src/storage-keys.ts";
 
 interface SettingsStorage {
@@ -63,6 +63,12 @@ beforeEach(() => {
 
 function buildWith(values: Readonly<Record<string, string | null>>) {
   if (!configuration) throw new Error("setting configuration was not registered");
+  configuration.state = {
+    serverUrl: DEFAULT_DOFEK_SERVER_URL,
+    email: "",
+    password: "",
+    connectionStatus: "not connected",
+  };
   const settingsStorage = {
     getItem: vi.fn((key: string) => values[key] ?? null),
     setItem: vi.fn(),
@@ -70,6 +76,10 @@ function buildWith(values: Readonly<Record<string, string | null>>) {
   const rendered = configuration.build.call(configuration, { settingsStorage });
   return { rendered, settingsStorage };
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("workout extension settings", () => {
   it("loads saved settings and renders every control", () => {
@@ -132,7 +142,7 @@ describe("workout extension settings", () => {
     expect(configuration?.state.connectionStatus).toBe("invalid saved status");
 
     buildWith({ [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ other: true }) });
-    expect(configuration?.state.connectionStatus).toBe("invalid saved status");
+    expect(configuration?.state.connectionStatus).toBe("not connected");
 
     expect(() =>
       buildWith({ [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify("connected") }),
@@ -140,7 +150,7 @@ describe("workout extension settings", () => {
     expect(() =>
       buildWith({ [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify(null) }),
     ).not.toThrow();
-    expect(configuration?.state.connectionStatus).toBe("invalid saved status");
+    expect(configuration?.state.connectionStatus).toBe("not connected");
   });
 
   it("persists edits and sends a nonce-bearing login command", () => {
