@@ -26,7 +26,19 @@ describe("ActivityRepository exact-range search", () => {
           ('mcp_search_test', ${TEST_USER_ID}, 'other', 'walking',
             '2026-05-18T12:00:00Z', '2026-05-18T12:30:00Z', 'Lunch Walk'),
           ('mcp_search_test', ${TEST_USER_ID}, 'after', 'cycling',
-            '2026-05-19T00:00:00Z', '2026-05-19T01:00:00Z', 'Boundary Ride After')`,
+            '2026-05-19T00:00:00Z', '2026-05-19T01:00:00Z', 'Boundary Ride After'),
+          ('mcp_search_test', ${TEST_USER_ID}, 'percent-literal', 'running',
+            '2026-06-01T08:00:00Z', '2026-06-01T09:00:00Z', '50% Effort'),
+          ('mcp_search_test', ${TEST_USER_ID}, 'percent-other', 'running',
+            '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z', '500 Effort'),
+          ('mcp_search_test', ${TEST_USER_ID}, 'underscore-literal', 'running',
+            '2026-06-01T12:00:00Z', '2026-06-01T13:00:00Z', 'Leg_day Run'),
+          ('mcp_search_test', ${TEST_USER_ID}, 'underscore-other', 'running',
+            '2026-06-01T14:00:00Z', '2026-06-01T15:00:00Z', 'Leg-day Run'),
+          ('mcp_search_test', ${TEST_USER_ID}, 'backslash-literal', 'running',
+            '2026-06-01T16:00:00Z', '2026-06-01T17:00:00Z', 'Trail\\Run'),
+          ('mcp_search_test', ${TEST_USER_ID}, 'backslash-other', 'running',
+            '2026-06-01T18:00:00Z', '2026-06-01T19:00:00Z', 'TrailRun')`,
     );
   }, 60_000);
 
@@ -67,5 +79,23 @@ describe("ActivityRepository exact-range search", () => {
       limit: 1,
     });
     expect(emptyResult).toEqual({ items: [], totalCount: 0 });
+  });
+
+  it.each([
+    ["50%", "50% Effort"],
+    ["Leg_day", "Leg_day Run"],
+    ["Trail\\Run", "Trail\\Run"],
+  ])("matches ILIKE metacharacters literally in %s", async (query, expectedName) => {
+    const repository = new ActivityRepository(testContext.db, TEST_USER_ID, "UTC");
+
+    const result = await repository.search({
+      startDate: "2026-06-01",
+      endDate: "2026-06-01",
+      query,
+      limit: 10,
+    });
+
+    expect(result.items.map((item) => item.name)).toEqual([expectedName]);
+    expect(result.totalCount).toBe(1);
   });
 });

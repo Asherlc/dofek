@@ -34,6 +34,22 @@ const activityListRowSchema = z.object({
   total_count: z.coerce.number(),
 });
 
+const activityListColumns = sql`
+  a.id,
+  a.activity_type,
+  a.started_at::text AS started_at,
+  a.ended_at::text AS ended_at,
+  a.name,
+  a.provider_id,
+  a.source_providers,
+  a.member_activity_ids,
+  NULL::double precision AS avg_hr,
+  NULL::smallint AS max_hr,
+  NULL::double precision AS avg_power,
+  NULL::double precision AS distance_meters,
+  COUNT(*) OVER()::int AS total_count
+`;
+
 const activityDetailRowSchema = z.object({
   id: z.string(),
   activity_type: z.string(),
@@ -378,7 +394,8 @@ export class ActivityRepository extends BaseRepository {
   async search(
     input: SearchInput,
   ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
-    const queryPattern = input.query ? `%${input.query}%` : null;
+    const escapedQuery = input.query?.replace(/[%_\\]/g, (character) => `\\${character}`);
+    const queryPattern = escapedQuery ? `%${escapedQuery}%` : null;
     const rows = await this.#exactRangeRows(
       input.startDate,
       input.endDate,
@@ -424,19 +441,7 @@ export class ActivityRepository extends BaseRepository {
     return this.query(
       activityListRowSchema,
       sql`SELECT
-            a.id,
-            a.activity_type,
-            a.started_at::text AS started_at,
-            a.ended_at::text AS ended_at,
-            a.name,
-            a.provider_id,
-            a.source_providers,
-            a.member_activity_ids,
-            NULL::double precision AS avg_hr,
-            NULL::smallint AS max_hr,
-            NULL::double precision AS avg_power,
-            NULL::double precision AS distance_meters,
-            COUNT(*) OVER()::int AS total_count
+            ${activityListColumns}
           FROM fitness.v_activity a
           WHERE a.user_id = ${this.userId}
             AND a.started_at >= (${startDate}::date AT TIME ZONE ${this.timezone})
@@ -465,19 +470,7 @@ export class ActivityRepository extends BaseRepository {
     return this.query(
       activityListRowSchema,
       sql`SELECT
-            a.id,
-            a.activity_type,
-            a.started_at::text AS started_at,
-            a.ended_at::text AS ended_at,
-            a.name,
-            a.provider_id,
-            a.source_providers,
-            a.member_activity_ids,
-            NULL::double precision AS avg_hr,
-            NULL::smallint AS max_hr,
-            NULL::double precision AS avg_power,
-            NULL::double precision AS distance_meters,
-            COUNT(*) OVER()::int AS total_count
+            ${activityListColumns}
           FROM fitness.v_activity a
           WHERE a.user_id = ${this.userId}
             ${rangeFilter}
