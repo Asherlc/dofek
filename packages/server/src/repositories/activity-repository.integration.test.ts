@@ -23,7 +23,7 @@ describe("ActivityRepository exact-range search", () => {
             '2026-05-10T00:00:00Z', '2026-05-10T01:00:00Z', 'Boundary Ride First'),
           ('mcp_search_test', ${TEST_USER_ID}, 'matching', 'cycling',
             '2026-05-18T23:00:00Z', '2026-05-18T23:30:00Z', 'Evening Ride'),
-          ('mcp_search_test', ${TEST_USER_ID}, 'nonmatching', 'walking',
+          ('mcp_search_test', ${TEST_USER_ID}, 'other', 'walking',
             '2026-05-18T12:00:00Z', '2026-05-18T12:30:00Z', 'Lunch Walk'),
           ('mcp_search_test', ${TEST_USER_ID}, 'after', 'cycling',
             '2026-05-19T00:00:00Z', '2026-05-19T01:00:00Z', 'Boundary Ride After')`,
