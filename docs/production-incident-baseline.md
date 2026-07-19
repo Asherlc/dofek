@@ -14112,3 +14112,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   compare the same structured `trpc.procedure` and ClickHouse spans against the
   baseline above and record p50/p95/max latency in issue #1431. The change has
   not yet been measured in production.
+
+## 2026-07-19 — Zepp Workout Extension Build Lacked Its Registered App ID
+
+- **Symptoms:** The PR CI `Build Zepp packages` job built the standard watch ZAB,
+  then stopped at `Validate Workout Extension app ID` before building the
+  Workout Extension ZAB.
+- **User impact:** PR #1687 could not pass its CI gate or produce a validated
+  Workout Extension artifact.
+- **Evidence:** The exact failing step was `Validate Workout Extension app ID`
+  in GitHub Actions job
+  [88207614710](https://github.com/Asherlc/dofek/actions/runs/29692477018/job/88207614710).
+  The first fatal line was `Repository variable ZEPP_WORKOUT_EXTENSION_APP_ID
+  must contain the numeric app ID provisioned in the Zepp developer console.`
+- **Root cause:** The repository did not define
+  `ZEPP_WORKOUT_EXTENSION_APP_ID`, although Zepp requires a Workout Extension to
+  be registered as an independent application with its own app ID
+  ([Zepp Workout Extension quick start](https://docs.zepp.com/docs/guides/workout-extension/quick-start/)).
+- **Fix / mitigation:** Registered Workout Extension app ID `1120920` was added
+  as the public GitHub repository variable
+  `ZEPP_WORKOUT_EXTENSION_APP_ID`. The required-prerequisite check remains
+  fail-fast; no fallback ID or warn-and-continue behavior was added.
+- **Validation:** Attempt 2 of
+  [CI run 29692477018](https://github.com/Asherlc/dofek/actions/runs/29692477018)
+  built both Zepp packages successfully and completed the overall CI gate with
+  `success`.
+- **Remaining risk / follow-up:** The generated Workout Extension ZAB must use
+  app ID `1120920` when it is uploaded to that registered application in the
+  Zepp Developer Console
+  ([Zepp Workout Extension submission](https://docs.zepp.com/docs/guides/workout-extension/distribute/)).
