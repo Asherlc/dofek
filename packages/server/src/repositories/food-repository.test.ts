@@ -420,6 +420,12 @@ describe("FoodRepository", () => {
       const result = await repo.dailyTotalsRange("2024-06-15", "2024-06-15");
 
       expect(result[0]).toBeInstanceOf(DailyNutritionSummary);
+      expect(result[0]?.date).toBe("2024-06-15");
+      expect(result[0]?.calories).toBe(2450);
+      expect(result[0]?.proteinGrams).toBe(165);
+      expect(result[0]?.carbsGrams).toBe(280);
+      expect(result[0]?.fatGrams).toBe(85);
+      expect(result[0]?.fiberGrams).toBe(32);
       expect(result[0]?.mealCount).toBe(4);
       expect(result[0]?.sourceProviders).toEqual(["fatsecret"]);
     });
