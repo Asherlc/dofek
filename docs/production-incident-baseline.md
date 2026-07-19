@@ -14027,3 +14027,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   releases from manually pushed Zepp tags. Use `workflow_dispatch` for manual
   releases. Confirm the next production release creates one tag, one release,
   and one successful workflow run.
+
+## 2026-07-18 — Anomaly Detection Ranked Raw Sleep at Request Time
+
+- **Symptoms:** The `anomalyDetection.check` tRPC procedure took 17.6 seconds
+  on average and 31.2 seconds at maximum in the available production sample.
+- **User impact:** Opening anomaly detection could block for tens of seconds
+  while the server recalculated sleep-night rankings over the preceding 35
+  days.
+- **Evidence:** Structured Axiom spans showed three matching ClickHouse POSTs
+  averaging 17.4 seconds and reaching 31.0 seconds. In trace
+  `d6a52211e18f82fa7a45c1594772309a`, the anomaly procedure took 17.1 seconds,
+  its sleep query took 17.0 seconds, and regular ClickHouse queue wait was only
+  0.184 milliseconds. The investigation details and Axiom query links are in
+  [issue #1431](https://github.com/Asherlc/dofek/issues/1431#issuecomment-5014485388).
+- **Root cause:** `AnomalyDetectionRepository.check()` called
+  `fetchSleepNights()`, which ranked `analytics.v_sleep` rows with a window
+  function during every request even though the incremental
+  `analytics.daily_sleep` serving model already contains the required nightly
+  values.
+- **Fix / mitigation:** [PR #1686](https://github.com/Asherlc/dofek/pull/1686)
+  switches anomaly detection to `fetchDailySleepPerformanceNights()` so the
+  route reads the existing incremental serving model. No timeout, retry, or
+  queue-limit change was added.
+- **Validation:** A regression test first failed while the repository still
+  queried `analytics.v_sleep`, then passed after the switch and asserts the
+  route queries `analytics.daily_sleep` instead. The focused suites pass 124
+  tests, the full unit suite passes 11,902 tests with 21 skipped, and lint plus
+  root/server/web TypeScript checks pass.
+- **Remaining risk / follow-up:** After deployment and representative traffic,
+  compare the same structured `trpc.procedure` and ClickHouse spans against the
+  baseline above and record p50/p95/max latency in issue #1431. The change has
+  not yet been measured in production.
