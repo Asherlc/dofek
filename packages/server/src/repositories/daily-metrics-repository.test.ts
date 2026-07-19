@@ -173,6 +173,7 @@ describe("DailyMetricsRepository", () => {
 
       expect(result[0]?.resting_hr).toBe(52);
       const compiledQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("WHERE false");
       expect(compiledQuery.params).toEqual(["user-1", "2025-03-10", "2025-03-15"]);
     });
   });
