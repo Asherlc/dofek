@@ -27,6 +27,7 @@ import {
   isRangeFilterInputType,
   toFilterOptions,
 } from "../lib/provider-detail-filter-options.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { DateRangeFilterField } from "./DateRangeFilterField.tsx";
 import { ProviderDataDeleteControl } from "./ProviderDataDeleteControl.tsx";
@@ -150,6 +151,7 @@ export function ProviderDetailPage() {
           },
         });
       } catch (err: unknown) {
+        captureException(err, { context: "sync-provider" });
         setSyncStatus("error");
         setSyncPercentage(undefined);
         setSyncMessage(err instanceof Error ? err.message : "Sync failed");

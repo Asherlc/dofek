@@ -36,7 +36,9 @@ function mapBullMqState(state: string): OperationStatus["status"] {
 
 export async function readOperationProgress(job: ProgressJob): Promise<OperationStatus> {
   const status = mapBullMqState(await job.getState());
-  const parsedProgress = operationProgressSchema.safeParse(job.progress);
+  const normalizedProgress =
+    typeof job.progress === "number" ? { percentage: job.progress } : job.progress;
+  const parsedProgress = operationProgressSchema.safeParse(normalizedProgress);
   const progress = parsedProgress.success ? parsedProgress.data : {};
 
   if (status === "failed") {

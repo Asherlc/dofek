@@ -39,6 +39,10 @@ describe("readOperationProgress", () => {
       progress: 100,
     });
 
-    expect(progress).toEqual({ status: "completed", message: "Operation complete" });
+    expect(progress).toEqual({
+      status: "completed",
+      percentage: 100,
+      message: "Operation complete",
+    });
   });
 });

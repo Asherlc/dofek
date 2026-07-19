@@ -3,7 +3,10 @@ import { Job, UnrecoverableError, Worker } from "bullmq";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
-import { markProviderDataDeletionCompleted } from "../db/provider-data-deletion.ts";
+import {
+  markProviderDataDeletionCompleted,
+  markProviderDataDeletionFailed,
+} from "../db/provider-data-deletion.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { jobContext, logger } from "../logger.ts";
 import { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
@@ -183,21 +186,48 @@ const providerDataDeletionWorker = new Worker<ProviderDataDeletionJobData>(
   },
   { autorun: false, connection, concurrency: 1 },
 );
+
+async function persistProviderDataDeletionFailure(
+  job: Job<ProviderDataDeletionJobData>,
+  failure: Error,
+): Promise<void> {
+  try {
+    await markProviderDataDeletionFailed(
+      db,
+      job.data.eventId,
+      failure.message || "Provider data deletion failed",
+    );
+  } catch (error: unknown) {
+    Sentry.captureException(error, {
+      tags: { providerDataDeletionStep: "persistFailure" },
+      extra: { eventId: job.data.eventId },
+    });
+    logger.error(
+      `[provider-data-deletion] Failed to persist terminal failure for ${job.data.eventId}: ${String(error)}`,
+    );
+  }
+}
+
 providerDataDeletionWorker.on("failed", (job, error) => {
-  if (!job || error instanceof UnrecoverableError) return;
+  if (!job) return;
+  if (error instanceof UnrecoverableError) {
+    void persistProviderDataDeletionFailure(job, error);
+    return;
+  }
   const configuredAttempts = job.opts.attempts ?? 1;
   if (job.attemptsMade < configuredAttempts) return;
 
   void job
     .retry("failed", { resetAttemptsMade: true, resetAttemptsStarted: true })
-    .catch((error: unknown) => {
-      Sentry.captureException(error, {
+    .catch(async (redriveError: unknown) => {
+      Sentry.captureException(redriveError, {
         tags: { providerDataDeletionStep: "redrive" },
         extra: { eventId: job.data.eventId },
       });
       logger.error(
-        `[provider-data-deletion] Failed to redrive terminal job ${job.data.eventId}: ${String(error)}`,
+        `[provider-data-deletion] Failed to redrive terminal job ${job.data.eventId}: ${String(redriveError)}`,
       );
+      await persistProviderDataDeletionFailure(job, error);
     });
 });
 // Training export jobs are processed by the standalone Python BullMQ worker

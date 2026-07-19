@@ -1539,6 +1539,7 @@ describe("providerDetailRouter", () => {
       const execute = vi.fn().mockResolvedValue([
         {
           event_id: operationId,
+          failure_reason: null,
           generation: "1",
           provider_id: "strava",
           status: "pending",
@@ -1560,6 +1561,7 @@ describe("providerDetailRouter", () => {
       const execute = vi.fn().mockResolvedValue([
         {
           event_id: operationId,
+          failure_reason: null,
           generation: "1",
           provider_id: "strava",
           status: "dispatched",
@@ -1586,6 +1588,7 @@ describe("providerDetailRouter", () => {
       const execute = vi.fn().mockResolvedValue([
         {
           event_id: operationId,
+          failure_reason: null,
           generation: "1",
           provider_id: "strava",
           status: "completed",
@@ -1602,12 +1605,35 @@ describe("providerDetailRouter", () => {
       expect(mockGetProviderDataDeletionJob).not.toHaveBeenCalled();
     });
 
+    it("returns a durable failure after the deletion job is evicted", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const operationId = "30000000-0000-4000-8000-000000000001";
+      const execute = vi.fn().mockResolvedValue([
+        {
+          event_id: operationId,
+          failure_reason: "Provider credentials were rejected",
+          generation: "1",
+          provider_id: "strava",
+          status: "failed",
+          user_id: userId,
+        },
+      ]);
+      const caller = createCaller({ db: { execute, transaction: vi.fn() }, userId });
+
+      await expect(caller.deletionStatus({ providerId: "strava", operationId })).resolves.toEqual({
+        status: "failed",
+        message: "Provider credentials were rejected",
+      });
+      expect(mockGetProviderDataDeletionJob).not.toHaveBeenCalled();
+    });
+
     it("returns queued progress when the deletion job is not available yet", async () => {
       const userId = "00000000-0000-4000-8000-000000000001";
       const operationId = "30000000-0000-4000-8000-000000000001";
       const execute = vi.fn().mockResolvedValue([
         {
           event_id: operationId,
+          failure_reason: null,
           generation: "1",
           provider_id: "strava",
           status: "dispatched",
@@ -1630,6 +1656,7 @@ describe("providerDetailRouter", () => {
       const execute = vi.fn().mockResolvedValue([
         {
           event_id: operationId,
+          failure_reason: null,
           generation: "1",
           provider_id: "strava",
           status: "dispatched",

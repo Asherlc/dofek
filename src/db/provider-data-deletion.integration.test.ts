@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   findProviderDataDeletionRequest,
   getProviderDataGenerations,
+  markProviderDataDeletionFailed,
 } from "./provider-data-deletion.ts";
 import { providerDataDeletionOutbox, providerDataGeneration } from "./schema/events.ts";
 import { userProfile } from "./schema/reference.ts";
@@ -57,6 +58,7 @@ describe("provider data deletion persistence (integration)", () => {
       findProviderDataDeletionRequest(context.db, firstUserId, "garmin", deletionEventId),
     ).resolves.toEqual({
       eventId: deletionEventId,
+      failureReason: null,
       generation: 5,
       providerId: "garmin",
       status: "dispatched",
@@ -65,5 +67,24 @@ describe("provider data deletion persistence (integration)", () => {
     await expect(
       findProviderDataDeletionRequest(context.db, secondUserId, "garmin", deletionEventId),
     ).resolves.toBeNull();
+  });
+
+  it("persists terminal deletion failures after the queue job is gone", async () => {
+    await markProviderDataDeletionFailed(
+      context.db,
+      deletionEventId,
+      "ClickHouse rejected the deletion",
+    );
+
+    await expect(
+      findProviderDataDeletionRequest(context.db, firstUserId, "garmin", deletionEventId),
+    ).resolves.toEqual({
+      eventId: deletionEventId,
+      failureReason: "ClickHouse rejected the deletion",
+      generation: 5,
+      providerId: "garmin",
+      status: "failed",
+      userId: firstUserId,
+    });
   });
 });

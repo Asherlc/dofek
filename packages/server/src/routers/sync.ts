@@ -684,12 +684,10 @@ const syncRouterProcedures = {
 
       const parsedProgress = importJobProgressSchema.safeParse(job.progress);
       const progressValue = parsedProgress.success ? parsedProgress.data : undefined;
-      const normalizedProgress =
-        typeof progressValue === "number" ? { percentage: progressValue } : progressValue;
       const operationProgress = await readOperationProgress({
         failedReason: job.failedReason,
         getState: () => job.getState(),
-        progress: normalizedProgress,
+        progress: progressValue,
       });
       const message =
         typeof progressValue === "object" && progressValue.message

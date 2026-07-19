@@ -281,6 +281,12 @@ export const providerDetailRouter = router({
       if (request.status === "completed") {
         return { status: "completed", percentage: 100, message: "Provider data deleted" };
       }
+      if (request.status === "failed") {
+        return {
+          status: "failed",
+          message: request.failureReason ?? "Provider data deletion failed",
+        };
+      }
 
       try {
         const job = await getProviderDataDeletionQueue().getJob(input.operationId);

@@ -4,6 +4,7 @@ import {
   getProviderDataGenerations,
   listPendingProviderDataDeletionRequests,
   markProviderDataDeletionCompleted,
+  markProviderDataDeletionFailed,
 } from "./provider-data-deletion.ts";
 
 const userId = "00000000-0000-4000-8000-000000000001";
@@ -85,6 +86,7 @@ describe("provider data deletion persistence", () => {
     const execute = vi.fn().mockResolvedValue([
       {
         event_id: eventId,
+        failure_reason: null,
         generation: "3",
         provider_id: "garmin",
         status: "dispatched",
@@ -94,6 +96,7 @@ describe("provider data deletion persistence", () => {
 
     await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).resolves.toEqual({
       eventId,
+      failureReason: null,
       generation: 3,
       providerId: "garmin",
       status: "dispatched",
@@ -120,12 +123,34 @@ describe("provider data deletion persistence", () => {
         event_id: eventId,
         generation: "3",
         provider_id: "garmin",
-        status: "failed",
+        status: "cancelled",
         user_id: userId,
       },
     ]);
 
     await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).rejects.toThrow();
+  });
+
+  it("finds a failed deletion request with its durable failure reason", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        event_id: eventId,
+        failure_reason: "ClickHouse rejected the deletion",
+        generation: "3",
+        provider_id: "garmin",
+        status: "failed",
+        user_id: userId,
+      },
+    ]);
+
+    await expect(findProviderDataDeletionRequestWithFreshSchema(execute)).resolves.toEqual({
+      eventId,
+      failureReason: "ClickHouse rejected the deletion",
+      generation: 3,
+      providerId: "garmin",
+      status: "failed",
+      userId,
+    });
   });
 
   it("returns null when a user-scoped deletion request does not exist", async () => {
@@ -138,6 +163,14 @@ describe("provider data deletion persistence", () => {
     const execute = vi.fn().mockResolvedValue([]);
 
     await markProviderDataDeletionCompleted({ execute }, eventId);
+
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("marks an outbox request failed with its reason", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+
+    await markProviderDataDeletionFailed({ execute }, eventId, "ClickHouse unavailable");
 
     expect(execute).toHaveBeenCalledOnce();
   });
