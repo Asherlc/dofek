@@ -1,9 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { logger } from "../logger.ts";
 import { processProviderDataDeletionJob } from "./process-provider-data-deletion-job.ts";
 import type { ProviderDataDeletionJobData } from "./queues.ts";
 
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("@sentry/node", () => ({ captureException: mockCaptureException }));
+
 const firstId = "10000000-0000-4000-8000-000000000001";
 const secondId = "20000000-0000-4000-8000-000000000002";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
+});
 
 function makeJob(dataOverrides: Partial<ProviderDataDeletionJobData> = {}) {
   const data: ProviderDataDeletionJobData = {
@@ -61,8 +71,19 @@ describe("processProviderDataDeletionJob", () => {
       }),
     );
     expect(job.updateProgress).toHaveBeenCalledWith({
+      checkpoint: undefined,
+      message: "Advancing provider generation fence...",
+      percentage: 0,
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
       checkpoint: { batches: 1, deletedRows: 2, lastId: secondId },
       message: "Tombstoned 2 metric stream rows...",
+    });
+    expect(job.updateProgress.mock.calls[1]?.[0]).not.toHaveProperty("percentage");
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      checkpoint: { batches: 1, deletedRows: 2, lastId: secondId },
+      message: "Provider data deletion complete.",
+      percentage: 100,
     });
     expect(enqueueAnalyticsRefresh).toHaveBeenCalledWith(
       job.data.userId,
@@ -100,5 +121,30 @@ describe("processProviderDataDeletionJob", () => {
     expect(command).toHaveBeenCalledTimes(2);
     expect(enqueueAnalyticsRefresh).not.toHaveBeenCalled();
     expect(markCompleted).not.toHaveBeenCalled();
+  });
+
+  it("reports progress update failures without aborting deletion", async () => {
+    const progressError = new Error("Redis progress failed");
+    const warn = vi.spyOn(logger, "warn").mockReturnValue(logger);
+    const command = vi.fn(async () => undefined);
+    const query = vi.fn().mockResolvedValue({ json: async () => [] });
+    const enqueueAnalyticsRefresh = vi.fn(async () => undefined);
+    const markCompleted = vi.fn(async () => undefined);
+    const job = makeJob();
+    job.updateProgress.mockRejectedValue(progressError);
+
+    await processProviderDataDeletionJob(job, {
+      clickHouseClient: { command, query },
+      enqueueAnalyticsRefresh,
+      markCompleted,
+    });
+
+    expect(mockCaptureException).toHaveBeenCalledWith(progressError, {
+      tags: { providerDataDeletionStep: "updateProgress" },
+    });
+    expect(warn).toHaveBeenCalledWith(
+      "[provider-data-deletion] Failed to update progress: Error: Redis progress failed",
+    );
+    expect(markCompleted).toHaveBeenCalledWith(job.data.eventId);
   });
 });
