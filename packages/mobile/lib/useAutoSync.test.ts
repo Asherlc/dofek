@@ -148,7 +148,7 @@ describe("useAutoSync", () => {
     vi.setSystemTime(new Date("2026-03-22T10:00:00"));
     mockActiveSyncs = { data: [], isLoading: false };
     mockMutateAsync.mockResolvedValue({ jobId: "test-job" });
-    mockSyncStatusFetch.mockResolvedValue({ status: "done" });
+    mockSyncStatusFetch.mockResolvedValue({ status: "completed" });
     mockIsAvailable.mockReturnValue(false);
     mockGetRequestStatus.mockResolvedValue("unnecessary");
     mockRequestPermissions.mockResolvedValue(true);
@@ -227,7 +227,7 @@ describe("useAutoSync", () => {
     mockSyncStatusFetch
       .mockResolvedValueOnce({ status: "running" })
       .mockResolvedValueOnce({ status: "running" })
-      .mockResolvedValueOnce({ status: "done" });
+      .mockResolvedValueOnce({ status: "completed" });
 
     renderHook(() => useAutoSync("2026-03-21"));
     await act(() => vi.runAllTimersAsync());
@@ -237,7 +237,7 @@ describe("useAutoSync", () => {
   });
 
   it("invalidates affected query families on error status", async () => {
-    mockSyncStatusFetch.mockResolvedValue({ status: "error" });
+    mockSyncStatusFetch.mockResolvedValue({ status: "failed" });
 
     renderHook(() => useAutoSync("2026-03-21"));
     await act(() => vi.runAllTimersAsync());
