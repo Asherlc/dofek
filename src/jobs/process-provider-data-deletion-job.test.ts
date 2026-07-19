@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { logger } from "../logger.ts";
-import { processProviderDataDeletionJob } from "./process-provider-data-deletion-job.ts";
+import {
+  type ProviderDataDeletionJob,
+  processProviderDataDeletionJob,
+} from "./process-provider-data-deletion-job.ts";
 import type { ProviderDataDeletionJobData } from "./queues.ts";
 
 const mockCaptureException = vi.hoisted(() => vi.fn());
@@ -29,7 +32,9 @@ function makeJob(dataOverrides: Partial<ProviderDataDeletionJobData> = {}) {
     updateData: vi.fn(async (nextData: ProviderDataDeletionJobData) => {
       Object.assign(data, nextData);
     }),
-    updateProgress: vi.fn(async () => undefined),
+    updateProgress: vi.fn(
+      async (_progress: Parameters<ProviderDataDeletionJob["updateProgress"]>[0]) => undefined,
+    ),
   };
 }
 
