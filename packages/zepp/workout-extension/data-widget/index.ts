@@ -18,23 +18,23 @@ const logger = Logger.getLogger("dofek-workout");
 const SAMPLE_INTERVAL_MS = 10_000;
 const UPLOAD_BATCH_SIZE = 6;
 
-interface WorkoutExtensionState {
-  intervalId: number | null;
-  collecting: boolean;
-  flushing: boolean;
-  pendingBatches: LiveWorkoutBatch[];
-  statusWidget: { setProperty(property: number, value: string): void } | null;
+function nullable<T>(): T | null {
+  return null;
+}
+
+function emptyArray<T>(): T[] {
+  return [];
 }
 
 DataWidget(
   BasePage({
     state: {
-      intervalId: null,
+      intervalId: nullable<ReturnType<typeof setInterval>>(),
       collecting: false,
       flushing: false,
-      pendingBatches: [],
-      statusWidget: null,
-    } satisfies WorkoutExtensionState,
+      pendingBatches: emptyArray<LiveWorkoutBatch>(),
+      statusWidget: nullable<ReturnType<typeof createWidget>>(),
+    },
 
     build() {
       const persistedBuffer = readLiveWorkoutBuffer();

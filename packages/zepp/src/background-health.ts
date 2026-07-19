@@ -50,8 +50,13 @@ export function collectBackgroundHealthSample(
 
   try {
     const stressReadings = new sensors.Stress().getToday();
-    const stress = stressReadings.findLast((reading) => reading > 0);
-    if (stress !== undefined) sample.stress = stress;
+    for (let index = stressReadings.length - 1; index >= 0; index -= 1) {
+      const stress = stressReadings[index];
+      if (stress !== undefined && stress > 0) {
+        sample.stress = stress;
+        break;
+      }
+    }
   } catch {}
 
   let activities: HealthActivity[] = [];

@@ -326,6 +326,9 @@ describe("collectHealthData", () => {
       getLastWeek(): number[] {
         return [];
       }
+      getHistory(): [] {
+        return [];
+      }
     }
     const result = collectHealthData(
       makeSensors({
