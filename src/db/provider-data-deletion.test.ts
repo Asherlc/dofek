@@ -98,6 +98,37 @@ describe("provider data deletion persistence", () => {
     });
   });
 
+  it("rejects deletion request rows without a lifecycle status", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        event_id: eventId,
+        generation: "3",
+        provider_id: "garmin",
+        user_id: userId,
+      },
+    ]);
+
+    await expect(
+      findProviderDataDeletionRequest({ execute }, userId, "garmin", eventId),
+    ).rejects.toThrow();
+  });
+
+  it("rejects deletion request rows with an unsupported lifecycle status", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        event_id: eventId,
+        generation: "3",
+        provider_id: "garmin",
+        status: "failed",
+        user_id: userId,
+      },
+    ]);
+
+    await expect(
+      findProviderDataDeletionRequest({ execute }, userId, "garmin", eventId),
+    ).rejects.toThrow();
+  });
+
   it("returns null when a user-scoped deletion request does not exist", async () => {
     const execute = vi.fn().mockResolvedValue([]);
 

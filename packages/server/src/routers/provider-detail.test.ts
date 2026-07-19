@@ -1580,6 +1580,77 @@ describe("providerDetailRouter", () => {
       });
     });
 
+    it("returns completed progress without looking up a queue job", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const operationId = "30000000-0000-4000-8000-000000000001";
+      const execute = vi.fn().mockResolvedValue([
+        {
+          event_id: operationId,
+          generation: "1",
+          provider_id: "strava",
+          status: "completed",
+          user_id: userId,
+        },
+      ]);
+      const caller = createCaller({ db: { execute, transaction: vi.fn() }, userId });
+
+      await expect(caller.deletionStatus({ providerId: "strava", operationId })).resolves.toEqual({
+        status: "completed",
+        percentage: 100,
+        message: "Provider data deleted",
+      });
+      expect(mockGetProviderDataDeletionJob).not.toHaveBeenCalled();
+    });
+
+    it("returns queued progress when the deletion job is not available yet", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const operationId = "30000000-0000-4000-8000-000000000001";
+      const execute = vi.fn().mockResolvedValue([
+        {
+          event_id: operationId,
+          generation: "1",
+          provider_id: "strava",
+          status: "dispatched",
+          user_id: userId,
+        },
+      ]);
+      mockGetProviderDataDeletionJob.mockResolvedValue(undefined);
+      const caller = createCaller({ db: { execute, transaction: vi.fn() }, userId });
+
+      await expect(caller.deletionStatus({ providerId: "strava", operationId })).resolves.toEqual({
+        status: "queued",
+        message: "Waiting for the deletion worker...",
+      });
+    });
+
+    it("reports queue lookup errors with an actionable client error", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const operationId = "30000000-0000-4000-8000-000000000001";
+      const queueError = new Error("Redis unavailable");
+      const execute = vi.fn().mockResolvedValue([
+        {
+          event_id: operationId,
+          generation: "1",
+          provider_id: "strava",
+          status: "dispatched",
+          user_id: userId,
+        },
+      ]);
+      mockGetProviderDataDeletionJob.mockRejectedValue(queueError);
+      const caller = createCaller({ db: { execute, transaction: vi.fn() }, userId });
+
+      await expect(
+        caller.deletionStatus({ providerId: "strava", operationId }),
+      ).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to check provider data deletion progress",
+        cause: queueError,
+      });
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(queueError, {
+        tags: { operation: "providerDataDeletionStatus" },
+      });
+    });
+
     it("does not expose deletion progress owned by another user", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
