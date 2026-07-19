@@ -1,11 +1,14 @@
+import { Link } from "@tanstack/react-router";
 import { formatCellValue, formatColumnName } from "./provider-detail-format.ts";
 
 export function RecordDetailModal({
   record,
   onClose,
+  activityId,
 }: {
   record: Record<string, unknown>;
   onClose: () => void;
+  activityId?: string;
 }) {
   const rawValue = record.raw;
   const raw = typeof rawValue === "object" && rawValue !== null ? rawValue : null;
@@ -33,6 +36,15 @@ export function RecordDetailModal({
             &times;
           </button>
         </div>
+        {activityId && (
+          <Link
+            to="/activity/$id"
+            params={{ id: activityId }}
+            className="inline-flex mb-4 text-xs font-medium text-accent hover:text-accent-secondary"
+          >
+            Open activity
+          </Link>
+        )}
         <div className="mb-4">
           <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">Fields</h4>
           <div className="rounded-lg border border-border bg-page divide-y divide-border/50">

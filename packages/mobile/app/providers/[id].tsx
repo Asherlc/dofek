@@ -57,10 +57,13 @@ function formatCellValue(value: unknown): string {
 function RecordDetailModal({
   record,
   onClose,
+  activityId,
 }: {
   record: Record<string, unknown>;
   onClose: () => void;
+  activityId?: string;
 }) {
+  const router = useRouter();
   const rawValue = record.raw;
   const raw = typeof rawValue === "object" && rawValue !== null ? rawValue : null;
 
@@ -85,6 +88,19 @@ function RecordDetailModal({
           style={modalStyles.scrollView}
           contentContainerStyle={modalStyles.scrollContent}
         >
+          {activityId && (
+            <TouchableOpacity
+              onPress={() => {
+                onClose();
+                router.push(`/activity/${activityId}`);
+              }}
+              style={modalStyles.activityLink}
+              activeOpacity={0.7}
+            >
+              <Text style={modalStyles.activityLinkText}>Open activity</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Populated fields */}
           <Text style={modalStyles.sectionTitle}>Fields</Text>
           <View style={modalStyles.fieldsCard}>
@@ -180,6 +196,14 @@ const modalStyles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
+  },
+  activityLink: {
+    alignSelf: "flex-start",
+  },
+  activityLinkText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "600",
   },
   sectionTitle: {
     fontSize: 12,
@@ -367,7 +391,15 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
       </View>
 
       {selectedRecord && (
-        <RecordDetailModal record={selectedRecord} onClose={() => setSelectedRecord(null)} />
+        <RecordDetailModal
+          record={selectedRecord}
+          onClose={() => setSelectedRecord(null)}
+          activityId={
+            dataType === "activities" && typeof selectedRecord.id === "string"
+              ? selectedRecord.id
+              : undefined
+          }
+        />
       )}
     </View>
   );

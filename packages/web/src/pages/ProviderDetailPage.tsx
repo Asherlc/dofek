@@ -1015,7 +1015,15 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
 
       {/* Record detail modal */}
       {selectedRecord && (
-        <RecordDetailModal record={selectedRecord} onClose={() => setSelectedRecord(null)} />
+        <RecordDetailModal
+          record={selectedRecord}
+          onClose={() => setSelectedRecord(null)}
+          activityId={
+            dataType === "activities" && typeof selectedRecord.id === "string"
+              ? selectedRecord.id
+              : undefined
+          }
+        />
       )}
     </>
   );

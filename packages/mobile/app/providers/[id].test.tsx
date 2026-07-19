@@ -130,10 +130,11 @@ vi.mock("react-native", () => ({
 }));
 
 const mockBack = vi.fn();
+const mockPush = vi.fn();
 const mockUseLocalSearchParams = vi.fn().mockReturnValue({ id: "wahoo" });
 
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ back: mockBack, push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ back: mockBack, push: mockPush, replace: vi.fn() }),
   useLocalSearchParams: (...args: unknown[]) => mockUseLocalSearchParams(...args),
 }));
 
@@ -179,6 +180,7 @@ vi.mock("../../lib/auth-context", () => ({
 
 vi.mock("@dofek/format/format", () => ({
   formatRelativeTime: (date: string) => `${date} ago`,
+  formatTableCellValue: (value: unknown) => String(value),
   formatTime: (date: string) => date,
 }));
 
@@ -341,6 +343,7 @@ function setupDefaultMocks() {
 describe("ProviderDetailScreen", () => {
   beforeEach(() => {
     mockBack.mockReset();
+    mockPush.mockReset();
     mockUseLocalSearchParams.mockReturnValue({ id: "wahoo" });
     mockSyncMutateAsync.mockReset();
     mockDataHealthQuery.mockReset();
@@ -806,6 +809,27 @@ describe("ProviderDetailScreen", () => {
           confirmation: "DELETE",
         });
       });
+    });
+  });
+
+  describe("Activity records", () => {
+    it("navigates from the record modal to the activity detail screen", async () => {
+      mockProviderStatsQuery.mockReturnValue({
+        data: [{ ...appleHealthStats, providerId: "wahoo", totalRecords: 1, activities: 1 }],
+        isLoading: false,
+      });
+      mockRecordsQuery.mockReturnValue({
+        data: { rows: [{ id: "activity-123", name: "Morning Ride" }] },
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Morning Ride"));
+      fireEvent.click(screen.getByText("Open activity"));
+
+      expect(mockPush).toHaveBeenCalledWith("/activity/activity-123");
     });
   });
 
