@@ -164,6 +164,16 @@ describe("DailyMetricsRepository", () => {
     });
   });
 
+  describe("listRange", () => {
+    it("returns resting heart rate alongside exact-range daily metrics", async () => {
+      const { repo } = makeRepository([makeDailyMetricsRow({ resting_hr: "52" })]);
+
+      const result = await repo.listRange("2025-03-10", "2025-03-15");
+
+      expect(result[0]?.resting_hr).toBe(52);
+    });
+  });
+
   describe("getLatest", () => {
     it("returns null when no data", async () => {
       const { repo } = makeRepository([]);

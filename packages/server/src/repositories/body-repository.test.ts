@@ -43,6 +43,12 @@ describe("BodyMeasurement", () => {
     expect(new BodyMeasurement(makeRow({ bodyFatPct: null })).bodyFatPct).toBeNull();
   });
 
+  it("exposes provider and BMI for server-side summaries", () => {
+    const measurement = new BodyMeasurement(makeRow());
+    expect(measurement.providerId).toBe("withings");
+    expect(measurement.bmi).toBe(22.4);
+  });
+
   it("serializes all fields via toDetail()", () => {
     const row = makeRow();
     expect(new BodyMeasurement(row).toDetail()).toEqual(row);
@@ -125,6 +131,23 @@ describe("BodyRepository", () => {
     expect(queryText).toContain("toString(body_measurements.recorded_at) AS recorded_at");
     expect(queryText).toContain("ORDER BY body_measurements.recorded_at DESC");
     expect(queryText).not.toContain("fitness.v_body_measurement");
+  });
+
+  it("reads an exact local-date range from ClickHouse", async () => {
+    const { repo, query } = makeRepository([]);
+
+    await repo.listRange("2024-01-10", "2024-01-15");
+
+    expect(query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("toDate(toTimeZone(recorded_at, {timezone:String}))"),
+      {
+        userId: "user-1",
+        timezone: "UTC",
+        startDate: "2024-01-10",
+        endDate: "2024-01-15",
+      },
+    );
   });
 
   it("maps all snake_case DB fields to camelCase", async () => {

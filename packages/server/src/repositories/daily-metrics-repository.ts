@@ -34,6 +34,12 @@ const dailyMetricsViewRowSchema = z.object({
   source_providers: z.array(z.string()),
 });
 
+const healthTrendRowSchema = dailyMetricsViewRowSchema.extend({
+  resting_hr: z.coerce.number().nullable(),
+});
+
+export type HealthTrendRow = z.infer<typeof healthTrendRowSchema>;
+
 export type DailyMetricsViewRow = z.infer<typeof dailyMetricsViewRowSchema>;
 
 const hrvBaselineRowSchema = z.object({
@@ -88,6 +94,26 @@ export class DailyMetricsRepository extends BaseRepository {
             AND date <= ${dateWindowEnd(endDate)}
             ${this.dateAccessPredicate(sql`date`)}
           ORDER BY date ASC`,
+    );
+  }
+
+  /** Daily health metrics inside an exact inclusive range, including resting heart rate. */
+  async listRange(
+    startDate: string,
+    endDate: string,
+    restingHeartRateCte: SQL = restingHeartRateValuesCte([]),
+  ): Promise<HealthTrendRow[]> {
+    return this.query(
+      healthTrendRowSchema,
+      sql`WITH ${restingHeartRateCte}
+          SELECT dm.*, resting.resting_hr
+          FROM fitness.v_daily_metrics dm
+          LEFT JOIN resting_heart_rate resting ON resting.date = dm.date
+          WHERE dm.user_id = ${this.userId}
+            AND dm.date >= ${startDate}::date
+            AND dm.date <= ${endDate}::date
+            ${this.dateAccessPredicate(sql`dm.date`)}
+          ORDER BY dm.date ASC`,
     );
   }
 

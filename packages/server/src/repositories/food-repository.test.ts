@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { DailyTotals, FoodEntry, FoodRepository, FoodSearchResult } from "./food-repository.ts";
+import {
+  DailyNutritionSummary,
+  DailyTotals,
+  FoodEntry,
+  FoodRepository,
+  FoodSearchResult,
+} from "./food-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -393,6 +399,29 @@ describe("FoodRepository", () => {
       const { repo } = makeRepository([]);
       const result = await repo.dailyTotals(30);
       expect(result).toEqual([]);
+    });
+  });
+
+  describe("dailyTotalsRange", () => {
+    it("returns exact-range totals with meal counts and provider provenance", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-06-15",
+          calories: "2450",
+          protein_g: "165",
+          carbs_g: "280",
+          fat_g: "85",
+          fiber_g: "32",
+          meal_count: "4",
+          source_providers: ["fatsecret"],
+        },
+      ]);
+
+      const result = await repo.dailyTotalsRange("2024-06-15", "2024-06-15");
+
+      expect(result[0]).toBeInstanceOf(DailyNutritionSummary);
+      expect(result[0]?.mealCount).toBe(4);
+      expect(result[0]?.sourceProviders).toEqual(["fatsecret"]);
     });
   });
 
