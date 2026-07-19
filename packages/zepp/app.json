@@ -29,6 +29,7 @@
     "data:user.hd.stand",
     "data:user.hd.pai",
     "data:user.hd.fat_burning",
+    "data:user.hd.workout",
     "device:os.alarm"
   ],
   "runtime": {

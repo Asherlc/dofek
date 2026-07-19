@@ -1,6 +1,9 @@
 name: Release Dofek Zepp (Zepp Store)
 
 on:
+  push:
+    tags:
+      - "zepp-v*"
   workflow_run:
     workflows: ["CI"]
     branches: [main]
@@ -15,6 +18,7 @@ jobs:
   build:
     name: Build ZAB Package
     if: >
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
@@ -22,6 +26,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       release_tag: ${{ steps.version.outputs.release_tag }}
       ci_run_id: ${{ steps.resolve-ci-run.outputs.run_id }}
+      is_tagged: ${{ steps.version.outputs.is_tagged }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -37,12 +42,15 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/zepp-v* ]]; then
             VERSION="${GITHUB_REF_NAME#zepp-v}"
             RELEASE_TAG="$GITHUB_REF_NAME"
+            IS_TAGGED=true
           else
             VERSION="0.0.$(date +%s)"
             RELEASE_TAG="zepp-v${VERSION}"
+            IS_TAGGED=false
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "is_tagged=$IS_TAGGED" >> "$GITHUB_OUTPUT"
           IFS='.' read -ra PARTS <<< "$VERSION"
           MAJOR="${PARTS[0]:-0}"
           MINOR="${PARTS[1]:-0}"
@@ -79,39 +87,58 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           CODE=${{ steps.version.outputs.code }}
-          node -e "
-            const fs = require('fs');
-            const app = JSON.parse(fs.readFileSync('packages/zepp/app.json', 'utf8'));
-            app.app.version.name = '$VERSION';
-            app.app.version.code = $CODE;
-            fs.writeFileSync('packages/zepp/app.json', JSON.stringify(app, null, 2) + '\n');
-            const pkg = JSON.parse(fs.readFileSync('packages/zepp/package.json', 'utf8'));
-            pkg.version = '$VERSION';
-            fs.writeFileSync('packages/zepp/package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
+          pnpm tsx packages/zepp/src/patch-release-version.ts "$VERSION" "$CODE"
 
       - name: Print resolved version
         run: echo "Building Dofek Zepp v${{ steps.version.outputs.version }} (code ${{ steps.version.outputs.code }})"
 
-      - name: Build Zepp ZAB
+      - name: Build Zepp watch app ZAB
         uses: ./.github/actions/build-zepp
 
-      - name: Upload ZAB artifact
+      - name: Validate Workout Extension app ID
+        env:
+          ZEPP_WORKOUT_EXTENSION_APP_ID: ${{ vars.ZEPP_WORKOUT_EXTENSION_APP_ID }}
+        run: |
+          if ! [[ "$ZEPP_WORKOUT_EXTENSION_APP_ID" =~ ^[1-9][0-9]*$ ]] || [ "$ZEPP_WORKOUT_EXTENSION_APP_ID" -lt 1000000 ]; then
+            echo "::error::Repository variable ZEPP_WORKOUT_EXTENSION_APP_ID must contain the numeric app ID provisioned in the Zepp developer console."
+            exit 1
+          fi
+
+      - name: Build Zepp Workout Extension ZAB
+        working-directory: packages/zepp
+        env:
+          ZEPP_WORKOUT_EXTENSION_APP_ID: ${{ vars.ZEPP_WORKOUT_EXTENSION_APP_ID }}
+        run: pnpm build:workout-extension
+
+      - name: Upload watch app ZAB artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: zepp-zab
+          name: dofek-zepp-app-zab
           path: packages/zepp/dist/
+          retention-days: 90
+
+      - name: Upload Workout Extension ZAB artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dofek-zepp-workout-extension-zab
+          path: packages/zepp/workout-extension/dist/
           retention-days: 90
 
   release:
     name: Create GitHub Release
     needs: build
+    if: needs.build.outputs.is_tagged == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: zepp-zab
-          path: dist
+          name: dofek-zepp-app-zab
+          path: dist/watch-app
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dofek-zepp-workout-extension-zab
+          path: dist/workout-extension
 
       - name: Create Release
         env:
@@ -125,10 +152,11 @@ jobs:
             echo "::error::ZEPP_RELEASE_TOKEN is not configured"
             exit 1
           fi
-          ZAB_FILE=$(ls dist/*.zab 2>/dev/null | head -1)
-          if [ -z "$ZAB_FILE" ]; then
-            echo "::error::No .zab file found in dist/"
-            ls -la dist/
+          WATCH_APP_ZAB=$(find dist/watch-app -name '*.zab' -type f -print -quit)
+          WORKOUT_EXTENSION_ZAB=$(find dist/workout-extension -name '*.zab' -type f -print -quit)
+          if [ -z "$WATCH_APP_ZAB" ] || [ -z "$WORKOUT_EXTENSION_ZAB" ]; then
+            echo "::error::Both the watch app and Workout Extension .zab files are required."
+            find dist -maxdepth 3 -type f -print
             exit 1
           fi
           NOTES_FILE=$(mktemp)
@@ -143,4 +171,5 @@ jobs:
             --target "$TARGET_SHA" \
             --title "Dofek Zepp v$VERSION" \
             --notes-file "$NOTES_FILE" \
-            "$ZAB_FILE"
+            "$WATCH_APP_ZAB" \
+            "$WORKOUT_EXTENSION_ZAB"

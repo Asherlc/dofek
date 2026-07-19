@@ -101,6 +101,14 @@ declare module "@zos/sensor" {
     getCurrent(): number;
   }
 
+  export class Workout {
+    getHistory(): Array<{ startTime: number; duration: number }>;
+  }
+
+  export class Time {
+    onPerMinute(callback: () => void): void;
+  }
+
   export function checkSensor(sensor: new () => Accelerometer | Gyroscope): boolean;
 }
 

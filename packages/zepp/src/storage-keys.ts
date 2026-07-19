@@ -32,6 +32,7 @@ export const FREQ_MODE_LABELS: Record<number, string> = {
 export const SESSION_FILE_A = "data://imu/session_a.bin";
 export const SESSION_FILE_B = "data://imu/session_b.bin";
 export const SESSION_META_FILE = "data://imu/session_meta.json";
+export const BACKGROUND_HEALTH_FILE = "data://health/background.json";
 export const SERVICE_FILE = "app-service/imu_service";
 
 export const FLUSH_SAMPLE_THRESHOLD = 64;
