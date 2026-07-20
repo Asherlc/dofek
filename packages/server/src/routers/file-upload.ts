@@ -1,4 +1,5 @@
 import { extname } from "node:path";
+import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import {
@@ -157,7 +158,8 @@ function validateImportMetadata(input: z.infer<typeof initiateInputSchema>): voi
       message: `Invalid ${input.importType} file extension`,
     });
   }
-  if (!config.contentTypes.includes(input.contentType.toLowerCase())) {
+  const baseContentType = input.contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (!config.contentTypes.includes(baseContentType)) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: `Invalid ${input.importType} content type`,
@@ -313,10 +315,17 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
               multipartUploadId,
             );
           } catch (error) {
-            await storageFor(dependencies).abortMultipartUpload(
-              upload.objectKey,
-              multipartUploadId,
-            );
+            try {
+              await storageFor(dependencies).abortMultipartUpload(
+                upload.objectKey,
+                multipartUploadId,
+              );
+            } catch (abortError) {
+              Sentry.captureException(abortError, {
+                tags: { source: "file-upload-initiate", operation: "abortMultipartUpload" },
+                extra: { uploadId: upload.id, multipartUploadId },
+              });
+            }
             const concurrentUpload = await dependencies.repository.find(
               ctx.db,
               upload.id,

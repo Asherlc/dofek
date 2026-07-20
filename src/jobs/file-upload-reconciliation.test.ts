@@ -3,12 +3,12 @@ import type { FileUpload } from "../db/file-upload.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
 
 const repository = vi.hoisted(() => ({
-  expire: vi.fn(),
+  expire: vi.fn(async () => true),
   objectKeyExists: vi.fn(async () => false),
   list: vi.fn(async (): Promise<FileUpload[]> => []),
   markObjectDeleted: vi.fn(),
   queue: vi.fn(),
-  requeue: vi.fn(),
+  requeue: vi.fn(async () => true),
   lifecycle: vi.fn(),
   reconciliation: vi.fn(),
   captureException: vi.fn(),
@@ -156,6 +156,40 @@ describe("reconcileFileUploads", () => {
 
     expect(objectStorage.deleteObject).toHaveBeenCalledWith(completed.objectKey);
     expect(repository.markObjectDeleted).toHaveBeenCalledWith(database, completed.id);
+  });
+
+  it("skips expired repair metrics when the upload already transitioned", async () => {
+    const stale = upload({
+      state: "uploading",
+      r2MultipartUploadId: "multipart-id",
+      expiresAt: new Date(0),
+    });
+    repository.list.mockResolvedValue([stale]);
+    repository.expire.mockResolvedValueOnce(false);
+    const objectStorage = storage();
+
+    await reconcileFileUploads(database, objectStorage);
+
+    expect(objectStorage.abortMultipartUpload).toHaveBeenCalledWith(
+      stale.objectKey,
+      "multipart-id",
+    );
+    expect(repository.expire).toHaveBeenCalledWith(database, stale.id);
+    expect(repository.lifecycle).not.toHaveBeenCalled();
+    expect(repository.reconciliation).not.toHaveBeenCalled();
+  });
+
+  it("skips stuck-processing repair metrics when the upload already transitioned", async () => {
+    const stuck = upload({ id: "00000000-0000-4000-8000-0000000000f3", state: "processing" });
+    repository.list.mockResolvedValue([stuck]);
+    repository.requeue.mockResolvedValueOnce(false);
+
+    await reconcileFileUploads(database, storage());
+
+    expect(repository.requeue).toHaveBeenCalledWith(database, stuck.id);
+    expect(repository.reconciliation).not.toHaveBeenCalledWith(1, {
+      repair: "stuck_processing",
+    });
   });
 
   it("continues reconciling uploads after one upload fails", async () => {

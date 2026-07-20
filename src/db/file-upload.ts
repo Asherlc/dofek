@@ -510,27 +510,41 @@ export async function markFileUploadObjectDeleted(
   );
 }
 
-export async function expireFileUpload(database: Database, uploadId: string): Promise<void> {
-  await database.execute(
+export async function expireFileUpload(database: Database, uploadId: string): Promise<boolean> {
+  const rows = await executeWithSchema(
+    database,
+    z.object({ id: z.uuid() }),
     sql`UPDATE fitness.file_upload
         SET state = 'expired', updated_at = now(), version = version + 1
-        WHERE id = ${uploadId}::uuid AND state IN ('initiated', 'uploading') AND expires_at < now()`,
+        WHERE id = ${uploadId}::uuid AND state IN ('initiated', 'uploading') AND expires_at < now()
+        RETURNING id`,
   );
+  return rows.length > 0;
 }
 
-export async function requeueStuckFileUpload(database: Database, uploadId: string): Promise<void> {
-  await database.execute(
+export async function requeueStuckFileUpload(
+  database: Database,
+  uploadId: string,
+): Promise<boolean> {
+  const rows = await executeWithSchema(
+    database,
+    z.object({ id: z.uuid() }),
     sql`WITH requeued AS (
           UPDATE fitness.file_upload
           SET state = 'queued', updated_at = now(), version = version + 1
           WHERE id = ${uploadId}::uuid AND state = 'processing'
             AND updated_at < now() - interval '2 hours'
           RETURNING id
+        ),
+        outbox_update AS (
+          UPDATE fitness.file_upload_outbox
+          SET status = 'pending', dispatched_at = NULL, failure_reason = NULL, failed_at = NULL
+          WHERE upload_id IN (SELECT id FROM requeued)
+          RETURNING upload_id
         )
-        UPDATE fitness.file_upload_outbox
-        SET status = 'pending', dispatched_at = NULL, failure_reason = NULL, failed_at = NULL
-        WHERE upload_id IN (SELECT id FROM requeued)`,
+        SELECT id FROM requeued`,
   );
+  return rows.length > 0;
 }
 
 export async function fileUploadObjectKeyExists(

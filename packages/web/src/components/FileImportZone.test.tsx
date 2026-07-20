@@ -21,17 +21,24 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="/providers/strong-csv">{children}</a>,
 }));
 
-vi.mock("../lib/trpc.ts", () => ({
-  trpc: {
-    fileUpload: {
-      initiate: { useMutation: () => ({ mutateAsync: mocks.initiate }) },
-      authorizeParts: { useMutation: () => ({ mutateAsync: mocks.authorizeParts }) },
-      complete: { useMutation: () => ({ mutateAsync: mocks.complete }) },
-      abort: { useMutation: () => ({ mutateAsync: mocks.abort }) },
+vi.mock("../lib/trpc.ts", () => {
+  const initiateResult = { mutateAsync: mocks.initiate };
+  const authorizePartsResult = { mutateAsync: mocks.authorizeParts };
+  const completeResult = { mutateAsync: mocks.complete };
+  const abortResult = { mutateAsync: mocks.abort };
+  const trpcUtils = { client: { fileUpload: { resume: { query: mocks.resume } } } };
+  return {
+    trpc: {
+      fileUpload: {
+        initiate: { useMutation: () => initiateResult },
+        authorizeParts: { useMutation: () => authorizePartsResult },
+        complete: { useMutation: () => completeResult },
+        abort: { useMutation: () => abortResult },
+      },
+      useUtils: () => trpcUtils,
     },
-    useUtils: () => ({ client: { fileUpload: { resume: { query: mocks.resume } } } }),
-  },
-}));
+  };
+});
 
 vi.mock("../lib/resumable-file-upload.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/resumable-file-upload.ts")>();
@@ -215,6 +222,48 @@ describe("FileImportZone", () => {
     await act(async () => rejectResume(new Error("late polling failure")));
 
     expect(mocks.captureException).not.toHaveBeenCalled();
+  });
+
+  it("stops the previous polling loop when the active import changes", async () => {
+    let resolveFirstResume: (value: {
+      upload: { state: string; progressPercent: number };
+      parts: unknown[];
+    }) => void = () => undefined;
+    mocks.resume.mockImplementation(({ uploadId }) => {
+      if (uploadId === "first") {
+        return new Promise((resolve) => {
+          resolveFirstResume = resolve;
+        });
+      }
+      return Promise.resolve({ upload: { state: "completed", progressPercent: 100 }, parts: [] });
+    });
+
+    const props = (jobId: string) => ({
+      providerId: "garmin-dump",
+      importType: "garmin-dump" as const,
+      title: "Garmin",
+      description: ".zip account export",
+      accept: ".zip",
+      activeImport: { jobId, status: "running" as const },
+    });
+
+    const { rerender } = render(<FileImportZone {...props("file-import-first")} />);
+    await waitFor(() => expect(mocks.resume).toHaveBeenCalledWith({ uploadId: "first" }));
+
+    rerender(<FileImportZone {...props("file-import-second")} />);
+    await waitFor(() => expect(mocks.resume).toHaveBeenCalledWith({ uploadId: "second" }));
+
+    await act(async () =>
+      resolveFirstResume({ upload: { state: "processing", progressPercent: 50 }, parts: [] }),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+    });
+
+    const firstCalls = vi
+      .mocked(mocks.resume)
+      .mock.calls.filter(([{ uploadId }]) => uploadId === "first");
+    expect(firstCalls).toHaveLength(1);
   });
 
   it("cleans up local state when server cancellation fails", async () => {

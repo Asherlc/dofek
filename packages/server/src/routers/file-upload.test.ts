@@ -9,12 +9,14 @@ const metrics = vi.hoisted(() => ({
   duration: vi.fn(),
   lifecycle: vi.fn(),
 }));
+const sentry = vi.hoisted(() => ({ captureException: vi.fn() }));
 
 vi.mock("dofek/file-upload-metrics", () => ({
   fileUploadBytesTotal: { add: metrics.bytes },
   fileUploadCompletionDuration: { record: metrics.duration },
   fileUploadLifecycleTotal: { add: metrics.lifecycle },
 }));
+vi.mock("@sentry/node", () => ({ captureException: sentry.captureException }));
 
 vi.mock("../trpc.ts", () => {
   const trpc = initTRPC.context<{ db: unknown; userId: string }>().create();
@@ -387,6 +389,33 @@ describe("fileUploadRouter", () => {
 
     await expect(caller.initiate(initiationInput())).rejects.toThrow("state changed");
     expect(storage.abortMultipartUpload).toHaveBeenCalledOnce();
+  });
+
+  it("preserves the markUploading error when abortMultipartUpload also fails", async () => {
+    const initiated = upload({ state: "initiated", r2MultipartUploadId: null });
+    const { caller, repository, storage } = setup(initiated);
+    repository.find.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    repository.markUploading.mockRejectedValueOnce(new Error("state changed"));
+    vi.mocked(storage.abortMultipartUpload).mockRejectedValueOnce(new Error("R2 abort failed"));
+
+    await expect(caller.initiate(initiationInput())).rejects.toThrow("state changed");
+    expect(storage.abortMultipartUpload).toHaveBeenCalledOnce();
+    expect(sentry.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { source: "file-upload-initiate", operation: "abortMultipartUpload" },
+      extra: { uploadId: initiated.id, multipartUploadId: "multipart-1" },
+    });
+  });
+
+  it("accepts content types with parameters", async () => {
+    const initiated = upload({ state: "initiated", r2MultipartUploadId: null });
+    const uploading = upload();
+    const { caller, repository } = setup(initiated);
+    repository.find.mockResolvedValueOnce(null);
+    repository.markUploading.mockResolvedValueOnce(uploading);
+
+    await expect(
+      caller.initiate(initiationInput({ contentType: "application/zip; charset=utf-8" })),
+    ).resolves.toMatchObject({ state: "uploading" });
   });
 
   it("rejects authorization for missing, inactive, and invalid upload parts", async () => {

@@ -110,14 +110,14 @@ export function FileImportZone({
   );
 
   const pollUpload = useCallback(
-    async (uploadId: string) => {
+    async (uploadId: string, signal?: AbortSignal) => {
       currentUploadIdRef.current = uploadId;
-      while (!stoppedRef.current) {
+      while (!stoppedRef.current && !signal?.aborted) {
         let result: Awaited<ReturnType<FileUploadApi["resume"]>>;
         try {
           result = await uploadApi.resume({ uploadId });
         } catch (error) {
-          if (stoppedRef.current) return;
+          if (stoppedRef.current || signal?.aborted) return;
           captureException(error, { tags: { uploadId } });
           setState({
             phase: "failed",
@@ -126,6 +126,7 @@ export function FileImportZone({
           });
           return;
         }
+        if (stoppedRef.current || signal?.aborted) return;
         const upload = result.upload;
         if (upload.state === "completed") {
           setState({ phase: "completed", progress: 100, message: "Import completed" });
@@ -159,11 +160,13 @@ export function FileImportZone({
   );
 
   useEffect(() => {
+    const controller = new AbortController();
+    const signal = controller.signal;
     stoppedRef.current = false;
     void indexedDbUploadSessionStore
       .get(sessionKey)
       .then((session) => {
-        if (session && !stoppedRef.current) {
+        if (session && !stoppedRef.current && !signal.aborted) {
           currentUploadIdRef.current = session.uploadId;
           setState({
             phase: "cancelled",
@@ -173,7 +176,7 @@ export function FileImportZone({
         }
       })
       .catch((error: unknown) => {
-        if (stoppedRef.current) return;
+        if (stoppedRef.current || signal.aborted) return;
         captureException(error, { tags: { uploadId: "pending" } });
         setState({
           phase: "failed",
@@ -183,10 +186,11 @@ export function FileImportZone({
       });
     const activeUploadId = activeImport ? uploadIdFromJobId(activeImport.jobId) : null;
     if (activeUploadId && activeUploadId !== cancelledUploadIdRef.current) {
-      void pollUpload(activeUploadId);
+      void pollUpload(activeUploadId, signal);
     }
     return () => {
       stoppedRef.current = true;
+      controller.abort();
       abortControllerRef.current?.abort();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
@@ -216,7 +220,7 @@ export function FileImportZone({
         });
         currentUploadIdRef.current = completed.uploadId;
         setState({ phase: "processing", progress: 0, message: "Processing import..." });
-        await pollUpload(completed.uploadId);
+        await pollUpload(completed.uploadId, abortController.signal);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           setState({ phase: "cancelled", progress: 0, message: "Upload cancelled" });

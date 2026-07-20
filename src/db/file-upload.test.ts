@@ -360,11 +360,19 @@ describe("file upload repository", () => {
 
   it("runs direct lifecycle and outbox updates", async () => {
     database.execute.mockResolvedValue([]);
+    mocks.executeWithSchema.mockResolvedValue([]);
     await markFileUploadOutboxDispatched(database, uploadId);
     await failFileUploadProcessing(database, uploadId, "INVALID", "bad upload");
-    await expireFileUpload(database, uploadId);
-    await requeueStuckFileUpload(database, uploadId);
-    expect(database.execute).toHaveBeenCalledTimes(4);
+    expect(await expireFileUpload(database, uploadId)).toBe(false);
+    expect(await requeueStuckFileUpload(database, uploadId)).toBe(false);
+    expect(database.execute).toHaveBeenCalledTimes(2);
+    expect(mocks.executeWithSchema).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns true when expire and requeue match an existing row", async () => {
+    mocks.executeWithSchema.mockResolvedValue([{ id: uploadId }]);
+    expect(await expireFileUpload(database, uploadId)).toBe(true);
+    expect(await requeueStuckFileUpload(database, uploadId)).toBe(true);
   });
 
   it("lists reconciliation candidates and validates its limit", async () => {
