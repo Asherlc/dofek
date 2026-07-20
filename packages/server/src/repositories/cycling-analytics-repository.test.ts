@@ -420,6 +420,33 @@ describe("CyclingAnalyticsRepository", () => {
     });
   });
 
+  it("excludes aerobic efficiency rows whose missing joined values became zeros", async () => {
+    const sensorStore = makeMockSensorStore([
+      cyclingActivityRow({
+        max_hr: 0,
+        avg_power_z2: 0,
+        avg_hr_z2: 0,
+        efficiency_factor: 0,
+        z2_samples: 0,
+      }),
+    ]);
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getActivities(ChartRange.fromDays(90), {
+      activityLimit: 20,
+      activityOffset: 0,
+      variabilityLimit: 20,
+      variabilityOffset: 0,
+    });
+
+    expect(result.aerobicEfficiency).toEqual({ maxHr: null, activities: [] });
+  });
+
   it("returns the cycling empty state when there are no activities", async () => {
     const sensorStore = makeMockSensorStore([]);
     const repository = new CyclingAnalyticsRepository(

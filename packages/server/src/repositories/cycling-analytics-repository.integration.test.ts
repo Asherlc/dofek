@@ -15,6 +15,7 @@ import { CyclingAnalyticsRepository } from "./cycling-analytics-repository.ts";
 const ACTIVITY_ID = "11111111-1111-4111-8111-111111111111";
 const RECENT_HEART_RATE_ACTIVITY_ID = "22222222-2222-4222-8222-222222222222";
 const HISTORICAL_HIGH_HEART_RATE_ACTIVITY_ID = "33333333-3333-4333-8333-333333333333";
+const ZERO_EFFICIENCY_ACTIVITY_ID = "44444444-4444-4444-8444-444444444444";
 
 describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
   let testContext: TestContext;
@@ -51,6 +52,16 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
         600,
         0,
         1,
+        now64(9, 'UTC')
+      )`,
+    );
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.cycling_activity VALUES (
+        toUUID('${ZERO_EFFICIENCY_ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), 'wahoo', ['wahoo'],
+        'cycling', 'Ride Without Zone Two Data', now64(6, 'UTC') - INTERVAL 4 DAY,
+        now64(6, 'UTC') - INTERVAL 4 DAY + INTERVAL 1 HOUR, 30000, 145, 175, 200,
+        3600, 3600, 220, 250, 100, 3600, 0, 0, 0, 0, 0, 0, 1,
         now64(9, 'UTC')
       )`,
     );
@@ -114,6 +125,26 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
     expect(activities.variability.rows[0]?.variabilityIndex).toBe(1.12);
     expect(activities.verticalAscent[0]?.verticalAscentRate).toBe(500);
     expect(activities.aerobicEfficiency.activities[0]?.efficiencyFactor).toBe(1.333);
+  });
+
+  it("omits zero-filled aerobic efficiency rows returned by ClickHouse", async () => {
+    const repository = new CyclingAnalyticsRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "UTC",
+      sensorStore,
+    );
+
+    const activities = await repository.getActivities(ChartRange.fromDays(90), {
+      activityLimit: 20,
+      activityOffset: 0,
+      variabilityLimit: 20,
+      variabilityOffset: 0,
+    });
+
+    expect(activities.aerobicEfficiency.activities).toEqual([
+      expect.objectContaining({ name: "Threshold Intervals", efficiencyFactor: 1.333 }),
+    ]);
   });
 
   it("uses the newest body measurement for power summary calculations", async () => {
