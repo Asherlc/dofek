@@ -35,22 +35,26 @@ describe("DataReadinessBanner", () => {
     expect(healthy.container.innerHTML).toBe("");
   });
 
-  it("surfaces data-health query errors when no readiness snapshot is available", () => {
+  it("does not expose data-health implementation errors", () => {
     render(<DataReadinessBanner error={new Error("ClickHouse read model query failed")} />);
 
     expect(screen.getByText("Data readiness is unavailable")).toBeTruthy();
-    expect(screen.getByText("ClickHouse read model query failed")).toBeTruthy();
+    expect(screen.getByText("We couldn't check your data status. Please try again.")).toBeTruthy();
+    expect(screen.queryByText("ClickHouse read model query failed")).toBeNull();
   });
 
   it("shows blocked server readiness messages", () => {
     render(<DataReadinessBanner data={makeSnapshot()} />);
 
-    expect(screen.getByText("Data pipeline needs attention")).toBeTruthy();
+    expect(screen.getByText("Some data is temporarily unavailable")).toBeTruthy();
     expect(screen.getByText("Last checked 2026-06-30 08:00 UTC")).toBeTruthy();
     expect(screen.getByText("Activities")).toBeTruthy();
     expect(
-      screen.getByText("Activities data is available, but ClickHouse mirrors are not current."),
+      screen.getByText("Activities data is still being prepared. Please check back soon."),
     ).toBeTruthy();
+    expect(
+      screen.queryByText("Activities data is available, but ClickHouse mirrors are not current."),
+    ).toBeNull();
   });
 
   it("shows syncing, stale, and missing headings from the overall status", () => {
