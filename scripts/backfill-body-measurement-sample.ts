@@ -99,9 +99,7 @@ const isDirectExecution =
   import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
 
 if (isDirectExecution) {
-  main().catch(async (error: unknown) => {
-    Sentry.captureException(error);
-    await Sentry.close(2_000);
+  main().catch((error: unknown) => {
     console.error(`[body-measurement-backfill] ${error}`);
     process.exit(1);
   });

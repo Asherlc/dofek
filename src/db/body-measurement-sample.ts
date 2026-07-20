@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { METRIC_STREAM_TABLE } from "../metric-stream/clickhouse-table.ts";
 import type { ClickHouseClient } from "./clickhouse.ts";
-import { bodyMeasurementChannels } from "./clickhouse-read-models.ts";
+import { bodyMeasurementChannelListSql } from "./clickhouse-read-models.ts";
 
 export interface BodyMeasurementSampleBackfillRange {
   start: Date;
@@ -12,9 +12,9 @@ const missingCountRowsSchema = z.array(
   z.object({ missing_count: z.coerce.number().int().nonnegative() }),
 );
 
-function bodyMeasurementChannelListSql(): string {
-  return bodyMeasurementChannels.map((channel) => `'${channel}'`).join(", ");
-}
+const backfillCommandResultSchema = z.object({
+  summary: z.object({ written_rows: z.coerce.number().int().nonnegative() }),
+});
 
 function clickHouseDateTimeParameter(value: Date): string {
   return value.toISOString().replace("T", " ").replace("Z", "");
@@ -57,10 +57,7 @@ export async function backfillMissingBodyMeasurementSamples(
   client: ClickHouseClient,
   range: BodyMeasurementSampleBackfillRange,
 ): Promise<number> {
-  const missingCount = await countMissingBodyMeasurementSamples(client, range);
-  if (missingCount === 0) return 0;
-
-  await client.command({
+  const result = await client.command({
     query: `INSERT INTO analytics.body_measurement_sample (
   id,
   provider_id,
@@ -92,5 +89,5 @@ ${missingBodyMeasurementSampleRowsSql()}`,
     query_params: backfillQueryParams(range),
     clickhouse_settings: { wait_end_of_query: 1 },
   });
-  return missingCount;
+  return backfillCommandResultSchema.parse(result).summary.written_rows;
 }

@@ -22,7 +22,7 @@ export const bodyMeasurementChannels = [
   "body_temperature",
 ] as const;
 
-function bodyMeasurementChannelListSql(): string {
+export function bodyMeasurementChannelListSql(): string {
   return bodyMeasurementChannels.map((channel) => `'${channel}'`).join(",\n      ");
 }
 
