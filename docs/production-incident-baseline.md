@@ -14353,3 +14353,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployment, verify every active part reports both projections, redrive the
   pending deletion, and compare `system.query_log.read_rows` with the 1,000-row
   batch size.
+
+## 2026-07-20 — Zepp Workout Extension Was Built but Not Released
+
+- **Symptoms:** Successful Zepp workflows built and retained both ZAB artifacts,
+  but the GitHub Release job was skipped after the Workout Extension landed.
+- **User impact:** The normal watch app and Workout Extension were available only
+  from workflow artifacts; no GitHub Release contained the Workout Extension.
+- **Evidence:** In
+  [run 29716993735](https://github.com/Asherlc/dofek/actions/runs/29716993735),
+  `Build Zepp Workout Extension ZAB` and `Upload Workout Extension ZAB artifact`
+  passed, while `Create GitHub Release` was skipped. The workflow gated that job
+  on `is_tagged == 'true'`, but successful `main` CI runs set `is_tagged=false`.
+  The latest published release, `zepp-v0.0.1784480955`, predated the Workout
+  Extension and contained only the normal watch-app ZAB.
+- **Root cause:** The Workout Extension change made GitHub Release creation
+  tag-only even though normal Zepp delivery continued to originate from
+  successful `main` CI runs.
+- **Fix / mitigation:** GitHub Release creation now runs after every successful
+  `main` Zepp build and attaches both independently packaged ZABs. The tag-push
+  trigger and dead tagged-version branch were removed so the scoped release
+  token cannot recursively trigger a duplicate Zepp workflow after creating the
+  release tag.
+- **Validation:** Local Actionlint and YAML validation cover the workflow change.
+  A successful hosted `main` CI run is required to confirm that the replacement
+  release contains both ZAB assets.
+- **Remaining risk / follow-up:** After merge, verify the first replacement
+  release contains both `dofek-zepp-app-zab` and
+  `dofek-zepp-workout-extension-zab`, then upload each package to its matching
+  Zepp developer-console listing for store review.

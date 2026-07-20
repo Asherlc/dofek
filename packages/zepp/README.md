@@ -114,38 +114,22 @@ pnpm build
 
 ## Release (Zepp Store)
 
-CI builds and attaches both `.zab` packages as GitHub Release artifacts. Zepp's documented publication flow requires uploading each ZAB through the developer console and submitting it for review, so CI prepares the packages while the final store uploads remain manual ([Zepp app submission](https://docs.zepp.com/docs/distribute/)).
+CI builds both `.zab` packages and attaches them to a GitHub Release. Zepp's documented publication flow requires uploading each ZAB through the developer console and submitting it for review, so CI prepares the packages while the final store uploads remain manual ([Zepp app submission](https://docs.zepp.com/docs/distribute/)).
 
 ### Automatic builds (every main push)
 
-Every successful `main` CI run triggers `release-zepp.yml`: it patches an auto-generated version, builds both independently submitted Zepp packages with the local Zeus wrapper, and uploads both `.zab` artifacts for 90 days. Configure the public GitHub repository variable `ZEPP_WORKOUT_EXTENSION_APP_ID` with the numeric app ID provisioned for the independent Workout Extension before enabling these builds.
+Every successful `main` CI run triggers `release-zepp.yml`: it patches an auto-generated version, builds both independently submitted Zepp packages with the local Zeus wrapper, uploads both `.zab` workflow artifacts for 90 days, and creates a GitHub Release containing both packages. Configure the public GitHub repository variable `ZEPP_WORKOUT_EXTENSION_APP_ID` with the numeric app ID provisioned for the independent Workout Extension before enabling these builds.
 
 The artifacts are:
 
 - `dofek-zepp-app-zab` — the normal API_LEVEL 3.0+ watch app.
 - `dofek-zepp-workout-extension-zab` — the independent API_LEVEL 3.6+ Workout Extension.
 
-**Version scheme:**
-- Tagged push (`zepp-v1.2.3`) → version `1.2.3`, code `10203`
-- Main push (no tag) → version `0.0.<unix-timestamp>`, code `<timestamp>`
+CI versions each build as `0.0.<unix-timestamp>` with code `<timestamp>`, so version files do not need manual updates.
 
-You never need to manually bump version files — CI derives the version from the tag or generates one.
-
-### Cutting a tagged release (GitHub Release)
-
-Tagged pushes additionally create a GitHub Release with the `.zab` attached.
-
-```bash
-git tag zepp-v1.0.1
-git push origin zepp-v1.0.1
-```
-
-1. The tag-triggered workflow builds both `.zab` files with version `1.0.1` and creates one GitHub Release containing both files.
-2. Download both `.zab` files from the Release page.
-3. Upload the normal watch app package to its existing listing in [console.zepp.com](https://console.zepp.com/).
-4. Upload the Workout Extension package to its independent Workout Extension listing and submit both upgrades for review. Zepp requires a separate app ID and submission for a Workout Extension ([Workout Extension quick start](https://docs.zepp.com/docs/guides/workout-extension/quick-start/)).
-
-Tag pattern: `zepp-v<semver>`.
+1. Download both `.zab` files from the latest GitHub Release.
+2. Upload the normal watch app package to its existing listing in [console.zepp.com](https://console.zepp.com/).
+3. Upload the Workout Extension package to its independent Workout Extension listing and submit both upgrades for review. Zepp requires a separate app ID and submission for a Workout Extension ([Workout Extension quick start](https://docs.zepp.com/docs/guides/workout-extension/quick-start/)).
 
 ## Output file location
 
