@@ -23,11 +23,17 @@ describe("countMissingBodyMeasurementSamples", () => {
         },
       }),
     );
-    expect(query.mock.calls[0]?.[0].query).toContain(
-      "FROM ingest.metric_stream AS metric_stream FINAL",
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("FROM ingest.metric_stream AS metric_stream FINAL"),
+      }),
     );
-    expect(query.mock.calls[0]?.[0].query).toContain(
-      "LEFT ANTI JOIN analytics.body_measurement_sample AS existing_sample FINAL",
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining(
+          "LEFT ANTI JOIN analytics.body_measurement_sample AS existing_sample FINAL",
+        ),
+      }),
     );
   });
 });
