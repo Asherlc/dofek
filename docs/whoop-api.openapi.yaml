@@ -975,13 +975,88 @@ components:
           type: integer
 
     # -- LinkWorkoutRequest/Response
+    # Body captured from the iOS app (mitmproxy) — the "Calculate Muscular Load"
+    # action. Attaches strength data to an existing strap-tracked activity so it
+    # earns Muscular Load without spawning a second activity (it then reports as
+    # weightlifting_msk). Requires a prior POST /v3/workout-template to mint the
+    # template_id; that key is echoed here as both template_id and
+    # template.workout_template_key.
     LinkWorkoutRequest:
       type: object
-      description: Request body for linking a cardio workout to a weightlifting workout
+      description: |
+        Request body for linking a strength workout to an existing cardio
+        activity. Two-step flow: (1) POST /weightlifting-service/v3/workout-template
+        with {name, workout_groups} → returns workout_template_key; (2) POST here
+        with the template inline plus that key and the target activity_id.
+      required: [template, template_id, activity_id]
+      properties:
+        template:
+          allOf:
+            - $ref: "#/components/schemas/WorkoutTemplateDto"
+          description: |
+            The template inline. source is "USER"; workout_template_key equals
+            template_id. Sets use only number_of_reps + weight (WorkoutTemplateSetDto);
+            the workout window is taken from the linked activity, so no per-set
+            timestamps are sent.
+        template_id:
+          type: integer
+          format: int64
+          description: The workout_template_key returned by the step-1 template POST.
+        activity_id:
+          type: string
+          format: uuid
+          description: The existing activity to attach the strength data to.
+        rpe:
+          type: integer
+          description: Rate of perceived exertion. Observed as 0.
+          example: 0
 
     LinkWorkoutResponse:
       type: object
-      description: Response from linking a workout
+      description: |
+        200 response from linking a workout. workout_metadata is the now-linked
+        activity metadata, carrying a fresh weightlifting_workout_id and the
+        computed Muscular Load fields.
+      properties:
+        original_activity_id:
+          type: string
+          format: uuid
+        original_activity_type:
+          type: string
+          example: weightlifting
+        workout_metadata:
+          type: object
+          description: The linked activity's metadata (subset shown).
+          properties:
+            id:
+              type: string
+              format: uuid
+            user_id:
+              type: integer
+            during:
+              type: string
+              description: PostgreSQL range literal, inherited from the activity.
+              example: "['2026-07-20T16:36:34.972Z','2026-07-20T18:09:29.181Z')"
+            score_type:
+              type: string
+              example: CARDIO
+            type:
+              type: string
+              example: weightlifting
+            weightlifting_workout_id:
+              type: string
+              format: uuid
+            workout_template_id:
+              type: integer
+              format: int64
+            total_effective_volume_kg:
+              type: number
+            raw_msk_strain_score:
+              type: number
+            msk_intensity_percent:
+              type: number
+            scaled_msk_strain_score:
+              type: number
 
     # -- CustomExerciseDto
     CustomExerciseDto:
