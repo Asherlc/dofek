@@ -14353,7 +14353,6 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployment, verify every active part reports both projections, redrive the
   pending deletion, and compare `system.query_log.read_rows` with the 1,000-row
   batch size.
-
 ## 2026-07-20 — Zepp Workout Extension Was Built but Not Released
 
 - **Symptoms:** Successful Zepp workflows built and retained both ZAB artifacts,
@@ -14382,3 +14381,44 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   release contains both `dofek-zepp-app-zab` and
   `dofek-zepp-workout-extension-zab`, then upload each package to its matching
   Zepp developer-console listing for store review.
+
+## 2026-07-20 — Web Rollout Raced ClickHouse Service Discovery
+
+- **Symptoms:** Deploy Web run
+  [29716994073](https://github.com/Asherlc/dofek/actions/runs/29716994073)
+  failed in `Deploy stack without ClickHouse consumers`. Both new `web` tasks
+  exited with code 1, Swarm entered `rollback_started`, and the later
+  always-run full-stack apply converged successfully with the same application
+  image.
+- **User impact:** The first production rollout attempt failed, but Swarm kept
+  the previous web tasks available during rollback. The workflow's final stack
+  apply subsequently deployed `sha-94b8fa2`; production now reports web at
+  2/2 replicas and worker at 1/1 replica on that image.
+- **Evidence:** The exact failed command was `docker stack deploy` followed by
+  the workflow's convergence check. The first fatal application dependency
+  line in Axiom at `2026-07-20T04:32:57.255Z` was `getaddrinfo ENOTFOUND
+  clickhouse`; the corresponding `/readyz` request returned HTTP 503. Docker's
+  daemon recorded fatal task errors for both the new web task and new worker
+  task. Commit `94b8fa2` changed the ClickHouse service from 26.3.3.20 to
+  26.6.1.1193, and the workflow applied that dependency change in the same
+  stack update that started the new app tasks. Docker documents that services
+  attached to the same overlay network discover one another through embedded
+  DNS: <https://docs.docker.com/engine/swarm/networking/>.
+- **Root cause:** The workflow did not perform the pre-migration dependency
+  stack apply described in `deploy/README.md`; it updated ClickHouse and
+  started the new web and worker tasks in one operation, so those tasks reached
+  readiness while the `clickhouse` overlay-network DNS record was temporarily
+  unavailable.
+- **Fix / mitigation:** The workflow now performs an explicit pre-migration
+  stack apply using the currently deployed application image, or the requested
+  image for a new stack. It then uses the existing Postgres and ClickHouse
+  readiness gates before migrations and rolls out the requested application
+  image afterward. This sequences dependency changes ahead of app startup
+  without adding an ad-hoc retry, sleep, or healthcheck extension. During the
+  incident, the workflow's always-run final stack apply restored the ClickHouse
+  consumers and successfully converged the same `sha-94b8fa2` app image after
+  ClickHouse service discovery had settled.
+- **Remaining risk / follow-up:** Validate with a deployment that changes a
+  dependency service and confirm the first rollout converges. Update the
+  `check-logs` skill's stale Axiom dataset name from `dofek-app-logs` to the
+  deployed `dofek-logs` dataset.
