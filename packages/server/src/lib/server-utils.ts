@@ -1,7 +1,8 @@
 import { createWriteStream } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { Readable } from "node:stream";
+import { type Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 /** Max upload size: 2 GB */
 export const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
@@ -11,27 +12,24 @@ export function errorMessage(err: unknown): string {
 }
 
 /** Stream a request body to a file on disk, enforcing a max size. */
-export function streamToFile(
+export async function streamToFile(
   req: Readable,
   filePath: string,
   maxBytes = MAX_UPLOAD_BYTES,
 ): Promise<number> {
-  return new Promise((resolve, reject) => {
-    let bytesReceived = 0;
-    const ws = createWriteStream(filePath);
-
-    req.on("data", (chunk: Buffer) => {
+  let bytesReceived = 0;
+  const sizeLimiter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
       bytesReceived += chunk.length;
       if (bytesReceived > maxBytes) {
-        req.destroy(new Error(`Upload exceeds maximum size of ${maxBytes} bytes`));
+        callback(new Error(`Upload exceeds maximum size of ${maxBytes} bytes`));
+        return;
       }
-    });
-
-    req.pipe(ws);
-    ws.on("finish", () => resolve(bytesReceived));
-    ws.on("error", reject);
-    req.on("error", reject);
+      callback(null, chunk);
+    },
   });
+  await pipeline(req, sizeLimiter, createWriteStream(filePath));
+  return bytesReceived;
 }
 
 /** Concatenate chunk files in order into a single output file. */

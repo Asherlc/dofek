@@ -133,6 +133,19 @@ async function cleanupTempFile(filePath: string): Promise<void> {
   });
 }
 
+function isClientDisconnect(request: Request, error: unknown): boolean {
+  return (
+    request.aborted ||
+    (error instanceof Error && "code" in error && error.code === "ECONNRESET")
+  );
+}
+
+function respondToUploadFailure(response: Response, message: string): void {
+  if (!response.headersSent && !response.destroyed) {
+    response.status(500).json({ error: message });
+  }
+}
+
 const jobProgressSchema = z.union([
   z.number(),
   z
@@ -456,10 +469,14 @@ async function handleSingleFileUpload({
     );
     response.json({ status: "processing", jobId });
   } catch (error: unknown) {
+    await cleanupTempFile(tmpFile);
+    if (isClientDisconnect(request, error)) {
+      logger.info(`[${config.routeId}] Upload cancelled by client`);
+      return;
+    }
     captureException(error);
     logger.error(`[${config.routeId}] Upload failed: ${error}`);
-    await cleanupTempFile(tmpFile);
-    response.status(500).json({ error: "Upload failed" });
+    respondToUploadFailure(response, "Upload failed");
   }
 }
 
@@ -609,8 +626,6 @@ async function handleChunkedFileUpload({
       response.status(500).json({ error: "Failed to assemble uploaded file" });
     }
   } catch (error: unknown) {
-    captureException(error);
-    logger.error(`[upload] Chunked upload failed: ${error}`);
     const upload = await uploadStateStore.getUploadSession(uploadId);
     if (upload) {
       await uploadStateStore.deleteUploadSession(uploadId);
@@ -624,7 +639,13 @@ async function handleChunkedFileUpload({
       message: "Upload failed",
       userId,
     });
-    response.status(500).json({ error: "Upload failed" });
+    if (isClientDisconnect(request, error)) {
+      logger.info(`[upload] ${config.routeId} upload ${uploadId} cancelled by client`);
+      return;
+    }
+    captureException(error);
+    logger.error(`[upload] Chunked upload failed: ${error}`);
+    respondToUploadFailure(response, "Upload failed");
   }
 }
 

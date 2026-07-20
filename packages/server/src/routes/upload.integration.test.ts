@@ -1,8 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { readdir, readlink, rm } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
+import { execFile } from "node:child_process";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { ImportJobData } from "dofek/jobs/queues";
 import express from "express";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -16,6 +19,7 @@ process.env.JOB_FILES_DIR = TEST_JOB_DIR;
 // be imported AFTER the env var is set.  Vitest hoists static `import` above
 // any runtime assignment, hence the top-level `await import(…)`.
 const { createUploadRouter } = await import("./upload.ts");
+const execFileAsync = promisify(execFile);
 
 // ── Fake BullMQ queue (dependency-injected, no vi.mock) ──
 
@@ -57,6 +61,36 @@ function createTestApp() {
     }),
   );
   return { app, queue };
+}
+
+async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (!(await predicate())) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for upload cleanup");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+async function deletedOpenUploadDescriptors(): Promise<string[]> {
+  const descriptorDirectory = "/proc/self/fd";
+  if (existsSync(descriptorDirectory)) {
+    const descriptorNames = await readdir(descriptorDirectory);
+    const targets = await Promise.all(
+      descriptorNames.map(async (descriptorName) =>
+        readlink(join(descriptorDirectory, descriptorName)).catch(() => ""),
+      ),
+    );
+    return targets.filter((target) => target.startsWith(TEST_JOB_DIR));
+  }
+
+  const { stdout } = await execFileAsync("lsof", ["-a", "-p", String(process.pid), "-Fn"]);
+  return stdout
+    .split("\n")
+    .filter(
+      (line) =>
+        line.startsWith(`n${TEST_JOB_DIR}`) || line.startsWith(`n/private${TEST_JOB_DIR}`),
+    )
+    .map((line) => line.slice(1));
 }
 
 // ── HTTP helpers ──
@@ -109,6 +143,37 @@ afterAll(async () => {
 
 describe("upload integration (real file I/O)", () => {
   describe("POST /api/upload/apple-health — single file", () => {
+    it("closes and removes an incomplete upload when the client aborts", async () => {
+      const { app, queue } = createTestApp();
+      const server = app.listen(0);
+      const port = getPort(server);
+
+      const request = httpRequest({
+          host: "127.0.0.1",
+          port,
+          path: "/api/upload/apple-health",
+          method: "POST",
+          headers: {
+            Authorization: "Bearer test-session",
+            "Content-Type": "application/zip",
+            "Content-Length": 8 * 1024 * 1024,
+          },
+      });
+      const requestClosed = new Promise<void>((resolve) => request.on("error", () => resolve()));
+      request.write(Buffer.alloc(256 * 1024, "x"));
+      await waitUntil(async () => (await readdir(TEST_JOB_DIR)).length === 1);
+      request.destroy();
+      await requestClosed;
+
+      await waitUntil(async () => (await readdir(TEST_JOB_DIR)).length === 0);
+
+      expect(queue.recorded).toHaveLength(0);
+      expect(await deletedOpenUploadDescriptors()).toEqual([]);
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    });
+
     it("writes a zip upload to disk and enqueues an import job", async () => {
       const { app, queue } = createTestApp();
       const payload = Buffer.from("PK\x03\x04fake-zip-data");
