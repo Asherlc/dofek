@@ -1,4 +1,9 @@
-import { bannerHeading, freshnessLabel } from "@dofek/providers/data-readiness-banner";
+import {
+  bannerHeading,
+  DATA_READINESS_ERROR_MESSAGE,
+  dataReadinessMessage,
+  freshnessLabel,
+} from "@dofek/providers/data-readiness-banner";
 
 export type DataReadinessStatus = "healthy" | "syncing" | "stale" | "missing" | "blocked";
 
@@ -45,7 +50,7 @@ export function DataReadinessBanner({
     return (
       <output className="block w-full rounded-lg border border-red-300 bg-red-50 p-4 text-red-950">
         <h2 className="text-sm font-semibold">Data readiness is unavailable</h2>
-        <p className="mt-1 text-sm">{error.message ?? "The data readiness check failed."}</p>
+        <p className="mt-1 text-sm">{DATA_READINESS_ERROR_MESSAGE}</p>
       </output>
     );
   }
@@ -68,7 +73,7 @@ export function DataReadinessBanner({
           {relevantDatasets.map((dataset) => (
             <li key={dataset.key} className="rounded-md bg-white/60 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide">{dataset.label}</p>
-              <p className="mt-1 text-sm">{dataset.message}</p>
+              <p className="mt-1 text-sm">{dataReadinessMessage(dataset)}</p>
             </li>
           ))}
         </ul>

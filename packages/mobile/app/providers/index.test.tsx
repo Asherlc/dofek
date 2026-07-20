@@ -980,9 +980,9 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    expect(screen.getByText("Data pipeline needs attention")).toBeTruthy();
+    expect(screen.getByText("Some data is temporarily unavailable")).toBeTruthy();
     expect(
-      screen.getByText("Sleep data is synced, but dashboard summaries are blocked."),
+      screen.getByText("Sleep data is still being prepared. Please check back soon."),
     ).toBeTruthy();
   });
 
@@ -1588,17 +1588,15 @@ describe("ProvidersScreen", () => {
     expect(garminCard.queryByText("Import only")).toBeNull();
   });
 
-  it("shows the server error when active import progress cannot load", async () => {
+  it("shows a user-facing error when active import progress cannot load", async () => {
     mockActiveImportsQuery.mockReturnValue({
       data: undefined,
-      error: new Error("Unable to check import progress because the queue service is unavailable."),
+      error: new Error("We couldn't check import progress. Please try again."),
     });
 
     await renderProvidersScreen();
 
-    expect(
-      screen.getByText("Unable to check import progress because the queue service is unavailable."),
-    ).toBeTruthy();
+    expect(screen.getByText("We couldn't check import progress. Please try again.")).toBeTruthy();
   });
 
   it("shows shared import progress while providers are still loading", async () => {

@@ -447,6 +447,45 @@ describe("CyclingAnalyticsRepository", () => {
     expect(result.aerobicEfficiency).toEqual({ maxHr: null, activities: [] });
   });
 
+  it("excludes indoor and virtual cycling workouts from vertical ascent", async () => {
+    const sensorStore = makeMockSensorStore([
+      cyclingActivityRow({
+        activity_name: "Spin Class",
+        activity_type: "indoor_cycling",
+        elevation_gain_meters: 500,
+      }),
+      cyclingActivityRow({
+        id: "22222222-2222-4222-8222-222222222222",
+        activity_name: "Virtual Climb",
+        activity_type: "virtual_cycling",
+        elevation_gain_meters: 1000,
+      }),
+      cyclingActivityRow({
+        id: "33333333-3333-4333-8333-333333333333",
+        activity_name: "Outdoor Climb",
+        activity_type: "road_cycling",
+        elevation_gain_meters: 750,
+      }),
+    ]);
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getActivities(ChartRange.fromDays(90), {
+      activityLimit: 20,
+      activityOffset: 0,
+      variabilityLimit: 20,
+      variabilityOffset: 0,
+    });
+
+    expect(result.verticalAscent.map((activity) => activity.activityName)).toEqual([
+      "Outdoor Climb",
+    ]);
+  });
+
   it("returns the cycling empty state when there are no activities", async () => {
     const sensorStore = makeMockSensorStore([]);
     const repository = new CyclingAnalyticsRepository(

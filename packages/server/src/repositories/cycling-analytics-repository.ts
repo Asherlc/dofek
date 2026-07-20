@@ -1,3 +1,4 @@
+import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
   type CriticalPowerModel,
   DURATION_LABELS,
@@ -347,7 +348,12 @@ export class CyclingAnalyticsRepository {
         ).toDetail(),
       );
     const verticalAscent = rows
-      .filter((row) => row.elevation_gain_meters != null && row.elapsed_seconds > 0)
+      .filter(
+        (row) =>
+          !isIndoorCycling(row.activity_type) &&
+          row.elevation_gain_meters != null &&
+          row.elapsed_seconds > 0,
+      )
       .map((row) =>
         new VerticalAscentModel({
           date: row.date,

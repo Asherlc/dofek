@@ -231,14 +231,14 @@ describe("DataSourcesPanel", () => {
 
     render(<DataSourcesPanel />);
 
-    const readiness = screen.getByText("Data pipeline needs attention");
+    const readiness = screen.getByText("Some data is temporarily unavailable");
     const provider = screen.getByText("Garmin");
 
     expect(
       readiness.compareDocumentPosition(provider) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      screen.getByText("Activities are synced, but activity summaries need attention."),
+      screen.getByText("Activities data is still being prepared. Please check back soon."),
     ).toBeTruthy();
   });
 
