@@ -14270,3 +14270,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   zero-row progress message that does not visibly update. After deployment,
   submit a repeated deletion and verify it advances directly to acknowledgement
   when every older key is already tombstoned.
+
+## 2026-07-19 — Secret Scan Depended on GitHub's Pull-Request Commits API
+
+- **Symptoms:** PR #1689's `Test / Secret Scan` job failed twice before running
+  the Gitleaks scanner. The security, test, and overall CI gates then failed
+  because they require that job.
+- **User impact:** The otherwise-green provider deletion fix could not pass its
+  required CI gates.
+- **Evidence:** The exact failing step was `gitleaks/gitleaks-action` in attempts
+  1 and 2 of
+  [CI run 29709329357](https://github.com/Asherlc/dofek/actions/runs/29709329357).
+  The first fatal line was `RequestError [HttpError]: No server is currently
+  available to service your request.` Both failures were HTTP 503 responses
+  from `GET /repos/Asherlc/dofek/pulls/1689/commits`; the second response still
+  had 4,998 of 5,000 core API requests remaining. The action documents that it
+  uses `GITHUB_TOKEN` for GitHub API calls
+  ([Gitleaks Action environment variables](https://github.com/gitleaks/gitleaks-action#environment-variables)).
+- **Root cause:** The secret-scan job delegated commit-range discovery to the
+  Gitleaks Action, so an unavailable GitHub pull-request commits endpoint
+  prevented the locally available Gitleaks scanner from starting.
+- **Fix / mitigation:** The job now downloads the official Gitleaks v8.30.1
+  Linux CLI archive, verifies its pinned SHA-256, validates a non-empty local
+  Git commit range, and scans that range directly. Pull-request and push scans
+  retain `--no-merges --first-parent`; manual runs scan full history. No retry,
+  timeout, warning-and-continue path, or GitHub API fallback was added. Gitleaks
+  documents both checksum-published binary releases and commit-range scans
+  ([v8.30.1 release](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1),
+  [Git scan options](https://github.com/gitleaks/gitleaks#git)).
+- **Validation:** The pinned CLI archive checksum matches the official release,
+  and the PR commit range scans cleanly locally. Actionlint and the replacement
+  GitHub Actions run provide workflow-level validation.
+- **Remaining risk / follow-up:** Confirm the replacement `Secret Scan`,
+  `Security & Dependencies`, `Test Gate`, and `CI Gate` jobs all pass on PR
+  #1689. Future Gitleaks upgrades must update both the pinned version and
+  archive checksum together.
