@@ -56,6 +56,7 @@ function row(overrides: Record<string, unknown> = {}) {
     updated_at: now,
     expires_at: new Date("2026-07-21T00:00:00Z"),
     completed_at: null,
+    object_deleted_at: null,
     ...overrides,
   };
 }
@@ -97,6 +98,7 @@ describe("file upload repository", () => {
       error_code: "code",
       error_message: "message",
       completed_at: now,
+      object_deleted_at: null,
     });
     mocks.executeWithSchema.mockResolvedValue([persisted]);
 
@@ -125,6 +127,7 @@ describe("file upload repository", () => {
       updatedAt: now,
       expiresAt: new Date("2026-07-21T00:00:00Z"),
       completedAt: now,
+      objectDeletedAt: null,
     });
   });
 

@@ -11,6 +11,7 @@ import {
   real,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -96,15 +97,33 @@ export const fileUpload = fitness.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    objectDeletedAt: timestamp("object_deleted_at", { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex("file_upload_object_key_unique").on(table.objectKey),
-    uniqueIndex("file_upload_import_job_id_unique").on(table.importJobId),
+    unique("file_upload_object_key_key").on(table.objectKey),
+    unique("file_upload_import_job_id_key").on(table.importJobId),
     index("file_upload_owner_updated_idx").on(table.userId, table.updatedAt.desc()),
     index("file_upload_reconcile_idx").on(table.state, table.expiresAt, table.updatedAt),
     check("file_upload_expected_size_positive", sql`${table.expectedSizeBytes} > 0`),
     check("file_upload_part_size_valid", sql`${table.partSizeBytes} >= 5242880`),
     check("file_upload_progress_valid", sql`${table.progressPercent} BETWEEN 0 AND 100`),
+    check(
+      "file_upload_import_type_valid",
+      sql`${table.importType} IN ('apple-health', 'strong-csv', 'cronometer-csv', 'kaya-export', 'zos-app', 'garmin-dump', 'fit-file')`,
+    ),
+    check(
+      "file_upload_state_valid",
+      sql`${table.state} IN ('initiated', 'uploading', 'uploaded', 'queued', 'processing', 'completed', 'failed', 'aborted', 'expired')`,
+    ),
+    check("file_upload_expected_sha256_valid", sql`${table.expectedSha256} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "file_upload_verified_sha256_valid",
+      sql`${table.verifiedSha256} IS NULL OR ${table.verifiedSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "file_upload_weight_unit_valid",
+      sql`${table.weightUnit} IS NULL OR ${table.weightUnit} IN ('kg', 'lbs')`,
+    ),
   ],
 );
 
@@ -124,9 +143,13 @@ export const fileUploadOutbox = fitness.table(
     failedAt: timestamp("failed_at", { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex("file_upload_outbox_upload_id_unique").on(table.uploadId),
-    uniqueIndex("file_upload_outbox_import_job_id_unique").on(table.importJobId),
+    unique("file_upload_outbox_upload_id_key").on(table.uploadId),
+    unique("file_upload_outbox_import_job_id_key").on(table.importJobId),
     index("file_upload_outbox_dispatch_idx").on(table.status, table.createdAt),
+    check(
+      "file_upload_outbox_status_valid",
+      sql`${table.status} IN ('pending', 'dispatched', 'completed', 'failed')`,
+    ),
   ],
 );
 

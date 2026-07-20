@@ -18,6 +18,24 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const Empty: Story = {
+  args: {
+    activeImport: undefined,
+    recentLogs: [],
+  },
+};
+
+export const ActiveImport: Story = {
+  args: {
+    activeImport: {
+      jobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+      status: "running",
+      percentage: 42,
+      message: "Processing import...",
+    },
+  },
+};
+
 export const WithRecentImport: Story = {
   args: {
     recentLogs: [

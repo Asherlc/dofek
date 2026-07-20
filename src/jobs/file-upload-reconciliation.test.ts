@@ -6,6 +6,7 @@ const repository = vi.hoisted(() => ({
   expire: vi.fn(),
   objectKeyExists: vi.fn(async () => false),
   list: vi.fn(async (): Promise<FileUpload[]> => []),
+  markObjectDeleted: vi.fn(),
   queue: vi.fn(),
   requeue: vi.fn(),
   lifecycle: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock("../db/file-upload.ts", () => ({
   expireFileUpload: repository.expire,
   fileUploadObjectKeyExists: repository.objectKeyExists,
   listFileUploadsForReconciliation: repository.list,
+  markFileUploadObjectDeleted: repository.markObjectDeleted,
   queueCompletedFileUpload: repository.queue,
   requeueStuckFileUpload: repository.requeue,
 }));
@@ -58,6 +60,7 @@ function upload(overrides: Partial<FileUpload>): FileUpload {
     updatedAt: new Date(0),
     expiresAt: new Date(Date.now() + 60_000),
     completedAt: null,
+    objectDeletedAt: null,
     ...overrides,
   };
 }
@@ -152,6 +155,29 @@ describe("reconcileFileUploads", () => {
     await reconcileFileUploads(database, objectStorage);
 
     expect(objectStorage.deleteObject).toHaveBeenCalledWith(completed.objectKey);
+    expect(repository.markObjectDeleted).toHaveBeenCalledWith(database, completed.id);
+  });
+
+  it("continues reconciling uploads after one upload fails", async () => {
+    const failedUpload = upload({ state: "uploaded" });
+    const stuckUpload = upload({
+      id: "00000000-0000-4000-8000-0000000000f3",
+      state: "processing",
+    });
+    repository.list.mockResolvedValue([failedUpload, stuckUpload]);
+    const objectStorage = storage();
+    vi.mocked(objectStorage.headObject).mockRejectedValue(new Error("R2 is unavailable"));
+
+    await reconcileFileUploads(database, objectStorage);
+
+    expect(repository.requeue).toHaveBeenCalledWith(database, stuckUpload.id);
+    expect(repository.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: {
+        source: "file-upload-reconciliation",
+        repairKind: "upload",
+      },
+      extra: { uploadId: failedUpload.id },
+    });
   });
 
   it("deletes aged R2 objects without a database upload", async () => {
@@ -179,6 +205,28 @@ describe("reconcileFileUploads", () => {
     expect(repository.objectKeyExists).toHaveBeenCalledOnce();
     expect(repository.objectKeyExists).toHaveBeenCalledWith(database, "imports/known/source");
     expect(objectStorage.deleteObject).not.toHaveBeenCalled();
+  });
+
+  it("continues reconciling orphan objects after one object fails", async () => {
+    const objectStorage = storage();
+    vi.mocked(objectStorage.listObjects).mockResolvedValue([
+      { objectKey: "imports/failing/source", lastModified: new Date(0) },
+      { objectKey: "imports/orphan/source", lastModified: new Date(0) },
+    ]);
+    repository.objectKeyExists
+      .mockRejectedValueOnce(new Error("database lookup failed"))
+      .mockResolvedValueOnce(false);
+
+    await reconcileFileUploads(database, objectStorage);
+
+    expect(objectStorage.deleteObject).toHaveBeenCalledWith("imports/orphan/source");
+    expect(repository.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: {
+        source: "file-upload-reconciliation",
+        repairKind: "orphan",
+      },
+      extra: { objectKey: "imports/failing/source" },
+    });
   });
 
   it("runs immediately and on its interval until closed", async () => {

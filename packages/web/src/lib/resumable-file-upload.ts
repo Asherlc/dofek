@@ -33,18 +33,20 @@ export interface StoredUploadSession {
   completedParts: Array<{ partNumber: number; etag: string }>;
 }
 
+const uploadImportTypeSchema = z.enum([
+  "apple-health",
+  "strong-csv",
+  "cronometer-csv",
+  "kaya-export",
+  "zos-app",
+  "garmin-dump",
+  "fit-file",
+]);
+
 const storedUploadSessionSchema = z.object({
   providerId: z.string().min(1),
   uploadId: z.uuid(),
-  importType: z.enum([
-    "apple-health",
-    "strong-csv",
-    "cronometer-csv",
-    "kaya-export",
-    "zos-app",
-    "garmin-dump",
-    "fit-file",
-  ]),
+  importType: uploadImportTypeSchema,
   filename: z.string().min(1),
   sizeBytes: z.number().int().positive(),
   lastModified: z.number().int().nonnegative(),
@@ -55,14 +57,7 @@ const storedUploadSessionSchema = z.object({
   ),
 });
 
-export type UploadImportType =
-  | "apple-health"
-  | "strong-csv"
-  | "cronometer-csv"
-  | "kaya-export"
-  | "zos-app"
-  | "garmin-dump"
-  | "fit-file";
+export type UploadImportType = z.infer<typeof uploadImportTypeSchema>;
 
 export interface UploadSessionStore {
   delete(providerId: string): Promise<void>;

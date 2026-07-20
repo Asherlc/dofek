@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { Transform, Writable } from "node:stream";
@@ -138,11 +138,17 @@ export async function processFileUploadImportJob(
   const workDirectory = join(baseDirectory, `file-upload-${upload.id}`);
   await mkdir(workDirectory, { recursive: true });
   const filePath = join(workDirectory, `source${safeFileExtension(upload.originalFilename)}`);
+  const partialFilePath = `${filePath}.partial`;
   let preserveWorkDirectory = false;
   try {
-    const verifiedSha256 = existsSync(filePath)
-      ? await verifyLocalFile(upload, filePath)
-      : await downloadAndVerify(storage, upload, filePath);
+    let verifiedSha256: string;
+    if (existsSync(filePath)) {
+      verifiedSha256 = await verifyLocalFile(upload, filePath);
+    } else {
+      await rm(partialFilePath, { force: true });
+      verifiedSha256 = await downloadAndVerify(storage, upload, partialFilePath);
+      await rename(partialFilePath, filePath);
+    }
     if (upload.originalFilename.toLowerCase().endsWith(".zip")) {
       await validateImportArchive(filePath);
     }

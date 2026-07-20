@@ -109,10 +109,10 @@ describe("R2ImportUploadStorage", () => {
   });
 
   it.each([
-    [{ ETag: '"etag"', Size: 1 }, "PartNumber"],
-    [{ PartNumber: 1, Size: 1 }, "ETag"],
-    [{ PartNumber: 1, ETag: '"etag"' }, "Size"],
-  ])("rejects incomplete part metadata missing %s", async (part, _missingField) => {
+    ["PartNumber", { ETag: '"etag"', Size: 1 }],
+    ["ETag", { PartNumber: 1, Size: 1 }],
+    ["Size", { PartNumber: 1, ETag: '"etag"' }],
+  ])("rejects incomplete part metadata missing %s", async (_missingField, part) => {
     const { client } = clientWithResponses({ Parts: [part] });
     await expect(
       new R2ImportUploadStorage(client, "imports").listParts("key", "upload-1"),

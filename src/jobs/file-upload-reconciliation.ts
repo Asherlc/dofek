@@ -3,6 +3,7 @@ import {
   expireFileUpload,
   fileUploadObjectKeyExists,
   listFileUploadsForReconciliation,
+  markFileUploadObjectDeleted,
   queueCompletedFileUpload,
   requeueStuckFileUpload,
 } from "../db/file-upload.ts";
@@ -14,49 +15,72 @@ import { logger } from "../logger.ts";
 const RECONCILIATION_INTERVAL_MS = 15 * 60 * 1_000;
 const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1_000;
 
+function reportReconciliationItemFailure(
+  error: unknown,
+  repairKind: "upload" | "orphan",
+  extra: { uploadId: string } | { objectKey: string },
+): void {
+  Sentry.captureException(error, {
+    tags: { source: "file-upload-reconciliation", repairKind },
+    extra,
+  });
+  logger.error(
+    `[file-upload-reconciliation] Failed ${repairKind} repair (${Object.values(extra)[0]}): ${String(error)}`,
+  );
+}
+
 export async function reconcileFileUploads(
   database: Database,
   storage: ImportUploadStorage,
 ): Promise<void> {
   const uploads = await listFileUploadsForReconciliation(database);
   for (const upload of uploads) {
-    if (
-      (upload.state === "initiated" || upload.state === "uploading") &&
-      upload.expiresAt < new Date()
-    ) {
-      if (upload.r2MultipartUploadId) {
-        await storage.abortMultipartUpload(upload.objectKey, upload.r2MultipartUploadId);
+    try {
+      if (
+        (upload.state === "initiated" || upload.state === "uploading") &&
+        upload.expiresAt < new Date()
+      ) {
+        if (upload.r2MultipartUploadId) {
+          await storage.abortMultipartUpload(upload.objectKey, upload.r2MultipartUploadId);
+        }
+        await expireFileUpload(database, upload.id);
+        fileUploadLifecycleTotal.add(1, { state: "expired", import_type: upload.importType });
+        fileUploadReconciliationTotal.add(1, { repair: "expired_multipart" });
+        continue;
       }
-      await expireFileUpload(database, upload.id);
-      fileUploadLifecycleTotal.add(1, { state: "expired", import_type: upload.importType });
-      fileUploadReconciliationTotal.add(1, { repair: "expired_multipart" });
-      continue;
+      if (upload.state === "uploaded") {
+        const object = await storage.headObject(upload.objectKey);
+        await queueCompletedFileUpload(database, upload.id, upload.userId, {
+          importJobId: `file-import-${upload.id}`,
+          objectSizeBytes: object.sizeBytes,
+        });
+        fileUploadReconciliationTotal.add(1, { repair: "uploaded_without_outbox" });
+        continue;
+      }
+      if (upload.state === "processing") {
+        await requeueStuckFileUpload(database, upload.id);
+        fileUploadReconciliationTotal.add(1, { repair: "stuck_processing" });
+        continue;
+      }
+      await storage.deleteObject(upload.objectKey);
+      await markFileUploadObjectDeleted(database, upload.id);
+    } catch (error) {
+      reportReconciliationItemFailure(error, "upload", { uploadId: upload.id });
     }
-    if (upload.state === "uploaded") {
-      const object = await storage.headObject(upload.objectKey);
-      await queueCompletedFileUpload(database, upload.id, upload.userId, {
-        importJobId: `file-import-${upload.id}`,
-        objectSizeBytes: object.sizeBytes,
-      });
-      fileUploadReconciliationTotal.add(1, { repair: "uploaded_without_outbox" });
-      continue;
-    }
-    if (upload.state === "processing") {
-      await requeueStuckFileUpload(database, upload.id);
-      fileUploadReconciliationTotal.add(1, { repair: "stuck_processing" });
-      continue;
-    }
-    await storage.deleteObject(upload.objectKey);
   }
 
   const orphanCutoff = Date.now() - ORPHAN_GRACE_MS;
   for (const object of await storage.listObjects("imports/")) {
-    if (
-      object.lastModified.getTime() < orphanCutoff &&
-      !(await fileUploadObjectKeyExists(database, object.objectKey))
-    ) {
-      await storage.deleteObject(object.objectKey);
-      fileUploadReconciliationTotal.add(1, { repair: "orphaned_object" });
+    try {
+      if (
+        object.lastModified.getTime() < orphanCutoff &&
+        !(await fileUploadObjectKeyExists(database, object.objectKey))
+      ) {
+        await storage.deleteObject(object.objectKey);
+        fileUploadReconciliationTotal.add(1, { repair: "orphaned_object" });
+      }
+    } catch (error) {
+      reportReconciliationItemFailure(error, "orphan", { objectKey: object.objectKey });
     }
   }
 }

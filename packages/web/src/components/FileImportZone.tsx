@@ -76,6 +76,7 @@ export function FileImportZone({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentUploadIdRef = useRef<string | null>(null);
+  const cancelledUploadIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stoppedRef = useRef(false);
   const validProviderId = providerId?.length ? providerId : null;
@@ -112,7 +113,19 @@ export function FileImportZone({
     async (uploadId: string) => {
       currentUploadIdRef.current = uploadId;
       while (!stoppedRef.current) {
-        const result = await uploadApi.resume({ uploadId });
+        let result: Awaited<ReturnType<FileUploadApi["resume"]>>;
+        try {
+          result = await uploadApi.resume({ uploadId });
+        } catch (error) {
+          if (stoppedRef.current) return;
+          captureException(error, { tags: { uploadId } });
+          setState({
+            phase: "failed",
+            progress: 0,
+            message: error instanceof Error ? error.message : "Upload status is unavailable",
+          });
+          return;
+        }
         const upload = result.upload;
         if (upload.state === "completed") {
           setState({ phase: "completed", progress: 100, message: "Import completed" });
@@ -147,18 +160,31 @@ export function FileImportZone({
 
   useEffect(() => {
     stoppedRef.current = false;
-    void indexedDbUploadSessionStore.get(sessionKey).then((session) => {
-      if (session && !stoppedRef.current) {
-        currentUploadIdRef.current = session.uploadId;
+    void indexedDbUploadSessionStore
+      .get(sessionKey)
+      .then((session) => {
+        if (session && !stoppedRef.current) {
+          currentUploadIdRef.current = session.uploadId;
+          setState({
+            phase: "cancelled",
+            progress: 0,
+            message: "Select the same file to resume upload",
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        if (stoppedRef.current) return;
+        captureException(error, { tags: { uploadId: "pending" } });
         setState({
-          phase: "cancelled",
+          phase: "failed",
           progress: 0,
-          message: "Select the same file to resume upload",
+          message: error instanceof Error ? error.message : "Upload session storage is unavailable",
         });
-      }
-    });
+      });
     const activeUploadId = activeImport ? uploadIdFromJobId(activeImport.jobId) : null;
-    if (activeUploadId) void pollUpload(activeUploadId);
+    if (activeUploadId && activeUploadId !== cancelledUploadIdRef.current) {
+      void pollUpload(activeUploadId);
+    }
     return () => {
       stoppedRef.current = true;
       abortControllerRef.current?.abort();
@@ -211,12 +237,37 @@ export function FileImportZone({
 
   const cancelUpload = useCallback(async () => {
     abortControllerRef.current?.abort();
+    stoppedRef.current = true;
     const uploadId = currentUploadIdRef.current;
+    cancelledUploadIdRef.current = uploadId;
+    let cancellationError: unknown;
     if (uploadId) {
-      await uploadApi.abort({ uploadId });
-      await indexedDbUploadSessionStore.delete(sessionKey);
+      try {
+        await uploadApi.abort({ uploadId });
+      } catch (error) {
+        cancellationError = error;
+        captureException(error, { tags: { uploadId } });
+      }
+      try {
+        await indexedDbUploadSessionStore.delete(sessionKey);
+      } catch (error) {
+        captureException(error, { tags: { uploadId } });
+        setState({
+          phase: "failed",
+          progress: 0,
+          message: error instanceof Error ? error.message : "Local upload cleanup failed",
+        });
+        return;
+      }
     }
-    setState({ phase: "cancelled", progress: 0, message: "Upload cancelled" });
+    setState({
+      phase: "cancelled",
+      progress: 0,
+      message:
+        cancellationError instanceof Error
+          ? `Upload cancelled locally. ${cancellationError.message}`
+          : "Upload cancelled",
+    });
   }, [sessionKey, uploadApi]);
 
   const handleFileSelect = useCallback(

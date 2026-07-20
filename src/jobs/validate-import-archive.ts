@@ -76,7 +76,7 @@ export async function validateImportArchive(filePath: string): Promise<void> {
       zipFile.close();
       resolve();
     });
-    zipFile.once("error", reject);
+    zipFile.once("error", fail);
     zipFile.readEntry();
   });
 }

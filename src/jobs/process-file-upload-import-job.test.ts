@@ -74,6 +74,7 @@ function upload(overrides: Partial<FileUpload> = {}): FileUpload {
     updatedAt: new Date(),
     expiresAt: new Date(Date.now() + 60_000),
     completedAt: null,
+    objectDeletedAt: null,
     ...overrides,
   };
 }
@@ -133,6 +134,26 @@ describe("processFileUploadImportJob", () => {
     expect(mocks.complete).toHaveBeenCalledWith(database, uploadId, digest);
     expect(storage.deleteObject).toHaveBeenCalledWith(upload().objectKey);
     expect(existsSync(join(jobFilesDirectory, `file-upload-${uploadId}`))).toBe(false);
+  });
+
+  it("publishes the retained upload file only after download verification", async () => {
+    const filePath = join(jobFilesDirectory, `file-upload-${uploadId}`, "source.csv");
+    let finalFileExistedDuringDownload: boolean | undefined;
+    const objectStorage = storageWithBody();
+    vi.mocked(objectStorage.getObjectStream).mockResolvedValue(
+      Readable.from(
+        (async function* () {
+          yield body.subarray(0, 5);
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          finalFileExistedDuringDownload = existsSync(filePath);
+          yield body.subarray(5);
+        })(),
+      ),
+    );
+
+    await processFileUploadImportJob(job(), database, objectStorage);
+
+    expect(finalFileExistedDuringDownload).toBe(false);
   });
 
   it("rejects a digest mismatch before the importer runs", async () => {

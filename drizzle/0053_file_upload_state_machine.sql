@@ -23,6 +23,7 @@ CREATE TABLE fitness.file_upload (
   updated_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz NOT NULL,
   completed_at timestamptz,
+  object_deleted_at timestamptz,
   CONSTRAINT file_upload_import_type_valid CHECK (
     import_type IN (
       'apple-health', 'strong-csv', 'cronometer-csv', 'kaya-export',

@@ -56,6 +56,7 @@ const fileUploadRowSchema = z.object({
   updated_at: z.coerce.date(),
   expires_at: z.coerce.date(),
   completed_at: z.coerce.date().nullable(),
+  object_deleted_at: z.coerce.date().nullable(),
 });
 
 export interface FileUpload {
@@ -83,6 +84,7 @@ export interface FileUpload {
   updatedAt: Date;
   expiresAt: Date;
   completedAt: Date | null;
+  objectDeletedAt: Date | null;
 }
 
 export interface CreateFileUploadInput {
@@ -118,7 +120,7 @@ const selectFileUploadColumns = sql`id, user_id, import_type, object_key,
   original_filename, content_type, expected_size_bytes, expected_sha256,
   verified_sha256, r2_multipart_upload_id, state, version, part_size_bytes, completion_parts,
   import_job_id, import_since, weight_unit, progress_percent, error_code,
-  error_message, created_at, updated_at, expires_at, completed_at`;
+  error_message, created_at, updated_at, expires_at, completed_at, object_deleted_at`;
 
 function mapFileUpload(row: z.infer<typeof fileUploadRowSchema>): FileUpload {
   return {
@@ -146,6 +148,7 @@ function mapFileUpload(row: z.infer<typeof fileUploadRowSchema>): FileUpload {
     updatedAt: row.updated_at,
     expiresAt: row.expires_at,
     completedAt: row.completed_at,
+    objectDeletedAt: row.object_deleted_at,
   };
 }
 
@@ -486,11 +489,25 @@ export async function listFileUploadsForReconciliation(
            OR state = 'uploaded'
            OR (state = 'processing' AND updated_at < now() - interval '2 hours')
            OR (state IN ('completed', 'failed', 'aborted', 'expired')
-               AND updated_at < now() - interval '7 days')
+               AND updated_at < now() - interval '7 days'
+               AND object_deleted_at IS NULL)
         ORDER BY updated_at
         LIMIT ${parsedLimit}`,
   );
   return rows.map(mapFileUpload);
+}
+
+export async function markFileUploadObjectDeleted(
+  database: Database,
+  uploadId: string,
+): Promise<void> {
+  await database.execute(
+    sql`UPDATE fitness.file_upload
+        SET object_deleted_at = now(), updated_at = now(), version = version + 1
+        WHERE id = ${uploadId}::uuid
+          AND state IN ('completed', 'failed', 'aborted', 'expired')
+          AND object_deleted_at IS NULL`,
+  );
 }
 
 export async function expireFileUpload(database: Database, uploadId: string): Promise<void> {

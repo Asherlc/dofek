@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createFileUpload,
   findFileUploadForUser,
+  listFileUploadsForReconciliation,
+  markFileUploadObjectDeleted,
   markFileUploadObjectUploaded,
   markFileUploadUploading,
   queueCompletedFileUpload,
@@ -93,5 +95,23 @@ describe("file upload state machine (integration)", () => {
           WHERE upload_id = ${input.id}::uuid`,
     );
     expect(rows[0]?.count).toBe("1");
+  });
+
+  it("does not repeatedly reconcile a terminal upload after its object is deleted", async () => {
+    const input = uploadInput();
+    await createFileUpload(testContext.db, input);
+    await testContext.db.execute(sql`UPDATE fitness.file_upload
+      SET state = 'completed', updated_at = now() - interval '8 days'
+      WHERE id = ${input.id}::uuid`);
+
+    expect(
+      (await listFileUploadsForReconciliation(testContext.db)).map((upload) => upload.id),
+    ).toContain(input.id);
+
+    await markFileUploadObjectDeleted(testContext.db, input.id);
+
+    expect(
+      (await listFileUploadsForReconciliation(testContext.db)).map((upload) => upload.id),
+    ).not.toContain(input.id);
   });
 });

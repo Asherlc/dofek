@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -10,9 +10,12 @@ const mocks = vi.hoisted(() => ({
   initiate: vi.fn(),
   resume: vi.fn(),
   runUpload: vi.fn(),
+  captureException: vi.fn(),
   sessionGet: vi.fn(async (): Promise<unknown> => null),
   sessionDelete: vi.fn(),
 }));
+
+vi.mock("@sentry/react", () => ({ captureException: mocks.captureException }));
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="/providers/strong-csv">{children}</a>,
@@ -114,5 +117,180 @@ describe("FileImportZone", () => {
     await waitFor(() =>
       expect(screen.getByText("Select the same file to resume upload")).toBeTruthy(),
     );
+  });
+
+  it("reports IndexedDB session lookup failures", async () => {
+    mocks.sessionGet.mockRejectedValue(new Error("Upload session storage is unavailable"));
+
+    render(
+      <FileImportZone
+        providerId="fit-file"
+        importType="fit-file"
+        title="FIT File"
+        description=".fit file"
+        accept=".fit"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("Upload session storage is unavailable")).toBeTruthy(),
+    );
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { uploadId: "pending" },
+    });
+  });
+
+  it("ignores IndexedDB session lookup failures after unmount", async () => {
+    let rejectSessionLookup: (error: Error) => void = () => undefined;
+    mocks.sessionGet.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectSessionLookup = reject;
+      }),
+    );
+    const rendered = render(
+      <FileImportZone
+        providerId="fit-file"
+        importType="fit-file"
+        title="FIT File"
+        description=".fit file"
+        accept=".fit"
+      />,
+    );
+
+    rendered.unmount();
+    await act(async () => rejectSessionLookup(new Error("late session lookup failure")));
+
+    expect(mocks.captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports active upload polling failures", async () => {
+    mocks.resume.mockRejectedValue(new Error("Upload status is unavailable"));
+
+    render(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+        activeImport={{
+          jobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+          status: "running",
+        }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText("Upload status is unavailable")).toBeTruthy());
+    expect(mocks.resume).toHaveBeenCalledWith({
+      uploadId: "00000000-0000-4000-8000-0000000000f7",
+    });
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { uploadId: "00000000-0000-4000-8000-0000000000f7" },
+    });
+  });
+
+  it("ignores polling failures after unmount", async () => {
+    let rejectResume: (error: Error) => void = () => undefined;
+    mocks.resume.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectResume = reject;
+      }),
+    );
+    const rendered = render(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+        activeImport={{
+          jobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+          status: "running",
+        }}
+      />,
+    );
+    await waitFor(() => expect(mocks.resume).toHaveBeenCalledOnce());
+
+    rendered.unmount();
+    await act(async () => rejectResume(new Error("late polling failure")));
+
+    expect(mocks.captureException).not.toHaveBeenCalled();
+  });
+
+  it("cleans up local state when server cancellation fails", async () => {
+    mocks.resume.mockResolvedValue({
+      upload: { state: "queued", progressPercent: 20 },
+      parts: [],
+    });
+    mocks.abort.mockRejectedValue(new Error("Server cancellation is unavailable"));
+
+    render(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+        activeImport={{
+          jobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+          status: "running",
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(mocks.sessionDelete).toHaveBeenCalledWith("garmin-dump"));
+    expect(mocks.abort).toHaveBeenCalledWith({
+      uploadId: "00000000-0000-4000-8000-0000000000f7",
+    });
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { uploadId: "00000000-0000-4000-8000-0000000000f7" },
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByText("Upload cancelled locally. Server cancellation is unavailable"),
+      ).toBeTruthy(),
+    );
+  });
+
+  it("cancels an in-flight local upload before it has a server upload ID", async () => {
+    mocks.runUpload.mockImplementation(
+      async ({
+        onProgress,
+        signal,
+      }: {
+        onProgress: (progress: unknown) => void;
+        signal: AbortSignal;
+      }) => {
+        onProgress({ phase: "uploading", percentage: 10, message: "Uploading..." });
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("Upload cancelled", "AbortError")),
+            { once: true },
+          );
+        });
+        throw new Error("unreachable");
+      },
+    );
+    render(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+      />,
+    );
+    fireEvent.drop(screen.getByRole("region", { name: "Garmin file drop zone" }), {
+      dataTransfer: { files: [new File(["zip-data"], "garmin.zip")] },
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.getByText("Upload cancelled")).toBeTruthy());
+    expect(mocks.abort).not.toHaveBeenCalled();
+    expect(mocks.sessionDelete).not.toHaveBeenCalled();
   });
 });

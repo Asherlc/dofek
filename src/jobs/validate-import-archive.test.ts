@@ -119,9 +119,21 @@ describe("validateImportArchive", () => {
       }));
 
       const freshModule = await import("./validate-import-archive.ts");
-      await freshModule.validateImportArchive("upload.zip");
-      expect(closeFile).toHaveBeenCalledOnce();
-      expect(zipFile.close).toHaveBeenCalledOnce();
+      const hasValidSignature =
+        signature.length === 4 &&
+        signature[0] === 0x50 &&
+        signature[1] === 0x4b &&
+        ((signature[2] === 0x03 && signature[3] === 0x04) ||
+          (signature[2] === 0x05 && signature[3] === 0x06) ||
+          (signature[2] === 0x07 && signature[3] === 0x08));
+      try {
+        await freshModule.validateImportArchive("upload.zip");
+      } finally {
+        expect(closeFile).toHaveBeenCalledOnce();
+        if (hasValidSignature && !input.openError && !input.omitZipFile) {
+          expect(zipFile.close).toHaveBeenCalledOnce();
+        }
+      }
     }
 
     await expect(

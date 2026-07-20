@@ -54,6 +54,7 @@ function upload(overrides: Partial<FileUpload> = {}): FileUpload {
     updatedAt: new Date("2026-07-19T00:00:00Z"),
     expiresAt: new Date("2026-07-20T00:00:00Z"),
     completedAt: null,
+    objectDeletedAt: null,
     ...overrides,
   };
 }
