@@ -268,9 +268,11 @@ describe("runResumableFileUpload", () => {
     vi.spyOn(Math, "random").mockReturnValue(1);
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(null, { status: 503 })),
+      vi.fn(async () => {
+        setTimeout(() => controller.abort(), 0);
+        return new Response(null, { status: 503 });
+      }),
     );
-    setTimeout(() => controller.abort(), 0);
 
     await expect(
       runResumableFileUpload({
