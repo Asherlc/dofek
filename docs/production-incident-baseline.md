@@ -14217,3 +14217,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement GitHub Actions run
   discovers the same tests on both mutation shards and completes the aggregate
   mutation, test, and CI gates successfully.
+## 2026-07-19 — Aborted Proxy Uploads Leaked Deleted Temporary Files
+
+- **Symptoms:** Three Garmin upload retries aborted with `ECONNRESET` while a prior
+  Garmin import remained `waiting-children` at about 9.44% progress. The upload
+  filesystem was 90% utilized.
+- **User impact:** Large file imports were unreliable, and repeated disconnects
+  consumed disk space until the affected web replicas restarted.
+- **Evidence:** At `00:35:58Z`, `POST /api/upload/garmin-dump` returned `200` and
+  created BullMQ job `15`. Aborts followed at approximately `00:36:03.313`,
+  `00:36:05.063`, and `00:36:07.925` across both web replicas. Containers
+  `21814130c903` and `782396b6296a` retained three deleted-but-open files through
+  FDs 69, 72, and 79, totaling 88,370,387 bytes (about 84.3 MiB). The local
+  regression observed the destination stream with `destroyed === false` and
+  `closed === false` after abort.
+- **Root cause:** `streamToFile()` used `request.pipe(writeStream)` and rejected
+  on the request's abort error without destroying or awaiting the destination.
+  The handler then unlinked the path, leaving its descriptor and disk blocks open.
+- **Containment:** The legacy stream path was changed to `stream.pipeline()`, and
+  confirmed client disconnects became cancellations rather than Sentry failures.
+  Its integration regression failed three times before the fix with an accumulating
+  deleted/open file and passed after the destination closed and no job was queued.
+- **Durable fix:** The proxy endpoint was removed. Browsers now use private R2
+  multipart uploads governed by a Postgres state machine, authoritative part
+  verification, full-file SHA-256 verification, a transactional outbox,
+  deterministic BullMQ jobs, idempotent worker claims, and automated reconciliation.
+  See [`file-upload-architecture.md`](file-upload-architecture.md). Cloudflare's
+  documented multipart limits and lifecycle cleanup are reflected in the control
+  plane and Terraform: <https://developers.cloudflare.com/r2/objects/upload-objects/>
+  and <https://developers.cloudflare.com/r2/buckets/object-lifecycles/>.
+- **Remaining risk / follow-up:** No production resource was changed. Rollout
+  requires migration `0053`, creation of `dofek-imports`, verified R2 credentials
+  in Infisical, and a coordinated web/worker release. Monitor upload lifecycle,
+  checksum mismatch, outbox, reconciliation, worker disk, and stuck-job metrics.

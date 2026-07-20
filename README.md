@@ -528,6 +528,17 @@ Required production config:
 - `BREVO_SMTP_KEY`
 - `EXPORT_EMAIL_FROM`
 
+### Durable file import storage
+
+Browser file imports upload directly to the private `dofek-imports` R2 bucket with
+short-lived multipart URLs. Postgres owns upload state and a transactional outbox;
+workers verify the complete object's size and SHA-256 before importing it. See
+[`docs/file-upload-architecture.md`](docs/file-upload-architecture.md) for the protocol,
+recovery behavior, rollout order, and operational runbook.
+
+Production requires the shared `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, and
+`R2_SECRET_ACCESS_KEY` secrets plus `IMPORT_R2_BUCKET` (set in `deploy/stack.yml`).
+
 ### Stripe billing
 
 Stripe Checkout, Customer Portal sessions, and webhook verification require
