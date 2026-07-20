@@ -253,17 +253,20 @@ describe("FileImportZone", () => {
     rerender(<FileImportZone {...props("file-import-second")} />);
     await waitFor(() => expect(mocks.resume).toHaveBeenCalledWith({ uploadId: "second" }));
 
-    await act(async () =>
-      resolveFirstResume({ upload: { state: "processing", progressPercent: 50 }, parts: [] }),
-    );
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 1_500));
-    });
+    vi.useFakeTimers();
+    try {
+      await act(async () =>
+        resolveFirstResume({ upload: { state: "processing", progressPercent: 50 }, parts: [] }),
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(1_000));
 
-    const firstCalls = vi
-      .mocked(mocks.resume)
-      .mock.calls.filter(([{ uploadId }]) => uploadId === "first");
-    expect(firstCalls).toHaveLength(1);
+      const firstCalls = vi
+        .mocked(mocks.resume)
+        .mock.calls.filter(([{ uploadId }]) => uploadId === "first");
+      expect(firstCalls).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("cleans up local state when server cancellation fails", async () => {
