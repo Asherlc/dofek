@@ -420,14 +420,54 @@ describe("CyclingAnalyticsRepository", () => {
     });
   });
 
-  it("excludes aerobic efficiency rows whose missing joined values became zeros", async () => {
+  it("requires positive efficiency values and at least 300 zone 2 samples", async () => {
     const sensorStore = makeMockSensorStore([
       cyclingActivityRow({
-        max_hr: 0,
+        activity_name: "Minimum Valid Ride",
+        avg_power_z2: 180,
+        avg_hr_z2: 135,
+        efficiency_factor: 1.333,
+        z2_samples: 300,
+      }),
+      cyclingActivityRow({
+        id: "22222222-2222-4222-8222-222222222222",
+        activity_name: "Zero Power Ride",
         avg_power_z2: 0,
+        avg_hr_z2: 135,
+        efficiency_factor: 1.333,
+        z2_samples: 600,
+      }),
+      cyclingActivityRow({
+        id: "33333333-3333-4333-8333-333333333333",
+        activity_name: "Zero Heart Rate Ride",
+        avg_power_z2: 180,
         avg_hr_z2: 0,
+        efficiency_factor: 1.333,
+        z2_samples: 600,
+      }),
+      cyclingActivityRow({
+        id: "44444444-4444-4444-8444-444444444444",
+        activity_name: "Zero Efficiency Ride",
+        avg_power_z2: 180,
+        avg_hr_z2: 135,
         efficiency_factor: 0,
-        z2_samples: 0,
+        z2_samples: 600,
+      }),
+      cyclingActivityRow({
+        id: "55555555-5555-4555-8555-555555555555",
+        activity_name: "Missing Samples Ride",
+        avg_power_z2: 180,
+        avg_hr_z2: 135,
+        efficiency_factor: 1.333,
+        z2_samples: null,
+      }),
+      cyclingActivityRow({
+        id: "66666666-6666-4666-8666-666666666666",
+        activity_name: "Insufficient Samples Ride",
+        avg_power_z2: 180,
+        avg_hr_z2: 135,
+        efficiency_factor: 1.333,
+        z2_samples: 299,
       }),
     ]);
     const repository = new CyclingAnalyticsRepository(
@@ -444,7 +484,9 @@ describe("CyclingAnalyticsRepository", () => {
       variabilityOffset: 0,
     });
 
-    expect(result.aerobicEfficiency).toEqual({ maxHr: null, activities: [] });
+    expect(result.aerobicEfficiency.activities.map((activity) => activity.name)).toEqual([
+      "Minimum Valid Ride",
+    ]);
   });
 
   it("excludes indoor and virtual cycling workouts from vertical ascent", async () => {
