@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -29,6 +30,7 @@ const generationAggregateRowsSchema = z.array(
 const acknowledgementAggregateRowsSchema = z.array(
   z.object({ acknowledgement_count: z.coerce.number().int().nonnegative() }),
 );
+const queryLogRowsSchema = z.array(z.object({ read_rows: z.coerce.number().int().nonnegative() }));
 
 describe("processProviderDataDeletionJob ClickHouse integration", () => {
   let testContext: TestContext;
@@ -319,7 +321,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
     expect(insertedBatchKeys[1]).toEqual([{ generation: 1, id: reusedGenerationId }]);
   });
 
-  it("does not paginate a metric stream key whose latest version is already deleted", async () => {
+  it("does not tombstone a metric stream key whose latest version is already deleted", async () => {
     const providerId = "repeated-delete-provider";
     const clickHouseClient = getClickHouseTestClient(testContext);
     await insertClickHouseMetricStreamRows(testContext, [
@@ -366,6 +368,11 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
     const updateData = vi.fn(async (nextData: ProviderDataDeletionJobData) => {
       Object.assign(secondDeletionData, nextData);
     });
+    const clickHouseInsert = clickHouseClient.insert;
+    if (!clickHouseInsert) {
+      throw new Error("ClickHouse integration test client does not support inserts");
+    }
+    const secondDeletionInsert = vi.fn(clickHouseInsert);
 
     await processProviderDataDeletionJob(
       {
@@ -374,12 +381,123 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
         updateProgress: vi.fn(async () => undefined),
       },
       {
-        clickHouseClient,
+        clickHouseClient: {
+          command: (options) => clickHouseClient.command(options),
+          query: async (options) => {
+            const result = await clickHouseClient.query(options);
+            return { json: () => result.json() };
+          },
+          insert: secondDeletionInsert,
+        },
         enqueueAnalyticsRefresh: vi.fn(async () => undefined),
         markCompleted: vi.fn(async () => undefined),
       },
     );
 
-    expect(updateData).not.toHaveBeenCalled();
+    expect(secondDeletionInsert).not.toHaveBeenCalled();
+    expect(updateData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        checkpoint: {
+          batches: 1,
+          deletedRows: 0,
+          examinedRows: 1,
+          lastGeneration: 0,
+          lastId: repeatedDeletionRowId,
+        },
+      }),
+    );
+  });
+
+  it("reads a bounded live-candidate range instead of sorting the full provider history", async () => {
+    const providerId = `bounded-candidate-${randomUUID()}`;
+    const clickHouseClient = getClickHouseTestClient(testContext);
+    await clickHouseClient.command({
+      query: `ALTER TABLE ingest.metric_stream
+        ADD PROJECTION IF NOT EXISTS by_provider_live_generation (
+          SELECT user_id, provider_id, is_deleted, generation, id
+          ORDER BY (user_id, provider_id, is_deleted, generation, id)
+        )`,
+    });
+    await clickHouseClient.command({
+      query: `INSERT INTO ingest.metric_stream (
+          id, activity_id, user_id, recorded_at, channel, provider_id, external_id,
+          device_id, source_type, scalar, vector, point, metadata, ingested_at,
+          is_deleted, version, generation
+        )
+        SELECT
+          generateUUIDv4(),
+          NULL,
+          {user_id:UUID},
+          addMicroseconds(toDateTime64('2026-04-01 00:00:00', 6, 'UTC'), number),
+          'heart_rate',
+          {provider_id:String},
+          NULL,
+          NULL,
+          'integration-test',
+          toFloat32(number),
+          [],
+          'null',
+          '{}',
+          now64(9),
+          0,
+          1,
+          0
+        FROM numbers(50_000)`,
+      query_params: { provider_id: providerId, user_id: userId },
+    });
+
+    const logComment = `provider-deletion-candidate-${randomUUID()}`;
+    const stopAfterCandidateRead = new Error("stop after candidate read");
+    const deletionClient: ProviderDataDeletionClickHouseClient = {
+      command: (options) => clickHouseClient.command(options),
+      query: async (options) => {
+        const isCandidateQuery = options.query.includes("LIMIT {batch_size:UInt64}");
+        const result = await clickHouseClient.query({
+          ...options,
+          query: isCandidateQuery
+            ? `${options.query}, log_comment = '${logComment}'`
+            : options.query,
+        });
+        return { json: () => result.json() };
+      },
+      insert: async () => {
+        throw stopAfterCandidateRead;
+      },
+    };
+    const data: ProviderDataDeletionJobData = {
+      type: "provider-data-deletion",
+      eventId: randomUUID(),
+      generation: 1,
+      providerId,
+      userId,
+    };
+
+    await expect(
+      processProviderDataDeletionJob(
+        {
+          data,
+          updateData: vi.fn(async () => undefined),
+          updateProgress: vi.fn(async () => undefined),
+        },
+        {
+          clickHouseClient: deletionClient,
+          enqueueAnalyticsRefresh: vi.fn(async () => undefined),
+          markCompleted: vi.fn(async () => undefined),
+        },
+      ),
+    ).rejects.toBe(stopAfterCandidateRead);
+
+    await clickHouseClient.command({ query: "SYSTEM FLUSH LOGS" });
+    const queryLogResult = await clickHouseClient.query({
+      query: `SELECT read_rows
+        FROM system.query_log
+        WHERE type = 'QueryFinish' AND log_comment = {log_comment:String}`,
+      query_params: { log_comment: logComment },
+      format: "JSONEachRow",
+    });
+    const queryLogRows = queryLogRowsSchema.parse(await queryLogResult.json());
+
+    expect(queryLogRows).toHaveLength(1);
+    expect(queryLogRows[0]?.read_rows).toBeLessThanOrEqual(16_384);
   });
 });

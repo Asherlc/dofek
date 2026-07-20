@@ -6,6 +6,7 @@ import {
   INGEST_DATABASE,
   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_PROVIDER_GENERATION_PROJECTION,
+  METRIC_STREAM_PROVIDER_LIVE_GENERATION_PROJECTION,
   METRIC_STREAM_TABLE,
   PROVIDER_DATA_GENERATION_TABLE,
 } from "../metric-stream/clickhouse-table.ts";
@@ -119,14 +120,18 @@ async function assertProviderGenerationProjectionReady(
   const result = await client.query({
     query: `SELECT
         count() AS active_parts,
-        countIf(NOT has(projections, {projection_name:String})) AS missing_projection_parts
+        countIf(
+          NOT has(projections, {covering_projection_name:String})
+          OR NOT has(projections, {live_projection_name:String})
+        ) AS missing_projection_parts
       FROM system.parts
       WHERE active
         AND database = {database_name:String}
         AND table = {table_name:String}`,
     query_params: {
       database_name: INGEST_DATABASE,
-      projection_name: METRIC_STREAM_PROVIDER_GENERATION_PROJECTION,
+      covering_projection_name: METRIC_STREAM_PROVIDER_GENERATION_PROJECTION,
+      live_projection_name: METRIC_STREAM_PROVIDER_LIVE_GENERATION_PROJECTION,
       table_name: "metric_stream",
     },
     format: "JSONEachRow",
@@ -134,7 +139,7 @@ async function assertProviderGenerationProjectionReady(
   const [readiness] = projectionReadinessRowsSchema.parse(await result.json());
   if (readiness.missing_projection_parts > 0) {
     throw new Error(
-      `Provider data deletion requires the ${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION} projection on all active ${METRIC_STREAM_TABLE} parts; ${readiness.missing_projection_parts} of ${readiness.active_parts} parts are missing it. Materialize the projection using docs/provider-data-deletion-runbook.md before retrying.`,
+      `Provider data deletion requires the ${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION} and ${METRIC_STREAM_PROVIDER_LIVE_GENERATION_PROJECTION} projections on all active ${METRIC_STREAM_TABLE} parts; ${readiness.missing_projection_parts} of ${readiness.active_parts} parts are missing at least one. Materialize the projections using docs/provider-data-deletion-runbook.md before retrying.`,
     );
   }
 }
@@ -151,7 +156,10 @@ async function loadNextMetricStreamBatch(
     user_id: data.userId,
   };
   const checkpointCondition = checkpoint
-    ? "AND tuple(generation, id) > tuple({last_generation:UInt64}, {last_id:UUID})"
+    ? `AND (
+          generation > {last_generation:UInt64}
+          OR (generation = {last_generation:UInt64} AND id > {last_id:UUID})
+        )`
     : "";
   if (checkpoint) {
     queryParams.last_generation = checkpoint.lastGeneration;
@@ -160,22 +168,18 @@ async function loadNextMetricStreamBatch(
 
   const result = await client.query({
     query: `SELECT generation, id
-      FROM (
-        SELECT generation, id, is_deleted AS source_is_deleted
-        FROM ${METRIC_STREAM_TABLE}
-        WHERE user_id = {user_id:UUID}
-          AND provider_id = {provider_id:String}
-          AND generation < {generation:UInt64}
-          ${checkpointCondition}
-        ORDER BY generation, id, version DESC, ingested_at DESC
-        LIMIT 1 BY generation, id
-      )
-      WHERE source_is_deleted = 0
+      FROM ${METRIC_STREAM_TABLE}
+      WHERE user_id = {user_id:UUID}
+        AND provider_id = {provider_id:String}
+        AND is_deleted = 0
+        AND generation < {generation:UInt64}
+        ${checkpointCondition}
+      ORDER BY generation, id
       LIMIT {batch_size:UInt64}
       SETTINGS
         force_optimize_projection = 1,
-        force_optimize_projection_name = '${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION}',
-        preferred_optimize_projection_name = '${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION}'`,
+        force_optimize_projection_name = '${METRIC_STREAM_PROVIDER_LIVE_GENERATION_PROJECTION}',
+        preferred_optimize_projection_name = '${METRIC_STREAM_PROVIDER_LIVE_GENERATION_PROJECTION}'`,
     query_params: queryParams,
     format: "JSONEachRow",
   });

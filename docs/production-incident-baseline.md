@@ -14305,3 +14305,45 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `Security & Dependencies`, `Test Gate`, and `CI Gate` jobs all pass on PR
   #1689. Future Gitleaks upgrades must update both the pinned version and
   archive checksum together.
+
+## 2026-07-19 — Latest-Version Provider Cursor Still Scanned Every Row Per Page
+
+- **Symptoms:** Review of PR #1689 found that its newest-version cursor query
+  still read the provider's complete metric-stream range for every 1,000-row
+  page, despite forcing the `by_provider_generation` projection.
+- **User impact:** Active or mixed providers could require one full ClickHouse
+  scan per cursor page, keeping deletion workers busy and delaying visible
+  completion at production history sizes.
+- **Evidence:** `EXPLAIN PIPELINE` on ClickHouse 26.6 showed threaded reads plus
+  `PartialSortingTransform` and `MergeSortingTransform`. The projection stores
+  `version` and `ingested_at` ascending, while the cursor requested both
+  descending. `EXPLAIN indexes = 1` also omitted the tuple cursor from the
+  primary-key condition. A real-engine regression read all 50,000 provider
+  rows to return the first 1,000 candidates. Diagnostic fixtures separately
+  read 204,800 rows per page for 200,000 merged keys and 380,000 rows for a
+  200,000-key two-version history. ClickHouse documents that read-in-order can
+  avoid sorting only when the requested order matches the stored table or
+  projection order:
+  <https://clickhouse.com/blog/clickhouse-top-n-queries-granule-level-data-skipping>.
+- **Root cause:** Candidate discovery combined two incompatible needs in one
+  query: newest-version selection required reverse version ordering, while
+  bounded cursor pagination required forward projection ordering. ClickHouse
+  therefore sorted the full qualifying range before applying the outer limit.
+- **Fix / mitigation:** Migration
+  `0048_provider_live_generation_projection` adds the narrow
+  `by_provider_live_generation` projection ordered by user, provider, physical
+  deletion state, generation, and ID. Candidate discovery filters physical
+  live rows and reads forward in projection order with an index-usable expanded
+  cursor predicate. The existing covering-projection query still resolves each
+  candidate's latest version before inserting a tombstone, so stale live rows
+  in unmerged parts remain safe. No timeout, retry, or larger batch was added.
+- **Validation:** The real ClickHouse regression failed before the fix at
+  50,000 rows read for a 1,000-row page and passes after the fix below the
+  unchanged 16,384-row bound. The five-test deletion integration suite also
+  proves that a newer tombstone suppresses deletion of an older physical live
+  version. The focused processor and migration unit suites pass 12 tests.
+- **Remaining risk / follow-up:** Existing production parts require explicit
+  materialization of both deletion projections before workers can scan. After
+  deployment, verify every active part reports both projections, redrive the
+  pending deletion, and compare `system.query_log.read_rows` with the 1,000-row
+  batch size.

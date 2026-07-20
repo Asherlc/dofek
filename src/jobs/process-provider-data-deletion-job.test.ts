@@ -117,15 +117,16 @@ describe("processProviderDataDeletionJob", () => {
     expect(query.mock.calls[0]?.[0]).toEqual({
       query: expect.stringContaining("FROM system.parts"),
       query_params: {
+        covering_projection_name: "by_provider_generation",
         database_name: "ingest",
-        projection_name: "by_provider_generation",
+        live_projection_name: "by_provider_live_generation",
         table_name: "metric_stream",
       },
       format: "JSONEachRow",
     });
     expect(query.mock.calls[1]?.[0]).toEqual({
       query: expect.stringMatching(
-        /ORDER BY generation, id, version DESC, ingested_at DESC[\s\S]*LIMIT 1 BY generation, id[\s\S]*WHERE source_is_deleted = 0[\s\S]*LIMIT \{batch_size:UInt64\}[\s\S]*force_optimize_projection_name = 'by_provider_generation'/,
+        /is_deleted = 0[\s\S]*ORDER BY generation, id[\s\S]*LIMIT \{batch_size:UInt64\}[\s\S]*force_optimize_projection_name = 'by_provider_live_generation'/,
       ),
       query_params: expect.objectContaining({ batch_size: 1_000 }),
       format: "JSONEachRow",
@@ -262,7 +263,7 @@ describe("processProviderDataDeletionJob", () => {
 
     expect(query.mock.calls[1]?.[0]).toEqual({
       query: expect.stringContaining(
-        "AND tuple(generation, id) > tuple({last_generation:UInt64}, {last_id:UUID})",
+        "OR (generation = {last_generation:UInt64} AND id > {last_id:UUID})",
       ),
       query_params: expect.objectContaining({
         last_generation: checkpoint.lastGeneration,
@@ -288,7 +289,7 @@ describe("processProviderDataDeletionJob", () => {
         markCompleted,
       }),
     ).rejects.toThrow(
-      "Provider data deletion requires the by_provider_generation projection on all active ingest.metric_stream parts; 12 of 12 parts are missing it",
+      "Provider data deletion requires the by_provider_generation and by_provider_live_generation projections on all active ingest.metric_stream parts; 12 of 12 parts are missing at least one",
     );
 
     expect(command).toHaveBeenCalledTimes(1);
