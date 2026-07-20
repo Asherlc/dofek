@@ -11,7 +11,7 @@ vi.mock("./DofekChart.tsx", () => ({
 import { CorrelationCard, type Insight } from "./CorrelationCard.tsx";
 
 describe("CorrelationCard", () => {
-  it("scales the scatterplot x-axis to the observed data range", () => {
+  it("scales the scatter plot x-axis to the observed data range", () => {
     const insight: Insight = {
       id: "monthly-exercise-body-fat",
       type: "correlation",
