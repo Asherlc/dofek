@@ -5,9 +5,12 @@ export const PROVIDER_DATA_GENERATION_TABLE = `${INGEST_DATABASE}.provider_data_
 export const LEGACY_METRIC_STREAM_TABLE = "postgres_fitness.metric_stream";
 export const METRIC_STREAM_ORDER_BY = "(user_id, activity_id, channel, recorded_at, id)";
 export const METRIC_STREAM_PROVIDER_GENERATION_PROJECTION = "by_provider_generation";
+export const METRIC_STREAM_PROVIDER_LIVE_GENERATION_PROJECTION = "by_provider_live_generation";
 export const METRIC_STREAM_PROVIDER_GENERATION_ORDER_BY = "(user_id, provider_id, generation, id)";
 export const METRIC_STREAM_PROVIDER_GENERATION_COVERING_ORDER_BY =
   "(user_id, provider_id, generation, id, version, ingested_at)";
+export const METRIC_STREAM_PROVIDER_LIVE_GENERATION_ORDER_BY =
+  "(user_id, provider_id, is_deleted, generation, id)";
 
 export const metricStreamIngestMetadataColumnDefinitions = `  ingested_at DateTime64(9) DEFAULT now(),
   is_deleted Int8 DEFAULT 0,
@@ -42,6 +45,11 @@ export function metricStreamProviderGenerationProjectionDefinition(): string {
     ORDER BY ${METRIC_STREAM_PROVIDER_GENERATION_COVERING_ORDER_BY}`;
 }
 
+export function metricStreamProviderLiveGenerationProjectionDefinition(): string {
+  return `SELECT user_id, provider_id, is_deleted, generation, id
+    ORDER BY ${METRIC_STREAM_PROVIDER_LIVE_GENERATION_ORDER_BY}`;
+}
+
 export function buildIngestMetricStreamCreateTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_TABLE} (
   id UUID,
@@ -60,6 +68,9 @@ export function buildIngestMetricStreamCreateTableSql(): string {
 ${metricStreamIngestMetadataColumnDefinitions},
   PROJECTION ${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION} (
     ${metricStreamProviderGenerationProjectionDefinition()}
+  ),
+  PROJECTION ${METRIC_STREAM_PROVIDER_LIVE_GENERATION_PROJECTION} (
+    ${metricStreamProviderLiveGenerationProjectionDefinition()}
   )
 )
 ${metricStreamReplacingMergeTreeEngine()}`;

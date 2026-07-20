@@ -22,12 +22,20 @@ describe("clickHouseMigrations", () => {
           firstMigrationNumber - secondMigrationNumber,
       ),
     );
-    expect(migrations.at(-1)).toMatchObject({
-      id: "0047_cover_provider_generation_projection",
+    expect(
+      migrations.find((migration) => migration.id === "0047_cover_provider_generation_projection"),
+    ).toMatchObject({
       statements: expect.arrayContaining([
         expect.stringContaining("DROP PROJECTION IF EXISTS by_provider_generation"),
         expect.stringContaining("ADD PROJECTION IF NOT EXISTS by_provider_generation"),
         expect.stringContaining("source_type"),
+      ]),
+    });
+    expect(migrations.at(-1)).toMatchObject({
+      id: "0048_provider_live_generation_projection",
+      statements: expect.arrayContaining([
+        expect.stringContaining("ADD PROJECTION IF NOT EXISTS by_provider_live_generation"),
+        expect.stringContaining("is_deleted"),
       ]),
     });
   });

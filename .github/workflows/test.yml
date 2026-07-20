@@ -187,7 +187,7 @@ jobs:
       contents: read
     services:
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine@sha256:0b5334420a843292394d51d494c14be462cbba9c5e38f909ddab133b9cffee7b
+        image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -630,7 +630,7 @@ jobs:
           --health-timeout 5s
           --health-retries 15
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine
+        image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -1064,7 +1064,7 @@ jobs:
           --health-timeout 5s
           --health-retries 15
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine
+        image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
