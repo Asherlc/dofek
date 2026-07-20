@@ -53,7 +53,9 @@ jobs:
   build-metro-bundle:
     name: Metro Bundle
     needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
+    if: >-
+      needs.check-mobile-changes.outputs.changed == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -79,7 +81,9 @@ jobs:
   build-ios-native:
     name: iOS Native Build
     needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
+    if: >-
+      needs.check-mobile-changes.outputs.changed == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-26
     env:
       DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData

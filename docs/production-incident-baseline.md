@@ -14539,3 +14539,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   dependency service and confirm the first rollout converges. Update the
   `check-logs` skill's stale Axiom dataset name from `dofek-app-logs` to the
   deployed `dofek-logs` dataset.
+
+## 2026-07-20 — Fork PR Triggered Credentialed Platform Builds
+
+- **Symptoms:** PR #1701 passed its OpenAPI check but failed Metro Bundle and
+  Zepp package builds after shared CI and dependency files caused all platform
+  change detectors to run.
+- **User impact:** The otherwise mergeable documentation and CI change could
+  not pass the repository CI gate.
+- **Evidence:** In [CI run 29783877402](https://github.com/Asherlc/dofek/actions/runs/29783877402),
+  Metro first failed with `Missing GitHub OIDC request env vars`, and Zepp first
+  failed because `ZEPP_WORKOUT_EXTENSION_APP_ID` was empty. GitHub documents
+  that fork pull-request workflows run without access to repository secrets
+  ([fork workflow permissions](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository)).
+- **Root cause:** Secret- and base-repository-variable-dependent build steps ran
+  for an untrusted fork pull request, where GitHub intentionally withholds those
+  credentials and configuration values.
+- **Fix / mitigation:** Fork pull requests now skip only the Metro/iOS jobs that
+  load Infisical credentials and the Zepp Workout Extension steps that require
+  the base repository variable. Secretless mobile, Zepp, test, typecheck, and
+  OpenAPI checks continue to run. Same-repository pull requests and pushes keep
+  the full build matrix.
+- **Validation:** Local Actionlint and YAML validation pass. Hosted validation
+  is pending the replacement PR #1701 CI run.
+- **Remaining risk / follow-up:** Fork pull requests cannot validate the
+  credentialed artifacts before merge. Their secretless checks still exercise
+  the affected source; the full credentialed builds run from trusted repository
+  contexts.
