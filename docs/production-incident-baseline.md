@@ -14353,6 +14353,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployment, verify every active part reports both projections, redrive the
   pending deletion, and compare `system.query_log.read_rows` with the 1,000-row
   batch size.
+
+## 2026-07-20 — Linked Rock-Climbing Activity Displayed as Cardio
+
+- **Symptoms:** [Activity `16506a17-e002-43ae-8c41-62c8431d069c`](https://dofek.asherlc.com/activity/16506a17-e002-43ae-8c41-62c8431d069c)
+  displayed as `cardio` even though its name and linked provider records
+  identified a rock-climbing workout.
+- **User impact:** The activity detail and any activity-type grouping treated a
+  rock-climbing session as generic cardio.
+- **Evidence:** The deduplicated ClickHouse row contained seven member activity
+  IDs: four Apple Health `climbing` rows, one Strava `climbing` row named
+  `Morning Rock Climb`, one WHOOP `rock_climbing` row, and one Peloton `cardio`
+  row named `96 min 33 sec Cardio: Climbing`. The canonical row retained the
+  Peloton ID and `cardio` type.
+- **Root cause:** `deduped_activities` selected every canonical field from the
+  provider-priority winner, so Peloton's generic discipline overrode the exact
+  `rock_climbing` classification already present in the linked group.
+- **Fix / mitigation:** Canonical identity and provider selection remain
+  unchanged, while the merged activity type now selects `rock_climbing` when
+  any linked active record has that exact type. The implementation uses
+  ClickHouse's conditional aggregate combinator behavior
+  ([`-If` aggregate combinator](https://clickhouse.com/docs/sql-reference/aggregate-functions/combinators#-if)).
+- **Validation:** A real-ClickHouse integration regression failed before the
+  fix with `cardio` and passed afterward with `rock_climbing`; the existing
+  source-link test also passes. The changed-test run, analytics SQL lint,
+  analytics policy check, Biome check, and Git diff check pass.
+- **Remaining risk / follow-up:** The production activity remains mislabeled
+  until this change is deployed and the incremental `deduped_activities` model
+  rebuilds the affected group. Verify the linked activity reports
+  `rock_climbing` after that refresh.
+
 ## 2026-07-20 — Web Rollout Raced ClickHouse Service Discovery
 
 - **Symptoms:** Deploy Web run
