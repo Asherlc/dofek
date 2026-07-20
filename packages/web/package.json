@@ -12,6 +12,7 @@
     "typecheck": "tsr generate && tsc --noEmit"
   },
   "dependencies": {
+    "@aws-crypto/sha256-browser": "5.2.0",
     "@dofek/auth": "workspace:*",
     "@dofek/filter-columns": "workspace:*",
     "@dofek/format": "workspace:*",
