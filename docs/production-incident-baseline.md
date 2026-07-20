@@ -14387,18 +14387,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   builds compete for the same ClickHouse CPU, increasing the sleep query's CPU
   wait from about 0.95 seconds to 24.6 seconds. tRPC batching then makes the
   whole lower page wait for the slowest cold procedure.
-- **Fix / mitigation:** Unresolved. No timeout, retry, cache extension, queue
-  tuning, or behavior change was applied during diagnosis. The existing
-  incremental `analytics.daily_sleep` model proves a stored daily sleep path
-  already exists, but it does not currently expose all provenance required by
-  the page.
-- **Remaining risk / follow-up:** Move route-facing sleep reads off the
-  recursive view onto a stored incremental daily sleep model while preserving
-  `source_name` and `source_providers`, then validate cold-cache page latency
-  during an overlapping analytics build. Fix the `activity_power_curve`
-  timeout so a single failing tail model does not continuously cause the
-  successful model selection to be replayed. Separately evaluate dashboard
-  query priority or workload isolation only after both root causes are fixed.
+- **Fix / mitigation:** Pending deployment. The incremental
+  `analytics.daily_sleep` model now stores `source_name` and
+  `source_providers`, and route-facing sleep list/latest reads query that
+  stored daily table instead of recursively evaluating `analytics.v_sleep`.
+  `sleepNeed.performance` also reuses the stored row's provenance instead of
+  issuing a second sleep query. No timeout, retry, cache extension, or queue
+  tuning was added.
+- **Validation:** The test-first repository regressions failed while the reads
+  still referenced `analytics.v_sleep`, then passed after the change. The
+  focused 88-test unit suite, root and server TypeScript checks, Biome, and the
+  analytics policy check pass. A real ClickHouse integration assertion covers
+  provenance through the stored model; local execution was blocked before the
+  test body because unrelated workspace test processes exhausted Docker's
+  memory and ClickHouse exited with code 137, so the isolated CI run remains
+  required before deployment.
+- **Remaining risk / follow-up:** After deployment and the next incremental
+  model build, validate cold-cache page latency during an overlapping analytics
+  build. Fix the `activity_power_curve` timeout so a single failing tail model
+  does not continuously cause the successful model selection to be replayed.
+  Separately evaluate dashboard query priority or workload isolation only if
+  contention remains after both direct causes are fixed.
 
 ## 2026-07-20 — Web Rollout Raced ClickHouse Service Discovery
 

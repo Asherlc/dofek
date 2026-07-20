@@ -92,11 +92,15 @@ describe("sleep router integration", () => {
 
   it("sleep.list returns started_at in UTC ISO 8601 format", async () => {
     await queryCache.invalidateAll();
-    const rows = await query<{ started_at: string }[]>("sleep.list", { days: 30 });
+    const rows = await query<
+      { started_at: string; source_name: string | null; source_providers: string[] }[]
+    >("sleep.list", { days: 30 });
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       expect(row.started_at).toMatch(UTC_ISO_REGEX);
       expect(new Date(row.started_at).getTime()).not.toBeNaN();
+      expect(row.source_name).toBeNull();
+      expect(row.source_providers).toContain("test_provider");
     }
   });
 
