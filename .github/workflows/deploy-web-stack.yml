@@ -447,6 +447,35 @@ jobs:
           done
           REMOTE
 
+      - name: Apply dependency stack before migrations
+        env:
+          REQUESTED_IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          pre_migration_image_tag="$REQUESTED_IMAGE_TAG"
+          web_service_name="${STACK_NAME}_web"
+          if docker service inspect "$web_service_name" >/dev/null 2>&1; then
+            deployed_web_image="$(
+              docker service inspect "$web_service_name" \
+                --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+            )"
+            deployed_web_image="${deployed_web_image%@*}"
+            case "$deployed_web_image" in
+              ghcr.io/asherlc/dofek:*)
+                pre_migration_image_tag="${deployed_web_image#ghcr.io/asherlc/dofek:}"
+                ;;
+              *)
+                echo "::error::Unable to derive the deployed app image tag from ${deployed_web_image}"
+                exit 1
+                ;;
+            esac
+          fi
+
+          echo "Applying dependency changes with app image ${pre_migration_image_tag} before migrations."
+          IMAGE_TAG="$pre_migration_image_tag" \
+            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+            docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml \
+              --with-registry-auth --detach=true "$STACK_NAME"
+
       - name: Wait for Postgres writable
         run: |
           for attempt in $(seq 1 36); do

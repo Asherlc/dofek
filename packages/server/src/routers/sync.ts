@@ -1,3 +1,4 @@
+import { dataReadinessMessage } from "@dofek/providers/data-readiness-banner";
 import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
 import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
@@ -284,24 +285,6 @@ function datasetStatus(input: {
   return "healthy";
 }
 
-function datasetMessage(input: {
-  label: string;
-  status: z.infer<typeof dataReadinessStatusSchema>;
-}): string {
-  switch (input.status) {
-    case "healthy":
-      return `${input.label} summaries are current.`;
-    case "syncing":
-      return `${input.label} data is syncing now.`;
-    case "stale":
-      return `${input.label} data is synced, but dashboard summaries are still catching up.`;
-    case "missing":
-      return `No ${input.label.toLowerCase()} data has been synced yet.`;
-    case "blocked":
-      return `${input.label} data is available, but ClickHouse mirrors are not current.`;
-  }
-}
-
 function buildProviderNameById(): Map<string, string> {
   const names = new Map<string, string>();
   for (const provider of UPLOAD_IMPORT_PROVIDERS) {
@@ -390,7 +373,7 @@ async function getActiveSyncProvidersForUser(
     captureException(error);
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
-      message: "Unable to check sync readiness because the queue service is unavailable.",
+      message: "We couldn't check sync status. Please try again.",
     });
   }
 }
@@ -670,7 +653,7 @@ const syncRouterProcedures = {
       captureException(error);
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to check import progress because the queue service is unavailable.",
+        message: "We couldn't check import progress. Please try again.",
       });
     }
 
@@ -772,7 +755,7 @@ const syncRouterProcedures = {
           cdcLagSeconds: readModelLagSeconds,
           readModelLagSeconds,
           status,
-          message: datasetMessage({ label: dataset.label, status }),
+          message: dataReadinessMessage({ label: dataset.label, status }),
         };
       });
 

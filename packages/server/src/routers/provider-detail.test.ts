@@ -1550,7 +1550,7 @@ describe("providerDetailRouter", () => {
 
       await expect(caller.deletionStatus({ providerId: "strava", operationId })).resolves.toEqual({
         status: "queued",
-        message: "Waiting to delete provider data...",
+        message: "Provider data deletion is pending...",
       });
       expect(mockGetProviderDataDeletionJob).not.toHaveBeenCalled();
     });
@@ -1645,7 +1645,7 @@ describe("providerDetailRouter", () => {
 
       await expect(caller.deletionStatus({ providerId: "strava", operationId })).resolves.toEqual({
         status: "queued",
-        message: "Waiting for the deletion worker...",
+        message: "Provider data deletion is pending...",
       });
     });
 

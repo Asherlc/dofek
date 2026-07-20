@@ -1,3 +1,4 @@
+import { isIndoorCycling } from "@dofek/training/endurance-types";
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
@@ -472,16 +473,18 @@ export class CyclingAdvancedRepository {
       },
     );
 
-    return rows.map(
-      (row) =>
-        new VerticalAscentModel({
-          date: row.date,
-          activityName: row.name,
-          activityType: row.activity_type,
-          elevationGainMeters: row.elevation_gain,
-          elapsedSeconds: row.elapsed_seconds,
-        }),
-    );
+    return rows
+      .filter((row) => !isIndoorCycling(row.activity_type))
+      .map(
+        (row) =>
+          new VerticalAscentModel({
+            date: row.date,
+            activityName: row.name,
+            activityType: row.activity_type,
+            elevationGainMeters: row.elevation_gain,
+            elapsedSeconds: row.elapsed_seconds,
+          }),
+      );
   }
 
   /** Pedal dynamics: left/right balance, torque effectiveness, pedal smoothness. */

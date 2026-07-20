@@ -1,4 +1,9 @@
-import { bannerHeading, freshnessLabel } from "@dofek/providers/data-readiness-banner";
+import {
+  bannerHeading,
+  DATA_READINESS_ERROR_MESSAGE,
+  dataReadinessMessage,
+  freshnessLabel,
+} from "@dofek/providers/data-readiness-banner";
 import { statusColors, textColors } from "@dofek/scoring/colors";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
@@ -42,7 +47,7 @@ export function DataReadinessBanner({
       <View style={[styles.banner, stylesByStatus.blocked]}>
         <Text style={[styles.heading, styles.lightText]}>Data readiness is unavailable</Text>
         <Text style={[styles.datasetMessage, styles.lightText]}>
-          {error.message ?? "The data readiness check failed."}
+          {DATA_READINESS_ERROR_MESSAGE}
         </Text>
       </View>
     );
@@ -74,7 +79,7 @@ export function DataReadinessBanner({
               {dataset.label}
             </Text>
             <Text style={[styles.datasetMessage, isDatasetDark && styles.lightText]}>
-              {dataset.message}
+              {dataReadinessMessage(dataset)}
             </Text>
           </View>
         );
