@@ -70,6 +70,32 @@ export const EmergingSignal: Story = {
   },
 };
 
+export const NonZeroBasedRange: Story = {
+  args: {
+    insight: {
+      id: "insight-non-zero-range",
+      type: "correlation",
+      confidence: "emerging",
+      metric: "Monthly body fat change",
+      action: "Monthly exercise volume",
+      message:
+        "Monthly exercise volume is strongly negatively associated with monthly body fat change.",
+      detail: "Spearman rho = -0.73 (n=19).",
+      whenTrue: { mean: 0, n: 19 },
+      whenFalse: { mean: 0, n: 0 },
+      effectSize: -0.73,
+      pValue: 0.01,
+      dataPoints: [
+        { x: 2_920, y: -0.1, date: "2025-01" },
+        { x: 3_080, y: -0.3, date: "2025-02" },
+        { x: 3_260, y: -0.8, date: "2025-03" },
+        { x: 3_480, y: -1.0, date: "2025-04" },
+        { x: 3_800, y: -0.9, date: "2025-05" },
+      ],
+    },
+  },
+};
+
 export const Discovery: Story = {
   args: {
     insight: {
