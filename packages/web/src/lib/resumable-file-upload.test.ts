@@ -167,6 +167,18 @@ describe("runResumableFileUpload", () => {
     expect(slice).toHaveBeenCalledTimes(2);
   });
 
+  it("stops hashing when the upload is cancelled", async () => {
+    const controller = new AbortController();
+    const chunkSize = 4 * 1024 * 1024;
+    const file = new File([new Uint8Array(chunkSize + 1)], "large.fit");
+    const slice = vi.spyOn(file, "slice");
+
+    await expect(hashFile(file, () => controller.abort(), controller.signal)).rejects.toMatchObject(
+      { name: "AbortError", message: "Upload cancelled" },
+    );
+    expect(slice).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["filename", "different.fit"],
     ["sizeBytes", 9],

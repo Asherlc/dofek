@@ -119,9 +119,11 @@ function bytesToHex(bytes: Uint8Array): string {
 export async function hashFile(
   file: File,
   onProgress?: (percentage: number) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
   const sha256 = new Sha256();
   for (let offset = 0; offset < file.size; offset += HASH_CHUNK_SIZE_BYTES) {
+    if (signal?.aborted) throw new DOMException("Upload cancelled", "AbortError");
     const chunk = file.slice(offset, Math.min(offset + HASH_CHUNK_SIZE_BYTES, file.size));
     sha256.update(new Uint8Array(await chunk.arrayBuffer()));
     onProgress?.(Math.round((Math.min(offset + chunk.size, file.size) / file.size) * 100));
@@ -190,12 +192,15 @@ async function uploadPartWithRetry(
 
 export async function runResumableFileUpload(options: RunUploadOptions): Promise<UploadSummary> {
   options.onProgress({ phase: "preparing", percentage: 0, message: "Preparing upload..." });
-  const sha256 = await hashFile(options.file, (percentage) =>
-    options.onProgress({
-      phase: "preparing",
-      percentage: Math.round(percentage * 0.1),
-      message: "Verifying file integrity...",
-    }),
+  const sha256 = await hashFile(
+    options.file,
+    (percentage) =>
+      options.onProgress({
+        phase: "preparing",
+        percentage: Math.round(percentage * 0.1),
+        message: "Verifying file integrity...",
+      }),
+    options.signal,
   );
   const storedSession = await options.sessionStore.get(options.providerId);
   const uploadId =
