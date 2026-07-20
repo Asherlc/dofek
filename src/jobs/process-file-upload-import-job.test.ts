@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
+import { UnrecoverableError, WaitingChildrenError } from "bullmq";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileUpload } from "../db/file-upload.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
+import type { ImportJobData } from "./queues.ts";
 
 const mocks = vi.hoisted(() => ({
   claim: vi.fn(),
@@ -15,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   fail: vi.fn(),
   progress: vi.fn(),
   processImport: vi.fn(),
+  validateArchive: vi.fn(),
+  checksumMismatch: vi.fn(),
+  lifecycle: vi.fn(),
 }));
 
 vi.mock("../db/file-upload.ts", () => ({
@@ -25,6 +30,11 @@ vi.mock("../db/file-upload.ts", () => ({
 }));
 
 vi.mock("./process-import-job.ts", () => ({ processImportJob: mocks.processImport }));
+vi.mock("./validate-import-archive.ts", () => ({ validateImportArchive: mocks.validateArchive }));
+vi.mock("../file-upload-metrics.ts", () => ({
+  fileUploadChecksumMismatchesTotal: { add: mocks.checksumMismatch },
+  fileUploadLifecycleTotal: { add: mocks.lifecycle },
+}));
 
 const { processFileUploadImportJob } = await import("./process-file-upload-import-job.ts");
 
@@ -69,10 +79,11 @@ function upload(overrides: Partial<FileUpload> = {}): FileUpload {
 }
 
 function job() {
+  const data: ImportJobData = { uploadId, userId: upload().userId, importType: "strong-csv" };
   return {
     id: `file-import-${uploadId}`,
     queueQualifiedName: "bull:import",
-    data: { uploadId, userId: upload().userId, importType: "strong-csv" as const },
+    data,
     updateData: vi.fn(async () => undefined),
     moveToWaitingChildren: vi.fn(async () => false),
     getChildrenValues: vi.fn(async () => ({})),
@@ -139,6 +150,136 @@ describe("processFileUploadImportJob", () => {
       "IMPORT_REJECTED",
       "Upload SHA-256 mismatch",
     );
+    expect(mocks.checksumMismatch).toHaveBeenCalledWith(1, { import_type: "strong-csv" });
+  });
+
+  it("rejects a size mismatch before the importer runs", async () => {
+    mocks.claim.mockResolvedValue(upload({ expectedSizeBytes: body.length + 1 }));
+
+    await expect(processFileUploadImportJob(job(), database, storageWithBody())).rejects.toThrow(
+      `Upload size mismatch: expected ${body.length + 1}, received ${body.length}`,
+    );
+
+    expect(mocks.processImport).not.toHaveBeenCalled();
+    expect(mocks.fail).toHaveBeenCalledWith(
+      database,
+      uploadId,
+      "IMPORT_REJECTED",
+      `Upload size mismatch: expected ${body.length + 1}, received ${body.length}`,
+    );
+  });
+
+  it("maps durable job data and forwards bounded progress and checkpoints", async () => {
+    const durableJob = job();
+    mocks.processImport.mockImplementation(async (localImportJob) => {
+      expect(localImportJob.data).toEqual({
+        filePath: join(jobFilesDirectory, `file-upload-${uploadId}`, "source.csv"),
+        since: new Date(0).toISOString(),
+        userId: upload().userId,
+        importType: "strong-csv",
+        weightUnit: "kg",
+        checkpoint: undefined,
+      });
+      await localImportJob.updateData({ ...localImportJob.data, checkpoint: { phase: "ready" } });
+      await localImportJob.updateProgress({ percentage: 120.8 });
+      await localImportJob.updateProgress({ message: "working" });
+    });
+
+    await processFileUploadImportJob(durableJob, database, storageWithBody());
+
+    expect(durableJob.updateData).toHaveBeenCalledWith({
+      ...durableJob.data,
+      checkpoint: { phase: "ready" },
+    });
+    expect(mocks.progress).toHaveBeenCalledWith(database, uploadId, 99);
+    expect(durableJob.updateProgress).toHaveBeenNthCalledWith(1, { percentage: 120.8 });
+    expect(durableJob.updateProgress).toHaveBeenNthCalledWith(2, { message: "working" });
+    expect(mocks.lifecycle).toHaveBeenCalledWith(1, {
+      state: "completed",
+      import_type: "strong-csv",
+    });
+  });
+
+  it("validates zip archives before importing", async () => {
+    mocks.claim.mockResolvedValue(
+      upload({ originalFilename: "GARMIN.ZIP", importType: "garmin-dump" }),
+    );
+
+    await processFileUploadImportJob(job(), database, storageWithBody());
+
+    expect(mocks.validateArchive).toHaveBeenCalledWith(
+      join(jobFilesDirectory, `file-upload-${uploadId}`, "source.zip"),
+    );
+    expect(mocks.validateArchive.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.processImport.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("uses a safe fallback extension for invalid filenames", async () => {
+    mocks.claim.mockResolvedValue(upload({ originalFilename: "archive.bad-name" }));
+
+    await processFileUploadImportJob(job(), database, storageWithBody());
+
+    expect(mocks.processImport.mock.calls[0]?.[0].data.filePath).toBe(
+      join(jobFilesDirectory, `file-upload-${uploadId}`, "source.bin"),
+    );
+  });
+
+  it("preserves and verifies the local file while a Garmin flow waits for children", async () => {
+    const durableJob = job();
+    durableJob.data = {
+      ...durableJob.data,
+      checkpoint: { phase: "ready" },
+    };
+    mocks.claim.mockResolvedValue(upload({ importType: "garmin-dump" }));
+    mocks.processImport.mockRejectedValueOnce(new WaitingChildrenError());
+    const objectStorage = storageWithBody();
+
+    await expect(processFileUploadImportJob(durableJob, database, objectStorage)).rejects.toThrow(
+      WaitingChildrenError,
+    );
+    expect(existsSync(join(jobFilesDirectory, `file-upload-${uploadId}`, "source.csv"))).toBe(true);
+
+    mocks.processImport.mockResolvedValueOnce(undefined);
+    await processFileUploadImportJob(durableJob, database, objectStorage);
+
+    expect(objectStorage.getObjectStream).toHaveBeenCalledOnce();
+    expect(existsSync(join(jobFilesDirectory, `file-upload-${uploadId}`))).toBe(false);
+  });
+
+  it("rejects a corrupt retained work file", async () => {
+    const workDirectory = join(jobFilesDirectory, `file-upload-${uploadId}`);
+    await writeFile(join(jobFilesDirectory, "placeholder"), "ready");
+    const objectStorage = storageWithBody();
+    mocks.processImport.mockRejectedValueOnce(new WaitingChildrenError());
+    await expect(processFileUploadImportJob(job(), database, objectStorage)).rejects.toThrow(
+      WaitingChildrenError,
+    );
+    await writeFile(join(workDirectory, "source.csv"), "corrupt");
+
+    await expect(processFileUploadImportJob(job(), database, objectStorage)).rejects.toThrow(
+      "Retained upload work file failed integrity verification",
+    );
+  });
+
+  it("records unrecoverable importer failures and cleans the work directory", async () => {
+    mocks.processImport.mockRejectedValue(new UnrecoverableError("Invalid import contents"));
+
+    await expect(processFileUploadImportJob(job(), database, storageWithBody())).rejects.toThrow(
+      "Invalid import contents",
+    );
+
+    expect(mocks.fail).toHaveBeenCalledWith(
+      database,
+      uploadId,
+      "IMPORT_REJECTED",
+      "Invalid import contents",
+    );
+    expect(mocks.lifecycle).toHaveBeenCalledWith(1, {
+      state: "failed",
+      import_type: "strong-csv",
+    });
+    expect(existsSync(join(jobFilesDirectory, `file-upload-${uploadId}`))).toBe(false);
   });
 
   it("returns without reading R2 for an already completed upload", async () => {

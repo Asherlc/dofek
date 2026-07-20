@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileUpload } from "../db/file-upload.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
 
@@ -8,6 +8,10 @@ const repository = vi.hoisted(() => ({
   list: vi.fn(async (): Promise<FileUpload[]> => []),
   queue: vi.fn(),
   requeue: vi.fn(),
+  lifecycle: vi.fn(),
+  reconciliation: vi.fn(),
+  captureException: vi.fn(),
+  logError: vi.fn(),
 }));
 
 vi.mock("../db/file-upload.ts", () => ({
@@ -17,8 +21,16 @@ vi.mock("../db/file-upload.ts", () => ({
   queueCompletedFileUpload: repository.queue,
   requeueStuckFileUpload: repository.requeue,
 }));
+vi.mock("../file-upload-metrics.ts", () => ({
+  fileUploadLifecycleTotal: { add: repository.lifecycle },
+  fileUploadReconciliationTotal: { add: repository.reconciliation },
+}));
+vi.mock("@sentry/node", () => ({ captureException: repository.captureException }));
+vi.mock("../logger.ts", () => ({ logger: { error: repository.logError } }));
 
-const { reconcileFileUploads } = await import("./file-upload-reconciliation.ts");
+const { reconcileFileUploads, startFileUploadReconciler } = await import(
+  "./file-upload-reconciliation.ts"
+);
 
 function upload(overrides: Partial<FileUpload>): FileUpload {
   return {
@@ -72,6 +84,10 @@ beforeEach(() => {
   repository.objectKeyExists.mockResolvedValue(false);
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("reconcileFileUploads", () => {
   it("aborts and expires stale multipart uploads", async () => {
     const stale = upload({
@@ -89,6 +105,25 @@ describe("reconcileFileUploads", () => {
       "multipart-id",
     );
     expect(repository.expire).toHaveBeenCalledWith(database, stale.id);
+    expect(repository.lifecycle).toHaveBeenCalledWith(1, {
+      state: "expired",
+      import_type: "garmin-dump",
+    });
+    expect(repository.reconciliation).toHaveBeenCalledWith(1, {
+      repair: "expired_multipart",
+    });
+  });
+
+  it("expires initiated uploads without trying to abort a multipart upload", async () => {
+    const stale = upload({ state: "initiated", expiresAt: new Date(0) });
+    repository.list.mockResolvedValue([stale]);
+    const objectStorage = storage();
+
+    await reconcileFileUploads(database, objectStorage);
+
+    expect(objectStorage.abortMultipartUpload).not.toHaveBeenCalled();
+    expect(repository.expire).toHaveBeenCalledWith(database, stale.id);
+    expect(objectStorage.deleteObject).not.toHaveBeenCalledWith(stale.objectKey);
   });
 
   it("queues uploaded objects and requeues stuck processing", async () => {
@@ -103,6 +138,20 @@ describe("reconcileFileUploads", () => {
       objectSizeBytes: 10,
     });
     expect(repository.requeue).toHaveBeenCalledWith(database, stuck.id);
+    expect(repository.reconciliation).toHaveBeenCalledWith(1, {
+      repair: "uploaded_without_outbox",
+    });
+    expect(repository.reconciliation).toHaveBeenCalledWith(1, { repair: "stuck_processing" });
+  });
+
+  it("deletes terminal upload objects from storage", async () => {
+    const completed = upload({ state: "completed" });
+    repository.list.mockResolvedValue([completed]);
+    const objectStorage = storage();
+
+    await reconcileFileUploads(database, objectStorage);
+
+    expect(objectStorage.deleteObject).toHaveBeenCalledWith(completed.objectKey);
   });
 
   it("deletes aged R2 objects without a database upload", async () => {
@@ -114,5 +163,50 @@ describe("reconcileFileUploads", () => {
     await reconcileFileUploads(database, objectStorage);
 
     expect(objectStorage.deleteObject).toHaveBeenCalledWith("imports/orphan/source");
+    expect(repository.reconciliation).toHaveBeenCalledWith(1, { repair: "orphaned_object" });
+  });
+
+  it("keeps recent objects and aged objects that still exist in the database", async () => {
+    const objectStorage = storage();
+    vi.mocked(objectStorage.listObjects).mockResolvedValue([
+      { objectKey: "imports/recent/source", lastModified: new Date() },
+      { objectKey: "imports/known/source", lastModified: new Date(0) },
+    ]);
+    repository.objectKeyExists.mockResolvedValue(true);
+
+    await reconcileFileUploads(database, objectStorage);
+
+    expect(repository.objectKeyExists).toHaveBeenCalledOnce();
+    expect(repository.objectKeyExists).toHaveBeenCalledWith(database, "imports/known/source");
+    expect(objectStorage.deleteObject).not.toHaveBeenCalled();
+  });
+
+  it("runs immediately and on its interval until closed", async () => {
+    vi.useFakeTimers();
+    const objectStorage = storage();
+
+    const reconciler = startFileUploadReconciler(database, objectStorage);
+    await vi.waitFor(() => expect(repository.list).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1_000);
+    expect(repository.list).toHaveBeenCalledTimes(2);
+
+    await reconciler.close();
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1_000);
+    expect(repository.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports reconciliation failures", async () => {
+    repository.list.mockRejectedValue(new Error("database unavailable"));
+
+    const reconciler = startFileUploadReconciler(database, storage());
+    await vi.waitFor(() => expect(repository.captureException).toHaveBeenCalledOnce());
+    await reconciler.close();
+
+    expect(repository.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { source: "file-upload-reconciliation" },
+    });
+    expect(repository.logError).toHaveBeenCalledWith(
+      "[file-upload-reconciliation] Failed: Error: database unavailable",
+    );
   });
 });

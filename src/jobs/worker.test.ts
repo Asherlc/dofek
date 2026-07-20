@@ -40,6 +40,9 @@ const hoisted = vi.hoisted(() => {
   const mockCloseGarminProgress = vi.fn().mockResolvedValue(undefined);
   const mockCloseProviderDataDeletionOutbox = vi.fn().mockResolvedValue(undefined);
   const mockCloseFileUploadOutbox = vi.fn().mockResolvedValue(undefined);
+  const mockCloseFileUploadReconciler = vi.fn().mockResolvedValue(undefined);
+  const mockImportUploadStorage = { name: "import-upload-storage" };
+  const mockCreateImportUploadStorage = vi.fn(() => mockImportUploadStorage);
   const mockGarminProgressCoordinator = {
     observeFitJob: mockObserveFitJob,
     reconcile: mockReconcileGarminProgress,
@@ -65,6 +68,9 @@ const hoisted = vi.hoisted(() => {
     mockCloseGarminProgress,
     mockCloseProviderDataDeletionOutbox,
     mockCloseFileUploadOutbox,
+    mockCloseFileUploadReconciler,
+    mockImportUploadStorage,
+    mockCreateImportUploadStorage,
     mockGarminProgressCoordinator,
     MockUnrecoverableError,
     workerOnMocks,
@@ -109,7 +115,7 @@ vi.mock("./process-file-upload-import-job.ts", () => ({
 }));
 
 vi.mock("../file-upload-storage.ts", () => ({
-  createImportUploadStorageFromEnv: vi.fn(() => ({})),
+  createImportUploadStorageFromEnv: hoisted.mockCreateImportUploadStorage,
 }));
 
 vi.mock("./process-fit-file-import-job.ts", () => ({
@@ -157,6 +163,12 @@ vi.mock("./provider-data-deletion-outbox.ts", () => ({
 vi.mock("./file-upload-outbox.ts", () => ({
   startFileUploadOutboxDispatcher: vi.fn(() => ({
     close: hoisted.mockCloseFileUploadOutbox,
+  })),
+}));
+
+vi.mock("./file-upload-reconciliation.ts", () => ({
+  startFileUploadReconciler: vi.fn(() => ({
+    close: hoisted.mockCloseFileUploadReconciler,
   })),
 }));
 
@@ -957,6 +969,7 @@ describe("worker module", () => {
   it("import processor delegates to processFileUploadImportJob", async () => {
     const { processFileUploadImportJob } = await import("./process-file-upload-import-job.ts");
     vi.mocked(processFileUploadImportJob).mockClear();
+    hoisted.mockCreateImportUploadStorage.mockClear();
 
     await invokeProcessor("import-queue", {
       filePath: "/tmp/f",
@@ -966,6 +979,12 @@ describe("worker module", () => {
     });
 
     expect(processFileUploadImportJob).toHaveBeenCalled();
+    expect(processFileUploadImportJob).toHaveBeenCalledWith(
+      expect.any(Object),
+      mockDatabase,
+      hoisted.mockImportUploadStorage,
+    );
+    expect(hoisted.mockCreateImportUploadStorage).not.toHaveBeenCalled();
   });
 
   it("import processor fails loudly when BullMQ omits the job ID", async () => {
@@ -1310,6 +1329,8 @@ describe("worker module", () => {
     expect(mockReadinessClose).toHaveBeenCalledOnce();
     expect(mockCloseGarminProgress).toHaveBeenCalledOnce();
     expect(mockCloseProviderDataDeletionOutbox).toHaveBeenCalledOnce();
+    expect(hoisted.mockCloseFileUploadOutbox).toHaveBeenCalledOnce();
+    expect(hoisted.mockCloseFileUploadReconciler).toHaveBeenCalledOnce();
     expect(mockClose).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
     expect(closeAllQueueResources).toHaveBeenCalledOnce();
     expect(shutdownOrder).toEqual([
