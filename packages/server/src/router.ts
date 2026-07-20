@@ -20,6 +20,7 @@ import { cyclingAdvancedRouter } from "./routers/cycling-advanced.ts";
 import { dailyMetricsRouter } from "./routers/daily-metrics.ts";
 import { durationCurvesRouter } from "./routers/duration-curves.ts";
 import { efficiencyRouter } from "./routers/efficiency.ts";
+import { fileUploadRouter } from "./routers/file-upload.ts";
 import { foodRouter } from "./routers/food.ts";
 import { garminAuthRouter } from "./routers/garmin-auth.ts";
 import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
@@ -105,6 +106,7 @@ const appRouterProcedures = {
   durationCurves: durationCurvesRouter,
   efficiency: efficiencyRouter,
   food: foodRouter,
+  fileUpload: fileUploadRouter,
   garminAuth: garminAuthRouter,
   heartRate: heartRateRouter,
   healthKitSync: healthKitSyncRouter,

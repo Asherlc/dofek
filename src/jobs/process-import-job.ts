@@ -8,7 +8,26 @@ import { logger } from "../logger.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
 import type { GarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
 
-type ImportJob = GarminDumpImportJob;
+export interface LocalImportJobData {
+  filePath: string;
+  since: string;
+  userId: string;
+  importType:
+    | "apple-health"
+    | "strong-csv"
+    | "cronometer-csv"
+    | "kaya-export"
+    | "zos-app"
+    | "garmin-dump"
+    | "fit-file";
+  weightUnit?: "kg" | "lbs";
+  checkpoint?: unknown;
+}
+
+type ImportJob = Omit<GarminDumpImportJob, "data" | "updateData"> & {
+  data: LocalImportJobData;
+  updateData(data: LocalImportJobData): Promise<void>;
+};
 
 function isKayaImportDatabase(db: SyncDatabase): db is KayaImportDatabase {
   return "transaction" in db && typeof db.transaction === "function";

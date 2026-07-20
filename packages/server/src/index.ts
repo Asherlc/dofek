@@ -46,7 +46,6 @@ import { createCompanionTokenHttpRouter } from "./routes/companion-token.ts";
 import { createExportRouter } from "./routes/export.ts";
 import { createIngestZosHealthRouter } from "./routes/ingest-zos-health.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
-import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
@@ -214,7 +213,6 @@ function setupRoutes(
   // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
   app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
-  app.use("/api/upload", createUploadRouter({ importQueue, db }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
   app.use(createMcpOAuthRouter(db, options.mcpAuthRateLimit));

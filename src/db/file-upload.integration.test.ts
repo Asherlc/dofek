@@ -1,0 +1,97 @@
+import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  createFileUpload,
+  findFileUploadForUser,
+  markFileUploadObjectUploaded,
+  markFileUploadUploading,
+  queueCompletedFileUpload,
+} from "./file-upload.ts";
+import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+
+describe("file upload state machine (integration)", () => {
+  const userId = "00000000-0000-4000-8000-0000000000d1";
+  const otherUserId = "00000000-0000-4000-8000-0000000000d2";
+  let testContext: TestContext;
+
+  beforeAll(async () => {
+    testContext = await setupTestDatabase();
+    await testContext.db.execute(sql`INSERT INTO fitness.user_profile (id, name)
+      VALUES (${userId}, 'Upload User'), (${otherUserId}, 'Other Upload User')`);
+  }, 120_000);
+
+  afterAll(async () => {
+    await testContext?.cleanup();
+  });
+
+  function uploadInput(uploadId = randomUUID()) {
+    return {
+      id: uploadId,
+      userId,
+      importType: "garmin-dump" as const,
+      objectKey: `imports/${userId}/${uploadId}/source`,
+      originalFilename: "garmin-export.zip",
+      contentType: "application/zip",
+      expectedSizeBytes: 32 * 1024 * 1024,
+      expectedSha256: "a".repeat(64),
+      partSizeBytes: 16 * 1024 * 1024,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      since: new Date(0),
+    };
+  }
+
+  it("returns the same session for repeated initiation", async () => {
+    const input = uploadInput();
+
+    const first = await createFileUpload(testContext.db, input);
+    const repeated = await createFileUpload(testContext.db, input);
+
+    expect(repeated).toEqual(first);
+    expect(repeated.state).toBe("initiated");
+  });
+
+  it("isolates upload lookup by owner", async () => {
+    const input = uploadInput();
+    await createFileUpload(testContext.db, input);
+
+    expect(await findFileUploadForUser(testContext.db, input.id, otherUserId)).toBeNull();
+  });
+
+  it("rejects an invalid state transition", async () => {
+    const input = uploadInput();
+    await createFileUpload(testContext.db, input);
+
+    await expect(
+      queueCompletedFileUpload(testContext.db, input.id, userId, {
+        importJobId: `file-import-${input.id}`,
+        objectSizeBytes: input.expectedSizeBytes,
+      }),
+    ).rejects.toThrow("uploaded");
+  });
+
+  it("queues exactly one outbox event under concurrent completion", async () => {
+    const input = uploadInput();
+    await createFileUpload(testContext.db, input);
+    await markFileUploadUploading(testContext.db, input.id, userId, "r2-multipart-id");
+    await markFileUploadObjectUploaded(testContext.db, input.id, userId);
+    const completion = {
+      importJobId: `file-import-${input.id}`,
+      objectSizeBytes: input.expectedSizeBytes,
+    };
+
+    const [first, repeated] = await Promise.all([
+      queueCompletedFileUpload(testContext.db, input.id, userId, completion),
+      queueCompletedFileUpload(testContext.db, input.id, userId, completion),
+    ]);
+
+    expect(first.importJobId).toBe(completion.importJobId);
+    expect(repeated).toEqual(first);
+    const rows = await testContext.db.execute<{ count: string }>(
+      sql`SELECT count(*)::text AS count
+          FROM fitness.file_upload_outbox
+          WHERE upload_id = ${input.id}::uuid`,
+    );
+    expect(rows[0]?.count).toBe("1");
+  });
+});

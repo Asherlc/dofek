@@ -9,7 +9,8 @@ import {
 } from "../providers/garmin-dump.ts";
 import type { SyncResult } from "../providers/types.ts";
 import { attachGarminFitImportFlow, createBatchId, FLOW_BATCH_SIZE } from "./garmin-dump-flow.ts";
-import { fitFileImportJobResultSchema, type ImportJobData } from "./queues.ts";
+import type { LocalImportJobData } from "./process-import-job.ts";
+import { fitFileImportJobResultSchema } from "./queues.ts";
 
 const MAX_GARMIN_IMPORT_ERRORS = 10;
 
@@ -34,8 +35,8 @@ export interface GarminDumpImportResult extends SyncResult {
 export interface GarminDumpImportJob {
   id: string;
   queueQualifiedName: string;
-  data: ImportJobData;
-  updateData(data: ImportJobData): Promise<void>;
+  data: LocalImportJobData;
+  updateData(data: LocalImportJobData): Promise<void>;
   moveToWaitingChildren(): Promise<boolean>;
   getChildrenValues(): Promise<Record<string, unknown>>;
   getIgnoredChildrenFailures(): Promise<Record<string, string>>;

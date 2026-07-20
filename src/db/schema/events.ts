@@ -64,6 +64,73 @@ export const providerDataDeletionOutbox = fitness.table(
 );
 
 // ============================================================
+// File upload — durable R2 upload lifecycle + transactional outbox
+// ============================================================
+
+export const fileUpload = fitness.table(
+  "file_upload",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    importType: text("import_type").notNull(),
+    objectKey: text("object_key").notNull(),
+    originalFilename: text("original_filename").notNull(),
+    contentType: text("content_type").notNull(),
+    expectedSizeBytes: bigint("expected_size_bytes", { mode: "number" }).notNull(),
+    expectedSha256: text("expected_sha256").notNull(),
+    verifiedSha256: text("verified_sha256"),
+    r2MultipartUploadId: text("r2_multipart_upload_id"),
+    state: text("state").notNull().default("initiated"),
+    version: integer("version").notNull().default(0),
+    partSizeBytes: integer("part_size_bytes").notNull(),
+    completionParts: jsonb("completion_parts"),
+    importJobId: text("import_job_id"),
+    importSince: timestamp("import_since", { withTimezone: true }).notNull(),
+    weightUnit: text("weight_unit"),
+    progressPercent: integer("progress_percent").notNull().default(0),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("file_upload_object_key_unique").on(table.objectKey),
+    uniqueIndex("file_upload_import_job_id_unique").on(table.importJobId),
+    index("file_upload_owner_updated_idx").on(table.userId, table.updatedAt.desc()),
+    index("file_upload_reconcile_idx").on(table.state, table.expiresAt, table.updatedAt),
+    check("file_upload_expected_size_positive", sql`${table.expectedSizeBytes} > 0`),
+    check("file_upload_part_size_valid", sql`${table.partSizeBytes} >= 5242880`),
+    check("file_upload_progress_valid", sql`${table.progressPercent} BETWEEN 0 AND 100`),
+  ],
+);
+
+export const fileUploadOutbox = fitness.table(
+  "file_upload_outbox",
+  {
+    eventId: uuid("event_id").primaryKey().defaultRandom(),
+    uploadId: uuid("upload_id")
+      .notNull()
+      .references(() => fileUpload.id, { onDelete: "cascade" }),
+    importJobId: text("import_job_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    failureReason: text("failure_reason"),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("file_upload_outbox_upload_id_unique").on(table.uploadId),
+    uniqueIndex("file_upload_outbox_import_job_id_unique").on(table.importJobId),
+    index("file_upload_outbox_dispatch_idx").on(table.status, table.createdAt),
+  ],
+);
+
+// ============================================================
 // Sync log — tracks reliability per provider per data type
 // ============================================================
 

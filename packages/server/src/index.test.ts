@@ -122,7 +122,6 @@ vi.mock("./routes/companion-token.ts", () => ({
 vi.mock("../routes/stripe-webhook.ts", () => ({
   createStripeWebhookRouter: vi.fn(() => express.Router()),
 }));
-vi.mock("./routes/upload.ts", () => ({ createUploadRouter: vi.fn(() => express.Router()) }));
 vi.mock("../routes/webhooks.ts", () => ({ createWebhookRouter: vi.fn(() => express.Router()) }));
 vi.mock("../slack/bot.ts", () => ({ startSlackBot: vi.fn() }));
 
@@ -245,19 +244,6 @@ describe("createApp", () => {
 
     expect(createCompanionPairingRouter).toHaveBeenCalledWith({ db: fakeDb });
     expect(createCompanionTokenHttpRouter).toHaveBeenCalledWith({ db: fakeDb });
-  });
-
-  it("wires upload routes to the import queue and database", async () => {
-    const { createUploadRouter } = await import("./routes/upload.ts");
-    const { createDatabaseFromEnv } = await import("dofek/db");
-    const fakeDb = createDatabaseFromEnv();
-
-    createApp(fakeDb, makeMockSensorStore());
-
-    expect(createUploadRouter).toHaveBeenCalledWith({
-      importQueue: mockQueue,
-      db: fakeDb,
-    });
   });
 
   it("returns ready when Postgres, ClickHouse, and queues are reachable", async () => {
