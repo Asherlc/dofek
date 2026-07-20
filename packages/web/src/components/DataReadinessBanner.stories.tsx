@@ -99,6 +99,19 @@ export const Syncing: Story = {
   args: { data: syncingSnapshot },
 };
 
+export const MultipleAlerts: Story = {
+  args: {
+    data: {
+      ...blockedSnapshot,
+      datasets: [
+        ...staleSnapshot.datasets,
+        ...missingSnapshot.datasets,
+        ...blockedSnapshot.datasets,
+      ],
+    },
+  },
+};
+
 export const StackedPageContent: Story = {
   args: { data: syncingSnapshot },
   render: (args) => (

@@ -47,7 +47,7 @@ export default function TodayScreen() {
     { endDate },
     { placeholderData: (previousData) => previousData },
   );
-  const dataHealthQuery = trpc.sync.dataHealth.useQuery();
+  const dataHealthQuery = trpc.sync.dataHealth.useQuery({ datasets: ["dailyMetrics"] });
   const dashboardData = dashboardQuery.data;
   const anomalyQuery = trpc.anomalyDetection.check.useQuery(
     { endDate },

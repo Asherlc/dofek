@@ -16,6 +16,7 @@ import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { Hypnogram } from "../components/charts/Hypnogram";
 import { SleepBar } from "../components/charts/SleepBar";
 import { SparkLine } from "../components/charts/SparkLine";
+import { DataReadinessBanner } from "../components/DataReadinessBanner";
 import { DaySelector } from "../components/DaySelector";
 import { MetricCard } from "../components/MetricCard";
 import { trpc } from "../lib/trpc";
@@ -28,6 +29,7 @@ export default function SleepScreen() {
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
   const latestStagesQuery = trpc.sleep.latestStages.useQuery();
   const consistencyQuery = trpc.recovery.sleepConsistency.useQuery({ days });
+  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["sleep"] });
 
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
@@ -70,6 +72,12 @@ export default function SleepScreen() {
       }
     >
       <DaySelector days={days} onChange={setDays} />
+
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
 
       {isLoading ? (
         <View style={styles.loadingContainer}>

@@ -218,6 +218,12 @@ const queueBackpressureStates = ["waiting", "active", "delayed", "failed"] as co
 
 const dataReadinessStatusSchema = z.enum(["healthy", "syncing", "stale", "missing", "blocked"]);
 
+const dataHealthDatasetKeySchema = z.enum(["dailyMetrics", "sleep", "activity"]);
+
+const dataHealthInputSchema = z.object({
+  datasets: z.array(dataHealthDatasetKeySchema).min(1),
+});
+
 const syncingProviderSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -229,7 +235,7 @@ const dataHealthOutputSchema = z.object({
   syncingProviders: z.array(syncingProviderSchema),
   datasets: z.array(
     z.object({
-      key: z.enum(["dailyMetrics", "sleep", "activity"]),
+      key: dataHealthDatasetKeySchema,
       label: z.string(),
       rawRows: z.number(),
       latestRawAt: z.string().nullable(),
@@ -739,13 +745,18 @@ const syncRouterProcedures = {
 
   /** User-facing freshness/readiness state for primary dashboard datasets. */
   dataHealth: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .input(dataHealthInputSchema.optional())
     .output(dataHealthOutputSchema)
-    .query(async ({ ctx }) => {
+    .query(async ({ ctx, input }) => {
       const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
       const repo = new SyncRepository(ctx.db, ctx.userId);
+      const requestedDatasetKeys = input ? new Set(input.datasets) : null;
+      const selectedDatasets = requestedDatasetKeys
+        ? dataHealthDatasets.filter((dataset) => requestedDatasetKeys.has(dataset.key))
+        : dataHealthDatasets;
       const [freshnessRows, syncingProviders] = await Promise.all([
         repo.getDataHealthFreshness(
-          dataHealthDatasets,
+          selectedDatasets,
           sensorStore ?? undefined,
           ctx.accessWindow,
           ctx.timezone,
@@ -753,7 +764,7 @@ const syncRouterProcedures = {
         getActiveSyncProvidersForUser(ctx.userId),
       ]);
 
-      const datasets = dataHealthDatasets.map((dataset, index) => {
+      const datasets = selectedDatasets.map((dataset, index) => {
         const freshnessRow = freshnessRows[index];
         const rawRows = freshnessRow?.rawRows ?? 0;
         const latestRawAt = timestampToIsoString(freshnessRow?.latestRawAt ?? null);
@@ -775,14 +786,16 @@ const syncRouterProcedures = {
           message: datasetMessage({ label: dataset.label, status }),
         };
       });
+      const relevantSyncingProviders =
+        input && datasets.every((dataset) => dataset.status === "healthy") ? [] : syncingProviders;
 
       return {
         overallStatus: overallDataHealthStatus(
           datasets.map((dataset) => dataset.status),
-          syncingProviders,
+          relevantSyncingProviders,
         ),
         generatedAt: new Date().toISOString(),
-        syncingProviders,
+        syncingProviders: relevantSyncingProviders,
         datasets,
       };
     }),

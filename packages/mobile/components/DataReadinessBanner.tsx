@@ -1,6 +1,6 @@
 import { bannerHeading, freshnessLabel } from "@dofek/providers/data-readiness-banner";
 import { statusColors, textColors } from "@dofek/scoring/colors";
-import { StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
 export type DataReadinessStatus = "healthy" | "syncing" | "stale" | "missing" | "blocked";
@@ -24,6 +24,13 @@ export interface DataReadinessSnapshot {
   datasets: DataReadinessDataset[];
 }
 
+const indicatorColorByStatus: Record<Exclude<DataReadinessStatus, "healthy">, string> = {
+  syncing: statusColors.info,
+  stale: statusColors.warning,
+  missing: textColors.tertiary,
+  blocked: statusColors.danger,
+};
+
 interface DataReadinessBannerProps {
   data?: DataReadinessSnapshot;
   error?: { message?: string } | null;
@@ -40,8 +47,8 @@ export function DataReadinessBanner({
   if (error) {
     return (
       <View style={[styles.banner, stylesByStatus.blocked]}>
-        <Text style={[styles.heading, styles.lightText]}>Data readiness is unavailable</Text>
-        <Text style={[styles.datasetMessage, styles.lightText]}>
+        <Text style={styles.heading}>Data readiness is unavailable</Text>
+        <Text style={styles.datasetMessage}>
           {error.message ?? "The data readiness check failed."}
         </Text>
       </View>
@@ -50,35 +57,29 @@ export function DataReadinessBanner({
 
   if (!data || data.overallStatus === "healthy") return null;
 
-  const isDarkBanner =
-    data.overallStatus === "syncing" ||
-    data.overallStatus === "stale" ||
-    data.overallStatus === "blocked";
   const relevantDatasets = data.datasets.filter((dataset) => dataset.status !== "healthy");
   const checkedAt = freshnessLabel(data);
+  const status = data.overallStatus;
 
   return (
-    <View style={[styles.banner, stylesByStatus[data.overallStatus]]}>
-      <Text style={[styles.heading, isDarkBanner && styles.lightText]}>{bannerHeading(data)}</Text>
-      {checkedAt ? (
-        <Text style={[styles.freshness, isDarkBanner && styles.lightText]}>{checkedAt}</Text>
-      ) : null}
-      {relevantDatasets.map((dataset) => {
-        const isDatasetDark =
-          dataset.status === "syncing" ||
-          dataset.status === "stale" ||
-          dataset.status === "blocked";
-        return (
-          <View key={dataset.key} style={styles.dataset}>
-            <Text style={[styles.datasetLabel, isDatasetDark && styles.lightText]}>
-              {dataset.label}
-            </Text>
-            <Text style={[styles.datasetMessage, isDatasetDark && styles.lightText]}>
-              {dataset.message}
-            </Text>
-          </View>
-        );
-      })}
+    <View style={[styles.banner, stylesByStatus[status]]}>
+      <View style={styles.header}>
+        {status === "syncing" ? (
+          <ActivityIndicator color={indicatorColorByStatus[status]} size="small" />
+        ) : (
+          <View style={[styles.statusDot, { backgroundColor: indicatorColorByStatus[status] }]} />
+        )}
+        <View style={styles.headingContent}>
+          <Text style={styles.heading}>{bannerHeading(data)}</Text>
+          {checkedAt ? <Text style={styles.freshness}>{checkedAt}</Text> : null}
+        </View>
+      </View>
+      {relevantDatasets.map((dataset) => (
+        <View key={dataset.key} style={styles.dataset}>
+          <Text style={styles.datasetLabel}>{dataset.label}</Text>
+          <Text style={styles.datasetMessage}>{dataset.message}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -87,24 +88,44 @@ const styles = StyleSheet.create({
   banner: {
     borderRadius: radius.lg,
     borderWidth: 1,
-    padding: spacing.md,
+    borderLeftWidth: 4,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
     gap: spacing.sm,
+  },
+  header: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  headingContent: {
+    flex: 1,
   },
   heading: {
     color: colors.text,
     fontSize: 14,
     fontWeight: "700",
+    lineHeight: 18,
   },
   freshness: {
     color: colors.textSecondary,
     fontSize: 12,
-    fontWeight: "600",
+    lineHeight: 16,
+  },
+  statusDot: {
+    borderRadius: radius.full,
+    height: 8,
+    marginHorizontal: spacing.xs,
+    width: 8,
   },
   dataset: {
     borderRadius: radius.md,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: colors.surfaceSecondary,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
     padding: spacing.sm,
-    gap: spacing.xs,
+    gap: 2,
   },
   datasetLabel: {
     color: colors.text,
@@ -117,26 +138,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  lightText: {
-    color: "#ffffff",
-  },
 });
 
 const stylesByStatus = StyleSheet.create({
   syncing: {
-    backgroundColor: "#0f2742",
-    borderColor: statusColors.info,
+    borderColor: colors.surfaceSecondary,
+    borderLeftColor: statusColors.info,
   },
   stale: {
-    backgroundColor: "#31240d",
-    borderColor: statusColors.warning,
+    borderColor: colors.surfaceSecondary,
+    borderLeftColor: statusColors.warning,
   },
   missing: {
-    backgroundColor: colors.surfaceSecondary,
-    borderColor: textColors.tertiary,
+    borderColor: colors.surfaceSecondary,
+    borderLeftColor: textColors.tertiary,
   },
   blocked: {
-    backgroundColor: "#3b1212",
-    borderColor: statusColors.danger,
+    borderColor: colors.surfaceSecondary,
+    borderLeftColor: statusColors.danger,
   },
 });
