@@ -215,6 +215,7 @@ function ScatterPlot({ insight }: { insight: Insight }) {
         name: insight.action,
         showSplitLine: true,
       }),
+      scale: true,
       nameLocation: "middle",
       nameGap: 20,
       nameTextStyle: { color: chartThemeColors.axisLabel, fontSize: 10 },

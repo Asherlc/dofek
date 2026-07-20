@@ -203,9 +203,9 @@ describe("ActivitiesScreen", () => {
     render(<ActivitiesScreen />);
 
     expect(dataHealthInput).toEqual({ datasets: ["activity"] });
-    expect(screen.getByText("Data pipeline needs attention")).toBeDefined();
+    expect(screen.getByText("Some data is temporarily unavailable")).toBeDefined();
     expect(
-      screen.getByText("Activities data is available, but ClickHouse mirrors are not current."),
+      screen.getByText("Activities data is still being prepared. Please check back soon."),
     ).toBeDefined();
   });
 

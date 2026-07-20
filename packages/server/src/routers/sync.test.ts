@@ -1930,7 +1930,7 @@ describe("syncRouter", () => {
       });
 
       await expect(caller.activeImports()).rejects.toThrow(
-        "Unable to check import progress because the queue service is unavailable.",
+        "We couldn't check import progress. Please try again.",
       );
     });
   });
@@ -2318,7 +2318,7 @@ describe("syncRouter", () => {
 
       await expect(caller.dataHealth()).rejects.toMatchObject({
         code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to check sync readiness because the queue service is unavailable.",
+        message: "We couldn't check sync status. Please try again.",
       });
 
       mockGetJobs.mockResolvedValue([]);
@@ -2673,7 +2673,7 @@ describe("syncRouter", () => {
           key: "dailyMetrics",
           status: "blocked",
           latestReadModelAt: null,
-          message: expect.stringContaining("ClickHouse mirrors are not current"),
+          message: "Daily metrics data is still being prepared. Please check back soon.",
         }),
       );
     });
@@ -3166,7 +3166,7 @@ describe("syncRouter", () => {
 
       await expect(caller.dataHealth()).rejects.toMatchObject({
         code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to check sync readiness because the queue service is unavailable.",
+        message: "We couldn't check sync status. Please try again.",
       });
       expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error));
     });
