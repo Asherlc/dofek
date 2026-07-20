@@ -319,8 +319,8 @@ describe("sleep router integration", () => {
           ) VALUES (
             'whoop_gap', ${TEST_USER_ID},
             NOW() + INTERVAL '4 hours',
-            NOW() + INTERVAL '11 hours',
-            420, 60, 90, 210, 60,
+            NOW() + INTERVAL '12 hours',
+            480, 70, 100, 250, 60,
             'sleep'
           )`,
     );

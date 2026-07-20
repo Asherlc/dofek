@@ -14397,11 +14397,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The test-first repository regressions failed while the reads
   still referenced `analytics.v_sleep`, then passed after the change. The
   focused 90-test unit suite, root and server TypeScript checks, Biome, and the
-  analytics policy check pass. A real ClickHouse integration assertion covers
-  provenance through the stored model; local execution was blocked before the
-  test body because unrelated workspace test processes exhausted Docker's
-  memory and ClickHouse exited with code 137, so the isolated CI run remains
-  required before deployment.
+  analytics policy check pass. The real ClickHouse six-test sleep integration
+  suite also passes, preserves provenance through the stored model, and logged
+  7–25 ms local endpoint durations for the stored sleep reads.
 - **Remaining risk / follow-up:** After deployment and the next incremental
   model build, validate cold-cache page latency during an overlapping analytics
   build. Fix the `activity_power_curve` timeout so a single failing tail model
