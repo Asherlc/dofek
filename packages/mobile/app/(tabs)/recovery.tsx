@@ -30,6 +30,7 @@ import {
 } from "react-native";
 import { Card } from "../../components/Card";
 import { SparkLine } from "../../components/charts/SparkLine";
+import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
@@ -179,6 +180,7 @@ export default function RecoveryScreen() {
     { days, endDate },
     { placeholderData: (previousData) => previousData },
   );
+  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["dailyMetrics"] });
   const recoveryData = recoveryQuery.data;
 
   const hrvData = recoveryData?.hrvVariability ?? [];
@@ -253,6 +255,12 @@ export default function RecoveryScreen() {
       }
     >
       <DaySelector days={days} onChange={setDays} />
+
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
 
       {isLoading ? (
         <QueryStatePanel variant="loading" minHeight={200} />

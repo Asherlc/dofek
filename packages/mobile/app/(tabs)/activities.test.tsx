@@ -41,6 +41,7 @@ let mockDataHealthQuery: {
   isLoading: boolean;
   error: Error | null;
 };
+let dataHealthInput: unknown;
 const routerPush = vi.fn();
 
 vi.mock("expo-router", () => ({
@@ -85,7 +86,10 @@ vi.mock("../../lib/trpc", () => ({
     },
     sync: {
       dataHealth: {
-        useQuery: () => mockDataHealthQuery,
+        useQuery: (input: unknown) => {
+          dataHealthInput = input;
+          return mockDataHealthQuery;
+        },
       },
     },
     useUtils: () => ({
@@ -167,6 +171,7 @@ describe("ActivitiesScreen", () => {
     invalidateActivityOverview = vi.fn();
     invalidateActivityList = vi.fn();
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
+    dataHealthInput = undefined;
     invalidateDataHealth = vi.fn();
     routerPush.mockReset();
     vi.restoreAllMocks();
@@ -197,6 +202,7 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
+    expect(dataHealthInput).toEqual({ datasets: ["activity"] });
     expect(screen.getByText("Some data is temporarily unavailable")).toBeDefined();
     expect(
       screen.getByText("Activities data is still being prepared. Please check back soon."),

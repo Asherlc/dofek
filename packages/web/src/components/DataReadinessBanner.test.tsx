@@ -78,6 +78,21 @@ describe("DataReadinessBanner", () => {
     expect(classNames).toContain("w-full");
   });
 
+  it("sizes the dataset grid to the scoped alert count", () => {
+    const snapshot = makeSnapshot();
+    const firstDataset = snapshot.datasets[0];
+    if (!firstDataset) throw new Error("Expected a data readiness fixture");
+    const { rerender } = render(
+      <DataReadinessBanner data={{ ...snapshot, datasets: [firstDataset] }} />,
+    );
+
+    expect(screen.getByRole("list").className.split(/\s+/)).toContain("md:grid-cols-1");
+
+    rerender(<DataReadinessBanner data={snapshot} />);
+
+    expect(screen.getByRole("list").className.split(/\s+/)).toContain("md:grid-cols-2");
+  });
+
   it("uses blocked, syncing, and missing headings from the overall status", () => {
     const { rerender } = render(
       <DataReadinessBanner data={makeSnapshot({ overallStatus: "blocked" })} />,

@@ -41,6 +41,7 @@ let mockDataHealthQuery: {
   isLoading: boolean;
   error: Error | null;
 };
+let dataHealthInput: unknown;
 
 interface BulkDeleteVariables {
   ids: string[];
@@ -111,7 +112,10 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     sync: {
       dataHealth: {
-        useQuery: () => mockDataHealthQuery,
+        useQuery: (input: unknown) => {
+          dataHealthInput = input;
+          return mockDataHealthQuery;
+        },
       },
     },
     useUtils: () => ({
@@ -199,6 +203,7 @@ describe("ActivitiesPage", () => {
     invalidateActivityList = vi.fn();
     mockBulkDeleteShouldFail = false;
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
+    dataHealthInput = undefined;
   });
 
   it("shows activity readiness when activity summaries are blocked", () => {
@@ -226,6 +231,7 @@ describe("ActivitiesPage", () => {
 
     render(<ActivitiesPage />);
 
+    expect(dataHealthInput).toEqual({ datasets: ["activity"] });
     expect(screen.getByText("Some data is temporarily unavailable")).toBeDefined();
     expect(
       screen.getByText("Activities data is still being prepared. Please check back soon."),
