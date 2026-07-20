@@ -39,6 +39,10 @@ const hoisted = vi.hoisted(() => {
   const mockReconcileGarminProgress = vi.fn().mockRejectedValueOnce(reconcileGarminProgressError);
   const mockCloseGarminProgress = vi.fn().mockResolvedValue(undefined);
   const mockCloseProviderDataDeletionOutbox = vi.fn().mockResolvedValue(undefined);
+  const mockCloseFileUploadOutbox = vi.fn().mockResolvedValue(undefined);
+  const mockCloseFileUploadReconciler = vi.fn().mockResolvedValue(undefined);
+  const mockImportUploadStorage = { name: "import-upload-storage" };
+  const mockCreateImportUploadStorage = vi.fn(() => mockImportUploadStorage);
   const mockGarminProgressCoordinator = {
     observeFitJob: mockObserveFitJob,
     reconcile: mockReconcileGarminProgress,
@@ -63,6 +67,10 @@ const hoisted = vi.hoisted(() => {
     mockReconcileGarminProgress,
     mockCloseGarminProgress,
     mockCloseProviderDataDeletionOutbox,
+    mockCloseFileUploadOutbox,
+    mockCloseFileUploadReconciler,
+    mockImportUploadStorage,
+    mockCreateImportUploadStorage,
     mockGarminProgressCoordinator,
     MockUnrecoverableError,
     workerOnMocks,
@@ -102,8 +110,12 @@ vi.mock("../db/refit-sensor-store.ts", () => ({
   createRefitSensorStore: vi.fn(() => ({})),
 }));
 
-vi.mock("./process-import-job.ts", () => ({
-  processImportJob: vi.fn(),
+vi.mock("./process-file-upload-import-job.ts", () => ({
+  processFileUploadImportJob: vi.fn(),
+}));
+
+vi.mock("../file-upload-storage.ts", () => ({
+  createImportUploadStorageFromEnv: hoisted.mockCreateImportUploadStorage,
 }));
 
 vi.mock("./process-fit-file-import-job.ts", () => ({
@@ -148,6 +160,18 @@ vi.mock("./provider-data-deletion-outbox.ts", () => ({
   })),
 }));
 
+vi.mock("./file-upload-outbox.ts", () => ({
+  startFileUploadOutboxDispatcher: vi.fn(() => ({
+    close: hoisted.mockCloseFileUploadOutbox,
+  })),
+}));
+
+vi.mock("./file-upload-reconciliation.ts", () => ({
+  startFileUploadReconciler: vi.fn(() => ({
+    close: hoisted.mockCloseFileUploadReconciler,
+  })),
+}));
+
 vi.mock("./scheduled-sync.ts", () => ({
   setupScheduledSync: vi.fn(() => Promise.resolve()),
 }));
@@ -184,6 +208,7 @@ vi.mock("./queues.ts", () => ({
     }),
   },
   getRedisConnection: vi.fn(() => ({})),
+  getImportQueue: vi.fn(() => ({})),
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
   IMPORT_QUEUE: "import-queue",
   FIT_FILE_IMPORT_QUEUE: "fit-file-import-queue",
@@ -941,9 +966,10 @@ describe("worker module", () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
-  it("import processor delegates to processImportJob", async () => {
-    const { processImportJob } = await import("./process-import-job.ts");
-    vi.mocked(processImportJob).mockClear();
+  it("import processor delegates to processFileUploadImportJob", async () => {
+    const { processFileUploadImportJob } = await import("./process-file-upload-import-job.ts");
+    vi.mocked(processFileUploadImportJob).mockClear();
+    hoisted.mockCreateImportUploadStorage.mockClear();
 
     await invokeProcessor("import-queue", {
       filePath: "/tmp/f",
@@ -952,12 +978,18 @@ describe("worker module", () => {
       importType: "apple-health",
     });
 
-    expect(processImportJob).toHaveBeenCalled();
+    expect(processFileUploadImportJob).toHaveBeenCalled();
+    expect(processFileUploadImportJob).toHaveBeenCalledWith(
+      expect.any(Object),
+      mockDatabase,
+      hoisted.mockImportUploadStorage,
+    );
+    expect(hoisted.mockCreateImportUploadStorage).not.toHaveBeenCalled();
   });
 
   it("import processor fails loudly when BullMQ omits the job ID", async () => {
-    const { processImportJob } = await import("./process-import-job.ts");
-    vi.mocked(processImportJob).mockClear();
+    const { processFileUploadImportJob } = await import("./process-file-upload-import-job.ts");
+    vi.mocked(processFileUploadImportJob).mockClear();
 
     await expect(
       invokeProcessor(
@@ -973,12 +1005,12 @@ describe("worker module", () => {
       ),
     ).rejects.toThrow("BullMQ import job ID missing");
 
-    expect(processImportJob).not.toHaveBeenCalled();
+    expect(processFileUploadImportJob).not.toHaveBeenCalled();
   });
 
-  it("import processor passes a token-backed lock extender to processImportJob", async () => {
-    const { processImportJob } = await import("./process-import-job.ts");
-    vi.mocked(processImportJob).mockClear();
+  it("import processor passes a token-backed lock extender to processFileUploadImportJob", async () => {
+    const { processFileUploadImportJob } = await import("./process-file-upload-import-job.ts");
+    vi.mocked(processFileUploadImportJob).mockClear();
     const extendLock = vi.fn().mockResolvedValue(1);
 
     await invokeProcessor(
@@ -993,11 +1025,11 @@ describe("worker module", () => {
       { extendLock },
     );
 
-    const processCall = vi.mocked(processImportJob).mock.calls[0];
+    const processCall = vi.mocked(processFileUploadImportJob).mock.calls[0];
     const job = processCall?.[0];
     expect(job).toBeDefined();
     if (!job) {
-      throw new Error("processImportJob was not called");
+      throw new Error("processFileUploadImportJob was not called");
     }
 
     await job.extendLock(600_000);
@@ -1005,17 +1037,16 @@ describe("worker module", () => {
     expect(extendLock).toHaveBeenCalledWith("token-1", 600_000);
   });
 
-  it("import processor exposes token-bound durable flow operations to processImportJob", async () => {
-    const { processImportJob } = await import("./process-import-job.ts");
-    vi.mocked(processImportJob).mockClear();
+  it("import processor exposes token-bound durable flow operations to processFileUploadImportJob", async () => {
+    const { processFileUploadImportJob } = await import("./process-file-upload-import-job.ts");
+    vi.mocked(processFileUploadImportJob).mockClear();
     const updateProgress = vi.fn().mockResolvedValue(undefined);
     const updateData = vi.fn().mockResolvedValue(undefined);
     const moveToWaitingChildren = vi.fn().mockResolvedValue(true);
     const getChildrenValues = vi.fn().mockResolvedValue({ "bull:fit-batch:batch-1": {} });
     const getIgnoredChildrenFailures = vi.fn().mockResolvedValue({});
     const nextData = {
-      filePath: "/tmp/f",
-      since: "2026-01-01",
+      uploadId: "00000000-0000-4000-8000-0000000000f6",
       userId: "u",
       importType: "garmin-dump" as const,
       checkpoint: { version: 1 },
@@ -1040,11 +1071,11 @@ describe("worker module", () => {
       },
     );
 
-    const processCall = vi.mocked(processImportJob).mock.calls[0];
+    const processCall = vi.mocked(processFileUploadImportJob).mock.calls[0];
     const durableJob = processCall?.[0];
     expect(durableJob).toBeDefined();
     if (!durableJob) {
-      throw new Error("processImportJob was not called");
+      throw new Error("processFileUploadImportJob was not called");
     }
 
     expect(durableJob.id).toBe("test-job-1");
@@ -1073,8 +1104,8 @@ describe("worker module", () => {
   });
 
   it("import processor lock extender fails loudly when BullMQ omits the token", async () => {
-    const { processImportJob } = await import("./process-import-job.ts");
-    vi.mocked(processImportJob).mockClear();
+    const { processFileUploadImportJob } = await import("./process-file-upload-import-job.ts");
+    vi.mocked(processFileUploadImportJob).mockClear();
     const extendLock = vi.fn().mockResolvedValue(1);
 
     await invokeProcessor(
@@ -1089,11 +1120,11 @@ describe("worker module", () => {
       { extendLock },
     );
 
-    const processCall = vi.mocked(processImportJob).mock.calls[0];
+    const processCall = vi.mocked(processFileUploadImportJob).mock.calls[0];
     const job = processCall?.[0];
     expect(job).toBeDefined();
     if (!job) {
-      throw new Error("processImportJob was not called");
+      throw new Error("processFileUploadImportJob was not called");
     }
 
     await expect(job.extendLock(600_000)).rejects.toThrow("BullMQ import job lock token missing");
@@ -1101,8 +1132,8 @@ describe("worker module", () => {
   });
 
   it("import processor lock extender fails when BullMQ no longer owns the lock", async () => {
-    const { processImportJob } = await import("./process-import-job.ts");
-    vi.mocked(processImportJob).mockClear();
+    const { processFileUploadImportJob } = await import("./process-file-upload-import-job.ts");
+    vi.mocked(processFileUploadImportJob).mockClear();
     const extendLock = vi.fn().mockResolvedValue(0);
 
     await invokeProcessor(
@@ -1117,11 +1148,11 @@ describe("worker module", () => {
       { extendLock },
     );
 
-    const processCall = vi.mocked(processImportJob).mock.calls[0];
+    const processCall = vi.mocked(processFileUploadImportJob).mock.calls[0];
     const job = processCall?.[0];
     expect(job).toBeDefined();
     if (!job) {
-      throw new Error("processImportJob was not called");
+      throw new Error("processFileUploadImportJob was not called");
     }
 
     await expect(job.extendLock(600_000)).rejects.toThrow(
@@ -1298,6 +1329,8 @@ describe("worker module", () => {
     expect(mockReadinessClose).toHaveBeenCalledOnce();
     expect(mockCloseGarminProgress).toHaveBeenCalledOnce();
     expect(mockCloseProviderDataDeletionOutbox).toHaveBeenCalledOnce();
+    expect(hoisted.mockCloseFileUploadOutbox).toHaveBeenCalledOnce();
+    expect(hoisted.mockCloseFileUploadReconciler).toHaveBeenCalledOnce();
     expect(mockClose).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
     expect(closeAllQueueResources).toHaveBeenCalledOnce();
     expect(shutdownOrder).toEqual([

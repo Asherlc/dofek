@@ -16,7 +16,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
   - **Databasus state path**: The `databasus` service bind-mounts its internal state to `/mnt/dofek-data/databasus` so backup schedules and storage config survive Docker volume churn.
   - **CloudBeaver state path**: The `cloudbeaver` service bind-mounts its workspace to `/mnt/dofek-data/cloudbeaver`, including the Terraform-synced preconfigured Postgres and ClickHouse datasource file.
-  - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), web build assets (`dofek-web-assets`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), DB backups (`dofek-db-backups`), and canonical metric-stream replay archives (`dofek-metric-stream-archive`).
+  - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), private direct file imports (`dofek-imports`), web build assets (`dofek-web-assets`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), DB backups (`dofek-db-backups`), and canonical metric-stream replay archives (`dofek-metric-stream-archive`).
 - **Networking**:
   - **Firewall**: OCI security lists allow production SSH/HTTP/HTTPS.
   - **DNS**: Cloudflare manages multiple zones: `dofek.fit`, `dofek.live`, and subdomains on `asherlc.com`.
@@ -34,6 +34,11 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - `oracle-free/`: Separate Terraform root for the OCI production host. The reserved public IP is copied into the `ORACLE_SERVER_HOST` GitHub Actions variable and into the main `deploy/` root as `var.oracle_server_host`.
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
 - `storage.tf`: Manages Cloudflare R2 buckets, lifecycle rules, the `assets.dofek.fit` bucket-level custom domain, and the CORS policy required for browser module loads from that cross-origin asset hostname. Cloudflare documents R2 custom domains as bucket-level domain bindings, not ordinary origin `CNAME` records, and documents that custom domains return CORS headers only when the bucket has a matching CORS policy: https://developers.cloudflare.com/r2/buckets/public-buckets/#custom-domains and https://developers.cloudflare.com/r2/buckets/cors/#use-cors-with-a-custom-domain. The `storybook.dofek.fit` custom domain is still configured manually in the Cloudflare dashboard.
+  It also manages the private `dofek-imports` bucket. Its CORS policy permits only
+  production application origins to make `PUT` requests and exposes `ETag` for
+  multipart completion. Raw objects expire after seven days and incomplete
+  multipart uploads after one day. Cloudflare's presigned URL flow still requires
+  bucket CORS for browsers: https://developers.cloudflare.com/r2/buckets/cors/#use-cors-with-a-presigned-url.
   The `assets.dofek.fit` custom domain was first restored manually during the
   2026-07-10 production incident, so the first Terraform apply after this
   resource was added must either import/adopt that existing Cloudflare object if

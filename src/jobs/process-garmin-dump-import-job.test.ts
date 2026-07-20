@@ -6,8 +6,8 @@ import {
   prepareGarminDumpImport,
 } from "../providers/garmin-dump.ts";
 import { attachGarminFitImportFlow } from "./garmin-dump-flow.ts";
+import type { LocalImportJobData as ImportJobData } from "./local-import-job-data.ts";
 import { processGarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
-import type { ImportJobData } from "./queues.ts";
 
 const { mockCaptureException, mockLoggerWarn } = vi.hoisted(() => ({
   mockCaptureException: vi.fn(),

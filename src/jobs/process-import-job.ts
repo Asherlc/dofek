@@ -6,9 +6,13 @@ import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
+import type { LocalImportJobData } from "./local-import-job-data.ts";
 import type { GarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
 
-type ImportJob = GarminDumpImportJob;
+type ImportJob = Omit<GarminDumpImportJob, "data" | "updateData"> & {
+  data: LocalImportJobData;
+  updateData(data: LocalImportJobData): Promise<void>;
+};
 
 function isKayaImportDatabase(db: SyncDatabase): db is KayaImportDatabase {
   return "transaction" in db && typeof db.transaction === "function";
