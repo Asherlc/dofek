@@ -16,10 +16,14 @@ function bodyMeasurementChannelListSql(): string {
   return bodyMeasurementChannels.map((channel) => `'${channel}'`).join(", ");
 }
 
+function clickHouseDateTimeParameter(value: Date): string {
+  return value.toISOString().replace("T", " ").replace("Z", "");
+}
+
 function backfillQueryParams(range: BodyMeasurementSampleBackfillRange): Record<string, string> {
   return {
-    start: range.start.toISOString(),
-    end: range.end.toISOString(),
+    start: clickHouseDateTimeParameter(range.start),
+    end: clickHouseDateTimeParameter(range.end),
   };
 }
 
