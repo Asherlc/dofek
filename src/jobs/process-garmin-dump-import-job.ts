@@ -9,7 +9,7 @@ import {
 } from "../providers/garmin-dump.ts";
 import type { SyncResult } from "../providers/types.ts";
 import { attachGarminFitImportFlow, createBatchId, FLOW_BATCH_SIZE } from "./garmin-dump-flow.ts";
-import type { LocalImportJobData } from "./process-import-job.ts";
+import type { LocalImportJobData } from "./local-import-job-data.ts";
 import { fitFileImportJobResultSchema } from "./queues.ts";
 
 const MAX_GARMIN_IMPORT_ERRORS = 10;

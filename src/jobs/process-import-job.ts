@@ -6,23 +6,8 @@ import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
+import type { LocalImportJobData } from "./local-import-job-data.ts";
 import type { GarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
-
-export interface LocalImportJobData {
-  filePath: string;
-  since: string;
-  userId: string;
-  importType:
-    | "apple-health"
-    | "strong-csv"
-    | "cronometer-csv"
-    | "kaya-export"
-    | "zos-app"
-    | "garmin-dump"
-    | "fit-file";
-  weightUnit?: "kg" | "lbs";
-  checkpoint?: unknown;
-}
 
 type ImportJob = Omit<GarminDumpImportJob, "data" | "updateData"> & {
   data: LocalImportJobData;

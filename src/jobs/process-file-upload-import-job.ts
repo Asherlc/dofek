@@ -19,7 +19,7 @@ import {
   fileUploadLifecycleTotal,
 } from "../file-upload-metrics.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
-import type { LocalImportJobData } from "./process-import-job.ts";
+import type { LocalImportJobData } from "./local-import-job-data.ts";
 import { processImportJob } from "./process-import-job.ts";
 import type { ImportJobData } from "./queues.ts";
 import { validateImportArchive } from "./validate-import-archive.ts";

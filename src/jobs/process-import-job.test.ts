@@ -4,7 +4,7 @@ import { WaitingChildrenError } from "bullmq";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
-import type { LocalImportJobData as ImportJobData } from "./process-import-job.ts";
+import type { LocalImportJobData as ImportJobData } from "./local-import-job-data.ts";
 
 const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
