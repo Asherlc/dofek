@@ -98,7 +98,11 @@ merged AS (
         best.canonical_id AS id,
         any(best.provider_id) AS provider_id,
         any(best.user_id) AS user_id,
-        any(best.activity_type) AS activity_type,
+        if(
+            countIf(ranked.activity_type = 'rock_climbing') > 0,
+            'rock_climbing',
+            any(best.activity_type)
+        ) AS activity_type,
         minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at,
         maxIf(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR), ranked.activity_id IS NOT null) AS ended_at,
         any(best.source_name) AS source_name,
