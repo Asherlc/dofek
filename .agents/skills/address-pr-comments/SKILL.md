@@ -61,9 +61,22 @@ For each unresolved inline comment or PR-level review body:
 
 #### b. Assess validity
 
-Determine whether the comment identifies a real issue:
+Assess the reviewer's stated problem separately from their proposed solution. A
+suggested patch can be inappropriate even when the underlying correctness,
+performance, security, or maintainability concern is legitimate. Never reject a
+comment solely because its proposed implementation would make the code worse.
+
+1. Determine whether the stated problem identifies a real issue.
+2. Independently determine whether the proposed solution is appropriate.
+3. If the problem is valid but the solution is not, investigate alternative
+   solutions and implement the minimum appropriate fix. If choosing among the
+   alternatives requires a product/design decision, ask the user before proceeding.
+4. Reply with both conclusions: acknowledge the valid concern, explain why the
+   proposed solution was not used, and describe the alternative fix and evidence.
+
+Classify the underlying problem as follows:
 - **Valid**: Bug, correctness issue, missing edge case, style violation per project rules (CLAUDE.md), unclear code, missing tests, security concern, or any other legitimate improvement.
-- **Not valid**: Misunderstanding of the code, outdated concern already addressed, stylistic preference not backed by project conventions, or suggestion that would make the code worse.
+- **Not valid**: Misunderstanding of the code, outdated concern already addressed, stylistic preference not backed by project conventions, or a purported issue contradicted by the code's actual behavior.
 - **Pre-existing issues are still valid**: Do not decline, defer, or resolve a review comment merely because the issue existed before this PR, is broad, or also appears elsewhere in the codebase. If the reviewer identified a real issue in code touched by the PR or in the review surface, fix it in this PR unless it requires a product/design decision or an unreasonably large cross-cutting migration. If it is too large to fix safely in the PR, ask the user before deferring it; do not unilaterally reply that it will be handled later. If the user approves deferral, open a GitHub issue for the follow-up and link it in the PR comment reply.
 - **Bad standard patterns must be fixed**: Do not decline a comment because the code follows an existing or standard project pattern when that pattern is unsafe, incorrect, weakly tested, or violates current project guidance. Treat the review as evidence that the pattern should change. Update all relevant instances in the touched area, and if the bad pattern is widespread enough to require a broader migration, ask the user before deferring it. If deferred, open a GitHub issue and link it in the PR reply.
 - **Minor enhancements should still be made**: Do not decline a comment merely because it is a minor enhancement, polish, stronger assertion, resilience improvement, or not a correctness bug. If it is reasonable and does not conflict with project direction, implement it. Only skip enhancements that are harmful, obsolete, duplicative of an existing fix, or require a product/design decision; explain that specific reason.
