@@ -8,13 +8,16 @@ import {
   markProviderDataDeletionFailed,
 } from "../db/provider-data-deletion.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
+import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
 import { jobContext, logger } from "../logger.ts";
+import { startFileUploadOutboxDispatcher } from "./file-upload-outbox.ts";
+import { startFileUploadReconciler } from "./file-upload-reconciliation.ts";
 import { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
 import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
 import { processExportJob } from "./process-export-job.ts";
+import { processFileUploadImportJob } from "./process-file-upload-import-job.ts";
 import { processFitFileImportBatchJob } from "./process-fit-file-import-batch-job.ts";
 import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
-import { processImportJob } from "./process-import-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
 import { processProviderDataDeletionJob } from "./process-provider-data-deletion-job.ts";
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
@@ -33,6 +36,7 @@ import {
   FIT_FILE_IMPORT_QUEUE,
   type FitFileImportBatchJobData,
   type FitFileImportJobData,
+  getImportQueue,
   getProviderDataDeletionQueue,
   getRedisConnection,
   IMPORT_QUEUE,
@@ -64,6 +68,12 @@ const WORKER_READINESS_PORT = 3001;
 
 const db = createDatabaseFromEnv();
 const connection = getRedisConnection();
+let importUploadStorage: ReturnType<typeof createImportUploadStorageFromEnv> | null = null;
+
+function getImportUploadStorage() {
+  importUploadStorage ??= createImportUploadStorageFromEnv();
+  return importUploadStorage;
+}
 
 // Lazy-init the CH-backed refit sensor store. Created when the post-sync worker
 // first needs it (avoids forcing every worker to depend on CLICKHOUSE_URL).
@@ -126,7 +136,11 @@ const importWorker: Worker<ImportJobData> = new Worker<ImportJobData>(
   IMPORT_QUEUE,
   (job, token) =>
     jobContext.run(job, () =>
-      processImportJob(importJobWithLockExtender(job, token, importWorker), db),
+      processFileUploadImportJob(
+        importJobWithLockExtender(job, token, importWorker),
+        db,
+        getImportUploadStorage(),
+      ),
     ),
   { autorun: false, connection },
 );
@@ -301,6 +315,8 @@ const providerDataDeletionOutboxDispatcher = startProviderDataDeletionOutboxDisp
   db,
   getProviderDataDeletionQueue(),
 );
+const fileUploadOutboxDispatcher = startFileUploadOutboxDispatcher(db, getImportQueue());
+const fileUploadReconciler = startFileUploadReconciler(db, getImportUploadStorage());
 
 function importJobWithLockExtender(
   job: Job<ImportJobData>,
@@ -464,6 +480,8 @@ async function shutdown() {
       readinessServer.close((error) => (error ? reject(error) : resolve()));
     }),
     providerDataDeletionOutboxDispatcher.close(),
+    fileUploadOutboxDispatcher.close(),
+    fileUploadReconciler.close(),
     ...allWorkers.map((worker) => worker.close()),
   ]);
   await garminImportProgressCoordinator.close();

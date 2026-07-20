@@ -106,9 +106,7 @@ vi.mock("./FileImportProviderCard.tsx", () => ({
     title: string;
     description: string;
     accept: string;
-    uploadUrl: string;
-    statusUrl: string;
-    chunked?: boolean;
+    importType: string;
     stats?: Record<string, unknown>;
     activeImport?: Record<string, unknown>;
   }) => {
@@ -352,9 +350,7 @@ describe("DataSourcesPanel", () => {
         title: "Kaya",
         description: ".csv export from Kaya",
         accept: ".csv",
-        uploadUrl: "/api/upload/kaya-export",
-        statusUrl: "/api/upload/kaya-export/status",
-        chunked: true,
+        importType: "kaya-export",
       }),
     );
   });
@@ -471,9 +467,7 @@ describe("DataSourcesPanel", () => {
         providerId: "apple_health",
         title: "Apple Health",
         description: ".zip or .xml from Health app export",
-        uploadUrl: "/api/upload/apple-health?fullSync=true",
-        statusUrl: "/api/upload/apple-health/status",
-        chunked: true,
+        importType: "apple-health",
       }),
     );
   });

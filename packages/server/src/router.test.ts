@@ -156,6 +156,7 @@ describe("appRouter", () => {
       "power",
       "durationCurves",
       "efficiency",
+      "fileUpload",
       "food",
       "garminAuth",
       "heartRate",

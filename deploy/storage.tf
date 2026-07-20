@@ -63,6 +63,59 @@ resource "cloudflare_r2_bucket" "exports" {
   location   = "WEUR"
 }
 
+resource "cloudflare_r2_bucket" "imports" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-imports"
+  location   = "WEUR"
+}
+
+resource "cloudflare_r2_bucket_cors" "imports" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.imports.name
+
+  rules = [{
+    id = "production-direct-uploads"
+    allowed = {
+      origins = [
+        "https://dofek.asherlc.com",
+        "https://dofek.fit",
+        "https://www.dofek.fit",
+        "https://dofek.live",
+        "https://www.dofek.live",
+      ]
+      methods = ["PUT"]
+      headers = ["content-type"]
+    }
+    expose_headers  = ["etag"]
+    max_age_seconds = 3600
+  }]
+}
+
+resource "cloudflare_r2_bucket_lifecycle" "imports_cleanup" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.imports.name
+
+  rules = [{
+    id      = "expire-raw-imports"
+    enabled = true
+    conditions = {
+      prefix = "imports/"
+    }
+    delete_objects_transition = {
+      condition = {
+        max_age = 604800
+        type    = "Age"
+      }
+    }
+    abort_multipart_uploads_transition = {
+      condition = {
+        max_age = 86400
+        type    = "Age"
+      }
+    }
+  }]
+}
+
 resource "cloudflare_r2_bucket_lifecycle" "exports_cleanup" {
   account_id  = var.cloudflare_account_id
   bucket_name = cloudflare_r2_bucket.exports.name

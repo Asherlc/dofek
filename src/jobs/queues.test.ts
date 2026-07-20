@@ -325,8 +325,7 @@ describe("queues", () => {
   describe("ImportJobData", () => {
     it("allows kaya-export as an import job type", () => {
       const jobData = {
-        filePath: "/tmp/kaya.csv",
-        since: "1970-01-01T00:00:00.000Z",
+        uploadId: "00000000-0000-4000-8000-0000000000f3",
         userId: "user-1",
         importType: "kaya-export",
       } satisfies ImportJobData;

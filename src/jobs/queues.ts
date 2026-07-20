@@ -22,8 +22,7 @@ export interface SyncJobData {
 }
 
 export interface ImportJobData {
-  filePath: string;
-  since: string; // ISO date string
+  uploadId: string;
   userId: string;
   importType:
     | "apple-health"
@@ -33,9 +32,11 @@ export interface ImportJobData {
     | "zos-app"
     | "garmin-dump"
     | "fit-file";
-  /** Weight unit for Strong CSV imports */
-  weightUnit?: "kg" | "lbs";
   checkpoint?: unknown;
+}
+
+export interface FileUploadImportQueue {
+  add(name: string, data: ImportJobData, options?: JobsOptions): Promise<unknown>;
 }
 
 export const fitFileImportActivitySummarySchema = z.object({
@@ -269,6 +270,21 @@ export function getProviderSyncQueue(providerId: string): Queue<SyncJobData> {
 
 export function createImportQueue(connection?: ConnectionOptions): Queue<ImportJobData> {
   return new Queue(IMPORT_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+export async function enqueueFileUploadImport(
+  request: import("../db/file-upload.ts").FileUploadOutboxRequest,
+  queue: FileUploadImportQueue,
+): Promise<void> {
+  await queue.add(
+    request.importType,
+    {
+      uploadId: request.uploadId,
+      userId: request.userId,
+      importType: request.importType,
+    },
+    { jobId: request.importJobId },
+  );
 }
 
 export function createFitFileImportQueue(

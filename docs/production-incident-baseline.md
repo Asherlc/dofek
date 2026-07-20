@@ -14218,6 +14218,40 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   discovers the same tests on both mutation shards and completes the aggregate
   mutation, test, and CI gates successfully.
 
+## 2026-07-19 — Aborted Proxy Uploads Leaked Deleted Temporary Files
+
+- **Symptoms:** Three Garmin upload retries aborted with `ECONNRESET` while a prior
+  Garmin import remained `waiting-children` at about 9.44% progress. The upload
+  filesystem was 90% utilized.
+- **User impact:** Large file imports were unreliable, and repeated disconnects
+  consumed disk space until the affected web replicas restarted.
+- **Evidence:** At `00:35:58Z`, `POST /api/upload/garmin-dump` returned `200` and
+  created BullMQ job `15`. Aborts followed at approximately `00:36:03.313`,
+  `00:36:05.063`, and `00:36:07.925` across both web replicas. Containers
+  `21814130c903` and `782396b6296a` retained three deleted-but-open files through
+  FDs 69, 72, and 79, totaling 88,370,387 bytes (about 84.3 MiB). The local
+  regression observed the destination stream with `destroyed === false` and
+  `closed === false` after abort.
+- **Root cause:** `streamToFile()` used `request.pipe(writeStream)` and rejected
+  on the request's abort error without destroying or awaiting the destination.
+  The handler then unlinked the path, leaving its descriptor and disk blocks open.
+- **Containment:** The legacy stream path was changed to `stream.pipeline()`, and
+  confirmed client disconnects became cancellations rather than Sentry failures.
+  Its integration regression failed three times before the fix with an accumulating
+  deleted/open file and passed after the destination closed and no job was queued.
+- **Durable fix:** The proxy endpoint was removed. Browsers now use private R2
+  multipart uploads governed by a Postgres state machine, authoritative part
+  verification, full-file SHA-256 verification, a transactional outbox,
+  deterministic BullMQ jobs, idempotent worker claims, and automated reconciliation.
+  See [`file-upload-architecture.md`](file-upload-architecture.md). Cloudflare's
+  documented multipart limits and lifecycle cleanup are reflected in the control
+  plane and Terraform: <https://developers.cloudflare.com/r2/objects/upload-objects/>
+  and <https://developers.cloudflare.com/r2/buckets/object-lifecycles/>.
+- **Remaining risk / follow-up:** No production resource was changed. Rollout
+  requires migration `0053`, creation of `dofek-imports`, verified R2 credentials
+  in Infisical, and a coordinated web/worker release. Monitor upload lifecycle,
+  checksum mismatch, outbox, reconciliation, worker disk, and stuck-job metrics.
+
 ## 2026-07-19 — Repeated Provider Deletion Rescanned Tombstoned Metric Streams
 
 - **Symptoms:** A second `garmin-dump` provider-data deletion remained at
@@ -14406,6 +14440,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   does not continuously cause the successful model selection to be replayed.
   Separately evaluate dashboard query priority or workload isolation only if
   contention remains after both direct causes are fixed.
+
+## 2026-07-20 — Zepp Workout Extension Was Built but Not Released
+
+- **Symptoms:** Successful Zepp workflows built and retained both ZAB artifacts,
+  but the GitHub Release job was skipped after the Workout Extension landed.
+- **User impact:** The normal watch app and Workout Extension were available only
+  from workflow artifacts; no GitHub Release contained the Workout Extension.
+- **Evidence:** In
+  [run 29716993735](https://github.com/Asherlc/dofek/actions/runs/29716993735),
+  `Build Zepp Workout Extension ZAB` and `Upload Workout Extension ZAB artifact`
+  passed, while `Create GitHub Release` was skipped. The workflow gated that job
+  on `is_tagged == 'true'`, but successful `main` CI runs set `is_tagged=false`.
+  The latest published release, `zepp-v0.0.1784480955`, predated the Workout
+  Extension and contained only the normal watch-app ZAB.
+- **Root cause:** The Workout Extension change made GitHub Release creation
+  tag-only even though normal Zepp delivery continued to originate from
+  successful `main` CI runs.
+- **Fix / mitigation:** GitHub Release creation now runs after every successful
+  `main` Zepp build and attaches both independently packaged ZABs. The tag-push
+  trigger and dead tagged-version branch were removed so the scoped release
+  token cannot recursively trigger a duplicate Zepp workflow after creating the
+  release tag.
+- **Validation:** Local Actionlint and YAML validation cover the workflow change.
+  A successful hosted `main` CI run is required to confirm that the replacement
+  release contains both ZAB assets.
+- **Remaining risk / follow-up:** After merge, verify the first replacement
+  release contains both `dofek-zepp-app-zab` and
+  `dofek-zepp-workout-extension-zab`, then upload each package to its matching
+  Zepp developer-console listing for store review.
 
 ## 2026-07-20 — Linked Rock-Climbing Activity Displayed as Cardio
 
