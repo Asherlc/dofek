@@ -772,6 +772,10 @@ describe("production analytics read-model build", () => {
       "toDate(sleep.started_at - INTERVAL 6 HOUR) >= existing_dates.latest_materialized_date - INTERVAL 7 DAY",
     );
     expect(sql).toContain("analytics.v_sleep");
+    expect(sql).toContain("sleep.source_name AS source_name");
+    expect(sql).toContain("sleep.source_providers AS source_providers");
+    expect(sql).toContain("ranked_sleep.source_name AS source_name");
+    expect(sql).toContain("ranked_sleep.source_providers AS source_providers");
     expect(normalizedSql).toContain("PARTITION BY user_id, date");
     expect(normalizedSql).toContain("ORDER BY duration_minutes DESC NULLS LAST, started_at DESC");
     expect(sql).toContain("WHERE ranked_sleep.row_number = 1");

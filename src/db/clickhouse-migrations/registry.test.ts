@@ -32,10 +32,10 @@ describe("clickHouseMigrations", () => {
       ]),
     });
     expect(migrations.at(-1)).toMatchObject({
-      id: "0048_provider_live_generation_projection",
+      id: "0049_daily_sleep_provenance",
       statements: expect.arrayContaining([
-        expect.stringContaining("ADD PROJECTION IF NOT EXISTS by_provider_live_generation"),
-        expect.stringContaining("is_deleted"),
+        expect.stringContaining("source_name Nullable(String)"),
+        expect.stringContaining("source_providers Array(String) DEFAULT []"),
       ]),
     });
   });

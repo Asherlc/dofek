@@ -326,15 +326,6 @@ export const sleepNeedRouter = router({
         accessWindow: ctx.accessWindow,
         queryOptions: { priority: "dashboard" },
       });
-      const provenanceRows = await fetchSleepNights({
-        sensorStore,
-        userId: ctx.userId,
-        timezone: tz,
-        endDate: input.endDate,
-        days: 14,
-        accessWindow: ctx.accessWindow,
-        queryOptions: { priority: "dashboard" },
-      });
       const lastSleep = performanceRows.at(-1) ?? null;
       if (!lastSleep || lastSleep.duration_minutes == null) {
         return null;
@@ -373,8 +364,6 @@ export const sleepNeedRouter = router({
         hasAdditionalComponents ? { consistency, lowStress } : undefined,
       );
       const recommendedBedtime = computeRecommendedBedtime("07:00", Math.round(neededMinutes));
-      const provenanceRow = provenanceRows.find((row) => row.date === lastSleep.date);
-
       return {
         ...result,
         actualMinutes,
@@ -382,9 +371,9 @@ export const sleepNeedRouter = router({
         efficiency,
         recommendedBedtime,
         sleepDate: lastSleep.date,
-        providerId: provenanceRow?.provider_id ?? lastSleep.provider_id,
-        sourceName: provenanceRow?.source_name ?? null,
-        sourceProviders: provenanceRow?.source_providers ?? [],
+        providerId: lastSleep.provider_id,
+        sourceName: lastSleep.source_name,
+        sourceProviders: lastSleep.source_providers,
       };
     }),
 });

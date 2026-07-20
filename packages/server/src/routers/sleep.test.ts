@@ -185,7 +185,7 @@ describe("sleepRouter access window", () => {
 
     const queryText = query.mock.calls[0]?.[1];
     const queryParams = query.mock.calls[0]?.[2];
-    expect(queryText).toContain("WHERE user_id = {userId:UUID}");
+    expect(queryText).toContain("WHERE sleep.user_id = {userId:UUID}");
     expect(queryText).toContain("<= toDate({endDate:String})");
     expect(queryText).not.toContain("subtractDays");
     expect(queryParams).toMatchObject({ userId: "user-1", endDate: "2026-04-26" });

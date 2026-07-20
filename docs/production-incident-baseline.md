@@ -14387,6 +14387,60 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployment, verify every active part reports both projections, redrive the
   pending deletion, and compare `system.query_log.read_rows` with the 1,000-row
   batch size.
+## 2026-07-20 — Uncached Sleep Page Reads Blocked on Recursive Sleep Deduplication
+
+- **Symptoms:** The production `/sleep` page intermittently showed blocking
+  loading for tens of seconds. A warm browser trace was fast (436 ms Largest
+  Contentful Paint and a 35 ms batched sleep request), but authenticated reads
+  using an uncached date reproduced 24.2–38.6 second responses across
+  `sleep.list`, `sleep.latestStages`, `sleepNeed.calculate`,
+  `sleepNeed.performance`, and `insights.compute`.
+- **User impact:** Sleep data can remain behind loading skeletons until the
+  slowest procedure in the page's shared tRPC batch completes. Warm Redis
+  entries hide the problem on subsequent loads.
+- **Evidence:** The first slow backend operation was the `sleep.list` /
+  `fetchLatestSleepNight` ClickHouse query against `analytics.v_sleep`. At
+  18:45:51 UTC, ClickHouse took 26,502 ms, read 769,460 source rows, produced
+  7,573,058 join-result rows, selected 261 MB, and recorded 24,588,371
+  microseconds of `OSCPUWaitMicroseconds`. The same query shape took 3,494 ms
+  at 18:36:40 UTC with 949,278 microseconds of CPU wait. The slow reproduction
+  overlapped an incremental `activity_sensor_sample` insert that ran for
+  206,526 ms, read 23,795,163 rows, and wrote 2,417,919 rows. An earlier
+  `provider_stats` build ran for 114,607 ms and read 279,038,338 rows. A later
+  isolated cold `sleep.list` request still took 6,656 ms while the same dbt
+  build continued. The analytics-worker log shows `activity_power_curve`
+  failing with ClickHouse exception 159 after its exact 240,000 ms query
+  limit, followed by `dbt build failed with exit status 1; retrying in 300s`.
+- **Root cause:** Request-time reads recompute the recursive
+  `analytics.v_sleep` view, including an all-session self-join and recursive
+  connected-components traversal for provider overlap deduplication. The date
+  predicate applied by the route does not prevent that view from processing
+  the larger source graph. The scheduled analytics build currently ends in an
+  `activity_power_curve` timeout and retries the entire 22-model selection
+  after five minutes, repeatedly replaying expensive successful models. Those
+  builds compete for the same ClickHouse CPU, increasing the sleep query's CPU
+  wait from about 0.95 seconds to 24.6 seconds. tRPC batching then makes the
+  whole lower page wait for the slowest cold procedure.
+- **Fix / mitigation:** Pending deployment. The incremental
+  `analytics.daily_sleep` model now stores `source_name` and
+  `source_providers`, and route-facing sleep list/latest reads query that
+  stored daily table instead of recursively evaluating `analytics.v_sleep`.
+  `sleepNeed.performance` also reuses the stored row's provenance instead of
+  issuing a second sleep query. No timeout, retry, cache extension, or queue
+  tuning was added.
+- **Validation:** The test-first repository regressions failed while the reads
+  still referenced `analytics.v_sleep`, then passed after the change. The
+  focused 90-test unit suite, root and server TypeScript checks, Biome, and the
+  analytics policy check pass. The real ClickHouse six-test sleep integration
+  suite also passes, preserves provenance through the stored model, and logged
+  7–25 ms local endpoint durations for the stored sleep reads.
+- **Remaining risk / follow-up:** After deployment and the next incremental
+  model build, validate cold-cache page latency during an overlapping analytics
+  build. Fix the `activity_power_curve` timeout so a single failing tail model
+  does not continuously cause the successful model selection to be replayed.
+  Separately evaluate dashboard query priority or workload isolation only if
+  contention remains after both direct causes are fixed.
+
 ## 2026-07-20 — Zepp Workout Extension Was Built but Not Released
 
 - **Symptoms:** Successful Zepp workflows built and retained both ZAB artifacts,

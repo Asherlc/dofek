@@ -1,10 +1,6 @@
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
-import {
-  clickHouseDateRangePredicate,
-  type RangeDays,
-  rangeDaysParams,
-} from "../lib/date-window.ts";
+import type { RangeDays } from "../lib/date-window.ts";
 import type { ActivitySensorQueryOptions, ActivitySensorStore } from "./activity-repository.ts";
 
 const nullableNumberSchema = z.preprocess(
@@ -56,6 +52,8 @@ export interface FetchSleepNightsInput {
 const dailySleepPerformanceRowSchema = z.object({
   date: z.string(),
   provider_id: z.string().nullable(),
+  source_name: z.string().nullable(),
+  source_providers: z.array(z.string()),
   started_at: z.string(),
   ended_at: z.string().nullable(),
   duration_minutes: nullableNumberSchema,
@@ -77,13 +75,6 @@ export interface FetchDailySleepPerformanceNightsInput {
   queryOptions?: ActivitySensorQueryOptions;
 }
 
-function accessWindowClause(accessWindow: AccessWindow | undefined): string {
-  if (!accessWindow || accessWindow.kind === "full") return "";
-  return `
-    AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) >= toDate({accessStartDate:String})
-    AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) < toDate({accessEndDateExclusive:String})`;
-}
-
 function accessWindowParams(accessWindow: AccessWindow | undefined): Record<string, unknown> {
   if (!accessWindow || accessWindow.kind === "full") return {};
   return {
@@ -103,59 +94,35 @@ export async function fetchSleepNights(
 ): Promise<ClickHouseSleepNight[]> {
   const orderDirection = input.order === "desc" ? "DESC" : "ASC";
   const limitClause = input.limit != null ? "\nLIMIT {limit:UInt32}" : "";
-  const sleepDateExpression = "toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)";
-  const sleepLowerBoundClause = clickHouseDateRangePredicate({
-    expression: sleepDateExpression,
-    days: input.days,
-    operator: ">=",
-  });
+  const sleepLowerBoundClause =
+    input.days === null
+      ? ""
+      : "AND sleep.date >= subtractDays(toDate({endDate:String}), {days:UInt32})";
   const rows = await input.sensorStore.query(
     clickHouseSleepNightSchema,
     `SELECT
-      date,
-      provider_id,
-      source_name,
-      source_providers,
-      formatDateTime(started_at_dt, '%FT%TZ', 'UTC') AS started_at,
-      if(isNull(ended_at_dt), NULL, formatDateTime(ended_at_dt, '%FT%TZ', 'UTC')) AS ended_at,
-      duration_minutes,
-      deep_minutes,
-      rem_minutes,
-      light_minutes,
-      awake_minutes,
-      efficiency_pct
-    FROM (
-      SELECT
-        toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
-        provider_id,
-        source_name,
-        source_providers,
-        started_at AS started_at_dt,
-        ended_at AS ended_at_dt,
-        duration_minutes,
-        deep_minutes,
-        rem_minutes,
-        light_minutes,
-        awake_minutes,
-        efficiency_pct,
-        row_number() OVER (
-          PARTITION BY toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)
-          ORDER BY duration_minutes DESC NULLS LAST
-        ) AS row_number
-      FROM analytics.v_sleep
-      WHERE user_id = {userId:UUID}
-        AND is_nap = false
-        ${sleepLowerBoundClause}
-        AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) <= toDate({endDate:String})
-        ${accessWindowClause(input.accessWindow)}
-    )
-    WHERE row_number = 1
-    ORDER BY date ${orderDirection}${limitClause}`,
+      toString(sleep.date) AS date,
+      sleep.provider_id AS provider_id,
+      sleep.source_name AS source_name,
+      sleep.source_providers AS source_providers,
+      formatDateTime(sleep.started_at, '%FT%TZ', 'UTC') AS started_at,
+      if(isNull(sleep.ended_at), NULL, formatDateTime(sleep.ended_at, '%FT%TZ', 'UTC')) AS ended_at,
+      sleep.duration_minutes AS duration_minutes,
+      sleep.deep_minutes AS deep_minutes,
+      sleep.rem_minutes AS rem_minutes,
+      sleep.light_minutes AS light_minutes,
+      sleep.awake_minutes AS awake_minutes,
+      sleep.efficiency_pct AS efficiency_pct
+    FROM analytics.daily_sleep AS sleep FINAL
+    WHERE sleep.user_id = {userId:UUID}
+      ${sleepLowerBoundClause}
+      AND sleep.date <= toDate({endDate:String})
+      ${dateAccessWindowClause(input.accessWindow)}
+    ORDER BY sleep.date ${orderDirection}${limitClause}`,
     {
       userId: input.userId,
-      timezone: input.timezone,
       endDate: input.endDate,
-      ...rangeDaysParams(input.days),
+      ...(input.days === null ? {} : { days: input.days }),
       ...(input.limit != null ? { limit: input.limit } : {}),
       ...accessWindowParams(input.accessWindow),
     },
@@ -172,6 +139,8 @@ export async function fetchDailySleepPerformanceNights(
     `SELECT
       toString(sleep.date) AS date,
       sleep.provider_id AS provider_id,
+      sleep.source_name AS source_name,
+      sleep.source_providers AS source_providers,
       formatDateTime(sleep.started_at, '%FT%TZ', 'UTC') AS started_at,
       if(isNull(sleep.ended_at), NULL, formatDateTime(sleep.ended_at, '%FT%TZ', 'UTC')) AS ended_at,
       sleep.duration_minutes AS duration_minutes,
@@ -205,49 +174,30 @@ export async function fetchLatestSleepNight(input: {
   endDate?: string;
   accessWindow?: AccessWindow;
 }): Promise<ClickHouseSleepNight | null> {
-  const endDateClause = input.endDate
-    ? `AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) <= toDate({endDate:String})`
-    : "";
+  const endDateClause = input.endDate ? "AND sleep.date <= toDate({endDate:String})" : "";
   const rows = await input.sensorStore.query(
     clickHouseSleepNightSchema,
     `SELECT
-      date,
-      provider_id,
-      source_name,
-      source_providers,
-      formatDateTime(started_at_dt, '%FT%TZ', 'UTC') AS started_at,
-      if(isNull(ended_at_dt), NULL, formatDateTime(ended_at_dt, '%FT%TZ', 'UTC')) AS ended_at,
-      duration_minutes,
-      deep_minutes,
-      rem_minutes,
-      light_minutes,
-      awake_minutes,
-      efficiency_pct
-    FROM (
-      SELECT
-        toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
-        provider_id,
-        source_name,
-        source_providers,
-        started_at AS started_at_dt,
-        ended_at AS ended_at_dt,
-        duration_minutes,
-        deep_minutes,
-        rem_minutes,
-        light_minutes,
-        awake_minutes,
-        efficiency_pct
-      FROM analytics.v_sleep
-      WHERE user_id = {userId:UUID}
-        AND is_nap = false
-        ${endDateClause}
-        ${accessWindowClause(input.accessWindow)}
-      ORDER BY started_at DESC
-      LIMIT 1
-    )`,
+      toString(sleep.date) AS date,
+      sleep.provider_id AS provider_id,
+      sleep.source_name AS source_name,
+      sleep.source_providers AS source_providers,
+      formatDateTime(sleep.started_at, '%FT%TZ', 'UTC') AS started_at,
+      if(isNull(sleep.ended_at), NULL, formatDateTime(sleep.ended_at, '%FT%TZ', 'UTC')) AS ended_at,
+      sleep.duration_minutes AS duration_minutes,
+      sleep.deep_minutes AS deep_minutes,
+      sleep.rem_minutes AS rem_minutes,
+      sleep.light_minutes AS light_minutes,
+      sleep.awake_minutes AS awake_minutes,
+      sleep.efficiency_pct AS efficiency_pct
+    FROM analytics.daily_sleep AS sleep FINAL
+    WHERE sleep.user_id = {userId:UUID}
+      ${endDateClause}
+      ${dateAccessWindowClause(input.accessWindow)}
+    ORDER BY sleep.date DESC
+    LIMIT 1`,
     {
       userId: input.userId,
-      timezone: input.timezone,
       ...(input.endDate != null ? { endDate: input.endDate } : {}),
       ...accessWindowParams(input.accessWindow),
     },
