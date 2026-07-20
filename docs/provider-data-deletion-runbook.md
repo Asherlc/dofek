@@ -30,6 +30,8 @@ Metric-stream writers stamp every new event with the provider's current generati
 
 ## Deployment And Historical Projection
 
+Production and CI must run ClickHouse 26.6.1.1193 or newer within the 26.6 stable line. ClickHouse 26.3 selects `by_provider_live_generation` but does not stop this ordered projection read at the 1,000-row batch limit, so it scans the provider's complete qualifying range. Version 26.6.1.1193 is an official ClickHouse stable release: <https://github.com/ClickHouse/ClickHouse/releases/tag/v26.6.1.1193-stable>.
+
 The ClickHouse migrations add `generation`, the generation-fence table, and both deletion projection definitions. Migration `0047_cover_provider_generation_projection` provides the full latest-row lookup, while `0048_provider_live_generation_projection` adds the narrow deletion-state-first ordering used for bounded candidate pagination. New parts populate both projections automatically. Existing parts remain correct but do not receive a newly added or reordered projection until an operator explicitly materializes it. ClickHouse requires `MATERIALIZE PROJECTION` for existing data: <https://clickhouse.com/docs/data-modeling/projections#filtering-on-columns-which-arent-in-the-primary-key>.
 
 Materialization rewrites historical data, so do not put it in the deploy migration. Run it only in an approved maintenance window:

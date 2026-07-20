@@ -14321,9 +14321,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   primary-key condition. A real-engine regression read all 50,000 provider
   rows to return the first 1,000 candidates. Diagnostic fixtures separately
   read 204,800 rows per page for 200,000 merged keys and 380,000 rows for a
-  200,000-key two-version history. ClickHouse documents that read-in-order can
-  avoid sorting only when the requested order matches the stored table or
-  projection order:
+  200,000-key two-version history. The replacement projection reduced the
+  50,000-row regression below 16,384 rows on ClickHouse 26.6.1.1193, but the
+  production and CI pin at 26.3.3.20 still selected that projection and read
+  all 50,000 rows. ClickHouse documents that read-in-order can avoid sorting
+  only when the requested order matches the stored table or projection order:
   <https://clickhouse.com/blog/clickhouse-top-n-queries-granule-level-data-skipping>.
 - **Root cause:** Candidate discovery combined two incompatible needs in one
   query: newest-version selection required reverse version ordering, while
@@ -14336,7 +14338,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   live rows and reads forward in projection order with an index-usable expanded
   cursor predicate. The existing covering-projection query still resolves each
   candidate's latest version before inserting a tombstone, so stale live rows
-  in unmerged parts remain safe. No timeout, retry, or larger batch was added.
+  in unmerged parts remain safe. Production and CI now use ClickHouse
+  26.6.1.1193, the same stable runtime on which the bounded projection read was
+  verified. ClickHouse publishes that release here:
+  <https://github.com/ClickHouse/ClickHouse/releases/tag/v26.6.1.1193-stable>.
+  No timeout, retry, or larger batch was added.
 - **Validation:** The real ClickHouse regression failed before the fix at
   50,000 rows read for a 1,000-row page and passes after the fix below the
   unchanged 16,384-row bound. The five-test deletion integration suite also
