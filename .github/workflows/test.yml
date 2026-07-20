@@ -235,6 +235,17 @@ jobs:
       - name: Run yamllint
         run: uv tool run yamllint -c .yamllint.yml --no-warnings .
 
+  openapi-lint:
+    name: OpenAPI Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Validate OpenAPI document
+        run: pnpm lint:openapi
+
   dotenv-lint:
     name: Dotenv Lint
     runs-on: ubuntu-latest
@@ -500,7 +511,7 @@ jobs:
 
   quality-gate:
     name: Lint & Static Analysis
-    needs: [actionlint, lint, stylelint, yamllint, dotenv-lint, sqlfluff, tflint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, check-dns-records, swiftlint, periphery]
+    needs: [actionlint, lint, stylelint, yamllint, openapi-lint, dotenv-lint, sqlfluff, tflint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, check-dns-records, swiftlint, periphery]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -511,6 +522,7 @@ jobs:
             "${{ needs.lint.result }}" \
             "${{ needs.stylelint.result }}" \
             "${{ needs.yamllint.result }}" \
+            "${{ needs.openapi-lint.result }}" \
             "${{ needs.dotenv-lint.result }}" \
             "${{ needs.sqlfluff.result }}" \
             "${{ needs.tflint.result }}" \

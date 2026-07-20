@@ -104,7 +104,7 @@ Example response shape:
 | `GET /weightlifting-service/v3/workout-library` | Same (v3) |
 | `GET /weightlifting-service/v3/prs` | Personal records |
 
-#### Write endpoints (POST, confirmed to exist via 405/422 responses)
+#### Write endpoints (POST)
 
 | Endpoint | Description |
 |----------|-------------|
@@ -114,6 +114,11 @@ Example response shape:
 | `POST /weightlifting-service/v2/performance-profile` | Write performance profile |
 | `POST /weightlifting-service/v2/weightlifting-workout/link-cardio-workout` | Link cardio workout |
 | `POST /weightlifting-service/v1/raw-data/protobuf` | Upload raw strap data |
+
+The link-cardio-workout endpoint was validated end to end on July 20, 2026:
+creating a workout template and linking it to an existing activity both returned
+HTTP 200. The request and response shapes are preserved in a
+[sanitized capture](whoop-link-workout-capture-2026-07-20.json).
 
 #### Other paths (from APK decompilation, not all tested)
 

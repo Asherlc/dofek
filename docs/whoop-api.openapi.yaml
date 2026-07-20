@@ -341,14 +341,11 @@ components:
           type: number
           description: 0-1 recording quality
         distance_meter:
-          type: number
-          nullable: true
+          type: [number, "null"]
         altitude_gain_meter:
-          type: number
-          nullable: true
+          type: [number, "null"]
         altitude_change_meter:
-          type: number
-          nullable: true
+          type: [number, "null"]
         zone_duration:
           $ref: "#/components/schemas/ZoneDuration"
 
@@ -447,8 +444,7 @@ components:
           format: uuid
           example: "546e0dd6-88e1-4eb2-9cd0-73aa8b729bd3"
         v1_id:
-          type: integer
-          nullable: true
+          type: [integer, "null"]
         user_id:
           type: integer
         created_at:
@@ -486,8 +482,7 @@ components:
             percent_recorded:
               type: number
             distance_meter:
-              type: number
-              nullable: true
+              type: [number, "null"]
             zone_durations:
               $ref: "#/components/schemas/ZoneDuration"
         sport_id:
@@ -501,8 +496,7 @@ components:
           items:
             $ref: "#/components/schemas/DeveloperWorkoutRecord"
         next_token:
-          type: string
-          nullable: true
+          type: [string, "null"]
 
     # ── Performance Assessment ────────────────────────────
     PerformanceAssessmentResponse:
@@ -542,19 +536,16 @@ components:
           type: string
           format: uuid
         workout_template_id:
-          type: integer
-          nullable: true
+          type: [integer, "null"]
         name:
-          type: string
-          nullable: true
+          type: [string, "null"]
           example: "Mar 12, 2026"
         during:
           type: string
           description: "PostgreSQL-style time range for the workout: ['start','end')"
           example: "['2026-03-12T21:37:00.000Z','2026-03-12T21:56:00.000Z')"
         pushcore_version:
-          type: string
-          nullable: true
+          type: [string, "null"]
           example: whoop_3.13.1
         total_effective_volume_kg:
           type: number
@@ -628,11 +619,9 @@ components:
           description: IANA timezone string
           example: "America/New_York"
         name:
-          type: string
-          nullable: true
+          type: [string, "null"]
         msk_total_volume_kg:
-          type: number
-          nullable: true
+          type: [number, "null"]
         raw_msk_strain_score:
           type: number
         msk_intensity_percent:
@@ -640,19 +629,15 @@ components:
         scaled_msk_strain_score:
           type: number
         pushcore_version:
-          type: string
-          nullable: true
+          type: [string, "null"]
         workout_template_id:
-          type: integer
+          type: [integer, "null"]
           format: int64
-          nullable: true
         rpe:
-          type: integer
-          nullable: true
+          type: [integer, "null"]
           description: Rate of Perceived Exertion
         workout_groups:
-          type: array
-          nullable: true
+          type: [array, "null"]
           items:
             $ref: "#/components/schemas/WeightliftingWorkoutGroupDto"
         type:
@@ -782,12 +767,10 @@ components:
           description: How volume is tracked for this exercise
           enum: [WEIGHT, TIME, REPS, DISTANCE]
         volume_input_value:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: Default volume value (e.g., "0:45" for timed exercises)
         volume_input_units:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: Units for volume_input_value (e.g., "min")
         trackable:
           type: boolean
@@ -800,14 +783,12 @@ components:
         deleted:
           type: boolean
         image_url:
-          type: string
+          type: [string, "null"]
           format: uri
-          nullable: true
           example: "https://dh6o7n168ts9.cloudfront.net/exercises/FRONTPLANKELBOW.jpg"
         video_url:
-          type: string
+          type: [string, "null"]
           format: uri
-          nullable: true
           example: "https://dh6o7n168ts9.cloudfront.net/exercise-videos-temp/FRONTPLANKELBOW.mp4"
         created_at:
           type: string
@@ -817,15 +798,13 @@ components:
           format: date-time
 
     CustomExerciseInfo:
-      type: object
-      nullable: true
+      type: [object, "null"]
       description: Present only for user-created custom exercises
       properties:
         user_id:
           type: integer
         original_exercise_id:
-          type: string
-          nullable: true
+          type: [string, "null"]
 
     # -- WeightliftingSet (read response) — includes server-computed fields
     WeightliftingSet:
@@ -839,21 +818,17 @@ components:
           type: number
           description: Weight used in kg (0 for bodyweight exercises)
         number_of_reps:
-          type: integer
-          nullable: true
+          type: [integer, "null"]
           description: Number of reps (0 or null for time-based exercises)
         time_in_seconds:
-          type: integer
-          nullable: true
+          type: [integer, "null"]
           description: Duration of set in seconds
         msk_total_volume_kg:
-          type: number
-          nullable: true
+          type: [number, "null"]
           description: Computed MSK volume for this set in kg
           example: 255.876
         during:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: "PostgreSQL-style time range: ['start','end')"
           example: "['2026-03-12T21:37:00.000Z','2026-03-12T21:37:00.001Z')"
         complete:
@@ -861,16 +836,13 @@ components:
         is_exercise_trackable:
           type: boolean
         strap_location:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: PushCore strap body location
         strap_location_laterality:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: Left/right for strap placement
         protobuf_file_path:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: S3 path to raw PushCore protobuf data
 
     # -- WeightliftingSetDto (write request) — from decompiled WeightliftingWorkoutSetDto
@@ -882,36 +854,27 @@ components:
         Note: uses "weight" (not "weight_kg") in the request DTO.
       properties:
         number_of_reps:
-          type: integer
-          nullable: true
+          type: [integer, "null"]
         time_in_seconds:
-          type: integer
-          nullable: true
+          type: [integer, "null"]
         weight:
-          type: number
-          nullable: true
+          type: [number, "null"]
           description: Weight in kg (field name is "weight" in write DTO, "weight_kg" in read response)
         weightlifting_workout_set_id:
-          type: string
+          type: [string, "null"]
           format: uuid
-          nullable: true
         is_exercise_trackable:
           type: boolean
         during:
-          type: string
-          nullable: true
+          type: [string, "null"]
         strap_location:
-          type: string
-          nullable: true
+          type: [string, "null"]
         strap_location_laterality:
-          type: string
-          nullable: true
+          type: [string, "null"]
         protobuf_file_path:
-          type: string
-          nullable: true
+          type: [string, "null"]
         msk_total_volume_kg:
-          type: number
-          nullable: true
+          type: [number, "null"]
 
     ExerciseCatalogV2Response:
       type: object
@@ -926,16 +889,17 @@ components:
       type: object
       description: |
         Workout template with planned exercises and sets.
-        Used for both request (POST/PUT) and response (GET).
+        Used for both request (POST/PUT) and response (GET). Live request and
+        response evidence is captured in
+        [the sanitized link-workout capture](./whoop-link-workout-capture-2026-07-20.json).
       properties:
         workout_template_key:
           type: integer
           format: int64
           description: Template ID (called "key" in the DTO)
         parent_template_key:
-          type: integer
+          type: [integer, "null"]
           format: int64
-          nullable: true
           description: Parent template ID if this is a copy
         name:
           type: string
@@ -944,6 +908,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkoutTemplateGroupDto"
+        is_draft:
+          type: boolean
+          description: Whether the template is still a draft.
+        source:
+          type: string
+          description: Template origin assigned by WHOOP.
+          example: USER
 
     WorkoutTemplateGroupDto:
       type: object
@@ -972,16 +943,83 @@ components:
           type: number
           description: Weight in kg
         time_in_seconds:
-          type: integer
+          type: [integer, "null"]
 
     # -- LinkWorkoutRequest/Response
+    # Source: docs/whoop-link-workout-capture-2026-07-20.json
     LinkWorkoutRequest:
       type: object
-      description: Request body for linking a cardio workout to a weightlifting workout
+      description: |
+        Request body for attaching a strength template to an existing cardio
+        activity. First create the template with POST
+        /weightlifting-service/v3/workout-template, then use the returned
+        workout_template_key as template_id here. See the
+        [sanitized live capture](./whoop-link-workout-capture-2026-07-20.json).
+      required: [template, template_id, activity_id]
+      properties:
+        template:
+          allOf:
+            - $ref: "#/components/schemas/WorkoutTemplateDto"
+          description: |
+            The created template inline. Its workout_template_key equals
+            template_id. The linked activity supplies the workout window, so
+            sets contain repetitions and weight without per-set timestamps.
+        template_id:
+          type: integer
+          format: int64
+          description: The workout_template_key returned by template creation.
+        activity_id:
+          type: string
+          format: uuid
+          description: The existing activity receiving the strength data.
+        rpe:
+          type: integer
+          description: Rate of perceived exertion. The live capture sent 0.
+          example: 0
 
     LinkWorkoutResponse:
       type: object
-      description: Response from linking a workout
+      description: Successful response from linking a workout.
+      required: [original_activity_id, original_activity_type, workout_metadata]
+      properties:
+        original_activity_id:
+          type: string
+          format: uuid
+        original_activity_type:
+          type: string
+          example: weightlifting
+        workout_metadata:
+          type: object
+          description: Linked activity metadata; the observed subset is documented here.
+          properties:
+            id:
+              type: string
+              format: uuid
+            user_id:
+              type: integer
+            during:
+              type: string
+              description: PostgreSQL range literal inherited from the activity.
+            score_type:
+              type: string
+              example: CARDIO
+            type:
+              type: string
+              example: weightlifting
+            weightlifting_workout_id:
+              type: string
+              format: uuid
+            workout_template_id:
+              type: integer
+              format: int64
+            total_effective_volume_kg:
+              type: number
+            raw_msk_strain_score:
+              type: number
+            msk_intensity_percent:
+              type: number
+            scaled_msk_strain_score:
+              type: number
 
     # -- CustomExerciseDto
     CustomExerciseDto:
@@ -1024,8 +1062,7 @@ components:
         my_workouts_title:
           type: string
         my_workouts_ctatext:
-          type: string
-          nullable: true
+          type: [string, "null"]
         whoop_workouts_list:
           type: array
           items:
@@ -1109,8 +1146,7 @@ components:
                         - type: number
                         - type: string
                     impact:
-                      type: number
-                      nullable: true
+                      type: [number, "null"]
 
 security:
   - bearerAuth: []
@@ -1528,7 +1564,7 @@ paths:
     get:
       operationId: getExerciseCatalogV2
       summary: Get full exercise catalog (v2, wrapped)
-      description: Same catalog as v1 but wrapped in {"exercises": [...]}.
+      description: 'Same catalog as v1 but wrapped in {"exercises": [...]}.'
       tags: [Weightlifting]
       responses:
         "200":
@@ -1705,15 +1741,18 @@ paths:
 
   # @GET("weightlifting-service/v1/share/{sharedWorkoutId}")
   # Object getSharedWorkout(@Path sharedWorkoutId, Continuation<SharedWorkoutResponse>)
-  /weightlifting-service/v1/share/{sharedWorkoutId}:
+  # @POST("weightlifting-service/v1/share/{workoutTemplateId}")
+  # Object createShareableWorkoutLink(@Path workoutTemplateId, Continuation<ShareableWorkoutLinkResponse>)
+  /weightlifting-service/v1/share/{shareId}:
     get:
       operationId: getSharedWorkout
       summary: Get a shared workout by ID
       tags: [Weightlifting]
       parameters:
-        - name: sharedWorkoutId
+        - name: shareId
           in: path
           required: true
+          description: Shared workout ID.
           schema:
             type: string
       responses:
@@ -1724,17 +1763,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/SharedWorkoutResponse"
 
-  # @POST("weightlifting-service/v1/share/{workoutTemplateId}")
-  # Object createShareableWorkoutLink(@Path workoutTemplateId, Continuation<ShareableWorkoutLinkResponse>)
-  /weightlifting-service/v1/share/{workoutTemplateId}:
     post:
       operationId: createShareableWorkoutLink
       summary: Create a shareable link for a workout template
       tags: [Weightlifting]
       parameters:
-        - name: workoutTemplateId
+        - name: shareId
           in: path
           required: true
+          description: Workout template ID.
           schema:
             type: integer
             format: int64

@@ -118,6 +118,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check . --max-diagnostics=500 && pnpm lint:analytics-sql && pnpm lint:analytics-policy",
     "lint:fix": "biome check --write .",
+    "lint:openapi": "redocly lint docs/whoop-api.openapi.yaml --extends minimal",
     "lint:css": "stylelint \"**/*.css\"",
     "lint:analytics-sql": "sh -c 'set -a; [ ! -f .env.local ] || . ./.env.local; set +a; cd analytics && UV_PROJECT_ENVIRONMENT=../.venv-analytics uv run --project . sqlfluff lint --ignore parsing models'",
     "lint:analytics-policy": "sh -c 'files=$(find analytics src/db/clickhouse-sql -path \"analytics/target\" -prune -o -path \"analytics/logs\" -prune -o -path \"analytics/dbt_packages\" -prune -o -name \"*.sql\" -type f -print 2>/dev/null); if [ -z \"$files\" ]; then echo \"No analytics SQL files to lint\"; else tsx scripts/migration-policy.ts $files; fi'",
@@ -213,6 +214,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.6",
+    "@redocly/cli": "2.39.0",
     "@size-limit/file": "12.0.1",
     "@stryker-mutator/core": "9.6.1",
     "@stryker-mutator/vitest-runner": "9.6.1",

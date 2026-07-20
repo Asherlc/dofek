@@ -62,6 +62,7 @@ jobs:
         uses: ./.github/actions/build-zepp
 
       - name: Validate Workout Extension app ID
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           ZEPP_WORKOUT_EXTENSION_APP_ID: ${{ vars.ZEPP_WORKOUT_EXTENSION_APP_ID }}
         run: |
@@ -71,6 +72,7 @@ jobs:
           fi
 
       - name: Build Zepp Workout Extension ZAB
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         working-directory: packages/zepp
         env:
           ZEPP_WORKOUT_EXTENSION_APP_ID: ${{ vars.ZEPP_WORKOUT_EXTENSION_APP_ID }}
