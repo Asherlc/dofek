@@ -24,8 +24,8 @@ function backfillQueryParams(range: BodyMeasurementSampleBackfillRange): Record<
 }
 
 function missingBodyMeasurementSampleRowsSql(): string {
-  return `FROM ${METRIC_STREAM_TABLE} FINAL AS metric_stream
-LEFT ANTI JOIN analytics.body_measurement_sample FINAL AS existing_sample
+  return `FROM ${METRIC_STREAM_TABLE} AS metric_stream FINAL
+LEFT ANTI JOIN analytics.body_measurement_sample AS existing_sample FINAL
   ON existing_sample.id = metric_stream.id
  AND existing_sample._peerdb_version >= metric_stream.version
 WHERE metric_stream.channel IN (${bodyMeasurementChannelListSql()})
