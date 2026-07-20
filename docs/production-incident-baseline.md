@@ -14217,3 +14217,56 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement GitHub Actions run
   discovers the same tests on both mutation shards and completes the aggregate
   mutation, test, and CI gates successfully.
+
+## 2026-07-19 — Repeated Provider Deletion Rescanned Tombstoned Metric Streams
+
+- **Symptoms:** A second `garmin-dump` provider-data deletion remained at
+  `Tombstoned 0 metric stream rows...` while the provider had about 9.36 million
+  historical metric-stream rows. The web progress display did not visibly
+  change even though the worker checkpoint advanced.
+- **User impact:** The deletion appeared stuck and kept one worker busy issuing
+  thousands of expensive ClickHouse cursor queries instead of completing after
+  confirming that the earlier deletion had already tombstoned the rows.
+- **Evidence:** PostgreSQL showed generation-1 deletion event
+  `89033ea3-089a-4eb3-8d20-906bc6198b87` completed and generation-2 event
+  `36dbbede-0aaf-4ef6-a31c-f4044d112098` still dispatched. The generation-2
+  BullMQ checkpoint advanced to batch 700 and 700,000 examined keys while
+  `deletedRows` remained zero. ClickHouse `system.query_log` showed each exact
+  `SELECT generation, id FROM ingest.metric_stream ... LIMIT 1000` cursor query
+  reading 9,363,456 rows and taking about 1.7–2.3 seconds before returning 1,000
+  keys. There was no fatal log line: the job was advancing through an
+  inefficient finite rescan. Both clients poll deletion status every second,
+  but the generic operation-progress response excludes the checkpoint and the
+  batching loop does not publish a percentage.
+- **Root cause:** `loadNextMetricStreamBatch()` paginates every older
+  `(generation, id)` key without first selecting the latest version and
+  excluding keys whose latest version is already deleted. The later
+  `tombstoneMetricStreamBatch()` correctly filters those keys, so a repeated
+  deletion writes zero tombstones but still visits the entire old generation in
+  1,000-key batches. The only visible batching message interpolates cumulative
+  tombstones, so every poll returns the same user-visible message when all keys
+  are already deleted. ClickHouse documents that `LIMIT BY` selects the first
+  rows per distinct key according to the query ordering:
+  <https://clickhouse.com/docs/sql-reference/statements/select/limit-by>.
+- **Fix / mitigation:** The cursor now orders versions newest-first, selects one
+  latest row per `(generation, id)`, and only then excludes existing tombstones.
+  Checkpoints also persist an exact examined-row count and publish messages such
+  as `Checked 2 metric stream rows; deleted 2...`, which both polling clients
+  already render. No timeout, retry, larger batch, client-side calculation, or
+  expensive total-count query was added. The running production job was not
+  interrupted or manually altered during diagnosis or implementation.
+- **Validation:** The real-ClickHouse repeated-deletion regression failed before
+  the fix because the second deletion persisted a zero-tombstone checkpoint,
+  then passed after the cursor change without paginating the already-deleted
+  key. The focused processor suites pass 6 unit and 4 ClickHouse integration
+  tests; the surrounding queue, worker, and provider-detail router suites pass
+  197 tests. Full lint plus root and server TypeScript checks pass. The broader
+  changed-test selection passed 6,288 tests but retained four unrelated
+  Coros/Suunto/Wahoo FIT-import integration failures that reproduce without the
+  optional Redpanda environment variables.
+- **Remaining risk / follow-up:** Until the fix is deployed,
+  repeated deletions can scan millions of already tombstoned keys once per
+  1,000-key page, consume ClickHouse capacity for hours, and show a misleading
+  zero-row progress message that does not visibly update. After deployment,
+  submit a repeated deletion and verify it advances directly to acknowledgement
+  when every older key is already tombstoned.

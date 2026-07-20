@@ -19,6 +19,9 @@ const eventId = "20000000-0000-4000-8000-000000000002";
 const oldGenerationId = "30000000-0000-4000-8000-000000000003";
 const activeGenerationId = "40000000-0000-4000-8000-000000000004";
 const reusedGenerationId = "50000000-0000-4000-8000-000000000005";
+const repeatedDeletionFirstEventId = "70000000-0000-4000-8000-000000000007";
+const repeatedDeletionSecondEventId = "80000000-0000-4000-8000-000000000008";
+const repeatedDeletionRowId = "90000000-0000-4000-8000-000000000009";
 const operationRevision = "1000000000000000";
 const generationAggregateRowsSchema = z.array(
   z.object({ generation: z.coerce.number().int().nonnegative() }),
@@ -314,5 +317,69 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
     expect(insertedBatchKeys[0]).toContainEqual({ generation: 0, id: reusedGenerationId });
     expect(insertedBatchKeys[0]).not.toContainEqual({ generation: 1, id: reusedGenerationId });
     expect(insertedBatchKeys[1]).toEqual([{ generation: 1, id: reusedGenerationId }]);
+  });
+
+  it("does not paginate a metric stream key whose latest version is already deleted", async () => {
+    const providerId = "repeated-delete-provider";
+    const clickHouseClient = getClickHouseTestClient(testContext);
+    await insertClickHouseMetricStreamRows(testContext, [
+      {
+        id: repeatedDeletionRowId,
+        userId,
+        recordedAt: "2026-03-01T00:00:00.000Z",
+        channel: "heart_rate",
+        providerId,
+        scalar: 140,
+        generation: 0,
+      },
+    ]);
+
+    const firstDeletionData: ProviderDataDeletionJobData = {
+      type: "provider-data-deletion",
+      eventId: repeatedDeletionFirstEventId,
+      generation: 1,
+      providerId,
+      userId,
+    };
+    await processProviderDataDeletionJob(
+      {
+        data: firstDeletionData,
+        updateData: vi.fn(async (nextData: ProviderDataDeletionJobData) => {
+          Object.assign(firstDeletionData, nextData);
+        }),
+        updateProgress: vi.fn(async () => undefined),
+      },
+      {
+        clickHouseClient,
+        enqueueAnalyticsRefresh: vi.fn(async () => undefined),
+        markCompleted: vi.fn(async () => undefined),
+      },
+    );
+
+    const secondDeletionData: ProviderDataDeletionJobData = {
+      type: "provider-data-deletion",
+      eventId: repeatedDeletionSecondEventId,
+      generation: 2,
+      providerId,
+      userId,
+    };
+    const updateData = vi.fn(async (nextData: ProviderDataDeletionJobData) => {
+      Object.assign(secondDeletionData, nextData);
+    });
+
+    await processProviderDataDeletionJob(
+      {
+        data: secondDeletionData,
+        updateData,
+        updateProgress: vi.fn(async () => undefined),
+      },
+      {
+        clickHouseClient,
+        enqueueAnalyticsRefresh: vi.fn(async () => undefined),
+        markCompleted: vi.fn(async () => undefined),
+      },
+    );
+
+    expect(updateData).not.toHaveBeenCalled();
   });
 });

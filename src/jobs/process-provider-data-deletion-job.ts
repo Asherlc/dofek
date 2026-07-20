@@ -160,13 +160,17 @@ async function loadNextMetricStreamBatch(
 
   const result = await client.query({
     query: `SELECT generation, id
-      FROM ${METRIC_STREAM_TABLE}
-      WHERE user_id = {user_id:UUID}
-        AND provider_id = {provider_id:String}
-        AND generation < {generation:UInt64}
-        ${checkpointCondition}
-      ORDER BY generation, id
-      LIMIT 1 BY generation, id
+      FROM (
+        SELECT generation, id, is_deleted AS source_is_deleted
+        FROM ${METRIC_STREAM_TABLE}
+        WHERE user_id = {user_id:UUID}
+          AND provider_id = {provider_id:String}
+          AND generation < {generation:UInt64}
+          ${checkpointCondition}
+        ORDER BY generation, id, version DESC, ingested_at DESC
+        LIMIT 1 BY generation, id
+      )
+      WHERE source_is_deleted = 0
       LIMIT {batch_size:UInt64}
       SETTINGS
         force_optimize_projection = 1,
@@ -290,6 +294,7 @@ export async function processProviderDataDeletionJob(
     checkpoint = {
       batches: (checkpoint?.batches ?? 0) + 1,
       deletedRows: (checkpoint?.deletedRows ?? 0) + deletedRows,
+      examinedRows: (checkpoint?.examinedRows ?? 0) + rows.length,
       lastGeneration: lastRow.generation,
       lastId: lastRow.id,
     };
@@ -297,7 +302,7 @@ export async function processProviderDataDeletionJob(
     await updateProgress(
       job,
       undefined,
-      `Tombstoned ${checkpoint.deletedRows} metric stream rows...`,
+      `Checked ${checkpoint.examinedRows} metric stream rows; deleted ${checkpoint.deletedRows}...`,
       checkpoint,
     );
   }

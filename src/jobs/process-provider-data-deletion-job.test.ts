@@ -125,7 +125,7 @@ describe("processProviderDataDeletionJob", () => {
     });
     expect(query.mock.calls[1]?.[0]).toEqual({
       query: expect.stringMatching(
-        /ORDER BY generation, id[\s\S]*LIMIT 1 BY generation, id[\s\S]*LIMIT \{batch_size:UInt64\}[\s\S]*force_optimize_projection_name = 'by_provider_generation'/,
+        /ORDER BY generation, id, version DESC, ingested_at DESC[\s\S]*LIMIT 1 BY generation, id[\s\S]*WHERE source_is_deleted = 0[\s\S]*LIMIT \{batch_size:UInt64\}[\s\S]*force_optimize_projection_name = 'by_provider_generation'/,
       ),
       query_params: expect.objectContaining({ batch_size: 1_000 }),
       format: "JSONEachRow",
@@ -136,7 +136,13 @@ describe("processProviderDataDeletionJob", () => {
     });
     expect(job.updateData).toHaveBeenCalledWith(
       expect.objectContaining({
-        checkpoint: { batches: 1, deletedRows: 2, lastGeneration: 1, lastId: secondId },
+        checkpoint: {
+          batches: 1,
+          deletedRows: 2,
+          examinedRows: 2,
+          lastGeneration: 1,
+          lastId: secondId,
+        },
       }),
     );
     expect(job.updateProgress).toHaveBeenCalledWith({
@@ -145,15 +151,27 @@ describe("processProviderDataDeletionJob", () => {
       percentage: 0,
     });
     expect(job.updateProgress).toHaveBeenCalledWith({
-      checkpoint: { batches: 1, deletedRows: 2, lastGeneration: 1, lastId: secondId },
-      message: "Tombstoned 2 metric stream rows...",
+      checkpoint: {
+        batches: 1,
+        deletedRows: 2,
+        examinedRows: 2,
+        lastGeneration: 1,
+        lastId: secondId,
+      },
+      message: "Checked 2 metric stream rows; deleted 2...",
     });
     const tombstoneProgress = job.updateProgress.mock.calls.find(
-      ([progress]) => progress.message === "Tombstoned 2 metric stream rows...",
+      ([progress]) => progress.message === "Checked 2 metric stream rows; deleted 2...",
     )?.[0];
     expect(tombstoneProgress).not.toHaveProperty("percentage");
     expect(job.updateProgress).toHaveBeenCalledWith({
-      checkpoint: { batches: 1, deletedRows: 2, lastGeneration: 1, lastId: secondId },
+      checkpoint: {
+        batches: 1,
+        deletedRows: 2,
+        examinedRows: 2,
+        lastGeneration: 1,
+        lastId: secondId,
+      },
       message: "Provider data deletion complete.",
       percentage: 100,
     });
