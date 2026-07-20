@@ -367,9 +367,13 @@ export class CyclingAnalyticsRepository {
       .filter(
         (row) =>
           row.avg_power_z2 != null &&
+          row.avg_power_z2 > 0 &&
           row.avg_hr_z2 != null &&
+          row.avg_hr_z2 > 0 &&
           row.efficiency_factor != null &&
-          row.z2_samples != null,
+          row.efficiency_factor > 0 &&
+          row.z2_samples != null &&
+          row.z2_samples >= 300,
       )
       .map((row) => ({
         date: row.date,
@@ -410,7 +414,7 @@ export class CyclingAnalyticsRepository {
       },
       verticalAscent,
       aerobicEfficiency: {
-        maxHr: rows.find((row) => row.max_hr != null)?.max_hr ?? null,
+        maxHr: rows.find((row) => row.max_hr != null && row.max_hr > 0)?.max_hr ?? null,
         activities: efficiencyActivities,
       },
     };
