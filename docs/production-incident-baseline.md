@@ -14560,8 +14560,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the base repository variable. Secretless mobile, Zepp, test, typecheck, and
   OpenAPI checks continue to run. Same-repository pull requests and pushes keep
   the full build matrix.
-- **Validation:** Local Actionlint and YAML validation pass. Hosted validation
-  is pending the replacement PR #1701 CI run.
+- **Validation:** Local Actionlint and YAML validation pass. Replacement
+  [CI run 29784266049](https://github.com/Asherlc/dofek/actions/runs/29784266049)
+  passed, including the OpenAPI lint, secretless watchOS and Zepp builds, all
+  test suites, and the final CI gate; Metro/iOS and the credentialed Zepp
+  extension steps were skipped as intended.
 - **Remaining risk / follow-up:** Fork pull requests cannot validate the
   credentialed artifacts before merge. Their secretless checks still exercise
   the affected source; the full credentialed builds run from trusted repository
