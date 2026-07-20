@@ -471,9 +471,9 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      expect(screen.getByText("Data pipeline needs attention")).toBeTruthy();
+      expect(screen.getByText("Some data is temporarily unavailable")).toBeTruthy();
       expect(
-        screen.getByText("Activity data is available, but ClickHouse mirrors are not current."),
+        screen.getByText("Activities data is still being prepared. Please check back soon."),
       ).toBeTruthy();
     });
 

@@ -672,6 +672,36 @@ describe("CyclingAdvancedRepository", () => {
       expect(result[0]?.toDetail().verticalAscentRate).toBe(1000);
     });
 
+    it("excludes indoor and virtual cycling workouts", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-03-15",
+          name: "Spin Class",
+          activity_type: "indoor_cycling",
+          elevation_gain: 500,
+          elapsed_seconds: 1800,
+        },
+        {
+          date: "2024-03-16",
+          name: "Virtual Climb",
+          activity_type: "virtual_cycling",
+          elevation_gain: 1000,
+          elapsed_seconds: 3600,
+        },
+        {
+          date: "2024-03-17",
+          name: "Outdoor Climb",
+          activity_type: "road_cycling",
+          elevation_gain: 750,
+          elapsed_seconds: 2700,
+        },
+      ]);
+
+      const result = await repo.getVerticalAscentRates(90);
+
+      expect(result.map((model) => model.toDetail().activityName)).toEqual(["Outdoor Climb"]);
+    });
+
     it("does not require grade channel data — altitude-only providers return results", async () => {
       // Regression test: providers that don't emit a grade channel (Garmin, Wahoo)
       // must still surface climbing. The precomputed climbing columns are derived
