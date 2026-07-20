@@ -1,8 +1,20 @@
 import { initTRPC } from "@trpc/server";
 import type { FileUpload } from "dofek/db/file-upload";
 import type { ImportUploadStorage } from "dofek/file-upload-storage";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
+
+const metrics = vi.hoisted(() => ({
+  bytes: vi.fn(),
+  duration: vi.fn(),
+  lifecycle: vi.fn(),
+}));
+
+vi.mock("dofek/file-upload-metrics", () => ({
+  fileUploadBytesTotal: { add: metrics.bytes },
+  fileUploadCompletionDuration: { record: metrics.duration },
+  fileUploadLifecycleTotal: { add: metrics.lifecycle },
+}));
 
 vi.mock("../trpc.ts", () => {
   const trpc = initTRPC.context<{ db: unknown; userId: string }>().create();
@@ -10,6 +22,10 @@ vi.mock("../trpc.ts", () => {
 });
 
 const { createFileUploadRouter } = await import("./file-upload.ts");
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 function upload(overrides: Partial<FileUpload> = {}): FileUpload {
   const id = "00000000-0000-4000-8000-0000000000e1";
@@ -82,6 +98,27 @@ function setup(currentUpload = upload()) {
     userId: currentUpload.userId,
   });
   return { caller, repository, storage };
+}
+
+interface InitiationInput {
+  uploadId: string;
+  importType: "garmin-dump";
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+}
+
+function initiationInput(overrides: Partial<InitiationInput> = {}): InitiationInput {
+  return {
+    uploadId: upload().id,
+    importType: "garmin-dump",
+    filename: "garmin.zip",
+    contentType: "application/zip",
+    sizeBytes: 20 * 1024 * 1024,
+    sha256: "a".repeat(64),
+    ...overrides,
+  };
 }
 
 describe("fileUploadRouter", () => {
@@ -177,5 +214,359 @@ describe("fileUploadRouter", () => {
         ],
       }),
     ).rejects.toThrow("invalid size");
+  });
+
+  it("initiates a new multipart upload with normalized metadata", async () => {
+    const initiated = upload({ state: "initiated", r2MultipartUploadId: null });
+    const uploading = upload();
+    const { caller, repository, storage } = setup(initiated);
+    repository.find.mockResolvedValueOnce(null);
+    repository.markUploading.mockResolvedValueOnce(uploading);
+
+    const result = await caller.initiate(initiationInput({ contentType: "APPLICATION/ZIP" }));
+
+    expect(repository.rateAllowed).toHaveBeenCalledWith({}, initiated.userId, "initiate");
+    expect(repository.create).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        id: initiated.id,
+        userId: initiated.userId,
+        objectKey: initiated.objectKey,
+        contentType: "application/zip",
+        partSizeBytes: 16 * 1024 * 1024,
+        since: new Date(0),
+      }),
+    );
+    expect(storage.createMultipartUpload).toHaveBeenCalledWith(
+      initiated.objectKey,
+      initiated.contentType,
+    );
+    expect(repository.markUploading).toHaveBeenCalledWith(
+      {},
+      initiated.id,
+      initiated.userId,
+      "multipart-1",
+    );
+    expect(metrics.lifecycle).toHaveBeenCalledWith(1, {
+      state: "initiated",
+      import_type: "garmin-dump",
+    });
+    expect(result).toMatchObject({
+      uploadId: uploading.id,
+      state: "uploading",
+      partCount: 2,
+      expiresAt: uploading.expiresAt.toISOString(),
+    });
+  });
+
+  it("uses a seven-day window for incremental Apple Health imports", async () => {
+    const initiated = upload({
+      importType: "apple-health",
+      originalFilename: "export.xml",
+      contentType: "application/xml",
+      state: "initiated",
+      r2MultipartUploadId: null,
+    });
+    const { caller, repository } = setup(initiated);
+    repository.find.mockResolvedValueOnce(null);
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-07-19T00:00:00Z").getTime());
+
+    await caller.initiate({
+      uploadId: initiated.id,
+      importType: "apple-health",
+      filename: "export.XML",
+      contentType: "APPLICATION/XML",
+      sizeBytes: initiated.expectedSizeBytes,
+      sha256: initiated.expectedSha256,
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({ since: new Date("2026-07-12T00:00:00Z") }),
+    );
+  });
+
+  it("uses epoch for full Apple Health imports and defaults Strong weight units", async () => {
+    const apple = upload({
+      importType: "apple-health",
+      originalFilename: "export.zip",
+      state: "initiated",
+      r2MultipartUploadId: null,
+    });
+    const appleSetup = setup(apple);
+    appleSetup.repository.find.mockResolvedValueOnce(null);
+    await appleSetup.caller.initiate({
+      uploadId: apple.id,
+      importType: "apple-health",
+      filename: "export.zip",
+      contentType: "application/zip",
+      sizeBytes: apple.expectedSizeBytes,
+      sha256: apple.expectedSha256,
+      fullSync: true,
+    });
+    expect(appleSetup.repository.create).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({ since: new Date(0), weightUnit: undefined }),
+    );
+
+    const strong = upload({
+      importType: "strong-csv",
+      originalFilename: "strong.csv",
+      contentType: "text/csv",
+      state: "initiated",
+      r2MultipartUploadId: null,
+    });
+    const strongSetup = setup(strong);
+    strongSetup.repository.find.mockResolvedValueOnce(null);
+    await strongSetup.caller.initiate({
+      uploadId: strong.id,
+      importType: "strong-csv",
+      filename: "strong.csv",
+      contentType: "text/csv",
+      sizeBytes: strong.expectedSizeBytes,
+      sha256: strong.expectedSha256,
+    });
+    expect(strongSetup.repository.create).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({ weightUnit: "kg" }),
+    );
+  });
+
+  it("rejects invalid import metadata and initiation rate limits", async () => {
+    const extensionSetup = setup();
+    await expect(
+      extensionSetup.caller.initiate(initiationInput({ filename: "garmin.csv" })),
+    ).rejects.toThrow("Invalid garmin-dump file extension");
+
+    const contentSetup = setup();
+    await expect(
+      contentSetup.caller.initiate(initiationInput({ contentType: "text/csv" })),
+    ).rejects.toThrow("Invalid garmin-dump content type");
+
+    const rateSetup = setup();
+    rateSetup.repository.find.mockResolvedValueOnce(null);
+    rateSetup.repository.rateAllowed.mockResolvedValueOnce(false);
+    await expect(rateSetup.caller.initiate(initiationInput())).rejects.toThrow(
+      "Too many uploads initiated",
+    );
+    expect(rateSetup.repository.create).not.toHaveBeenCalled();
+  });
+
+  it("reuses an existing upload without consuming initiation rate capacity", async () => {
+    const existing = upload();
+    const { caller, repository, storage } = setup(existing);
+
+    await expect(caller.initiate(initiationInput())).resolves.toMatchObject({ state: "uploading" });
+
+    expect(repository.rateAllowed).not.toHaveBeenCalled();
+    expect(storage.createMultipartUpload).not.toHaveBeenCalled();
+    expect(metrics.lifecycle).not.toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ state: "initiated" }),
+    );
+  });
+
+  it("converges a concurrent multipart initiation and aborts the losing R2 upload", async () => {
+    const initiated = upload({ state: "initiated", r2MultipartUploadId: null });
+    const concurrent = upload({ state: "uploading", r2MultipartUploadId: "winner" });
+    const { caller, repository, storage } = setup(initiated);
+    repository.find.mockResolvedValueOnce(null).mockResolvedValueOnce(concurrent);
+    repository.markUploading.mockRejectedValueOnce(new Error("state changed"));
+
+    await expect(caller.initiate(initiationInput())).resolves.toMatchObject({ state: "uploading" });
+
+    expect(storage.abortMultipartUpload).toHaveBeenCalledWith(initiated.objectKey, "multipart-1");
+  });
+
+  it("rethrows a failed multipart transition when no concurrent upload won", async () => {
+    const initiated = upload({ state: "initiated", r2MultipartUploadId: null });
+    const { caller, repository, storage } = setup(initiated);
+    repository.find.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    repository.markUploading.mockRejectedValueOnce(new Error("state changed"));
+
+    await expect(caller.initiate(initiationInput())).rejects.toThrow("state changed");
+    expect(storage.abortMultipartUpload).toHaveBeenCalledOnce();
+  });
+
+  it("rejects authorization for missing, inactive, and invalid upload parts", async () => {
+    const missing = setup();
+    missing.repository.find.mockResolvedValueOnce(null);
+    await expect(
+      missing.caller.authorizeParts({ uploadId: upload().id, partNumbers: [1] }),
+    ).rejects.toThrow("was not found");
+
+    const inactive = setup(upload({ state: "initiated", r2MultipartUploadId: null }));
+    await expect(
+      inactive.caller.authorizeParts({ uploadId: upload().id, partNumbers: [1] }),
+    ).rejects.toThrow("not accepting parts");
+
+    const invalid = setup();
+    await expect(
+      invalid.caller.authorizeParts({ uploadId: upload().id, partNumbers: [3] }),
+    ).rejects.toThrow("Invalid upload part 3");
+  });
+
+  it("deduplicates authorized part numbers", async () => {
+    const { caller, storage } = setup();
+
+    const result = await caller.authorizeParts({ uploadId: upload().id, partNumbers: [1, 1] });
+
+    expect(result.parts).toHaveLength(1);
+    expect(storage.authorizeUploadPart).toHaveBeenCalledOnce();
+  });
+
+  it("resumes active uploads from R2 and terminal uploads without R2", async () => {
+    const active = setup();
+    await expect(active.caller.resume({ uploadId: upload().id })).resolves.toMatchObject({
+      parts: [{ partNumber: 1 }, { partNumber: 2 }],
+    });
+    expect(active.storage.listParts).toHaveBeenCalledWith(upload().objectKey, "multipart-1");
+    expect(metrics.lifecycle).toHaveBeenCalledWith(1, {
+      state: "resumed",
+      import_type: "garmin-dump",
+    });
+
+    const terminal = setup(upload({ state: "completed", r2MultipartUploadId: null }));
+    await expect(terminal.caller.resume({ uploadId: upload().id })).resolves.toMatchObject({
+      parts: [],
+    });
+    expect(terminal.storage.listParts).not.toHaveBeenCalled();
+  });
+
+  it("rejects completion rate limits and uploads that are not ready", async () => {
+    const rate = setup();
+    rate.repository.rateAllowed.mockResolvedValueOnce(false);
+    await expect(rate.caller.complete({ uploadId: upload().id, parts: [] })).rejects.toThrow(
+      "Too many uploads completed",
+    );
+
+    const inactive = setup(upload({ state: "initiated", r2MultipartUploadId: null }));
+    await expect(inactive.caller.complete({ uploadId: upload().id, parts: [] })).rejects.toThrow(
+      "not ready to complete",
+    );
+  });
+
+  it("rejects incomplete parts and ETag mismatches", async () => {
+    const incomplete = setup();
+    vi.mocked(incomplete.storage.listParts).mockResolvedValueOnce([
+      { partNumber: 1, etag: "etag-1", sizeBytes: 16 * 1024 * 1024 },
+    ]);
+    await expect(
+      incomplete.caller.complete({
+        uploadId: upload().id,
+        parts: [{ partNumber: 1, etag: "etag-1" }],
+      }),
+    ).rejects.toThrow("incomplete parts");
+
+    const mismatch = setup();
+    await expect(
+      mismatch.caller.complete({
+        uploadId: upload().id,
+        parts: [
+          { partNumber: 1, etag: "wrong" },
+          { partNumber: 2, etag: "etag-2" },
+        ],
+      }),
+    ).rejects.toThrow("ETag mismatch");
+  });
+
+  it("completes, verifies, queues, and records upload metrics", async () => {
+    const { caller, repository, storage } = setup();
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-07-19T00:01:40Z").getTime());
+
+    const result = await caller.complete({
+      uploadId: upload().id,
+      parts: [
+        { partNumber: 2, etag: "etag-2" },
+        { partNumber: 1, etag: "etag-1" },
+      ],
+    });
+
+    expect(repository.recordCompletionParts).toHaveBeenCalledWith(
+      {},
+      upload().id,
+      upload().userId,
+      [
+        { partNumber: 1, etag: '"etag-1"' },
+        { partNumber: 2, etag: '"etag-2"' },
+      ],
+    );
+    expect(storage.completeMultipartUpload).toHaveBeenCalledWith(
+      upload().objectKey,
+      "multipart-1",
+      [
+        { partNumber: 1, etag: '"etag-1"' },
+        { partNumber: 2, etag: '"etag-2"' },
+      ],
+    );
+    expect(repository.queue).toHaveBeenCalledWith({}, upload().id, upload().userId, {
+      importJobId: `file-import-${upload().id}`,
+      objectSizeBytes: upload().expectedSizeBytes,
+    });
+    expect(metrics.bytes).toHaveBeenCalledWith(upload().expectedSizeBytes, {
+      import_type: "garmin-dump",
+    });
+    expect(metrics.duration).toHaveBeenCalledWith(100, { import_type: "garmin-dump" });
+    expect(result).toMatchObject({ state: "queued", importJobId: `file-import-${upload().id}` });
+  });
+
+  it("recovers completion when the multipart operation already produced an object", async () => {
+    const { caller, storage } = setup();
+    vi.mocked(storage.completeMultipartUpload).mockRejectedValueOnce(new Error("NoSuchUpload"));
+
+    await expect(
+      caller.complete({
+        uploadId: upload().id,
+        parts: [
+          { partNumber: 1, etag: "etag-1" },
+          { partNumber: 2, etag: "etag-2" },
+        ],
+      }),
+    ).resolves.toMatchObject({ state: "queued" });
+    expect(storage.headObject).toHaveBeenCalledOnce();
+  });
+
+  it("preserves the multipart error when object recovery also fails", async () => {
+    const { caller, storage } = setup();
+    vi.mocked(storage.completeMultipartUpload).mockRejectedValueOnce(new Error("NoSuchUpload"));
+    vi.mocked(storage.headObject).mockRejectedValueOnce(new Error("missing"));
+
+    await expect(
+      caller.complete({
+        uploadId: upload().id,
+        parts: [
+          { partNumber: 1, etag: "etag-1" },
+          { partNumber: 2, etag: "etag-2" },
+        ],
+      }),
+    ).rejects.toThrow("NoSuchUpload");
+  });
+
+  it("aborts active uploads and records cancellation", async () => {
+    const { caller, repository, storage } = setup();
+
+    await expect(caller.abort({ uploadId: upload().id })).resolves.toMatchObject({
+      state: "aborted",
+    });
+
+    expect(storage.abortMultipartUpload).toHaveBeenCalledWith(upload().objectKey, "multipart-1");
+    expect(repository.abort).toHaveBeenCalledWith({}, upload().id, upload().userId);
+    expect(metrics.lifecycle).toHaveBeenCalledWith(1, {
+      state: "cancelled",
+      import_type: "garmin-dump",
+    });
+  });
+
+  it("returns idempotent aborts and skips R2 for uploads without multipart state", async () => {
+    const aborted = setup(upload({ state: "aborted" }));
+    await expect(aborted.caller.abort({ uploadId: upload().id })).resolves.toMatchObject({
+      state: "aborted",
+    });
+    expect(aborted.repository.abort).not.toHaveBeenCalled();
+
+    const initiated = setup(upload({ state: "initiated", r2MultipartUploadId: null }));
+    await initiated.caller.abort({ uploadId: upload().id });
+    expect(initiated.storage.abortMultipartUpload).not.toHaveBeenCalled();
+    expect(initiated.repository.abort).toHaveBeenCalledOnce();
   });
 });
