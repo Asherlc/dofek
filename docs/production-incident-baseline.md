@@ -14217,3 +14217,139 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement GitHub Actions run
   discovers the same tests on both mutation shards and completes the aggregate
   mutation, test, and CI gates successfully.
+
+## 2026-07-19 — Repeated Provider Deletion Rescanned Tombstoned Metric Streams
+
+- **Symptoms:** A second `garmin-dump` provider-data deletion remained at
+  `Tombstoned 0 metric stream rows...` while the provider had about 9.36 million
+  historical metric-stream rows. The web progress display did not visibly
+  change even though the worker checkpoint advanced.
+- **User impact:** The deletion appeared stuck and kept one worker busy issuing
+  thousands of expensive ClickHouse cursor queries instead of completing after
+  confirming that the earlier deletion had already tombstoned the rows.
+- **Evidence:** PostgreSQL showed generation-1 deletion event
+  `89033ea3-089a-4eb3-8d20-906bc6198b87` completed and generation-2 event
+  `36dbbede-0aaf-4ef6-a31c-f4044d112098` still dispatched. The generation-2
+  BullMQ checkpoint advanced to batch 700 and 700,000 examined keys while
+  `deletedRows` remained zero. ClickHouse `system.query_log` showed each exact
+  `SELECT generation, id FROM ingest.metric_stream ... LIMIT 1000` cursor query
+  reading 9,363,456 rows and taking about 1.7–2.3 seconds before returning 1,000
+  keys. There was no fatal log line: the job was advancing through an
+  inefficient finite rescan. Both clients poll deletion status every second,
+  but the generic operation-progress response excludes the checkpoint and the
+  batching loop does not publish a percentage.
+- **Root cause:** `loadNextMetricStreamBatch()` paginates every older
+  `(generation, id)` key without first selecting the latest version and
+  excluding keys whose latest version is already deleted. The later
+  `tombstoneMetricStreamBatch()` correctly filters those keys, so a repeated
+  deletion writes zero tombstones but still visits the entire old generation in
+  1,000-key batches. The only visible batching message interpolates cumulative
+  tombstones, so every poll returns the same user-visible message when all keys
+  are already deleted. ClickHouse documents that `LIMIT BY` selects the first
+  rows per distinct key according to the query ordering:
+  <https://clickhouse.com/docs/sql-reference/statements/select/limit-by>.
+- **Fix / mitigation:** The cursor now orders versions newest-first, selects one
+  latest row per `(generation, id)`, and only then excludes existing tombstones.
+  Checkpoints also persist an exact examined-row count and publish messages such
+  as `Checked 2 metric stream rows; deleted 2...`, which both polling clients
+  already render. No timeout, retry, larger batch, client-side calculation, or
+  expensive total-count query was added. The running production job was not
+  interrupted or manually altered during diagnosis or implementation.
+- **Validation:** The real-ClickHouse repeated-deletion regression failed before
+  the fix because the second deletion persisted a zero-tombstone checkpoint,
+  then passed after the cursor change without paginating the already-deleted
+  key. The focused processor suites pass 6 unit and 4 ClickHouse integration
+  tests; the surrounding queue, worker, and provider-detail router suites pass
+  197 tests. Full lint plus root and server TypeScript checks pass. The broader
+  changed-test selection passed 6,288 tests but retained four unrelated
+  Coros/Suunto/Wahoo FIT-import integration failures that reproduce without the
+  optional Redpanda environment variables.
+- **Remaining risk / follow-up:** Until the fix is deployed,
+  repeated deletions can scan millions of already tombstoned keys once per
+  1,000-key page, consume ClickHouse capacity for hours, and show a misleading
+  zero-row progress message that does not visibly update. After deployment,
+  submit a repeated deletion and verify it advances directly to acknowledgement
+  when every older key is already tombstoned.
+
+## 2026-07-19 — Secret Scan Depended on GitHub's Pull-Request Commits API
+
+- **Symptoms:** PR #1689's `Test / Secret Scan` job failed twice before running
+  the Gitleaks scanner. The security, test, and overall CI gates then failed
+  because they require that job.
+- **User impact:** The otherwise-green provider deletion fix could not pass its
+  required CI gates.
+- **Evidence:** The exact failing step was `gitleaks/gitleaks-action` in attempts
+  1 and 2 of
+  [CI run 29709329357](https://github.com/Asherlc/dofek/actions/runs/29709329357).
+  The first fatal line was `RequestError [HttpError]: No server is currently
+  available to service your request.` Both failures were HTTP 503 responses
+  from `GET /repos/Asherlc/dofek/pulls/1689/commits`; the second response still
+  had 4,998 of 5,000 core API requests remaining. The action documents that it
+  uses `GITHUB_TOKEN` for GitHub API calls
+  ([Gitleaks Action environment variables](https://github.com/gitleaks/gitleaks-action#environment-variables)).
+- **Root cause:** The secret-scan job delegated commit-range discovery to the
+  Gitleaks Action, so an unavailable GitHub pull-request commits endpoint
+  prevented the locally available Gitleaks scanner from starting.
+- **Fix / mitigation:** The job now downloads the official Gitleaks v8.30.1
+  Linux CLI archive, verifies its pinned SHA-256, validates a non-empty local
+  Git commit range, and scans that range directly. Pull-request and push scans
+  retain `--no-merges --first-parent`; manual runs scan full history. No retry,
+  timeout, warning-and-continue path, or GitHub API fallback was added. Gitleaks
+  documents both checksum-published binary releases and commit-range scans
+  ([v8.30.1 release](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1),
+  [Git scan options](https://github.com/gitleaks/gitleaks#git)).
+- **Validation:** The pinned CLI archive checksum matches the official release,
+  and the PR commit range scans cleanly locally. Actionlint and the replacement
+  GitHub Actions run provide workflow-level validation.
+- **Remaining risk / follow-up:** Confirm the replacement `Secret Scan`,
+  `Security & Dependencies`, `Test Gate`, and `CI Gate` jobs all pass on PR
+  #1689. Future Gitleaks upgrades must update both the pinned version and
+  archive checksum together.
+
+## 2026-07-19 — Latest-Version Provider Cursor Still Scanned Every Row Per Page
+
+- **Symptoms:** Review of PR #1689 found that its newest-version cursor query
+  still read the provider's complete metric-stream range for every 1,000-row
+  page, despite forcing the `by_provider_generation` projection.
+- **User impact:** Active or mixed providers could require one full ClickHouse
+  scan per cursor page, keeping deletion workers busy and delaying visible
+  completion at production history sizes.
+- **Evidence:** `EXPLAIN PIPELINE` on ClickHouse 26.6 showed threaded reads plus
+  `PartialSortingTransform` and `MergeSortingTransform`. The projection stores
+  `version` and `ingested_at` ascending, while the cursor requested both
+  descending. `EXPLAIN indexes = 1` also omitted the tuple cursor from the
+  primary-key condition. A real-engine regression read all 50,000 provider
+  rows to return the first 1,000 candidates. Diagnostic fixtures separately
+  read 204,800 rows per page for 200,000 merged keys and 380,000 rows for a
+  200,000-key two-version history. The replacement projection reduced the
+  50,000-row regression below 16,384 rows on ClickHouse 26.6.1.1193, but the
+  production and CI pin at 26.3.3.20 still selected that projection and read
+  all 50,000 rows. ClickHouse documents that read-in-order can avoid sorting
+  only when the requested order matches the stored table or projection order:
+  <https://clickhouse.com/blog/clickhouse-top-n-queries-granule-level-data-skipping>.
+- **Root cause:** Candidate discovery combined two incompatible needs in one
+  query: newest-version selection required reverse version ordering, while
+  bounded cursor pagination required forward projection ordering. ClickHouse
+  therefore sorted the full qualifying range before applying the outer limit.
+- **Fix / mitigation:** Migration
+  `0048_provider_live_generation_projection` adds the narrow
+  `by_provider_live_generation` projection ordered by user, provider, physical
+  deletion state, generation, and ID. Candidate discovery filters physical
+  live rows and reads forward in projection order with an index-usable expanded
+  cursor predicate. The existing covering-projection query still resolves each
+  candidate's latest version before inserting a tombstone, so stale live rows
+  in unmerged parts remain safe. Production and CI now use ClickHouse
+  26.6.1.1193, the same stable runtime on which the bounded projection read was
+  verified. ClickHouse publishes that release here:
+  <https://github.com/ClickHouse/ClickHouse/releases/tag/v26.6.1.1193-stable>.
+  No timeout, retry, or larger batch was added.
+- **Validation:** The real ClickHouse regression failed before the fix at
+  50,000 rows read for a 1,000-row page and passes after the fix below the
+  unchanged 16,384-row bound. The five-test deletion integration suite also
+  proves that a newer tombstone suppresses deletion of an older physical live
+  version. The focused processor and migration unit suites pass 12 tests.
+- **Remaining risk / follow-up:** Existing production parts require explicit
+  materialization of both deletion projections before workers can scan. After
+  deployment, verify every active part reports both projections, redrive the
+  pending deletion, and compare `system.query_log.read_rows` with the 1,000-row
+  batch size.
