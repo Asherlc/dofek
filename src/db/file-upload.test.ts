@@ -207,7 +207,7 @@ describe("file upload repository", () => {
     ).rejects.toThrow("must be uploading");
   });
 
-  it("aborts uploads idempotently and rejects missing or terminal uploads", async () => {
+  it("supports idempotent abort retries and rejects missing or terminal uploads", async () => {
     mocks.executeWithSchema.mockResolvedValueOnce([row({ state: "aborted" })]);
     await expect(abortFileUpload(database, uploadId, userId)).resolves.toMatchObject({
       state: "aborted",
@@ -283,7 +283,7 @@ describe("file upload repository", () => {
     );
   });
 
-  it("marks object upload completion idempotently and rejects invalid states", async () => {
+  it("supports idempotent object completion retries and rejects invalid states", async () => {
     mocks.executeWithSchema.mockResolvedValueOnce([row({ state: "uploaded" })]);
     await expect(markFileUploadObjectUploaded(database, uploadId, userId)).resolves.toMatchObject({
       state: "uploaded",
