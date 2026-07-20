@@ -59,7 +59,7 @@ describe("SleepRepository", () => {
       );
       expect(execute).not.toHaveBeenCalled();
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
-      expect(queryText).toContain("analytics.v_sleep");
+      expect(queryText).toContain("analytics.daily_sleep");
       expect(queryText).not.toContain("fitness.v_sleep");
     });
 
@@ -179,7 +179,7 @@ describe("SleepRepository", () => {
       await repo.getLatestStages();
       expect(execute).not.toHaveBeenCalled();
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
-      expect(queryText).toContain("analytics.v_sleep");
+      expect(queryText).toContain("analytics.daily_sleep");
       expect(queryText).not.toContain("fitness.v_sleep");
     });
   });
@@ -220,7 +220,7 @@ describe("SleepRepository", () => {
       );
       expect(execute).not.toHaveBeenCalled();
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
-      expect(queryText).toContain("analytics.v_sleep");
+      expect(queryText).toContain("analytics.daily_sleep");
       expect(queryText).not.toContain("fitness.v_sleep");
     });
 

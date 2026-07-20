@@ -36,7 +36,7 @@ function makeSensorStore(bodyRows: Record<string, unknown>[] = [], sleepRows: un
   return {
     query: vi.fn(async (_schema: unknown, query: string) => {
       if (query.includes("analytics.v_body_measurement")) return bodyRows;
-      if (query.includes("analytics.v_sleep")) return sleepRows;
+      if (query.includes("analytics.daily_sleep")) return sleepRows;
       return [{ date: "2025-05-01", resting_hr: 52 }];
     }),
   };
@@ -392,7 +392,7 @@ describe("LifeEventsRepository", () => {
 
       expect(sensorStore.query).toHaveBeenCalledWith(
         expect.anything(),
-        expect.stringContaining("analytics.v_sleep"),
+        expect.stringContaining("analytics.daily_sleep"),
         expect.objectContaining({
           endDate: "2025-06-13",
           days: 6,

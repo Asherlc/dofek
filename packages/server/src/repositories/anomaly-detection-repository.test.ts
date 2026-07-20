@@ -73,6 +73,8 @@ function sleepRowsForBaseline({
   const baselineRows = Array.from({ length: baselineCount }, (_unused, index) => ({
     date: dateDaysBefore(targetDate, baselineCount - index),
     provider_id: "whoop",
+    source_name: null,
+    source_providers: ["whoop"],
     started_at: `${dateDaysBefore(targetDate, baselineCount - index)}T23:00:00Z`,
     ended_at: `${dateDaysBefore(targetDate, baselineCount - index - 1)}T07:00:00Z`,
     duration_minutes:
@@ -88,6 +90,8 @@ function sleepRowsForBaseline({
     {
       date: targetDate,
       provider_id: "whoop",
+      source_name: null,
+      source_providers: ["whoop"],
       started_at: `${targetDate}T23:00:00Z`,
       ended_at: `${dateDaysBefore(targetDate, -1)}T07:00:00Z`,
       duration_minutes: targetDuration,
