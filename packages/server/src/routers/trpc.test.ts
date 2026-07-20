@@ -422,6 +422,16 @@ describe("trpc", () => {
       await expectSanitizedClickHouseError(internalError);
     });
 
+    it("hides missing analytics-store configuration from tRPC callers", async () => {
+      const internalError = new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+      });
+
+      await expectSanitizedClickHouseError(internalError);
+    });
+
     it("does not hide timeout errors when the message is not from ClickHouse", async () => {
       const timeoutError = Object.assign(new Error("postgres request timed out"), {
         code: "ETIMEDOUT",
