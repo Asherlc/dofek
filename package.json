@@ -128,6 +128,7 @@
     "clickhouse-cdc": "./scripts/with-env.sh tsx scripts/run-clickhouse-cdc.ts",
     "check:clickhouse-cdc": "./scripts/with-env.sh tsx scripts/check-clickhouse-cdc.ts",
     "catch-up:metric-stream": "./scripts/with-env.sh tsx scripts/catch-up-clickhouse-metric-stream.ts",
+    "backfill:body-measurements": "./scripts/with-env.sh tsx scripts/backfill-body-measurement-sample.ts",
     "test:changed": "vitest run --changed origin/main",
     "test:unit": "vitest run --project unit",
     "test:watch": "vitest --watch",

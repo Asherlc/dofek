@@ -7,7 +7,7 @@ import {
   standardViewHeader,
 } from "./clickhouse-sql-helpers.ts";
 
-const bodyMeasurementChannels = [
+export const bodyMeasurementChannels = [
   "body_weight",
   "body_fat_percentage",
   "muscle_mass",
@@ -20,9 +20,9 @@ const bodyMeasurementChannels = [
   "diastolic_blood_pressure",
   "heart_pulse",
   "body_temperature",
-];
+] as const;
 
-function bodyMeasurementChannelListSql(): string {
+export function bodyMeasurementChannelListSql(): string {
   return bodyMeasurementChannels.map((channel) => `'${channel}'`).join(",\n      ");
 }
 

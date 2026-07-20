@@ -14470,6 +14470,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `dofek-zepp-workout-extension-zab`, then upload each package to its matching
   Zepp developer-console listing for store review.
 
+## 2026-07-20 — Body-Measurement Projection Stopped Receiving Metric-Stream Rows
+
+- **Symptoms:** The production Body page did not show current weight
+  measurements even though provider sync continued to ingest them.
+- **User impact:** Body-weight and body-composition analytics were stale; the
+  newest downstream measurement was June 21 while raw Withings weight existed
+  through July 20 and raw Apple Health weight existed through July 10.
+- **Evidence:** `ingest.metric_stream FINAL` contained 3,405 Withings
+  `body_weight` rows with a newest timestamp of `2026-07-20 14:40:11`, while
+  `analytics.body_measurement_sample FINAL` contained 2,564 Withings weight
+  rows and stopped at `2026-06-21 14:52:45`. `analytics.v_body_measurement`
+  and `analytics.daily_body_measurement` stopped at the same June 21 timestamp.
+  The production definition of `analytics.body_measurement_sample_ingest`
+  referenced `postgres_fitness.metric_stream` and did not reference
+  `ingest.metric_stream`.
+- **Root cause:** Migration `0034_move_metric_stream_to_ingest` copied and then
+  removed the legacy `postgres_fitness.metric_stream` table without recreating
+  `analytics.body_measurement_sample_ingest` against the canonical
+  `ingest.metric_stream` source. Incremental materialized views process newly
+  inserted source blocks, so leaving the view attached to the retired source
+  stopped the body projection from receiving later inserts
+  ([ClickHouse incremental materialized views](https://clickhouse.com/docs/materialized-view/incremental-materialized-view)).
+- **Fix / mitigation:** Migration `0050_repair_body_measurement_sample_ingest`
+  recreates the projection view against `ingest.metric_stream`. The bounded
+  `pnpm backfill:body-measurements -- --start <utc-start> --end <utc-end>`
+  command reports only source rows whose version is absent from the projection;
+  adding `--execute` inserts those rows. The repair is not yet deployed, and no
+  production mutation was performed during diagnosis or implementation.
+- **Remaining risk / follow-up:** Body data will remain stale until the view is
+  recreated and the June 21 onward gap is backfilled. After remediation,
+  verify matching newest timestamps across the raw stream, body projection,
+  `v_body_measurement`, and `daily_body_measurement`, then confirm the Body-page
+  query cache is refreshed with the repaired result.
 ## 2026-07-20 — Linked Rock-Climbing Activity Displayed as Cardio
 
 - **Symptoms:** [Activity `16506a17-e002-43ae-8c41-62c8431d069c`](https://dofek.asherlc.com/activity/16506a17-e002-43ae-8c41-62c8431d069c)

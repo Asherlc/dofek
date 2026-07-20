@@ -31,11 +31,29 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("source_type"),
       ]),
     });
-    expect(migrations.at(-1)).toMatchObject({
+    expect(
+      migrations.find((migration) => migration.id === "0048_provider_live_generation_projection"),
+    ).toMatchObject({
+      id: "0048_provider_live_generation_projection",
+      statements: expect.arrayContaining([
+        expect.stringContaining("ADD PROJECTION IF NOT EXISTS by_provider_live_generation"),
+        expect.stringContaining("is_deleted"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0049_daily_sleep_provenance"),
+    ).toMatchObject({
       id: "0049_daily_sleep_provenance",
       statements: expect.arrayContaining([
         expect.stringContaining("source_name Nullable(String)"),
         expect.stringContaining("source_providers Array(String) DEFAULT []"),
+      ]),
+    });
+    expect(migrations.at(-1)).toMatchObject({
+      id: "0050_repair_body_measurement_sample_ingest",
+      statements: expect.arrayContaining([
+        "DROP VIEW IF EXISTS analytics.body_measurement_sample_ingest",
+        expect.stringContaining("FROM ingest.metric_stream"),
       ]),
     });
   });
