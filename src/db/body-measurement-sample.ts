@@ -32,6 +32,8 @@ function missingBodyMeasurementSampleRowsSql(): string {
 LEFT ANTI JOIN analytics.body_measurement_sample AS existing_sample FINAL
   ON existing_sample.id = metric_stream.id
  AND existing_sample._peerdb_version >= metric_stream.version
+ AND existing_sample.recorded_at >= {start:DateTime64(6)}
+ AND existing_sample.recorded_at < {end:DateTime64(6)}
 WHERE metric_stream.channel IN (${bodyMeasurementChannelListSql()})
   AND metric_stream.recorded_at >= {start:DateTime64(6)}
   AND metric_stream.recorded_at < {end:DateTime64(6)}`;

@@ -76,13 +76,14 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const client = createClickHouseClientFromEnv();
 
   try {
-    const missingCount = await countMissingBodyMeasurementSamples(client, options);
+    const missingCount = options.execute
+      ? await backfillMissingBodyMeasurementSamples(client, options)
+      : await countMissingBodyMeasurementSamples(client, options);
     console.log(`[body-measurement-backfill] found ${missingCount} missing rows`);
     if (!options.execute) {
       console.log("[body-measurement-backfill] dry run only; add --execute to write to ClickHouse");
       return;
     }
-    await backfillMissingBodyMeasurementSamples(client, options);
     console.log("[body-measurement-backfill] complete");
   } catch (error: unknown) {
     Sentry.captureException(error);

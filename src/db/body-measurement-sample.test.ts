@@ -35,5 +35,15 @@ describe("countMissingBodyMeasurementSamples", () => {
         ),
       }),
     );
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("existing_sample.recorded_at >= {start:DateTime64(6)}"),
+      }),
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("existing_sample.recorded_at < {end:DateTime64(6)}"),
+      }),
+    );
   });
 });
