@@ -89,6 +89,19 @@ export const Syncing: Story = {
   },
 };
 
+export const MultipleAlerts: Story = {
+  args: {
+    data: {
+      ...blockedSnapshot,
+      datasets: [
+        ...staleSnapshot.datasets,
+        ...missingSnapshot.datasets,
+        ...blockedSnapshot.datasets,
+      ],
+    },
+  },
+};
+
 export const HealthyHidden: Story = {
   args: { data: { ...staleSnapshot, overallStatus: "healthy", datasets: [] } },
 };
