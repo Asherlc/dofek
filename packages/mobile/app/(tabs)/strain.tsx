@@ -28,6 +28,7 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
+import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { DaySelector } from "../../components/DaySelector";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { safeParseRows } from "../../lib/safe-parse";
@@ -181,6 +182,7 @@ export default function StrainScreen() {
     { days, endDate },
     { placeholderData: (previousData) => previousData },
   );
+  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["activity"] });
 
   useEffect(() => {
     if (trainingQuery.isError && trainingQuery.error) {
@@ -272,6 +274,12 @@ export default function StrainScreen() {
       }
     >
       <DaySelector days={days} onChange={setDays} />
+
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
 
       {isLoading ? (
         <QueryStatePanel variant="loading" minHeight={200} />

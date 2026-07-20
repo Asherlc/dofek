@@ -6,6 +6,7 @@ import {
   CorrelationCardSkeleton,
   type Insight,
 } from "../components/CorrelationCard.tsx";
+import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { Hypnogram } from "../components/Hypnogram.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -55,6 +56,7 @@ export function SleepPage() {
     ...minimumSelectedRangeQueryInput(days, 90),
     endDate,
   });
+  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["sleep"] });
 
   const sleepInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -83,6 +85,11 @@ export function SleepPage() {
         title="Sleep"
         subtitle="Sleep stages, debt, and patterns over time"
       >
+        <DataReadinessBanner
+          data={dataHealth.data}
+          error={dataHealth.error}
+          loading={dataHealth.isLoading}
+        />
         {/* Sleep Performance Score + Bedtime Recommendation */}
         {((sleepPerformance.isError && !sleepPerformance.data) ||
           (sleepNeed.isError && !sleepNeed.data)) && (

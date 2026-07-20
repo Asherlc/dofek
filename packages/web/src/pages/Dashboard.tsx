@@ -198,7 +198,7 @@ export function Dashboard() {
     { days, endDate },
     { enabled: coreDashboardReady },
   );
-  const dataHealth = trpc.sync.dataHealth.useQuery();
+  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["dailyMetrics"] });
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
     : undefined;
