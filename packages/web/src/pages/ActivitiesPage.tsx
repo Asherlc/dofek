@@ -50,7 +50,7 @@ export function ActivitiesPage() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
-  const dataHealth = trpc.sync.dataHealth.useQuery();
+  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["activity"] });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await Promise.all([

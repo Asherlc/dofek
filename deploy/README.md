@@ -179,17 +179,17 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       Cloudflare documents R2 lifecycle object expiration rules here:
       https://developers.cloudflare.com/r2/buckets/object-lifecycles/.
    6. Apply the stack configuration before migrations with a non-prune,
-      detached `docker stack deploy` and a temporary overlay that sets web,
-      worker and analytics-worker replicas to zero.
-      On existing stacks this uses the currently
-      deployed app image tag, so database, ClickHouse, network, config, and
-      resource-limit changes are applied before migrations without rolling new
-      app code ahead of schema changes or letting old app tasks issue expensive
-      analytics queries during the migration window. On clean-slate hosts it
-      uses the deploy image tag so the DB service and overlay network exist
-      before readiness checks. The final stack deploy restores the app service
-      replicas from `deploy/stack.yml`. The deploy workflow waits explicitly
-      for Postgres and ClickHouse before running migrations instead of keeping a
+      detached `docker stack deploy` and the temporary ClickHouse-consumer
+      quiesce overlay. On existing stacks this uses the currently deployed app
+      image tag, so database, ClickHouse, network, config, and resource-limit
+      changes are applied before migrations without rolling new app code ahead
+      of schema changes. The overlay keeps analytics-worker and the metric-stream
+      ClickHouse sink at zero replicas during the migration and CDC setup window.
+      On clean-slate hosts the stack apply uses the deploy image tag so the DB
+      service and overlay network exist before readiness checks. The final stack
+      deploy rolls out the requested app image and restores the quiesced consumer
+      replicas from `deploy/stack.yml`. The deploy workflow waits explicitly for
+      Postgres and ClickHouse before running migrations instead of keeping a
       long-lived Docker-over-SSH stack-deploy wait open while the single-node
       host restarts services.
    7. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).

@@ -1930,7 +1930,7 @@ describe("syncRouter", () => {
       });
 
       await expect(caller.activeImports()).rejects.toThrow(
-        "Unable to check import progress because the queue service is unavailable.",
+        "We couldn't check import progress. Please try again.",
       );
     });
   });
@@ -2318,7 +2318,7 @@ describe("syncRouter", () => {
 
       await expect(caller.dataHealth()).rejects.toMatchObject({
         code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to check sync readiness because the queue service is unavailable.",
+        message: "We couldn't check sync status. Please try again.",
       });
 
       mockGetJobs.mockResolvedValue([]);
@@ -2621,6 +2621,38 @@ describe("syncRouter", () => {
       ]);
     });
 
+    it("returns readiness for only the requested datasets", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth({ datasets: ["sleep"] });
+
+      expect(result.datasets).toEqual([
+        expect.objectContaining({
+          key: "sleep",
+          status: "healthy",
+        }),
+      ]);
+      expect(result.overallStatus).toBe("healthy");
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+      expect(sensorStore.query).toHaveBeenCalledTimes(1);
+    });
+
     it("marks data blocked when raw data exists but read models are unavailable", async () => {
       const mockExecute = vi
         .fn()
@@ -2641,7 +2673,7 @@ describe("syncRouter", () => {
           key: "dailyMetrics",
           status: "blocked",
           latestReadModelAt: null,
-          message: expect.stringContaining("ClickHouse mirrors are not current"),
+          message: "Daily metrics data is still being prepared. Please check back soon.",
         }),
       );
     });
@@ -2740,6 +2772,30 @@ describe("syncRouter", () => {
       expect(result.overallStatus).toBe("syncing");
       expect(result.syncingProviders).toEqual([{ id: "garmin", name: "Garmin" }]);
       expect(result.datasets[0]?.status).toBe("missing");
+    });
+
+    it("hides unrelated sync alerts when a scoped dataset is healthy", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+        },
+      ]);
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-1",
+          data: { userId: "user-1", providerId: "garmin" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth({ datasets: ["dailyMetrics"] });
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
     });
 
     it("ignores active provider sync jobs for other users when datasets are healthy", async () => {
@@ -3110,7 +3166,7 @@ describe("syncRouter", () => {
 
       await expect(caller.dataHealth()).rejects.toMatchObject({
         code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to check sync readiness because the queue service is unavailable.",
+        message: "We couldn't check sync status. Please try again.",
       });
       expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error));
     });

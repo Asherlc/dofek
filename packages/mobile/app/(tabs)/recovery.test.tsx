@@ -19,6 +19,11 @@ vi.mock("../../lib/trpc", () => ({
         }),
       },
     },
+    sync: {
+      dataHealth: {
+        useQuery: () => ({ data: undefined, isLoading: false, error: null }),
+      },
+    },
     useUtils: () => ({
       mobileDashboard: {
         recovery: { invalidate: vi.fn() },

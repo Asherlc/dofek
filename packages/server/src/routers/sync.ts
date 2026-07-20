@@ -1,3 +1,4 @@
+import { dataReadinessMessage } from "@dofek/providers/data-readiness-banner";
 import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
 import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
@@ -218,6 +219,12 @@ const queueBackpressureStates = ["waiting", "active", "delayed", "failed"] as co
 
 const dataReadinessStatusSchema = z.enum(["healthy", "syncing", "stale", "missing", "blocked"]);
 
+const dataHealthDatasetKeySchema = z.enum(["dailyMetrics", "sleep", "activity"]);
+
+const dataHealthInputSchema = z.object({
+  datasets: z.array(dataHealthDatasetKeySchema).min(1),
+});
+
 const syncingProviderSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -229,7 +236,7 @@ const dataHealthOutputSchema = z.object({
   syncingProviders: z.array(syncingProviderSchema),
   datasets: z.array(
     z.object({
-      key: z.enum(["dailyMetrics", "sleep", "activity"]),
+      key: dataHealthDatasetKeySchema,
       label: z.string(),
       rawRows: z.number(),
       latestRawAt: z.string().nullable(),
@@ -282,24 +289,6 @@ function datasetStatus(input: {
   if (input.latestReadModelAt === null) return "blocked";
   if (input.readModelLagSeconds !== null && input.readModelLagSeconds > 3600) return "stale";
   return "healthy";
-}
-
-function datasetMessage(input: {
-  label: string;
-  status: z.infer<typeof dataReadinessStatusSchema>;
-}): string {
-  switch (input.status) {
-    case "healthy":
-      return `${input.label} summaries are current.`;
-    case "syncing":
-      return `${input.label} data is syncing now.`;
-    case "stale":
-      return `${input.label} data is synced, but dashboard summaries are still catching up.`;
-    case "missing":
-      return `No ${input.label.toLowerCase()} data has been synced yet.`;
-    case "blocked":
-      return `${input.label} data is available, but ClickHouse mirrors are not current.`;
-  }
 }
 
 function buildProviderNameById(): Map<string, string> {
@@ -390,7 +379,7 @@ async function getActiveSyncProvidersForUser(
     captureException(error);
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
-      message: "Unable to check sync readiness because the queue service is unavailable.",
+      message: "We couldn't check sync status. Please try again.",
     });
   }
 }
@@ -670,7 +659,7 @@ const syncRouterProcedures = {
       captureException(error);
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to check import progress because the queue service is unavailable.",
+        message: "We couldn't check import progress. Please try again.",
       });
     }
 
@@ -739,13 +728,18 @@ const syncRouterProcedures = {
 
   /** User-facing freshness/readiness state for primary dashboard datasets. */
   dataHealth: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .input(dataHealthInputSchema.optional())
     .output(dataHealthOutputSchema)
-    .query(async ({ ctx }) => {
+    .query(async ({ ctx, input }) => {
       const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
       const repo = new SyncRepository(ctx.db, ctx.userId);
+      const requestedDatasetKeys = input ? new Set(input.datasets) : null;
+      const selectedDatasets = requestedDatasetKeys
+        ? dataHealthDatasets.filter((dataset) => requestedDatasetKeys.has(dataset.key))
+        : dataHealthDatasets;
       const [freshnessRows, syncingProviders] = await Promise.all([
         repo.getDataHealthFreshness(
-          dataHealthDatasets,
+          selectedDatasets,
           sensorStore ?? undefined,
           ctx.accessWindow,
           ctx.timezone,
@@ -753,7 +747,7 @@ const syncRouterProcedures = {
         getActiveSyncProvidersForUser(ctx.userId),
       ]);
 
-      const datasets = dataHealthDatasets.map((dataset, index) => {
+      const datasets = selectedDatasets.map((dataset, index) => {
         const freshnessRow = freshnessRows[index];
         const rawRows = freshnessRow?.rawRows ?? 0;
         const latestRawAt = timestampToIsoString(freshnessRow?.latestRawAt ?? null);
@@ -772,17 +766,19 @@ const syncRouterProcedures = {
           cdcLagSeconds: readModelLagSeconds,
           readModelLagSeconds,
           status,
-          message: datasetMessage({ label: dataset.label, status }),
+          message: dataReadinessMessage({ label: dataset.label, status }),
         };
       });
+      const relevantSyncingProviders =
+        input && datasets.every((dataset) => dataset.status === "healthy") ? [] : syncingProviders;
 
       return {
         overallStatus: overallDataHealthStatus(
           datasets.map((dataset) => dataset.status),
-          syncingProviders,
+          relevantSyncingProviders,
         ),
         generatedAt: new Date().toISOString(),
-        syncingProviders,
+        syncingProviders: relevantSyncingProviders,
         datasets,
       };
     }),

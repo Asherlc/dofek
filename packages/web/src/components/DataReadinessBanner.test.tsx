@@ -47,11 +47,12 @@ describe("DataReadinessBanner", () => {
     expect(healthy.container.innerHTML).toBe("");
   });
 
-  it("surfaces data-health query errors when no readiness snapshot is available", () => {
+  it("does not expose data-health implementation errors", () => {
     render(<DataReadinessBanner error={new Error("ClickHouse read model query failed")} />);
 
     expect(screen.getByRole("status").textContent).toContain("Data readiness is unavailable");
-    expect(screen.getByText("ClickHouse read model query failed")).toBeTruthy();
+    expect(screen.getByText("We couldn't check your data status. Please try again.")).toBeTruthy();
+    expect(screen.queryByText("ClickHouse read model query failed")).toBeNull();
   });
 
   it("shows stale server readiness messages without recomputing metrics", () => {
@@ -77,11 +78,26 @@ describe("DataReadinessBanner", () => {
     expect(classNames).toContain("w-full");
   });
 
+  it("sizes the dataset grid to the scoped alert count", () => {
+    const snapshot = makeSnapshot();
+    const firstDataset = snapshot.datasets[0];
+    if (!firstDataset) throw new Error("Expected a data readiness fixture");
+    const { rerender } = render(
+      <DataReadinessBanner data={{ ...snapshot, datasets: [firstDataset] }} />,
+    );
+
+    expect(screen.getByRole("list").className.split(/\s+/)).toContain("md:grid-cols-1");
+
+    rerender(<DataReadinessBanner data={snapshot} />);
+
+    expect(screen.getByRole("list").className.split(/\s+/)).toContain("md:grid-cols-2");
+  });
+
   it("uses blocked, syncing, and missing headings from the overall status", () => {
     const { rerender } = render(
       <DataReadinessBanner data={makeSnapshot({ overallStatus: "blocked" })} />,
     );
-    expect(screen.getByText("Data pipeline needs attention")).toBeTruthy();
+    expect(screen.getByText("Some data is temporarily unavailable")).toBeTruthy();
 
     rerender(
       <DataReadinessBanner

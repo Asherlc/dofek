@@ -14387,3 +14387,72 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   verify matching newest timestamps across the raw stream, body projection,
   `v_body_measurement`, and `daily_body_measurement`, then confirm the Body-page
   query cache is refreshed with the repaired result.
+## 2026-07-20 — Linked Rock-Climbing Activity Displayed as Cardio
+
+- **Symptoms:** [Activity `16506a17-e002-43ae-8c41-62c8431d069c`](https://dofek.asherlc.com/activity/16506a17-e002-43ae-8c41-62c8431d069c)
+  displayed as `cardio` even though its name and linked provider records
+  identified a rock-climbing workout.
+- **User impact:** The activity detail and any activity-type grouping treated a
+  rock-climbing session as generic cardio.
+- **Evidence:** The deduplicated ClickHouse row contained seven member activity
+  IDs: four Apple Health `climbing` rows, one Strava `climbing` row named
+  `Morning Rock Climb`, one WHOOP `rock_climbing` row, and one Peloton `cardio`
+  row named `96 min 33 sec Cardio: Climbing`. The canonical row retained the
+  Peloton ID and `cardio` type.
+- **Root cause:** `deduped_activities` selected every canonical field from the
+  provider-priority winner, so Peloton's generic discipline overrode the exact
+  `rock_climbing` classification already present in the linked group.
+- **Fix / mitigation:** Canonical identity and provider selection remain
+  unchanged, while the merged activity type now selects `rock_climbing` when
+  any linked active record has that exact type. The implementation uses
+  ClickHouse's conditional aggregate combinator behavior
+  ([`-If` aggregate combinator](https://clickhouse.com/docs/sql-reference/aggregate-functions/combinators#-if)).
+- **Validation:** A real-ClickHouse integration regression failed before the
+  fix with `cardio` and passed afterward with `rock_climbing`; the existing
+  source-link test also passes. The changed-test run, analytics SQL lint,
+  analytics policy check, Biome check, and Git diff check pass.
+- **Remaining risk / follow-up:** The production activity remains mislabeled
+  until this change is deployed and the incremental `deduped_activities` model
+  rebuilds the affected group. Verify the linked activity reports
+  `rock_climbing` after that refresh.
+
+## 2026-07-20 — Web Rollout Raced ClickHouse Service Discovery
+
+- **Symptoms:** Deploy Web run
+  [29716994073](https://github.com/Asherlc/dofek/actions/runs/29716994073)
+  failed in `Deploy stack without ClickHouse consumers`. Both new `web` tasks
+  exited with code 1, Swarm entered `rollback_started`, and the later
+  always-run full-stack apply converged successfully with the same application
+  image.
+- **User impact:** The first production rollout attempt failed, but Swarm kept
+  the previous web tasks available during rollback. The workflow's final stack
+  apply subsequently deployed `sha-94b8fa2`; production now reports web at
+  2/2 replicas and worker at 1/1 replica on that image.
+- **Evidence:** The exact failed command was `docker stack deploy` followed by
+  the workflow's convergence check. The first fatal application dependency
+  line in Axiom at `2026-07-20T04:32:57.255Z` was `getaddrinfo ENOTFOUND
+  clickhouse`; the corresponding `/readyz` request returned HTTP 503. Docker's
+  daemon recorded fatal task errors for both the new web task and new worker
+  task. Commit `94b8fa2` changed the ClickHouse service from 26.3.3.20 to
+  26.6.1.1193, and the workflow applied that dependency change in the same
+  stack update that started the new app tasks. Docker documents that services
+  attached to the same overlay network discover one another through embedded
+  DNS: <https://docs.docker.com/engine/swarm/networking/>.
+- **Root cause:** The workflow did not perform the pre-migration dependency
+  stack apply described in `deploy/README.md`; it updated ClickHouse and
+  started the new web and worker tasks in one operation, so those tasks reached
+  readiness while the `clickhouse` overlay-network DNS record was temporarily
+  unavailable.
+- **Fix / mitigation:** The workflow now performs an explicit pre-migration
+  stack apply using the currently deployed application image, or the requested
+  image for a new stack. It then uses the existing Postgres and ClickHouse
+  readiness gates before migrations and rolls out the requested application
+  image afterward. This sequences dependency changes ahead of app startup
+  without adding an ad-hoc retry, sleep, or healthcheck extension. During the
+  incident, the workflow's always-run final stack apply restored the ClickHouse
+  consumers and successfully converged the same `sha-94b8fa2` app image after
+  ClickHouse service discovery had settled.
+- **Remaining risk / follow-up:** Validate with a deployment that changes a
+  dependency service and confirm the first rollout converges. Update the
+  `check-logs` skill's stale Axiom dataset name from `dofek-app-logs` to the
+  deployed `dofek-logs` dataset.

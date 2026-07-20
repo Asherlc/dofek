@@ -43,7 +43,7 @@ const blockedSnapshot: DataReadinessSnapshot = {
       cdcLagSeconds: null,
       readModelLagSeconds: null,
       status: "blocked",
-      message: "Activities data is available, but ClickHouse mirrors are not current.",
+      message: "Activities data is still being prepared. Please check back soon.",
     },
   ],
 };
@@ -99,6 +99,19 @@ export const Syncing: Story = {
   args: { data: syncingSnapshot },
 };
 
+export const MultipleAlerts: Story = {
+  args: {
+    data: {
+      ...blockedSnapshot,
+      datasets: [
+        ...staleSnapshot.datasets,
+        ...missingSnapshot.datasets,
+        ...blockedSnapshot.datasets,
+      ],
+    },
+  },
+};
+
 export const StackedPageContent: Story = {
   args: { data: syncingSnapshot },
   render: (args) => (
@@ -119,5 +132,5 @@ export const LoadingHidden: Story = {
 };
 
 export const QueryError: Story = {
-  args: { error: new Error("ClickHouse read model query failed") },
+  args: { error: new Error("Data status request failed") },
 };

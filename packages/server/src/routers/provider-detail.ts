@@ -276,7 +276,7 @@ export const providerDetailRouter = router({
       }
 
       if (request.status === "pending") {
-        return { status: "queued", message: "Waiting to delete provider data..." };
+        return { status: "queued", message: "Provider data deletion is pending..." };
       }
       if (request.status === "completed") {
         return { status: "completed", percentage: 100, message: "Provider data deleted" };
@@ -291,7 +291,7 @@ export const providerDetailRouter = router({
       try {
         const job = await getProviderDataDeletionQueue().getJob(input.operationId);
         if (!job) {
-          return { status: "queued", message: "Waiting for the deletion worker..." };
+          return { status: "queued", message: "Provider data deletion is pending..." };
         }
         return readOperationProgress(job);
       } catch (error: unknown) {

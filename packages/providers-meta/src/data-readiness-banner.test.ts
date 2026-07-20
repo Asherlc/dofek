@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { bannerHeading, freshnessLabel } from "./data-readiness-banner.ts";
+import {
+  bannerHeading,
+  DATA_READINESS_ERROR_MESSAGE,
+  dataReadinessMessage,
+  freshnessLabel,
+} from "./data-readiness-banner.ts";
 
 describe("bannerHeading", () => {
   it("returns non-syncing headings from overall status", () => {
     expect(bannerHeading({ overallStatus: "stale" })).toBe("Dashboard summaries are catching up");
     expect(bannerHeading({ overallStatus: "missing" })).toBe("No data has synced yet");
-    expect(bannerHeading({ overallStatus: "blocked" })).toBe("Data pipeline needs attention");
+    expect(bannerHeading({ overallStatus: "blocked" })).toBe(
+      "Some data is temporarily unavailable",
+    );
   });
 
   it("formats syncing headings for zero, one, two, and many providers", () => {
@@ -48,5 +55,28 @@ describe("freshnessLabel", () => {
 
   it("returns empty string when generatedAt is an invalid date", () => {
     expect(freshnessLabel({ overallStatus: "stale", generatedAt: "not-a-date" })).toBe("");
+  });
+});
+
+describe("dataReadinessMessage", () => {
+  it("describes readiness without exposing implementation details", () => {
+    expect(dataReadinessMessage({ label: "Activities", status: "healthy" })).toBe(
+      "Activities summaries are current.",
+    );
+    expect(dataReadinessMessage({ label: "Activities", status: "syncing" })).toBe(
+      "Activities data is syncing now.",
+    );
+    expect(dataReadinessMessage({ label: "Activities", status: "stale" })).toBe(
+      "Activities data is synced, but dashboard summaries are still catching up.",
+    );
+    expect(dataReadinessMessage({ label: "Activities", status: "missing" })).toBe(
+      "No activities data has been synced yet.",
+    );
+    expect(dataReadinessMessage({ label: "Activities", status: "blocked" })).toBe(
+      "Activities data is still being prepared. Please check back soon.",
+    );
+    expect(DATA_READINESS_ERROR_MESSAGE).toBe(
+      "We couldn't check your data status. Please try again.",
+    );
   });
 });

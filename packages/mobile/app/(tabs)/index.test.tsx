@@ -208,6 +208,7 @@ describe("TodayScreen independent loading states", () => {
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
+    expect(mockDataHealthUseQuery).toHaveBeenCalledWith({ datasets: ["dailyMetrics"] });
     expect(screen.getByText("Dashboard summaries are catching up")).toBeTruthy();
     expect(
       screen.getByText(

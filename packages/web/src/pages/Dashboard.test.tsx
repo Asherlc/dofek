@@ -222,6 +222,7 @@ describe("Dashboard", () => {
 
     render(<Dashboard />);
 
+    expect(mockDataHealthQuery).toHaveBeenCalledWith({ datasets: ["dailyMetrics"] });
     expect(screen.getByText("Dashboard summaries are catching up")).toBeTruthy();
     expect(
       screen.getByText(

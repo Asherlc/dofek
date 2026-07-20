@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { dedupedActivitiesTableSql } from "./clickhouse-migrations/0024_create_dbt_serving_read_model_tables.ts";
 
 const activityId = "00000000-0000-0000-0000-000000000101";
+const linkedActivityId = "00000000-0000-0000-0000-000000000102";
 const groupId = "00000000-0000-0000-0000-000000000202";
 const testUserId = "00000000-0000-0000-0000-000000000303";
 
@@ -15,6 +16,12 @@ interface SourceLinkRow {
   providerId: string;
   sourceLinkCount: number;
   subsource: string;
+}
+
+interface ActivityTypeRow {
+  activityType: string;
+  activityId: string;
+  providerId: string;
 }
 
 describe("deduped_activities read model", () => {
@@ -59,6 +66,31 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     const rows = await result.json<SourceLinkRow>();
 
     expect(rows).toEqual([{ providerId: "peloton", sourceLinkCount: 1, subsource: "" }]);
+  }, 180_000);
+
+  it("uses a linked rock climbing classification instead of the canonical provider's cardio type", async () => {
+    const activeClient = requireClient(client);
+    await seedSpecificActivityTypeFixture(activeClient, targetSchema);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.deduped_activities
+${renderDedupedActivitiesSelectSql(targetSchema)}`,
+    });
+
+    const result = await activeClient.query({
+      query: `SELECT
+          toString(activity_id) AS activityId,
+          provider_id AS providerId,
+          activity_type AS activityType
+        FROM ${targetSchema}.deduped_activities FINAL
+        WHERE activity_id = {activityId:UUID}
+          AND is_deleted = 0`,
+      query_params: { activityId },
+      format: "JSONEachRow",
+    });
+    const rows = await result.json<ActivityTypeRow>();
+
+    expect(rows).toEqual([{ activityId, providerId: "peloton", activityType: "rock_climbing" }]);
   }, 180_000);
 });
 
@@ -125,6 +157,48 @@ async function seedMissingSourceNameFixture(
   ]);
 }
 
+async function seedSpecificActivityTypeFixture(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<void> {
+  await runStatements(client, [
+    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
+    `CREATE DATABASE ${targetSchema}`,
+    createActivitySourceRecordsTableSql(targetSchema),
+    createActivityDuplicateGroupsTableSql(targetSchema),
+    createSourceActivityTableSql(targetSchema),
+    dedupedActivitiesTableSql.replaceAll("analytics.", `${targetSchema}.`),
+    insertActivitySourceRecordSql(targetSchema, "cardio"),
+    `INSERT INTO ${targetSchema}.activity_source_records VALUES (
+  '${linkedActivityId}',
+  'whoop',
+  '${testUserId}',
+  'whoop-rock-climbing-workout',
+  'rock_climbing',
+  toDateTime64('2026-07-05 16:00:00', 6, 'UTC'),
+  toDateTime64('2026-07-05 17:00:00', 6, 'UTC'),
+  CAST(NULL, 'Nullable(String)'),
+  CAST(NULL, 'Nullable(String)'),
+  CAST(NULL, 'Nullable(String)'),
+  'America/Los_Angeles',
+  CAST(NULL, 'Nullable(String)'),
+  toDateTime64('2026-07-05 17:01:00', 9, 'UTC'),
+  20,
+  1,
+  0,
+  toDateTime64('2026-07-05 17:02:00', 9, 'UTC')
+)`,
+    insertActivityDuplicateGroupSql(targetSchema),
+    `INSERT INTO ${targetSchema}.activity_duplicate_groups VALUES (
+  '${linkedActivityId}',
+  '${groupId}',
+  1,
+  0,
+  toDateTime64('2026-07-05 17:02:00', 9, 'UTC')
+)`,
+  ]);
+}
+
 async function runStatements(client: ClickHouseClient, statements: string[]): Promise<void> {
   for (const statement of statements) {
     await client.command({ query: statement });
@@ -182,13 +256,13 @@ ENGINE = ReplacingMergeTree()
 ORDER BY id`;
 }
 
-function insertActivitySourceRecordSql(targetSchema: string): string {
+function insertActivitySourceRecordSql(targetSchema: string, activityType = "cycling"): string {
   return `INSERT INTO ${targetSchema}.activity_source_records VALUES (
   '${activityId}',
   'peloton',
   '${testUserId}',
   'peloton-workout-without-source-name',
-  'cycling',
+  '${activityType}',
   toDateTime64('2026-07-05 16:00:00', 6, 'UTC'),
   toDateTime64('2026-07-05 17:00:00', 6, 'UTC'),
   CAST(NULL, 'Nullable(String)'),

@@ -33,7 +33,7 @@ const blockedSnapshot: DataReadinessSnapshot = {
       cdcLagSeconds: null,
       readModelLagSeconds: null,
       status: "blocked",
-      message: "Activities data is available, but ClickHouse mirrors are not current.",
+      message: "Activities data is still being prepared. Please check back soon.",
     },
   ],
 };
@@ -85,6 +85,19 @@ export const Syncing: Story = {
       ...missingSnapshot,
       overallStatus: "syncing",
       syncingProviders: [{ id: "garmin", name: "Garmin" }],
+    },
+  },
+};
+
+export const MultipleAlerts: Story = {
+  args: {
+    data: {
+      ...blockedSnapshot,
+      datasets: [
+        ...staleSnapshot.datasets,
+        ...missingSnapshot.datasets,
+        ...blockedSnapshot.datasets,
+      ],
     },
   },
 };
