@@ -4,7 +4,7 @@ import {
   backfillMissingBodyMeasurementSamples,
   countMissingBodyMeasurementSamples,
 } from "../../../../src/db/body-measurement-sample.ts";
-import { createMigration } from "../../../../src/db/clickhouse-migrations/0049_repair_body_measurement_sample_ingest.ts";
+import { createMigration } from "../../../../src/db/clickhouse-migrations/0050_repair_body_measurement_sample_ingest.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import {
   createClickHouseTestActivitySensorStore,

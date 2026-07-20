@@ -75,7 +75,7 @@ function makeSensorStore(bodyRows: Record<string, unknown>[] = [], sleepRows: un
   return {
     query: vi.fn(async (_schema: unknown, query: string) => {
       if (query.includes("analytics.v_body_measurement")) return bodyRows;
-      if (query.includes("analytics.v_sleep")) return sleepRows;
+      if (query.includes("analytics.daily_sleep")) return sleepRows;
       return [{ date: "2026-01-01", resting_hr: 52 }];
     }),
   };

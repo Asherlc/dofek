@@ -11,6 +11,7 @@ import {
   real,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -58,6 +59,95 @@ export const providerDataDeletionOutbox = fitness.table(
     check("provider_data_deletion_outbox_generation_positive", sql`${table.generation} > 0`),
     check(
       "provider_data_deletion_outbox_status_valid",
+      sql`${table.status} IN ('pending', 'dispatched', 'completed', 'failed')`,
+    ),
+  ],
+);
+
+// ============================================================
+// File upload — durable R2 upload lifecycle + transactional outbox
+// ============================================================
+
+export const fileUpload = fitness.table(
+  "file_upload",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    importType: text("import_type").notNull(),
+    objectKey: text("object_key").notNull(),
+    originalFilename: text("original_filename").notNull(),
+    contentType: text("content_type").notNull(),
+    expectedSizeBytes: bigint("expected_size_bytes", { mode: "number" }).notNull(),
+    expectedSha256: text("expected_sha256").notNull(),
+    verifiedSha256: text("verified_sha256"),
+    r2MultipartUploadId: text("r2_multipart_upload_id"),
+    state: text("state").notNull().default("initiated"),
+    version: bigint("version", { mode: "number" }).notNull().default(0),
+    partSizeBytes: bigint("part_size_bytes", { mode: "number" }).notNull(),
+    completionParts: jsonb("completion_parts"),
+    importJobId: text("import_job_id"),
+    importSince: timestamp("import_since", { withTimezone: true }).notNull(),
+    weightUnit: text("weight_unit"),
+    progressPercent: bigint("progress_percent", { mode: "number" }).notNull().default(0),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    objectDeletedAt: timestamp("object_deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("file_upload_object_key_key").on(table.objectKey),
+    unique("file_upload_import_job_id_key").on(table.importJobId),
+    index("file_upload_owner_updated_idx").on(table.userId, table.updatedAt.desc()),
+    index("file_upload_reconcile_idx").on(table.state, table.expiresAt, table.updatedAt),
+    check("file_upload_expected_size_positive", sql`${table.expectedSizeBytes} > 0`),
+    check("file_upload_part_size_valid", sql`${table.partSizeBytes} >= 5242880`),
+    check("file_upload_progress_valid", sql`${table.progressPercent} BETWEEN 0 AND 100`),
+    check(
+      "file_upload_import_type_valid",
+      sql`${table.importType} IN ('apple-health', 'strong-csv', 'cronometer-csv', 'kaya-export', 'zos-app', 'garmin-dump', 'fit-file')`,
+    ),
+    check(
+      "file_upload_state_valid",
+      sql`${table.state} IN ('initiated', 'uploading', 'uploaded', 'queued', 'processing', 'completed', 'failed', 'aborted', 'expired')`,
+    ),
+    check("file_upload_expected_sha256_valid", sql`${table.expectedSha256} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "file_upload_verified_sha256_valid",
+      sql`${table.verifiedSha256} IS NULL OR ${table.verifiedSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "file_upload_weight_unit_valid",
+      sql`${table.weightUnit} IS NULL OR ${table.weightUnit} IN ('kg', 'lbs')`,
+    ),
+  ],
+);
+
+export const fileUploadOutbox = fitness.table(
+  "file_upload_outbox",
+  {
+    eventId: uuid("event_id").primaryKey().defaultRandom(),
+    uploadId: uuid("upload_id")
+      .notNull()
+      .references(() => fileUpload.id, { onDelete: "cascade" }),
+    importJobId: text("import_job_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    failureReason: text("failure_reason"),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("file_upload_outbox_upload_id_key").on(table.uploadId),
+    unique("file_upload_outbox_import_job_id_key").on(table.importJobId),
+    index("file_upload_outbox_dispatch_idx").on(table.status, table.createdAt),
+    check(
+      "file_upload_outbox_status_valid",
       sql`${table.status} IN ('pending', 'dispatched', 'completed', 'failed')`,
     ),
   ],

@@ -14218,6 +14218,40 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   discovers the same tests on both mutation shards and completes the aggregate
   mutation, test, and CI gates successfully.
 
+## 2026-07-19 — Aborted Proxy Uploads Leaked Deleted Temporary Files
+
+- **Symptoms:** Three Garmin upload retries aborted with `ECONNRESET` while a prior
+  Garmin import remained `waiting-children` at about 9.44% progress. The upload
+  filesystem was 90% utilized.
+- **User impact:** Large file imports were unreliable, and repeated disconnects
+  consumed disk space until the affected web replicas restarted.
+- **Evidence:** At `00:35:58Z`, `POST /api/upload/garmin-dump` returned `200` and
+  created BullMQ job `15`. Aborts followed at approximately `00:36:03.313`,
+  `00:36:05.063`, and `00:36:07.925` across both web replicas. Containers
+  `21814130c903` and `782396b6296a` retained three deleted-but-open files through
+  FDs 69, 72, and 79, totaling 88,370,387 bytes (about 84.3 MiB). The local
+  regression observed the destination stream with `destroyed === false` and
+  `closed === false` after abort.
+- **Root cause:** `streamToFile()` used `request.pipe(writeStream)` and rejected
+  on the request's abort error without destroying or awaiting the destination.
+  The handler then unlinked the path, leaving its descriptor and disk blocks open.
+- **Containment:** The legacy stream path was changed to `stream.pipeline()`, and
+  confirmed client disconnects became cancellations rather than Sentry failures.
+  Its integration regression failed three times before the fix with an accumulating
+  deleted/open file and passed after the destination closed and no job was queued.
+- **Durable fix:** The proxy endpoint was removed. Browsers now use private R2
+  multipart uploads governed by a Postgres state machine, authoritative part
+  verification, full-file SHA-256 verification, a transactional outbox,
+  deterministic BullMQ jobs, idempotent worker claims, and automated reconciliation.
+  See [`file-upload-architecture.md`](file-upload-architecture.md). Cloudflare's
+  documented multipart limits and lifecycle cleanup are reflected in the control
+  plane and Terraform: <https://developers.cloudflare.com/r2/objects/upload-objects/>
+  and <https://developers.cloudflare.com/r2/buckets/object-lifecycles/>.
+- **Remaining risk / follow-up:** No production resource was changed. Rollout
+  requires migration `0053`, creation of `dofek-imports`, verified R2 credentials
+  in Infisical, and a coordinated web/worker release. Monitor upload lifecycle,
+  checksum mismatch, outbox, reconciliation, worker disk, and stuck-job metrics.
+
 ## 2026-07-19 — Repeated Provider Deletion Rescanned Tombstoned Metric Streams
 
 - **Symptoms:** A second `garmin-dump` provider-data deletion remained at
@@ -14353,6 +14387,88 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployment, verify every active part reports both projections, redrive the
   pending deletion, and compare `system.query_log.read_rows` with the 1,000-row
   batch size.
+## 2026-07-20 — Uncached Sleep Page Reads Blocked on Recursive Sleep Deduplication
+
+- **Symptoms:** The production `/sleep` page intermittently showed blocking
+  loading for tens of seconds. A warm browser trace was fast (436 ms Largest
+  Contentful Paint and a 35 ms batched sleep request), but authenticated reads
+  using an uncached date reproduced 24.2–38.6 second responses across
+  `sleep.list`, `sleep.latestStages`, `sleepNeed.calculate`,
+  `sleepNeed.performance`, and `insights.compute`.
+- **User impact:** Sleep data can remain behind loading skeletons until the
+  slowest procedure in the page's shared tRPC batch completes. Warm Redis
+  entries hide the problem on subsequent loads.
+- **Evidence:** The first slow backend operation was the `sleep.list` /
+  `fetchLatestSleepNight` ClickHouse query against `analytics.v_sleep`. At
+  18:45:51 UTC, ClickHouse took 26,502 ms, read 769,460 source rows, produced
+  7,573,058 join-result rows, selected 261 MB, and recorded 24,588,371
+  microseconds of `OSCPUWaitMicroseconds`. The same query shape took 3,494 ms
+  at 18:36:40 UTC with 949,278 microseconds of CPU wait. The slow reproduction
+  overlapped an incremental `activity_sensor_sample` insert that ran for
+  206,526 ms, read 23,795,163 rows, and wrote 2,417,919 rows. An earlier
+  `provider_stats` build ran for 114,607 ms and read 279,038,338 rows. A later
+  isolated cold `sleep.list` request still took 6,656 ms while the same dbt
+  build continued. The analytics-worker log shows `activity_power_curve`
+  failing with ClickHouse exception 159 after its exact 240,000 ms query
+  limit, followed by `dbt build failed with exit status 1; retrying in 300s`.
+- **Root cause:** Request-time reads recompute the recursive
+  `analytics.v_sleep` view, including an all-session self-join and recursive
+  connected-components traversal for provider overlap deduplication. The date
+  predicate applied by the route does not prevent that view from processing
+  the larger source graph. The scheduled analytics build currently ends in an
+  `activity_power_curve` timeout and retries the entire 22-model selection
+  after five minutes, repeatedly replaying expensive successful models. Those
+  builds compete for the same ClickHouse CPU, increasing the sleep query's CPU
+  wait from about 0.95 seconds to 24.6 seconds. tRPC batching then makes the
+  whole lower page wait for the slowest cold procedure.
+- **Fix / mitigation:** Pending deployment. The incremental
+  `analytics.daily_sleep` model now stores `source_name` and
+  `source_providers`, and route-facing sleep list/latest reads query that
+  stored daily table instead of recursively evaluating `analytics.v_sleep`.
+  `sleepNeed.performance` also reuses the stored row's provenance instead of
+  issuing a second sleep query. No timeout, retry, cache extension, or queue
+  tuning was added.
+- **Validation:** The test-first repository regressions failed while the reads
+  still referenced `analytics.v_sleep`, then passed after the change. The
+  focused 90-test unit suite, root and server TypeScript checks, Biome, and the
+  analytics policy check pass. The real ClickHouse six-test sleep integration
+  suite also passes, preserves provenance through the stored model, and logged
+  7–25 ms local endpoint durations for the stored sleep reads.
+- **Remaining risk / follow-up:** After deployment and the next incremental
+  model build, validate cold-cache page latency during an overlapping analytics
+  build. Fix the `activity_power_curve` timeout so a single failing tail model
+  does not continuously cause the successful model selection to be replayed.
+  Separately evaluate dashboard query priority or workload isolation only if
+  contention remains after both direct causes are fixed.
+
+## 2026-07-20 — Zepp Workout Extension Was Built but Not Released
+
+- **Symptoms:** Successful Zepp workflows built and retained both ZAB artifacts,
+  but the GitHub Release job was skipped after the Workout Extension landed.
+- **User impact:** The normal watch app and Workout Extension were available only
+  from workflow artifacts; no GitHub Release contained the Workout Extension.
+- **Evidence:** In
+  [run 29716993735](https://github.com/Asherlc/dofek/actions/runs/29716993735),
+  `Build Zepp Workout Extension ZAB` and `Upload Workout Extension ZAB artifact`
+  passed, while `Create GitHub Release` was skipped. The workflow gated that job
+  on `is_tagged == 'true'`, but successful `main` CI runs set `is_tagged=false`.
+  The latest published release, `zepp-v0.0.1784480955`, predated the Workout
+  Extension and contained only the normal watch-app ZAB.
+- **Root cause:** The Workout Extension change made GitHub Release creation
+  tag-only even though normal Zepp delivery continued to originate from
+  successful `main` CI runs.
+- **Fix / mitigation:** GitHub Release creation now runs after every successful
+  `main` Zepp build and attaches both independently packaged ZABs. The tag-push
+  trigger and dead tagged-version branch were removed so the scoped release
+  token cannot recursively trigger a duplicate Zepp workflow after creating the
+  release tag.
+- **Validation:** Local Actionlint and YAML validation cover the workflow change.
+  A successful hosted `main` CI run is required to confirm that the replacement
+  release contains both ZAB assets.
+- **Remaining risk / follow-up:** After merge, verify the first replacement
+  release contains both `dofek-zepp-app-zab` and
+  `dofek-zepp-workout-extension-zab`, then upload each package to its matching
+  Zepp developer-console listing for store review.
 
 ## 2026-07-20 — Body-Measurement Projection Stopped Receiving Metric-Stream Rows
 
@@ -14376,7 +14492,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   inserted source blocks, so leaving the view attached to the retired source
   stopped the body projection from receiving later inserts
   ([ClickHouse incremental materialized views](https://clickhouse.com/docs/materialized-view/incremental-materialized-view)).
-- **Fix / mitigation:** Migration `0049_repair_body_measurement_sample_ingest`
+- **Fix / mitigation:** Migration `0050_repair_body_measurement_sample_ingest`
   recreates the projection view against `ingest.metric_stream`. The bounded
   `pnpm backfill:body-measurements -- --start <utc-start> --end <utc-end>`
   command reports only source rows whose version is absent from the projection;

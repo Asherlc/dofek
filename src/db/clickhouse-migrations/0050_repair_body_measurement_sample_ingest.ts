@@ -3,7 +3,7 @@ import type { ClickHouseMigration } from "./types.ts";
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0049_repair_body_measurement_sample_ingest",
+    id: "0050_repair_body_measurement_sample_ingest",
     statements: [
       "DROP VIEW IF EXISTS analytics.body_measurement_sample_ingest",
       ...buildBodyMeasurementSampleProjectionStatements(),

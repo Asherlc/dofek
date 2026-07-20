@@ -47,9 +47,8 @@ const meta = {
     title: "Strong",
     description: ".csv export from Strong app",
     accept: ".csv",
-    uploadUrl: "/api/upload/strong-csv?units=kg",
-    statusUrl: "/api/upload/strong-csv/status",
-    chunked: true,
+    importType: "strong-csv",
+    weightUnit: "kg",
   },
 } satisfies Meta<typeof FileImportProviderCard>;
 
@@ -61,8 +60,6 @@ export const Default: Story = {};
 
 export const ActiveImport: Story = {
   args: {
-    statusUrl:
-      "data:application/json,%7B%22status%22%3A%22processing%22%2C%22progress%22%3A64%2C%22message%22%3A%22Importing%20activities%22%7D%23",
     activeImport: {
       jobId: "job-garmin",
       status: "running",
@@ -78,9 +75,8 @@ export const AppleHealth: Story = {
     title: "Apple Health",
     description: ".zip or .xml from Health app export",
     accept: ".zip,.xml",
-    uploadUrl: "/api/upload/apple-health?fullSync=true",
-    statusUrl: "/api/upload/apple-health/status",
-    chunked: true,
+    importType: "apple-health",
+    fullSync: true,
   },
 };
 
@@ -90,9 +86,7 @@ export const FitFile: Story = {
     title: "FIT File",
     description: ".fit activity or weight file",
     accept: ".fit",
-    uploadUrl: "/api/upload/fit-file",
-    statusUrl: "/api/upload/fit-file/status",
-    chunked: true,
+    importType: "fit-file",
   },
 };
 

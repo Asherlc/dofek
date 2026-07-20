@@ -124,27 +124,6 @@ function createPerformanceCaller(rows: SleepNeedFixtureRow[]) {
   });
 }
 
-function createSplitPerformanceCaller(
-  dailyRows: SleepNeedFixtureRow[],
-  provenanceRows: SleepNeedFixtureRow[],
-) {
-  const sortedDailyRows = [...dailyRows].sort((leftRow, rightRow) =>
-    leftRow.date.localeCompare(rightRow.date),
-  );
-  const sortedProvenanceRows = [...provenanceRows].sort((leftRow, rightRow) =>
-    leftRow.date.localeCompare(rightRow.date),
-  );
-  return createCaller({
-    db: { execute: vi.fn() },
-    userId: "user-1",
-    sensorStore: makeMockSensorStore([
-      toClickHouseSleepRows(sortedDailyRows),
-      toClickHouseSleepRows(sortedProvenanceRows),
-      [],
-    ]),
-  });
-}
-
 describe("sleepNeedRouter", () => {
   // ── calculate ──────────────────────────────────────────
 
@@ -680,7 +659,7 @@ describe("sleepNeedRouter", () => {
         { date: "2026-03-01", duration_minutes: 480 },
       ];
       const clickHouseRows = toClickHouseSleepRows(rows);
-      const sensorStore = makeMockSensorStore([clickHouseRows, clickHouseRows, []]);
+      const sensorStore = makeMockSensorStore([clickHouseRows]);
       const caller = createCaller({
         db: { execute: vi.fn() },
         userId: "user-1",
@@ -695,7 +674,7 @@ describe("sleepNeedRouter", () => {
       ).toHaveLength(1);
       expect(
         queryTexts.filter((queryText) => queryText.includes("analytics.v_sleep")),
-      ).toHaveLength(1);
+      ).toHaveLength(0);
     });
 
     it("uses dashboard priority for every sleep-performance ClickHouse read", async () => {
@@ -704,7 +683,7 @@ describe("sleepNeedRouter", () => {
         { date: "2026-03-01", duration_minutes: 480 },
       ];
       const clickHouseRows = toClickHouseSleepRows(rows);
-      const sensorStore = makeMockSensorStore([clickHouseRows, clickHouseRows, []]);
+      const sensorStore = makeMockSensorStore([clickHouseRows]);
       const caller = createCaller({
         db: { execute: vi.fn() },
         userId: "user-1",
@@ -714,13 +693,13 @@ describe("sleepNeedRouter", () => {
       await caller.performance({ endDate: "2026-03-15" });
 
       const queryOptions = vi.mocked(sensorStore.query).mock.calls.map((call) => call[3]);
-      expect(queryOptions).toEqual([{ priority: "dashboard" }, { priority: "dashboard" }]);
+      expect(queryOptions).toEqual([{ priority: "dashboard" }]);
       expect(stressRepositoryMock.getStressScores).toHaveBeenCalledWith(90, "2026-03-15", {
         priority: "dashboard",
       });
     });
 
-    it("includes provenance from v_sleep on performance response", async () => {
+    it("includes provenance from the daily sleep model on performance response", async () => {
       const caller = createPerformanceCaller([
         {
           date: "2026-03-14",
@@ -737,62 +716,6 @@ describe("sleepNeedRouter", () => {
       expect(result?.providerId).toBe("whoop");
       expect(result?.sourceName).toBe("WHOOP 4.0");
       expect(result?.sourceProviders).toEqual(["whoop", "apple_health"]);
-    });
-
-    it("prefers v_sleep provenance over the daily sleep summary provider", async () => {
-      const caller = createSplitPerformanceCaller(
-        [
-          {
-            date: "2026-03-14",
-            duration_minutes: 450,
-            efficiency_pct: 92,
-            provider_id: "apple_health",
-          },
-          { date: "2026-03-01", duration_minutes: 480, provider_id: "apple_health" },
-        ],
-        [
-          {
-            date: "2026-03-14",
-            duration_minutes: 450,
-            efficiency_pct: 92,
-            provider_id: "whoop",
-            source_name: "WHOOP 4.0",
-            source_providers: ["whoop", "apple_health"],
-          },
-        ],
-      );
-      const result = await caller.performance({ endDate: "2026-03-15" });
-
-      expect(result?.providerId).toBe("whoop");
-      expect(result?.sourceName).toBe("WHOOP 4.0");
-      expect(result?.sourceProviders).toEqual(["whoop", "apple_health"]);
-    });
-
-    it("falls back to daily sleep provider when v_sleep has no matching night", async () => {
-      const caller = createSplitPerformanceCaller(
-        [
-          {
-            date: "2026-03-14",
-            duration_minutes: 450,
-            efficiency_pct: 92,
-            provider_id: "apple_health",
-          },
-          { date: "2026-03-01", duration_minutes: 480, provider_id: "apple_health" },
-        ],
-        [
-          {
-            date: "2026-03-01",
-            duration_minutes: 480,
-            provider_id: "whoop",
-            source_name: "WHOOP 4.0",
-          },
-        ],
-      );
-      const result = await caller.performance({ endDate: "2026-03-15" });
-
-      expect(result?.providerId).toBe("apple_health");
-      expect(result?.sourceName).toBeNull();
-      expect(result?.sourceProviders).toEqual([]);
     });
 
     it("uses the historical sleep average for provider-backed rows", async () => {
