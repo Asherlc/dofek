@@ -7,6 +7,42 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-21: PR image vulnerability scan blocked CI
+
+### Symptoms
+
+`Test / Image Vulnerability Scan` failed while scanning `e2e-server:latest`,
+and the dependent `Test / Security & Dependencies` gate failed as a result.
+
+### User Impact
+
+No production users were impacted. The pull request was blocked from merging
+until the container's fixed vulnerabilities were removed.
+
+### Evidence
+
+The first fatal Grype output was `discovered vulnerabilities at or above the
+severity threshold`. It identified fixed updates for Node dependencies
+including `axios`, `body-parser`, `brace-expansion`, `protobufjs`, `shell-quote`,
+`tar`, and `undici`, plus Python 3.13.14 in the dbt-tools layer.
+
+### Root Cause
+
+The image was built from an outdated Python 3.13 Alpine base and the lockfile
+overrides pinned several transitive dependencies below their available fixed
+versions. Grype correctly failed the image scan at the critical threshold.
+
+### Fix or Mitigation
+
+Updated the dbt-tools image to Python 3.14.6 Alpine 3.24 and upgraded the
+affected direct/transitive dependency overrides with a regenerated lockfile.
+The exact CI Grype command passed against the rebuilt local image.
+
+### Remaining Risk
+
+Future base-image or transitive dependency advisories can block CI again;
+continue treating the pinned image scan as a required merge gate.
+
 ## 2026-07-18: Loading baseline found slow anomaly and provider-detail queries
 
 ### Symptoms
