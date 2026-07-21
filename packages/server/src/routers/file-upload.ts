@@ -7,6 +7,7 @@ import {
   type CreateFileUploadInput,
   createFileUpload,
   type FileUpload,
+  FileUploadExpiredError,
   fileUploadImportTypeSchema,
   fileUploadStateSchema,
   findFileUploadForUser,
@@ -143,6 +144,24 @@ function requireUpload(upload: FileUpload | null, uploadId: string): FileUpload 
     throw new TRPCError({ code: "NOT_FOUND", message: `Upload ${uploadId} was not found` });
   }
   return upload;
+}
+
+function requireActiveUpload(upload: FileUpload): FileUpload {
+  if (upload.expiresAt <= new Date()) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Upload session has expired" });
+  }
+  return upload;
+}
+
+async function translateExpiredUploadError<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof FileUploadExpiredError) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Upload session has expired" });
+    }
+    throw error;
+  }
 }
 
 function objectKey(userId: string, uploadId: string): string {
@@ -308,11 +327,13 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
             upload.contentType,
           );
           try {
-            upload = await dependencies.repository.markUploading(
-              ctx.db,
-              upload.id,
-              ctx.userId,
-              multipartUploadId,
+            upload = await translateExpiredUploadError(() =>
+              dependencies.repository.markUploading(
+                ctx.db,
+                upload.id,
+                ctx.userId,
+                multipartUploadId,
+              ),
             );
           } catch (error) {
             try {
@@ -349,9 +370,11 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
       )
       .output(z.object({ upload: serializedUploadSchema, parts: z.array(authorizedPartSchema) }))
       .mutation(async ({ ctx, input }) => {
-        const upload = requireUpload(
-          await dependencies.repository.find(ctx.db, input.uploadId, ctx.userId),
-          input.uploadId,
+        const upload = requireActiveUpload(
+          requireUpload(
+            await dependencies.repository.find(ctx.db, input.uploadId, ctx.userId),
+            input.uploadId,
+          ),
         );
         if (upload.state !== "uploading" || !upload.r2MultipartUploadId) {
           throw new TRPCError({ code: "CONFLICT", message: "Upload is not accepting parts" });
@@ -378,6 +401,7 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
           await dependencies.repository.find(ctx.db, input.uploadId, ctx.userId),
           input.uploadId,
         );
+        if (upload.state === "uploading") requireActiveUpload(upload);
         const parts =
           upload.state === "uploading" && upload.r2MultipartUploadId
             ? await storageFor(dependencies).listParts(upload.objectKey, upload.r2MultipartUploadId)
@@ -399,6 +423,7 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
         if (["queued", "processing", "completed"].includes(upload.state) && upload.importJobId) {
           return serializeUpload(upload);
         }
+        requireActiveUpload(upload);
         if (!(await dependencies.repository.rateAllowed(ctx.db, ctx.userId, "complete"))) {
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",
@@ -413,11 +438,13 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
           upload.r2MultipartUploadId,
         );
         const verifiedParts = verifyParts(upload, authoritativeParts, input.parts);
-        upload = await dependencies.repository.recordCompletionParts(
-          ctx.db,
-          upload.id,
-          ctx.userId,
-          verifiedParts,
+        upload = await translateExpiredUploadError(() =>
+          dependencies.repository.recordCompletionParts(
+            ctx.db,
+            upload.id,
+            ctx.userId,
+            verifiedParts,
+          ),
         );
         let object: { sizeBytes: number };
         try {
@@ -434,11 +461,15 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
             throw completionError;
           }
         }
-        upload = await dependencies.repository.markUploaded(ctx.db, upload.id, ctx.userId);
-        upload = await dependencies.repository.queue(ctx.db, upload.id, ctx.userId, {
-          importJobId: `file-import-${upload.id}`,
-          objectSizeBytes: object.sizeBytes,
-        });
+        upload = await translateExpiredUploadError(() =>
+          dependencies.repository.markUploaded(ctx.db, upload.id, ctx.userId),
+        );
+        upload = await translateExpiredUploadError(() =>
+          dependencies.repository.queue(ctx.db, upload.id, ctx.userId, {
+            importJobId: `file-import-${upload.id}`,
+            objectSizeBytes: object.sizeBytes,
+          }),
+        );
         fileUploadLifecycleTotal.add(1, { state: "queued", import_type: upload.importType });
         fileUploadBytesTotal.add(object.sizeBytes, { import_type: upload.importType });
         fileUploadCompletionDuration.record((Date.now() - upload.createdAt.getTime()) / 1_000, {

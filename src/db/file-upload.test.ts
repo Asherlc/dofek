@@ -54,7 +54,7 @@ function row(overrides: Record<string, unknown> = {}) {
     error_message: null,
     created_at: now,
     updated_at: now,
-    expires_at: new Date("2026-07-21T00:00:00Z"),
+    expires_at: new Date("2030-01-01T00:00:00Z"),
     completed_at: null,
     object_deleted_at: null,
     ...overrides,
@@ -72,7 +72,7 @@ function input(overrides: Record<string, unknown> = {}) {
     expectedSizeBytes: 100,
     expectedSha256: "a".repeat(64),
     partSizeBytes: 5,
-    expiresAt: new Date("2026-07-21T00:00:00Z"),
+    expiresAt: new Date("2030-01-01T00:00:00Z"),
     since: new Date(0),
     ...overrides,
   };
@@ -125,7 +125,7 @@ describe("file upload repository", () => {
       errorMessage: "message",
       createdAt: now,
       updatedAt: now,
-      expiresAt: new Date("2026-07-21T00:00:00Z"),
+      expiresAt: new Date("2030-01-01T00:00:00Z"),
       completedAt: now,
       objectDeletedAt: null,
     });
