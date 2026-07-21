@@ -5,10 +5,19 @@
 Start the local backing services before running integration tests:
 
 ```bash
-docker compose up -d db clickhouse redis
-docker compose ps db clickhouse redis
+pnpm compose:env --write
+docker compose --env-file .env.local up -d db clickhouse redis redpanda
+pnpm compose:env --write
+docker compose --env-file .env.local ps db clickhouse redis redpanda
+set -a; . ./.env.local; set +a
 pnpm exec vitest run --project integration
 ```
+
+Compose assigns collision-free host ports per workspace. Source the generated
+`.env.local` in the same shell that starts Vitest; otherwise ClickHouse clients
+fall back to `localhost:8123` even when this workspace exposes ClickHouse on a
+different port. Docker Compose supports explicit environment files for variable
+interpolation: <https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/#substitute-with---env-file>.
 
 For faster local integration runs against the shared compose database, point
 `TEST_DATABASE_URL` at the generated local Postgres URL:
@@ -30,6 +39,64 @@ Sources:
 
 - PostgreSQL `CREATE DATABASE` template option: https://www.postgresql.org/docs/current/sql-createdatabase.html
 - Vitest `--shard` option for splitting CI test runs: https://vitest.dev/guide/cli.html#shard
+
+### Isolated browser end-to-end stack
+
+Run browser E2E in an explicit Compose project so it cannot collide with the
+normal workspace stack:
+
+```bash
+docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml up -d --build
+docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml ps -a
+pnpm e2e:web:run
+```
+
+Use a task-specific project name rather than Compose's directory-derived
+default; Docker documents project-name isolation and precedence here:
+<https://docs.docker.com/compose/how-tos/project-name/>.
+
+On failure, preserve evidence before teardown:
+
+```bash
+docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml ps -a
+docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml logs --no-color
+```
+
+Then remove only this isolated project's containers and fresh volumes:
+
+```bash
+docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml down -v
+```
+
+This topology currently validates browser paths. It is not a complete mobile
+write-path environment because the metric-stream broker prerequisites are
+missing; that confirmed gap is tracked in
+[#1806](https://github.com/Asherlc/dofek/issues/1806). Do not treat its healthy
+server status as proof that activity recording can save.
+
+### Native FIT Decoder
+
+Wahoo, Coros, and Suunto integration tests invoke the native FIT decoder at
+`.build/fit-decoder/bin/dofek-fit-decoder`. If they report `Unable to start the
+native FIT decoder`, first verify that the file exists and matches the host
+architecture:
+
+```bash
+file .build/fit-decoder/bin/dofek-fit-decoder
+```
+
+The `fit-decoder-linux` CI artifact is an ELF executable and cannot run on
+macOS. On macOS, build a native decoder with the repository's pinned vcpkg
+toolchain:
+
+```bash
+VCPKG_ROOT=/path/to/full/vcpkg/checkout pnpm build:fit-decoder
+```
+
+Use the vcpkg commit and bootstrap sequence from
+[`test.yml`](../.github/workflows/test.yml); the project uses vcpkg manifest
+mode as documented by Microsoft:
+<https://learn.microsoft.com/vcpkg/concepts/manifest-mode>.
 
 ### Docker Disk Recovery
 

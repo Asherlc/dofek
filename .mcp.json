@@ -8,6 +8,10 @@
       "command": "codegraph",
       "args": ["serve", "--mcp"]
     },
+    "xcodebuildmcp": {
+      "command": "npx",
+      "args": ["-y", "xcodebuildmcp@latest", "mcp"]
+    },
     "axiom": {
       "command": "sh",
       "args": [

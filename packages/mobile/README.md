@@ -34,6 +34,86 @@ cd packages/mobile
 pnpm start
 ```
 
+### iOS Simulator development build
+
+This app contains custom Swift modules, so use the checked-in Xcode workspace
+and a development client rather than relying on Expo Go. Expo documents both
+the local iOS Simulator setup and the development-build workflow:
+<https://docs.expo.dev/workflow/ios-simulator/> and
+<https://docs.expo.dev/build-reference/simulators/>.
+
+1. Boot a simulator and build the `Dofek` scheme from
+   `ios/Dofek.xcworkspace` for `iphonesimulator`. The repository's
+   XcodeBuildMCP configuration can perform the build, install, launch, log, and
+   screenshot operations; Xcode or `xcodebuild` can do the same locally.
+2. Load the required `EXPO_PUBLIC_*` runtime values from Infisical before the
+   build. In particular, `EXPO_PUBLIC_SENTRY_DSN` must be a valid DSN.
+3. Start Metro for the development client:
+
+   ```bash
+   pnpm expo start --dev-client --localhost \
+     --private-key-path /secure/path/to/private-key.pem
+   ```
+
+4. Install and launch the built `.app`, then verify that a real application
+   screen renders before beginning UI exploration. A running process that is
+   still showing the Expo development launcher is not an app-level validation.
+
+The native binary embeds `certs/certificate.pem`, so Metro must sign the
+development manifest with the corresponding private key. The private key is
+intentionally ignored by Git and must come from approved secret storage; never
+copy it into the repository or logs. Expo's code-signing guide explains why the
+certificate is committed while the private key remains secret:
+<https://docs.expo.dev/eas-update/code-signing/>.
+
+The iOS Simulator cannot exercise Bluetooth, accelerometer, gyroscope, or other
+device-only hardware. Use it for navigation, rendering, API/error states, and
+software-only flows; use physical devices for BLE and motion validation. Expo
+lists current simulator hardware limitations here:
+<https://docs.expo.dev/workflow/ios-simulator/#limitations>.
+
+### Signed Release simulator audit
+
+Use an embedded Release bundle when the goal is to audit production-like app UI
+without Metro. The command below uses local ad-hoc signing so keychain-backed
+SecureStore remains available without a distribution identity:
+
+```bash
+EXPO_PUBLIC_SERVER_URL=http://127.0.0.1:3100 \
+EXPO_PUBLIC_SENTRY_DSN=https://public-key@sentry.example/project-id \
+SENTRY_DISABLE_AUTO_UPLOAD=true \
+xcodebuild -quiet \
+  -workspace ios/Dofek.xcworkspace \
+  -scheme Dofek \
+  -configuration Release \
+  -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' \
+  -derivedDataPath .context/ReleaseAuditDerivedData \
+  CODE_SIGN_STYLE=Manual \
+  CODE_SIGN_IDENTITY=- \
+  DEVELOPMENT_TEAM= \
+  PROVISIONING_PROFILE_SPECIFIER= \
+  build
+```
+
+Do not add a global `-sdk iphonesimulator`: the checked-in `Dofek` scheme also
+contains the watchOS app, and the destination is sufficient to select the iOS
+Simulator for the main target. Do not use `CODE_SIGNING_ALLOWED=NO`, because an
+unsigned audit artifact lacks the keychain entitlements SecureStore needs. Do
+not override `INFOPLIST_FILE` globally; doing so drops the main target's declared
+background modes. These constraints come from the checked-in
+[`Dofek.xcscheme`](ios/Dofek.xcodeproj/xcshareddata/xcschemes/Dofek.xcscheme),
+[`project.pbxproj`](ios/Dofek.xcodeproj/project.pbxproj), and
+[`Info.plist`](ios/Dofek/Info.plist).
+
+Install and launch the resulting
+`.context/ReleaseAuditDerivedData/Build/Products/Release-iphonesimulator/Dofek.app`,
+then verify visible UI, native accessibility targets, app logs, and server logs.
+The repository's
+[`ios-simulator-audit` skill](../../.agents/skills/ios-simulator-audit/SKILL.md)
+contains the full XcodeBuildMCP workflow. Expo's local production-build guide is
+the upstream reference for using Release configuration locally:
+<https://docs.expo.dev/guides/local-app-production/>.
+
 ## Dependency pins
 
 - `@react-native-async-storage/async-storage@2.2.0` — stay on 2.2.x for Expo SDK 57. AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see [expo/expo#43757](https://github.com/expo/expo/issues/43757).

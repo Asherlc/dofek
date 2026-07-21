@@ -25,6 +25,23 @@
 - **Vitest**: Use for component and hook unit tests.
 - **Mocks**: Mock the `tRPC` and native modules in isolation tests. See `test-setup.ts`.
 - **Native Tests**: Run XCTest suites for Swift modules.
+- **Simulator audits**: Prefer XcodeBuildMCP when configured. Build the
+  `Dofek` scheme from `ios/Dofek.xcworkspace` for a booted iOS Simulator,
+  install and launch the `.app`, then capture logs and screenshots while
+  exploring real navigation paths. Do not count a successful compile, process
+  launch, or Expo development-launcher screen as successful app UI execution.
+- **Use the simulator-audit skill**: For a signed Release audit, read
+  [`.agents/skills/ios-simulator-audit/SKILL.md`](../../.agents/skills/ios-simulator-audit/SKILL.md).
+  Do not pass a global `-sdk iphonesimulator` to the multi-platform `Dofek`
+  scheme, disable code signing, or blank `INFOPLIST_FILE`; each creates a false
+  failure in the watch target, SecureStore, or CoreBluetooth path respectively.
+- **Signed development manifests**: Because `app.json` configures an Expo
+  Updates code-signing certificate, start Metro with the matching ignored
+  private key via `--private-key-path`. Never commit or print that key. If the
+  key is unavailable, report the exact manifest-signing blocker and ask before
+  pivoting to a Release simulator build with an embedded bundle.
+- **Simulator scope**: Do not infer BLE, motion-sensor, or background-delivery
+  correctness from the Simulator; exercise those paths on physical hardware.
 
 ### Error Handling
 - **Telemetry**: Every catch block MUST call `captureException` from `./lib/telemetry`.
