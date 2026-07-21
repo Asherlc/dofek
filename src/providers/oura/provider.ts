@@ -195,6 +195,7 @@ export class OuraProvider implements WebhookProvider {
         return {
           providerAccountId: data.id,
           email: data.email ?? null,
+          emailVerified: false,
           name: null,
         };
       },

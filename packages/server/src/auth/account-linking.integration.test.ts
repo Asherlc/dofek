@@ -29,6 +29,7 @@ describe("resolveOrCreateUser (integration)", () => {
     const result = await resolveOrCreateUser(ctx.db, "google", {
       providerAccountId: "google-123",
       email: "first@example.com",
+      emailVerified: true,
       name: "First User",
     });
 
@@ -52,12 +53,14 @@ describe("resolveOrCreateUser (integration)", () => {
     const first = await resolveOrCreateUser(ctx.db, "google", {
       providerAccountId: "google-123",
       email: "user@example.com",
+      emailVerified: true,
       name: "User",
     });
 
     const second = await resolveOrCreateUser(ctx.db, "google", {
       providerAccountId: "google-123",
       email: "user@example.com",
+      emailVerified: true,
       name: "User",
     });
 
@@ -69,12 +72,14 @@ describe("resolveOrCreateUser (integration)", () => {
     const first = await resolveOrCreateUser(ctx.db, "google", {
       providerAccountId: "google-123",
       email: "shared@example.com",
+      emailVerified: true,
       name: "User",
     });
 
     const second = await resolveOrCreateUser(ctx.db, "apple", {
       providerAccountId: "apple-456",
       email: "shared@example.com",
+      emailVerified: true,
       name: "User",
     });
 
@@ -88,16 +93,73 @@ describe("resolveOrCreateUser (integration)", () => {
     expect(accounts.map((a) => a.auth_provider)).toEqual(["apple", "google"]);
   });
 
+  it("does not auto-link an unverified email matching an existing profile", async () => {
+    await ctx.db.execute(
+      sql`UPDATE fitness.user_profile SET email = 'shared@example.com' WHERE id = ${TEST_USER_ID}`,
+    );
+
+    const result = await resolveOrCreateUser(ctx.db, "strava", {
+      providerAccountId: "strava-unverified",
+      email: "shared@example.com",
+      emailVerified: false,
+      name: "Unverified User",
+    });
+
+    expect(result.userId).not.toBe(TEST_USER_ID);
+    expect(result.isNewUser).toBe(true);
+
+    const profile = await ctx.db.execute<{ email: string | null }>(
+      sql`SELECT email FROM fitness.user_profile WHERE id = ${result.userId}`,
+    );
+    expect(profile[0]?.email).toBeNull();
+
+    const account = await ctx.db.execute<{ email: string | null }>(
+      sql`SELECT email FROM fitness.auth_account WHERE user_id = ${result.userId}`,
+    );
+    expect(account[0]?.email).toBeNull();
+  });
+
+  it("does not auto-link an unverified email matching an existing auth account", async () => {
+    const first = await resolveOrCreateUser(ctx.db, "google", {
+      providerAccountId: "google-verified",
+      email: "shared@example.com",
+      emailVerified: true,
+      name: "Verified User",
+    });
+
+    const second = await resolveOrCreateUser(ctx.db, "strava", {
+      providerAccountId: "strava-unverified",
+      email: "shared@example.com",
+      emailVerified: false,
+      name: "Unverified User",
+    });
+
+    expect(second.userId).not.toBe(first.userId);
+    expect(second.isNewUser).toBe(true);
+
+    const profile = await ctx.db.execute<{ email: string | null }>(
+      sql`SELECT email FROM fitness.user_profile WHERE id = ${second.userId}`,
+    );
+    expect(profile[0]?.email).toBeNull();
+
+    const account = await ctx.db.execute<{ email: string | null }>(
+      sql`SELECT email FROM fitness.auth_account WHERE user_id = ${second.userId}`,
+    );
+    expect(account[0]?.email).toBeNull();
+  });
+
   it("creates a new user when email does not match any existing user", async () => {
     const first = await resolveOrCreateUser(ctx.db, "google", {
       providerAccountId: "google-123",
       email: "first@example.com",
+      emailVerified: true,
       name: "First",
     });
 
     const second = await resolveOrCreateUser(ctx.db, "apple", {
       providerAccountId: "apple-456",
       email: "different@example.com",
+      emailVerified: true,
       name: "Second",
     });
 
@@ -110,6 +172,7 @@ describe("resolveOrCreateUser (integration)", () => {
     const first = await resolveOrCreateUser(ctx.db, "google", {
       providerAccountId: "google-123",
       email: "first@example.com",
+      emailVerified: true,
       name: "First",
     });
 
@@ -119,6 +182,7 @@ describe("resolveOrCreateUser (integration)", () => {
       {
         providerAccountId: "apple-789",
         email: "totally-different@example.com",
+        emailVerified: true,
         name: "Different",
       },
       first.userId,
@@ -132,12 +196,14 @@ describe("resolveOrCreateUser (integration)", () => {
     await resolveOrCreateUser(ctx.db, "google", {
       providerAccountId: "google-123",
       email: "user@example.com",
+      emailVerified: true,
       name: "User",
     });
 
     const noEmail = await resolveOrCreateUser(ctx.db, "fitbit", {
       providerAccountId: "fitbit-999",
       email: null,
+      emailVerified: false,
       name: "Fitbit User",
     });
 
@@ -149,6 +215,7 @@ describe("resolveOrCreateUser (integration)", () => {
     const first = await resolveOrCreateUser(ctx.db, "google", {
       providerAccountId: "google-123",
       email: "old@example.com",
+      emailVerified: true,
       name: "Old Name",
     });
 
@@ -158,6 +225,7 @@ describe("resolveOrCreateUser (integration)", () => {
       {
         providerAccountId: "google-123",
         email: "new@example.com",
+        emailVerified: true,
         name: "New Name",
       },
       first.userId,

@@ -101,6 +101,14 @@ export default function ProvidersScreen() {
   const resumedJobIds = useRef(new Set<string>());
   const pollingJobIds = useRef(new Set<string>());
   const importedSharedUris = useRef(new Set<string>());
+  const isMounted = useRef(true);
+
+  useEffect(
+    () => () => {
+      isMounted.current = false;
+    },
+    [],
+  );
 
   const sharedFileUri = Array.isArray(params.sharedFile) ? params.sharedFile[0] : params.sharedFile;
 
@@ -482,6 +490,7 @@ export default function ProvidersScreen() {
         }
       } catch (error: unknown) {
         captureException(error, { context: "sync-all" });
+        if (!isMounted.current) return;
         setSyncingProviders(new Set());
         setAnySyncing(false);
       }

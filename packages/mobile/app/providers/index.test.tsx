@@ -1030,6 +1030,25 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("does not update state when Sync All fails after unmount", async () => {
+    let rejectSync: (error: Error) => void = () => undefined;
+    mockSyncMutateAsync.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectSync = reject;
+        }),
+    );
+
+    const rendered = await renderProvidersScreen();
+    fireEvent.click(screen.getByText("Sync All"));
+    rendered.unmount();
+
+    await act(async () => {
+      rejectSync(new Error("Sync failed"));
+      await Promise.resolve();
+    });
+  });
+
   it("shows provider cooldown outcome without polling a fake job", async () => {
     mockSyncMutateAsync.mockResolvedValue({
       jobId: "job-skipped",

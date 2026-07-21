@@ -257,6 +257,7 @@ export class FitbitProvider implements WebhookProvider {
         return {
           providerAccountId: data.user.encodedId,
           email: null,
+          emailVerified: false,
           name: data.user.displayName ?? null,
         };
       },
