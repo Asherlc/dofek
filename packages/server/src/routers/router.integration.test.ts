@@ -1544,11 +1544,28 @@ describe("Router coverage", () => {
       expect(Array.isArray(result)).toBe(true);
     });
 
-    it("unlinkAccount rejects when user has fewer than 2 accounts", async () => {
-      // With 0 or 1 accounts, unlinking should fail
+    it("unlinkAccount rejects when unlinking the only login account", async () => {
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.auth_account (auth_provider, provider_account_id, user_id, email, name)
+            VALUES ('google', 'only-login-account', ${TEST_USER_ID}, 'only@test.com', 'Only Login')
+            ON CONFLICT DO NOTHING`,
+      );
+      await queryCache.invalidateAll();
+
+      const accounts = await query<{ id: string; authProvider: string }[]>("auth.linkedAccounts");
+      const onlyLoginAccount = accounts.find((account) => account.authProvider === "google");
+      expect(onlyLoginAccount).toBeDefined();
+      if (!onlyLoginAccount) {
+        throw new Error("Expected the fixture Google account to be linked");
+      }
+
       await expect(
-        mutate("auth.unlinkAccount", { accountId: "00000000-0000-0000-0000-000000000099" }),
+        mutate("auth.unlinkAccount", { accountId: onlyLoginAccount.id }),
       ).rejects.toThrow(/Cannot unlink your only login method/);
+
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.auth_account WHERE auth_provider = 'google' AND user_id = ${TEST_USER_ID}`,
+      );
     });
 
     it("unlinkAccount succeeds when user has 2+ accounts", async () => {
