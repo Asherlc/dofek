@@ -2492,7 +2492,17 @@ describe("createAuthRouter", () => {
       const { ensureProvider } = await import("dofek/db/tokens");
 
       expect(completeRes.status).toBe(302);
-      expect(completeRes.headers.location).toContain("dofek://auth/callback?code=");
+      const completeLocation = completeRes.headers.location;
+      if (typeof completeLocation !== "string")
+        throw new Error("Expected mobile callback location");
+      expect(completeLocation).toContain("dofek://auth/callback?code=");
+      const exchangeCode = new URL(completeLocation).searchParams.get("code");
+      if (!exchangeCode) throw new Error("Expected mobile exchange code");
+      await expect(getMobileAuthExchangeStoreRef().consume(exchangeCode)).resolves.toEqual({
+        kind: "session",
+        sessionId: "sess-1",
+        isNewUser: true,
+      });
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),
         "strava",
