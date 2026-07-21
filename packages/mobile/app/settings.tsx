@@ -62,6 +62,11 @@ export default function SettingsScreen() {
   const passwordStatus = trpc.auth.passwordCredentialStatus.useQuery();
   const setPasswordMutation = trpc.auth.setPassword.useMutation({
     onSuccess: async () => {
+      if (passwordStatus.data?.hasPassword) {
+        await auth.logout();
+        Alert.alert("Password Updated", "Please sign in again.");
+        return;
+      }
       await trpcUtils.auth.passwordCredentialStatus.invalidate();
       Alert.alert("Password Updated", "Your password has been saved.");
     },

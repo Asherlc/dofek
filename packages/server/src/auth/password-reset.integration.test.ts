@@ -9,6 +9,7 @@ import {
   InvalidPasswordResetTokenError,
   resetPasswordWithToken,
 } from "./password-reset.ts";
+import { createSession, validateSession } from "./session.ts";
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 const mockSendPlainTextEmail = vi.fn().mockResolvedValue(undefined);
@@ -170,6 +171,28 @@ describe("password reset service", () => {
     await expect(resetPasswordWithToken(ctx.db, token, "another-password123")).rejects.toThrow(
       InvalidPasswordResetTokenError,
     );
+  });
+
+  it("revokes all sessions and outstanding reset tokens after a password reset", async () => {
+    const registered = await registerPasswordUser(ctx.db, {
+      email: "reset@example.com",
+      password: "password123",
+      name: "Reset User",
+    });
+    const firstSession = await createSession(ctx.db, registered.userId);
+    const secondSession = await createSession(ctx.db, registered.userId);
+    await createPasswordResetToken(ctx.db, "reset@example.com");
+    const outstandingToken = extractResetTokenFromLastEmail();
+    await createPasswordResetToken(ctx.db, "reset@example.com");
+    const submittedToken = extractResetTokenFromLastEmail();
+
+    await resetPasswordWithToken(ctx.db, submittedToken, "new-password123");
+
+    await expect(validateSession(ctx.db, firstSession.sessionId)).resolves.toBeNull();
+    await expect(validateSession(ctx.db, secondSession.sessionId)).resolves.toBeNull();
+    await expect(
+      resetPasswordWithToken(ctx.db, outstandingToken, "another-password123"),
+    ).rejects.toThrow(InvalidPasswordResetTokenError);
   });
 
   it("rolls back token consumption when the credential row is missing", async () => {
