@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install -g corepack@0.35.0 && corepack enable && corepack prepare --activate
 
-FROM python:3.14.6-alpine3.24 AS dbt-tools
+FROM python:3.13.14-alpine3.24 AS dbt-tools
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
     dbt-core==1.11.12 \
@@ -109,11 +109,11 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates libbz2 libstdc++
-COPY --from=dbt-tools /usr/local/bin/python3.14 /usr/local/bin/python3.14
+COPY --from=dbt-tools /usr/local/bin/python3.13 /usr/local/bin/python3.13
 COPY --from=dbt-tools /usr/local/bin/dbt /usr/local/bin/dbt
 COPY --from=dbt-tools /usr/local/bin/sqlfluff /usr/local/bin/sqlfluff
-COPY --from=dbt-tools /usr/local/lib/python3.14 /usr/local/lib/python3.14
-COPY --from=dbt-tools /usr/local/lib/libpython3.14.so* /usr/local/lib/
+COPY --from=dbt-tools /usr/local/lib/python3.13 /usr/local/lib/python3.13
+COPY --from=dbt-tools /usr/local/lib/libpython3.13.so* /usr/local/lib/
 COPY --from=fit-decoder-build /src/.build/fit-decoder/bin/dofek-fit-decoder /usr/local/bin/
 
 COPY --from=source --chown=node:node /app/src ./src

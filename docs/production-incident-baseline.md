@@ -34,8 +34,9 @@ versions. Grype correctly failed the image scan at the critical threshold.
 
 ### Fix or Mitigation
 
-Updated the dbt-tools image to Python 3.14.6 Alpine 3.24 and upgraded the
-affected direct/transitive dependency overrides with a regenerated lockfile.
+Upgraded the affected direct/transitive dependency overrides with a regenerated
+lockfile. The dbt-tools image remains on pinned Python 3.13.14 Alpine 3.24
+because dbt 1.11.12 and mashumaro 3.14 fail during startup on Python 3.14.
 The exact CI Grype command passed against the rebuilt local image.
 
 ### Remaining Risk
