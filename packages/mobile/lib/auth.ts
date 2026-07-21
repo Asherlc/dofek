@@ -199,18 +199,59 @@ export async function startOAuthLogin(
     return null;
   }
 
-  // Extract session token from the redirect URL
+  // Exchange the short-lived deep-link code for the session over HTTPS.
   const url = new URL(result.url);
-  const session = url.searchParams.get("session");
-  const newUserParam = url.searchParams.get("new_user");
-  if (!session) return null;
-  if (newUserParam !== "true" && newUserParam !== "false") {
-    throw new Error("Authentication failed");
+  const code = url.searchParams.get("code");
+  if (!code) return null;
+  const exchangeResponse = await fetch(`${serverUrl}/auth/mobile/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const exchangeData: unknown = await exchangeResponse.json().catch((error: unknown) => {
+    captureException(error, { source: "mobile-auth-exchange-parse" });
+    return null;
+  });
+  const parsedExchange = z
+    .union([z.object({ session: z.string(), isNewUser: z.boolean() }), ErrorResponseSchema])
+    .safeParse(exchangeData);
+  if (!exchangeResponse.ok || !parsedExchange.success || "error" in parsedExchange.data) {
+    throw new Error(
+      parsedExchange.success && "error" in parsedExchange.data
+        ? parsedExchange.data.error
+        : "Authentication failed",
+    );
   }
   return {
-    session,
-    isNewUser: newUserParam === "true",
+    session: parsedExchange.data.session,
+    isNewUser: parsedExchange.data.isNewUser,
   };
+}
+
+export async function createProviderHandoffCode(
+  serverUrl: string,
+  providerId: string,
+  sessionToken: string,
+): Promise<string> {
+  const response = await fetch(`${serverUrl}/auth/provider/${providerId}/hand-off`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${sessionToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+  });
+  const data: unknown = await response.json().catch((error: unknown) => {
+    captureException(error, { source: "provider-handoff-parse" });
+    return null;
+  });
+  const parsed = z.union([z.object({ code: z.string() }), ErrorResponseSchema]).safeParse(data);
+  if (!response.ok || !parsed.success || "error" in parsed.data) {
+    throw new Error(
+      parsed.success && "error" in parsed.data ? parsed.data.error : "Provider connection failed",
+    );
+  }
+  return parsed.data.code;
 }
 
 /** Whether native Apple Sign In is available (iOS 13+). */

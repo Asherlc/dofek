@@ -7,7 +7,7 @@ import { revokePasswordChangeAuthenticationMaterial } from "./password-change.ts
 
 export class DuplicateEmailError extends Error {
   constructor() {
-    super("An account with this email already exists");
+    super("Unable to create an account with these details");
     this.name = "DuplicateEmailError";
   }
 }
@@ -57,15 +57,11 @@ export async function registerPasswordUser(
   );
   const matchedUser = existingUser[0];
 
-  const passwordHash = hashPassword(input.password);
-
   if (matchedUser) {
-    await db.execute(
-      sql`INSERT INTO fitness.user_password_credential (user_id, email, password_hash)
-          VALUES (${matchedUser.id}, ${email}, ${passwordHash})`,
-    );
-    return { userId: matchedUser.id, isNewUser: false };
+    throw new DuplicateEmailError();
   }
+
+  const passwordHash = hashPassword(input.password);
 
   const displayName = input.name?.trim() || email.split("@")[0] || "User";
   const newUser = await executeWithSchema(
@@ -111,10 +107,6 @@ export async function authenticatePasswordUser(
   }
 
   return { userId: row.user_id };
-}
-
-export function isPasswordAuthEnabled(): boolean {
-  return process.env.ENABLE_PASSWORD_AUTH !== "false";
 }
 
 export class MissingCurrentPasswordError extends Error {

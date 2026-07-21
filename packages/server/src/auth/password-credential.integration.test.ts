@@ -51,18 +51,26 @@ describe("password credential auth (integration)", () => {
     expect(profile[0]?.name).toBe("New User");
   });
 
-  it("links password credentials to an existing OAuth user by email", async () => {
+  it("does not add a password credential to an existing OAuth user by email", async () => {
     await ctx.db.execute(
       sql`UPDATE fitness.user_profile SET email = 'existing@example.com', name = 'Existing User' WHERE id = ${TEST_USER_ID}`,
     );
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.auth_account
+          (user_id, auth_provider, provider_account_id, email, name)
+          VALUES (${TEST_USER_ID}, 'google', 'google-existing', 'existing@example.com', 'Existing User')`,
+    );
 
-    const result = await registerPasswordUser(ctx.db, {
-      email: "existing@example.com",
-      password: "password123",
+    await expect(
+      registerPasswordUser(ctx.db, {
+        email: "existing@example.com",
+        password: "password123",
+      }),
+    ).rejects.toThrow(DuplicateEmailError);
+
+    await expect(getPasswordCredentialStatus(ctx.db, TEST_USER_ID)).resolves.toEqual({
+      hasPassword: false,
     });
-
-    expect(result.userId).toBe(TEST_USER_ID);
-    expect(result.isNewUser).toBe(false);
   });
 
   it("rejects duplicate password registration for the same email", async () => {

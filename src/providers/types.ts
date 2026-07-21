@@ -32,6 +32,7 @@ export interface OAuth1Flow {
 export interface ProviderIdentity {
   providerAccountId: string;
   email: string | null;
+  emailVerified: boolean;
   name: string | null;
 }
 

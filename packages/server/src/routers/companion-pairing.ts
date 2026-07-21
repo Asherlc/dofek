@@ -1,3 +1,4 @@
+import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { regenerateCompanionToken } from "../companion/token-repository.ts";
@@ -50,25 +51,23 @@ export const companionPairingRouter = router({
           message: "Pairing code was not found or has expired.",
         });
       }
-      if (challenge.claimedAt) {
+      if (challenge.claimedAt && challenge.userId !== ctx.userId) {
         throw new TRPCError({
           code: "CONFLICT",
           message: "Pairing code has already been used.",
         });
       }
 
-      const companionToken = await regenerateCompanionToken(ctx.db, ctx.userId);
-      if (!companionToken.token) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to create Dofek connection.",
-        });
+      if (challenge.claimedAt && challenge.companionToken) {
+        return {
+          state: "claimed",
+          expiresAt: challenge.expiresAt,
+        };
       }
 
       const claimedChallenge = await store.claimChallenge({
         shortCode: challenge.shortCode,
         userId: ctx.userId,
-        companionToken: companionToken.token,
       });
       if (!claimedChallenge) {
         throw new TRPCError({
@@ -77,9 +76,41 @@ export const companionPairingRouter = router({
         });
       }
 
-      return {
-        state: "claimed",
-        expiresAt: claimedChallenge.expiresAt,
-      };
+      try {
+        const companionToken = await regenerateCompanionToken(ctx.db, ctx.userId);
+        if (!companionToken.token) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to create Dofek connection.",
+          });
+        }
+
+        const pairedChallenge = await store.setClaimedChallengeToken({
+          shortCode: challenge.shortCode,
+          userId: ctx.userId,
+          companionToken: companionToken.token,
+        });
+        if (!pairedChallenge) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Pairing code has already been used.",
+          });
+        }
+
+        return {
+          state: "claimed",
+          expiresAt: pairedChallenge.expiresAt,
+        };
+      } catch (error) {
+        try {
+          await store.releaseClaimedChallengeTokenIssuance({
+            shortCode: challenge.shortCode,
+            userId: ctx.userId,
+          });
+        } catch (releaseError) {
+          captureException(releaseError);
+        }
+        throw error;
+      }
     }),
 });

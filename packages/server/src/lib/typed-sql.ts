@@ -17,6 +17,14 @@ function extractRows(result: unknown): unknown[] {
 }
 
 /**
+ * Minimal DB interface for executeWithSchema — only needs the execute method.
+ * Accepts both the pooled `Database` wrapper and Drizzle transaction handles.
+ */
+export interface SchemaExecutionDatabase extends SqlExecutor {
+  execute: (query: SQL) => Promise<Record<string, unknown>[] | { rows: Record<string, unknown>[] }>;
+}
+
+/**
  * Execute a raw SQL query and parse each row with a Zod schema.
  * Use this instead of `db.execute<T>()` generics — Zod validates at runtime,
  * catching schema drift, missing columns, and type mismatches that generics miss.
