@@ -29,13 +29,15 @@ local signup date `2026-07-21` and permits dates `2026-07-21` through
 
 1. Add a failing entitlement test for a user in `America/Los_Angeles` created at `2026-07-21T01:30:00Z`, asserting the exact `[2026-07-20, 2026-07-27)` date interval.
 2. Add the inverse `Asia/Tokyo` case at `2026-07-20T15:30:00Z`, asserting the exact `[2026-07-21, 2026-07-28)` date interval.
-3. Thread the profile's validated IANA timezone through the billing repository/query input and every `resolveAccessWindow()` call, then derive the seven-day date window in that timezone. Invalid timezone updates remain rejected at the profile boundary; legacy profiles with no timezone use UTC explicitly.
-4. Add contract tests for every access-window call site, the missing-timezone UTC fallback, and invalid-timezone rejection without changing paid-access behavior.
-5. Re-run the focused entitlement/router tests and `pnpm e2e:web:run`; the dashboard steps assertion should pass without altering the E2E fixture dates.
+3. Add an `America/Los_Angeles` case created at `2026-03-08T07:30:00Z`, immediately before the spring daylight-saving transition, and assert `[2026-03-07, 2026-03-14)`. This interval crosses the transition while still covering seven local calendar dates.
+4. Thread the profile's validated IANA timezone through the billing repository/query input and every `resolveAccessWindow()` call, then derive the seven-day date window in that timezone. Advance seven local calendar dates; never compute the exclusive end by adding a fixed 168 hours. Invalid timezone updates remain rejected at the profile boundary; legacy profiles with no timezone use UTC explicitly.
+5. Add contract tests for every access-window call site, the missing-timezone UTC fallback, and invalid-timezone rejection without changing paid-access behavior.
+6. Re-run the focused entitlement/router tests and `pnpm e2e:web:run`; the dashboard steps assertion should pass without altering the E2E fixture dates.
 
 ## Acceptance criteria
 
 - A free user's access window is the half-open interval `[localSignupDate, localSignupDate + 7 days)`, covering exactly the signup date and six subsequent local dates.
+- The exclusive end advances by seven local calendar dates and remains correct across daylight-saving transitions.
 - The current local day's daily metrics are visible immediately after signup in timezones west and east of UTC.
 - Paid access windows are unchanged.
 - The dashboard E2E suite displays the seeded 9,200 steps and passes.

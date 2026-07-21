@@ -94,15 +94,17 @@ shell, and reuse that name so concurrent and stale runs cannot share resources:
 e2e_project_name="dofek-e2e-audit-$(date +%s)-$$"
 rtk docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
 rtk docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
-rtk pnpm e2e:web:run
-```
-
-If a test fails, capture `ps -a` and full service logs before teardown. Only
-after evidence is preserved, remove this exact isolated project with:
-
-```bash
+if ! rtk pnpm e2e:web:run; then
+  rtk docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
+  rtk docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml logs --no-color
+  rtk docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
+  exit 1
+fi
 rtk docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
 ```
+
+The failure branch captures container state and complete service logs before
+teardown. The success path also removes the exact isolated project.
 
 The current E2E topology has no Redpanda service and omits the server's
 metric-stream producer variables. Treat it as browser-only until

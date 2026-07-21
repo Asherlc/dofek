@@ -50,25 +50,22 @@ cannot share resources:
 e2e_project_name="dofek-e2e-audit-$(date +%s)-$$"
 docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
 docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
-pnpm e2e:web:run
+if ! pnpm e2e:web:run; then
+  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
+  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml logs --no-color
+  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
+  exit 1
+fi
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
 ```
 
 Use a task-specific project name rather than Compose's directory-derived
 default; Docker documents project-name isolation and precedence here:
 <https://docs.docker.com/compose/how-tos/project-name/>.
 
-On failure, preserve evidence before teardown:
-
-```bash
-docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
-docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml logs --no-color
-```
-
-Then remove only this isolated project's containers and fresh volumes:
-
-```bash
-docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
-```
+The failure branch preserves container state and complete service logs before
+teardown. Both paths remove only this isolated project's containers and fresh
+volumes.
 
 This topology currently validates browser paths. It is not a complete mobile
 write-path environment because the metric-stream broker prerequisites are

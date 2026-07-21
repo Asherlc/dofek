@@ -147,9 +147,11 @@ capture logs from the iOS app:
 
 ```json
 {
-  "xcodebuildmcp": {
-    "command": "pnpm",
-    "args": ["dlx", "xcodebuildmcp@2.6.2", "mcp"]
+  "mcpServers": {
+    "xcodebuildmcp": {
+      "command": "pnpm",
+      "args": ["dlx", "xcodebuildmcp@2.6.2", "mcp"]
+    }
   }
 }
 ```

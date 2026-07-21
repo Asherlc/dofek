@@ -59,8 +59,13 @@ ssh dofek-server 'docker service logs --raw --timestamps --since 24h dofek_worke
 # Search for specific errors. Fetch a fixed log window remotely, then apply the
 # operator-provided term locally so it is never interpreted by the SSH shell.
 search_term='<SEARCH_TERM>'
-if ! log_output=$(ssh dofek-server 'docker service logs --raw --timestamps --since 24h --tail 2000 dofek_web 2>&1'); then
-  echo 'Unable to retrieve dofek_web logs' >&2
+target_service='<SERVICE_NAME>'
+case "$target_service" in
+  dofek_web|dofek_worker|dofek_analytics-worker|dofek_cdc-health|dofek_ota|dofek_traefik) ;;
+  *) echo "Unsupported service: $target_service" >&2; exit 1 ;;
+esac
+if ! log_output=$(ssh dofek-server "docker service logs --raw --timestamps --since 24h --tail 2000 $target_service 2>&1"); then
+  echo "Unable to retrieve $target_service logs" >&2
   exit 1
 fi
 printf '%s\n' "$log_output" \
