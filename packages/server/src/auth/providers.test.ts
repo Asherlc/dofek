@@ -23,6 +23,7 @@ vi.mock("arctic", () => {
   };
 });
 
+import { decodeIdToken } from "arctic";
 import {
   decodePemToDer,
   getConfiguredProviders,
@@ -461,6 +462,27 @@ describe("auth/providers", () => {
       const provider = getIdentityProvider("apple");
       const result = await provider.validateCallback("code", "verifier");
       expect(result.user.email).toBe("test@example.com");
+    });
+
+    it.each([
+      ["true", true],
+      ["false", false],
+    ] as const)("Apple callback normalizes string email_verified=%s", (emailVerified, expected) => {
+      process.env.APPLE_CLIENT_ID = "id";
+      process.env.APPLE_TEAM_ID = "team";
+      process.env.APPLE_KEY_ID = "key";
+      process.env.APPLE_PRIVATE_KEY =
+        "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----";
+      process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
+      vi.mocked(decodeIdToken).mockReturnValueOnce({
+        sub: "user-123",
+        email: "test@example.com",
+        email_verified: emailVerified,
+      });
+
+      return getIdentityProvider("apple")
+        .validateCallback("code", "verifier")
+        .then((result) => expect(result.user.emailVerified).toBe(expected));
     });
   });
 
