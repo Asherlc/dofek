@@ -18,6 +18,7 @@ import {
   dofekGrid,
   dofekLegend,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -159,9 +160,9 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
           .filter((p) => p.value[1] > 0)
           .map((p) => {
             total += p.value[1];
-            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatDurationMinutes(p.value[1] * 60)}`;
+            return `<span style="color:${escapeTooltipHtml(p.color)}">\u25CF</span> ${escapeTooltipHtml(p.seriesName)}: ${formatDurationMinutes(p.value[1] * 60)}`;
           });
-        return `<strong>${dateLabel}</strong> (${formatDurationMinutes(total * 60)} total)<br/>${lines.join("<br/>")}`;
+        return `<strong>${escapeTooltipHtml(dateLabel)}</strong> (${formatDurationMinutes(total * 60)} total)<br/>${lines.join("<br/>")}`;
       },
     }),
     xAxis: dofekAxis.time(),
@@ -203,7 +204,7 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
     tooltip: dofekTooltip({
       trigger: "item",
       formatter: ({ name, value, percent }: { name: string; value: number; percent: number }) => {
-        return `${name}: ${formatIntensity(percent)} (${formatDurationSeconds(value)})`;
+        return `${escapeTooltipHtml(name)}: ${formatIntensity(percent)} (${formatDurationSeconds(value)})`;
       },
     }),
     legend: {

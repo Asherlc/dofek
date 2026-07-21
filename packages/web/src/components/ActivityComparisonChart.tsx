@@ -6,6 +6,7 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
   seriesColor,
 } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -46,9 +47,9 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
         const pace = typeof rawValue[1] === "number" ? rawValue[1] : 0;
         const seriesName = String(params.seriesName ?? "");
         return [
-          `<strong>${seriesName}</strong>`,
-          `Date: ${formatDateMedium(date)}`,
-          `Pace: ${formatPace(pace)} ${units.paceLabel}`,
+          `<strong>${escapeTooltipHtml(seriesName)}</strong>`,
+          `Date: ${escapeTooltipHtml(formatDateMedium(date))}`,
+          `Pace: ${escapeTooltipHtml(formatPace(pace))} ${escapeTooltipHtml(units.paceLabel)}`,
         ].join("<br/>");
       },
     }),

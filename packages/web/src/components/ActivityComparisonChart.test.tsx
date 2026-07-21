@@ -2,6 +2,7 @@
 
 import type { UnitSystem } from "@dofek/format/units";
 import { render, screen } from "@testing-library/react";
+import type { ActivityComparisonRow } from "dofek-server/types";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
@@ -41,6 +42,23 @@ function getFirstSeriesData(): Array<[string, number]> {
   return [];
 }
 
+function isTooltipFormatter(value: unknown): value is (params: Record<string, unknown>) => unknown {
+  return typeof value === "function";
+}
+
+function getTooltipFormatter(): (params: Record<string, unknown>) => unknown {
+  const tooltip = capturedOption?.tooltip;
+  if (
+    !tooltip ||
+    typeof tooltip !== "object" ||
+    !("formatter" in tooltip) ||
+    !isTooltipFormatter(tooltip.formatter)
+  ) {
+    throw new Error("Expected tooltip formatter");
+  }
+  return tooltip.formatter;
+}
+
 const mockData = [
   {
     activityName: "Park Loop",
@@ -61,7 +79,7 @@ const mockData = [
       },
     ],
   },
-];
+] satisfies [ActivityComparisonRow];
 
 describe("ActivityComparisonChart", () => {
   it("shows empty state when no data", () => {
@@ -101,5 +119,25 @@ describe("ActivityComparisonChart", () => {
     const first = data[0];
     if (!first) throw new Error("Expected series data");
     expect(first[1]).toBe(300);
+  });
+
+  it("escapes provider-controlled route names in HTML tooltips", () => {
+    const maliciousName =
+      'Route <a href="javascript:alert(1)" onmouseover="alert(\'x\')">click</a> & "quoted"';
+    renderWithUnits(
+      <ActivityComparisonChart data={[{ ...mockData[0], activityName: maliciousName }]} />,
+    );
+
+    const html = String(
+      getTooltipFormatter()({
+        value: ["2026-03-10", 300],
+        seriesName: maliciousName,
+      }),
+    );
+
+    expect(html).toContain(
+      "Route &lt;a href=&quot;javascript:alert(1)&quot; onmouseover=&quot;alert(&#39;x&#39;)&quot;&gt;click&lt;/a&gt; &amp; &quot;quoted&quot;",
+    );
+    expect(html).not.toContain("<a ");
   });
 });

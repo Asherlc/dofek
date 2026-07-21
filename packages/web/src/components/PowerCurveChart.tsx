@@ -6,6 +6,7 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -98,7 +99,7 @@ export function PowerCurveChart({ data, comparisonData, model, loading }: PowerC
       trigger: "item",
       formatter: (params: { data: [number, number]; seriesName: string }) => {
         const [seconds, watts] = params.data;
-        return `${params.seriesName}<br/>${formatDuration(seconds)}: <strong>${watts}W</strong>`;
+        return `${escapeTooltipHtml(params.seriesName)}<br/>${formatDuration(seconds)}: <strong>${watts}W</strong>`;
       },
     }),
     xAxis: {

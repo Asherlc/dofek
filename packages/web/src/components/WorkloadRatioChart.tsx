@@ -8,6 +8,7 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -41,16 +42,16 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         const firstParam = params[0];
         if (!firstParam) return "";
         const date = formatDateShort(firstParam.data[0]);
-        let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+        let html = `<div style="font-weight:600;margin-bottom:4px">${escapeTooltipHtml(date)}</div>`;
         for (const p of params) {
           if (p.seriesName.startsWith("_")) continue;
           if (p.data[1] == null) continue;
           html += `<div style="display:flex;align-items:center;gap:6px">`;
-          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`;
+          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${escapeTooltipHtml(p.color)}"></span>`;
           const valueText = p.seriesName.includes("Load")
             ? formatTrainingLoad(p.data[1])
             : formatNumber(p.data[1], 2);
-          html += `<span>${p.seriesName}: <b>${valueText}</b></span>`;
+          html += `<span>${escapeTooltipHtml(p.seriesName)}: <b>${escapeTooltipHtml(valueText)}</b></span>`;
           html += `</div>`;
         }
         return html;

@@ -31,6 +31,16 @@ interface TooltipOverrides {
   axisPointer?: unknown;
 }
 
+/** Escape an untrusted value before interpolating it into an ECharts HTML tooltip. */
+export function escapeTooltipHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 /** Standard Dofek tooltip. Override trigger or add a custom formatter. */
 export function dofekTooltip(overrides?: TooltipOverrides) {
   return {
