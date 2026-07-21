@@ -14,6 +14,7 @@ const companionPairingStoreMocks = vi.hoisted(() => {
   const queueConnection = { connectionName: "test-queue-connection" };
   return {
     mockGetRedisConnection: vi.fn(() => queueConnection),
+    mockCaptureException: vi.fn(),
     mockRedisConnectionConstructor: vi.fn(function RedisConnection() {
       return {
         get client(): Promise<unknown> {
@@ -34,6 +35,10 @@ vi.mock("bullmq", () => ({
 
 vi.mock("dofek/jobs/queues", () => ({
   getRedisConnection: companionPairingStoreMocks.mockGetRedisConnection,
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: companionPairingStoreMocks.mockCaptureException,
 }));
 
 interface FakeRedisEntry {
@@ -624,6 +629,43 @@ describe("RedisCompanionPairingStore", () => {
         "dofek_companion_test",
       ],
     });
+  });
+
+  it("returns null when Redis token attachment cannot produce a challenge", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const challenge = await store.createChallenge();
+
+    await expect(
+      store.setClaimedChallengeToken({
+        shortCode: "ABC234",
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+      }),
+    ).resolves.toBeNull();
+    await store.claimChallenge({ shortCode: challenge.shortCode, userId: "user-1" });
+    redisClient.nextEvalResult = 1;
+    await expect(
+      store.setClaimedChallengeToken({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+      }),
+    ).resolves.toBeNull();
+    redisClient.nextEvalResult = "{";
+    await expect(
+      store.setClaimedChallengeToken({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+      }),
+    ).resolves.toBeNull();
+    expect(companionPairingStoreMocks.mockCaptureException).toHaveBeenCalledWith(
+      expect.any(SyntaxError),
+      {
+        extra: { companionPairingShortCode: challenge.shortCode },
+      },
+    );
   });
 
   it("releases an unfinished Redis token issuance only for its claim owner", async () => {
