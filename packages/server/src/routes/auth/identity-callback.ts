@@ -141,6 +141,7 @@ export async function handleIdentityCallback(
       {
         providerAccountId: identityUser.sub,
         email: identityUser.email,
+        emailVerified: identityUser.emailVerified,
         name: userName,
         groups: identityUser.groups,
       },

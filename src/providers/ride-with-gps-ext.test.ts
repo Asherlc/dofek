@@ -566,6 +566,7 @@ describe("RideWithGpsProvider — getUserIdentity", () => {
 
     expect(identity?.providerAccountId).toBe("42");
     expect(identity?.email).toBe("test@example.com");
+    expect(identity?.emailVerified).toBe(false);
     expect(identity?.name).toBe("Test User");
   });
 

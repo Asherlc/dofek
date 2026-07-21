@@ -42,7 +42,7 @@ vi.mock("../auth/password-credential.ts", () => ({
   authenticatePasswordUser: vi.fn(() => Promise.resolve({ userId: "user-1" })),
   DuplicateEmailError: class DuplicateEmailError extends Error {
     constructor() {
-      super("An account with this email already exists");
+      super("Unable to create an account with these details");
       this.name = "DuplicateEmailError";
     }
   },
@@ -52,7 +52,6 @@ vi.mock("../auth/password-credential.ts", () => ({
       this.name = "InvalidCredentialsError";
     }
   },
-  isPasswordAuthEnabled: vi.fn(() => true),
 }));
 
 vi.mock("../auth/session.ts", () => ({
@@ -2499,6 +2498,7 @@ describe("createAuthRouter", () => {
         expect.objectContaining({
           providerAccountId: "strava-web-signup-1",
           email: "runner@example.com",
+          emailVerified: false,
         }),
       );
       expect(ensureProvider).toHaveBeenCalledWith(

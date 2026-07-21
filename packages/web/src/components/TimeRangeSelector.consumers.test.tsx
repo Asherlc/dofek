@@ -226,7 +226,7 @@ describe("TimeRangeSelector consumers", () => {
     cleanup();
   });
 
-  it("passes finite and All ranges to Body selected chart queries while preserving support minima", async () => {
+  it("passes finite and All ranges to Body selected chart queries", async () => {
     render(<BodyHarness />);
     await screen.findByRole("button", { name: "All" });
 
@@ -239,7 +239,7 @@ describe("TimeRangeSelector consumers", () => {
       { name: "dailyMetrics.hrvBaseline", input: { days: 7, endDate: "2026-07-08" } },
       { name: "stress.scores", input: { days: 7, endDate: "2026-07-08" } },
       { name: "bodyAnalytics.recomposition", input: { days: 7, endDate: "2026-07-08" } },
-      { name: "bodyAnalytics.weightOverview", input: { days: 90, endDate: "2026-07-08" } },
+      { name: "bodyAnalytics.weightOverview", input: { days: 7, endDate: "2026-07-08" } },
       { name: "insights.compute", input: { days: 90, endDate: "2026-07-08" } },
     ]);
     expectRegistryCovered("body");

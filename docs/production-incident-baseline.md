@@ -7,6 +7,48 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-21: PR image vulnerability scan blocked CI
+
+### Symptoms
+
+`Test / Image Vulnerability Scan` failed while scanning `e2e-server:latest`,
+and the dependent `Test / Security & Dependencies` gate failed as a result.
+
+### User Impact
+
+No production users were impacted. The pull request was blocked from merging
+until the container's fixed vulnerabilities were removed.
+
+### Evidence
+
+The first fatal [Grype](https://github.com/anchore/grype) output was
+`discovered vulnerabilities at or above the severity threshold`. It identified
+fixed updates for application dependencies including `axios`, `body-parser`,
+`brace-expansion`, `protobufjs`, `shell-quote`, `tar`, and `undici`, plus the
+same packages bundled inside npm in the Node base image.
+
+### Root Cause
+
+The lockfile overrides initially pinned several transitive dependencies below
+their available fixed versions, while npm bundled in the Node base image also
+contained vulnerable copies. CI additionally reused stale dependency layers
+until the image build received an input-based cache key.
+
+### Fix or Mitigation
+
+Upgraded the affected direct/transitive dependency overrides with a regenerated
+lockfile, updated npm to 12.0.1, and keyed dependency-layer invalidation to
+`package.json`, `pnpm-lock.yaml`, and `Dockerfile`. The dbt-tools image remains
+on pinned Python 3.13.14 Alpine 3.24 because dbt 1.11.12 and mashumaro 3.14
+fail during startup on Python 3.14; see the [reproducible dbt import failure
+and Python 3.13 validation](#2026-07-08--ci-e2e-analytics-failing-on-dbt-import-under-python-314).
+The exact CI Grype command passed against the rebuilt local image.
+
+### Remaining Risk
+
+Future base-image or transitive dependency advisories can block CI again;
+continue treating the pinned image scan as a required merge gate.
+
 ## 2026-07-18: Loading baseline found slow anomaly and provider-detail queries
 
 ### Symptoms

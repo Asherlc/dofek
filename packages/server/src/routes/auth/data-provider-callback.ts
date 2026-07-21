@@ -3,8 +3,12 @@ import { revokeToken } from "dofek/auth/oauth";
 import { queryCache } from "dofek/lib/cache";
 import type { Request, Response } from "express";
 import { MissingEmailForSignupError, resolveOrCreateUser } from "../../auth/account-linking.ts";
-import { isValidMobileScheme, setSessionCookie } from "../../auth/cookies.ts";
-import { createSession } from "../../auth/session.ts";
+import {
+  getSessionIdFromRequest,
+  isValidMobileScheme,
+  setSessionCookie,
+} from "../../auth/cookies.ts";
+import { createSession, validateSession } from "../../auth/session.ts";
 import { logger } from "../../logger.ts";
 import {
   completeSignupHtml,
@@ -149,6 +153,14 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     if (!setup?.oauthConfig || !setup.exchangeCode) {
       res.status(400).send("Provider does not support OAuth code exchange");
       return;
+    }
+
+    if (setup.getUserIdentity && intent === "data") {
+      const sessionId = getSessionIdFromRequest(req);
+      const session = sessionId ? await validateSession(db, sessionId) : null;
+      if (session && session.userId !== stateUserId) {
+        throw new Error("OAuth callback session does not match authenticated OAuth state");
+      }
     }
 
     // Revoke existing tokens before exchange — some providers (e.g. Wahoo) limit

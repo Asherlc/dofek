@@ -44,6 +44,7 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
     const { userId, isNewUser } = await resolveOrCreateUser(db, pending.providerId, {
       providerAccountId: pending.identity.providerAccountId,
       email: parsedEmail.data,
+      emailVerified: false,
       name: pending.identity.name,
     });
     const { getAllProviders } = await import("dofek/providers/registry");

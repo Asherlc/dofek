@@ -448,6 +448,7 @@ export class RideWithGpsProvider implements SyncProvider {
         return {
           providerAccountId: String(data.user.id),
           email: data.user.email ?? null,
+          emailVerified: false,
           name: data.user.name ?? null,
         };
       },
