@@ -16,8 +16,19 @@ const mobileAuthExchangePayloadSchema = z.discriminatedUnion("kind", [
 export type MobileAuthExchangePayload = z.infer<typeof mobileAuthExchangePayloadSchema>;
 
 interface RedisClient {
-  set(key: string, value: string, mode: "PX", millisecondsToExpire: number): Promise<"OK" | null>;
-  getdel(key: string): Promise<string | null>;
+  set(key: string, value: string, options: { PX: number }): Promise<string | null>;
+  getAndDelete(key: string): Promise<string | null>;
+}
+
+interface RedisCommandClient {
+  set(key: string, value: string, options: { PX: number }): Promise<string | null>;
+  sendCommand(command: string[]): Promise<string | null>;
+}
+
+function isRedisCommandClient(value: unknown): value is RedisCommandClient {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("set" in value) || !("sendCommand" in value)) return false;
+  return typeof value.set === "function" && typeof value.sendCommand === "function";
 }
 
 async function getSharedRedisClient(): Promise<RedisClient> {
@@ -29,10 +40,12 @@ async function getSharedRedisClient(): Promise<RedisClient> {
     });
   }
   const redisClient = await sharedRedisConnection.client;
+  if (!isRedisCommandClient(redisClient)) {
+    throw new Error("Redis client does not support mobile auth exchange commands");
+  }
   return {
-    set: async (key, value, mode, millisecondsToExpire) =>
-      redisClient.set(key, value, mode, millisecondsToExpire),
-    getdel: async (key) => redisClient.getdel(key),
+    set: async (key, value, options) => redisClient.set(key, value, options),
+    getAndDelete: async (key) => redisClient.sendCommand(["GETDEL", key]),
   };
 }
 
@@ -53,18 +66,15 @@ export class RedisMobileAuthExchangeStore implements MobileAuthExchangeStore {
   async issue(payload: MobileAuthExchangePayload): Promise<string> {
     const code = randomBytes(32).toString("hex");
     const client = await this.#getRedisClient();
-    await client.set(
-      `${MOBILE_AUTH_CODE_PREFIX}${code}`,
-      JSON.stringify(payload),
-      "PX",
-      MOBILE_AUTH_CODE_TTL_MS,
-    );
+    await client.set(`${MOBILE_AUTH_CODE_PREFIX}${code}`, JSON.stringify(payload), {
+      PX: MOBILE_AUTH_CODE_TTL_MS,
+    });
     return code;
   }
 
   async consume(code: string): Promise<MobileAuthExchangePayload | null> {
     const client = await this.#getRedisClient();
-    const rawPayload = await client.getdel(`${MOBILE_AUTH_CODE_PREFIX}${code}`);
+    const rawPayload = await client.getAndDelete(`${MOBILE_AUTH_CODE_PREFIX}${code}`);
     if (!rawPayload) return null;
     try {
       const parsed = mobileAuthExchangePayloadSchema.safeParse(JSON.parse(rawPayload));
