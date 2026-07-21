@@ -2,11 +2,7 @@ import { PasswordLoginRequestSchema } from "@dofek/auth/auth";
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import express, { Router } from "express";
-import {
-  authenticatePasswordUser,
-  InvalidCredentialsError,
-  isPasswordAuthEnabled,
-} from "../auth/password-credential.ts";
+import { authenticatePasswordUser, InvalidCredentialsError } from "../auth/password-credential.ts";
 import { regenerateCompanionToken } from "../companion/token-repository.ts";
 import { logger } from "../logger.ts";
 
@@ -18,11 +14,6 @@ export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
   const router = Router();
 
   router.post("/password-login", express.json(), async (req, res) => {
-    if (!isPasswordAuthEnabled()) {
-      sendJson(res, 404, { error: "Password authentication is not enabled" });
-      return;
-    }
-
     const parsed = PasswordLoginRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       sendJson(res, 400, { error: "Invalid login details" });
