@@ -483,6 +483,14 @@ describe("fileUploadRouter", () => {
       message: "Upload session has expired",
     });
     expect(expired.storage.listParts).not.toHaveBeenCalled();
+
+    const initiated = setup(
+      upload({ expiresAt: new Date(0), r2MultipartUploadId: null, state: "initiated" }),
+    );
+    await expect(initiated.caller.resume({ uploadId: upload().id })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Upload session has expired",
+    });
   });
 
   it("rejects completion rate limits and uploads that are not ready", async () => {

@@ -401,7 +401,9 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
           await dependencies.repository.find(ctx.db, input.uploadId, ctx.userId),
           input.uploadId,
         );
-        if (upload.state === "uploading") requireActiveUpload(upload);
+        if (upload.state === "initiated" || upload.state === "uploading") {
+          requireActiveUpload(upload);
+        }
         const parts =
           upload.state === "uploading" && upload.r2MultipartUploadId
             ? await storageFor(dependencies).listParts(upload.objectKey, upload.r2MultipartUploadId)
