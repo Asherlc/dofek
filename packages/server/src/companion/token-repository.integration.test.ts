@@ -1,0 +1,112 @@
+import { sql } from "drizzle-orm";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  createOrGetCompanionToken,
+  regenerateCompanionToken,
+  validateCompanionToken,
+} from "./token-repository.ts";
+
+const insertedUserRowSchema = z.object({ id: z.string() });
+const activeTokenCountRowSchema = z.object({ active_count: z.coerce.number() });
+
+describe("companion token repository (integration)", () => {
+  let ctx: TestContext;
+  let testUserId: string;
+
+  beforeAll(async () => {
+    ctx = await setupTestDatabase();
+  }, 120_000);
+
+  afterAll(async () => {
+    await ctx?.cleanup();
+  });
+
+  beforeEach(async () => {
+    await ctx.db.execute(sql`DELETE FROM fitness.companion_token`);
+    await ctx.db.execute(
+      sql`DELETE FROM fitness.user_profile WHERE email = 'companion-token-test@test.com'`,
+    );
+    const rows = await executeWithSchema(
+      ctx.db,
+      insertedUserRowSchema,
+      sql`INSERT INTO fitness.user_profile (name, email)
+          VALUES ('Companion Token Test User', 'companion-token-test@test.com')
+          RETURNING id`,
+    );
+    const insertedUser = rows[0];
+    if (!insertedUser) throw new Error("Failed to create test user");
+    testUserId = insertedUser.id;
+  });
+
+  it("keeps the old token valid when creating its replacement fails", async () => {
+    const previous = await createOrGetCompanionToken(ctx.db, testUserId);
+    if (!previous.token) throw new Error("Failed to create initial companion token");
+
+    await ctx.db.execute(
+      sql.raw(`
+      CREATE FUNCTION fitness.fail_companion_token_insert()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'forced companion token insertion failure';
+      END;
+      $$`),
+    );
+    await ctx.db.execute(
+      sql.raw(`
+      CREATE TRIGGER fail_companion_token_insert
+      BEFORE INSERT ON fitness.companion_token
+      FOR EACH ROW EXECUTE FUNCTION fitness.fail_companion_token_insert();
+    `),
+    );
+
+    try {
+      await expect(regenerateCompanionToken(ctx.db, testUserId)).rejects.toThrow(
+        "forced companion token insertion failure",
+      );
+    } finally {
+      await ctx.db.execute(
+        sql.raw("DROP TRIGGER fail_companion_token_insert ON fitness.companion_token"),
+      );
+      await ctx.db.execute(sql.raw("DROP FUNCTION fitness.fail_companion_token_insert()"));
+    }
+
+    expect(await validateCompanionToken(ctx.db, previous.token)).toBe(testUserId);
+  });
+
+  it("leaves exactly one active token after successful regeneration", async () => {
+    const previous = await createOrGetCompanionToken(ctx.db, testUserId);
+    if (!previous.token) throw new Error("Failed to create initial companion token");
+
+    const replacement = await regenerateCompanionToken(ctx.db, testUserId);
+
+    if (!replacement.token) throw new Error("Regeneration did not return a replacement token");
+    expect(await validateCompanionToken(ctx.db, previous.token)).toBeNull();
+    expect(await validateCompanionToken(ctx.db, replacement.token)).toBe(testUserId);
+    const activeTokenRows = await executeWithSchema(
+      ctx.db,
+      activeTokenCountRowSchema,
+      sql`SELECT count(*)::int AS active_count
+          FROM fitness.companion_token
+          WHERE user_id = ${testUserId} AND revoked_at IS NULL`,
+    );
+    expect(activeTokenRows[0]?.active_count).toBe(1);
+  });
+
+  it("returns a conflict result rather than an immediately-invalid token for concurrent regeneration", async () => {
+    await createOrGetCompanionToken(ctx.db, testUserId);
+
+    const results = await Promise.all([
+      regenerateCompanionToken(ctx.db, testUserId),
+      regenerateCompanionToken(ctx.db, testUserId),
+    ]);
+    const returnedTokens = results.flatMap((result) => (result.token ? [result.token] : []));
+
+    expect(returnedTokens).toHaveLength(1);
+    const returnedToken = returnedTokens[0];
+    if (!returnedToken) throw new Error("Concurrent regeneration did not return a token");
+    expect(await validateCompanionToken(ctx.db, returnedToken)).toBe(testUserId);
+  });
+});

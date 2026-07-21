@@ -1,8 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import {
+  executeWithSchema,
+  type SchemaExecutionDatabase,
+  timestampStringSchema,
+} from "../lib/typed-sql.ts";
 
 const companionTokenRowSchema = z.object({
   id: z.string(),
@@ -18,7 +21,10 @@ export interface CompanionTokenMetadata {
   revokedAt: string | null;
 }
 
-type ExecutableDatabase = Pick<Database, "execute">;
+type ExecutableDatabase = SchemaExecutionDatabase;
+interface TransactionalDatabase {
+  transaction: <T>(callback: (transaction: ExecutableDatabase) => Promise<T>) => Promise<T>;
+}
 
 export function generateCompanionToken(): string {
   return `dofek_companion_${randomBytes(32).toString("base64url")}`;
@@ -75,23 +81,17 @@ export async function createOrGetCompanionToken(
 }
 
 export async function regenerateCompanionToken(
-  db: ExecutableDatabase,
+  db: TransactionalDatabase,
   userId: string,
 ): Promise<CompanionTokenMetadata> {
-  await db.execute(sql`BEGIN`);
-  try {
-    await db.execute(
+  return db.transaction(async (transaction) => {
+    await transaction.execute(
       sql`UPDATE fitness.companion_token
           SET revoked_at = COALESCE(revoked_at, NOW())
           WHERE user_id = ${userId} AND revoked_at IS NULL`,
     );
-    const result = await createOrGetCompanionToken(db, userId);
-    await db.execute(sql`COMMIT`);
-    return result;
-  } catch (error) {
-    await db.execute(sql`ROLLBACK`);
-    throw error;
-  }
+    return createOrGetCompanionToken(transaction, userId);
+  });
 }
 
 export async function validateCompanionToken(

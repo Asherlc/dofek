@@ -107,9 +107,8 @@ describe("token-repository", () => {
 
   describe("regenerateCompanionToken", () => {
     it("revokes existing token and creates a new one", async () => {
-      const db = createMockDb();
-      db.execute
-        .mockResolvedValueOnce([]) // BEGIN
+      const transaction = createMockDb();
+      transaction.execute
         .mockResolvedValueOnce([]) // UPDATE revoke
         .mockResolvedValueOnce([
           {
@@ -118,11 +117,22 @@ describe("token-repository", () => {
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
-        ]) // INSERT ... ON CONFLICT ... RETURNING
-        .mockResolvedValueOnce([]); // COMMIT
+        ]); // INSERT ... ON CONFLICT ... RETURNING
+      let transactionCallCount = 0;
+      const db = {
+        execute: vi.fn(),
+        transaction: async <T>(callback: (tx: typeof transaction) => Promise<T>): Promise<T> => {
+          transactionCallCount += 1;
+          return callback(transaction);
+        },
+      };
+
       const result = await regenerateCompanionToken(db, "user-123");
+
       expect(result.id).toBe("new-id");
       expect(result.token).not.toBeNull();
+      expect(transactionCallCount).toBe(1);
+      expect(db.execute).not.toHaveBeenCalled();
     });
   });
 });
