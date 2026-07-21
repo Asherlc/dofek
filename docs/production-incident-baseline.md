@@ -14699,3 +14699,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Added request-level coverage for separate `session` and `code` queries, asserting redaction while preserving unrelated parameters and not adding absent sensitive parameters.
 - **Validation:** Focused Stryker run passed with 100% mutation score (3/3 killed, 0 surviving, 0 timed out); the index test suite and Biome check pass. CI rerun is queued on commit `c55eb45d`.
 - **Remaining risk / follow-up:** Confirm the queued CI run completes successfully.
+
+## 2026-07-21 — Kaya Web Import Stalled Before Queueing
+
+- **Status:** Root cause fixed and validated locally; production deployment is pending.
+- **Symptoms:** The Kaya provider card displayed `Select the same file to resume upload`
+  immediately after a CSV import attempt.
+- **User impact:** The Kaya export was not imported, and retrying from the provider card
+  presented a resumable-upload prompt instead of import progress.
+- **Evidence:** At `2026-07-21 23:03:17 UTC`, the only production
+  `fitness.file_upload` row for `kaya-export` entered `uploading` and stopped
+  updating at `23:03:17.808 UTC`. No Kaya import job or matching web/worker error
+  appeared in the two-hour Docker log window. The screenshot was captured at
+  `23:03:30 UTC`. In `FileImportZone`, the effect cleanup aborts the current
+  upload, while the effect depends transitively on mutation results that change
+  as a mutation runs. React reruns cleanup before an effect whose dependencies
+  changed runs again ([React `useEffect`](https://react.dev/reference/react/useEffect#parameters)),
+  and `useMutation` exposes changing mutation status and result state
+  ([TanStack Query `useMutation`](https://tanstack.com/query/latest/docs/framework/react/reference/useMutation)).
+- **Root cause:** A mutation-state rerender changed the uploader effect's callback
+  dependencies, so React ran cleanup and aborted the browser upload before it
+  could complete. The local IndexedDB session remained, producing the resume
+  prompt on the next render.
+- **Fix / mitigation:** `FileImportZone` now depends on the stable mutation
+  functions instead of the changing mutation result objects, so mutation-state
+  rerenders do not recreate the polling callback or run the effect cleanup that
+  aborts the upload. A component regression test models changing mutation result
+  objects and proves the upload signal stays active.
+- **Validation:** The new regression test failed against the original
+  implementation because the upload signal was aborted, then passed after the
+  fix. All 11 focused `FileImportZone` tests, the web TypeScript check, and Biome
+  checks pass without added waits or retries.
+- **Remaining risk / follow-up:** Deploy the fix, retry the Kaya CSV, and confirm
+  the production upload row advances through queued and completed states.
