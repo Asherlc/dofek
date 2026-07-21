@@ -5,13 +5,14 @@ export interface SqlExecutor {
   execute(query: SQL): Promise<unknown>;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
+const transactionQueryResultSchema = z.object({ rows: z.array(z.unknown()) });
 
 function extractRows(result: unknown): unknown[] {
   if (Array.isArray(result)) return result;
-  if (isRecord(result) && Array.isArray(result.rows)) return result.rows;
+
+  const transactionQueryResult = transactionQueryResultSchema.safeParse(result);
+  if (transactionQueryResult.success) return transactionQueryResult.data.rows;
+
   throw new Error("Unexpected database execute result shape");
 }
 
