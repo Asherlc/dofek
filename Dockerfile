@@ -52,6 +52,7 @@ COPY . .
 FROM base AS workspace-manifests
 WORKDIR /app
 ENV CYPRESS_INSTALL_BINARY=0
+ARG DEPENDENCY_CACHE_BUST
 COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
 COPY packages/server/package.json ./packages/server/
@@ -82,11 +83,13 @@ COPY packages/zones/package.json ./packages/zones/
 # ── Workspace dependencies: full install for web build tooling ───────────
 FROM workspace-manifests AS workspace-deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    echo "$DEPENDENCY_CACHE_BUST" >/dev/null && \
     pnpm install --frozen-lockfile
 
 # ── Server production dependencies: stays cached across source-only changes ──
 FROM workspace-manifests AS server-deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    echo "$DEPENDENCY_CACHE_BUST" >/dev/null && \
     pnpm install --prod --frozen-lockfile --filter dofek-server...
 
 # ── Client build: full source + Vite build (assets copied into server stage)
