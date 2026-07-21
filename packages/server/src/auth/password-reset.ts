@@ -5,8 +5,8 @@ import { z } from "zod";
 import { sendPlainTextEmail } from "../../../../src/email.ts";
 import { getPublicUrlBase } from "../lib/public-url.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import { revokePasswordChangeAuthenticationMaterial } from "./password-change.ts";
 import { hashPassword, normalizeEmail, validatePassword } from "./password.ts";
+import { revokePasswordChangeAuthenticationMaterial } from "./password-change.ts";
 
 const RESET_TOKEN_BYTES = 32;
 const RESET_TOKEN_TTL_MINUTES = 60;

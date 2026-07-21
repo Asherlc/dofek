@@ -2,8 +2,8 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import { revokePasswordChangeAuthenticationMaterial } from "./password-change.ts";
 import { hashPassword, normalizeEmail, validatePassword, verifyPassword } from "./password.ts";
+import { revokePasswordChangeAuthenticationMaterial } from "./password-change.ts";
 
 export class DuplicateEmailError extends Error {
   constructor() {
