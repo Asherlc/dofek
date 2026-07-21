@@ -111,21 +111,9 @@ describe("token-repository", () => {
       transaction.execute
         .mockResolvedValueOnce([
           {
-            id: "old-id",
-            user_id: "user-123",
-            created_at: "2026-01-01T00:00:00.000Z",
-            revoked_at: null,
+            acquired: true,
           },
-        ]) // SELECT active token before lock
-        .mockResolvedValueOnce([]) // Acquire advisory lock
-        .mockResolvedValueOnce([
-          {
-            id: "old-id",
-            user_id: "user-123",
-            created_at: "2026-01-01T00:00:00.000Z",
-            revoked_at: null,
-          },
-        ]) // SELECT active token after lock
+        ]) // Acquire advisory lock
         .mockResolvedValueOnce([]) // UPDATE revoke
         .mockResolvedValueOnce([
           {
@@ -152,18 +140,14 @@ describe("token-repository", () => {
       expect(db.execute).not.toHaveBeenCalled();
     });
 
-    it("returns the concurrently-created token metadata without revoking it", async () => {
+    it("returns a conflict result without revoking an active token", async () => {
       const transaction = createMockDb();
       transaction.execute
         .mockResolvedValueOnce([
           {
-            id: "old-id",
-            user_id: "user-123",
-            created_at: "2026-01-01T00:00:00.000Z",
-            revoked_at: null,
+            acquired: false,
           },
-        ]) // SELECT active token before lock
-        .mockResolvedValueOnce([]) // Acquire advisory lock
+        ]) // Fail to acquire advisory lock
         .mockResolvedValueOnce([
           {
             id: "new-id",
@@ -171,7 +155,7 @@ describe("token-repository", () => {
             created_at: "2026-01-01T00:01:00.000Z",
             revoked_at: null,
           },
-        ]); // SELECT active token after lock
+        ]); // SELECT active token
       const db = {
         transaction: async <T>(callback: (tx: typeof transaction) => Promise<T>): Promise<T> =>
           callback(transaction),
@@ -185,7 +169,7 @@ describe("token-repository", () => {
         createdAt: "2026-01-01T00:01:00.000Z",
         revokedAt: null,
       });
-      expect(transaction.execute).toHaveBeenCalledTimes(3);
+      expect(transaction.execute).toHaveBeenCalledTimes(2);
     });
   });
 });

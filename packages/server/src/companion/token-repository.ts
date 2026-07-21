@@ -13,6 +13,7 @@ const companionTokenRowSchema = z.object({
   created_at: timestampStringSchema,
   revoked_at: timestampStringSchema.nullable(),
 });
+const advisoryLockRowSchema = z.object({ acquired: z.boolean() });
 
 export interface CompanionTokenMetadata {
   id: string;
@@ -92,19 +93,21 @@ export async function regenerateCompanionToken(
   userId: string,
 ): Promise<CompanionTokenMetadata> {
   return db.transaction(async (transaction) => {
-    const activeTokenBeforeLock = await findActiveCompanionToken(transaction, userId);
-    await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
-    const activeTokenAfterLock = await findActiveCompanionToken(transaction, userId);
-    if (
-      activeTokenBeforeLock &&
-      activeTokenAfterLock &&
-      activeTokenBeforeLock.id !== activeTokenAfterLock.id
-    ) {
+    const lockRows = await executeWithSchema(
+      transaction,
+      advisoryLockRowSchema,
+      sql`SELECT pg_try_advisory_xact_lock(hashtext(${userId})) AS acquired`,
+    );
+    if (!lockRows[0]?.acquired) {
+      const activeToken = await findActiveCompanionToken(transaction, userId);
+      if (!activeToken) {
+        throw new Error("Companion token regeneration is already in progress");
+      }
       return {
-        id: activeTokenAfterLock.id,
+        id: activeToken.id,
         token: null,
-        createdAt: activeTokenAfterLock.created_at,
-        revokedAt: activeTokenAfterLock.revoked_at,
+        createdAt: activeToken.created_at,
+        revokedAt: activeToken.revoked_at,
       };
     }
     await transaction.execute(

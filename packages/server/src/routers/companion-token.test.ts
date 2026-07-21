@@ -74,21 +74,9 @@ describe("companionTokenRouter", () => {
       execute
         .mockResolvedValueOnce([
           {
-            id: "old-id",
-            user_id: "user-1",
-            created_at: "2026-01-01T00:00:00.000Z",
-            revoked_at: null,
+            acquired: true,
           },
-        ]) // SELECT active token before lock
-        .mockResolvedValueOnce([]) // Acquire advisory lock
-        .mockResolvedValueOnce([
-          {
-            id: "old-id",
-            user_id: "user-1",
-            created_at: "2026-01-01T00:00:00.000Z",
-            revoked_at: null,
-          },
-        ]) // SELECT active token after lock
+        ]) // Acquire advisory lock
         .mockResolvedValueOnce([]) // UPDATE revoke
         .mockResolvedValueOnce([
           {
