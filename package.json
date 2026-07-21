@@ -45,6 +45,7 @@
     "./providers/apple-health/streaming": "./src/providers/apple-health/streaming.ts",
     "./providers/apple-health/fhir": "./src/providers/apple-health/fhir.ts",
     "./providers/apple-health/dates": "./src/providers/apple-health/dates.ts",
+    "./providers/kaya/provider": "./src/providers/kaya/provider.ts",
     "./providers/ride-with-gps": "./src/providers/ride-with-gps.ts",
     "./providers/strong-csv": "./src/providers/strong-csv.ts",
     "./providers/polar": "./src/providers/polar/provider.ts",
