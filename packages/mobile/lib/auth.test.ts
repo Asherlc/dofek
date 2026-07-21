@@ -361,8 +361,11 @@ describe("startOAuthLogin", () => {
   it("returns auth result from successful deep link", async () => {
     vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
       type: "success",
-      url: "dofek://auth/callback?session=sess-oauth-1&new_user=true",
+      url: "dofek://auth/callback?code=exchange-oauth-1",
     });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ session: "sess-oauth-1", isNewUser: true }), { status: 200 }),
+    );
 
     const result = await startOAuthLogin("https://srv", "google", false);
 
@@ -376,8 +379,11 @@ describe("startOAuthLogin", () => {
   it("uses data-provider auth path when isDataProvider is true", async () => {
     vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
       type: "success",
-      url: "dofek://auth/callback?session=sess-data-1&new_user=false",
+      url: "dofek://auth/callback?code=exchange-data-1",
     });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ session: "sess-data-1", isNewUser: false }), { status: 200 }),
+    );
 
     const result = await startOAuthLogin("https://srv", "strava", true);
 
@@ -391,8 +397,11 @@ describe("startOAuthLogin", () => {
   it("throws when OAuth callback is missing new_user", async () => {
     vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
       type: "success",
-      url: "dofek://auth/callback?session=sess-oauth-1",
+      url: "dofek://auth/callback?code=exchange-oauth-1",
     });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ session: "sess-oauth-1" }), { status: 200 }),
+    );
 
     await expect(startOAuthLogin("https://srv", "google", false)).rejects.toThrow(
       "Authentication failed",

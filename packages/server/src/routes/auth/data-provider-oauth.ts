@@ -7,11 +7,42 @@ import type { OAuthStateEntry } from "../../lib/oauth-state-store.ts";
 import { logger } from "../../logger.ts";
 import {
   getDb,
+  getMobileAuthExchangeStoreRef,
   getOAuth1SecretStoreRef,
   getOAuthStateStoreRef,
   getSinglePathParam,
   sanitizeReturnTo,
 } from "./shared.ts";
+
+export async function handleMobileProviderHandoff(req: Request, res: Response): Promise<void> {
+  const providerId = getSinglePathParam(req.params.provider);
+  if (!providerId) {
+    res.status(400).json({ error: "Missing provider" });
+    return;
+  }
+  const sessionId = getSessionIdFromRequest(req);
+  if (!sessionId) {
+    res.status(401).json({ error: "You must be logged in to connect a provider" });
+    return;
+  }
+  const session = await validateSession(getDb(), sessionId);
+  if (!session) {
+    res.status(401).json({ error: "Session expired — please log in first" });
+    return;
+  }
+  const { getAllProviders } = await import("dofek/providers/registry");
+  await (await import("../../routers/sync-helpers.ts")).ensureProvidersRegistered();
+  if (providerId !== "slack" && !getAllProviders().some((provider) => provider.id === providerId)) {
+    res.status(404).json({ error: "Unknown provider" });
+    return;
+  }
+  const code = await getMobileAuthExchangeStoreRef().issue({
+    kind: "provider",
+    userId: session.userId,
+    providerId,
+  });
+  res.json({ code });
+}
 
 async function startDataProviderOAuth(
   req: Request,
@@ -167,9 +198,20 @@ export async function handleDataProviderOAuthStart(req: Request, res: Response):
       return;
     }
     // 2. Then check session (returns 401 if not logged in)
-    const sessionId = getSessionIdFromRequest(req);
+    const handoffCode = typeof req.query.code === "string" ? req.query.code : undefined;
+    const handoff = handoffCode ? await getMobileAuthExchangeStoreRef().consume(handoffCode) : null;
+    if (handoff && (handoff.kind !== "provider" || handoff.providerId !== providerId)) {
+      res.status(401).send("Invalid provider handoff code");
+      return;
+    }
+    const sessionId = handoff?.kind === "provider" ? undefined : getSessionIdFromRequest(req);
     const db = getDb();
-    const session = sessionId ? await validateSession(db, sessionId) : null;
+    const session =
+      handoff?.kind === "provider"
+        ? { userId: handoff.userId }
+        : sessionId
+          ? await validateSession(db, sessionId)
+          : null;
     if (!session) {
       res.status(401).send("You must be logged in to connect a provider");
       return;

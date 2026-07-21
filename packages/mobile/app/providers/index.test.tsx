@@ -840,6 +840,14 @@ describe("ProviderCard", () => {
 
 describe("ProvidersScreen", () => {
   beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ code: "provider-handoff-code" }), { status: 200 }),
+        ),
+    );
     mockPush.mockReset();
     mockReplace.mockReset();
     mockUseLocalSearchParams.mockReturnValue({});
@@ -1784,7 +1792,7 @@ describe("ProvidersScreen", () => {
 
     await waitFor(() => {
       expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
-        "https://test.example.com/auth/provider/strava?session=test-token",
+        "https://test.example.com/auth/provider/strava?code=provider-handoff-code",
       );
     });
   });

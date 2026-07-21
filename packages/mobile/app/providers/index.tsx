@@ -17,6 +17,7 @@ import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
+import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
 import { syncDofekFoodToHealthKit } from "../../lib/health-kit-food-writeback";
 import {
@@ -493,13 +494,15 @@ export default function ProvidersScreen() {
     async (provider: { id: string; label: string; authType: string }) => {
       switch (provider.authType) {
         case "oauth":
-        case "oauth1":
+        case "oauth1": {
           if (!sessionToken) break;
+          const handoffCode = await createProviderHandoffCode(serverUrl, provider.id, sessionToken);
           await WebBrowser.openBrowserAsync(
-            `${serverUrl}/auth/provider/${provider.id}?session=${encodeURIComponent(sessionToken)}`,
+            `${serverUrl}/auth/provider/${provider.id}?code=${encodeURIComponent(handoffCode)}`,
           );
           await trpcUtils.sync.providers.invalidate();
           break;
+        }
         case "credential":
           setCredentialAuthProvider({ id: provider.id, name: provider.label });
           break;

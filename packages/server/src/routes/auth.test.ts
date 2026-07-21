@@ -1022,7 +1022,7 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(302);
       const location = res.headers.location;
       expect(typeof location).toBe("string");
-      expect(location).toContain("dofek://auth/callback?session=");
+      expect(location).toContain("dofek://auth/callback?code=");
       // Restore
       vi.mocked(getMobileSchemeCookie).mockReturnValue(undefined);
     });
@@ -1233,7 +1233,7 @@ describe("createAuthRouter", () => {
         formBody: { code: "apple-code", state: "apple:mock-state" },
       });
       expect(callbackRes.status).toBe(302);
-      expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
+      expect(callbackRes.headers.location).toContain("dofek://auth/callback?code=");
 
       // Restore
       vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
@@ -1615,7 +1615,7 @@ describe("createAuthRouter", () => {
         "/auth/callback/google?code=authcode&state=google:mobile-state",
       );
       expect(res.status).toBe(302);
-      expect(res.headers.location).toContain("dofek://auth/callback?session=sess-1");
+      expect(res.headers.location).toContain("dofek://auth/callback?code=");
       // Should have created a session
       expect(createSession).toHaveBeenCalled();
       // Should NOT have set a session cookie (mobile uses deep link instead)
@@ -2057,8 +2057,7 @@ describe("createAuthRouter", () => {
         `/callback?code=strava-mobile-code&state=${state}`,
       );
       expect(callbackRes.status).toBe(302);
-      expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
-      expect(callbackRes.headers.location).toContain("new_user=false");
+      expect(callbackRes.headers.location).toContain("dofek://auth/callback?code=");
       expect(setSessionCookie).not.toHaveBeenCalled();
       expect(resolveOrCreateUser).toHaveBeenCalledWith(
         expect.anything(),
@@ -2349,8 +2348,7 @@ describe("createAuthRouter", () => {
       const { ensureProvider } = await import("dofek/db/tokens");
 
       expect(completeRes.status).toBe(302);
-      expect(completeRes.headers.location).toContain("dofek://auth/callback?session=");
-      expect(completeRes.headers.location).toContain("new_user=true");
+      expect(completeRes.headers.location).toContain("dofek://auth/callback?code=");
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),
         "strava",
@@ -3422,7 +3420,7 @@ describe("createAuthRouter", () => {
         `/callback?code=mobile-data-code&state=${state}`,
       );
       expect(callbackRes.status).toBe(302);
-      expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
+      expect(callbackRes.headers.location).toContain("dofek://auth/callback?code=");
       expect(setSessionCookie).not.toHaveBeenCalled();
     });
 

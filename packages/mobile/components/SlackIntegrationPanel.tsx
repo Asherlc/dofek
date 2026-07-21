@@ -1,5 +1,6 @@
 import * as WebBrowser from "expo-web-browser";
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { createProviderHandoffCode } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
 import { SERVER_URL } from "../lib/server";
 import { trpc } from "../lib/trpc";
@@ -10,8 +11,10 @@ export function SlackIntegrationPanel() {
   const { sessionToken } = useAuth();
 
   async function handleConnect() {
+    if (!sessionToken) return;
+    const handoffCode = await createProviderHandoffCode(SERVER_URL, "slack", sessionToken);
     const url = new URL(`${SERVER_URL}/auth/provider/slack`);
-    if (sessionToken) url.searchParams.set("session", sessionToken);
+    url.searchParams.set("code", handoffCode);
     await WebBrowser.openBrowserAsync(url.toString(), {
       presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
     });

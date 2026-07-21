@@ -13,6 +13,7 @@ import { logger } from "../../logger.ts";
 import {
   completeSignupHtml,
   getDb,
+  getMobileAuthExchangeStoreRef,
   getOAuth1SecretStoreRef,
   getOAuthStateStoreRef,
   getPostLoginRedirect,
@@ -267,9 +268,12 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
           // Mobile: redirect to app via deep link with session token
           if (stateEntry.mobileScheme && isValidMobileScheme(stateEntry.mobileScheme)) {
             logger.info(`[auth] User ${userId} logged in via data provider ${providerId} (mobile)`);
-            res.redirect(
-              `${stateEntry.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}&new_user=${isNewUser}`,
-            );
+            const exchangeCode = await getMobileAuthExchangeStoreRef().issue({
+              kind: "session",
+              sessionId: sessionInfo.sessionId,
+              isNewUser,
+            });
+            res.redirect(`${stateEntry.mobileScheme}://auth/callback?code=${exchangeCode}`);
             return;
           }
 

@@ -199,18 +199,53 @@ export async function startOAuthLogin(
     return null;
   }
 
-  // Extract session token from the redirect URL
+  // Exchange the short-lived deep-link code for the session over HTTPS.
   const url = new URL(result.url);
-  const session = url.searchParams.get("session");
-  const newUserParam = url.searchParams.get("new_user");
-  if (!session) return null;
-  if (newUserParam !== "true" && newUserParam !== "false") {
-    throw new Error("Authentication failed");
+  const code = url.searchParams.get("code");
+  if (!code) return null;
+  const exchangeResponse = await fetch(`${serverUrl}/auth/mobile/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const exchangeData: unknown = await exchangeResponse.json().catch(() => null);
+  const parsedExchange = z
+    .object({ session: z.string(), isNewUser: z.boolean(), error: z.string().optional() })
+    .safeParse(exchangeData);
+  if (!exchangeResponse.ok || !parsedExchange.success) {
+    throw new Error(
+      parsedExchange.success && parsedExchange.data.error
+        ? parsedExchange.data.error
+        : "Authentication failed",
+    );
   }
   return {
-    session,
-    isNewUser: newUserParam === "true",
+    session: parsedExchange.data.session,
+    isNewUser: parsedExchange.data.isNewUser,
   };
+}
+
+export async function createProviderHandoffCode(
+  serverUrl: string,
+  providerId: string,
+  sessionToken: string,
+): Promise<string> {
+  const response = await fetch(`${serverUrl}/auth/provider/${providerId}/hand-off`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${sessionToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+  });
+  const data: unknown = await response.json().catch(() => null);
+  const parsed = z.object({ code: z.string(), error: z.string().optional() }).safeParse(data);
+  if (!response.ok || !parsed.success) {
+    throw new Error(
+      parsed.success && parsed.data.error ? parsed.data.error : "Provider connection failed",
+    );
+  }
+  return parsed.data.code;
 }
 
 /** Whether native Apple Sign In is available (iOS 13+). */
