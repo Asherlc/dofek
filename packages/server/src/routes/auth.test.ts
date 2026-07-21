@@ -48,7 +48,6 @@ vi.mock("../auth/password-credential.ts", () => ({
       this.name = "InvalidCredentialsError";
     }
   },
-  isPasswordAuthEnabled: vi.fn(() => true),
 }));
 
 vi.mock("../auth/session.ts", () => ({

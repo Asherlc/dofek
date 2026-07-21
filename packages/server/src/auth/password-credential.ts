@@ -108,10 +108,6 @@ export async function authenticatePasswordUser(
   return { userId: row.user_id };
 }
 
-export function isPasswordAuthEnabled(): boolean {
-  return process.env.ENABLE_PASSWORD_AUTH !== "false";
-}
-
 export class MissingCurrentPasswordError extends Error {
   constructor() {
     super("Current password is required");

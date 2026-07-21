@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   mockRegisterPasswordUser,
   mockAuthenticatePasswordUser,
-  mockIsPasswordAuthEnabled,
   mockCreateSession,
   mockSetSessionCookie,
   mockSanitizeReturnTo,
@@ -15,7 +14,6 @@ const {
 } = vi.hoisted(() => ({
   mockRegisterPasswordUser: vi.fn(),
   mockAuthenticatePasswordUser: vi.fn(),
-  mockIsPasswordAuthEnabled: vi.fn(() => true),
   mockCreateSession: vi.fn(),
   mockSetSessionCookie: vi.fn(),
   mockSanitizeReturnTo: vi.fn((value: string | undefined) => {
@@ -31,7 +29,6 @@ const {
 vi.mock("../../auth/password-credential.ts", () => ({
   registerPasswordUser: (...args: unknown[]) => mockRegisterPasswordUser(...args),
   authenticatePasswordUser: (...args: unknown[]) => mockAuthenticatePasswordUser(...args),
-  isPasswordAuthEnabled: () => mockIsPasswordAuthEnabled(),
   DuplicateEmailError: class DuplicateEmailError extends Error {
     constructor() {
       super("Unable to create an account with these details");
@@ -124,7 +121,6 @@ function createMockReqRes(options?: {
 describe("handlePasswordRegister", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsPasswordAuthEnabled.mockReturnValue(true);
     mockCreateSession.mockResolvedValue({
       sessionId: "sess-register",
       expiresAt: new Date("2027-01-01"),
@@ -134,16 +130,6 @@ describe("handlePasswordRegister", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-  });
-
-  it("returns 404 when password auth is disabled", async () => {
-    mockIsPasswordAuthEnabled.mockReturnValue(false);
-    const { req, res } = createMockReqRes();
-
-    await handlePasswordRegister(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: "Password authentication is not enabled" });
   });
 
   it("returns 400 for invalid registration body", async () => {
@@ -332,22 +318,11 @@ describe("handlePasswordRegister", () => {
 describe("handlePasswordLogin", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsPasswordAuthEnabled.mockReturnValue(true);
     mockCreateSession.mockResolvedValue({
       sessionId: "sess-login",
       expiresAt: new Date("2027-01-01"),
     });
     mockAuthenticatePasswordUser.mockResolvedValue({ userId: "user-1" });
-  });
-
-  it("returns 404 when password auth is disabled", async () => {
-    mockIsPasswordAuthEnabled.mockReturnValue(false);
-    const { req, res } = createMockReqRes();
-
-    await handlePasswordLogin(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: "Password authentication is not enabled" });
   });
 
   it("returns 400 for invalid login body", async () => {
@@ -488,7 +463,6 @@ describe("handlePasswordLogin", () => {
 describe("handlePasswordResetRequest", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsPasswordAuthEnabled.mockReturnValue(true);
     mockCreatePasswordResetToken.mockResolvedValue({ sent: true, token: "reset-token" });
   });
 
@@ -504,16 +478,6 @@ describe("handlePasswordResetRequest", () => {
     expect(res.json).toHaveBeenCalledWith({
       message: "If that email has a password login, we'll send a reset link.",
     });
-  });
-
-  it("returns 404 when password auth is disabled", async () => {
-    mockIsPasswordAuthEnabled.mockReturnValue(false);
-    const { req, res } = createMockReqRes();
-
-    await handlePasswordResetRequest(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: "Password authentication is not enabled" });
   });
 
   it("returns 400 for invalid reset request body", async () => {
@@ -550,7 +514,6 @@ describe("handlePasswordResetRequest", () => {
 describe("handlePasswordResetConfirm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsPasswordAuthEnabled.mockReturnValue(true);
     mockResetPasswordWithToken.mockResolvedValue(undefined);
   });
 
@@ -564,16 +527,6 @@ describe("handlePasswordResetConfirm", () => {
 
     expect(mockResetPasswordWithToken).toHaveBeenCalledWith({}, "reset-token", "new-password123");
     expect(res.json).toHaveBeenCalledWith({ ok: true });
-  });
-
-  it("returns 404 when password auth is disabled", async () => {
-    mockIsPasswordAuthEnabled.mockReturnValue(false);
-    const { req, res } = createMockReqRes();
-
-    await handlePasswordResetConfirm(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: "Password authentication is not enabled" });
   });
 
   it("returns 400 for invalid reset confirmation body", async () => {

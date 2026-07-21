@@ -12,7 +12,6 @@ import {
   authenticatePasswordUser,
   DuplicateEmailError,
   InvalidCredentialsError,
-  isPasswordAuthEnabled,
   registerPasswordUser,
 } from "../../auth/password-credential.ts";
 import {
@@ -44,11 +43,6 @@ function sendAuthError(res: Response, status: number, message: string): void {
 }
 
 export async function handlePasswordRegister(req: Request, res: Response): Promise<void> {
-  if (!isPasswordAuthEnabled()) {
-    res.status(404).json({ error: "Password authentication is not enabled" });
-    return;
-  }
-
   try {
     const parsed = PasswordRegisterRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -92,11 +86,6 @@ export async function handlePasswordRegister(req: Request, res: Response): Promi
 }
 
 export async function handlePasswordLogin(req: Request, res: Response): Promise<void> {
-  if (!isPasswordAuthEnabled()) {
-    res.status(404).json({ error: "Password authentication is not enabled" });
-    return;
-  }
-
   try {
     const parsed = PasswordLoginRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -139,11 +128,6 @@ const PASSWORD_RESET_REQUEST_MESSAGE =
   "If that email has a password login, we'll send a reset link.";
 
 export async function handlePasswordResetRequest(req: Request, res: Response): Promise<void> {
-  if (!isPasswordAuthEnabled()) {
-    res.status(404).json({ error: "Password authentication is not enabled" });
-    return;
-  }
-
   try {
     const parsed = PasswordResetRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -160,11 +144,6 @@ export async function handlePasswordResetRequest(req: Request, res: Response): P
 }
 
 export async function handlePasswordResetConfirm(req: Request, res: Response): Promise<void> {
-  if (!isPasswordAuthEnabled()) {
-    res.status(404).json({ error: "Password authentication is not enabled" });
-    return;
-  }
-
   try {
     const parsed = PasswordResetConfirmSchema.safeParse(req.body);
     if (!parsed.success) {
