@@ -87,7 +87,7 @@ export function BodyPage() {
   });
   const stressData = trpc.stress.scores.useQuery({ ...selectedRangeQueryInput(days), endDate });
   const weightOverview = trpc.bodyAnalytics.weightOverview.useQuery({
-    ...minimumSelectedRangeQueryInput(days, 90),
+    ...selectedRangeQueryInput(days),
     endDate,
   });
   const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({

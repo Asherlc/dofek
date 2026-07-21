@@ -11,6 +11,11 @@ import {
   type IdentityFlowStore,
 } from "../../lib/identity-flow-store.ts";
 import {
+  InMemoryMobileAuthExchangeStore,
+  type MobileAuthExchangeStore,
+  RedisMobileAuthExchangeStore,
+} from "../../lib/mobile-auth-exchange-store.ts";
+import {
   getOAuth1SecretStore,
   getOAuthStateStore,
   type OAuth1SecretStore,
@@ -53,6 +58,7 @@ export function oauthSuccessHtml(
 
 let oauthStateStore: OAuthStateStore;
 let oauth1SecretStore: OAuth1SecretStore;
+let mobileAuthExchangeStore: MobileAuthExchangeStore;
 
 /**
  * Server-side state store for identity provider OAuth flows.
@@ -86,6 +92,10 @@ export function initAuthStores(database: import("dofek/db").Database): void {
   identityFlowStore = getIdentityFlowStore();
   oauthStateStore = getOAuthStateStore();
   oauth1SecretStore = getOAuth1SecretStore();
+  mobileAuthExchangeStore =
+    process.env.NODE_ENV === "test"
+      ? new InMemoryMobileAuthExchangeStore()
+      : new RedisMobileAuthExchangeStore();
 }
 
 export function getDb(): import("dofek/db").Database {
@@ -102,6 +112,10 @@ export function getOAuth1SecretStoreRef(): OAuth1SecretStore {
 
 export function getIdentityFlowStoreRef(): IdentityFlowStore {
   return identityFlowStore;
+}
+
+export function getMobileAuthExchangeStoreRef(): MobileAuthExchangeStore {
+  return mobileAuthExchangeStore;
 }
 
 export async function storeIdentityFlow(state: string, entry: IdentityFlowEntry): Promise<void> {

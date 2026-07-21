@@ -109,6 +109,13 @@ export interface FileUploadOutboxRequest {
   userId: string;
 }
 
+export class FileUploadExpiredError extends Error {
+  constructor(uploadId: string) {
+    super(`Upload ${uploadId} has expired`);
+    this.name = "FileUploadExpiredError";
+  }
+}
+
 const fileUploadOutboxRequestRowSchema = z.object({
   upload_id: z.uuid(),
   import_job_id: z.string().min(1),
@@ -167,11 +174,13 @@ export async function recordFileUploadCompletionParts(
             version = version + 1, updated_at = now()
         WHERE id = ${uploadId}::uuid AND user_id = ${userId}::uuid
           AND state = 'uploading'
+          AND expires_at > now()
         RETURNING ${selectFileUploadColumns}`,
   );
   if (rows[0]) return mapFileUpload(rows[0]);
   const existing = await findFileUploadForUser(database, uploadId, userId);
   if (!existing) throw new Error(`Upload ${uploadId} was not found`);
+  if (existing.expiresAt <= new Date()) throw new FileUploadExpiredError(uploadId);
   if (
     ["uploaded", "queued", "processing", "completed"].includes(existing.state) &&
     JSON.stringify(existing.completionParts) === serializedParts
@@ -280,12 +289,14 @@ export async function markFileUploadUploading(
             state = 'initiated'
             OR (state = 'uploading' AND r2_multipart_upload_id = ${multipartUploadId})
           )
+          AND expires_at > now()
         RETURNING ${selectFileUploadColumns}`,
   );
   if (rows[0]) return mapFileUpload(rows[0]);
 
   const existing = await findFileUploadForUser(database, uploadId, userId);
   if (!existing) throw new Error(`Upload ${uploadId} was not found`);
+  if (existing.expiresAt <= new Date()) throw new FileUploadExpiredError(uploadId);
   throw new Error(`Upload ${uploadId} cannot transition from ${existing.state} to uploading`);
 }
 
@@ -305,6 +316,7 @@ export async function queueCompletedFileUpload(
           WHERE id = ${uploadId}::uuid AND user_id = ${userId}::uuid
             AND state = 'uploaded'
             AND expected_size_bytes = ${completion.objectSizeBytes}
+            AND expires_at > now()
           RETURNING ${selectFileUploadColumns}
         ), inserted_outbox AS (
           INSERT INTO fitness.file_upload_outbox (upload_id, import_job_id)
@@ -328,6 +340,7 @@ export async function queueCompletedFileUpload(
       `Upload ${uploadId} size mismatch: expected ${existing.expectedSizeBytes}, received ${completion.objectSizeBytes}`,
     );
   }
+  if (existing.expiresAt <= new Date()) throw new FileUploadExpiredError(uploadId);
   throw new Error(`Upload ${uploadId} must be uploaded before queueing`);
 }
 
@@ -343,11 +356,13 @@ export async function markFileUploadObjectUploaded(
         SET state = 'uploaded', version = version + 1, updated_at = now()
         WHERE id = ${uploadId}::uuid AND user_id = ${userId}::uuid
           AND state = 'uploading'
+          AND expires_at > now()
         RETURNING ${selectFileUploadColumns}`,
   );
   if (rows[0]) return mapFileUpload(rows[0]);
   const existing = await findFileUploadForUser(database, uploadId, userId);
   if (!existing) throw new Error(`Upload ${uploadId} was not found`);
+  if (existing.expiresAt <= new Date()) throw new FileUploadExpiredError(uploadId);
   if (["uploaded", "queued", "processing", "completed"].includes(existing.state)) {
     return existing;
   }

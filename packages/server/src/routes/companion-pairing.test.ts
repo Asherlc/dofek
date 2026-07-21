@@ -176,6 +176,10 @@ describe("createCompanionPairingRouter", () => {
     await store.claimChallenge({
       shortCode: challenge.shortCode,
       userId: "user-1",
+    });
+    await store.setClaimedChallengeToken({
+      shortCode: challenge.shortCode,
+      userId: "user-1",
       companionToken: "dofek_companion_test",
     });
 

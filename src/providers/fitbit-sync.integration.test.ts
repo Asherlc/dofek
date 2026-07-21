@@ -920,6 +920,7 @@ describe("FitbitProvider.getUserIdentity()", () => {
     const identity = await setup.getUserIdentity("test-token");
     expect(identity.providerAccountId).toBe("ABC123");
     expect(identity.email).toBeNull();
+    expect(identity.emailVerified).toBe(false);
     expect(identity.name).toBe("Fit User");
     expect(fetchProfile).toHaveBeenCalledOnce();
   });

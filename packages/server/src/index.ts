@@ -148,6 +148,18 @@ function setupRoutes(
   // ── Request logging + metrics ──
   app.use((req, res, next) => {
     const start = Date.now();
+    let logPathSearch = req.originalUrl;
+    try {
+      const logUrl = new URL(req.originalUrl, "http://localhost");
+      for (const sensitiveParameter of ["session", "code"]) {
+        if (logUrl.searchParams.has(sensitiveParameter)) {
+          logUrl.searchParams.set(sensitiveParameter, "[REDACTED]");
+        }
+      }
+      logPathSearch = `${logUrl.pathname}${logUrl.search}`;
+    } catch (error: unknown) {
+      Sentry.captureException(error, { tags: { context: "request-url-logging" } });
+    }
     res.on("finish", () => {
       const durationMs = Date.now() - start;
       const route = req.route?.path ?? req.originalUrl.split("?")[0];
@@ -155,7 +167,7 @@ function setupRoutes(
         { method: req.method, route, status_code: res.statusCode },
         durationMs / 1000,
       );
-      logger.info(`[web] ${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs}ms`);
+      logger.info(`[web] ${req.method} ${logPathSearch} ${res.statusCode} ${durationMs}ms`);
     });
     next();
   });

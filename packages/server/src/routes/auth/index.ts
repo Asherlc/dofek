@@ -6,10 +6,12 @@ import {
   handleDataLinkStart,
   handleDataLoginStart,
   handleDataProviderOAuthStart,
+  handleMobileProviderHandoff,
 } from "./data-provider-oauth.ts";
 import { handleIdentityCallback } from "./identity-callback.ts";
 import { handleIdentityLink } from "./identity-link.ts";
 import { handleIdentityLogin } from "./identity-login.ts";
+import { handleMobileAuthExchange } from "./mobile-auth-exchange.ts";
 import {
   handlePasswordLogin,
   handlePasswordRegister,
@@ -57,6 +59,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // Email/password authentication
   router.post("/auth/register", authRateLimiter, express.json(), handlePasswordRegister);
   router.post("/auth/login/password", authRateLimiter, express.json(), handlePasswordLogin);
+  router.post("/auth/mobile/exchange", authRateLimiter, express.json(), handleMobileAuthExchange);
   router.post(
     "/auth/password-reset/request",
     authRateLimiter,
@@ -80,6 +83,12 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // Data provider OAuth routes (login, link, data sync)
   router.get("/auth/login/data/:provider", authRateLimiter, handleDataLoginStart);
   router.get("/auth/link/data/:provider", authRateLimiter, handleDataLinkStart);
+  router.post(
+    "/auth/provider/:provider/hand-off",
+    authRateLimiter,
+    express.json(),
+    handleMobileProviderHandoff,
+  );
   router.get("/auth/provider/:provider", authRateLimiter, handleDataProviderOAuthStart);
 
   // OAuth2 callback (shared for all data providers + Slack)

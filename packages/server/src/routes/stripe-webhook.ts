@@ -16,6 +16,11 @@ const stripeSubscriptionObjectSchema = z.object({
   current_period_end: z.number().nullable().optional(),
 });
 
+const stripeWebhookEventSchema = z.object({
+  id: z.string(),
+  created: z.number(),
+});
+
 interface StripeWebhookRouterDeps {
   db: Pick<Database, "execute">;
 }
@@ -40,9 +45,12 @@ export function createStripeWebhookRouter({ db }: StripeWebhookRouterDeps): Rout
         event.type === "customer.subscription.updated" ||
         event.type === "customer.subscription.deleted"
       ) {
+        const webhookEvent = stripeWebhookEventSchema.parse(event);
         const subscription = stripeSubscriptionObjectSchema.parse(event.data.object);
         const billingRepository = new BillingRepository(db);
         await billingRepository.updateSubscriptionForStripeCustomer({
+          stripeEventId: webhookEvent.id,
+          stripeEventCreated: webhookEvent.created,
           stripeCustomerId: subscription.customer,
           stripeSubscriptionId: subscription.id,
           stripeSubscriptionStatus: subscription.status,
