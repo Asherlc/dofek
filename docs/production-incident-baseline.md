@@ -21,23 +21,27 @@ until the container's fixed vulnerabilities were removed.
 
 ### Evidence
 
-The first fatal Grype output was `discovered vulnerabilities at or above the
-severity threshold`. It identified fixed updates for Node dependencies
-including `axios`, `body-parser`, `brace-expansion`, `protobufjs`, `shell-quote`,
-`tar`, and `undici`, plus Python 3.13.14 in the dbt-tools layer.
+The first fatal [Grype](https://github.com/anchore/grype) output was
+`discovered vulnerabilities at or above the severity threshold`. It identified
+fixed updates for application dependencies including `axios`, `body-parser`,
+`brace-expansion`, `protobufjs`, `shell-quote`, `tar`, and `undici`, plus the
+same packages bundled inside npm in the Node base image.
 
 ### Root Cause
 
-The image was built from an outdated Python 3.13 Alpine base and the lockfile
-overrides pinned several transitive dependencies below their available fixed
-versions. Grype correctly failed the image scan at the critical threshold.
+The lockfile overrides initially pinned several transitive dependencies below
+their available fixed versions, while npm bundled in the Node base image also
+contained vulnerable copies. CI additionally reused stale dependency layers
+until the image build received an input-based cache key.
 
 ### Fix or Mitigation
 
 Upgraded the affected direct/transitive dependency overrides with a regenerated
-lockfile. The dbt-tools image remains on pinned Python 3.13.14 Alpine 3.24
-because dbt 1.11.12 and mashumaro 3.14 fail during startup on Python 3.14.
-The exact CI Grype command passed against the rebuilt local image.
+lockfile, updated npm to 12.0.1, and keyed dependency-layer invalidation to
+`package.json`, `pnpm-lock.yaml`, and `Dockerfile`. The dbt-tools image remains
+on pinned Python 3.13.14 Alpine 3.24 because dbt 1.11.12 and mashumaro 3.14
+fail during startup on Python 3.14. The exact CI Grype command passed against
+the rebuilt local image.
 
 ### Remaining Risk
 

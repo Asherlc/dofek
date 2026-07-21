@@ -117,7 +117,7 @@ jobs:
           target: server
           load: true
           tags: e2e-server:latest
-          build-args: DEPENDENCY_CACHE_BUST=${{ github.sha }}
+          build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
           cache-from: |
             type=gha,scope=e2e
             type=registry,ref=ghcr.io/${{ github.repository }}:e2e-buildcache
@@ -808,7 +808,7 @@ jobs:
           target: server
           load: true
           tags: e2e-server:latest
-          build-args: DEPENDENCY_CACHE_BUST=${{ github.sha }}
+          build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
           cache-from: |
             type=gha,scope=e2e
             type=registry,ref=ghcr.io/${{ github.repository }}:e2e-buildcache

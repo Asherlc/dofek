@@ -4,6 +4,7 @@ ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 WORKDIR /app
 COPY package.json ./
+# Node Alpine omits Corepack; npm is used only to install the pinned bootstrap tools.
 RUN npm install -g npm@12.0.1 corepack@0.35.0 && corepack enable && corepack prepare --activate
 
 FROM python:3.13.14-alpine3.24 AS dbt-tools

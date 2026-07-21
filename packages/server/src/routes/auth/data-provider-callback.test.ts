@@ -347,6 +347,9 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     await handleOAuth2Callback(req, res);
 
     expect(mockGetUserIdentity).not.toHaveBeenCalled();
+    expect(mockLoadTokens).not.toHaveBeenCalled();
+    expect(mockRevokeToken).not.toHaveBeenCalled();
+    expect(mockExchangeCode).not.toHaveBeenCalled();
     expect(mockResolveOrCreateUser).not.toHaveBeenCalled();
     expect(mockPersistProviderConnection).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
