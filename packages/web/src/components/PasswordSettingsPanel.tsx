@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useAuth } from "../lib/auth-context.tsx";
 import { trpc } from "../lib/trpc.ts";
 
 export function PasswordSettingsPanel() {
+  const auth = useAuth();
   const utils = trpc.useUtils();
   const status = trpc.auth.passwordCredentialStatus.useQuery();
   const setPassword = trpc.auth.setPassword.useMutation();
@@ -31,7 +33,11 @@ export function PasswordSettingsPanel() {
           setCurrentPassword("");
           setNewPassword("");
           setConfirmPassword("");
-          setSuccess(hasPassword ? "Password changed." : "Password set.");
+          if (hasPassword) {
+            await auth.logout();
+            return;
+          }
+          setSuccess("Password set.");
           await utils.auth.passwordCredentialStatus.invalidate();
         },
       },

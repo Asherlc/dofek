@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { hashPassword, normalizeEmail, validatePassword, verifyPassword } from "./password.ts";
+import { revokePasswordChangeAuthenticationMaterial } from "./password-change.ts";
 
 export class DuplicateEmailError extends Error {
   constructor() {
@@ -151,43 +152,46 @@ export async function setPasswordForUser(
   input: SetPasswordForUserInput,
 ): Promise<PasswordCredentialStatus> {
   validatePassword(input.newPassword);
-  const credentialRows = await executeWithSchema(
-    db,
-    z.object({ email: z.string(), password_hash: z.string() }),
-    sql`SELECT email, password_hash FROM fitness.user_password_credential
-        WHERE user_id = ${userId}
-        LIMIT 1`,
-  );
-  const credential = credentialRows[0];
-
-  if (credential) {
-    if (!input.currentPassword) {
-      throw new MissingCurrentPasswordError();
-    }
-    if (!verifyPassword(input.currentPassword, credential.password_hash)) {
-      throw new InvalidCredentialsError();
-    }
-    await db.execute(
-      sql`UPDATE fitness.user_password_credential
-          SET password_hash = ${hashPassword(input.newPassword)}, updated_at = NOW()
-          WHERE user_id = ${userId}`,
+  return db.transaction(async (tx) => {
+    const credentialRows = await executeWithSchema(
+      tx,
+      z.object({ email: z.string(), password_hash: z.string() }),
+      sql`SELECT email, password_hash FROM fitness.user_password_credential
+          WHERE user_id = ${userId}
+          LIMIT 1`,
     );
+    const credential = credentialRows[0];
+
+    if (credential) {
+      if (!input.currentPassword) {
+        throw new MissingCurrentPasswordError();
+      }
+      if (!verifyPassword(input.currentPassword, credential.password_hash)) {
+        throw new InvalidCredentialsError();
+      }
+      await tx.execute(
+        sql`UPDATE fitness.user_password_credential
+            SET password_hash = ${hashPassword(input.newPassword)}, updated_at = NOW()
+            WHERE user_id = ${userId}`,
+      );
+      await revokePasswordChangeAuthenticationMaterial(tx, userId);
+    } else {
+      const profileRows = await executeWithSchema(
+        tx,
+        z.object({ email: z.string().nullable() }),
+        sql`SELECT email FROM fitness.user_profile WHERE id = ${userId} LIMIT 1`,
+      );
+      const email = profileRows[0]?.email ? normalizeEmail(profileRows[0].email) : null;
+      if (!email) {
+        throw new MissingProfileEmailError();
+      }
+
+      await tx.execute(
+        sql`INSERT INTO fitness.user_password_credential (user_id, email, password_hash)
+            VALUES (${userId}, ${email}, ${hashPassword(input.newPassword)})`,
+      );
+    }
+
     return { hasPassword: true };
-  }
-
-  const profileRows = await executeWithSchema(
-    db,
-    z.object({ email: z.string().nullable() }),
-    sql`SELECT email FROM fitness.user_profile WHERE id = ${userId} LIMIT 1`,
-  );
-  const email = profileRows[0]?.email ? normalizeEmail(profileRows[0].email) : null;
-  if (!email) {
-    throw new MissingProfileEmailError();
-  }
-
-  await db.execute(
-    sql`INSERT INTO fitness.user_password_credential (user_id, email, password_hash)
-        VALUES (${userId}, ${email}, ${hashPassword(input.newPassword)})`,
-  );
-  return { hasPassword: true };
+  });
 }
