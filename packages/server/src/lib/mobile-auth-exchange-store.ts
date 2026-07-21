@@ -1,3 +1,5 @@
+// cspell:ignore getdel
+
 import { randomBytes } from "node:crypto";
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
