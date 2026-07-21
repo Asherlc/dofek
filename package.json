@@ -265,7 +265,7 @@
       "@expo/dom-webview": "55.0.5",
       "@grpc/grpc-js": "1.14.4",
       "@opentelemetry/core": "2.8.0",
-      "@protobufjs/utf8": "1.1.1",
+      "@protobufjs/utf8": "1.1.2",
       "@xmldom/xmldom": "0.9.10",
       "axios": "1.18.1",
       "brace-expansion@<1.1.13": "1.1.13",
