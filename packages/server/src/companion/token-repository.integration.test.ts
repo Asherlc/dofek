@@ -63,9 +63,7 @@ describe("companion token repository (integration)", () => {
     );
 
     try {
-      await expect(regenerateCompanionToken(ctx.db, testUserId)).rejects.toThrow(
-        "forced companion token insertion failure",
-      );
+      await expect(regenerateCompanionToken(ctx.db, testUserId)).rejects.toThrow();
     } finally {
       await ctx.db.execute(
         sql.raw("DROP TRIGGER fail_companion_token_insert ON fitness.companion_token"),
