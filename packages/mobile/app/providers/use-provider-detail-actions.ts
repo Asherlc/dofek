@@ -185,15 +185,20 @@ export function useProviderDetailActions(
       case "oauth":
       case "oauth1": {
         if (!sessionToken) return;
-        const handoffCode = await createProviderHandoffCode(
-          serverUrl,
-          displayProvider.id,
-          sessionToken,
-        );
-        await WebBrowser.openBrowserAsync(
-          `${serverUrl}/auth/provider/${displayProvider.id}?code=${encodeURIComponent(handoffCode)}`,
-        );
-        trpcUtils.sync.providers.invalidate();
+        try {
+          const handoffCode = await createProviderHandoffCode(
+            serverUrl,
+            displayProvider.id,
+            sessionToken,
+          );
+          await WebBrowser.openBrowserAsync(
+            `${serverUrl}/auth/provider/${displayProvider.id}?code=${encodeURIComponent(handoffCode)}`,
+          );
+          await trpcUtils.sync.providers.invalidate();
+        } catch (error: unknown) {
+          captureException(error, { context: "connect-provider-detail" });
+          setSyncMessage(error instanceof Error ? error.message : "Provider connection failed");
+        }
         break;
       }
       case "credential":

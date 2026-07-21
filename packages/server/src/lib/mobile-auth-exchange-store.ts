@@ -1,6 +1,7 @@
 // cspell:ignore getdel
 
 import { randomBytes } from "node:crypto";
+import * as Sentry from "@sentry/node";
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
 import { z } from "zod";
@@ -79,7 +80,8 @@ export class RedisMobileAuthExchangeStore implements MobileAuthExchangeStore {
     try {
       const parsed = mobileAuthExchangePayloadSchema.safeParse(JSON.parse(rawPayload));
       return parsed.success ? parsed.data : null;
-    } catch {
+    } catch (error: unknown) {
+      Sentry.captureException(error, { tags: { context: "mobile-auth-exchange-parse" } });
       return null;
     }
   }

@@ -1,8 +1,9 @@
 import * as WebBrowser from "expo-web-browser";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { createProviderHandoffCode } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
 import { SERVER_URL } from "../lib/server";
+import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 
@@ -12,13 +13,21 @@ export function SlackIntegrationPanel() {
 
   async function handleConnect() {
     if (!sessionToken) return;
-    const handoffCode = await createProviderHandoffCode(SERVER_URL, "slack", sessionToken);
-    const url = new URL(`${SERVER_URL}/auth/provider/slack`);
-    url.searchParams.set("code", handoffCode);
-    await WebBrowser.openBrowserAsync(url.toString(), {
-      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-    });
-    refetch();
+    try {
+      const handoffCode = await createProviderHandoffCode(SERVER_URL, "slack", sessionToken);
+      const url = new URL(`${SERVER_URL}/auth/provider/slack`);
+      url.searchParams.set("code", handoffCode);
+      await WebBrowser.openBrowserAsync(url.toString(), {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      });
+      await refetch();
+    } catch (error: unknown) {
+      captureException(error, { context: "slack-provider-handoff" });
+      Alert.alert(
+        "Unable to connect Slack",
+        error instanceof Error ? error.message : "Slack connection failed",
+      );
+    }
   }
 
   if (isLoading) {

@@ -3,12 +3,8 @@ import { revokeToken } from "dofek/auth/oauth";
 import { queryCache } from "dofek/lib/cache";
 import type { Request, Response } from "express";
 import { MissingEmailForSignupError, resolveOrCreateUser } from "../../auth/account-linking.ts";
-import {
-  getSessionIdFromRequest,
-  isValidMobileScheme,
-  setSessionCookie,
-} from "../../auth/cookies.ts";
-import { createSession, validateSession } from "../../auth/session.ts";
+import { isValidMobileScheme, setSessionCookie } from "../../auth/cookies.ts";
+import { createSession } from "../../auth/session.ts";
 import { logger } from "../../logger.ts";
 import {
   completeSignupHtml,
@@ -328,12 +324,8 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       });
       try {
         const identity = await setup.getUserIdentity(tokens.accessToken);
-        const sessionId = getSessionIdFromRequest(req);
-        const session = sessionId ? await validateSession(db, sessionId) : null;
-        if (session) {
-          await resolveOrCreateUser(db, providerId, identity, session.userId);
-          logger.info(`[auth] Auto-linked ${providerId} identity to user ${session.userId}`);
-        }
+        await resolveOrCreateUser(db, providerId, identity, stateUserId);
+        logger.info(`[auth] Auto-linked ${providerId} identity to user ${stateUserId}`);
       } catch (identityErr: unknown) {
         logger.warn(`[auth] Failed to extract identity from ${providerId}: ${identityErr}`);
       }

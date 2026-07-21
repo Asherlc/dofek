@@ -5,6 +5,7 @@ const redisClient = vi.hoisted(() => ({
   sendCommand: vi.fn(),
 }));
 const redisConnectionConstructor = vi.hoisted(() => vi.fn());
+const mockCaptureException = vi.hoisted(() => vi.fn());
 
 vi.mock("bullmq", () => ({
   RedisConnection: redisConnectionConstructor,
@@ -13,6 +14,8 @@ vi.mock("bullmq", () => ({
 vi.mock("dofek/jobs/queues", () => ({
   getRedisConnection: vi.fn(),
 }));
+
+vi.mock("@sentry/node", () => ({ captureException: mockCaptureException }));
 
 import {
   InMemoryMobileAuthExchangeStore,
@@ -85,6 +88,9 @@ describe("RedisMobileAuthExchangeStore", () => {
 
     await expect(store.consume("malformed")).resolves.toBeNull();
     await expect(store.consume("invalid")).resolves.toBeNull();
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(SyntaxError), {
+      tags: { context: "mobile-auth-exchange-parse" },
+    });
   });
 
   it.each([

@@ -7,6 +7,7 @@ import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   Text,
@@ -496,11 +497,23 @@ export default function ProvidersScreen() {
         case "oauth":
         case "oauth1": {
           if (!sessionToken) break;
-          const handoffCode = await createProviderHandoffCode(serverUrl, provider.id, sessionToken);
-          await WebBrowser.openBrowserAsync(
-            `${serverUrl}/auth/provider/${provider.id}?code=${encodeURIComponent(handoffCode)}`,
-          );
-          await trpcUtils.sync.providers.invalidate();
+          try {
+            const handoffCode = await createProviderHandoffCode(
+              serverUrl,
+              provider.id,
+              sessionToken,
+            );
+            await WebBrowser.openBrowserAsync(
+              `${serverUrl}/auth/provider/${provider.id}?code=${encodeURIComponent(handoffCode)}`,
+            );
+            await trpcUtils.sync.providers.invalidate();
+          } catch (error: unknown) {
+            captureException(error, { context: "provider-handoff" });
+            Alert.alert(
+              "Unable to connect provider",
+              error instanceof Error ? error.message : "Provider connection failed",
+            );
+          }
           break;
         }
         case "credential":

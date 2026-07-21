@@ -10,6 +10,7 @@ import {
   AuthUserSchema,
   ConfiguredProvidersSchema,
   clearSessionToken,
+  createProviderHandoffCode,
   fetchConfiguredProviders,
   fetchCurrentUser,
   getSessionToken,
@@ -408,12 +409,51 @@ describe("startOAuthLogin", () => {
     );
   });
 
+  it("preserves an OAuth exchange error response", async () => {
+    vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
+      type: "success",
+      url: "dofek://auth/callback?code=exchange-oauth-1",
+    });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Exchange code is invalid or expired" }), {
+        status: 400,
+      }),
+    );
+
+    await expect(startOAuthLogin("https://srv", "google", false)).rejects.toThrow(
+      "Exchange code is invalid or expired",
+    );
+  });
+
   it("returns null when OAuth is cancelled", async () => {
     vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
       type: "cancel",
     });
 
     await expect(startOAuthLogin("https://srv", "google", false)).resolves.toBeNull();
+  });
+});
+
+describe("createProviderHandoffCode", () => {
+  it("preserves a provider handoff error response", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Session expired" }), { status: 401 }),
+    );
+
+    await expect(
+      createProviderHandoffCode("https://srv", "strava", "session-token"),
+    ).rejects.toThrow("Session expired");
+  });
+
+  it("reports malformed JSON responses", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("not-json", { status: 500 }));
+
+    await expect(
+      createProviderHandoffCode("https://srv", "strava", "session-token"),
+    ).rejects.toThrow("Provider connection failed");
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(SyntaxError), {
+      source: "provider-handoff-parse",
+    });
   });
 });
 

@@ -208,13 +208,16 @@ export async function startOAuthLogin(
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ code }),
   });
-  const exchangeData: unknown = await exchangeResponse.json().catch(() => null);
+  const exchangeData: unknown = await exchangeResponse.json().catch((error: unknown) => {
+    captureException(error, { source: "mobile-auth-exchange-parse" });
+    return null;
+  });
   const parsedExchange = z
-    .object({ session: z.string(), isNewUser: z.boolean(), error: z.string().optional() })
+    .union([z.object({ session: z.string(), isNewUser: z.boolean() }), ErrorResponseSchema])
     .safeParse(exchangeData);
-  if (!exchangeResponse.ok || !parsedExchange.success) {
+  if (!exchangeResponse.ok || !parsedExchange.success || "error" in parsedExchange.data) {
     throw new Error(
-      parsedExchange.success && parsedExchange.data.error
+      parsedExchange.success && "error" in parsedExchange.data
         ? parsedExchange.data.error
         : "Authentication failed",
     );
@@ -238,11 +241,14 @@ export async function createProviderHandoffCode(
       Accept: "application/json",
     },
   });
-  const data: unknown = await response.json().catch(() => null);
-  const parsed = z.object({ code: z.string(), error: z.string().optional() }).safeParse(data);
-  if (!response.ok || !parsed.success) {
+  const data: unknown = await response.json().catch((error: unknown) => {
+    captureException(error, { source: "provider-handoff-parse" });
+    return null;
+  });
+  const parsed = z.union([z.object({ code: z.string() }), ErrorResponseSchema]).safeParse(data);
+  if (!response.ok || !parsed.success || "error" in parsed.data) {
     throw new Error(
-      parsed.success && parsed.data.error ? parsed.data.error : "Provider connection failed",
+      parsed.success && "error" in parsed.data ? parsed.data.error : "Provider connection failed",
     );
   }
   return parsed.data.code;

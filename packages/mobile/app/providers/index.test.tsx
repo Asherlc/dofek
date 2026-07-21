@@ -44,6 +44,7 @@ vi.mock("react-native", () => ({
     return React.createElement("div", rest, children);
   },
   RefreshControl: () => null,
+  Alert: { alert: vi.fn() },
   TouchableOpacity: ({
     children,
     onPress,

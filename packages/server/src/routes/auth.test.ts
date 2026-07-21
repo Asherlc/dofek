@@ -384,6 +384,18 @@ describe("createAuthRouter", () => {
       expect(res.body).toContain("Invalid provider handoff code");
     });
 
+    it("rejects an expired provider exchange code instead of falling back to a session", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        { id: "strava", name: "Strava", authSetup: () => ({ oauthConfig: null }) },
+      ]);
+      const { app } = createTestApp();
+
+      const res = await request(app, "get", "/auth/provider/strava?code=expired-code");
+
+      expect(res.status).toBe(401);
+      expect(res.body).toContain("Invalid provider handoff code");
+    });
+
     it("accepts a matching provider exchange code on a data provider route", async () => {
       vi.mocked(getAllProviders).mockReturnValue([
         {
