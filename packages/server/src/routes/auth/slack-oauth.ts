@@ -9,7 +9,13 @@ import type { OAuthStateEntry } from "../../lib/oauth-state-store.ts";
 import { executeWithSchema } from "../../lib/typed-sql.ts";
 import { logger } from "../../logger.ts";
 import { SlackInstallationRepository } from "../../repositories/slack-installation-repository.ts";
-import { getDb, getOAuthStateStoreRef, oauthSuccessHtml, SLACK_SCOPES } from "./shared.ts";
+import {
+  getDb,
+  getMobileAuthExchangeStoreRef,
+  getOAuthStateStoreRef,
+  oauthSuccessHtml,
+  SLACK_SCOPES,
+} from "./shared.ts";
 
 export async function handleSlackCallback(
   _req: Request,
@@ -129,9 +135,20 @@ export async function handleSlackOAuthStart(req: Request, res: Response): Promis
   }
 
   // Resolve the logged-in user so we can link the Slack identity to them
-  const sessionId = getSessionIdFromRequest(req);
+  const handoffCode = typeof req.query.code === "string" ? req.query.code : undefined;
+  const handoff = handoffCode ? await getMobileAuthExchangeStoreRef().consume(handoffCode) : null;
+  if (handoffCode && (!handoff || handoff.kind !== "provider" || handoff.providerId !== "slack")) {
+    res.status(401).send("Invalid Slack handoff code");
+    return;
+  }
+  const sessionId = handoff?.kind === "provider" ? undefined : getSessionIdFromRequest(req);
   const db = getDb();
-  const session = sessionId ? await validateSession(db, sessionId) : null;
+  const session =
+    handoff?.kind === "provider"
+      ? { userId: handoff.userId }
+      : sessionId
+        ? await validateSession(db, sessionId)
+        : null;
   if (!session) {
     res.status(401).send("You must be logged in to connect Slack");
     return;

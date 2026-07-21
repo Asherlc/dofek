@@ -59,6 +59,7 @@
     "drizzle",
     "duckdb",
     "bullmq",
+    "GETDEL",
     "autorun",
     "cloudflarestorage",
     "trpc",

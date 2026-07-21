@@ -27,6 +27,17 @@ vi.mock("../lib/server", () => ({
 import { SlackIntegrationPanel } from "./SlackIntegrationPanel";
 
 describe("SlackIntegrationPanel", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ code: "provider-handoff-code" }), { status: 200 }),
+        ),
+    );
+  });
+
   it("shows loading state", () => {
     mockSlackStatus.data = undefined;
     mockSlackStatus.isLoading = true;
@@ -74,7 +85,7 @@ describe("SlackIntegrationPanel", () => {
 
     await waitFor(() => {
       expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
-        "https://dofek.test/auth/provider/slack?session=test-session-token",
+        "https://dofek.test/auth/provider/slack?code=provider-handoff-code",
         expect.objectContaining({
           presentationStyle: "pageSheet",
         }),

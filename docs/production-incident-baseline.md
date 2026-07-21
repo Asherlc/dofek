@@ -14644,3 +14644,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   credentialed artifacts before merge. Their secretless checks still exercise
   the affected source; the full credentialed builds run from trusted repository
   contexts.
+## 2026-07-21 — Mutation Testing Shard Missed URL Redaction Branch
+
+- **Symptoms:** CI run [29862766700](https://github.com/Asherlc/dofek/actions/runs/29862766700) failed `Test / Stryker (5)`, which caused the mutation and test gates to fail.
+- **User impact:** PR #1811 was blocked from merging; production was unaffected.
+- **Evidence:** The mutation report identified a surviving `ConditionalExpression` at `packages/server/src/index.ts:155` in the sensitive-query redaction branch. The shard also timed out remaining mutations after the surviving branch was not killed.
+- **Root cause:** Request-log tests covered redacting present sensitive parameters but did not prove absent sensitive parameters were not added, allowing the conditional mutant to survive.
+- **Fix / mitigation:** Added request-level coverage for separate `session` and `code` queries, asserting redaction while preserving unrelated parameters and not adding absent sensitive parameters.
+- **Validation:** Focused Stryker run passed with 100% mutation score (3/3 killed, 0 surviving, 0 timed out); the index test suite and Biome check pass. CI rerun is queued on commit `c55eb45d`.
+- **Remaining risk / follow-up:** Confirm the queued CI run completes successfully.

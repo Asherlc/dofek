@@ -1,5 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const redisClient = vi.hoisted(() => ({
+  set: vi.fn(),
+  sendCommand: vi.fn(),
+}));
+
+vi.mock("bullmq", () => ({
+  RedisConnection: vi.fn(() => ({ client: Promise.resolve(redisClient) })),
+}));
+
+vi.mock("dofek/jobs/queues", () => ({
+  getRedisConnection: vi.fn(),
+}));
+
 // Minimal mocks for shared.ts dependencies
 vi.mock("../../lib/oauth-state-store.ts", () => ({
   getOAuthStateStore: vi.fn(() => ({
@@ -51,7 +64,12 @@ vi.mock("../webhooks.ts", () => ({
 
 import { createDatabaseFromEnv } from "dofek/db";
 import {
+  InMemoryMobileAuthExchangeStore,
+  RedisMobileAuthExchangeStore,
+} from "../../lib/mobile-auth-exchange-store.ts";
+import {
   deletePendingEmailSignup,
+  getMobileAuthExchangeStoreRef,
   getPendingEmailSignup,
   initAuthStores,
   isSafeRelativeRedirect,
@@ -166,6 +184,34 @@ describe("shared auth helpers", () => {
       await expect(
         storeIdentityFlow("apple:state-456", { codeVerifier: "verifier" }),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("initAuthStores mobile exchange store", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    afterEach(() => {
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+    });
+
+    it("uses the in-memory exchange store in tests", () => {
+      process.env.NODE_ENV = "test";
+
+      initAuthStores(createDatabaseFromEnv());
+
+      expect(getMobileAuthExchangeStoreRef()).toBeInstanceOf(InMemoryMobileAuthExchangeStore);
+    });
+
+    it("uses the Redis exchange store outside tests", () => {
+      process.env.NODE_ENV = "production";
+
+      initAuthStores(createDatabaseFromEnv());
+
+      expect(getMobileAuthExchangeStoreRef()).toBeInstanceOf(RedisMobileAuthExchangeStore);
     });
   });
 });

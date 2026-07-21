@@ -7,6 +7,7 @@ import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   Text,
@@ -17,6 +18,7 @@ import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
+import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
 import { syncDofekFoodToHealthKit } from "../../lib/health-kit-food-writeback";
 import {
@@ -502,13 +504,27 @@ export default function ProvidersScreen() {
     async (provider: { id: string; label: string; authType: string }) => {
       switch (provider.authType) {
         case "oauth":
-        case "oauth1":
+        case "oauth1": {
           if (!sessionToken) break;
-          await WebBrowser.openBrowserAsync(
-            `${serverUrl}/auth/provider/${provider.id}?session=${encodeURIComponent(sessionToken)}`,
-          );
-          await trpcUtils.sync.providers.invalidate();
+          try {
+            const handoffCode = await createProviderHandoffCode(
+              serverUrl,
+              provider.id,
+              sessionToken,
+            );
+            await WebBrowser.openBrowserAsync(
+              `${serverUrl}/auth/provider/${provider.id}?code=${encodeURIComponent(handoffCode)}`,
+            );
+            await trpcUtils.sync.providers.invalidate();
+          } catch (error: unknown) {
+            captureException(error, { context: "provider-handoff" });
+            Alert.alert(
+              "Unable to connect provider",
+              error instanceof Error ? error.message : "Provider connection failed",
+            );
+          }
           break;
+        }
         case "credential":
           setCredentialAuthProvider({ id: provider.id, name: provider.label });
           break;

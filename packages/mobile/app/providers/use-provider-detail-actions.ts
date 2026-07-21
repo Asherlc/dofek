@@ -1,6 +1,7 @@
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useRef, useState } from "react";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
+import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
@@ -182,13 +183,24 @@ export function useProviderDetailActions(
 
     switch (displayProvider.authType) {
       case "oauth":
-      case "oauth1":
+      case "oauth1": {
         if (!sessionToken) return;
-        await WebBrowser.openBrowserAsync(
-          `${serverUrl}/auth/provider/${displayProvider.id}?session=${encodeURIComponent(sessionToken)}`,
-        );
-        trpcUtils.sync.providers.invalidate();
+        try {
+          const handoffCode = await createProviderHandoffCode(
+            serverUrl,
+            displayProvider.id,
+            sessionToken,
+          );
+          await WebBrowser.openBrowserAsync(
+            `${serverUrl}/auth/provider/${displayProvider.id}?code=${encodeURIComponent(handoffCode)}`,
+          );
+          await trpcUtils.sync.providers.invalidate();
+        } catch (error: unknown) {
+          captureException(error, { context: "connect-provider-detail" });
+          setSyncMessage(error instanceof Error ? error.message : "Provider connection failed");
+        }
         break;
+      }
       case "credential":
         setCredentialAuthProvider({ id: displayProvider.id, name: displayProvider.name });
         break;
