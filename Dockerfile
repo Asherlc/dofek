@@ -82,12 +82,12 @@ COPY packages/zones/package.json ./packages/zones/
 # ── Workspace dependencies: full install for web build tooling ───────────
 FROM workspace-manifests AS workspace-deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm install --force --frozen-lockfile
 
 # ── Server production dependencies: stays cached across source-only changes ──
 FROM workspace-manifests AS server-deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --prod --frozen-lockfile --filter dofek-server...
+    pnpm install --force --prod --frozen-lockfile --filter dofek-server...
 
 # ── Client build: full source + Vite build (assets copied into server stage)
 FROM workspace-deps AS client-build
