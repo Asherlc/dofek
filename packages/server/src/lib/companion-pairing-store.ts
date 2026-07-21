@@ -47,14 +47,90 @@ if not decodedOk or type(challenge) ~= "table" then
 end
 
 if challenge["claimedAt"] ~= nil then
-  return nil
+  if challenge["userId"] ~= ARGV[3] then
+    return nil
+  end
+  if challenge["companionToken"] ~= nil or challenge["tokenIssuing"] == true then
+    return nil
+  end
 end
 
 challenge["claimedAt"] = ARGV[2]
 challenge["userId"] = ARGV[3]
-if ARGV[4] ~= "" then
-  challenge["companionToken"] = ARGV[4]
+challenge["tokenIssuing"] = true
+local updatedPayload = cjson.encode(challenge)
+redis.call("PSETEX", KEYS[2], remainingTtlMs, updatedPayload)
+redis.call("PEXPIRE", KEYS[1], remainingTtlMs)
+return updatedPayload
+`;
+const SET_CLAIMED_CHALLENGE_TOKEN_SCRIPT = `
+local id = redis.call("GET", KEYS[1])
+if not id or id ~= ARGV[1] then
+  return nil
 end
+
+local payload = redis.call("GET", KEYS[2])
+if not payload then
+  redis.call("DEL", KEYS[1])
+  return nil
+end
+
+local remainingTtlMs = redis.call("PTTL", KEYS[2])
+if remainingTtlMs <= 0 then
+  redis.call("DEL", KEYS[1], KEYS[2])
+  return nil
+end
+
+local decodedOk, challenge = pcall(cjson.decode, payload)
+if not decodedOk or type(challenge) ~= "table" then
+  redis.call("DEL", KEYS[1], KEYS[2])
+  return nil
+end
+
+if challenge["claimedAt"] == nil or challenge["userId"] ~= ARGV[2] or challenge["tokenIssuing"] ~= true then
+  return nil
+end
+
+if challenge["companionToken"] ~= nil then
+  return payload
+end
+
+challenge["companionToken"] = ARGV[3]
+challenge["tokenIssuing"] = nil
+local updatedPayload = cjson.encode(challenge)
+redis.call("PSETEX", KEYS[2], remainingTtlMs, updatedPayload)
+redis.call("PEXPIRE", KEYS[1], remainingTtlMs)
+return updatedPayload
+`;
+const RELEASE_CLAIMED_CHALLENGE_TOKEN_ISSUANCE_SCRIPT = `
+local id = redis.call("GET", KEYS[1])
+if not id or id ~= ARGV[1] then
+  return nil
+end
+
+local payload = redis.call("GET", KEYS[2])
+if not payload then
+  redis.call("DEL", KEYS[1])
+  return nil
+end
+
+local remainingTtlMs = redis.call("PTTL", KEYS[2])
+if remainingTtlMs <= 0 then
+  redis.call("DEL", KEYS[1], KEYS[2])
+  return nil
+end
+
+local decodedOk, challenge = pcall(cjson.decode, payload)
+if not decodedOk or type(challenge) ~= "table" then
+  redis.call("DEL", KEYS[1], KEYS[2])
+  return nil
+end
+
+if challenge["claimedAt"] == nil or challenge["userId"] ~= ARGV[2] or challenge["tokenIssuing"] ~= true or challenge["companionToken"] ~= nil then
+  return nil
+end
+
+challenge["tokenIssuing"] = nil
 local updatedPayload = cjson.encode(challenge)
 redis.call("PSETEX", KEYS[2], remainingTtlMs, updatedPayload)
 redis.call("PEXPIRE", KEYS[1], remainingTtlMs)
@@ -76,6 +152,7 @@ const companionPairingChallengeSchema = z.object({
   expiresAt: z.string(),
   claimedAt: z.string().optional(),
   userId: z.string().optional(),
+  tokenIssuing: z.boolean().optional(),
   companionToken: z.string().optional(),
 });
 
@@ -110,8 +187,17 @@ export interface CompanionPairingStore {
   claimChallenge(params: {
     shortCode: string;
     userId: string;
-    companionToken?: string;
     now?: Date;
+  }): Promise<CompanionPairingChallenge | null>;
+  setClaimedChallengeToken(params: {
+    shortCode: string;
+    userId: string;
+    companionToken: string;
+    now?: Date;
+  }): Promise<CompanionPairingChallenge | null>;
+  releaseClaimedChallengeTokenIssuance(params: {
+    shortCode: string;
+    userId: string;
   }): Promise<CompanionPairingChallenge | null>;
 }
 
@@ -217,12 +303,10 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
   async claimChallenge({
     shortCode,
     userId,
-    companionToken,
     now = new Date(),
   }: {
     shortCode: string;
     userId: string;
-    companionToken?: string;
     now?: Date;
   }): Promise<CompanionPairingChallenge | null> {
     const normalizedShortCode = normalizePairingCode(shortCode);
@@ -232,15 +316,70 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
       this.#delete(challenge);
       return null;
     }
-    if (!challenge || challenge.claimedAt) return null;
+    if (
+      !challenge ||
+      (challenge.claimedAt &&
+        (challenge.userId !== userId || challenge.companionToken || challenge.tokenIssuing))
+    ) {
+      return null;
+    }
     const claimedChallenge = {
       ...challenge,
       claimedAt: now.toISOString(),
       userId,
-      companionToken,
+      tokenIssuing: true,
     };
     this.#save(claimedChallenge);
     return claimedChallenge;
+  }
+
+  async setClaimedChallengeToken({
+    shortCode,
+    userId,
+    companionToken,
+    now = new Date(),
+  }: {
+    shortCode: string;
+    userId: string;
+    companionToken: string;
+    now?: Date;
+  }): Promise<CompanionPairingChallenge | null> {
+    const challenge = await this.getByShortCode(shortCode, now);
+    if (
+      !challenge ||
+      !challenge.claimedAt ||
+      challenge.userId !== userId ||
+      !challenge.tokenIssuing ||
+      challenge.companionToken
+    ) {
+      return null;
+    }
+    const { tokenIssuing: _tokenIssuing, ...claimedChallenge } = challenge;
+    const updatedChallenge = { ...claimedChallenge, companionToken };
+    this.#save(updatedChallenge);
+    return updatedChallenge;
+  }
+
+  async releaseClaimedChallengeTokenIssuance({
+    shortCode,
+    userId,
+  }: {
+    shortCode: string;
+    userId: string;
+  }): Promise<CompanionPairingChallenge | null> {
+    const challenge = await this.getByShortCode(shortCode);
+    if (
+      !challenge ||
+      !challenge.claimedAt ||
+      challenge.userId !== userId ||
+      !challenge.tokenIssuing ||
+      challenge.companionToken
+    ) {
+      return null;
+    }
+    const { tokenIssuing: _tokenIssuing, ...releasedChallenge } = challenge;
+    this.#save(releasedChallenge);
+    return releasedChallenge;
   }
 
   #save(challenge: CompanionPairingChallenge): void {
@@ -339,12 +478,10 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
   async claimChallenge({
     shortCode,
     userId,
-    companionToken,
     now = new Date(),
   }: {
     shortCode: string;
     userId: string;
-    companionToken?: string;
     now?: Date;
   }): Promise<CompanionPairingChallenge | null> {
     const normalizedShortCode = normalizePairingCode(shortCode);
@@ -361,11 +498,74 @@ export class RedisCompanionPairingStore implements CompanionPairingStore {
       id,
       now.toISOString(),
       userId,
-      companionToken ?? "",
     );
     if (typeof payload !== "string") {
       return null;
     }
+    try {
+      const parsed = companionPairingChallengeSchema.safeParse(JSON.parse(payload));
+      return parsed.success ? parsed.data : null;
+    } catch (error) {
+      Sentry.captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
+      return null;
+    }
+  }
+
+  async setClaimedChallengeToken({
+    shortCode,
+    userId,
+    companionToken,
+  }: {
+    shortCode: string;
+    userId: string;
+    companionToken: string;
+  }): Promise<CompanionPairingChallenge | null> {
+    const normalizedShortCode = normalizePairingCode(shortCode);
+    const client = await this.#getRedisClient();
+    const shortCodeKey = pairingCodeKey(normalizedShortCode);
+    const id = await client.get(shortCodeKey);
+    if (!id) return null;
+
+    const payload = await client.eval(
+      SET_CLAIMED_CHALLENGE_TOKEN_SCRIPT,
+      2,
+      shortCodeKey,
+      pairingKey(id),
+      id,
+      userId,
+      companionToken,
+    );
+    if (typeof payload !== "string") return null;
+    try {
+      const parsed = companionPairingChallengeSchema.safeParse(JSON.parse(payload));
+      return parsed.success ? parsed.data : null;
+    } catch (error) {
+      Sentry.captureException(error, { extra: { companionPairingShortCode: normalizedShortCode } });
+      return null;
+    }
+  }
+
+  async releaseClaimedChallengeTokenIssuance({
+    shortCode,
+    userId,
+  }: {
+    shortCode: string;
+    userId: string;
+  }): Promise<CompanionPairingChallenge | null> {
+    const normalizedShortCode = normalizePairingCode(shortCode);
+    const client = await this.#getRedisClient();
+    const shortCodeKey = pairingCodeKey(normalizedShortCode);
+    const id = await client.get(shortCodeKey);
+    if (!id) return null;
+    const payload = await client.eval(
+      RELEASE_CLAIMED_CHALLENGE_TOKEN_ISSUANCE_SCRIPT,
+      2,
+      shortCodeKey,
+      pairingKey(id),
+      id,
+      userId,
+    );
+    if (typeof payload !== "string") return null;
     try {
       const parsed = companionPairingChallengeSchema.safeParse(JSON.parse(payload));
       return parsed.success ? parsed.data : null;
