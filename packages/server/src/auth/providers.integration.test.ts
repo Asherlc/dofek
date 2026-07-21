@@ -20,7 +20,7 @@ async function generateTestKeyPem(): Promise<{ pem: string; keyId: string }> {
 function createFakeIdToken(sub: string, email: string): string {
   const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
   const payload = Buffer.from(
-    JSON.stringify({ sub, email, iss: "https://appleid.apple.com" }),
+    JSON.stringify({ sub, email, email_verified: true, iss: "https://appleid.apple.com" }),
   ).toString("base64url");
   const fakeSignature = Buffer.from("fake-signature").toString("base64url");
   return `${header}.${payload}.${fakeSignature}`;
@@ -79,6 +79,7 @@ describe("validateNativeAppleCallback (integration)", () => {
 
     expect(result.user.sub).toBe("apple-user-001");
     expect(result.user.email).toBe("alice@icloud.com");
+    expect(result.user.emailVerified).toBe(true);
     expect(result.user.name).toBeNull();
     expect(result.user.groups).toBeNull();
   });

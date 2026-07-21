@@ -15,6 +15,7 @@ vi.mock("arctic", () => {
     decodeIdToken: vi.fn().mockReturnValue({
       sub: "user-123",
       email: "test@example.com",
+      email_verified: true,
       name: "Test User",
     }),
     generateCodeVerifier: vi.fn().mockReturnValue("test-verifier"),
@@ -379,6 +380,16 @@ describe("auth/providers", () => {
       const result = await provider.validateCallback("code", "verifier");
       // The mock returns email: "test@example.com"
       expect(result.user.email).toBe("test@example.com");
+    });
+
+    it("Google callback returns the email verification claim", async () => {
+      process.env.GOOGLE_CLIENT_ID = "id";
+      process.env.GOOGLE_CLIENT_SECRET = "secret";
+      process.env.GOOGLE_REDIRECT_URI = "http://localhost/callback";
+
+      const provider = getIdentityProvider("google");
+      const result = await provider.validateCallback("code", "verifier");
+      expect(result.user.emailVerified).toBe(true);
     });
 
     it("Google callback returns name from claims", async () => {
