@@ -86,6 +86,30 @@ jobs:
             exit 1
           fi
           echo "All actions are SHA-pinned"
+      - name: Verify all job containers are digest-pinned
+        run: |
+          UNPINNED=$(awk '
+            function is_pinned(line) {
+              return line ~ /@sha256:[0-9a-f]{64}([[:space:]]*(#.*)?)?$/
+            }
+            /^    container:[[:space:]]*[^[:space:]#]/ {
+              if (!is_pinned($0)) print FILENAME ":" FNR ":" $0
+              next
+            }
+            /^    container:[[:space:]]*$/ { in_container=1; next }
+            in_container && /^      image:/ {
+              if (!is_pinned($0)) print FILENAME ":" FNR ":" $0
+              in_container=0
+              next
+            }
+            in_container && !/^      / { in_container=0 }
+          ' .github/workflows/*.yml)
+          if [ -n "$UNPINNED" ]; then
+            echo "::error::Found unpinned job containers (must use a SHA-256 digest):"
+            echo "$UNPINNED"
+            exit 1
+          fi
+          echo "All job containers are digest-pinned"
 
   image-scan:
     name: Image Vulnerability Scan
