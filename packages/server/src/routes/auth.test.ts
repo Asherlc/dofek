@@ -2213,6 +2213,7 @@ describe("createAuthRouter", () => {
         expect.objectContaining({
           providerAccountId: "strava-web-signup-1",
           email: "runner@example.com",
+          emailVerified: false,
         }),
       );
       expect(ensureProvider).toHaveBeenCalledWith(
