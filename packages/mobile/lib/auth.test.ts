@@ -503,7 +503,7 @@ describe("registerWithPassword", () => {
 
   it("throws server error message when registration fails", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: "An account with this email already exists" }), {
+      new Response(JSON.stringify({ error: "Unable to create an account with these details" }), {
         status: 409,
         headers: { "content-type": "application/json" },
       }),
@@ -511,7 +511,7 @@ describe("registerWithPassword", () => {
 
     await expect(
       registerWithPassword("https://srv", "user@example.com", "password123", "User"),
-    ).rejects.toThrow("An account with this email already exists");
+    ).rejects.toThrow("Unable to create an account with these details");
   });
 
   it("throws generic message when registration response is invalid", async () => {
