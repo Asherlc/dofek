@@ -4,7 +4,7 @@ ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 WORKDIR /app
 COPY package.json ./
-RUN npm install -g corepack@0.35.0 && corepack enable && corepack prepare --activate
+RUN npm install -g npm@12.0.1 corepack@0.35.0 && corepack enable && corepack prepare --activate
 
 FROM python:3.13.14-alpine3.24 AS dbt-tools
 RUN apk add --no-cache build-base && \
