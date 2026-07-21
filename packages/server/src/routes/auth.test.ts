@@ -1,6 +1,6 @@
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { oauthSuccessHtml } from "./auth/shared.ts";
+import { getMobileAuthExchangeStoreRef, oauthSuccessHtml } from "./auth/shared.ts";
 
 // Mock all heavy dependencies
 vi.mock("../auth/cookies.ts", () => ({
@@ -261,6 +261,109 @@ describe("createAuthRouter", () => {
     });
   });
 
+  describe("POST /auth/mobile/exchange", () => {
+    it("returns 400 when the exchange code is missing", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/mobile/exchange", { jsonBody: {} });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Missing exchange code");
+    });
+
+    it("consumes a valid session exchange code", async () => {
+      const { app } = createTestApp();
+      const code = await getMobileAuthExchangeStoreRef().issue({
+        kind: "session",
+        sessionId: "session-1",
+        isNewUser: true,
+      });
+
+      const res = await request(app, "post", "/auth/mobile/exchange", {
+        jsonBody: { code },
+      });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({
+        session: "session-1",
+        isNewUser: true,
+      });
+    });
+
+    it("rejects an invalid or expired exchange code", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/mobile/exchange", {
+        jsonBody: { code: "expired-code" },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Exchange code is invalid or expired");
+    });
+  });
+
+  describe("POST /auth/provider/:provider/hand-off", () => {
+    it("issues a provider exchange code for an authenticated mobile handoff", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        { id: "strava", name: "Strava", authSetup: () => ({ oauthConfig: null }) },
+      ]);
+      const { app } = createTestApp();
+
+      const res = await request(app, "post", "/auth/provider/strava/hand-off", {
+        jsonBody: {},
+      });
+
+      expect(res.status).toBe(200);
+      const code = JSON.parse(res.body).code;
+      await expect(getMobileAuthExchangeStoreRef().consume(code)).resolves.toEqual({
+        kind: "provider",
+        userId: "user-1",
+        providerId: "strava",
+      });
+    });
+  });
+
+  describe("mobile provider handoff validation", () => {
+    it("rejects a session exchange code on a data provider route", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        { id: "strava", name: "Strava", authSetup: () => ({ oauthConfig: null }) },
+      ]);
+      const { app } = createTestApp();
+      const code = await getMobileAuthExchangeStoreRef().issue({
+        kind: "session",
+        sessionId: "session-1",
+        isNewUser: false,
+      });
+
+      const res = await request(app, "get", `/auth/provider/strava?code=${code}`);
+
+      expect(res.status).toBe(401);
+      expect(res.body).toContain("Invalid provider handoff code");
+    });
+
+    it("rejects a session exchange code on Slack OAuth", async () => {
+      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
+      process.env.SLACK_CLIENT_ID = "slack-client-id";
+      try {
+        const { app } = createTestApp();
+        const code = await getMobileAuthExchangeStoreRef().issue({
+          kind: "session",
+          sessionId: "session-1",
+          isNewUser: false,
+        });
+
+        const res = await request(app, "get", `/auth/provider/slack?code=${code}`);
+
+        expect(res.status).toBe(401);
+        expect(res.body).toContain("Invalid Slack handoff code");
+      } finally {
+        if (originalSlackClientId === undefined) {
+          delete process.env.SLACK_CLIENT_ID;
+        } else {
+          process.env.SLACK_CLIENT_ID = originalSlackClientId;
+        }
+      }
+    });
+  });
+
   describe("POST /auth/login/password", () => {
     it("creates a session for valid credentials", async () => {
       const { app } = createTestApp();
@@ -414,11 +517,37 @@ describe("createAuthRouter", () => {
     });
 
     it("redirects to Slack OAuth when configured", async () => {
+      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
       process.env.SLACK_CLIENT_ID = "test-client-id";
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/auth/provider/slack");
-      expect(res.status).toBe(302);
-      delete process.env.SLACK_CLIENT_ID;
+      try {
+        const { app } = createTestApp();
+        const res = await request(app, "get", "/auth/provider/slack");
+        expect(res.status).toBe(302);
+      } finally {
+        if (originalSlackClientId === undefined) {
+          delete process.env.SLACK_CLIENT_ID;
+        } else {
+          process.env.SLACK_CLIENT_ID = originalSlackClientId;
+        }
+      }
+    });
+
+    it("returns 401 when no session is available", async () => {
+      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
+      process.env.SLACK_CLIENT_ID = "test-client-id";
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      try {
+        const { app } = createTestApp();
+        const res = await request(app, "get", "/auth/provider/slack");
+        expect(res.status).toBe(401);
+        expect(res.body).toContain("You must be logged in to connect Slack");
+      } finally {
+        if (originalSlackClientId === undefined) {
+          delete process.env.SLACK_CLIENT_ID;
+        } else {
+          process.env.SLACK_CLIENT_ID = originalSlackClientId;
+        }
+      }
     });
   });
 
