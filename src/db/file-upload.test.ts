@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ executeWithSchema: vi.fn() }));
 
@@ -82,6 +82,10 @@ const database = { execute: vi.fn() };
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("file upload repository", () => {
@@ -208,6 +212,41 @@ describe("file upload repository", () => {
     await expect(
       recordFileUploadCompletionParts(database, uploadId, userId, parts),
     ).rejects.toThrow("must be uploading");
+  });
+
+  it("rejects every active transition exactly when the upload expires", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    mocks.executeWithSchema
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([row({ expires_at: now, state: "uploading" })]);
+    await expect(
+      recordFileUploadCompletionParts(database, uploadId, userId, [
+        { partNumber: 1, etag: "etag" },
+      ]),
+    ).rejects.toThrow("has expired");
+
+    mocks.executeWithSchema
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([row({ expires_at: now, state: "initiated" })]);
+    await expect(
+      markFileUploadUploading(database, uploadId, userId, "multipart-1"),
+    ).rejects.toThrow("has expired");
+
+    mocks.executeWithSchema
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([row({ expires_at: now, state: "uploaded" })]);
+    await expect(
+      queueCompletedFileUpload(database, uploadId, userId, { importJobId, objectSizeBytes: 100 }),
+    ).rejects.toThrow("has expired");
+
+    mocks.executeWithSchema
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([row({ expires_at: now, state: "uploading" })]);
+    await expect(markFileUploadObjectUploaded(database, uploadId, userId)).rejects.toThrow(
+      "has expired",
+    );
   });
 
   it("supports idempotent abort retries and rejects missing or terminal uploads", async () => {
