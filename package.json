@@ -240,6 +240,7 @@
     "drizzle-kit": "0.31.10",
     "jsdom": "29.0.0",
     "knip": "6.23.0",
+    "license-checker": "25.0.1",
     "msw": "2.12.11",
     "nyc": "18.0.0",
     "plantuml-encoder": "1.4.0",
