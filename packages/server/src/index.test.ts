@@ -12,6 +12,7 @@ const mockQueue = {
   close: mockQueueClose,
 };
 const mockLoggerInfo = vi.fn();
+const mockSentryCaptureException = vi.fn();
 const mockFitFileImportQueue = { ...mockQueue, name: "fit-file-import" };
 const mockFitFileImportBatchQueue = { ...mockQueue, name: "fit-file-import-batch" };
 const mockZipEntryExtractQueue = { ...mockQueue, name: "zip-entry-extract" };
@@ -91,6 +92,7 @@ vi.mock("../lib/sentry.ts", () => ({
       next(),
   ),
 }));
+vi.mock("@sentry/node", () => ({ captureException: mockSentryCaptureException }));
 vi.mock("./logger.ts", () => ({
   logger: { info: mockLoggerInfo, warn: vi.fn(), error: vi.fn() },
 }));
@@ -179,6 +181,7 @@ describe("createApp", () => {
       },
     });
     mockLoggerInfo.mockReset();
+    mockSentryCaptureException.mockReset();
   });
 
   it("returns 404 for non-existent routes", async () => {
@@ -208,6 +211,29 @@ describe("createApp", () => {
     expect(mockLoggerInfo.mock.calls[1]?.[0]).not.toContain("session=");
     expect(mockLoggerInfo).not.toHaveBeenCalledWith(expect.stringContaining("secret-session"));
     expect(mockLoggerInfo).not.toHaveBeenCalledWith(expect.stringContaining("secret-code"));
+  });
+
+  it("reports malformed request URLs and continues logging", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const app = createApp(createDatabaseFromEnv(), makeMockSensorStore());
+
+    vi.stubGlobal(
+      "URL",
+      vi.fn(() => {
+        throw new TypeError("malformed request URL");
+      }),
+    );
+    try {
+      const res = await request(app, "GET", "/api/nonexistent");
+
+      expect(res.status).toBe(404);
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(expect.any(TypeError), {
+        tags: { context: "request-url-logging" },
+      });
+      expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("/api/nonexistent"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("does not serve the SPA shell for missing JavaScript assets", async () => {
