@@ -800,6 +800,9 @@ importers:
       echarts-for-react:
         specifier: 3.0.6
         version: 3.0.6(echarts@6.1.0)(react@19.2.3)
+      html-escaper:
+        specifier: 3.0.3
+        version: 3.0.3
       leaflet:
         specifier: 1.9.4
         version: 1.9.4
@@ -837,6 +840,9 @@ importers:
       '@tanstack/router-plugin':
         specifier: 1.168.19
         version: 1.168.19(@tanstack/react-router@1.170.17(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(esbuild@0.28.1)(rolldown@1.0.3)(rollup@4.62.2)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
+      '@types/html-escaper':
+        specifier: 3.0.4
+        version: 3.0.4
       '@types/leaflet':
         specifier: 1.9.21
         version: 1.9.21
@@ -7733,6 +7739,9 @@ packages:
   '@types/hammerjs@2.0.46':
     resolution: {integrity: sha512-ynRvcq6wvqexJ9brDMS4BnBLzmr0e14d6ZJTEShTBWKymQiHwlAyGu0ZPEFI2Fh1U53F7tN9ufClWM5KvqkKOw==}
 
+  '@types/html-escaper@3.0.4':
+    resolution: {integrity: sha512-UKSaMPMXXKnq1jDj74seVikfdq5pWvoXcIgOUbwYzHuAEGiv8/juom1i/MsWBF8boFSI0uHQCSZauzr5OYnnJA==}
+
   '@types/http-cache-semantics@4.2.0':
     resolution: {integrity: sha512-L3LgimLHXtGkWikKnsPg0/VFx9OGZaC+eN1u4r+OB1XRqH3meBIAVC2zr1WdMH+RHmnRkqliQAOHNJ/E0j/e0Q==}
 
@@ -10586,6 +10595,9 @@ packages:
 
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
+
+  html-escaper@3.0.3:
+    resolution: {integrity: sha512-RuMffC89BOWQoY0WKGpIhn5gX3iI54O6nRA0yC124NYVtzjmFWBIiFd8M0x+ZdX0P9R4lADg1mgP8C7PxGOWuQ==}
 
   html-tags@5.1.0:
     resolution: {integrity: sha512-n6l5uca7/y5joxZ3LUePhzmBFUJ+U2YWzhMa8XUTecSeSlQiZdF5XAd/Q3/WUl0VsXgUwWi8I7CNIwdI5WN1SQ==}
@@ -22795,6 +22807,8 @@ snapshots:
 
   '@types/hammerjs@2.0.46': {}
 
+  '@types/html-escaper@3.0.4': {}
+
   '@types/http-cache-semantics@4.2.0': {}
 
   '@types/http-errors@2.0.5': {}
@@ -26026,6 +26040,8 @@ snapshots:
       - '@noble/hashes'
 
   html-escaper@2.0.2: {}
+
+  html-escaper@3.0.3: {}
 
   html-tags@5.1.0: {}
 
