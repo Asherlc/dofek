@@ -47,6 +47,15 @@ describe("executeWithSchema", () => {
     expect(result).toEqual([]);
   });
 
+  it("returns parsed rows from transaction query results", async () => {
+    const schema = z.object({ id: z.number() });
+    mockExecute.mockResolvedValue({ rows: [{ id: 1 }] });
+
+    const result = await executeWithSchema(createMockDb(), schema, sql`SELECT 1`);
+
+    expect(result).toEqual([{ id: 1 }]);
+  });
+
   it("throws ZodError when a row does not match the schema", async () => {
     const schema = z.object({
       id: z.number(),

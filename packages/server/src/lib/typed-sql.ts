@@ -1,12 +1,19 @@
-import type { Database } from "dofek/db";
 import type { SQL } from "drizzle-orm";
 import { z } from "zod";
 
-/**
- * Minimal DB interface for executeWithSchema — only needs the execute method.
- * Accepts both the full Drizzle `Database` and narrower `Pick<Database, "execute">`.
- */
-type ExecutableDatabase = Pick<Database, "execute">;
+export interface SqlExecutor {
+  execute(query: SQL): Promise<unknown>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function extractRows(result: unknown): unknown[] {
+  if (Array.isArray(result)) return result;
+  if (isRecord(result) && Array.isArray(result.rows)) return result.rows;
+  throw new Error("Unexpected database execute result shape");
+}
 
 /**
  * Execute a raw SQL query and parse each row with a Zod schema.
@@ -14,11 +21,11 @@ type ExecutableDatabase = Pick<Database, "execute">;
  * catching schema drift, missing columns, and type mismatches that generics miss.
  */
 export async function executeWithSchema<T extends z.ZodType>(
-  db: ExecutableDatabase,
+  db: SqlExecutor,
   schema: T,
   query: SQL,
 ): Promise<z.infer<T>[]> {
-  const rows = await db.execute(query);
+  const rows = extractRows(await db.execute(query));
   return rows.map((row) => schema.parse(row));
 }
 
