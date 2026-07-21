@@ -1036,6 +1036,9 @@ describe("ProvidersScreen", () => {
         sinceDays: 7,
       });
     });
+    await waitFor(() => {
+      expect(mockSyncStatusFetch).toHaveBeenCalledWith({ jobId: "job-1" }, { staleTime: 0 });
+    });
   });
 
   it("shows provider cooldown outcome without polling a fake job", async () => {
@@ -1136,6 +1139,9 @@ describe("ProvidersScreen", () => {
         providerId: "wahoo",
         sinceDays: undefined,
       });
+    });
+    await waitFor(() => {
+      expect(mockSyncStatusFetch).toHaveBeenCalledWith({ jobId: "job-2" }, { staleTime: 0 });
     });
   });
 

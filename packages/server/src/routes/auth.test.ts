@@ -1150,8 +1150,16 @@ describe("createAuthRouter", () => {
       );
       expect(res.status).toBe(302);
       const location = res.headers.location;
-      expect(typeof location).toBe("string");
+      if (typeof location !== "string")
+        throw new Error("Mobile callback did not include a location");
       expect(location).toContain("dofek://auth/callback?code=");
+      const exchangeCode = new URL(location).searchParams.get("code");
+      if (!exchangeCode) throw new Error("Mobile callback did not include an exchange code");
+      await expect(getMobileAuthExchangeStoreRef().consume(exchangeCode)).resolves.toEqual({
+        kind: "session",
+        sessionId: "sess-1",
+        isNewUser: false,
+      });
       // Restore
       vi.mocked(getMobileSchemeCookie).mockReturnValue(undefined);
     });
@@ -1747,6 +1755,13 @@ describe("createAuthRouter", () => {
       expect(res.headers.location).toContain("dofek://auth/callback?code=");
       // Should have created a session
       expect(createSession).toHaveBeenCalled();
+      const exchangeCode = new URL(res.headers.location ?? "").searchParams.get("code");
+      if (!exchangeCode) throw new Error("Mobile callback did not include an exchange code");
+      await expect(getMobileAuthExchangeStoreRef().consume(exchangeCode)).resolves.toEqual({
+        kind: "session",
+        sessionId: "sess-1",
+        isNewUser: false,
+      });
       // Should NOT have set a session cookie (mobile uses deep link instead)
       expect(setSessionCookie).not.toHaveBeenCalled();
       vi.mocked(getMobileSchemeCookie).mockReturnValue(undefined);

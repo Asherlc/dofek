@@ -4,9 +4,10 @@ const redisClient = vi.hoisted(() => ({
   set: vi.fn(),
   sendCommand: vi.fn(),
 }));
+const redisConnectionConstructor = vi.hoisted(() => vi.fn());
 
 vi.mock("bullmq", () => ({
-  RedisConnection: vi.fn(() => ({ client: Promise.resolve(redisClient) })),
+  RedisConnection: redisConnectionConstructor,
 }));
 
 vi.mock("dofek/jobs/queues", () => ({
@@ -20,6 +21,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  redisConnectionConstructor.mockImplementation(() => ({ client: Promise.resolve(redisClient) }));
   redisClient.set.mockResolvedValue("OK");
 });
 
@@ -53,6 +55,7 @@ describe("RedisMobileAuthExchangeStore", () => {
 
     const code = await store.issue(payload);
     await expect(store.consume(code)).resolves.toEqual(payload);
+    await new RedisMobileAuthExchangeStore().issue(payload);
 
     expect(redisClient.set).toHaveBeenCalledWith(
       expect.stringMatching(/^mobile-auth-exchange:[a-f0-9]{64}$/),
@@ -63,6 +66,12 @@ describe("RedisMobileAuthExchangeStore", () => {
       "GETDEL",
       expect.stringMatching(/^mobile-auth-exchange:[a-f0-9]{64}$/),
     ]);
+    expect(redisConnectionConstructor).toHaveBeenCalledWith(undefined, {
+      shared: true,
+      blocking: false,
+      skipVersionCheck: true,
+    });
+    expect(redisConnectionConstructor).toHaveBeenCalledTimes(1);
   });
 
   it("rejects malformed and invalid Redis payloads", async () => {
@@ -76,5 +85,29 @@ describe("RedisMobileAuthExchangeStore", () => {
 
     await expect(store.consume("malformed")).resolves.toBeNull();
     await expect(store.consume("invalid")).resolves.toBeNull();
+  });
+
+  it.each([
+    ["null", null],
+    ["an object without Redis commands", {}],
+    ["an object with non-function Redis commands", { set: true, sendCommand: true }],
+  ])("rejects a Redis client that is %s", async (_description, invalidRedisClient) => {
+    vi.resetModules();
+    vi.doMock("bullmq", () => ({
+      RedisConnection: vi.fn(() => ({ client: Promise.resolve(invalidRedisClient) })),
+    }));
+    vi.doMock("dofek/jobs/queues", () => ({ getRedisConnection: vi.fn() }));
+
+    const { RedisMobileAuthExchangeStore: FreshRedisMobileAuthExchangeStore } = await import(
+      "./mobile-auth-exchange-store.ts"
+    );
+    const store = new FreshRedisMobileAuthExchangeStore();
+
+    await expect(
+      store.issue({ kind: "session", sessionId: "session-1", isNewUser: false }),
+    ).rejects.toThrow("Redis client does not support mobile auth exchange commands");
+
+    vi.doUnmock("bullmq");
+    vi.doUnmock("dofek/jobs/queues");
   });
 });
