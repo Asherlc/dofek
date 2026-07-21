@@ -4,20 +4,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   mockAuthenticatePasswordUser,
   mockCaptureException,
-  mockIsPasswordAuthEnabled,
   mockLogger,
   mockRegenerateCompanionToken,
 } = vi.hoisted(() => ({
   mockAuthenticatePasswordUser: vi.fn(),
   mockCaptureException: vi.fn(),
-  mockIsPasswordAuthEnabled: vi.fn(() => true),
   mockLogger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
   mockRegenerateCompanionToken: vi.fn(),
 }));
 
 vi.mock("../auth/password-credential.ts", () => ({
   authenticatePasswordUser: (...args: unknown[]) => mockAuthenticatePasswordUser(...args),
-  isPasswordAuthEnabled: () => mockIsPasswordAuthEnabled(),
   InvalidCredentialsError: class InvalidCredentialsError extends Error {
     constructor() {
       super("Invalid email or password");
@@ -81,28 +78,12 @@ async function postJson(
 describe("createCompanionTokenHttpRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsPasswordAuthEnabled.mockReturnValue(true);
     mockAuthenticatePasswordUser.mockResolvedValue({ userId: "user-1" });
     mockRegenerateCompanionToken.mockResolvedValue({
       id: "token-1",
       token: "dofek_companion_test",
       createdAt: "2026-07-12T00:00:00.000Z",
       revokedAt: null,
-    });
-  });
-
-  it("returns 404 when password auth is disabled", async () => {
-    mockIsPasswordAuthEnabled.mockReturnValue(false);
-    const { app } = createTestApp();
-
-    const response = await postJson(app, "/api/companion-token/password-login", {
-      email: "user@example.com",
-      password: "password123",
-    });
-
-    expect(response).toEqual({
-      status: 404,
-      body: { error: "Password authentication is not enabled" },
     });
   });
 

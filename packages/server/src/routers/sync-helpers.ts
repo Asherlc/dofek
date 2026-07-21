@@ -114,6 +114,10 @@ async function doRegisterProviders() {
       () => import("dofek/providers/auto-supplements").then((m) => new m.AutoSupplementsProvider()),
     ],
     [
+      "kaya-export",
+      () => import("dofek/providers/kaya/provider").then((m) => new m.KayaProvider()),
+    ],
+    [
       "zos-app",
       () => import("dofek/providers/zos-app/provider").then((m) => new m.ZosAppProvider()),
     ],

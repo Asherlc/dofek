@@ -43,6 +43,7 @@ export function DailyHeartRatePage() {
           empty={sources.length === 0}
           height={400}
           emptyMessage="No heart rate data for this day"
+          timeRangeMode="data"
         />
       </div>
 

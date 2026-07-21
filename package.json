@@ -45,6 +45,7 @@
     "./providers/apple-health/streaming": "./src/providers/apple-health/streaming.ts",
     "./providers/apple-health/fhir": "./src/providers/apple-health/fhir.ts",
     "./providers/apple-health/dates": "./src/providers/apple-health/dates.ts",
+    "./providers/kaya/provider": "./src/providers/kaya/provider.ts",
     "./providers/ride-with-gps": "./src/providers/ride-with-gps.ts",
     "./providers/strong-csv": "./src/providers/strong-csv.ts",
     "./providers/polar": "./src/providers/polar/provider.ts",
@@ -270,15 +271,15 @@
       "@expo/dom-webview": "55.0.5",
       "@grpc/grpc-js": "1.14.4",
       "@opentelemetry/core": "2.8.0",
-      "@protobufjs/utf8": "1.1.1",
+      "@protobufjs/utf8": "1.1.2",
       "@xmldom/xmldom": "0.9.10",
-      "axios": "1.16.1",
+      "axios": "1.18.1",
       "brace-expansion@<1.1.13": "1.1.13",
-      "brace-expansion@>=2.0.0 <2.0.3": "2.0.3",
-      "brace-expansion@>=5.0.0 <5.0.6": "5.0.6",
+      "brace-expansion@>=2.0.0 <2.1.2": "2.1.2",
+      "brace-expansion@>=5.0.0 <5.0.7": "5.0.7",
       "esbuild": "0.28.1",
       "form-data": "4.0.6",
-      "gel>shell-quote": "1.8.4",
+      "gel>shell-quote": "1.10.0",
       "hono": "4.12.25",
       "ip-address": "10.2.0",
       "@slack/bolt>path-to-regexp": "8.4.2",
@@ -287,12 +288,14 @@
       "react": "19.2.3",
       "react-dom": "19.2.3",
       "router>path-to-regexp": "8.4.2",
-      "protobufjs": "8.6.4",
-      "shell-quote": "1.8.4",
-      "tar": "7.5.16",
+      "protobufjs": "8.7.1",
+      "shell-quote": "1.10.0",
+      "tar": "7.5.20",
+      "undici@>=6.0.0 <6.27.0": "6.27.0",
       "uuid": "11.1.1",
       "ws": "8.21.0",
-      "yaml": "2.9.0"
+      "yaml": "2.9.0",
+      "body-parser": "2.3.0"
     },
     "packageExtensions": {
       "@bacons/apple-targets@4.0.7": {
@@ -304,6 +307,11 @@
     "patchedDependencies": {
       "@expo/plist@0.0.18": "patches/@expo__plist@0.0.18.patch",
       "@expo/plist@0.8.1": "patches/@expo__plist@0.8.1.patch"
+    },
+    "auditConfig": {
+      "ignoreCves": [
+        "GHSA-rmmr-r34h-pfm5"
+      ]
     }
   },
   "engines": {

@@ -816,6 +816,7 @@ describe("StravaProvider.getUserIdentity()", () => {
     expect(calledHeaders).toEqual(expect.objectContaining({ Authorization: "Bearer test-token" }));
     expect(identity.providerAccountId).toBe("12345");
     expect(identity.email).toBeNull();
+    expect(identity.emailVerified).toBe(false);
     expect(identity.name).toBe("Jane Doe");
   });
 

@@ -127,7 +127,7 @@ Set the transport to Streamable HTTP, URL to `https://<your-dofek-host>/api/mcp`
 
 ## Local Axiom MCP
 
-The repo `.mcp.json` also exposes an `axiom` MCP server for production log queries. It starts `mcp-server-axiom` through `npx` and derives `AXIOM_TOKEN`, `AXIOM_URL`, and `AXIOM_ORG_ID` from the authenticated local Axiom CLI config:
+The repo `.mcp.json` also exposes an `axiom` MCP server for production log queries. It starts `mcp-server-axiom` through `npx` and derives `AXIOM_TOKEN`, `AXIOM_URL`, and `AXIOM_ORG_ID` from the authenticated local Axiom CLI config. The deployed collector routes application and infrastructure logs to `dofek-logs` ([source](../deploy/otel-collector-config.yaml)).
 
 ```bash
 axiom auth status --no-spinner
@@ -136,8 +136,38 @@ axiom auth status --no-spinner
 If your current MCP client session does not show Axiom tools, restart the session so `.mcp.json` is reloaded. Until then, use the CLI directly:
 
 ```bash
-axiom query "['dofek-app-logs'] | where _time > ago(24h) | search 'Slow query' | project _time, body | sort by _time desc | limit 50" -f json --no-spinner
+axiom query "['dofek-logs'] | where _time > ago(24h) | search 'Slow query' | project _time, body | sort by _time desc | limit 50" -f json --no-spinner
 ```
+
+## Local XcodeBuildMCP
+
+The repository configures XcodeBuildMCP in both `.mcp.json` and
+`.codex/config.toml` so supported agents can build, install, launch, inspect, and
+capture logs from the iOS app:
+
+```json
+{
+  "mcpServers": {
+    "xcodebuildmcp": {
+      "command": "pnpm",
+      "args": ["dlx", "xcodebuildmcp@2.6.2", "mcp"]
+    }
+  }
+}
+```
+
+Restart the agent session after cloning or changing the MCP configuration so
+the tool catalog reloads. If the current session cannot expose dynamically added
+MCP tools, the same package provides a CLI fallback:
+
+```bash
+pnpm dlx xcodebuildmcp@2.6.2 simulator list
+```
+
+Follow the upstream getting-started guide for prerequisites and tool names:
+<https://www.xcodebuildmcp.com/#get-started>. Version 2.6.2 is pinned here and
+in both repository MCP configurations so every client loads the reviewed tool
+release.
 
 ## Auth Failures
 

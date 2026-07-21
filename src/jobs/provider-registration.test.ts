@@ -40,6 +40,7 @@ const mockProviders = {
   velohero: { id: "velohero" },
   "auto-supplements": { id: "auto-supplements" },
   "amazfit-zepp": { id: "amazfit-zepp" },
+  "kaya-export": { id: "kaya-export" },
   "zos-app": { id: "zos-app" },
 };
 
@@ -138,6 +139,9 @@ vi.mock("../providers/auto-supplements.ts", () => ({
 }));
 vi.mock("../providers/amazfit-zepp.ts", () => ({
   AmazfitZeppProvider: vi.fn(() => mockProviders["amazfit-zepp"]),
+}));
+vi.mock("../providers/kaya/provider.ts", () => ({
+  KayaProvider: vi.fn(() => mockProviders["kaya-export"]),
 }));
 vi.mock("../providers/zos-app/provider.ts", () => ({
   ZosAppProvider: vi.fn(() => mockProviders["zos-app"]),

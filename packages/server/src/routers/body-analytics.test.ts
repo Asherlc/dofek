@@ -179,6 +179,28 @@ describe("bodyAnalyticsRouter", () => {
   });
 
   describe("weightOverview", () => {
+    it("uses the selected range for chart data and at least 90 days for prediction", async () => {
+      const smoothedWeightSpy = vi
+        .spyOn(BodyAnalyticsRepository.prototype, "getSmoothedWeight")
+        .mockResolvedValueOnce([]);
+      const weightPredictionSpy = vi
+        .spyOn(BodyAnalyticsRepository.prototype, "getWeightPrediction")
+        .mockResolvedValueOnce({
+          ratePerWeek: null,
+          rateConfidence: null,
+          impliedDailyCalories: null,
+          periodDeltas: { days7: null, days14: null, days30: null },
+          goal: null,
+          projectionLine: [],
+        });
+      const caller = makeCaller();
+
+      await caller.weightOverview({ days: 7, endDate: "2026-03-15" });
+
+      expect(smoothedWeightSpy).toHaveBeenCalledWith(7, "2026-03-15");
+      expect(weightPredictionSpy).toHaveBeenCalledWith(90, "2026-03-15", null);
+    });
+
     it("returns smoothed weight and prediction from the same fetch", async () => {
       const rows = Array.from({ length: 20 }, (_, index) => ({
         date: `2024-01-${String(index + 1).padStart(2, "0")}`,

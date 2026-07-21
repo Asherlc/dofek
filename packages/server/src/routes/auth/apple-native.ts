@@ -39,6 +39,7 @@ export async function handleAppleNativeSignIn(req: Request, res: Response): Prom
     const { userId, isNewUser } = await resolveOrCreateUser(db, "apple", {
       providerAccountId: identityUser.sub,
       email: identityUser.email,
+      emailVerified: identityUser.emailVerified,
       name: userName,
       groups: identityUser.groups,
     });

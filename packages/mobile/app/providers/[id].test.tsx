@@ -342,6 +342,14 @@ function setupDefaultMocks() {
 
 describe("ProviderDetailScreen", () => {
   beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ code: "provider-handoff-code" }), { status: 200 }),
+        ),
+    );
     mockBack.mockReset();
     mockPush.mockReset();
     mockUseLocalSearchParams.mockReturnValue({ id: "wahoo" });
@@ -559,7 +567,7 @@ describe("ProviderDetailScreen", () => {
 
       await waitFor(() => {
         expect(mockOpenBrowserAsync).toHaveBeenCalledWith(
-          "https://test.example.com/auth/provider/strava?session=test-token",
+          "https://test.example.com/auth/provider/strava?code=provider-handoff-code",
         );
       });
     });

@@ -9,6 +9,7 @@ import {
   registerPasswordUser,
   setPasswordForUser,
 } from "./password-credential.ts";
+import { createSession, validateSession } from "./session.ts";
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -25,6 +26,7 @@ describe("password credential auth (integration)", () => {
 
   beforeEach(async () => {
     await ctx.db.execute(sql`DELETE FROM fitness.session`);
+    await ctx.db.execute(sql`DELETE FROM fitness.password_reset_token`);
     await ctx.db.execute(sql`DELETE FROM fitness.user_password_credential`);
     await ctx.db.execute(sql`DELETE FROM fitness.auth_account`);
     await ctx.db.execute(sql`DELETE FROM fitness.user_profile WHERE id != ${TEST_USER_ID}`);
@@ -49,18 +51,26 @@ describe("password credential auth (integration)", () => {
     expect(profile[0]?.name).toBe("New User");
   });
 
-  it("links password credentials to an existing OAuth user by email", async () => {
+  it("does not add a password credential to an existing OAuth user by email", async () => {
     await ctx.db.execute(
       sql`UPDATE fitness.user_profile SET email = 'existing@example.com', name = 'Existing User' WHERE id = ${TEST_USER_ID}`,
     );
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.auth_account
+          (user_id, auth_provider, provider_account_id, email, name)
+          VALUES (${TEST_USER_ID}, 'google', 'google-existing', 'existing@example.com', 'Existing User')`,
+    );
 
-    const result = await registerPasswordUser(ctx.db, {
-      email: "existing@example.com",
-      password: "password123",
+    await expect(
+      registerPasswordUser(ctx.db, {
+        email: "existing@example.com",
+        password: "password123",
+      }),
+    ).rejects.toThrow(DuplicateEmailError);
+
+    await expect(getPasswordCredentialStatus(ctx.db, TEST_USER_ID)).resolves.toEqual({
+      hasPassword: false,
     });
-
-    expect(result.userId).toBe(TEST_USER_ID);
-    expect(result.isNewUser).toBe(false);
   });
 
   it("rejects duplicate password registration for the same email", async () => {
@@ -146,6 +156,32 @@ describe("password credential auth (integration)", () => {
       await expect(
         authenticatePasswordUser(ctx.db, "change@example.com", "new-password123"),
       ).resolves.toEqual({ userId: registered.userId });
+    });
+
+    it("revokes all sessions and outstanding reset tokens when changing a password", async () => {
+      const registered = await registerPasswordUser(ctx.db, {
+        email: "change@example.com",
+        password: "password123",
+      });
+      const firstSession = await createSession(ctx.db, registered.userId);
+      const secondSession = await createSession(ctx.db, registered.userId);
+      await ctx.db.execute(
+        sql`INSERT INTO fitness.password_reset_token (user_id, token_hash, expires_at)
+            VALUES (${registered.userId}, ${"outstanding-reset-token"}, NOW() + INTERVAL '1 hour')`,
+      );
+
+      await setPasswordForUser(ctx.db, registered.userId, {
+        currentPassword: "password123",
+        newPassword: "new-password123",
+      });
+
+      await expect(validateSession(ctx.db, firstSession.sessionId)).resolves.toBeNull();
+      await expect(validateSession(ctx.db, secondSession.sessionId)).resolves.toBeNull();
+      const tokenRows = await ctx.db.execute(
+        sql`SELECT consumed_at FROM fitness.password_reset_token
+            WHERE user_id = ${registered.userId}`,
+      );
+      expect(tokenRows[0]?.consumed_at).not.toBeNull();
     });
 
     it("fails when an OAuth-only user has no profile email", async () => {

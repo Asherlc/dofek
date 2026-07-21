@@ -15,8 +15,6 @@ const linkedAccountRowSchema = z.object({
   created_at: timestampStringSchema,
 });
 
-const countRowSchema = z.object({ count: z.coerce.number() });
-
 const idRowSchema = z.object({ id: z.string() });
 
 // ---------------------------------------------------------------------------
@@ -63,16 +61,6 @@ export class AuthRepository {
       name: row.name,
       createdAt: row.created_at,
     }));
-  }
-
-  /** Count of linked auth accounts for the user. */
-  async getAccountCount(): Promise<number> {
-    const rows = await executeWithSchema(
-      this.#db,
-      countRowSchema,
-      sql`SELECT COUNT(*)::text AS count FROM fitness.auth_account WHERE user_id = ${this.#userId}`,
-    );
-    return rows[0]?.count ?? 0;
   }
 
   /**

@@ -5,12 +5,14 @@ import { z } from "zod";
 const googleClaimsSchema = z.object({
   sub: z.string(),
   email: z.string().optional(),
+  email_verified: z.boolean(),
   name: z.string().optional(),
 });
 
 const appleClaimsSchema = z.object({
   sub: z.string(),
   email: z.string().optional(),
+  email_verified: z.union([z.boolean(), z.enum(["true", "false"])]),
 });
 
 import { IDENTITY_PROVIDER_NAMES, type IdentityProviderName } from "@dofek/auth/auth";
@@ -21,6 +23,7 @@ export type { IdentityProviderName };
 export interface IdentityUser {
   sub: string;
   email: string | null;
+  emailVerified: boolean;
   name: string | null;
   groups: string[] | null;
 }
@@ -61,6 +64,7 @@ function initGoogle(): IdentityProvider {
         user: {
           sub: claims.sub,
           email: claims.email ?? null,
+          emailVerified: claims.email_verified,
           name: claims.name ?? null,
           groups: null,
         },
@@ -117,7 +121,13 @@ function initApple(): IdentityProvider {
       return {
         tokens,
         // Apple only sends name on first authorization, not in the ID token
-        user: { sub: claims.sub, email: claims.email ?? null, name: null, groups: null },
+        user: {
+          sub: claims.sub,
+          email: claims.email ?? null,
+          emailVerified: claims.email_verified === true || claims.email_verified === "true",
+          name: null,
+          groups: null,
+        },
       };
     },
   };
@@ -260,7 +270,13 @@ export async function validateNativeAppleCallback(
   const claims = appleClaimsSchema.parse(decodeIdToken(idToken));
 
   return {
-    user: { sub: claims.sub, email: claims.email ?? null, name: null, groups: null },
+    user: {
+      sub: claims.sub,
+      email: claims.email ?? null,
+      emailVerified: claims.email_verified === true || claims.email_verified === "true",
+      name: null,
+      groups: null,
+    },
   };
 }
 

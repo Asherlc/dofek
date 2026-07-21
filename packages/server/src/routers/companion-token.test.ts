@@ -72,7 +72,11 @@ describe("companionTokenRouter", () => {
     it("revokes existing token and creates a new one", async () => {
       const execute = vi.fn();
       execute
-        .mockResolvedValueOnce([]) // BEGIN
+        .mockResolvedValueOnce([
+          {
+            acquired: true,
+          },
+        ]) // Acquire advisory lock
         .mockResolvedValueOnce([]) // UPDATE revoke
         .mockResolvedValueOnce([
           {
@@ -81,9 +85,16 @@ describe("companionTokenRouter", () => {
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
-        ]) // INSERT ... ON CONFLICT ... RETURNING
-        .mockResolvedValueOnce([]); // COMMIT
-      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+        ]); // INSERT ... ON CONFLICT ... RETURNING
+      const caller = createCaller({
+        db: {
+          transaction: async <T>(
+            callback: (transaction: { execute: typeof execute }) => Promise<T>,
+          ) => callback({ execute }),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
       const result = await caller.regenerate();
       expect(result.id).toBe("new-id");
       expect(result.token).not.toBeNull();

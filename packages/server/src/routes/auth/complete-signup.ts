@@ -9,6 +9,7 @@ import {
   completeSignupHtml,
   deletePendingEmailSignup,
   getDb,
+  getMobileAuthExchangeStoreRef,
   getPendingEmailSignup,
   getPostLoginRedirect,
   persistProviderConnection,
@@ -43,6 +44,7 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
     const { userId, isNewUser } = await resolveOrCreateUser(db, pending.providerId, {
       providerAccountId: pending.identity.providerAccountId,
       email: parsedEmail.data,
+      emailVerified: false,
       name: pending.identity.name,
     });
     const { getAllProviders } = await import("dofek/providers/registry");
@@ -65,9 +67,12 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
 
     if (pending.mobileScheme && isValidMobileScheme(pending.mobileScheme)) {
       logger.info(`[auth] User ${userId} completed signup via ${pending.providerId} (mobile)`);
-      res.redirect(
-        `${pending.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}&new_user=${isNewUser}`,
-      );
+      const exchangeCode = await getMobileAuthExchangeStoreRef().issue({
+        kind: "session",
+        sessionId: sessionInfo.sessionId,
+        isNewUser,
+      });
+      res.redirect(`${pending.mobileScheme}://auth/callback?code=${exchangeCode}`);
       return;
     }
 

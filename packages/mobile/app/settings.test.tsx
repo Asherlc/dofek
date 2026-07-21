@@ -3,6 +3,7 @@
 import { formatDateTime } from "@dofek/format/format";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
+import { Alert } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFileWrite = vi.fn();
@@ -45,6 +46,7 @@ vi.mock("../components/ProviderLogo", () => ({
 }));
 
 const mockRouterPush = vi.fn();
+const mockLogout = vi.fn();
 const mockCheckoutSession = vi.fn();
 const mockPortalSession = vi.fn();
 let mockSessionToken: string | null = "test-token";
@@ -71,7 +73,7 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
-    logout: vi.fn(),
+    logout: mockLogout,
     serverUrl: "https://test.example.com",
     sessionToken: mockSessionToken,
   }),
@@ -85,6 +87,11 @@ type ZeppPairingMutationOptions = {
   onSuccess?: () => void;
 };
 let mockZeppPairingMutationOptions: ZeppPairingMutationOptions | null = null;
+type SetPasswordMutationOptions = {
+  onError?: (error: { message: string }) => void;
+  onSuccess?: () => Promise<void>;
+};
+let mockSetPasswordMutationOptions: SetPasswordMutationOptions | null = null;
 const mockPasswordCredentialStatusQuery = vi.fn(() => ({
   data: { hasPassword: false },
   isLoading: false,
@@ -134,10 +141,13 @@ vi.mock("../lib/trpc", () => ({
         useQuery: () => mockPasswordCredentialStatusQuery(),
       },
       setPassword: {
-        useMutation: () => ({
-          mutate: vi.fn(),
-          isPending: false,
-        }),
+        useMutation: (options: SetPasswordMutationOptions) => {
+          mockSetPasswordMutationOptions = options;
+          return {
+            mutate: vi.fn(),
+            isPending: false,
+          };
+        },
       },
       set: {
         useMutation: () => ({ mutate: vi.fn(), isPending: false }),
@@ -208,6 +218,7 @@ beforeEach(() => {
     access: { ...defaultBillingStatus.access },
   };
   mockZeppPairingMutationOptions = null;
+  mockSetPasswordMutationOptions = null;
   vi.clearAllMocks();
 });
 
@@ -271,6 +282,31 @@ describe("SettingsScreen password", () => {
 
     expect(await screen.findByPlaceholderText("Current password")).toBeTruthy();
     expect(await screen.findByText("Change Password")).toBeTruthy();
+  });
+
+  it("confirms before logging out after changing an existing password", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: true },
+      isLoading: false,
+      error: null,
+    });
+    const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+    await act(async () => {
+      await mockSetPasswordMutationOptions?.onSuccess?.();
+    });
+
+    expect(mockLogout).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledWith("Password Updated", "Please sign in again.", [
+      { text: "OK", onPress: expect.any(Function) },
+    ]);
+
+    const onPress = alertSpy.mock.calls[0]?.[2]?.[0]?.onPress;
+    onPress?.();
+
+    expect(mockLogout).toHaveBeenCalledOnce();
   });
 });
 

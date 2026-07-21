@@ -40,6 +40,63 @@ Sources:
 - Vitest `--shard` option for splitting CI test runs: https://vitest.dev/guide/cli.html#shard
 - Stryker Vitest runner configuration: https://stryker-mutator.io/docs/stryker-js/vitest-runner/
 
+### Isolated browser end-to-end stack
+
+Generate a unique Compose project name for each browser E2E run, keep every
+command in the same shell, and reuse that name so concurrent or stale runs
+cannot share resources:
+
+```bash
+e2e_project_name="dofek-e2e-audit-$(date +%s)-$$"
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
+if ! pnpm e2e:web:run; then
+  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
+  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml logs --no-color
+  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
+  exit 1
+fi
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
+```
+
+Use a task-specific project name rather than Compose's directory-derived
+default; Docker documents project-name isolation and precedence here:
+<https://docs.docker.com/compose/how-tos/project-name/>.
+
+The failure branch preserves container state and complete service logs before
+teardown. Both paths remove only this isolated project's containers and fresh
+volumes.
+
+This topology currently validates browser paths. It is not a complete mobile
+write-path environment because the metric-stream broker prerequisites are
+missing; that confirmed gap is tracked in
+[#1806](https://github.com/Asherlc/dofek/issues/1806). Do not treat its healthy
+server status as proof that activity recording can save.
+
+### Native FIT Decoder
+
+Wahoo, Coros, and Suunto integration tests invoke the native FIT decoder at
+`.build/fit-decoder/bin/dofek-fit-decoder`. If they report `Unable to start the
+native FIT decoder`, first verify that the file exists and matches the host
+architecture:
+
+```bash
+file .build/fit-decoder/bin/dofek-fit-decoder
+```
+
+The `fit-decoder-linux` CI artifact is an ELF executable and cannot run on
+macOS. On macOS, build a native decoder with the repository's pinned vcpkg
+toolchain:
+
+```bash
+VCPKG_ROOT=/path/to/full/vcpkg/checkout pnpm build:fit-decoder
+```
+
+Use the vcpkg commit and bootstrap sequence from
+[`test.yml`](../.github/workflows/test.yml); the project uses vcpkg manifest
+mode as documented by Microsoft:
+<https://learn.microsoft.com/vcpkg/concepts/manifest-mode>.
+
 ### Docker Disk Recovery
 
 If a required validation command fails with `No space left on device`, inspect usage before

@@ -18,6 +18,7 @@ import { logger } from "../../logger.ts";
 import {
   getDb,
   getIdentityFlowStoreRef,
+  getMobileAuthExchangeStoreRef,
   getPostLoginRedirect,
   isIdentityProviderName,
   sanitizeReturnTo,
@@ -140,6 +141,7 @@ export async function handleIdentityCallback(
       {
         providerAccountId: identityUser.sub,
         email: identityUser.email,
+        emailVerified: identityUser.emailVerified,
         name: userName,
         groups: identityUser.groups,
       },
@@ -164,9 +166,12 @@ export async function handleIdentityCallback(
       // Mobile: redirect to app via deep link with session token
       if (mobileScheme && isValidMobileScheme(mobileScheme)) {
         logger.info(`[auth] User ${userId} logged in via ${providerName} (mobile)`);
-        res.redirect(
-          `${mobileScheme}://auth/callback?session=${sessionInfo.sessionId}&new_user=${isNewUser}`,
-        );
+        const exchangeCode = await getMobileAuthExchangeStoreRef().issue({
+          kind: "session",
+          sessionId: sessionInfo.sessionId,
+          isNewUser,
+        });
+        res.redirect(`${mobileScheme}://auth/callback?code=${exchangeCode}`);
         return;
       }
 

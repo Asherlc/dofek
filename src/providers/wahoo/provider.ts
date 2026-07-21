@@ -250,6 +250,7 @@ export class WahooProvider implements WebhookProvider {
         return {
           providerAccountId: String(user.id),
           email: null,
+          emailVerified: false,
           name: nameParts.length > 0 ? nameParts.join(" ") : null,
         };
       },

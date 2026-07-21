@@ -44,6 +44,7 @@ vi.mock("react-native", () => ({
     return React.createElement("div", rest, children);
   },
   RefreshControl: () => null,
+  Alert: { alert: vi.fn() },
   TouchableOpacity: ({
     children,
     onPress,
@@ -840,6 +841,14 @@ describe("ProviderCard", () => {
 
 describe("ProvidersScreen", () => {
   beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ code: "provider-handoff-code" }), { status: 200 }),
+        ),
+    );
     mockPush.mockReset();
     mockReplace.mockReset();
     mockUseLocalSearchParams.mockReturnValue({});
@@ -1028,6 +1037,28 @@ describe("ProvidersScreen", () => {
         sinceDays: 7,
       });
     });
+    await waitFor(() => {
+      expect(mockSyncStatusFetch).toHaveBeenCalledWith({ jobId: "job-1" }, { staleTime: 0 });
+    });
+  });
+
+  it("does not update state when Sync All fails after unmount", async () => {
+    let rejectSync: (error: Error) => void = () => undefined;
+    mockSyncMutateAsync.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectSync = reject;
+        }),
+    );
+
+    const rendered = await renderProvidersScreen();
+    fireEvent.click(screen.getByText("Sync All"));
+    rendered.unmount();
+
+    await act(async () => {
+      rejectSync(new Error("Sync failed"));
+      await Promise.resolve();
+    });
   });
 
   it("shows provider cooldown outcome without polling a fake job", async () => {
@@ -1128,6 +1159,9 @@ describe("ProvidersScreen", () => {
         providerId: "wahoo",
         sinceDays: undefined,
       });
+    });
+    await waitFor(() => {
+      expect(mockSyncStatusFetch).toHaveBeenCalledWith({ jobId: "job-2" }, { staleTime: 0 });
     });
   });
 
@@ -1784,7 +1818,7 @@ describe("ProvidersScreen", () => {
 
     await waitFor(() => {
       expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
-        "https://test.example.com/auth/provider/strava?session=test-token",
+        "https://test.example.com/auth/provider/strava?code=provider-handoff-code",
       );
     });
   });
