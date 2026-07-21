@@ -7,9 +7,7 @@ import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import { climbingEntry } from "../../db/schema/activity.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import type { SyncError, SyncResult } from "../types.ts";
-
-export const KAYA_PROVIDER_ID = "kaya-export";
-const KAYA_PROVIDER_NAME = "Kaya";
+import { KAYA_PROVIDER_ID, KAYA_PROVIDER_NAME } from "./provider.ts";
 
 const KAYA_HEADER = [
   "date",
