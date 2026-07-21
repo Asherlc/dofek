@@ -234,14 +234,14 @@ Durable, non-obvious notes for working in the Cursor Cloud VM. The startup updat
 - `ubuntu` is in the `docker` group, so `docker`/`docker compose` work without `sudo` once the daemon is up. On a brand-new session the socket may be `root:docker`; if you hit a permission error, `sudo chmod 666 /var/run/docker.sock`.
 
 ### Secrets / Infisical
-- The Infisical CLI is NOT installed. `scripts/with-env.sh` calls `infisical export` and prints `infisical: command not found`, then continues (the script has no `set -e`) using `.env` + `.env.local`. This is expected in the VM — local dev only needs `DATABASE_URL`, `CLICKHOUSE_URL`, `REDIS_URL`, which `pnpm compose:up` writes into `.env.local`.
+- The Infisical CLI is NOT installed. [`scripts/with-env.sh`](scripts/with-env.sh) deliberately fails before running its command when Infisical export is unavailable. For VM commands that only need the local `DATABASE_URL`, `CLICKHOUSE_URL`, and `REDIS_URL` written by `pnpm compose:up`, source `.env.local` explicitly and run the underlying command directly.
 - Provider OAuth/credentials and other secret-gated features are unavailable without Infisical. Use the dev-login bypass below instead of real auth.
 
 ### Bring up the full local stack (web + API, no PeerDB needed)
 Run from the repo root, in order:
 1. `pnpm compose:up` — starts Postgres/TimescaleDB + ClickHouse + Redis on random host ports and writes `.env.local`.
 2. `pnpm setup-db` — applies Postgres + ClickHouse migrations. The ClickHouse migrations pre-create the `analytics.*` serving tables that the API boot waits for, so PeerDB/Temporal and the Redpanda metric-stream stack are NOT required for dev.
-3. `./scripts/with-env.sh pnpm seed` — seeds demo data and creates the `dev-session`. Note `pnpm seed` does not wrap `with-env.sh` itself, so it must be run through `with-env.sh` (or with `DATABASE_URL` exported) to pick up `.env.local`.
+3. `set -a; . ./.env.local; set +a; pnpm seed` — exports the local service URLs, seeds demo data, and creates the `dev-session` without requiring unavailable provider secrets.
 4. `pnpm analytics:build` (optional) — dbt build via `uv`; populates ClickHouse activity/sleep read models from seeded Postgres data. The API boots without it (tables exist empty), but activity-stream analytics need it.
 5. API: `cd packages/server && pnpm dev` (Express + tRPC on `:3000`). Web: `cd packages/web && pnpm dev` (Vite on `:5173`, proxies `/api`, `/auth`, `/callback` to `:3000`).
 
