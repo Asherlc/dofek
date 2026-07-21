@@ -103,9 +103,12 @@ export default function ProvidersScreen() {
   const importedSharedUris = useRef(new Set<string>());
   const isMounted = useRef(true);
 
-  useEffect(() => () => {
-    isMounted.current = false;
-  }, []);
+  useEffect(
+    () => () => {
+      isMounted.current = false;
+    },
+    [],
+  );
 
   const sharedFileUri = Array.isArray(params.sharedFile) ? params.sharedFile[0] : params.sharedFile;
 
