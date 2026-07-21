@@ -150,7 +150,7 @@ pnpm compose:up
 
 # PeerDB CDC stack — required for the API server, since its boot path waits
 # for ClickHouse analytics views and lower-volume postgres_fitness mirrors.
-docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.peerdb.yml up -d
+pnpm compose -- -f docker-compose.yml -f docker-compose.peerdb.yml up -d
 # (The peerdb-temporal-init container auto-registers the MirrorName Temporal
 # search attribute that PeerDB workflows depend on. It exits after running.)
 # PeerDB UI is available at http://localhost:3001 when the PeerDB stack is up.
@@ -162,12 +162,14 @@ pnpm clickhouse-cdc
 
 # Optional local Redpanda/R2 replay stack. This starts Redpanda, local MinIO,
 # Redpanda Connect archive, and sink containers using the server image target.
-docker compose --env-file .env.local --profile metric-stream up -d \
+pnpm compose -- --profile metric-stream up -d \
   redpanda metric-stream-minio metric-stream-r2-archive \
   metric-stream-clickhouse-sink
 
-pnpm test                       # run tests
-pnpm test:watch                 # run tests in watch mode
+pnpm test                       # Docker-free unit + mobile tests
+pnpm test:integration           # Compose-backed integration tests
+pnpm test:all                   # unit + mobile + integration tests
+pnpm test:watch                 # Docker-free tests in watch mode
 pnpm dev                        # run sync runner in dev mode
 
 # Web dashboard — starts Vite dev server (proxies /api to Express)
@@ -203,6 +205,8 @@ Pull requests can publish web and mobile Storybook previews automatically on eve
 Dedicated PR review apps have been retired. Pull requests still publish Storybook previews to R2 for web and mobile UI review.
 
 Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement. Test files are colocated with source files (e.g. `index.test.ts` next to `index.ts`). E2E tests use [Cypress](https://www.cypress.io/) and run against a Docker Compose stack in CI. [Stryker](https://stryker-mutator.io/) mutation testing runs on PRs to verify test quality.
+
+Local Compose commands should run through `pnpm compose -- <arguments>`. The wrapper pins Docker Compose's project name, project directory, file, and child working directory to the physical workspace so Conductor workspaces cannot accidentally share resources through an inherited stale path. Docker Compose documents the precedence and isolation role of [project names](https://docs.docker.com/compose/how-tos/project-name/) and the [`--project-directory` option](https://docs.docker.com/reference/cli/docker/compose/).
 
 ### Migration Baseline (Squashed History)
 

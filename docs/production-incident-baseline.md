@@ -14602,3 +14602,42 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   credentialed artifacts before merge. Their secretless checks still exercise
   the affected source; the full credentialed builds run from trusted repository
   contexts.
+
+## 2026-07-21 — Local Test Runs Exhausted Docker Across Conductor Workspaces
+
+- **Symptoms:** YouTube playback stuttered while dozens of TimescaleDB test
+  containers and several Compose stacks were active. Docker held 59 stopped
+  containers and 4.297 GB of reclaimable container data, while Vitest/Stryker
+  processes continued creating databases.
+- **User impact:** The development machine became CPU-, memory-, and I/O-bound;
+  interactive video playback and normal development were visibly degraded.
+- **Evidence:** Stryker's Vitest collection contained 815 test files, including
+  104 `*.integration.test.ts` files. The default Vitest collection contained
+  829 files with the same 104 integration files. Active process trees showed
+  mutation workers repeatedly launching generic TimescaleDB Testcontainers.
+  Compose inspection also resolved an inherited `PWD` from another Conductor
+  workspace, allowing resource identity to drift from the physical checkout.
+- **Root cause:** Docker-backed integration tests were implicitly included in
+  default and mutation tiers, and the database helper created a new generic
+  container whenever `TEST_DATABASE_URL` was absent. Local Compose entry points
+  also relied on inherited working-directory state instead of an explicit
+  project name and directory. Docker documents how project names isolate
+  Compose resources: <https://docs.docker.com/compose/how-tos/project-name/>.
+- **Fix / mitigation:** Removed stopped containers and unused images/networks,
+  then stopped only the runaway process groups and disposable stacks identified
+  by workspace. The repository now keeps default, changed, coverage, and
+  mutation tiers Docker-free; explicit integration tiers use one per-workspace
+  Compose stack and cloned Postgres test databases. Compose entry points pin the
+  physical workspace identity, and archive runs `down --remove-orphans
+  --volumes` for that workspace's default and E2E files. Docker documents the
+  volume-removal scope of Compose down:
+  <https://docs.docker.com/reference/cli/docker/compose/down/>. After validation,
+  all 12 remaining idle workspace containers were stopped. Docker Desktop was
+  then stopped because its VM still consumed about 100% CPU with no running
+  containers; stopping it released that process and its memory.
+- **Remaining risk / follow-up:** Existing workspaces created before this change
+  may retain old stacks or volumes until they are archived or cleaned once.
+  Docker still has 103 local volumes, with 5.669 GB reported reclaimable; these
+  were preserved because a global cross-workspace volume prune was not approved.
+  Shared Docker images and build cache are intentionally not removed on archive;
+  they should be pruned only under the documented disk-recovery procedure.

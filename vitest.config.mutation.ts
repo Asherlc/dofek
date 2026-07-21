@@ -52,7 +52,7 @@ export default defineConfig({
       "packages/zepp/src/**/*.test.ts",
       "packages/zepp/workout-extension/**/*.test.ts",
     ],
-    exclude: ["**/node_modules/**"],
+    exclude: ["**/*.integration.test.ts", "**/node_modules/**"],
     setupFiles: ["packages/mobile/test-setup.ts"],
     environmentMatchGlobs: [["packages/mobile/**", "jsdom"]],
   },

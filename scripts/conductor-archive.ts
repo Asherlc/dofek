@@ -1,9 +1,22 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
+import { basename, join } from "node:path";
+
+const workspaceDirectory = realpathSync(process.cwd());
+const composeEnvironmentPath = join(workspaceDirectory, ".env.local");
+const composeFilePath = join(workspaceDirectory, "docker-compose.yml");
+const composeProjectName = basename(workspaceDirectory);
 
 function runDocker(dockerArguments: string[]): string {
   const result = spawnSync("docker", dockerArguments, {
+    cwd: workspaceDirectory,
     encoding: "utf8",
+    env: {
+      ...process.env,
+      COMPOSE_FILE: composeFilePath,
+      COMPOSE_PROJECT_NAME: composeProjectName,
+      PWD: workspaceDirectory,
+    },
     stdio: ["ignore", "pipe", "inherit"],
   });
 
@@ -25,7 +38,20 @@ function isRecord(value: unknown): value is { [key: string]: unknown } {
 }
 
 function getComposeProjectName(): string {
-  const output = runDocker(["compose", "config", "--format", "json"]);
+  const dockerArguments = [
+    "compose",
+    "--project-name",
+    composeProjectName,
+    "--project-directory",
+    workspaceDirectory,
+    "--file",
+    composeFilePath,
+  ];
+  if (existsSync(composeEnvironmentPath)) {
+    dockerArguments.push("--env-file", composeEnvironmentPath);
+  }
+  dockerArguments.push("config", "--format", "json");
+  const output = runDocker(dockerArguments);
   const parsedConfig: unknown = JSON.parse(output);
 
   if (
@@ -40,17 +66,26 @@ function getComposeProjectName(): string {
 }
 
 function runComposeDown(composeFile: string | null): void {
-  if (composeFile !== null && !existsSync(composeFile)) {
+  const selectedComposeFile =
+    composeFile === null ? composeFilePath : join(workspaceDirectory, composeFile);
+  if (!existsSync(selectedComposeFile)) {
     return;
   }
 
-  const dockerArguments = ["compose"];
+  const dockerArguments = [
+    "compose",
+    "--project-name",
+    composeProjectName,
+    "--project-directory",
+    workspaceDirectory,
+  ];
 
-  if (composeFile !== null) {
-    dockerArguments.push("-f", composeFile);
+  if (existsSync(composeEnvironmentPath)) {
+    dockerArguments.push("--env-file", composeEnvironmentPath);
   }
 
-  dockerArguments.push("down", "--remove-orphans");
+  dockerArguments.push("--file", selectedComposeFile);
+  dockerArguments.push("down", "--remove-orphans", "--volumes");
   runDocker(dockerArguments);
 }
 

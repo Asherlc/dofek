@@ -25,6 +25,7 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - **Deduplication**: Activity sensor analytics read from deduplicated ClickHouse read models.
 - **ClickHouse Analytics Models**: Expensive derived ClickHouse tables are maintained by dbt models in `analytics/models/`. `analytics.sensor_scalar_sample`, `analytics.deduped_sensor`, `analytics.resting_heart_rate_sleep_window`, and `analytics.activity_vo2max_estimate` are incremental dbt models populated outside the web/API request path.
 - **Nutrient Columns**: Shared nutrient columns are generated via `nutrient-columns.ts`.
+- **Integration Test Databases**: `pnpm test:integration` starts the workspace Compose stack and provides `TEST_DATABASE_URL`. The test helper creates one migrated PostgreSQL template per Vitest process and clones isolated databases from it; PostgreSQL documents this behavior in [`CREATE DATABASE ... TEMPLATE`](https://www.postgresql.org/docs/current/sql-createdatabase.html).
 
 ## Migrations
 
