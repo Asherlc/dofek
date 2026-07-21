@@ -1,6 +1,6 @@
 ALTER TABLE fitness.user_billing
-  ADD COLUMN stripe_subscription_event_id text,
-  ADD COLUMN stripe_subscription_event_created bigint;
+ADD COLUMN stripe_subscription_event_id text,
+ADD COLUMN stripe_subscription_event_created bigint;
 --> statement-breakpoint
 
 CREATE TABLE fitness.stripe_webhook_event (
