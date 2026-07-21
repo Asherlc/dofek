@@ -202,6 +202,60 @@ describe("companionPairingRouter", () => {
     );
   });
 
+  it("returns the completed claim without rotating its token again", async () => {
+    mockGetByShortCode.mockResolvedValue({
+      id: "pairing-1",
+      shortCode: "ABC234",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      expiresAt: "2026-07-12T00:10:00.000Z",
+      claimedAt: "2026-07-12T00:01:00.000Z",
+      userId: "user-1",
+      companionToken: "dofek_companion_test",
+    });
+    const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.claim({ code: "ABC234" })).resolves.toEqual({
+      state: "claimed",
+      expiresAt: "2026-07-12T00:10:00.000Z",
+    });
+    expect(mockClaimChallenge).not.toHaveBeenCalled();
+    expect(mockRegenerateCompanionToken).not.toHaveBeenCalled();
+  });
+
+  it("releases issuance when attaching the rotated token fails", async () => {
+    mockGetByShortCode.mockResolvedValue({
+      id: "pairing-1",
+      shortCode: "ABC234",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      expiresAt: "2026-07-12T00:10:00.000Z",
+    });
+    mockClaimChallenge.mockResolvedValue({
+      id: "pairing-1",
+      shortCode: "ABC234",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      expiresAt: "2026-07-12T00:10:00.000Z",
+      claimedAt: "2026-07-12T00:01:00.000Z",
+      userId: "user-1",
+      tokenIssuing: true,
+    });
+    mockRegenerateCompanionToken.mockResolvedValue({
+      id: "token-1",
+      token: "dofek_companion_test",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      revokedAt: null,
+    });
+    mockSetClaimedChallengeToken.mockResolvedValue(null);
+    const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.claim({ code: "ABC234" })).rejects.toThrow(
+      "Pairing code has already been used.",
+    );
+    expect(mockReleaseClaimedChallengeTokenIssuance).toHaveBeenCalledWith({
+      shortCode: "ABC234",
+      userId: "user-1",
+    });
+  });
+
   it("rejects claims after the shared store limiter is exhausted", async () => {
     mockConsumeClaimAttempt.mockResolvedValue(false);
     const caller = createCaller({ db: {}, userId: "rate-limited-user", timezone: "UTC" });

@@ -130,6 +130,9 @@ class FakeRedisClient {
     if (script.includes('challenge["companionToken"] = ARGV[3]')) {
       return this.#setClaimedChallengeToken(script, args);
     }
+    if (script.includes('challenge["tokenIssuing"] = nil')) {
+      return this.#releaseClaimedChallengeTokenIssuance(script, args);
+    }
     if (script.includes("cjson.decode")) {
       return this.#claimChallenge(script, args);
     }
@@ -256,6 +259,44 @@ class FakeRedisClient {
     if (parsedPayload.companionToken !== undefined) return payload;
     const { tokenIssuing: _tokenIssuing, ...claimedChallenge } = parsedPayload;
     const updatedPayload = JSON.stringify({ ...claimedChallenge, companionToken });
+    this.#entries.set(challengeKey, {
+      value: updatedPayload,
+      expiresAtMs: this.#entries.get(challengeKey)?.expiresAtMs ?? null,
+    });
+    return updatedPayload;
+  }
+
+  async #releaseClaimedChallengeTokenIssuance(
+    script: string,
+    args: string[],
+  ): Promise<string | null> {
+    const codeKey = requireArg(args, 0);
+    const challengeKey = requireArg(args, 1);
+    const expectedPairingId = requireArg(args, 2);
+    const userId = requireArg(args, 3);
+    const pairingId = await this.get(codeKey);
+    if (!pairingId || pairingId !== expectedPairingId) return null;
+    const payload = await this.get(challengeKey);
+    if (!payload) return null;
+    let parsedPayload: unknown;
+    try {
+      parsedPayload = JSON.parse(payload);
+    } catch (error) {
+      if (!script.includes("pcall(cjson.decode")) throw error;
+      await this.del(codeKey, challengeKey);
+      return null;
+    }
+    if (
+      !isRecord(parsedPayload) ||
+      parsedPayload.claimedAt === undefined ||
+      parsedPayload.userId !== userId ||
+      parsedPayload.tokenIssuing !== true ||
+      parsedPayload.companionToken !== undefined
+    ) {
+      return null;
+    }
+    const { tokenIssuing: _tokenIssuing, ...releasedChallenge } = parsedPayload;
+    const updatedPayload = JSON.stringify(releasedChallenge);
     this.#entries.set(challengeKey, {
       value: updatedPayload,
       expiresAtMs: this.#entries.get(challengeKey)?.expiresAtMs ?? null,
@@ -583,6 +624,52 @@ describe("RedisCompanionPairingStore", () => {
         "dofek_companion_test",
       ],
     });
+  });
+
+  it("releases an unfinished Redis token issuance only for its claim owner", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const challenge = await store.createChallenge();
+    await store.claimChallenge({ shortCode: challenge.shortCode, userId: "user-1" });
+
+    await expect(
+      store.releaseClaimedChallengeTokenIssuance({
+        shortCode: challenge.shortCode,
+        userId: "user-2",
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      store.releaseClaimedChallengeTokenIssuance({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+      }),
+    ).resolves.toMatchObject({ userId: "user-1" });
+    expect(await redisClient.readPairingPayload(challenge.id)).not.toHaveProperty("tokenIssuing");
+  });
+
+  it("returns null when releasing a Redis token issuance cannot produce a challenge", async () => {
+    const redisClient = new FakeRedisClient();
+    const store = new RedisCompanionPairingStore(async () => redisClient);
+    const challenge = await store.createChallenge();
+
+    await expect(
+      store.releaseClaimedChallengeTokenIssuance({ shortCode: "ABC234", userId: "user-1" }),
+    ).resolves.toBeNull();
+    await store.claimChallenge({ shortCode: challenge.shortCode, userId: "user-1" });
+    redisClient.nextEvalResult = 1;
+    await expect(
+      store.releaseClaimedChallengeTokenIssuance({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+      }),
+    ).resolves.toBeNull();
+    redisClient.nextEvalResult = "{";
+    await expect(
+      store.releaseClaimedChallengeTokenIssuance({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+      }),
+    ).resolves.toBeNull();
   });
 
   it("expires stale Redis challenges", async () => {
