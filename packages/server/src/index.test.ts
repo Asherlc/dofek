@@ -11,6 +11,7 @@ const mockQueue = {
   getJobCounts: mockQueueGetJobCounts,
   close: mockQueueClose,
 };
+const mockLoggerInfo = vi.fn();
 const mockFitFileImportQueue = { ...mockQueue, name: "fit-file-import" };
 const mockFitFileImportBatchQueue = { ...mockQueue, name: "fit-file-import-batch" };
 const mockZipEntryExtractQueue = { ...mockQueue, name: "zip-entry-extract" };
@@ -89,6 +90,9 @@ vi.mock("../lib/sentry.ts", () => ({
     () => (_error: unknown, _req: unknown, _res: unknown, next: (error?: unknown) => void) =>
       next(),
   ),
+}));
+vi.mock("./logger.ts", () => ({
+  logger: { info: mockLoggerInfo, warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("../mcp/route.ts", () => ({ createMcpRouter: vi.fn(() => express.Router()) }));
 vi.mock("../router.ts", () => ({ appRouter: {} }));
@@ -174,6 +178,7 @@ describe("createApp", () => {
         queues: "ok",
       },
     });
+    mockLoggerInfo.mockReset();
   });
 
   it("returns 404 for non-existent routes", async () => {
@@ -182,6 +187,27 @@ describe("createApp", () => {
     const app = createApp(fakeDb, makeMockSensorStore());
     const res = await request(app, "GET", "/api/nonexistent");
     expect(res.status).toBe(404);
+  });
+
+  it("redacts sensitive query parameters in request logs", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const app = createApp(createDatabaseFromEnv(), makeMockSensorStore());
+
+    const res = await request(app, "GET", "/api/nonexistent?session=secret-session&foo=visible");
+    const codeRes = await request(app, "GET", "/api/nonexistent?code=secret-code&foo=visible");
+
+    expect(res.status).toBe(404);
+    expect(codeRes.status).toBe(404);
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("/api/nonexistent?session=%5BREDACTED%5D&foo=visible"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("/api/nonexistent?code=%5BREDACTED%5D&foo=visible"),
+    );
+    expect(mockLoggerInfo.mock.calls[0]?.[0]).not.toContain("code=");
+    expect(mockLoggerInfo.mock.calls[1]?.[0]).not.toContain("session=");
+    expect(mockLoggerInfo).not.toHaveBeenCalledWith(expect.stringContaining("secret-session"));
+    expect(mockLoggerInfo).not.toHaveBeenCalledWith(expect.stringContaining("secret-code"));
   });
 
   it("does not serve the SPA shell for missing JavaScript assets", async () => {
