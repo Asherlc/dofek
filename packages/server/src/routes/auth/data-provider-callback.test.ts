@@ -3,11 +3,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mocks ──
 
-const { mockRevokeToken, mockLogger, mockLoadTokens, mockGetAllProviders } = vi.hoisted(() => ({
+const {
+  mockRevokeToken,
+  mockLogger,
+  mockLoadTokens,
+  mockGetAllProviders,
+  mockResolveOrCreateUser,
+  mockGetSessionIdFromRequest,
+  mockValidateSession,
+  mockPersistProviderConnection,
+} = vi.hoisted(() => ({
   mockRevokeToken: vi.fn(),
   mockLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   mockLoadTokens: vi.fn(),
   mockGetAllProviders: vi.fn(),
+  mockResolveOrCreateUser: vi.fn(),
+  mockGetSessionIdFromRequest: vi.fn(),
+  mockValidateSession: vi.fn(),
+  mockPersistProviderConnection: vi.fn(),
 }));
 
 vi.mock("dofek/auth/oauth", () => ({
@@ -26,18 +39,18 @@ vi.mock("dofek/lib/cache", () => ({
 
 vi.mock("../../auth/account-linking.ts", () => ({
   MissingEmailForSignupError: class extends Error {},
-  resolveOrCreateUser: vi.fn(),
+  resolveOrCreateUser: (...args: unknown[]) => mockResolveOrCreateUser(...args),
 }));
 
 vi.mock("../../auth/cookies.ts", () => ({
-  getSessionIdFromRequest: vi.fn(),
+  getSessionIdFromRequest: (...args: unknown[]) => mockGetSessionIdFromRequest(...args),
   isValidMobileScheme: vi.fn(),
   setSessionCookie: vi.fn(),
 }));
 
 vi.mock("../../auth/session.ts", () => ({
   createSession: vi.fn(),
-  validateSession: vi.fn(),
+  validateSession: (...args: unknown[]) => mockValidateSession(...args),
 }));
 
 vi.mock("./slack-oauth.ts", () => ({
@@ -70,7 +83,7 @@ vi.mock("./shared.ts", () => ({
   getOAuthStateStoreRef: () => mockOauthStateStore,
   getOAuth1SecretStoreRef: () => ({ get: vi.fn(), delete: vi.fn() }),
   oauthSuccessHtml: vi.fn(() => "<html>success</html>"),
-  persistProviderConnection: vi.fn(),
+  persistProviderConnection: (...args: unknown[]) => mockPersistProviderConnection(...args),
   sanitizeReturnTo: vi.fn(),
   completeSignupHtml: vi.fn(),
   storePendingEmailSignup: vi.fn(),
@@ -146,6 +159,8 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       expiresAt: new Date("2027-01-01"),
       scopes: "user_read",
     });
+    mockGetSessionIdFromRequest.mockReturnValue(undefined);
+    mockValidateSession.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -271,5 +286,73 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     // Revocation was not attempted (no stored tokens)
     expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
     expect(mockRevokeToken).not.toHaveBeenCalled();
+  });
+
+  it("links a mobile data-provider callback using the authenticated OAuth state", async () => {
+    const mockGetUserIdentity = vi.fn().mockResolvedValue({
+      providerAccountId: "wahoo-account-1",
+      email: "wahoo@example.com",
+      name: "Wahoo User",
+    });
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authSetup: () => ({
+          oauthConfig: { clientId: "test-id", redirectUri: "https://dofek.example/callback" },
+          exchangeCode: mockExchangeCode,
+          getUserIdentity: mockGetUserIdentity,
+        }),
+      },
+    ]);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockGetSessionIdFromRequest).toHaveBeenCalledWith(req);
+    expect(mockValidateSession).not.toHaveBeenCalled();
+    expect(mockResolveOrCreateUser).toHaveBeenCalledWith(
+      mockDb,
+      "wahoo",
+      expect.objectContaining({ providerAccountId: "wahoo-account-1" }),
+      "user-1",
+    );
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it("rejects a callback session that differs from the authenticated OAuth state", async () => {
+    const mockGetUserIdentity = vi.fn().mockResolvedValue({
+      providerAccountId: "wahoo-account-2",
+      email: "wahoo@example.com",
+      name: "Wahoo User",
+    });
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authSetup: () => ({
+          oauthConfig: { clientId: "test-id", redirectUri: "https://dofek.example/callback" },
+          exchangeCode: mockExchangeCode,
+          getUserIdentity: mockGetUserIdentity,
+        }),
+      },
+    ]);
+    mockGetSessionIdFromRequest.mockReturnValue("callback-session");
+    mockValidateSession.mockResolvedValue({
+      userId: "different-user",
+      expiresAt: new Date("2027-01-01"),
+    });
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockGetUserIdentity).not.toHaveBeenCalled();
+    expect(mockResolveOrCreateUser).not.toHaveBeenCalled();
+    expect(mockPersistProviderConnection).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining("does not match authenticated OAuth state"),
+      expect.anything(),
+    );
   });
 });
