@@ -1,3 +1,4 @@
+import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { regenerateCompanionToken } from "../companion/token-repository.ts";
@@ -101,10 +102,14 @@ export const companionPairingRouter = router({
           expiresAt: pairedChallenge.expiresAt,
         };
       } catch (error) {
-        await store.releaseClaimedChallengeTokenIssuance({
-          shortCode: challenge.shortCode,
-          userId: ctx.userId,
-        });
+        try {
+          await store.releaseClaimedChallengeTokenIssuance({
+            shortCode: challenge.shortCode,
+            userId: ctx.userId,
+          });
+        } catch (releaseError) {
+          captureException(releaseError);
+        }
         throw error;
       }
     }),

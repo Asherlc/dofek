@@ -8,6 +8,7 @@ const {
   mockSetClaimedChallengeToken,
   mockReleaseClaimedChallengeTokenIssuance,
   mockRegenerateCompanionToken,
+  mockCaptureException,
 } = vi.hoisted(() => ({
   mockGetByShortCode: vi.fn(),
   mockConsumeClaimAttempt: vi.fn(),
@@ -15,6 +16,7 @@ const {
   mockSetClaimedChallengeToken: vi.fn(),
   mockReleaseClaimedChallengeTokenIssuance: vi.fn(),
   mockRegenerateCompanionToken: vi.fn(),
+  mockCaptureException: vi.fn(),
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -45,6 +47,10 @@ vi.mock("../lib/companion-pairing-store.ts", () => ({
 
 vi.mock("../companion/token-repository.ts", () => ({
   regenerateCompanionToken: (...args: unknown[]) => mockRegenerateCompanionToken(...args),
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
 const { companionPairingRouter } = await import("./companion-pairing.ts");
@@ -254,6 +260,39 @@ describe("companionPairingRouter", () => {
       shortCode: "ABC234",
       userId: "user-1",
     });
+  });
+
+  it("preserves the pairing failure when issuance cleanup fails", async () => {
+    mockGetByShortCode.mockResolvedValue({
+      id: "pairing-1",
+      shortCode: "ABC234",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      expiresAt: "2026-07-12T00:10:00.000Z",
+    });
+    mockClaimChallenge.mockResolvedValue({
+      id: "pairing-1",
+      shortCode: "ABC234",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      expiresAt: "2026-07-12T00:10:00.000Z",
+      claimedAt: "2026-07-12T00:01:00.000Z",
+      userId: "user-1",
+      tokenIssuing: true,
+    });
+    mockRegenerateCompanionToken.mockResolvedValue({
+      id: "token-1",
+      token: "dofek_companion_test",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      revokedAt: null,
+    });
+    mockSetClaimedChallengeToken.mockResolvedValue(null);
+    const cleanupError = new Error("Redis unavailable");
+    mockReleaseClaimedChallengeTokenIssuance.mockRejectedValueOnce(cleanupError);
+    const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
+
+    await expect(caller.claim({ code: "ABC234" })).rejects.toThrow(
+      "Pairing code has already been used.",
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(cleanupError);
   });
 
   it("rejects claims after the shared store limiter is exhausted", async () => {
