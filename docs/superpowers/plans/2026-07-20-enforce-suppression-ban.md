@@ -24,7 +24,7 @@
 
 ## File Structure
 
-- Modify: `scripts/no-suppressions.sh` or replace it with a TypeScript script - make file discovery complete and testable.
+- Replace: `scripts/no-suppressions.sh` with a TypeScript script - make file discovery complete and testable through fixture-backed unit tests.
 - Create/modify: colocated script tests - cover included and excluded paths.
 - Modify: `package.json` and `.github/workflows/test.yml` - wire one canonical check into local lint and CI.
 - Modify: tracked files reported by the checker - remove the suppressions without weakening lint or mutation coverage.
@@ -46,7 +46,7 @@
 
 ### Task 3: Final Verification
 
-- [ ] Run `rtk bash scripts/no-suppressions.sh` or its canonical replacement and confirm exit 0.
+- [ ] Run the canonical checker with `rtk pnpm tsx scripts/no-suppressions.ts` and confirm exit 0.
 - [ ] Run `rtk pnpm typecheck` and the affected unit/mutation tests.
 - [ ] Verify the required CI gate cannot pass when the checker fails.
 - [ ] Record a short retrospective covering root cause, direct fix, validation evidence, and a concrete `AGENTS.md`, `scripts/README.md`, or skill improvement for future policy-check work.

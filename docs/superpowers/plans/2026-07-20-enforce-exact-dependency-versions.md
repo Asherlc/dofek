@@ -24,7 +24,7 @@
 
 ## File Structure
 
-- Modify: `scripts/exact-versions.sh` or replace it with a TypeScript script - make the repository policy deterministic and testable.
+- Replace: `scripts/exact-versions.sh` with a TypeScript script - make the repository policy deterministic and testable through fixture-backed unit tests.
 - Create/modify: colocated script tests - cover accepted and rejected version forms.
 - Modify: `packages/mobile/package.json` and `packages/zepp/package.json` - pin current ranged declarations to their existing resolved versions.
 - Modify: `package.json` and `.github/workflows/test.yml` - wire one canonical check into local lint and CI.
@@ -46,7 +46,7 @@
 
 ### Task 3: Final Verification
 
-- [ ] Run `rtk bash scripts/exact-versions.sh` or its canonical replacement and confirm exit 0.
+- [ ] Run the canonical checker with `rtk pnpm tsx scripts/exact-versions.ts` and confirm exit 0.
 - [ ] Run `rtk pnpm install --frozen-lockfile`, `rtk pnpm typecheck`, and affected package tests/builds.
 - [ ] Verify the required CI gate cannot pass when the checker fails.
 - [ ] Record a short retrospective covering root cause, direct fix, validation evidence, and a concrete `AGENTS.md`, `scripts/README.md`, or skill improvement for future policy-check work.

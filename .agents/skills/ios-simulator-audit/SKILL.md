@@ -69,15 +69,15 @@ With the configured MCP available, prefer its simulator build/install/launch,
 UI snapshot, screenshot, and log tools. The CLI fallback is:
 
 ```bash
-rtk npx -y xcodebuildmcp@2.6.2 simulator install \
+rtk pnpm dlx xcodebuildmcp@2.6.2 simulator install \
   --simulator-id <SIMULATOR_UDID> \
   --app-path .context/ReleaseAuditDerivedData/Build/Products/Release-iphonesimulator/Dofek.app
 
-rtk npx -y xcodebuildmcp@2.6.2 simulator launch-app \
+rtk pnpm dlx xcodebuildmcp@2.6.2 simulator launch-app \
   --simulator-id <SIMULATOR_UDID> \
   --bundle-id com.dofek.app
 
-rtk npx -y xcodebuildmcp@2.6.2 simulator snapshot-ui \
+rtk pnpm dlx xcodebuildmcp@2.6.2 simulator snapshot-ui \
   --simulator-id <SIMULATOR_UDID> \
   --output json
 ```

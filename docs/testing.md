@@ -42,12 +42,14 @@ Sources:
 
 ### Isolated browser end-to-end stack
 
-Run browser E2E in an explicit Compose project so it cannot collide with the
-normal workspace stack:
+Generate a unique Compose project name for each browser E2E run, keep every
+command in the same shell, and reuse that name so concurrent or stale runs
+cannot share resources:
 
 ```bash
-docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
-docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml ps -a
+e2e_project_name="dofek-e2e-audit-$(date +%s)-$$"
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
 pnpm e2e:web:run
 ```
 
@@ -58,14 +60,14 @@ default; Docker documents project-name isolation and precedence here:
 On failure, preserve evidence before teardown:
 
 ```bash
-docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml ps -a
-docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml logs --no-color
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml logs --no-color
 ```
 
 Then remove only this isolated project's containers and fresh volumes:
 
 ```bash
-docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml down -v
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
 ```
 
 This topology currently validates browser paths. It is not a complete mobile

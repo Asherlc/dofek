@@ -22,8 +22,8 @@ transaction in [`ROLLBACK`](https://www.postgresql.org/docs/current/sql-rollback
 
 ## Test Strategy
 
-- Unit: drive the seeder's public execution boundary with a database adapter that rejects a migration statement and assert a non-zero failure preserving file context.
-- Integration: run against a fresh Postgres fixture with an intentionally invalid test migration or canonical migration-runner failure injection.
+- Unit: drive the seeder's public execution boundary with a database adapter that rejects a migration statement and assert a non-zero failure preserving the exact migration filename, failed SQL statement, and original database error.
+- Integration: run against a fresh Postgres fixture with an intentionally invalid test migration or canonical migration-runner failure injection and assert the same exact filename, statement, and original database error context.
 - UI/mobile/web parity: not applicable; both review clients depend on the same seed database.
 
 ## File Structure
@@ -35,7 +35,7 @@ transaction in [`ROLLBACK`](https://www.postgresql.org/docs/current/sql-rollback
 
 ### Task 1: Add Failing Tests
 
-- [ ] Write a failing test showing a non-duplicate migration error is swallowed and seeding continues today; assert the seed phase is never invoked and no seed rows are written after the migration failure.
+- [ ] Write a failing test showing a non-duplicate migration error is swallowed and seeding continues today; assert the exact migration filename, failed SQL statement, and original database error are preserved, the seed phase is never invoked, and no seed rows are written after the migration failure.
 - [ ] Run `rtk pnpm vitest run --project unit scripts/seed-dev-db.test.ts`.
 - [ ] Confirm the failure is specifically the missing propagation.
 
@@ -49,5 +49,5 @@ transaction in [`ROLLBACK`](https://www.postgresql.org/docs/current/sql-rollback
 
 - [ ] Run the seeder against a fresh disposable Postgres database and verify migrations plus seed validation succeed.
 - [ ] Run `rtk pnpm lint`, `rtk pnpm typecheck`, and the focused tests.
-- [ ] Confirm an injected invalid statement stops immediately with a non-zero status.
+- [ ] Confirm an injected invalid statement stops immediately with a non-zero status and reports its exact migration filename, failed statement, and original database error.
 - [ ] Record a short retrospective covering root cause, direct fix, validation evidence, and a concrete documentation or skill improvement.

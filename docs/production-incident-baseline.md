@@ -14673,8 +14673,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Three simultaneous cold requests took 60–65
   seconds and wrote `200` only after the clients disconnected; once one request
   populated that cache, the same valid production request completed in 0.41
-  seconds. A nonexistent-channel request completed in 0.51 seconds, isolating
-  the delay after channel lookup and inside the cold stored-update path.
+  seconds. A nonexistent-channel request completed in 0.51 seconds, supporting,
+  but not proving, that the delay is in the valid-channel cold path.
 - **Fix / mitigation:** No deployed fix has been validated. Filed
   [#1783](https://github.com/Asherlc/dofek/issues/1783) for the obsolete local
   checker and [#1784](https://github.com/Asherlc/dofek/issues/1784) for the

@@ -15,7 +15,7 @@ rtk docker compose --env-file .env.local up -d --wait --wait-timeout 180 db clic
 rtk docker compose --env-file .env.local ps db clickhouse redis redpanda
 ```
 
-2. Load those generated URLs before starting Vitest:
+1. Load those generated URLs before starting Vitest:
 
 ```bash
 rtk bash -lc 'set -a; . ./.env.local; set +a; pnpm vitest run --project integration'
@@ -26,7 +26,7 @@ For one file:
 ```bash
 rtk bash -lc 'set -a; . ./.env.local; set +a; pnpm vitest run --project integration <path/to/file.integration.test.ts>'
 ```
-3. If the run fails, capture:
+1. If the run fails, capture:
 - exact failing command
 - first fatal error line
 - causal explanation for that error before changing behavior
@@ -37,16 +37,16 @@ rtk bash -lc 'set -a; . ./.env.local; set +a; pnpm vitest run --project integrat
 ```bash
 rtk docker ps
 ```
-2. Verify local backing services are up and healthy:
+1. Verify local backing services are up and healthy:
 ```bash
 rtk docker compose --env-file .env.local ps db clickhouse redis redpanda
 ```
-3. Confirm the test process loaded `.env.local`. A ClickHouse refusal at
+1. Confirm the test process loaded `.env.local`. A ClickHouse refusal at
    `localhost:8123` while Compose exposes a generated port is an environment
    error, not a product failure.
-4. Re-run only the failing integration suite to confirm reproducibility.
-5. Fix root cause, then re-run the same suite.
-6. Re-run the broader command to confirm.
+1. Re-run only the failing integration suite to confirm reproducibility.
+1. Fix root cause, then re-run the same suite.
+1. Re-run the broader command to confirm.
 
 ## Common Failures
 
@@ -87,11 +87,13 @@ failures.
 
 ## Isolated Browser E2E
 
-Use an explicit Compose project name and keep the normal workspace stack intact:
+Generate one unique Compose project name per run, keep every command in the same
+shell, and reuse that name so concurrent and stale runs cannot share resources:
 
 ```bash
-rtk docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
-rtk docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml ps -a
+e2e_project_name="dofek-e2e-audit-$(date +%s)-$$"
+rtk docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
+rtk docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
 rtk pnpm e2e:web:run
 ```
 
@@ -99,7 +101,7 @@ If a test fails, capture `ps -a` and full service logs before teardown. Only
 after evidence is preserved, remove this exact isolated project with:
 
 ```bash
-rtk docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml down -v
+rtk docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
 ```
 
 The current E2E topology has no Redpanda service and omits the server's
@@ -111,7 +113,7 @@ does not prove mobile activity saves can succeed.
 
 When reporting back, include:
 1. Failing command.
-2. First fatal error line.
-3. Root cause in one sentence.
-4. Fix applied.
-5. Validation command(s) and result.
+1. First fatal error line.
+1. Root cause in one sentence.
+1. Fix applied.
+1. Validation command(s) and result.

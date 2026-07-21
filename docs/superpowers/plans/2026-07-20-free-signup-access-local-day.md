@@ -17,17 +17,25 @@ The seven-day free signup window is anchored to the UTC calendar date of `user_p
 
 A newly registered user can view health data from their current local signup day, regardless of the UTC date at signup time.
 
+The seven-day date interval is `[localSignupDate, localSignupDate + 7 days)`: it
+includes the local signup date and the next six local dates. For example,
+`2026-07-21T01:30:00Z` in `America/Los_Angeles` has local signup date
+`2026-07-20` and permits dates `2026-07-20` through `2026-07-26`; the exclusive
+end is `2026-07-27`. Conversely, `2026-07-20T15:30:00Z` in `Asia/Tokyo` has
+local signup date `2026-07-21` and permits dates `2026-07-21` through
+`2026-07-27`; the exclusive end is `2026-07-28`.
+
 ## Test-first plan
 
-1. Add a failing entitlement test for a user in `America/Los_Angeles` created after UTC midnight, asserting that the limited window starts on the user's local calendar date.
-2. Add the inverse boundary case for a timezone east of UTC to prevent shifting the window in the other direction.
+1. Add a failing entitlement test for a user in `America/Los_Angeles` created at `2026-07-21T01:30:00Z`, asserting the exact `[2026-07-20, 2026-07-27)` date interval.
+2. Add the inverse `Asia/Tokyo` case at `2026-07-20T15:30:00Z`, asserting the exact `[2026-07-21, 2026-07-28)` date interval.
 3. Thread the profile's validated IANA timezone through the billing repository/query input and every `resolveAccessWindow()` call, then derive the seven-day date window in that timezone. Invalid timezone updates remain rejected at the profile boundary; legacy profiles with no timezone use UTC explicitly.
 4. Add contract tests for every access-window call site, the missing-timezone UTC fallback, and invalid-timezone rejection without changing paid-access behavior.
 5. Re-run the focused entitlement/router tests and `pnpm e2e:web:run`; the dashboard steps assertion should pass without altering the E2E fixture dates.
 
 ## Acceptance criteria
 
-- A free user's access window starts on the calendar date at their configured timezone, not the UTC calendar date.
+- A free user's access window is the half-open interval `[localSignupDate, localSignupDate + 7 days)`, covering exactly the signup date and six subsequent local dates.
 - The current local day's daily metrics are visible immediately after signup in timezones west and east of UTC.
 - Paid access windows are unchanged.
 - The dashboard E2E suite displays the seeded 9,200 steps and passes.

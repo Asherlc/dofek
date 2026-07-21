@@ -16,7 +16,7 @@ The server creates the fake values and both web and mobile render them.
 ## Implementation
 
 1. Add a failing repository test asserting that insufficient correlation results contain no inferential statistics.
-2. Define one shared server response contract with `statisticsStatus: "available" | "insufficient"`, `pairCount`, and `additionalSamplesNeeded`. When status is `insufficient`, Spearman, Pearson, R², and p-value fields are `null`; when status is `available`, all four fields are numeric. Do not encode “not computed” as numeric zero/one sentinels.
+2. Define one shared server response contract with `statisticsStatus: "available" | "insufficient"`, `pairCount`, and `additionalSamplesNeeded = max(0, 5 - pairCount)`. When status is `insufficient`, Spearman, Pearson, R², and p-value fields are `null`; when status is `available`, all four fields are numeric and `additionalSamplesNeeded` is `0`. Do not encode “not computed” as numeric zero/one sentinels.
 3. Update web and mobile to show the sample count and insufficient-data explanation without coefficient, regression, or p-value readouts until the minimum sample size is met.
 4. Preserve all current statistics, charts, and finding text for sufficient datasets.
 5. Update focused component tests and Storybook stories on both platforms.
@@ -27,7 +27,7 @@ The server creates the fake values and both web and mobile render them.
 - The user sees the actual sample count and the number of additional overlapping samples required.
 - With 5 or more valid pairs, current calculations and presentation remain available.
 - Web and mobile use the same server-provided availability semantics.
-- Route/schema tests prove the serialized contract at every 0–4 pair boundary and at 5 or more pairs, including exact `additionalSamplesNeeded` values and nullability.
+- Route/schema tests prove the serialized contract at every 0–4 pair boundary and at 5 or more pairs, including `additionalSamplesNeeded = max(0, 5 - pairCount)`, a serialized value of `0` at the 5-pair boundary and above, and the required inferential-field nullability.
 
 ## Validation
 

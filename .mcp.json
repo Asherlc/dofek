@@ -9,8 +9,8 @@
       "args": ["serve", "--mcp"]
     },
     "xcodebuildmcp": {
-      "command": "npx",
-      "args": ["-y", "xcodebuildmcp@2.6.2", "mcp"]
+      "command": "pnpm",
+      "args": ["dlx", "xcodebuildmcp@2.6.2", "mcp"]
     },
     "axiom": {
       "command": "sh",

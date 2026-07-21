@@ -148,8 +148,8 @@ capture logs from the iOS app:
 ```json
 {
   "xcodebuildmcp": {
-    "command": "npx",
-    "args": ["-y", "xcodebuildmcp@2.6.2", "mcp"]
+    "command": "pnpm",
+    "args": ["dlx", "xcodebuildmcp@2.6.2", "mcp"]
   }
 }
 ```
@@ -159,7 +159,7 @@ the tool catalog reloads. If the current session cannot expose dynamically added
 MCP tools, the same package provides a CLI fallback:
 
 ```bash
-npx -y xcodebuildmcp@2.6.2 simulator list
+pnpm dlx xcodebuildmcp@2.6.2 simulator list
 ```
 
 Follow the upstream getting-started guide for prerequisites and tool names:

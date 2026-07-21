@@ -31,7 +31,7 @@ Use `ToolSearch` to load the Axiom MCP tools, then query with APL (Axiom Process
 ['dofek-logs'] | where _time > ago(24h) and ['service.name'] == "dofek-web" | where severity_text == "ERROR" | sort by _time desc | limit 50
 
 // Apple Health import errors
-['dofek-logs'] | where _time > ago(7d) | search "apple" or search "health" or search "import" | sort by _time desc | limit 50
+['dofek-logs'] | where _time > ago(7d) | search "apple" or "health" or "import" | sort by _time desc | limit 50
 ```
 
 If the Axiom MCP server is not connected, fall back to step 2.
@@ -59,7 +59,11 @@ ssh dofek-server 'docker service logs --raw --timestamps --since 24h dofek_worke
 # Search for specific errors. Fetch a fixed log window remotely, then apply the
 # operator-provided term locally so it is never interpreted by the SSH shell.
 search_term='<SEARCH_TERM>'
-ssh dofek-server 'docker service logs --raw --timestamps --since 24h dofek_web 2>&1 | tail -2000' \
+if ! log_output=$(ssh dofek-server 'docker service logs --raw --timestamps --since 24h --tail 2000 dofek_web 2>&1'); then
+  echo 'Unable to retrieve dofek_web logs' >&2
+  exit 1
+fi
+printf '%s\n' "$log_output" \
   | grep -i -e 'error' -e 'fail' -e "$search_term" \
   | tail -100
 
