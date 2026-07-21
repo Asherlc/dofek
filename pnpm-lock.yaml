@@ -64,8 +64,8 @@ importers:
         specifier: 8.1.2
         version: 8.1.2
       '@clickhouse/client':
-        specifier: 1.12.1
-        version: 1.12.1
+        specifier: 1.23.1
+        version: 1.23.1
       '@dofek/format':
         specifier: workspace:*
         version: link:packages/format
@@ -1839,13 +1839,9 @@ packages:
   '@cacheable/utils@2.5.0':
     resolution: {integrity: sha512-buipgOVDkkPXNR5+xBpDw7Zk2n1EvU7qBJCNUcL7rhQ//kfpOXPAvQ511Os0vpLYJ1pZnvudNytkQt2hst3wqA==}
 
-  '@clickhouse/client-common@1.12.1':
-    resolution: {integrity: sha512-ccw1N6hB4+MyaAHIaWBwGZ6O2GgMlO99FlMj0B0UEGfjxM9v5dYVYql6FpP19rMwrVAroYs/IgX2vyZEBvzQLg==}
-    deprecated: 'Deprecated: import from @clickhouse/client or @clickhouse/client-web instead.'
-
-  '@clickhouse/client@1.12.1':
-    resolution: {integrity: sha512-7ORY85rphRazqHzImNXMrh4vsaPrpetFoTWpZYueCO2bbO6PXYDXp/GQ4DgxnGIqbWB/Di1Ai+Xuwq2o7DJ36A==}
-    engines: {node: '>=16'}
+  '@clickhouse/client@1.23.1':
+    resolution: {integrity: sha512-vs3/Zc1dHvT171btW5nMoPsPCJ6QVJ5pp7obxzO5sjqwFx/jjz9wwCAqcFOdc2DhprugDBaVn+4dVY8hG3A9nw==}
+    engines: {node: '>=20'}
 
   '@colors/colors@1.6.0':
     resolution: {integrity: sha512-Ir+AOibqzrIsL6ajt3Rz3LskB7OiMVHqltZmspbW/TJuTVuyOMirVqAkjfY6JISiLHgyNqicAC8AyHHGzNd/dA==}
@@ -16003,11 +15999,7 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@clickhouse/client-common@1.12.1': {}
-
-  '@clickhouse/client@1.12.1':
-    dependencies:
-      '@clickhouse/client-common': 1.12.1
+  '@clickhouse/client@1.23.1': {}
 
   '@colors/colors@1.6.0': {}
 
