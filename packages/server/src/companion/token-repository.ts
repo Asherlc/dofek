@@ -34,6 +34,21 @@ export function hashCompanionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+async function findActiveCompanionToken(
+  db: ExecutableDatabase,
+  userId: string,
+): Promise<z.infer<typeof companionTokenRowSchema> | null> {
+  const rows = await executeWithSchema(
+    db,
+    companionTokenRowSchema,
+    sql`SELECT id, user_id, created_at, revoked_at
+        FROM fitness.companion_token
+        WHERE user_id = ${userId} AND revoked_at IS NULL
+        LIMIT 1`,
+  );
+  return rows[0] ?? null;
+}
+
 export async function createOrGetCompanionToken(
   db: ExecutableDatabase,
   userId: string,
@@ -60,15 +75,7 @@ export async function createOrGetCompanionToken(
     };
   }
 
-  const existingRows = await executeWithSchema(
-    db,
-    companionTokenRowSchema,
-    sql`SELECT id, user_id, created_at, revoked_at
-        FROM fitness.companion_token
-        WHERE user_id = ${userId} AND revoked_at IS NULL
-        LIMIT 1`,
-  );
-  const existingRow = existingRows[0];
+  const existingRow = await findActiveCompanionToken(db, userId);
   if (!existingRow) {
     throw new Error("Failed to create companion token");
   }
@@ -85,6 +92,21 @@ export async function regenerateCompanionToken(
   userId: string,
 ): Promise<CompanionTokenMetadata> {
   return db.transaction(async (transaction) => {
+    const activeTokenBeforeLock = await findActiveCompanionToken(transaction, userId);
+    await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+    const activeTokenAfterLock = await findActiveCompanionToken(transaction, userId);
+    if (
+      activeTokenBeforeLock &&
+      activeTokenAfterLock &&
+      activeTokenBeforeLock.id !== activeTokenAfterLock.id
+    ) {
+      return {
+        id: activeTokenAfterLock.id,
+        token: null,
+        createdAt: activeTokenAfterLock.created_at,
+        revokedAt: activeTokenAfterLock.revoked_at,
+      };
+    }
     await transaction.execute(
       sql`UPDATE fitness.companion_token
           SET revoked_at = COALESCE(revoked_at, NOW())

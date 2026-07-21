@@ -109,6 +109,23 @@ describe("token-repository", () => {
     it("revokes existing token and creates a new one", async () => {
       const transaction = createMockDb();
       transaction.execute
+        .mockResolvedValueOnce([
+          {
+            id: "old-id",
+            user_id: "user-123",
+            created_at: "2026-01-01T00:00:00.000Z",
+            revoked_at: null,
+          },
+        ]) // SELECT active token before lock
+        .mockResolvedValueOnce([]) // Acquire advisory lock
+        .mockResolvedValueOnce([
+          {
+            id: "old-id",
+            user_id: "user-123",
+            created_at: "2026-01-01T00:00:00.000Z",
+            revoked_at: null,
+          },
+        ]) // SELECT active token after lock
         .mockResolvedValueOnce([]) // UPDATE revoke
         .mockResolvedValueOnce([
           {
@@ -133,6 +150,42 @@ describe("token-repository", () => {
       expect(result.token).not.toBeNull();
       expect(transactionCallCount).toBe(1);
       expect(db.execute).not.toHaveBeenCalled();
+    });
+
+    it("returns the concurrently-created token metadata without revoking it", async () => {
+      const transaction = createMockDb();
+      transaction.execute
+        .mockResolvedValueOnce([
+          {
+            id: "old-id",
+            user_id: "user-123",
+            created_at: "2026-01-01T00:00:00.000Z",
+            revoked_at: null,
+          },
+        ]) // SELECT active token before lock
+        .mockResolvedValueOnce([]) // Acquire advisory lock
+        .mockResolvedValueOnce([
+          {
+            id: "new-id",
+            user_id: "user-123",
+            created_at: "2026-01-01T00:01:00.000Z",
+            revoked_at: null,
+          },
+        ]); // SELECT active token after lock
+      const db = {
+        transaction: async <T>(callback: (tx: typeof transaction) => Promise<T>): Promise<T> =>
+          callback(transaction),
+      };
+
+      const result = await regenerateCompanionToken(db, "user-123");
+
+      expect(result).toEqual({
+        id: "new-id",
+        token: null,
+        createdAt: "2026-01-01T00:01:00.000Z",
+        revokedAt: null,
+      });
+      expect(transaction.execute).toHaveBeenCalledTimes(3);
     });
   });
 });
