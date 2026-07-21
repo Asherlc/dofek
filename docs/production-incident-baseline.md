@@ -40,8 +40,9 @@ Upgraded the affected direct/transitive dependency overrides with a regenerated
 lockfile, updated npm to 12.0.1, and keyed dependency-layer invalidation to
 `package.json`, `pnpm-lock.yaml`, and `Dockerfile`. The dbt-tools image remains
 on pinned Python 3.13.14 Alpine 3.24 because dbt 1.11.12 and mashumaro 3.14
-fail during startup on Python 3.14. The exact CI Grype command passed against
-the rebuilt local image.
+fail during startup on Python 3.14; see the [reproducible dbt import failure
+and Python 3.13 validation](#2026-07-08--ci-e2e-analytics-failing-on-dbt-import-under-python-314).
+The exact CI Grype command passed against the rebuilt local image.
 
 ### Remaining Risk
 
