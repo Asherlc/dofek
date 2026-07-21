@@ -35,6 +35,8 @@
     "peerdb",
     "peerflow",
     "pgcrypto",
+    "hashtext",
+    "xact",
     "btrim",
     "nextval",
     "postgis",
