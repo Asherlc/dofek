@@ -2,7 +2,6 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Client, escapeIdentifier } from "pg";
-import { GenericContainer } from "testcontainers";
 import { drizzleSchema as schema } from "./drizzle-schema.ts";
 import { createDatabase } from "./index.ts";
 
@@ -228,55 +227,33 @@ async function migrateTestDatabase(connectionString: string): Promise<void> {
 }
 
 /**
- * Spin up a TimescaleDB container (or use TEST_DATABASE_URL), create schema, run migrations.
- * When TEST_DATABASE_URL is set, creates an isolated database per test file to avoid
- * concurrent migration collisions. Call cleanup() in afterAll to tear down.
+ * Clone an isolated database from the migrated integration-test template.
+ * Call cleanup() in afterAll to tear down the clone.
  */
 export async function setupTestDatabase(): Promise<TestContext> {
-  let connectionString: string;
-  let container: Awaited<ReturnType<GenericContainer["start"]>> | null = null;
-  let adminUrl: string | null = null;
-  let dbName: string | null = null;
+  const adminUrl = process.env.TEST_DATABASE_URL?.trim();
+  if (!adminUrl) {
+    throw new Error(
+      "TEST_DATABASE_URL is required for integration tests. Run `pnpm test:integration` to start the workspace database.",
+    );
+  }
+
   const cleanupTasks: Array<() => Promise<void>> = [];
-
-  if (process.env.TEST_DATABASE_URL) {
-    // CI/shared Postgres: migrate once, then clone an isolated database per test file.
-    adminUrl = process.env.TEST_DATABASE_URL;
-    const templateName = await ensureTemplateDatabase(adminUrl);
-    dbName = `test_${randomBytes(6).toString("hex")}`;
-    const admin = new Client({ connectionString: adminUrl });
-    await admin.connect();
-    try {
-      await terminateDatabaseConnections(admin, templateName);
-      await admin.query(
-        `CREATE DATABASE ${escapeIdentifier(dbName)} WITH TEMPLATE ${escapeIdentifier(templateName)}`,
-      );
-    } finally {
-      await admin.end();
-    }
-
-    connectionString = databaseNameForUrl(adminUrl, dbName);
-  } else {
-    // Local: spin up a testcontainer
-    container = await new GenericContainer(
-      "mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all",
-    )
-      .withEnvironment({
-        POSTGRES_DB: "test",
-        POSTGRES_USER: "test",
-        POSTGRES_PASSWORD: "test",
-      })
-      .withExposedPorts(5432)
-      .start();
-
-    connectionString = `postgres://test:test@${container.getHost()}:${container.getMappedPort(5432)}/test`;
+  const templateName = await ensureTemplateDatabase(adminUrl);
+  const databaseName = `test_${randomBytes(6).toString("hex")}`;
+  const admin = new Client({ connectionString: adminUrl });
+  await admin.connect();
+  try {
+    await terminateDatabaseConnections(admin, templateName);
+    await admin.query(
+      `CREATE DATABASE ${escapeIdentifier(databaseName)} WITH TEMPLATE ${escapeIdentifier(templateName)}`,
+    );
+  } finally {
+    await admin.end();
   }
 
+  const connectionString = databaseNameForUrl(adminUrl, databaseName);
   await waitForDatabase(connectionString);
-  if (!process.env.TEST_DATABASE_URL) {
-    await migrateTestDatabase(connectionString);
-  }
-
   const db = createDatabase(connectionString);
 
   return {
@@ -290,11 +267,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
         await cleanupTask();
       }
       await db.$client.end();
-      if (container) {
-        await container.stop();
-      } else if (adminUrl && dbName) {
-        await dropDatabase(adminUrl, dbName);
-      }
+      await dropDatabase(adminUrl, databaseName);
     },
   };
 }

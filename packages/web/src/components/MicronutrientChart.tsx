@@ -1,6 +1,6 @@
 import { statusColors } from "@dofek/scoring/colors";
 import type { MicronutrientAdequacyRow } from "../../../server/src/routers/nutrition-analytics.ts";
-import { chartThemeColors, dofekAxis, dofekTooltip } from "../lib/chartTheme.ts";
+import { chartThemeColors, dofekAxis, dofekTooltip, escapeTooltipHtml } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface MicronutrientChartProps {
@@ -20,8 +20,10 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
         if (!firstParam) return "";
         const row = sorted[firstParam.dataIndex];
         if (!row) return "";
-        return `<b>${row.nutrient}</b><br/>
-          ${row.avgIntake} ${row.unit} / ${row.rda} ${row.unit}<br/>
+        const nutrient = escapeTooltipHtml(row.nutrient);
+        const unit = escapeTooltipHtml(row.unit);
+        return `<b>${nutrient}</b><br/>
+          ${row.avgIntake} ${unit} / ${row.rda} ${unit}<br/>
           <b>${row.percentRda}% of RDA</b><br/>
           <span style="color:${chartThemeColors.axisLabel}">(${row.daysTracked} days tracked)</span>`;
       },

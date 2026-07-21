@@ -12,6 +12,7 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -158,12 +159,14 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
       ) {
         const first = params[0];
         if (!first) return "";
-        const lines = [`<strong>${formatDateLong(first.value[0])}</strong>`];
+        const lines = [`<strong>${escapeTooltipHtml(formatDateLong(first.value[0]))}</strong>`];
         for (const param of params) {
           const value = param.value[1];
           const unit =
             param.seriesName === "Weekly Change" ? `${units.weightLabel}/week` : units.weightLabel;
-          lines.push(`${param.marker} ${param.seriesName}: ${value} ${unit}`);
+          lines.push(
+            `${param.marker} ${escapeTooltipHtml(param.seriesName)}: ${value} ${escapeTooltipHtml(unit)}`,
+          );
         }
         return lines.join("<br/>");
       },

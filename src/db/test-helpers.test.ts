@@ -111,6 +111,17 @@ describe("setupTestDatabase", () => {
     vi.resetModules();
   });
 
+  it("fails before opening a database connection when TEST_DATABASE_URL is missing", async () => {
+    delete process.env.TEST_DATABASE_URL;
+
+    const { setupTestDatabase } = await import("./test-helpers.ts");
+
+    await expect(setupTestDatabase()).rejects.toThrow(
+      "TEST_DATABASE_URL is required for integration tests. Run `pnpm test:integration` to start the workspace database.",
+    );
+    expect(pgState.connections).toEqual([]);
+  });
+
   it("creates one migrated template database and clones test databases from it", async () => {
     process.env.TEST_DATABASE_URL = "postgres://test:test@localhost:5432/test";
 

@@ -38,6 +38,7 @@ import {
   dofekGrid,
   dofekLegend,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -749,7 +750,7 @@ function ElevationChart({
       formatter: (params: Array<{ value: number; dataIndex: number }>) => {
         const firstParam = params[0];
         if (!firstParam) return "";
-        return `Elevation: ${Math.round(units.convertElevation(firstParam.value))} ${units.elevationLabel}`;
+        return `Elevation: ${Math.round(units.convertElevation(firstParam.value))} ${escapeTooltipHtml(units.elevationLabel)}`;
       },
     }),
     xAxis: dofekAxis.category({

@@ -6,6 +6,7 @@ import {
   dofekGrid,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { CorrelationStrengthBar } from "./CorrelationStrengthBar.tsx";
 import { DofekChart } from "./DofekChart.tsx";
@@ -253,7 +254,7 @@ function ScatterPlot({ insight }: { insight: Insight }) {
         const rawValue = Array.isArray(params.value) ? params.value : [0, 0];
         const v0 = Number(rawValue[0] ?? 0);
         const v1 = Number(rawValue[1] ?? 0);
-        return `${insight.action}: ${formatValue(v0)}<br/>${insight.metric}: ${formatValue(v1)}`;
+        return `${escapeTooltipHtml(insight.action)}: ${formatValue(v0)}<br/>${escapeTooltipHtml(insight.metric)}: ${formatValue(v1)}`;
       },
     }),
   };

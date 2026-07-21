@@ -14,6 +14,7 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../../lib/chartTheme.ts";
 import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
@@ -126,7 +127,7 @@ function PaceCurveChart({
             : seconds < 3600
               ? `${Math.round(seconds / 60)}min`
               : `${Math.round(seconds / 3600)}h`;
-        return `${durLabel}: <strong>${formatPace(pace)} ${units.paceLabel}</strong>`;
+        return `${durLabel}: <strong>${formatPace(pace)} ${escapeTooltipHtml(units.paceLabel)}</strong>`;
       },
     }),
     xAxis: {
@@ -212,10 +213,10 @@ function PaceTrendChart({
         const dataPoint = data[params.dataIndex];
         if (!dataPoint) return "";
         return [
-          `<strong>${dataPoint.activityName}</strong>`,
-          formatDateMedium(dataPoint.date),
-          `Pace: ${formatPace(units.convertPace(dataPoint.paceSecondsPerKm))} ${units.paceLabel}`,
-          `Distance: ${formatNumber(units.convertDistance(dataPoint.distanceKm))} ${units.distanceLabel} · ${dataPoint.durationMinutes} min`,
+          `<strong>${escapeTooltipHtml(dataPoint.activityName)}</strong>`,
+          escapeTooltipHtml(formatDateMedium(dataPoint.date)),
+          `Pace: ${formatPace(units.convertPace(dataPoint.paceSecondsPerKm))} ${escapeTooltipHtml(units.paceLabel)}`,
+          `Distance: ${formatNumber(units.convertDistance(dataPoint.distanceKm))} ${escapeTooltipHtml(units.distanceLabel)} · ${dataPoint.durationMinutes} min`,
         ].join("<br/>");
       },
     }),
@@ -277,7 +278,7 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
       formatter: (params: { data: [string, number]; dataIndex: number }) => {
         const dataPoint = data[params.dataIndex];
         if (!dataPoint) return "";
-        return `<strong>${dataPoint.activityName}</strong><br/>${formatDateMedium(dataPoint.date)}<br/>Cadence: ${dataPoint.cadence} spm`;
+        return `<strong>${escapeTooltipHtml(dataPoint.activityName)}</strong><br/>${escapeTooltipHtml(formatDateMedium(dataPoint.date))}<br/>Cadence: ${dataPoint.cadence} spm`;
       },
     }),
     xAxis: dofekAxis.time(),

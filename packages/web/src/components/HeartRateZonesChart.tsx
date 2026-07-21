@@ -21,6 +21,7 @@ import {
   dofekGrid,
   dofekLegend,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
@@ -115,7 +116,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
         if (!firstParam) return "";
         const zoneItem = rows[firstParam.dataIndex]?.zone;
         if (!zoneItem) return "";
-        return `<b>${zoneItem.label}</b> (${tooltipDetails(zoneItem)})<br/>
+        return `<b>${escapeTooltipHtml(zoneItem.label)}</b> (${escapeTooltipHtml(tooltipDetails(zoneItem))})<br/>
           ${formatZoneChartTime(zoneItem.seconds)} (${formatNumber(zoneItem.percent)}%)`;
       },
     }),
@@ -298,9 +299,9 @@ export function WeeklyHrZonesChart({
           .map((param) => {
             const zoneDefinition = zoneBySeriesName.get(param.seriesName);
             const seconds = zoneDefinition ? getHeartRateZoneSeconds(week, zoneDefinition.zone) : 0;
-            return `<span style="color:${param.color}">\u25CF</span> ${param.seriesName}: ${formatIntensity(param.value[1])} (${formatDurationSeconds(seconds)})`;
+            return `<span style="color:${escapeTooltipHtml(param.color)}">\u25CF</span> ${escapeTooltipHtml(param.seriesName)}: ${formatIntensity(param.value[1])} (${formatDurationSeconds(seconds)})`;
           });
-        return `<strong>${dateLabel}</strong><br/>${lines.join("<br/>")}`;
+        return `<strong>${escapeTooltipHtml(dateLabel)}</strong><br/>${lines.join("<br/>")}`;
       },
     }),
     xAxis: dofekAxis.time(),

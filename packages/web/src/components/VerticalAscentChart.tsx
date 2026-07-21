@@ -6,7 +6,14 @@ import {
   type VerticalAscentActivityTypeGroup,
 } from "@dofek/training/training";
 import type { VerticalAscentRow } from "dofek-server/types";
-import { chartColors, dofekAxis, dofekGrid, dofekLegend, dofekTooltip } from "../lib/chartTheme.ts";
+import {
+  chartColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekTooltip,
+  escapeTooltipHtml,
+} from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -88,11 +95,13 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
         if (!itemData.name) return "";
         const [date, vam] = itemData.value;
         return [
-          `<strong>${itemData.name}</strong>`,
-          `Type: ${itemData.activityType ? formatActivityTypeLabel(itemData.activityType) : "Other"}`,
-          `Date: ${formatDateShort(date)}`,
-          `Vertical Ascent Rate: ${formatNumber(vam, 0)} ${eLabel}/h`,
-          `Elevation Gain: ${formatNumber(itemData.elevationGain, 0)} ${eLabel}`,
+          `<strong>${escapeTooltipHtml(itemData.name)}</strong>`,
+          `Type: ${escapeTooltipHtml(
+            itemData.activityType ? formatActivityTypeLabel(itemData.activityType) : "Other",
+          )}`,
+          `Date: ${escapeTooltipHtml(formatDateShort(date))}`,
+          `Vertical Ascent Rate: ${formatNumber(vam, 0)} ${escapeTooltipHtml(eLabel)}/h`,
+          `Elevation Gain: ${formatNumber(itemData.elevationGain, 0)} ${escapeTooltipHtml(eLabel)}`,
         ].join("<br/>");
       },
     }),

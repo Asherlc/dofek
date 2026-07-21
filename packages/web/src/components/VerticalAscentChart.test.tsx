@@ -2,6 +2,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+let capturedOption: Record<string, unknown> | null = null;
+
 vi.mock("echarts-for-react", () => ({
   default: ({
     option,
@@ -9,13 +11,16 @@ vi.mock("echarts-for-react", () => ({
   }: {
     option: Record<string, unknown>;
     style: Record<string, unknown>;
-  }) => (
-    <div
-      data-testid="echarts-mock"
-      data-option={JSON.stringify(option)}
-      style={style satisfies React.CSSProperties}
-    />
-  ),
+  }) => {
+    capturedOption = option;
+    return (
+      <div
+        data-testid="echarts-mock"
+        data-option={JSON.stringify(option)}
+        style={style satisfies React.CSSProperties}
+      />
+    );
+  },
 }));
 
 vi.mock("./LoadingSkeleton.tsx", () => ({
@@ -94,5 +99,49 @@ describe("VerticalAscentChart", () => {
     expect(otherSeries.data).toHaveLength(2);
     expect(option.series.every((series: { type: string }) => series.type === "scatter")).toBe(true);
     expect(option.xAxis.name).toBe("Date");
+  });
+
+  it("escapes provider-controlled activity names and types in HTML tooltips", () => {
+    const maliciousName = '<img src=x onerror="alert(1)"> & "ride"';
+    const maliciousType = "road_cycling<script>alert('x')</script>";
+    render(
+      <VerticalAscentChart
+        data={[
+          {
+            date: "2026-04-03",
+            activityName: maliciousName,
+            activityType: maliciousType,
+            verticalAscentRate: 700,
+            elevationGainMeters: 350,
+            elapsedMinutes: 30,
+          },
+        ]}
+      />,
+    );
+
+    const tooltip = capturedOption?.tooltip;
+    if (
+      !tooltip ||
+      typeof tooltip !== "object" ||
+      !("formatter" in tooltip) ||
+      typeof tooltip.formatter !== "function"
+    ) {
+      throw new Error("Expected tooltip formatter");
+    }
+    const series = capturedOption?.series;
+    if (!Array.isArray(series) || !series[0] || !("data" in series[0])) {
+      throw new Error("Expected chart series data");
+    }
+    const seriesData = series[0].data;
+    if (!Array.isArray(seriesData) || !seriesData[0]) {
+      throw new Error("Expected first chart data point");
+    }
+
+    const html = String(tooltip.formatter({ data: seriesData[0] }));
+
+    expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &quot;ride&quot;");
+    expect(html).toContain("Road Cycling&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
+    expect(html).not.toContain("<img ");
+    expect(html).not.toContain("<script>");
   });
 });

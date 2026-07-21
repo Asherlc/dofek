@@ -8,6 +8,7 @@ import {
   dofekGrid,
   dofekLegend,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -108,7 +109,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
             ? `Missing zones this week: ${missingZones.join(", ")}`
             : null;
         return [
-          `<strong>Week of ${dateLabel}</strong>`,
+          `<strong>Week of ${escapeTooltipHtml(dateLabel)}</strong>`,
           `Polarization Index: ${piStr} ${status}`,
           `Zone 1 (easy, <80% max HR): ${formatMinutes(weekData.z1Seconds)}`,
           `Zone 2 (threshold, 80-90% max HR): ${formatMinutes(weekData.z2Seconds)}`,

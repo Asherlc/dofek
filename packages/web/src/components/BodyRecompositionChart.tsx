@@ -1,6 +1,5 @@
 import { formatDateShort } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
-import DOMPurify from "dompurify";
 import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
 import {
   chartColors,
@@ -9,6 +8,7 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -27,12 +27,6 @@ interface RecompositionTooltipParam {
   seriesName?: string;
   marker?: string;
   data?: unknown;
-}
-
-function escapeHtml(value: string): string {
-  const textContainer = document.createElement("span");
-  textContainer.textContent = value;
-  return DOMPurify.sanitize(textContainer.innerHTML, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
 }
 
 function isRecompositionDataPoint(value: unknown): value is RecompositionDataPoint {
@@ -78,12 +72,12 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
         if (!params || params.length === 0) return "";
         const firstDataPoint = params.find((param) => isRecompositionDataPoint(param.data))?.data;
         if (!isRecompositionDataPoint(firstDataPoint)) return "";
-        const date = escapeHtml(formatDateShort(firstDataPoint.value[0]));
+        const date = escapeTooltipHtml(formatDateShort(firstDataPoint.value[0]));
         const lines = params.flatMap((param) => {
           if (!isRecompositionDataPoint(param.data)) return [];
           const marker = typeof param.marker === "string" ? param.marker : "";
-          const seriesName = escapeHtml(param.seriesName ?? "");
-          const displayValue = escapeHtml(
+          const seriesName = escapeTooltipHtml(param.seriesName ?? "");
+          const displayValue = escapeTooltipHtml(
             formatMeasurementText(units.formatWeight(param.data.sourceWeightKg)),
           );
           return `${marker}${seriesName} <b>${displayValue}</b>`;
