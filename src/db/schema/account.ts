@@ -196,6 +196,10 @@ export const userBilling = fitness.table(
     stripeSubscriptionId: text("stripe_subscription_id").unique(),
     stripeSubscriptionStatus: text("stripe_subscription_status"),
     stripeCurrentPeriodEnd: timestamp("stripe_current_period_end", { withTimezone: true }),
+    stripeSubscriptionEventId: text("stripe_subscription_event_id"),
+    stripeSubscriptionEventCreated: bigint("stripe_subscription_event_created", {
+      mode: "number",
+    }),
     paidGrantReason: text("paid_grant_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -205,6 +209,12 @@ export const userBilling = fitness.table(
     index("user_billing_stripe_subscription_idx").on(table.stripeSubscriptionId),
   ],
 );
+
+export const stripeWebhookEvent = fitness.table("stripe_webhook_event", {
+  eventId: text("event_id").primaryKey(),
+  eventCreated: bigint("event_created", { mode: "number" }).notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ============================================================
 // Data exports — offline user exports stored in R2

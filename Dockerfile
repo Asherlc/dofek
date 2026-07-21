@@ -167,7 +167,8 @@ COPY --from=source --chown=node:node /app/packages/zones/src ./packages/zones/sr
 COPY --from=source --chown=node:node /app/packages/zones/package.json ./packages/zones/
 COPY --from=source --chown=node:node /app/packages/providers-meta/src ./packages/providers-meta/src
 COPY --from=source --chown=node:node /app/packages/providers-meta/package.json ./packages/providers-meta/
-RUN corepack disable && rm -rf /pnpm /root/.cache/node/corepack /root/.local/share/pnpm
+RUN corepack disable && \
+    rm -rf /pnpm /root/.cache/node/corepack /root/.local/share/pnpm /usr/local/lib/node_modules/npm
 # Link workspace packages so bare-specifier imports resolve
 RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/eight-sleep node_modules/eight-sleep-client && \
