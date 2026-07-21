@@ -238,6 +238,7 @@ Durable, non-obvious notes for working in the Cursor Cloud VM. The startup updat
 - Provider OAuth/credentials and other secret-gated features are unavailable without Infisical. Use the dev-login bypass below instead of real auth.
 
 ### Bring up the full local stack (web + API, no PeerDB needed)
+
 Run from the repo root, in order:
 1. `pnpm compose:up` — starts Postgres/TimescaleDB + ClickHouse + Redis on random host ports and writes `.env.local`.
 2. `pnpm setup-db` — applies Postgres + ClickHouse migrations. The ClickHouse migrations pre-create the `analytics.*` serving tables that the API boot waits for, so PeerDB/Temporal and the Redpanda metric-stream stack are NOT required for dev.
