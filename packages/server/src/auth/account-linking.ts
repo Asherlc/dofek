@@ -7,6 +7,7 @@ import { logger } from "../logger.ts";
 export interface ProviderIdentity {
   providerAccountId: string;
   email: string | null;
+  emailVerified: boolean;
   name: string | null;
   groups?: string[] | null;
 }
@@ -69,8 +70,8 @@ export async function resolveOrCreateUser(
     return { userId: firstExisting.user_id, isNewUser: false };
   }
 
-  // 3. Email-based auto-linking: find an existing user with the same email
-  if (identity.email) {
+  // 3. Email-based auto-linking: only use an explicitly verified email claim
+  if (identity.email && identity.emailVerified) {
     const emailMatch = await executeWithSchema(
       db,
       z.object({ id: z.string() }),
@@ -112,12 +113,13 @@ export async function resolveOrCreateUser(
     throw new MissingEmailForSignupError(providerName);
   }
 
-  // 4. Create a new user profile
+  // 4. Create a new user profile; unverified email claims are not canonical account data.
+  const profileEmail = identity.emailVerified ? identity.email : null;
   const newUser = await executeWithSchema(
     db,
     z.object({ id: z.string() }),
     sql`INSERT INTO fitness.user_profile (name, email)
-        VALUES (${identity.name ?? "User"}, ${identity.email})
+        VALUES (${identity.name ?? "User"}, ${profileEmail})
         RETURNING id`,
   );
   const newUserRow = newUser[0];
@@ -134,9 +136,10 @@ async function upsertAuthAccount(
   providerName: string,
   identity: ProviderIdentity,
 ): Promise<void> {
+  const accountEmail = identity.emailVerified ? identity.email : null;
   await db.execute(
     sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, email, name, groups)
-        VALUES (${userId}, ${providerName}, ${identity.providerAccountId}, ${identity.email}, ${identity.name}, ${identity.groups ?? null})
+        VALUES (${userId}, ${providerName}, ${identity.providerAccountId}, ${accountEmail}, ${identity.name}, ${identity.groups ?? null})
         ON CONFLICT (auth_provider, provider_account_id)
         DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, groups = EXCLUDED.groups`,
   );
