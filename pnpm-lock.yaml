@@ -8,15 +8,16 @@ overrides:
   '@expo/dom-webview': 55.0.5
   '@grpc/grpc-js': 1.14.4
   '@opentelemetry/core': 2.8.0
-  '@protobufjs/utf8': 1.1.1
+  '@protobufjs/utf8': 1.1.2
   '@xmldom/xmldom': 0.9.10
-  axios: 1.18.0
+  axios: 1.18.1
   brace-expansion@<1.1.13: 1.1.13
   brace-expansion@>=2.0.0 <2.0.3: 2.1.2
   brace-expansion@>=5.0.0 <5.0.6: 5.0.7
+  brace-expansion@5.0.6: 5.0.7
   esbuild: 0.28.1
   form-data: 4.0.6
-  gel>shell-quote: 1.9.0
+  gel>shell-quote: 1.10.0
   hono: 4.12.25
   ip-address: 10.2.0
   '@slack/bolt>path-to-regexp': 8.4.2
@@ -25,9 +26,11 @@ overrides:
   react: 19.2.3
   react-dom: 19.2.3
   router>path-to-regexp: 8.4.2
-  protobufjs: 8.6.6
-  shell-quote: 1.9.0
-  tar: 7.5.19
+  protobufjs: 8.7.1
+  shell-quote: 1.10.0
+  tar: 7.5.20
+  tar@7.5.16: 7.5.20
+  undici@6.26.0: 6.27.0
   uuid: 11.1.1
   ws: 8.21.0
   yaml: 2.9.0
@@ -8280,8 +8283,8 @@ packages:
     resolution: {integrity: sha512-KunSNx+TVpkAw/6ULfhnx+HWRecjqZGTOyquAoWHYLRSdK1tB5Ihce1ZW+UY3fj33bYAFWPu7W/GRSmmrCGuxA==}
     engines: {node: '>=4'}
 
-  axios@1.18.0:
-    resolution: {integrity: sha512-E32NzpYKp++W7XRe52rHiXV2ehxmh3wbdgO7MHeFM+vqxLBYHzt0ElkiImtOBxtOmyp0yoC8C6uESVV84Y2/hw==}
+  axios@1.18.1:
+    resolution: {integrity: sha512-3nTvFlvpn9Zu/RkHUqtc7/+al4UpRW5az71ap5zccp6e8RAYEzhMTecX8Dz1wWDYrPpUoB1HAQEGEAEvUr7S9g==}
 
   b4a@1.8.0:
     resolution: {integrity: sha512-qRuSmNSkGQaHwNbM7J78Wwy+ghLEYF1zNrSeMxj4Kgw6y33O3mXcQ6Ie9fRvfU/YnxWkOchPXbaLb73TkIsfdg==}
@@ -12473,8 +12476,8 @@ packages:
   proto-list@1.2.4:
     resolution: {integrity: sha512-vtK/94akxsTMhe0/cbfpR+syPuszcuwhqVjJq26CuNDgFGj682oRBXOP5MJpv2r7JtE8MsiepGIqvvOTBwn2vA==}
 
-  protobufjs@8.6.6:
-    resolution: {integrity: sha512-RkLIhE+Tdc2Kpq1F4Uw6OnpAXPca7B+GSDov/GqGCqNBpVyDskQ9yReZfgM+C7xw9AAix873iQZXbBWXj6NzYQ==}
+  protobufjs@8.7.1:
+    resolution: {integrity: sha512-agdGHrXNTv0IrYscJPDou/PlEJk1c/hBZ9o/B5NH2i/nSPtPqacNxzgwf1CebXxFMjMrZH5sqv9uQuw96aGt/A==}
     engines: {node: '>=12.0.0'}
 
   proxy-addr@2.0.7:
@@ -13156,8 +13159,8 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  shell-quote@1.9.0:
-    resolution: {integrity: sha512-Iov+JwFv/2HcTpcwNMKd8+IWNb8tboQJNQTkAY/LLVK7gGH9jy+LGkVqPxfekHl+yMmiqXszdGWXgkfml7hjqA==}
+  shell-quote@1.10.0:
+    resolution: {integrity: sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA==}
     engines: {node: '>= 0.4'}
 
   shelljs@0.8.5:
@@ -13663,8 +13666,8 @@ packages:
   tar-stream@3.2.0:
     resolution: {integrity: sha512-ojzvCvVaNp6aOTFmG7jaRD0meowIAuPc3cMMhSgKiVWws1GyHbGd/xvnyuRKcKlMpt3qvxx6r0hreCNITP9hIg==}
 
-  tar@7.5.19:
-    resolution: {integrity: sha512-4LeEWl96twnS2Q7Bz4MGqgazLqO+hJN63GZxXoIqh1T3VweYD997gbU1ItNsQafqqXTXd5WFyFdReLtwvRBNiw==}
+  tar@7.5.20:
+    resolution: {integrity: sha512-9FcyK4PA6+WbzlTM9WhQm6vB5W7cP7dUiPsv1g7YDwEQnQ1CGpK3MGlKk/ITVWMk05kHZuBhmVhiv8LZoy/PFQ==}
     engines: {node: '>=18'}
 
   tdigest@0.1.2:
@@ -16880,14 +16883,14 @@ snapshots:
     dependencies:
       lodash.camelcase: 4.3.0
       long: 5.3.2
-      protobufjs: 8.6.6
+      protobufjs: 8.7.1
       yargs: 17.7.3
 
   '@grpc/proto-loader@0.8.1':
     dependencies:
       lodash.camelcase: 4.3.0
       long: 5.3.2
-      protobufjs: 8.6.6
+      protobufjs: 8.7.1
       yargs: 17.7.3
 
   '@hono/node-server@1.19.14(hono@4.12.25)':
@@ -18435,7 +18438,7 @@ snapshots:
       '@opentelemetry/sdk-logs': 0.208.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-metrics': 2.2.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.2.0(@opentelemetry/api@1.9.1)
-      protobufjs: 8.6.6
+      protobufjs: 8.7.1
 
   '@opentelemetry/otlp-transformer@0.218.0(@opentelemetry/api@1.9.1)':
     dependencies:
@@ -19338,9 +19341,7 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
@@ -19884,7 +19885,7 @@ snapshots:
       '@slack/types': 2.21.1
       '@slack/web-api': 7.16.0
       '@types/express': 5.0.6
-      axios: 1.18.0
+      axios: 1.18.1
       express: 5.2.1
       path-to-regexp: 8.4.2
       raw-body: 3.0.2
@@ -19932,7 +19933,7 @@ snapshots:
       '@slack/types': 2.21.1
       '@types/node': 25.9.1
       '@types/retry': 0.12.0
-      axios: 1.18.0
+      axios: 1.18.1
       eventemitter3: 5.0.4
       form-data: 4.0.6
       is-electron: 2.2.2
@@ -23108,7 +23109,7 @@ snapshots:
   '@zeppos/zeus-cli@1.9.2(@babel/core@7.29.7)(@types/babel__core@7.20.5)(@types/node@25.9.1)(mem-fs@2.3.0)':
     dependencies:
       '@zeppos/zpm': 3.4.2(@babel/core@7.29.7)(@types/babel__core@7.20.5)
-      axios: 1.18.0
+      axios: 1.18.1
       chalk: 4.1.2
       chokidar: 3.6.0
       dayjs: 1.11.20
@@ -23436,7 +23437,7 @@ snapshots:
 
   axe-core@4.11.4: {}
 
-  axios@1.18.0:
+  axios@1.18.1:
     dependencies:
       follow-redirects: 1.16.0
       form-data: 4.0.6
@@ -23812,7 +23813,7 @@ snapshots:
       promise-inflight: 1.0.1
       rimraf: 3.0.2
       ssri: 8.0.1
-      tar: 7.5.19
+      tar: 7.5.20
       unique-filename: 1.1.1
     transitivePeerDependencies:
       - bluebird
@@ -23835,7 +23836,7 @@ snapshots:
       promise-inflight: 1.0.1
       rimraf: 3.0.2
       ssri: 9.0.1
-      tar: 7.5.19
+      tar: 7.5.20
       unique-filename: 2.0.1
     transitivePeerDependencies:
       - bluebird
@@ -24616,7 +24617,7 @@ snapshots:
       '@grpc/grpc-js': 1.14.4
       '@grpc/proto-loader': 0.7.15
       docker-modem: 5.0.7
-      protobufjs: 8.6.6
+      protobufjs: 8.7.1
       tar-fs: 2.1.4
     transitivePeerDependencies:
       - supports-color
@@ -25738,7 +25739,7 @@ snapshots:
       debug: 4.4.3(supports-color@8.1.1)
       env-paths: 3.0.0
       semver: 7.8.5
-      shell-quote: 1.9.0
+      shell-quote: 1.10.0
       which: 4.0.0
     transitivePeerDependencies:
       - supports-color
@@ -27445,7 +27446,7 @@ snapshots:
       npmlog: 6.0.2
       rimraf: 3.0.2
       semver: 7.8.5
-      tar: 7.5.19
+      tar: 7.5.20
       which: 2.0.2
     transitivePeerDependencies:
       - bluebird
@@ -27881,7 +27882,7 @@ snapshots:
       read-package-json-fast: 2.0.3
       rimraf: 3.0.2
       ssri: 8.0.1
-      tar: 7.5.19
+      tar: 7.5.20
     transitivePeerDependencies:
       - bluebird
       - supports-color
@@ -28182,7 +28183,7 @@ snapshots:
 
   proto-list@1.2.4: {}
 
-  protobufjs@8.6.6:
+  protobufjs@8.7.1:
     dependencies:
       long: 5.3.2
 
@@ -28267,7 +28268,7 @@ snapshots:
 
   react-devtools-core@6.1.5:
     dependencies:
-      shell-quote: 1.9.0
+      shell-quote: 1.10.0
       ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
@@ -29023,7 +29024,7 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  shell-quote@1.9.0: {}
+  shell-quote@1.10.0: {}
 
   shelljs@0.8.5:
     dependencies:
@@ -29600,7 +29601,7 @@ snapshots:
       - bare-buffer
       - react-native-b4a
 
-  tar@7.5.19:
+  tar@7.5.20:
     dependencies:
       '@isaacs/fs-minipass': 4.0.1
       chownr: 3.0.0
