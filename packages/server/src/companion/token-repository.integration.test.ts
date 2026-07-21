@@ -93,13 +93,40 @@ describe("companion token repository (integration)", () => {
     expect(activeTokenRows[0]?.active_count).toBe(1);
   });
 
-  it("returns a conflict result rather than an immediately-invalid token for concurrent regeneration", async () => {
+  it("returns a conflict result when regenerations contend", async () => {
     await createOrGetCompanionToken(ctx.db, testUserId);
 
-    const results = await Promise.all([
-      regenerateCompanionToken(ctx.db, testUserId),
-      regenerateCompanionToken(ctx.db, testUserId),
-    ]);
+    await ctx.db.execute(
+      sql.raw(`
+        CREATE FUNCTION fitness.delay_companion_token_update()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_sleep(0.1);
+          RETURN NEW;
+        END;
+        $$`),
+    );
+    await ctx.db.execute(
+      sql.raw(`
+        CREATE TRIGGER delay_companion_token_update
+        BEFORE UPDATE ON fitness.companion_token
+        FOR EACH ROW EXECUTE FUNCTION fitness.delay_companion_token_update();
+      `),
+    );
+
+    const results = await (async () => {
+      try {
+        return await Promise.all([
+          regenerateCompanionToken(ctx.db, testUserId),
+          regenerateCompanionToken(ctx.db, testUserId),
+        ]);
+      } finally {
+        await ctx.db.execute(
+          sql.raw("DROP TRIGGER delay_companion_token_update ON fitness.companion_token"),
+        );
+        await ctx.db.execute(sql.raw("DROP FUNCTION fitness.delay_companion_token_update()"));
+      }
+    })();
     const returnedTokens = results.flatMap((result) => (result.token ? [result.token] : []));
 
     expect(returnedTokens).toHaveLength(1);
