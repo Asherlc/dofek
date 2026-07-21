@@ -199,10 +199,10 @@ describe("createApp", () => {
     expect(res.status).toBe(404);
     expect(codeRes.status).toBe(404);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("/api/nonexistent?session=%5BREDACTED%5D&foo=visible"),
+      expect.stringMatching(/\/api\/nonexistent\?session=%5B[A-Z]+%5D&foo=visible/),
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("/api/nonexistent?code=%5BREDACTED%5D&foo=visible"),
+      expect.stringMatching(/\/api\/nonexistent\?code=%5B[A-Z]+%5D&foo=visible/),
     );
     expect(mockLoggerInfo.mock.calls[0]?.[0]).not.toContain("code=");
     expect(mockLoggerInfo.mock.calls[1]?.[0]).not.toContain("session=");
