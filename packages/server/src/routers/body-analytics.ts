@@ -62,9 +62,10 @@ export const bodyAnalyticsRouter = router({
     async ({ ctx, input, range }) => {
       const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
       const repo = createBodyAnalyticsRepository(ctx);
+      const predictionDays = range.days == null ? null : Math.max(range.days, 90);
       const [smoothedWeightResult, predictionResult] = await Promise.allSettled([
         repo.getSmoothedWeight(range.days, input.endDate),
-        repo.getWeightPrediction(range.days, input.endDate, goalWeightKg),
+        repo.getWeightPrediction(predictionDays, input.endDate, goalWeightKg),
       ]);
 
       if (smoothedWeightResult.status === "rejected") {
