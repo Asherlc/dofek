@@ -9,6 +9,7 @@ import {
   markFileUploadObjectUploaded,
   markFileUploadUploading,
   queueCompletedFileUpload,
+  recordFileUploadCompletionParts,
 } from "./file-upload.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
@@ -70,6 +71,35 @@ describe("file upload state machine (integration)", () => {
         objectSizeBytes: input.expectedSizeBytes,
       }),
     ).rejects.toThrow("uploaded");
+  });
+
+  it("does not finalize or queue an upload after it expires", async () => {
+    const input = { ...uploadInput(), expiresAt: new Date(0) };
+    await createFileUpload(testContext.db, input);
+    await testContext.db.execute(sql`UPDATE fitness.file_upload
+      SET state = 'uploading', r2_multipart_upload_id = 'r2-multipart-id'
+      WHERE id = ${input.id}::uuid`);
+
+    await expect(
+      recordFileUploadCompletionParts(testContext.db, input.id, userId, [
+        { partNumber: 1, etag: "etag-1" },
+        { partNumber: 2, etag: "etag-2" },
+      ]),
+    ).rejects.toThrow("has expired");
+    expect((await findFileUploadForUser(testContext.db, input.id, userId))?.state).toBe(
+      "uploading",
+    );
+
+    await testContext.db.execute(sql`UPDATE fitness.file_upload
+      SET state = 'uploaded'
+      WHERE id = ${input.id}::uuid`);
+    await expect(
+      queueCompletedFileUpload(testContext.db, input.id, userId, {
+        importJobId: `file-import-${input.id}`,
+        objectSizeBytes: input.expectedSizeBytes,
+      }),
+    ).rejects.toThrow("has expired");
+    expect((await findFileUploadForUser(testContext.db, input.id, userId))?.state).toBe("uploaded");
   });
 
   it("queues exactly one outbox event under concurrent completion", async () => {

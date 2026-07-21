@@ -54,7 +54,7 @@ function upload(overrides: Partial<FileUpload> = {}): FileUpload {
     errorMessage: null,
     createdAt: new Date("2026-07-19T00:00:00Z"),
     updatedAt: new Date("2026-07-19T00:00:00Z"),
-    expiresAt: new Date("2026-07-20T00:00:00Z"),
+    expiresAt: new Date("2030-01-01T00:00:00Z"),
     completedAt: null,
     objectDeletedAt: null,
     ...overrides,
@@ -436,6 +436,18 @@ describe("fileUploadRouter", () => {
     ).rejects.toThrow("Invalid upload part 3");
   });
 
+  it("rejects part authorization after the upload session expires", async () => {
+    const expired = setup(upload({ expiresAt: new Date(0) }));
+
+    await expect(
+      expired.caller.authorizeParts({ uploadId: upload().id, partNumbers: [1] }),
+    ).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Upload session has expired",
+    });
+    expect(expired.storage.authorizeUploadPart).not.toHaveBeenCalled();
+  });
+
   it("deduplicates authorized part numbers", async () => {
     const { caller, storage } = setup();
 
@@ -463,6 +475,24 @@ describe("fileUploadRouter", () => {
     expect(terminal.storage.listParts).not.toHaveBeenCalled();
   });
 
+  it("rejects resuming an upload after its session expires", async () => {
+    const expired = setup(upload({ expiresAt: new Date(0) }));
+
+    await expect(expired.caller.resume({ uploadId: upload().id })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Upload session has expired",
+    });
+    expect(expired.storage.listParts).not.toHaveBeenCalled();
+
+    const initiated = setup(
+      upload({ expiresAt: new Date(0), r2MultipartUploadId: null, state: "initiated" }),
+    );
+    await expect(initiated.caller.resume({ uploadId: upload().id })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Upload session has expired",
+    });
+  });
+
   it("rejects completion rate limits and uploads that are not ready", async () => {
     const rate = setup();
     rate.repository.rateAllowed.mockResolvedValueOnce(false);
@@ -474,6 +504,19 @@ describe("fileUploadRouter", () => {
     await expect(inactive.caller.complete({ uploadId: upload().id, parts: [] })).rejects.toThrow(
       "not ready to complete",
     );
+  });
+
+  it("rejects completion after the upload session expires", async () => {
+    const expired = setup(upload({ expiresAt: new Date(0) }));
+
+    await expect(
+      expired.caller.complete({ uploadId: upload().id, parts: [] }),
+    ).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Upload session has expired",
+    });
+    expect(expired.storage.listParts).not.toHaveBeenCalled();
+    expect(expired.repository.recordCompletionParts).not.toHaveBeenCalled();
   });
 
   it("rejects incomplete parts and ETag mismatches", async () => {
