@@ -38,7 +38,7 @@ vi.mock("../auth/password-credential.ts", () => ({
   authenticatePasswordUser: vi.fn(() => Promise.resolve({ userId: "user-1" })),
   DuplicateEmailError: class DuplicateEmailError extends Error {
     constructor() {
-      super("An account with this email already exists");
+      super("Unable to create an account with these details");
       this.name = "DuplicateEmailError";
     }
   },

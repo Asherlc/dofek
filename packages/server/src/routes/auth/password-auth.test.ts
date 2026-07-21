@@ -34,7 +34,7 @@ vi.mock("../../auth/password-credential.ts", () => ({
   isPasswordAuthEnabled: () => mockIsPasswordAuthEnabled(),
   DuplicateEmailError: class DuplicateEmailError extends Error {
     constructor() {
-      super("An account with this email already exists");
+      super("Unable to create an account with these details");
       this.name = "DuplicateEmailError";
     }
   },
@@ -278,7 +278,7 @@ describe("handlePasswordRegister", () => {
     expect(res.redirect).not.toHaveBeenCalled();
   });
 
-  it("returns 409 for duplicate email", async () => {
+  it("returns a generic error for an email that cannot be registered", async () => {
     mockRegisterPasswordUser.mockRejectedValue(new DuplicateEmailError());
     const { req, res } = createMockReqRes({
       body: { email: "user@example.com", password: "password123" },
@@ -288,7 +288,9 @@ describe("handlePasswordRegister", () => {
     await handlePasswordRegister(req, res);
 
     expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith({ error: "An account with this email already exists" });
+    expect(res.json).toHaveBeenCalledWith({
+      error: "Unable to create an account with these details",
+    });
   });
 
   it("returns 400 for weak password", async () => {
