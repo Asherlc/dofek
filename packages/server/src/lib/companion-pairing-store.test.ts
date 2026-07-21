@@ -375,6 +375,84 @@ describe("InMemoryCompanionPairingStore", () => {
     ).resolves.toMatchObject({ tokenIssuing: true });
   });
 
+  it("keeps a released claim owned by its original user", async () => {
+    const store = new InMemoryCompanionPairingStore();
+    const challenge = await store.createChallenge();
+
+    await store.claimChallenge({ shortCode: challenge.shortCode, userId: "user-1" });
+    await store.releaseClaimedChallengeTokenIssuance({
+      shortCode: challenge.shortCode,
+      userId: "user-1",
+    });
+
+    await expect(
+      store.claimChallenge({ shortCode: challenge.shortCode, userId: "user-2" }),
+    ).resolves.toBeNull();
+  });
+
+  it("attaches a token only while its claim is held by that user", async () => {
+    const store = new InMemoryCompanionPairingStore();
+    const challenge = await store.createChallenge();
+
+    await expect(
+      store.setClaimedChallengeToken({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+      }),
+    ).resolves.toBeNull();
+    await store.claimChallenge({ shortCode: challenge.shortCode, userId: "user-1" });
+    await expect(
+      store.setClaimedChallengeToken({
+        shortCode: challenge.shortCode,
+        userId: "user-2",
+        companionToken: "dofek_companion_second",
+      }),
+    ).resolves.toBeNull();
+    await store.setClaimedChallengeToken({
+      shortCode: challenge.shortCode,
+      userId: "user-1",
+      companionToken: "dofek_companion_test",
+    });
+    await expect(
+      store.setClaimedChallengeToken({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+        companionToken: "dofek_companion_second",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("releases only an unfinished token issuance held by that user", async () => {
+    const store = new InMemoryCompanionPairingStore();
+    const challenge = await store.createChallenge();
+
+    await expect(
+      store.releaseClaimedChallengeTokenIssuance({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+      }),
+    ).resolves.toBeNull();
+    await store.claimChallenge({ shortCode: challenge.shortCode, userId: "user-1" });
+    await expect(
+      store.releaseClaimedChallengeTokenIssuance({
+        shortCode: challenge.shortCode,
+        userId: "user-2",
+      }),
+    ).resolves.toBeNull();
+    await store.setClaimedChallengeToken({
+      shortCode: challenge.shortCode,
+      userId: "user-1",
+      companionToken: "dofek_companion_test",
+    });
+    await expect(
+      store.releaseClaimedChallengeTokenIssuance({
+        shortCode: challenge.shortCode,
+        userId: "user-1",
+      }),
+    ).resolves.toBeNull();
+  });
+
   it("expires stale challenges", async () => {
     const store = new InMemoryCompanionPairingStore();
     const now = new Date("2026-07-12T12:00:00.000Z");

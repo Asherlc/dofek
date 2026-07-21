@@ -349,11 +349,11 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
       !challenge ||
       !challenge.claimedAt ||
       challenge.userId !== userId ||
-      !challenge.tokenIssuing
+      !challenge.tokenIssuing ||
+      challenge.companionToken
     ) {
       return null;
     }
-    if (challenge.companionToken) return challenge;
     const { tokenIssuing: _tokenIssuing, ...claimedChallenge } = challenge;
     const updatedChallenge = { ...claimedChallenge, companionToken };
     this.#save(updatedChallenge);
