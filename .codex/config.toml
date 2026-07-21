@@ -14,4 +14,4 @@ url = "https://mcp.sentry.dev/mcp"
 
 [mcp_servers.xcodebuildmcp]
 command = "npx"
-args = ["-y", "xcodebuildmcp@latest", "mcp"]
+args = ["-y", "xcodebuildmcp@2.6.2", "mcp"]

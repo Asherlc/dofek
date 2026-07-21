@@ -21,8 +21,8 @@ A newly registered user can view health data from their current local signup day
 
 1. Add a failing entitlement test for a user in `America/Los_Angeles` created after UTC midnight, asserting that the limited window starts on the user's local calendar date.
 2. Add the inverse boundary case for a timezone east of UTC to prevent shifting the window in the other direction.
-3. Pass the user's validated timezone into access-window resolution and derive the seven-day date window in that timezone.
-4. Update access-window call sites and focused tests without changing paid-access behavior.
+3. Thread the profile's validated IANA timezone through the billing repository/query input and every `resolveAccessWindow()` call, then derive the seven-day date window in that timezone. Invalid timezone updates remain rejected at the profile boundary; legacy profiles with no timezone use UTC explicitly.
+4. Add contract tests for every access-window call site, the missing-timezone UTC fallback, and invalid-timezone rejection without changing paid-access behavior.
 5. Re-run the focused entitlement/router tests and `pnpm e2e:web:run`; the dashboard steps assertion should pass without altering the E2E fixture dates.
 
 ## Acceptance criteria

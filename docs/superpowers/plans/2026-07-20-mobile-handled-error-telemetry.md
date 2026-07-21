@@ -1,7 +1,5 @@
 # Report Mobile Handled Errors TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development before implementation. If executing this plan task-by-task, also use superpowers:executing-plans or superpowers:subagent-driven-development as appropriate. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Ensure every unexpected mobile error that is caught, logged, aggregated, or shown to the user is also reported to Sentry.
 
 **Behavior:** Mobile handled-error paths call the canonical `captureException()` helper with useful source context; genuinely expected control-flow failures are modeled without catch-and-ignore blocks.
@@ -21,7 +19,7 @@
 ## Test Strategy
 
 - Unit: add/extend component and service tests asserting `captureException()` receives the original error and a stable source tag before the UI error/fallback behavior continues.
-- Static policy: parse production TypeScript catch handlers and reject handlers that consume unexpected errors without reporting or rethrowing.
+- Static policy: parse production TypeScript catch handlers and reject every caught-and-consumed unexpected error unless that handler calls `captureException()` or rethrows. Uncaught errors and code without a catch handler remain outside this check because the runtime boundary reports them.
 - Integration/UI: exercise representative network, native-module, and connection failures while verifying the user-visible error remains actionable.
 
 ## File Structure
@@ -36,14 +34,14 @@
 ### Task 1: Add Failing Tests
 
 - [ ] Add focused failing tests for login provider discovery, auth modal failures, native connection failures, and background/service best-effort failures.
-- [ ] Add a failing syntax-aware policy fixture for an unexpected catch that only logs, aggregates, or sets UI state.
+- [ ] Add failing syntax-aware fixtures for catches that only log, aggregate, return fallback data, or set UI state. Add passing allowlist fixtures only for typed user-cancellation results and the known optional-haptics unavailable result; comments or variable names alone cannot create exemptions.
 - [ ] Run `rtk pnpm test:mobile` and the focused policy tests.
 
 ### Task 2: Implement the Minimal Fix
 
 - [ ] Call the canonical mobile `captureException()` helper in every confirmed unexpected handled-error path with stable source context.
 - [ ] Preserve current user-visible messages, cleanup, aggregation, and fallback behavior.
-- [ ] Model expected cancellation/haptic availability without operational-error reporting.
+- [ ] Model expected cancellation/haptic availability as explicit discriminated results recognized by the syntax-aware allowlist, without operational-error reporting.
 - [ ] Wire the static policy check into the canonical lint/CI path.
 
 ### Task 3: Final Verification

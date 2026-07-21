@@ -1,7 +1,5 @@
 # Enforce Exact Dependency Versions TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development before implementation. If executing this plan task-by-task, also use superpowers:executing-plans or superpowers:subagent-driven-development as appropriate. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make every workspace dependency declaration follow the repository's exact-version policy and enforce it in local lint and CI.
 
 **Behavior:** Any caret or tilde dependency range in a tracked workspace `package.json` causes the required policy gate to fail.
@@ -20,7 +18,7 @@
 
 ## Test Strategy
 
-- Unit: test a TypeScript checker with exact, caret, tilde, and `workspace:` dependency fixtures across dependencies and development dependencies.
+- Unit: test a TypeScript checker with exact, caret, tilde, and `workspace:` dependency fixtures across `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`.
 - Integration: run the checker against the repository and prove a temporary ranged dependency produces a non-zero status.
 - UI/mobile/web parity: not applicable; all workspace package manifests are in scope.
 
@@ -35,7 +33,7 @@
 
 ### Task 1: Add Failing Tests
 
-- [ ] Write failing tests for caret and tilde ranges plus passing cases for exact and `workspace:` versions.
+- [ ] Write failing caret/tilde and passing exact/`workspace:` fixtures for each of `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`.
 - [ ] Run `rtk pnpm vitest run --project unit <test-path>`.
 - [ ] Confirm the tests fail against the current checker behavior or missing integration.
 
@@ -51,3 +49,4 @@
 - [ ] Run `rtk bash scripts/exact-versions.sh` or its canonical replacement and confirm exit 0.
 - [ ] Run `rtk pnpm install --frozen-lockfile`, `rtk pnpm typecheck`, and affected package tests/builds.
 - [ ] Verify the required CI gate cannot pass when the checker fails.
+- [ ] Record a short retrospective covering root cause, direct fix, validation evidence, and a concrete `AGENTS.md`, `scripts/README.md`, or skill improvement for future policy-check work.

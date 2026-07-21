@@ -149,7 +149,7 @@ capture logs from the iOS app:
 {
   "xcodebuildmcp": {
     "command": "npx",
-    "args": ["-y", "xcodebuildmcp@latest", "mcp"]
+    "args": ["-y", "xcodebuildmcp@2.6.2", "mcp"]
   }
 }
 ```
@@ -159,13 +159,13 @@ the tool catalog reloads. If the current session cannot expose dynamically added
 MCP tools, the same package provides a CLI fallback:
 
 ```bash
-npx -y xcodebuildmcp@latest simulator list
+npx -y xcodebuildmcp@2.6.2 simulator list
 ```
 
-Follow the upstream getting-started guide for current prerequisites and tool
-names: <https://www.xcodebuildmcp.com/#get-started>. The repository-specific
-signed Release workflow is in
-[`ios-simulator-audit`](../.agents/skills/ios-simulator-audit/SKILL.md).
+Follow the upstream getting-started guide for prerequisites and tool names:
+<https://www.xcodebuildmcp.com/#get-started>. Version 2.6.2 is pinned here and
+in both repository MCP configurations so every client loads the reviewed tool
+release.
 
 ## Auth Failures
 

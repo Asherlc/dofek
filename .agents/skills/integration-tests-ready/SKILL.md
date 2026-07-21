@@ -8,17 +8,21 @@ description: Prepare and troubleshoot integration test runs in this repo. Use wh
 ## Quick Start
 
 1. Generate collision-free ports and start the complete local dependency set:
+
 ```bash
 rtk pnpm compose:env --write
-rtk docker compose --env-file .env.local up -d db clickhouse redis redpanda
-rtk pnpm compose:env --write
+rtk docker compose --env-file .env.local up -d --wait --wait-timeout 180 db clickhouse redis redpanda
 rtk docker compose --env-file .env.local ps db clickhouse redis redpanda
 ```
+
 2. Load those generated URLs before starting Vitest:
+
 ```bash
 rtk bash -lc 'set -a; . ./.env.local; set +a; pnpm vitest run --project integration'
 ```
+
 For one file:
+
 ```bash
 rtk bash -lc 'set -a; . ./.env.local; set +a; pnpm vitest run --project integration <path/to/file.integration.test.ts>'
 ```
@@ -51,7 +55,8 @@ rtk docker compose --env-file .env.local ps db clickhouse redis redpanda
   - Check DB logs: `rtk docker compose --env-file .env.local logs db --tail 200`.
 
 - ClickHouse `ECONNREFUSED` at `127.0.0.1:8123`
-  - Regenerate `.env.local` after Compose starts.
+  - Keep the `.env.local` generated before startup; do not regenerate ports
+    while the stack is running.
   - Source it in the same shell that starts Vitest.
   - Verify `CLICKHOUSE_URL` uses the generated host port.
 
@@ -85,7 +90,7 @@ failures.
 Use an explicit Compose project name and keep the normal workspace stack intact:
 
 ```bash
-rtk docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml up -d --build
+rtk docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
 rtk docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml ps -a
 rtk pnpm e2e:web:run
 ```

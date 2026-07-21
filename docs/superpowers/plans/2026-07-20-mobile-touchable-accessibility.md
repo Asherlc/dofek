@@ -19,7 +19,7 @@ React Native documents that touchable elements should be accessible by default a
 
 ## Implementation
 
-1. Add focused component tests that query representative primary actions by accessible role and name, starting with login, onboarding, settings, providers, and support.
+1. Add focused component tests across login, onboarding, settings, provider list/detail, and support that query primary actions by accessible role and name, assert disabled/busy state metadata, verify nested text does not replace the touch target's semantics, and activate each action to prove its callback/navigation still runs.
 2. Give every affected touch target an explicit semantic role, accessible label, and applicable disabled/busy state; ensure nested text does not replace or hide the actionable element.
 3. Prefer shared button/card components where they already exist, but do not introduce a new abstraction solely for this fix.
 4. Audit the remaining mobile `TouchableOpacity` and `Pressable` call sites so equivalent core actions are not left unreachable.

@@ -1,7 +1,5 @@
 # Enforce the Suppression Ban TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development before implementation. If executing this plan task-by-task, also use superpowers:executing-plans or superpowers:subagent-driven-development as appropriate. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make CI enforce the repository-wide ban on lint, type-check, coverage, and mutation-test suppression comments.
 
 **Behavior:** A tracked TypeScript suppression causes the normal lint/CI gate to fail, while generated files and the suppression-removal utility remain explicitly excluded.
@@ -20,7 +18,7 @@
 
 ## Test Strategy
 
-- Unit: extract the tracked-file matching logic into a TypeScript repository script and test included and generated-file paths with fixtures.
+- Unit: extract the tracked-file matching logic into a TypeScript repository script. Add forbidden fixtures for TypeScript (`@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`), Biome/ESLint (`biome-ignore`, `eslint-disable`), coverage (`c8 ignore`, `istanbul ignore`), and Stryker (`Stryker disable`) categories. Add allowed fixtures only for generated files and the suppression-removal utility itself.
 - Integration: run the checker against the repository and prove a temporary forbidden suppression produces a non-zero status before fixing the tracked findings.
 - UI/mobile/web parity: not applicable; the checker must cover both web and mobile source trees.
 
@@ -35,7 +33,7 @@
 
 ### Task 1: Add Failing Tests
 
-- [ ] Write failing tests proving app-, component-, package-root-, and server-level TypeScript files are scanned while generated files are excluded.
+- [ ] Write failing tests proving app-, component-, package-root-, and server-level TypeScript files are scanned, with one rejected fixture per suppression category and explicit accepted fixtures for generated files and the removal utility.
 - [ ] Run `rtk pnpm vitest run --project unit <test-path>`.
 - [ ] Confirm the tests fail because the current discovery omits those paths.
 
@@ -51,3 +49,4 @@
 - [ ] Run `rtk bash scripts/no-suppressions.sh` or its canonical replacement and confirm exit 0.
 - [ ] Run `rtk pnpm typecheck` and the affected unit/mutation tests.
 - [ ] Verify the required CI gate cannot pass when the checker fails.
+- [ ] Record a short retrospective covering root cause, direct fix, validation evidence, and a concrete `AGENTS.md`, `scripts/README.md`, or skill improvement for future policy-check work.

@@ -1,7 +1,5 @@
 # Pin Actionlint Installation TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development before implementation. If executing this plan task-by-task, also use superpowers:executing-plans or superpowers:subagent-driven-development as appropriate. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make the Actionlint CI job execute an immutable, reviewed tool artifact.
 
 **Behavior:** CI installs a specific current stable Actionlint release with integrity verification and does not fetch executable installer code from a mutable branch.
@@ -20,7 +18,7 @@
 
 ## Test Strategy
 
-- Unit/static policy: add a fixture-backed check that rejects executable downloads from mutable Git refs and accepts a version-plus-checksum installation.
+- Unit/static policy: add fixture-backed checks that reject executable downloads and checksum files from mutable Git refs, accept a hard-coded checksum reviewed in the workflow or a checksum downloaded from the same immutable release tag, and fail on a checksum mismatch.
 - Integration: run Actionlint from the pinned installation path against all workflows.
 - UI/mobile/web parity: not applicable.
 
@@ -40,7 +38,7 @@
 ### Task 2: Implement the Minimal Fix
 
 - [ ] Determine the current stable Actionlint release from the upstream release source.
-- [ ] Pin the release and verify its published checksum before execution.
+- [ ] Pin the release artifact and its checksum source to the same immutable release tag (or hard-code the reviewed published checksum) before execution.
 - [ ] Keep the existing Actionlint invocation and workflow scope unchanged.
 - [ ] Run the focused policy tests.
 
@@ -49,3 +47,5 @@
 - [ ] Run the pinned Actionlint binary against `.github/workflows/`.
 - [ ] Run `rtk pnpm lint` and the CI-policy unit tests.
 - [ ] Verify the Actionlint job needs no mutable executable download.
+- [ ] Prove a deliberately mismatched checksum fails installation before the binary executes.
+- [ ] Record a short retrospective covering root cause, direct fix, validation evidence, and a concrete `AGENTS.md`, workflow README, or skill improvement for future supply-chain checks.

@@ -12,7 +12,7 @@ The iOS provider detail route accepts arbitrary provider IDs. Opening `dofek://p
 
 ## Implementation
 
-1. Add a failing route test for a non-empty provider ID that is absent from the provider inventory.
+1. Add a failing route test for a non-empty provider ID that is absent from the provider inventory. Mock provider-detail, records, logs, disconnect, and sync APIs separately and assert each has zero calls after inventory validation.
 2. After the providers query succeeds, render a specific “Provider not found” state when neither a server provider nor the supported local Apple Health provider matches the ID.
 3. Provide an accessible action back to the provider list; do not issue detail records, logs, disconnect, or sync requests for the unknown provider.
 4. Preserve the existing loading, valid server-provider, and Apple Health paths.

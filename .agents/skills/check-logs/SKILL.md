@@ -56,8 +56,12 @@ ssh dofek-server 'docker service logs --raw --timestamps --since 24h dofek_web 2
 # Worker logs (Apple Health import, sync jobs)
 ssh dofek-server 'docker service logs --raw --timestamps --since 24h dofek_worker 2>&1 | tail -100'
 
-# Search for specific errors
-ssh dofek-server 'docker service logs --raw --timestamps --since 24h dofek_web 2>&1 | grep -i "error\|fail\|<SEARCH_TERM>" | tail -100'
+# Search for specific errors. Fetch a fixed log window remotely, then apply the
+# operator-provided term locally so it is never interpreted by the SSH shell.
+search_term='<SEARCH_TERM>'
+ssh dofek-server 'docker service logs --raw --timestamps --since 24h dofek_web 2>&1 | tail -2000' \
+  | grep -i -e 'error' -e 'fail' -e "$search_term" \
+  | tail -100
 
 # Follow logs in real-time
 ssh dofek-server 'docker service logs --raw --timestamps --since 10m --follow dofek_web 2>&1'

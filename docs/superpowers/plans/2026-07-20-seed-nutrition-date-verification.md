@@ -1,7 +1,5 @@
 # Verify Review-Seed Nutrition Dates TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development before implementation. If executing this plan task-by-task, also use superpowers:executing-plans or superpowers:subagent-driven-development as appropriate. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make review-data validation prove the advertised number of distinct nutrition days.
 
 **Behavior:** Seed verification fails unless the reviewer user has food entries on at least 85 distinct calendar dates.
@@ -18,10 +16,15 @@
 - The next `"food entries"` verifier executes the same query with a lower threshold.
 - Therefore 85 food rows on one date satisfy a check labeled and documented as 85 nutrition days.
 
+Primary sources: the verifier in [`seed-dev-db.ts`](../../../scripts/seed-dev-db.ts),
+the canonical seed writer's `fitness.food_entry.date` input in
+[`nutrition.ts`](../../../scripts/seed/nutrition.ts), and PostgreSQL's
+[`COUNT(DISTINCT expression)` aggregate semantics](https://www.postgresql.org/docs/current/functions-aggregate.html).
+
 ## Test Strategy
 
 - Unit: not sufficient because the defect is SQL aggregation semantics.
-- Integration: seed multiple food rows on fewer dates in real Postgres and prove the corrected query counts distinct dates and fails the threshold.
+- Integration: count the canonical `fitness.food_entry.date` SQL `date` column directly, with no timezone conversion. Seed multiple rows on fewer dates and include `logged_at` timestamps on both sides of UTC/local midnight to prove timestamps cannot change the calendar-date count.
 - UI/mobile/web parity: both review clients consume the same seeded nutrition history.
 
 ## File Structure
@@ -33,7 +36,7 @@
 
 ### Task 1: Add Failing Tests
 
-- [ ] Add a Postgres integration fixture with many food rows on fewer than 85 distinct dates.
+- [ ] Add a Postgres integration fixture with many food rows on fewer than 85 distinct `date` values, including midnight-boundary `logged_at` values.
 - [ ] Run `rtk pnpm vitest run --project integration <test-path>`.
 - [ ] Confirm the current query incorrectly passes the nutrition-day condition.
 
@@ -47,4 +50,6 @@
 
 - [ ] Run the full review seeder against a fresh disposable database.
 - [ ] Confirm output reports at least 85 distinct nutrition dates and at least 20 entries.
+- [ ] Prove exactly 85 distinct dates succeeds, fewer than 85 fails, and the separate total-row assertion remains independently enforced.
 - [ ] Run `rtk pnpm lint`, `rtk pnpm typecheck`, and the focused integration test.
+- [ ] Record a short retrospective covering root cause, direct fix, validation evidence, and a concrete documentation or skill improvement.

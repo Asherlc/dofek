@@ -10,7 +10,7 @@
     },
     "xcodebuildmcp": {
       "command": "npx",
-      "args": ["-y", "xcodebuildmcp@latest", "mcp"]
+      "args": ["-y", "xcodebuildmcp@2.6.2", "mcp"]
     },
     "axiom": {
       "command": "sh",

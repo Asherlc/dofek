@@ -14605,6 +14605,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-20 — Production OTA Manifest Requests Timed Out
 
+- **Status:** Unresolved investigation; remediation has not been validated.
+
 - **Symptoms:** The repository's mobile-update check failed, and valid iOS
   production-channel requests to `https://ota.dofek.asherlc.com/manifest`
   returned no response before the client timeout.
@@ -14622,18 +14624,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   treats client errors as healthy. Independently, the pinned Expo Open OTA
   server's cold manifest path synchronously lists the runtime's stored updates,
   reads per-update metadata, and checks each candidate before populating a
-  30-minute latest-update cache. Three simultaneous cold requests took 60–65
+  30-minute latest-update cache. The deployed image is pinned in
+  [`deploy/stack.yml`](../deploy/stack.yml); its v2.3.16 implementation performs
+  those operations in the upstream
+  [`manifest handler`](https://github.com/axelmarciano/expo-open-ota/blob/v2.3.16/internal/handlers/manifest_handler.go)
+  and [`update lookup`](https://github.com/axelmarciano/expo-open-ota/blob/v2.3.16/internal/update/updates.go).
+  Three simultaneous cold requests took 60–65
   seconds and wrote `200` only after the clients disconnected; once one request
   populated that cache, the same valid production request completed in 0.41
   seconds. A nonexistent-channel request completed in 0.51 seconds, isolating
   the delay after channel lookup and inside the cold stored-update path.
-- **Fix / mitigation:** Filed
+- **Fix / mitigation:** No deployed fix has been validated. Filed
   [#1783](https://github.com/Asherlc/dofek/issues/1783) for the obsolete local
   checker and [#1784](https://github.com/Asherlc/dofek/issues/1784) for the
   false-positive deploy health check and live endpoint investigation. No
-  production resource was changed during the audit.
+  production resource was changed during the audit; the reproduction commands
+  and captured timings are recorded in
+  [#1784](https://github.com/Asherlc/dofek/issues/1784).
 - **Remaining risk / follow-up:** Make cold-cache manifest generation complete
   within the iOS client's request budget (or prewarm/replace the implementation),
   confirm an iOS client receives the expected manifest or no-update response,
   and change deployment readiness to reject 4xx, malformed responses, and
-  timeouts before the next OTA publication.
+  timeouts before the next OTA publication. Until those checks pass against the
+  production channel, both the incident and its proposed remediation remain
+  not validated.

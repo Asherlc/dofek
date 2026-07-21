@@ -108,10 +108,8 @@ background modes. These constraints come from the checked-in
 Install and launch the resulting
 `.context/ReleaseAuditDerivedData/Build/Products/Release-iphonesimulator/Dofek.app`,
 then verify visible UI, native accessibility targets, app logs, and server logs.
-The repository's
-[`ios-simulator-audit` skill](../../.agents/skills/ios-simulator-audit/SKILL.md)
-contains the full XcodeBuildMCP workflow. Expo's local production-build guide is
-the upstream reference for using Release configuration locally:
+Expo's local production-build guide is the upstream reference for using
+Release configuration locally:
 <https://docs.expo.dev/guides/local-app-production/>.
 
 ## Dependency pins

@@ -6,15 +6,15 @@ Start the local backing services before running integration tests:
 
 ```bash
 pnpm compose:env --write
-docker compose --env-file .env.local up -d db clickhouse redis redpanda
-pnpm compose:env --write
+docker compose --env-file .env.local up -d --wait --wait-timeout 180 db clickhouse redis redpanda
 docker compose --env-file .env.local ps db clickhouse redis redpanda
 set -a; . ./.env.local; set +a
 pnpm exec vitest run --project integration
 ```
 
-Compose assigns collision-free host ports per workspace. Source the generated
-`.env.local` in the same shell that starts Vitest; otherwise ClickHouse clients
+Compose assigns collision-free host ports per workspace. Generate `.env.local`
+once before startup and keep it unchanged while the stack runs. Source it in
+the same shell that starts Vitest; otherwise ClickHouse clients
 fall back to `localhost:8123` even when this workspace exposes ClickHouse on a
 different port. Docker Compose supports explicit environment files for variable
 interpolation: <https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/#substitute-with---env-file>.
@@ -46,7 +46,7 @@ Run browser E2E in an explicit Compose project so it cannot collide with the
 normal workspace stack:
 
 ```bash
-docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml up -d --build
+docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
 docker compose -p dofek-e2e-audit -f docker-compose.e2e.yml ps -a
 pnpm e2e:web:run
 ```

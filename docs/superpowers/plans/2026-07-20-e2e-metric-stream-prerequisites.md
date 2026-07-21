@@ -13,13 +13,20 @@ This leaves browser-only E2E checks green while a normal authenticated write pat
 - `docker-compose.e2e.yml` omits both `METRIC_STREAM_TOPIC` and `REDPANDA_BROKERS` from the server and defines no Redpanda service.
 - The normal local Compose stack configures Redpanda and supplies both values to metric-stream producers.
 
+Primary evidence: [`docker-compose.e2e.yml`](../../../docker-compose.e2e.yml),
+the normal [`docker-compose.yml`](../../../docker-compose.yml), and captured
+runtime reproduction [#1806](https://github.com/Asherlc/dofek/issues/1806).
+Docker documents health-gated dependency startup and the `--wait` readiness
+contract in its [startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/)
+and [`compose up` reference](https://docs.docker.com/reference/cli/docker/compose/up/).
+
 ## Implementation
 
-1. Add a Redpanda service to the isolated E2E topology using the repository's current pinned broker version and an isolated, healthchecked internal listener.
-2. Set `REDPANDA_BROKERS` and `METRIC_STREAM_TOPIC` explicitly on the E2E server, and make server startup depend on broker health.
-3. Ensure the topic is available through normal producer behavior or an explicit idempotent E2E initialization step.
-4. Add an executable integration/E2E test that saves a minimal recorded activity and verifies its metric-stream write succeeds.
-5. Strengthen E2E readiness so required write-path infrastructure cannot be absent while the test server is declared ready.
+1. First add an executable integration/E2E test that saves a minimal recorded activity and fails with the current missing `METRIC_STREAM_TOPIC` prerequisite.
+2. Add a Redpanda service to the isolated E2E topology using the repository's current pinned broker version and an isolated, healthchecked internal listener.
+3. Set `REDPANDA_BROKERS` and `METRIC_STREAM_TOPIC` explicitly on the E2E server, make server startup depend on broker health, and ensure the topic is available through normal producer behavior or an explicit idempotent E2E initialization step.
+4. Strengthen E2E readiness so required write-path infrastructure cannot be absent while the test server is declared ready.
+5. Add negative setup tests that remove the broker, `REDPANDA_BROKERS`, and `METRIC_STREAM_TOPIC` one at a time and assert readiness fails immediately while naming the missing prerequisite.
 
 ## Acceptance criteria
 
