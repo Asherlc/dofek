@@ -154,6 +154,14 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       return;
     }
 
+    if (setup.getUserIdentity && intent === "data") {
+      const sessionId = getSessionIdFromRequest(req);
+      const session = sessionId ? await validateSession(db, sessionId) : null;
+      if (session && session.userId !== stateUserId) {
+        throw new Error("OAuth callback session does not match authenticated OAuth state");
+      }
+    }
+
     // Revoke existing tokens before exchange — some providers (e.g. Wahoo) limit
     // the number of active tokens per app+user and reject new token creation until
     // old tokens are revoked.
@@ -324,12 +332,8 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       });
       try {
         const identity = await setup.getUserIdentity(tokens.accessToken);
-        const sessionId = getSessionIdFromRequest(req);
-        const session = sessionId ? await validateSession(db, sessionId) : null;
-        if (session) {
-          await resolveOrCreateUser(db, providerId, identity, session.userId);
-          logger.info(`[auth] Auto-linked ${providerId} identity to user ${session.userId}`);
-        }
+        await resolveOrCreateUser(db, providerId, identity, stateUserId);
+        logger.info(`[auth] Auto-linked ${providerId} identity to user ${stateUserId}`);
       } catch (identityErr: unknown) {
         logger.warn(`[auth] Failed to extract identity from ${providerId}: ${identityErr}`);
       }

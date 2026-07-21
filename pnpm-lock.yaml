@@ -14,7 +14,6 @@ overrides:
   brace-expansion@<1.1.13: 1.1.13
   brace-expansion@>=2.0.0 <2.1.2: 2.1.2
   brace-expansion@>=5.0.0 <5.0.7: 5.0.7
-  body-parser: 2.3.0
   esbuild: 0.28.1
   form-data: 4.0.6
   gel>shell-quote: 1.10.0
@@ -29,11 +28,11 @@ overrides:
   protobufjs: 8.7.1
   shell-quote: 1.10.0
   tar: 7.5.20
-  tar@7.5.16: 7.5.20
-  undici@6.26.0: 6.27.0
+  undici@>=6.0.0 <6.27.0: 6.27.0
   uuid: 11.1.1
   ws: 8.21.0
   yaml: 2.9.0
+  body-parser: 2.3.0
 
 packageExtensionsChecksum: sha256-HhXpwdyEcI8/is2W0Bc7hOoEZs48mxCz5T520E5poHc=
 
