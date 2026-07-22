@@ -24,8 +24,7 @@ DBT_SAFE_MODELS="$DBT_ACTIVITY_MODELS $DBT_SLEEP_DASHBOARD_MODELS"
 DBT_E2E_MICROBATCH_VARS='{"sensor_scalar_sample_begin":"2026-01-01","deduped_sensor_begin":"2026-01-01","activity_sensor_sample_begin":"2026-01-01","activity_location_sample_begin":"2026-01-01"}'
 
 run_dbt_safe_builds() {
-  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select "$DBT_ACTIVITY_MODELS" &&
-  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select "$DBT_SLEEP_DASHBOARD_MODELS" &&
+  $NODE scripts/run-analytics-build.ts &&
   $NODE scripts/warm-query-cache.ts
 }
 

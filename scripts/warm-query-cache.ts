@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import * as Sentry from "@sentry/node";
 import { getAccessWindowForUser } from "../packages/server/src/billing/access-window-repository.ts";
@@ -9,6 +10,7 @@ import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { RedisQueryCacheRegistry } from "../src/lib/redis-query-cache-registry.ts";
 import { logger } from "../src/logger.ts";
+import { recordCacheRunForPendingProcessing } from "../src/processing/cache-processing.ts";
 
 export interface RegisteredQueryCacheKey {
   key: string;
@@ -37,6 +39,13 @@ export interface WarmRegisteredQueryCachesInput<TDatabase, TSensorStore> {
   sensorStore: TSensorStore;
   createCaller(context: WarmCallerContext<TDatabase, TSensorStore>): unknown;
   getAccessWindow(db: TDatabase, userId: string): Promise<AccessWindow>;
+}
+
+export interface CacheWarmOutcome {
+  userId: string;
+  path: string;
+  status: "succeeded" | "failed";
+  errorMessage: string | null;
 }
 
 function parseInput(serializedInput: string): unknown {
@@ -100,12 +109,26 @@ async function invokeCallerProcedure(caller: unknown, path: string, input: unkno
 export async function warmRegisteredQueryCaches<TDatabase, TSensorStore>(
   input: WarmRegisteredQueryCachesInput<TDatabase, TSensorStore>,
 ): Promise<{ refreshed: number; failed: number; skipped: number }> {
+  const result = await warmRegisteredQueryCachesWithOutcomes(input);
+  return { refreshed: result.refreshed, failed: result.failed, skipped: result.skipped };
+}
+
+export async function warmRegisteredQueryCachesWithOutcomes<TDatabase, TSensorStore>(
+  input: WarmRegisteredQueryCachesInput<TDatabase, TSensorStore>,
+  options: { failOnError?: boolean } = {},
+): Promise<{
+  refreshed: number;
+  failed: number;
+  skipped: number;
+  outcomes: CacheWarmOutcome[];
+}> {
   const keys = await input.cacheStore.listKeys();
   const accessWindows = new Map<string, AccessWindow>();
   let refreshed = 0;
   let failed = 0;
   let skipped = 0;
   const failures: Array<{ path: string; message: string }> = [];
+  const outcomes: CacheWarmOutcome[] = [];
 
   for (const key of keys.sort()) {
     const registeredQuery = parseRegisteredQueryCacheKey(key);
@@ -130,11 +153,24 @@ export async function warmRegisteredQueryCaches<TDatabase, TSensorStore>(
       });
       await invokeCallerProcedure(caller, registeredQuery.path, registeredQuery.input);
       refreshed += 1;
+      outcomes.push({
+        userId: registeredQuery.userId,
+        path: registeredQuery.path,
+        status: "succeeded",
+        errorMessage: null,
+      });
     } catch (error) {
       failed += 1;
+      const errorMessage = error instanceof Error ? error.message : String(error);
       failures.push({
         path: registeredQuery.path,
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage,
+      });
+      outcomes.push({
+        userId: registeredQuery.userId,
+        path: registeredQuery.path,
+        status: "failed",
+        errorMessage,
       });
       Sentry.captureException(error, {
         tags: { cacheOperation: "warm", trpcPath: registeredQuery.path },
@@ -143,13 +179,13 @@ export async function warmRegisteredQueryCaches<TDatabase, TSensorStore>(
     }
   }
 
-  if (failed > 0) {
+  if (failed > 0 && options.failOnError !== false) {
     const firstFailure = failures[0];
     throw new Error(
       `${failed} of ${keys.length} registered query caches failed to refresh; first failure: ${firstFailure?.path}: ${firstFailure?.message}`,
     );
   }
-  return { refreshed, failed, skipped };
+  return { refreshed, failed, skipped, outcomes };
 }
 
 async function main(): Promise<void> {
@@ -158,13 +194,26 @@ async function main(): Promise<void> {
   const sensorStore = new ClickHouseActivitySensorStore(clickHouseClient);
   const cacheRegistry = new RedisQueryCacheRegistry();
   try {
-    const result = await warmRegisteredQueryCaches({
-      cacheStore: cacheRegistry,
-      db,
-      sensorStore,
-      createCaller: (context) => appRouter.createCaller(context satisfies Context),
-      getAccessWindow: getAccessWindowForUser,
+    const result = await warmRegisteredQueryCachesWithOutcomes(
+      {
+        cacheStore: cacheRegistry,
+        db,
+        sensorStore,
+        createCaller: (context) => appRouter.createCaller(context satisfies Context),
+        getAccessWindow: getAccessWindowForUser,
+      },
+      { failOnError: false },
+    );
+    const processingResult = await recordCacheRunForPendingProcessing(db, {
+      runId: randomUUID(),
+      outcomes: result.outcomes,
     });
+    if (result.failed > 0 || processingResult.failed > 0) {
+      const firstFailure = result.outcomes.find((outcome) => outcome.status === "failed");
+      throw new Error(
+        `${result.failed} registered query caches failed to refresh; first failure: ${firstFailure?.path}: ${firstFailure?.errorMessage}`,
+      );
+    }
     logger.info(
       `[cache-warmer] Refreshed ${result.refreshed} app query caches; skipped ${result.skipped}`,
     );

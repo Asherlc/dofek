@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { parseRegisteredQueryCacheKey, warmRegisteredQueryCaches } from "./warm-query-cache.ts";
+import {
+  parseRegisteredQueryCacheKey,
+  warmRegisteredQueryCaches,
+  warmRegisteredQueryCachesWithOutcomes,
+} from "./warm-query-cache.ts";
 
 describe("parseRegisteredQueryCacheKey", () => {
   it("preserves the user, path, timezone, and JSON input", () => {
@@ -112,5 +116,32 @@ describe("warmRegisteredQueryCaches", () => {
       "1 of 2 registered query caches failed to refresh; first failure: broken.query: broken query",
     );
     expect(healthy).toHaveBeenCalledWith({ days: 90 });
+  });
+
+  it("returns per-query outcomes for processing reconciliation", async () => {
+    const result = await warmRegisteredQueryCachesWithOutcomes({
+      cacheStore: {
+        listKeys: vi.fn().mockResolvedValue(['user-1:activity.list:UTC:{"days":30}']),
+      },
+      createCaller: vi.fn().mockReturnValue({
+        activity: { list: vi.fn().mockResolvedValue({ ok: true }) },
+      }),
+      getAccessWindow: vi.fn().mockResolvedValue({
+        kind: "full",
+        paid: true,
+        reason: "paid_grant",
+      }),
+      db: { execute: vi.fn() },
+      sensorStore: {},
+    });
+
+    expect(result.outcomes).toEqual([
+      {
+        userId: "user-1",
+        path: "activity.list",
+        status: "succeeded",
+        errorMessage: null,
+      },
+    ]);
   });
 });

@@ -6,6 +6,10 @@ import {
   assertClickHouseCdcHealth,
   checkClickHouseCdcHealth,
 } from "../src/db/clickhouse-cdc-health.ts";
+import {
+  createProcessingReconciliationDatabaseFromEnv,
+  reconcilePendingProcessingOperations,
+} from "../src/processing/processing-reconciler.ts";
 import { main } from "./check-clickhouse-cdc.ts";
 
 const pgClientInstances = vi.hoisted<MockPgClient[]>(() => []);
@@ -35,6 +39,11 @@ vi.mock("../src/db/clickhouse-cdc-health.ts", () => ({
   checkClickHouseCdcHealth: vi.fn(),
 }));
 
+vi.mock("../src/processing/processing-reconciler.ts", () => ({
+  createProcessingReconciliationDatabaseFromEnv: vi.fn(),
+  reconcilePendingProcessingOperations: vi.fn(),
+}));
+
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
   close: vi.fn().mockResolvedValue(undefined),
@@ -43,8 +52,12 @@ vi.mock("@sentry/node", () => ({
 }));
 
 const mockedCreateClickHouseClientFromEnv = vi.mocked(createClickHouseClientFromEnv);
+const mockedCreateProcessingReconciliationDatabaseFromEnv = vi.mocked(
+  createProcessingReconciliationDatabaseFromEnv,
+);
 const mockedCheckClickHouseCdcHealth = vi.mocked(checkClickHouseCdcHealth);
 const mockedAssertClickHouseCdcHealth = vi.mocked(assertClickHouseCdcHealth);
+const mockedReconcilePendingProcessingOperations = vi.mocked(reconcilePendingProcessingOperations);
 const mockedSentryCaptureException = vi.mocked(Sentry.captureException);
 const mockedSentryClose = vi.mocked(Sentry.close);
 const mockedSentryInit = vi.mocked(Sentry.init);
@@ -89,6 +102,12 @@ describe("check-clickhouse-cdc", () => {
       query: vi.fn().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) }),
     };
     mockedCreateClickHouseClientFromEnv.mockReturnValue(clickHouseClient);
+    mockedCreateProcessingReconciliationDatabaseFromEnv.mockReturnValue({ execute: vi.fn() });
+    mockedReconcilePendingProcessingOperations.mockResolvedValue({
+      checked: 2,
+      completed: 1,
+      waiting: 1,
+    });
     mockedCheckClickHouseCdcHealth.mockResolvedValue({
       evidence: {
         peerDbMirrors: [
@@ -183,5 +202,9 @@ describe("check-clickhouse-cdc", () => {
       "postgres://peerdb:peerdb-dedicated-password@127.0.0.1:9900/peerdb",
     ]);
     expect(process.exit).toHaveBeenCalledWith(0);
+    expect(mockedReconcilePendingProcessingOperations).toHaveBeenCalledWith({
+      clickHouseClient: expect.any(Object),
+      database: expect.any(Object),
+    });
   });
 });
