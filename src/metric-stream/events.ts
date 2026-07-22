@@ -4,6 +4,7 @@ import { z } from "zod";
 export const METRIC_STREAM_EVENT_VERSION = 2;
 export const METRIC_STREAM_DELETE_EVENT_VERSION = 3;
 export const METRIC_STREAM_DELETED_EVENT_TYPE = "metric_stream_deleted";
+export const METRIC_STREAM_BATCH_COMPLETED_EVENT_TYPE = "metric_stream_batch_completed";
 
 const nonEmptyStringSchema = z.string().min(1);
 const optionalNullableTextSchema = nonEmptyStringSchema.nullable().optional();
@@ -135,10 +136,28 @@ export const metricStreamDeletedEventV3Schema = metricStreamDeletedEventV2Schema
   })
   .strict();
 
+export const metricStreamProcessingContextSchema = z
+  .object({
+    operationId: z.uuid(),
+    batchId: nonEmptyStringSchema,
+    datasetKeys: z.array(nonEmptyStringSchema).min(1),
+  })
+  .strict();
+
+export const metricStreamBatchCompletedEventV1Schema = metricStreamProcessingContextSchema
+  .extend({
+    version: z.literal(1),
+    eventType: z.literal(METRIC_STREAM_BATCH_COMPLETED_EVENT_TYPE),
+    expectedEventCount: z.number().int().positive(),
+    partitionKey: nonEmptyStringSchema,
+  })
+  .strict();
+
 export const metricStreamRedpandaEventSchema = z.union([
   metricStreamDeletedEventV1Schema,
   metricStreamDeletedEventV2Schema,
   metricStreamDeletedEventV3Schema,
+  metricStreamBatchCompletedEventV1Schema,
   metricStreamEventV1Schema,
   metricStreamEventV2Schema,
 ]);
@@ -156,6 +175,10 @@ export type MetricStreamDeletedEvent =
   | MetricStreamDeletedEventV1
   | MetricStreamDeletedEventV2
   | MetricStreamDeletedEventV3;
+export type MetricStreamProcessingContext = z.input<typeof metricStreamProcessingContextSchema>;
+export type MetricStreamBatchCompletedEventV1 = z.infer<
+  typeof metricStreamBatchCompletedEventV1Schema
+>;
 export type MetricStreamRedpandaEvent = z.infer<typeof metricStreamRedpandaEventSchema>;
 
 function formatUuidFromBytes(bytes: Uint8Array): string {
@@ -258,8 +281,36 @@ export function createMetricStreamDeletedEvent(
   });
 }
 
+export function createMetricStreamBatchPartitionKey(
+  contextInput: MetricStreamProcessingContext,
+): string {
+  const context = metricStreamProcessingContextSchema.parse(contextInput);
+  return `processing:${context.operationId}:${context.batchId}`;
+}
+
+export function createMetricStreamBatchCompletedEvent(
+  contextInput: MetricStreamProcessingContext,
+  expectedEventCount: number,
+  partitionKey = createMetricStreamBatchPartitionKey(contextInput),
+): MetricStreamBatchCompletedEventV1 {
+  const context = metricStreamProcessingContextSchema.parse(contextInput);
+  return metricStreamBatchCompletedEventV1Schema.parse({
+    ...context,
+    version: 1,
+    eventType: METRIC_STREAM_BATCH_COMPLETED_EVENT_TYPE,
+    expectedEventCount,
+    partitionKey,
+  });
+}
+
 export function isMetricStreamDeletedEvent(
   event: MetricStreamRedpandaEvent,
 ): event is MetricStreamDeletedEvent {
   return "eventType" in event && event.eventType === METRIC_STREAM_DELETED_EVENT_TYPE;
+}
+
+export function isMetricStreamBatchCompletedEvent(
+  event: MetricStreamRedpandaEvent,
+): event is MetricStreamBatchCompletedEventV1 {
+  return "eventType" in event && event.eventType === METRIC_STREAM_BATCH_COMPLETED_EVENT_TYPE;
 }

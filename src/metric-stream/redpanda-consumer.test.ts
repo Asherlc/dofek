@@ -65,6 +65,8 @@ describe("runMetricStreamEventConsumer", () => {
       run: vi.fn(async (options) => {
         await options.eachBatch({
           batch: {
+            topic: "metric-stream-v1",
+            partition: 2,
             messages: [
               {
                 offset: "12",
@@ -87,7 +89,11 @@ describe("runMetricStreamEventConsumer", () => {
 
     expect(connect).toHaveBeenCalled();
     expect(subscribe).toHaveBeenCalledWith({ topic: "metric-stream-v1", fromBeginning: false });
-    expect(handleEvents).toHaveBeenCalledWith([event]);
+    expect(handleEvents).toHaveBeenCalledWith([event], {
+      topic: "metric-stream-v1",
+      partition: 2,
+      eventOffsets: ["12"],
+    });
     expect(resolveOffset).toHaveBeenCalledWith("12");
     expect(commitOffsetsIfNecessary).toHaveBeenCalled();
   });
@@ -104,6 +110,8 @@ describe("runMetricStreamEventConsumer", () => {
       run: vi.fn(async (options) => {
         await options.eachBatch({
           batch: {
+            topic: "metric-stream-v1",
+            partition: 2,
             messages: [
               {
                 offset: "20",
@@ -128,7 +136,11 @@ describe("runMetricStreamEventConsumer", () => {
       topic: "metric-stream-v1",
     });
 
-    expect(handleEvents).toHaveBeenCalledWith([deleteEvent, event]);
+    expect(handleEvents).toHaveBeenCalledWith([deleteEvent, event], {
+      topic: "metric-stream-v1",
+      partition: 2,
+      eventOffsets: ["20", "21"],
+    });
   });
 
   it("does not resolve offsets when the handler fails", async () => {
@@ -142,6 +154,8 @@ describe("runMetricStreamEventConsumer", () => {
       run: vi.fn(async (options) => {
         await options.eachBatch({
           batch: {
+            topic: "metric-stream-v1",
+            partition: 2,
             messages: [
               {
                 offset: "12",
@@ -179,6 +193,8 @@ describe("runMetricStreamEventConsumer", () => {
         expect(options.eachBatchAutoResolve).toBe(false);
         await options.eachBatch({
           batch: {
+            topic: "metric-stream-v1",
+            partition: 2,
             messages: [{ offset: "13", value: null }],
           },
           commitOffsetsIfNecessary,
@@ -211,6 +227,8 @@ describe("runMetricStreamEventConsumer", () => {
       run: vi.fn(async (options) => {
         await options.eachBatch({
           batch: {
+            topic: "metric-stream-v1",
+            partition: 2,
             messages: [{ offset: "14", value: Buffer.from("{not-json") }],
           },
           commitOffsetsIfNecessary,

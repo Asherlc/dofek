@@ -19,6 +19,7 @@ export interface SyncJobData {
     | { type: "range"; sinceIso: string; untilIso: string };
   userId: string;
   checkpoint?: unknown;
+  processingOperationIds?: Record<string, string>;
 }
 
 export interface ImportJobData {

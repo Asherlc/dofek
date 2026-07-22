@@ -10,6 +10,8 @@ export interface MetricStreamKafkaMessage {
 
 export interface MetricStreamEachBatchPayload {
   batch: {
+    topic: string;
+    partition: number;
     messages: readonly MetricStreamKafkaMessage[];
   };
   commitOffsetsIfNecessary(): Promise<void>;
@@ -28,8 +30,17 @@ export interface MetricStreamConsumerLike {
 
 export interface RunMetricStreamEventConsumerOptions {
   consumer: MetricStreamConsumerLike;
-  handleEvents(events: MetricStreamRedpandaEvent[]): Promise<void>;
+  handleEvents(
+    events: MetricStreamRedpandaEvent[],
+    context: MetricStreamConsumerBatchContext,
+  ): Promise<void>;
   topic: string;
+}
+
+export interface MetricStreamConsumerBatchContext {
+  topic: string;
+  partition: number;
+  eventOffsets: readonly string[];
 }
 
 function parseMetricStreamMessage(
@@ -67,13 +78,22 @@ export async function runMetricStreamEventConsumer(
   await options.consumer.run({
     eachBatchAutoResolve: false,
     eachBatch: async (payload) => {
-      const events = payload.batch.messages.flatMap((message) => {
+      const events: MetricStreamRedpandaEvent[] = [];
+      const eventOffsets: string[] = [];
+      for (const message of payload.batch.messages) {
         const event = parseMetricStreamMessage(message);
-        return event ? [event] : [];
-      });
+        if (event) {
+          events.push(event);
+          eventOffsets.push(message.offset);
+        }
+      }
 
       if (events.length > 0) {
-        await options.handleEvents(events);
+        await options.handleEvents(events, {
+          topic: payload.batch.topic,
+          partition: payload.batch.partition,
+          eventOffsets,
+        });
       }
 
       for (const message of payload.batch.messages) {

@@ -1,10 +1,24 @@
 import * as Sentry from "@sentry/node";
 import { UnrecoverableError } from "bullmq";
-import type { SyncDatabase } from "../db/index.ts";
+import type { Database, SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
+import {
+  processingDatasetKeysForImport,
+  processingDatasetKeysForOutputPath,
+} from "../processing/dataset-contracts.ts";
+import {
+  createLazyDefaultMetricStreamEventPublisher,
+  MetricStreamProcessingPublisher,
+} from "../processing/metric-stream-processing-publisher.ts";
+import {
+  appendProcessingStageEvent,
+  createProcessingOperation,
+  recordMetricStreamBatchPublished,
+  recordRelationalCanonicalCommits,
+} from "../processing/processing-event-store.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
 import type { LocalImportJobData } from "./local-import-job-data.ts";
 import type { GarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
@@ -23,6 +37,27 @@ function requireKayaImportDatabase(db: SyncDatabase): KayaImportDatabase {
     throw new Error("Kaya export import requires a transactional database");
   }
   return db;
+}
+
+function hasTransaction(
+  database: SyncDatabase,
+): database is SyncDatabase & Pick<Database, "transaction"> {
+  return "transaction" in database && typeof database.transaction === "function";
+}
+
+function requireTransactionalDatabase(
+  database: SyncDatabase,
+): SyncDatabase & Pick<Database, "transaction"> {
+  if (!hasTransaction(database)) {
+    throw new Error("Processing metric-stream publication requires a transactional database");
+  }
+  return database;
+}
+
+function processingProviderId(importType: LocalImportJobData["importType"]): string {
+  if (importType === "apple-health") return "apple_health";
+  if (importType === "kaya-export") return "kaya";
+  return importType;
 }
 
 interface ImportCompletionResult {
@@ -78,9 +113,42 @@ async function logImportCompletion(
 
 export async function processImportJob(job: ImportJob, db: SyncDatabase): Promise<void> {
   const { filePath, since, userId, importType, weightUnit } = job.data;
+  const datasetKeys = processingDatasetKeysForImport(importType);
+  const processingOperation = await createProcessingOperation(db, {
+    userId,
+    providerId: processingProviderId(importType),
+    kind: "file_import",
+    externalCorrelationKey: job.id,
+    datasetKeys: [...datasetKeys],
+  });
+  await appendProcessingStageEvent(db, {
+    operationId: processingOperation.id,
+    stage: "ingest",
+    status: "queued",
+    progressPercentage: 0,
+    idempotencyKey: "worker-queued",
+  });
+  await appendProcessingStageEvent(db, {
+    operationId: processingOperation.id,
+    stage: "ingest",
+    status: "running",
+    progressPercentage: 0,
+    idempotencyKey: "worker-running",
+  });
+  const metricDatasetKeys = processingDatasetKeysForOutputPath(datasetKeys, "metric_stream");
+  const metricStreamPublisher =
+    metricDatasetKeys.length > 0
+      ? new MetricStreamProcessingPublisher(createLazyDefaultMetricStreamEventPublisher(), {
+          operationId: processingOperation.id,
+          datasetKeys: metricDatasetKeys,
+          recordPublishedBatch: (batch) =>
+            recordMetricStreamBatchPublished(requireTransactionalDatabase(db), batch),
+        })
+      : undefined;
   const sinceDate = new Date(since);
   const importStart = Date.now();
   let terminalImportError: UnrecoverableError | null = null;
+  let importedRecordCount = 0;
 
   let shouldCleanUpUploadedFile = importType !== "garmin-dump";
   let importFailed = false;
@@ -92,27 +160,36 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         const { importAppleHealthFile } = await import("../providers/apple-health/import.ts");
         let lastLoggedPercentage = 0;
         // Scale streaming progress to 0-90% — remaining 10% is for post-import steps
-        const result = await importAppleHealthFile(db, filePath, sinceDate, (info) => {
-          const scaledPercentage = Math.floor(info.percentage * 0.9);
-          const counts = [
-            info.recordCount > 0 ? `${info.recordCount.toLocaleString()} records` : "",
-            info.workoutCount > 0 ? `${info.workoutCount} workouts` : "",
-            info.sleepCount > 0 ? `${info.sleepCount} sleep sessions` : "",
-          ]
-            .filter(Boolean)
-            .join(", ");
-          const message = counts
-            ? `Importing health data (${counts})...`
-            : "Importing health data...";
-          job.updateProgress({ percentage: scaledPercentage, message }).catch((error: unknown) => {
-            logger.warn("Failed to update import progress: %s", error);
-            Sentry.captureException(error, { tags: { phase: "import-progress-update" } });
-          });
-          if (info.percentage >= lastLoggedPercentage + 10) {
-            logger.info(`[worker] Apple Health import progress: ${info.percentage}%`);
-            lastLoggedPercentage = info.percentage;
-          }
-        });
+        const result = await importAppleHealthFile(
+          db,
+          filePath,
+          sinceDate,
+          (info) => {
+            const scaledPercentage = Math.floor(info.percentage * 0.9);
+            const counts = [
+              info.recordCount > 0 ? `${info.recordCount.toLocaleString()} records` : "",
+              info.workoutCount > 0 ? `${info.workoutCount} workouts` : "",
+              info.sleepCount > 0 ? `${info.sleepCount} sleep sessions` : "",
+            ]
+              .filter(Boolean)
+              .join(", ");
+            const message = counts
+              ? `Importing health data (${counts})...`
+              : "Importing health data...";
+            job
+              .updateProgress({ percentage: scaledPercentage, message })
+              .catch((error: unknown) => {
+                logger.warn("Failed to update import progress: %s", error);
+                Sentry.captureException(error, { tags: { phase: "import-progress-update" } });
+              });
+            if (info.percentage >= lastLoggedPercentage + 10) {
+              logger.info(`[worker] Apple Health import progress: ${info.percentage}%`);
+              lastLoggedPercentage = info.percentage;
+            }
+          },
+          metricStreamPublisher,
+        );
+        importedRecordCount = result.recordsSynced;
 
         await logImportCompletion(
           db,
@@ -131,6 +208,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         const { importStrongCsv } = await import("../providers/strong-csv.ts");
         await reportImportProgress(job, 25, "Importing Strong CSV workouts...");
         const result = await importStrongCsv(db, csvText, userId, weightUnit ?? "kg");
+        importedRecordCount = result.recordsSynced;
         await reportImportProgress(job, 90, "Strong CSV import complete.");
 
         await logImportCompletion(
@@ -150,6 +228,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         const { importCronometerCsv } = await import("../providers/cronometer-csv.ts");
         await reportImportProgress(job, 25, "Importing Cronometer food entries...");
         const result = await importCronometerCsv(db, csvText, userId);
+        importedRecordCount = result.recordsSynced;
         await reportImportProgress(job, 90, "Cronometer CSV import complete.");
 
         await logImportCompletion(
@@ -169,6 +248,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         const { importKayaExportFile } = await import("../providers/kaya/import.ts");
         await reportImportProgress(job, 25, "Importing Kaya climbing entries...");
         const result = await importKayaExportFile(requireKayaImportDatabase(db), csvText, userId);
+        importedRecordCount = result.recordsSynced;
         await reportImportProgress(job, 90, "Kaya export import complete.");
 
         await logImportCompletion(
@@ -188,6 +268,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         const { importZosAppBin } = await import("../providers/zos-app/provider.ts");
         await reportImportProgress(job, 25, "Importing ZOS App sessions...");
         const result = await importZosAppBin(db, binData, userId);
+        importedRecordCount = result.recordsSynced;
 
         if (result.recordsSynced === 0 && result.errors.length > 0) {
           await logImportCompletion(
@@ -217,6 +298,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       } else if (importType === "garmin-dump") {
         const { processGarminDumpImportJob } = await import("./process-garmin-dump-import-job.ts");
         const result = await processGarminDumpImportJob(job, db);
+        importedRecordCount = result.recordsSynced;
         shouldCleanUpUploadedFile = true;
 
         await logImportCompletion(
@@ -247,7 +329,9 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
             sourceName: "FIT File",
           },
           (info) => updateImportJobProgress(job, info),
+          metricStreamPublisher,
         );
+        importedRecordCount = result.recordsSynced;
 
         await logImportCompletion(
           db,
@@ -271,6 +355,14 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       await unlink(filePath);
     } catch (cleanupError) {
       Sentry.captureException(cleanupError, { tags: { phase: "uploaded-file-cleanup" } });
+      await appendProcessingStageEvent(db, {
+        operationId: processingOperation.id,
+        stage: "ingest",
+        status: "failed",
+        errorCode: "file_cleanup_failed",
+        errorMessage: "The import finished, but its uploaded file could not be cleaned up.",
+        idempotencyKey: "worker-failed",
+      });
       if (importFailed) {
         throw new AggregateError(
           [importError, cleanupError],
@@ -280,7 +372,55 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       throw cleanupError;
     }
   }
-  if (importFailed) throw importError;
+  if (importFailed) {
+    await appendProcessingStageEvent(db, {
+      operationId: processingOperation.id,
+      stage: "ingest",
+      status: "failed",
+      errorCode: "file_import_failed",
+      errorMessage: "The file could not be imported. Check the file and try again.",
+      idempotencyKey: "worker-failed",
+    });
+    throw importError;
+  }
+
+  const emittedRelationalDatasetKeys = processingDatasetKeysForOutputPath(
+    datasetKeys,
+    "relational",
+  );
+  if (importedRecordCount > 0 && emittedRelationalDatasetKeys.length > 0) {
+    await recordRelationalCanonicalCommits(requireTransactionalDatabase(db), {
+      operationId: processingOperation.id,
+      datasetKeys: emittedRelationalDatasetKeys,
+      idempotencyKey: `worker-relational-commit:${job.id}`,
+    });
+  }
+  if (importedRecordCount === 0 && !metricStreamPublisher?.hasPublishedBatches) {
+    for (const datasetKey of datasetKeys) {
+      for (const stage of ["analytics", "cache_refresh"] as const) {
+        await appendProcessingStageEvent(db, {
+          operationId: processingOperation.id,
+          stage,
+          status: "skipped",
+          datasetKey,
+          message: "No new data was emitted for this dataset",
+          idempotencyKey: `no-output:${datasetKey}:${stage}`,
+        });
+      }
+    }
+  }
+
+  await appendProcessingStageEvent(db, {
+    operationId: processingOperation.id,
+    stage: "ingest",
+    status: terminalImportError ? "failed" : "succeeded",
+    progressPercentage: 100,
+    errorCode: terminalImportError ? "file_import_failed" : undefined,
+    errorMessage: terminalImportError
+      ? "Some files could not be imported. Review the import result and try again."
+      : undefined,
+    idempotencyKey: terminalImportError ? "worker-failed" : "worker-succeeded",
+  });
 
   try {
     job

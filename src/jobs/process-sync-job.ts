@@ -1,12 +1,27 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import * as Sentry from "@sentry/node";
-import type { SyncDatabase } from "../db/index.ts";
+import type { Database, SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
+import {
+  type ProcessingDatasetKey,
+  processingDatasetKeysForOutputPath,
+  processingDatasetKeysForProvider,
+} from "../processing/dataset-contracts.ts";
+import {
+  createLazyDefaultMetricStreamEventPublisher,
+  MetricStreamProcessingPublisher,
+} from "../processing/metric-stream-processing-publisher.ts";
+import {
+  appendProcessingStageEvent,
+  createProcessingOperation,
+  recordMetricStreamBatchPublished,
+  recordRelationalCanonicalCommits,
+} from "../processing/processing-event-store.ts";
 import {
   authFailureReasonFromError,
   type ProviderAuthFailureReason,
@@ -41,9 +56,80 @@ function computePercentage(
 
 /** Minimal Job interface — only the subset processSyncJob actually uses. */
 interface SyncJob {
+  id?: string;
   data: SyncJobData;
   updateProgress: (data: object) => Promise<void>;
   updateData: (data: SyncJobData) => Promise<void>;
+}
+
+async function ensureProcessingOperation(
+  job: SyncJob,
+  db: SyncDatabase,
+  provider: { id: string; processingDatasetKeys?: readonly ProcessingDatasetKey[] },
+) {
+  const datasetKeys = processingDatasetKeysForProvider(provider.id, provider.processingDatasetKeys);
+  const existingOperationId = job.data.processingOperationIds?.[provider.id];
+  if (existingOperationId) {
+    return { id: existingOperationId, datasetKeys };
+  }
+
+  const fallbackCorrelationKey = [
+    job.data.userId,
+    provider.id,
+    job.data.sinceIso ?? `days:${job.data.sinceDays ?? "all"}`,
+    job.data.untilIso ?? "open",
+  ].join(":");
+  const operation = await createProcessingOperation(db, {
+    userId: job.data.userId,
+    providerId: provider.id,
+    kind: "provider_sync",
+    externalCorrelationKey: `${job.id ?? fallbackCorrelationKey}:${provider.id}`,
+    datasetKeys: [...datasetKeys],
+  });
+  const nextData = {
+    ...job.data,
+    processingOperationIds: {
+      ...job.data.processingOperationIds,
+      [provider.id]: operation.id,
+    },
+  };
+  await job.updateData(nextData);
+  job.data = nextData;
+  return { id: operation.id, datasetKeys };
+}
+
+function hasTransaction(
+  database: SyncDatabase,
+): database is SyncDatabase & Pick<Database, "transaction"> {
+  return "transaction" in database && typeof database.transaction === "function";
+}
+
+function requireTransactionalSyncDatabase(
+  database: SyncDatabase,
+): SyncDatabase & Pick<Database, "transaction"> {
+  if (!hasTransaction(database)) {
+    throw new Error("Processing metric-stream publication requires a transactional database");
+  }
+  return database;
+}
+
+async function recordNoOutputStageSkips(
+  database: SyncDatabase,
+  operationId: string,
+  datasetKeys: readonly ProcessingDatasetKey[],
+): Promise<void> {
+  for (const datasetKey of datasetKeys) {
+    for (const stage of ["analytics", "cache_refresh"] as const) {
+      await appendProcessingStageEvent(database, {
+        operationId,
+        stage,
+        status: "skipped",
+        datasetKey,
+        message: "No new data was emitted for this dataset",
+        idempotencyKey: `no-output:${datasetKey}:${stage}`,
+      });
+    }
+  }
 }
 
 function createCheckpointStore(job: SyncJob): SyncCheckpointStore {
@@ -194,6 +280,35 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       continue;
     }
 
+    const processingOperation = await ensureProcessingOperation(job, db, provider);
+    await appendProcessingStageEvent(db, {
+      operationId: processingOperation.id,
+      stage: "ingest",
+      status: "queued",
+      progressPercentage: 0,
+      idempotencyKey: "worker-queued",
+    });
+    await appendProcessingStageEvent(db, {
+      operationId: processingOperation.id,
+      stage: "ingest",
+      status: "running",
+      progressPercentage: 0,
+      idempotencyKey: "worker-running",
+    });
+    const emittedMetricStreamDatasetKeys = processingDatasetKeysForOutputPath(
+      processingOperation.datasetKeys,
+      "metric_stream",
+    );
+    const metricStreamPublisher =
+      emittedMetricStreamDatasetKeys.length > 0
+        ? new MetricStreamProcessingPublisher(createLazyDefaultMetricStreamEventPublisher(), {
+            operationId: processingOperation.id,
+            datasetKeys: emittedMetricStreamDatasetKeys,
+            recordPublishedBatch: (batch) =>
+              recordMetricStreamBatchPublished(requireTransactionalSyncDatabase(db), batch),
+          })
+        : undefined;
+
     const syncStart = Date.now();
 
     try {
@@ -211,6 +326,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
               });
             },
             userId: job.data.userId,
+            metricStreamPublisher,
             checkpoint: createCheckpointStore(job),
             enqueueSyncContinuation: async (checkpoint) => {
               await enqueueSyncJob(provider.id, {
@@ -248,6 +364,20 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       }
       completedCount++;
       const hasErrors = result.errors.length > 0;
+      const emittedRelationalDatasetKeys = processingDatasetKeysForOutputPath(
+        processingOperation.datasetKeys,
+        "relational",
+      );
+      if (result.recordsSynced > 0 && emittedRelationalDatasetKeys.length > 0) {
+        await recordRelationalCanonicalCommits(requireTransactionalSyncDatabase(db), {
+          operationId: processingOperation.id,
+          datasetKeys: emittedRelationalDatasetKeys,
+          idempotencyKey: `worker-relational-commit:${job.id ?? "unidentified-job"}`,
+        });
+      }
+      if (result.recordsSynced === 0 && !metricStreamPublisher?.hasPublishedBatches) {
+        await recordNoOutputStageSkips(db, processingOperation.id, processingOperation.datasetKeys);
+      }
       const parts = [`${result.recordsSynced} synced`];
       if (hasErrors) parts.push(`${result.errors.length} errors`);
 
@@ -271,6 +401,18 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           }
         }
       }
+
+      await appendProcessingStageEvent(db, {
+        operationId: processingOperation.id,
+        stage: "ingest",
+        status: hasErrors ? "failed" : "succeeded",
+        progressPercentage: 100,
+        errorCode: hasErrors ? "provider_sync_failed" : undefined,
+        errorMessage: hasErrors
+          ? "Some data could not be synced. Reconnect the data source and try again."
+          : undefined,
+        idempotencyKey: hasErrors ? "worker-failed" : "worker-succeeded",
+      });
 
       const durationMs = Date.now() - syncStart;
       await logSync(db, {
@@ -347,6 +489,14 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         Sentry.captureException(err, { tags: { provider: provider.id } });
       }
       providerStatus[provider.id] = { status: "error", message };
+      await appendProcessingStageEvent(db, {
+        operationId: processingOperation.id,
+        stage: "ingest",
+        status: "failed",
+        errorCode: "provider_sync_failed",
+        errorMessage: "The data source could not be synced. Reconnect it and try again.",
+        idempotencyKey: "worker-failed",
+      });
       await job.updateProgress({
         providers: providerStatus,
         percentage: computePercentage(completedCount, 0, totalProviders),

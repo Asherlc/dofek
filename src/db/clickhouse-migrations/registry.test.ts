@@ -49,11 +49,20 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("source_providers Array(String) DEFAULT []"),
       ]),
     });
-    expect(migrations.at(-1)).toMatchObject({
+    expect(
+      migrations.find((migration) => migration.id === "0050_repair_body_measurement_sample_ingest"),
+    ).toMatchObject({
       id: "0050_repair_body_measurement_sample_ingest",
       statements: expect.arrayContaining([
         "DROP VIEW IF EXISTS analytics.body_measurement_sample_ingest",
         expect.stringContaining("FROM ingest.metric_stream"),
+      ]),
+    });
+    expect(migrations.at(-1)).toMatchObject({
+      id: "0052_processing_flow_markers",
+      statements: expect.arrayContaining([
+        expect.stringContaining("postgres_fitness.processing_flow_marker ("),
+        expect.stringContaining("postgres_fitness.processing_flow_marker_provider_inventory ("),
       ]),
     });
   });

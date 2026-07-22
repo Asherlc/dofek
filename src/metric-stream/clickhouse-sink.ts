@@ -2,17 +2,21 @@ import { z } from "zod";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import {
   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
+  METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_TABLE,
   PROVIDER_DATA_GENERATION_TABLE,
 } from "./clickhouse-table.ts";
 import {
+  isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
+  type MetricStreamBatchCompletedEventV1,
   type MetricStreamDeleteScope,
   type MetricStreamRedpandaEvent,
   type MetricStreamRowEvent,
 } from "./events.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
+  type MetricStreamConsumerBatchContext,
   runMetricStreamEventConsumer,
 } from "./redpanda-consumer.ts";
 
@@ -424,6 +428,7 @@ export async function markMetricStreamScopeDeletedInClickHouse(
 export async function applyMetricStreamEventsToClickHouse(
   client: ClickHouseMetricStreamInsertClient,
   events: readonly MetricStreamRedpandaEvent[],
+  context?: MetricStreamConsumerBatchContext,
 ): Promise<number> {
   let inserted = 0;
   let rowBuffer: MetricStreamRowEvent[] = [];
@@ -446,7 +451,58 @@ export async function applyMetricStreamEventsToClickHouse(
     rowBuffer = [];
   };
 
-  for (const event of events) {
+  const acknowledgeProcessingBatch = async (
+    event: MetricStreamBatchCompletedEventV1,
+    eventIndex: number,
+  ): Promise<void> => {
+    if (!context) {
+      throw new Error("metric-stream processing marker requires Kafka batch context");
+    }
+    const markerOffset = context.eventOffsets[eventIndex];
+    if (markerOffset === undefined) {
+      throw new Error("metric-stream processing marker is missing its Kafka offset");
+    }
+    if (!client.command) {
+      throw new Error(
+        "ClickHouse metric-stream processing acknowledgement requires a command-capable client",
+      );
+    }
+    await client.command({
+      query: `INSERT INTO ${METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE} (
+          operation_id,
+          batch_id,
+          dataset_keys,
+          expected_event_count,
+          topic,
+          topic_partition,
+          marker_offset
+        ) VALUES (
+          {operation_id:UUID},
+          {batch_id:String},
+          {dataset_keys:Array(String)},
+          {expected_event_count:UInt64},
+          {topic:String},
+          {partition:Int32},
+          {marker_offset:UInt64}
+        )`,
+      query_params: {
+        operation_id: event.operationId,
+        batch_id: event.batchId,
+        dataset_keys: event.datasetKeys,
+        expected_event_count: event.expectedEventCount,
+        topic: context.topic,
+        partition: context.partition,
+        marker_offset: markerOffset,
+      },
+    });
+  };
+
+  for (const [eventIndex, event] of events.entries()) {
+    if (isMetricStreamBatchCompletedEvent(event)) {
+      await flushRows();
+      await acknowledgeProcessingBatch(event, eventIndex);
+      continue;
+    }
     if (isMetricStreamDeletedEvent(event)) {
       await flushRows();
       if ("eventId" in event && (await isMetricStreamDeletionAcknowledged(client, event.eventId))) {
@@ -486,8 +542,8 @@ export async function runMetricStreamClickHouseSinkFromEnv(): Promise<void> {
   await runMetricStreamEventConsumer({
     consumer,
     topic,
-    handleEvents: async (events) => {
-      await applyMetricStreamEventsToClickHouse(client, events);
+    handleEvents: async (events, context) => {
+      await applyMetricStreamEventsToClickHouse(client, events, context);
     },
   });
 }
