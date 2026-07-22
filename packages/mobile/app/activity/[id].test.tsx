@@ -130,15 +130,19 @@ vi.mock("../../theme", () => ({
   },
 }));
 
-vi.mock("@dofek/format/format", () => ({
-  formatDateLong: (value: string) => (value.startsWith("2026-03-05") ? "March 5, 2026" : value),
-  formatDateTime: (value: string) =>
-    value.startsWith("2026-03-05") ? "March 5, 2026, 2:30 PM" : value,
-  formatDurationRange: () => "1:00:00",
-  formatDurationSeconds: (value: number) => `${value}s`,
-  formatNumber: (value: number) => String(value),
-  formatTimeOnly: (value: string) => value,
-}));
+vi.mock("@dofek/format/format", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@dofek/format/format")>();
+  return {
+    ...actual,
+    formatDateLong: (value: string) => (value.startsWith("2026-03-05") ? "March 5, 2026" : value),
+    formatDateTime: (value: string) =>
+      value.startsWith("2026-03-05") ? "March 5, 2026, 2:30 PM" : value,
+    formatDurationRange: () => "1:00:00",
+    formatDurationSeconds: (value: number) => `${value}s`,
+    formatNumber: (value: number) => String(value),
+    formatTimeOnly: (value: string) => value,
+  };
+});
 
 vi.mock("@dofek/format/units", () => ({}));
 
@@ -566,7 +570,21 @@ describe("ActivityDetailScreen", () => {
           gradeSystem: "v_scale",
           grade: "V4",
           sent: true,
+          attemptCount: 7,
+          ascentType: "Redpoint",
           routeName: "Blue Circuit",
+          locationName: "Touchstone Pacific Pipe",
+          sourceName: "Kaya",
+        },
+        {
+          id: "climb-project",
+          climbType: "boulder",
+          gradeSystem: "v_scale",
+          grade: "V5",
+          sent: false,
+          attemptCount: 1,
+          ascentType: null,
+          routeName: "Project",
           locationName: "Touchstone Pacific Pipe",
           sourceName: "Kaya",
         },
@@ -581,8 +599,11 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Climbs")).toBeTruthy();
     expect(screen.getByText("V4")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
-    expect(screen.getByText("Sent")).toBeTruthy();
-    expect(screen.getByText("Touchstone Pacific Pipe")).toBeTruthy();
+    expect(screen.getByText("Redpoint")).toBeTruthy();
+    expect(screen.getByText("Sent in 7 attempts")).toBeTruthy();
+    expect(screen.getByText("Project")).toBeTruthy();
+    expect(screen.getByText("Attempted 1 time")).toBeTruthy();
+    expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(2);
   });
 
   it("shows Apple Health upstream app names when subsource is present", async () => {
