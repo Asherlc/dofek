@@ -175,11 +175,11 @@ function overallStatus(datasets: readonly DerivedDatasetState[]): DerivedProcess
   const statuses = new Set(datasets.map((dataset) => dataset.status));
   if (statuses.has("failed")) return "failed";
   if (statuses.has("blocked")) return "blocked";
+  if (statuses.has("cancelled")) return "cancelled";
   if (statuses.has("delayed")) return "delayed";
   if (statuses.has("ready") && statuses.size > 1) return "partial";
   if (statuses.has("active")) return "active";
   if (statuses.has("waiting")) return "waiting";
-  if (statuses.has("cancelled")) return "cancelled";
   return "ready";
 }
 
