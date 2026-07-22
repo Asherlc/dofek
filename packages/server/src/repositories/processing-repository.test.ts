@@ -1,0 +1,468 @@
+import type { Database } from "dofek/db";
+import type { ProcessingOperationWithEvents } from "dofek/processing/processing-event-store";
+import type { DerivedProcessingStatus } from "dofek/processing/processing-state";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { mockDeriveProcessingState, mockListProcessingHistory, mockListScopedProcessingOperations } =
+  vi.hoisted(() => ({
+    mockDeriveProcessingState: vi.fn(),
+    mockListProcessingHistory: vi.fn(),
+    mockListScopedProcessingOperations: vi.fn(),
+  }));
+
+vi.mock("dofek/processing/processing-state", () => ({
+  deriveProcessingState: mockDeriveProcessingState,
+}));
+
+vi.mock("dofek/processing/processing-event-store", () => ({
+  listProcessingHistory: mockListProcessingHistory,
+  listScopedProcessingOperations: mockListScopedProcessingOperations,
+}));
+
+import { ProcessingRepository } from "./processing-repository.ts";
+
+const operationId = "10000000-0000-4000-8000-000000000001";
+const userId = "10000000-0000-4000-8000-000000000002";
+const now = new Date("2026-07-22T18:00:00.000Z");
+const database: Database = Object.create(null);
+
+function event(
+  sequence: number,
+  input: Partial<ProcessingOperationWithEvents["events"][number]>,
+): ProcessingOperationWithEvents["events"][number] {
+  return {
+    id: `10000000-0000-4000-8000-${sequence.toString().padStart(12, "0")}`,
+    sequence,
+    operationId,
+    stage: "ingest",
+    status: "succeeded",
+    datasetKey: "activity",
+    outputPath: null,
+    modelName: null,
+    occurredAt: now,
+    progressPercentage: null,
+    sourceWatermark: null,
+    servingWatermark: null,
+    message: null,
+    errorCode: null,
+    errorMessage: null,
+    metadataSchemaVersion: 1,
+    metadata: null,
+    idempotencyKey: `event-${sequence}`,
+    ...input,
+  };
+}
+
+function operation(
+  input: Partial<ProcessingOperationWithEvents> = {},
+): ProcessingOperationWithEvents {
+  return {
+    id: operationId,
+    userId,
+    providerId: "kaya-export",
+    kind: "file_import",
+    externalCorrelationKey: "import-1",
+    datasetKeys: ["activity"],
+    createdAt: now,
+    outputManifest: { activity: ["relational", "metric_stream"] },
+    events: [event(1, {})],
+    ...input,
+  };
+}
+
+describe("ProcessingRepository", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    mockDeriveProcessingState.mockImplementation((input: { datasetKeys: readonly string[] }) => ({
+      overallStatus: "ready",
+      datasets: input.datasetKeys.map((datasetKey) => ({
+        datasetKey,
+        currentStage: "cache_refresh",
+        status: "ready",
+        progressPercentage: 100,
+        lastAdvancedAt: now,
+      })),
+    }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("scopes status to the authenticated user, provider, and datasets", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([]);
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ providerId: "kaya-export", datasets: ["activity"] });
+
+    expect(mockListScopedProcessingOperations).toHaveBeenCalledWith(database, {
+      userId,
+      providerId: "kaya-export",
+      datasetKeys: ["activity"],
+    });
+    expect(result.scope).toEqual({ providerId: "kaya-export", datasets: ["activity"] });
+    expect(result.generatedAt).toBe("2026-07-22T18:00:00.000Z");
+  });
+
+  it("selects the matching dataset contract for labels", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([]);
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["nutrition"] });
+
+    expect(result.datasets).toEqual([
+      {
+        key: "nutrition",
+        label: "Nutrition",
+        status: "ready",
+        currentStage: null,
+        progressPercentage: null,
+        lastAdvancedAt: null,
+        lastReadyAt: null,
+      },
+    ]);
+    expect(result.scope).toEqual({ providerId: null, datasets: ["nutrition"] });
+  });
+
+  it("rejects a requested dataset without a registered contract", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([]);
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(
+      repository.status({
+        // @ts-expect-error Deliberately exercise the runtime defensive branch.
+        datasets: ["missing"],
+      }),
+    ).rejects.toThrow("Missing processing dataset contract for missing");
+  });
+
+  it("maps the latest ingest event into the processing-state operation status", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        id: "10000000-0000-4000-8000-000000000011",
+        events: [
+          event(1, { stage: "ingest", status: "failed" }),
+          event(3, { stage: "ingest", status: "running" }),
+          event(4, { stage: "cdc", status: "failed" }),
+        ],
+      }),
+      operation({
+        id: "10000000-0000-4000-8000-000000000012",
+        events: [event(1, { stage: "ingest", status: "queued" })],
+      }),
+      operation({
+        id: "10000000-0000-4000-8000-000000000013",
+        events: [event(1, { stage: "ingest", status: "succeeded" })],
+      }),
+      operation({
+        id: "10000000-0000-4000-8000-000000000014",
+        events: [event(1, { stage: "ingest", status: "failed" })],
+      }),
+      operation({
+        id: "10000000-0000-4000-8000-000000000015",
+        events: [event(1, { stage: "ingest", status: "cancelled" })],
+      }),
+      operation({
+        id: "10000000-0000-4000-8000-000000000016",
+        events: [event(1, { stage: "ingest", status: "skipped" })],
+      }),
+      operation({
+        id: "10000000-0000-4000-8000-000000000017",
+        events: [event(1, { stage: "cdc", status: "running" })],
+      }),
+    ]);
+    const repository = new ProcessingRepository(database, userId);
+
+    await repository.status({ datasets: ["activity"] });
+
+    expect(mockDeriveProcessingState.mock.calls.map(([input]) => input.operationStatus)).toEqual([
+      "running",
+      "queued",
+      "succeeded",
+      "failed",
+      "cancelled",
+      "succeeded",
+      undefined,
+    ]);
+    expect(mockDeriveProcessingState).toHaveBeenNthCalledWith(1, {
+      datasetKeys: ["activity"],
+      outputManifest: { activity: ["relational", "metric_stream"] },
+      events: [
+        {
+          sequence: 1,
+          stage: "ingest",
+          status: "failed",
+          datasetKey: "activity",
+          outputPath: null,
+          occurredAt: now,
+          progressPercentage: null,
+        },
+        {
+          sequence: 3,
+          stage: "ingest",
+          status: "running",
+          datasetKey: "activity",
+          outputPath: null,
+          occurredAt: now,
+          progressPercentage: null,
+        },
+        {
+          sequence: 4,
+          stage: "cdc",
+          status: "failed",
+          datasetKey: "activity",
+          outputPath: null,
+          occurredAt: now,
+          progressPercentage: null,
+        },
+      ],
+      operationStatus: "running",
+      now,
+      delayedAfterMs: 900_000,
+    });
+  });
+
+  it("uses the latest operation for current state and an older ready operation for history", async () => {
+    const readyAt = new Date("2026-07-22T17:00:00.000Z");
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({ id: "10000000-0000-4000-8000-000000000021", events: [] }),
+      operation({ id: "10000000-0000-4000-8000-000000000022", events: [] }),
+    ]);
+    mockDeriveProcessingState
+      .mockReturnValueOnce({
+        overallStatus: "active",
+        datasets: [
+          {
+            datasetKey: "sleep",
+            currentStage: "cache_refresh",
+            status: "ready",
+            progressPercentage: 100,
+            lastAdvancedAt: now,
+          },
+          {
+            datasetKey: "activity",
+            currentStage: "cdc",
+            status: "active",
+            progressPercentage: 40,
+            lastAdvancedAt: now,
+          },
+        ],
+      })
+      .mockReturnValueOnce({
+        overallStatus: "ready",
+        datasets: [
+          {
+            datasetKey: "sleep",
+            currentStage: "cache_refresh",
+            status: "ready",
+            progressPercentage: 100,
+            lastAdvancedAt: new Date("2026-07-22T16:00:00.000Z"),
+          },
+          {
+            datasetKey: "activity",
+            currentStage: "cache_refresh",
+            status: "ready",
+            progressPercentage: 100,
+            lastAdvancedAt: readyAt,
+          },
+        ],
+      });
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["activity"] });
+
+    expect(result.datasets).toEqual([
+      {
+        key: "activity",
+        label: "Activities",
+        status: "active",
+        currentStage: "cdc",
+        progressPercentage: 40,
+        lastAdvancedAt: "2026-07-22T18:00:00.000Z",
+        lastReadyAt: "2026-07-22T17:00:00.000Z",
+      },
+    ]);
+    expect(result.overallStatus).toBe("active");
+  });
+
+  it("ignores newer operations that do not include the requested dataset", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        id: "10000000-0000-4000-8000-000000000031",
+        datasetKeys: ["sleep"],
+        outputManifest: { sleep: ["relational"] },
+        events: [],
+      }),
+      operation({ id: "10000000-0000-4000-8000-000000000032", events: [] }),
+    ]);
+    mockDeriveProcessingState
+      .mockReturnValueOnce({
+        overallStatus: "ready",
+        datasets: [
+          {
+            datasetKey: "sleep",
+            currentStage: "cache_refresh",
+            status: "ready",
+            progressPercentage: 100,
+            lastAdvancedAt: now,
+          },
+        ],
+      })
+      .mockReturnValueOnce({
+        overallStatus: "active",
+        datasets: [
+          {
+            datasetKey: "activity",
+            currentStage: "analytics",
+            status: "active",
+            progressPercentage: 75,
+            lastAdvancedAt: null,
+          },
+        ],
+      });
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["activity"] });
+
+    expect(result.datasets[0]).toEqual({
+      key: "activity",
+      label: "Activities",
+      status: "active",
+      currentStage: "analytics",
+      progressPercentage: 75,
+      lastAdvancedAt: null,
+      lastReadyAt: null,
+    });
+  });
+
+  it("preserves a null ready timestamp when the ready event has no advancement time", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([operation({ events: [] })]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "ready",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "cache_refresh",
+          status: "ready",
+          progressPercentage: 100,
+          lastAdvancedAt: null,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["activity"] });
+
+    expect(result.datasets[0]?.lastAdvancedAt).toBeNull();
+    expect(result.datasets[0]?.lastReadyAt).toBeNull();
+  });
+
+  it.each<DerivedProcessingStatus>([
+    "failed",
+    "blocked",
+    "delayed",
+    "partial",
+    "active",
+    "waiting",
+    "cancelled",
+    "ready",
+  ])("aggregates a %s dataset status", async (status) => {
+    mockListScopedProcessingOperations.mockResolvedValue([operation()]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: status,
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "ingest",
+          status,
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["activity"] });
+
+    expect(result.overallStatus).toBe(status);
+  });
+
+  it("keeps model details private while preserving independent output paths", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        events: [
+          event(1, {}),
+          event(2, {
+            stage: "canonical_commit",
+            outputPath: "relational",
+          }),
+          event(3, {
+            stage: "canonical_commit",
+            outputPath: "metric_stream",
+          }),
+          event(4, {
+            stage: "analytics",
+            modelName: "activity_summary_rows",
+          }),
+        ],
+      }),
+    ]);
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["activity"] });
+
+    expect(result.operations[0]?.timeline).toEqual([
+      {
+        stage: "ingest",
+        status: "succeeded",
+        datasetKey: "activity",
+        outputPath: null,
+        occurredAt: "2026-07-22T18:00:00.000Z",
+        progressPercentage: null,
+        message: null,
+        errorCode: null,
+        errorMessage: null,
+      },
+      {
+        stage: "canonical_commit",
+        status: "succeeded",
+        datasetKey: "activity",
+        outputPath: "relational",
+        occurredAt: "2026-07-22T18:00:00.000Z",
+        progressPercentage: null,
+        message: null,
+        errorCode: null,
+        errorMessage: null,
+      },
+      {
+        stage: "canonical_commit",
+        status: "succeeded",
+        datasetKey: "activity",
+        outputPath: "metric_stream",
+        occurredAt: "2026-07-22T18:00:00.000Z",
+        progressPercentage: null,
+        message: null,
+        errorCode: null,
+        errorMessage: null,
+      },
+    ]);
+    expect(result.operations[0]?.timeline).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ modelName: expect.any(String) })]),
+    );
+  });
+
+  it("delegates history with the authenticated user and pagination", async () => {
+    const page = { operations: [], nextCursor: null };
+    mockListProcessingHistory.mockResolvedValue(page);
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.history({ cursor: operationId, limit: 25 })).resolves.toBe(page);
+    expect(mockListProcessingHistory).toHaveBeenCalledWith(database, {
+      userId,
+      cursor: operationId,
+      limit: 25,
+    });
+  });
+});
