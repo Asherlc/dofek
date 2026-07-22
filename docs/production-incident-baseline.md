@@ -15048,8 +15048,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-22 — Climbing Entries Missing From Activity Detail
 
-- **Status:** Resolved by the member-aware climbing detail API/UI and immutable
-  migration-history repair described below.
+- **Status:** Member-aware climbing detail is merged; production rollout is
+  pending a complete immutable migration-history repair described below.
 - **Symptoms:** The production detail page for activity
   `734b5d3e-df2b-4ee0-888e-55ea539d913a` showed generic activity metrics but no
   Kaya climbing attempts, grades, or sends.
@@ -15067,17 +15067,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   procedure or web/mobile detail component exposes per-activity climbing entries.
 - **Fix / mitigation:** Added a member-aware per-activity climbing-entry query and
   rendered it on both web and mobile activity detail screens. Restored the exact
-  historical `0003_drop_percent_recorded.sql` bytes in a non-executable
-  migration archive so production integrity checks can reconcile the applied
-  row without replaying the compacted migration on fresh databases.
+  historical bytes for all seven applied migrations removed by the same
+  baseline-compaction commit (`0003_drop_percent_recorded.sql` through
+  `0009_enable_pg_stat_statements.sql`, excluding the still-active `0001` and
+  `0002` files) in a non-executable migration archive. Production's migration
+  ledger confirmed these are the complete missing applied filenames, so the
+  repair does not rely on repeated deploy failures to discover them.
 - **Validation:** Canonical Postgres rows, merged member IDs, ClickHouse summary,
   stream, and zone rows were queried directly in production. Focused web,
   mobile, repository, router, and real-Postgres migration tests passed, including
   proof that archived SQL is integrity-checked but never executed. Lint,
   workspace and package TypeScript checks, and the full 12,965-test unit/mobile
-  suite passed before deployment.
-- **Remaining risk / follow-up:** No code-level risk remains from the incident.
-  Continue monitoring migration integrity and the two ClickHouse consumers after
-  deploys; the original failure left `analytics-worker` and
-  `metric-stream-clickhouse-sink` quiesced at `0/0`
-  ([failed deploy run](https://github.com/Asherlc/dofek/actions/runs/29926938914)).
+  suite passed before deployment. PR CI passed all checks and the merge commit's
+  main CI passed all 81 jobs. The first post-merge deploy used the preceding
+  `sha-56763ed` image and failed on missing `0003`; the merged `sha-b611e39`
+  image accepted `0003` and then failed on missing `0004`, proving the archive
+  lookup works and that the compacted migration set needed a complete audit.
+- **Remaining risk / follow-up:** Merge and deploy the complete archive, then
+  verify migrations, the web/worker rollout, both ClickHouse consumers, and the
+  original climbing activity page. Until that deployment succeeds, production
+  remains on the previous app image and the user-visible climbing fix is not
+  live. Failed deploy runs:
+  [preceding image](https://github.com/Asherlc/dofek/actions/runs/29944229608)
+  and [merged image](https://github.com/Asherlc/dofek/actions/runs/29945041858).
