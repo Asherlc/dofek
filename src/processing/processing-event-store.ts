@@ -95,6 +95,11 @@ const operationOutputRowSchema = z.object({
   output_path: outputPathSchema,
 });
 
+const scopedOperationRowSchema = operationRowSchema.extend({
+  events: z.array(eventRowSchema),
+  output_manifest: z.array(operationOutputRowSchema),
+});
+
 const operationDatasetRowSchema = z.object({
   operation_id: z.uuid(),
   dataset_key: datasetKeySchema,
@@ -326,6 +331,12 @@ export async function getProcessingOutputManifest(
         WHERE operation_id = ${parsedOperationId}::uuid
         ORDER BY dataset_key, output_path`,
   );
+  return mapProcessingOutputManifest(rows);
+}
+
+function mapProcessingOutputManifest(
+  rows: readonly z.infer<typeof operationOutputRowSchema>[],
+): Partial<Record<ProcessingDatasetKey, ProcessingOutputPath[]>> {
   const manifest: Partial<Record<ProcessingDatasetKey, ProcessingOutputPath[]>> = {};
   for (const row of rows) {
     const outputPaths = manifest[row.dataset_key] ?? [];
@@ -659,26 +670,47 @@ export async function listScopedProcessingOperations(
     : sql``;
   const rows = await executeWithSchema(
     database,
-    operationRowSchema,
-    sql`SELECT ${operationColumns}
-        FROM fitness.processing_operation operation
-        WHERE operation.user_id = ${userId}::uuid
-          AND (${providerId ?? null}::text IS NULL OR operation.provider_id = ${providerId ?? null})
-          ${datasetPredicate}
-          AND operation.created_at >= now() - interval '90 days'
-        ORDER BY operation.created_at DESC, operation.id DESC
-        LIMIT ${limit}`,
+    scopedOperationRowSchema,
+    sql`WITH scoped_operations AS (
+          SELECT ${operationColumns}
+          FROM fitness.processing_operation operation
+          WHERE operation.user_id = ${userId}::uuid
+            AND (${providerId ?? null}::text IS NULL OR operation.provider_id = ${providerId ?? null})
+            ${datasetPredicate}
+            AND operation.created_at >= now() - interval '90 days'
+          ORDER BY operation.created_at DESC, operation.id DESC
+          LIMIT ${limit}
+        )
+        SELECT operation.*,
+          coalesce(event_rows.events, '[]'::jsonb) AS events,
+          coalesce(output_rows.output_manifest, '[]'::jsonb) AS output_manifest
+        FROM scoped_operations operation
+        LEFT JOIN LATERAL (
+          SELECT jsonb_agg(to_jsonb(latest_event) ORDER BY latest_event.sequence) AS events
+          FROM (
+            SELECT DISTINCT ON (stage, dataset_key, output_path, model_name) ${eventColumns}
+            FROM fitness.processing_stage_event event
+            WHERE event.operation_id = operation.id
+            ORDER BY stage, dataset_key, output_path, model_name, sequence DESC
+          ) latest_event
+        ) event_rows ON true
+        LEFT JOIN LATERAL (
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'dataset_key', output.dataset_key,
+              'output_path', output.output_path
+            ) ORDER BY output.dataset_key, output.output_path
+          ) AS output_manifest
+          FROM fitness.processing_operation_output output
+          WHERE output.operation_id = operation.id
+        ) output_rows ON true
+        ORDER BY operation.created_at DESC, operation.id DESC`,
   );
-  return Promise.all(
-    rows.map(async (row) => {
-      const operation = mapOperation(row);
-      return {
-        ...operation,
-        events: await getLatestProcessingEvents(database, operation.id),
-        outputManifest: await getProcessingOutputManifest(database, operation.id),
-      };
-    }),
-  );
+  return rows.map((row) => ({
+    ...mapOperation(row),
+    events: row.events.map(mapEvent).sort((left, right) => left.sequence - right.sequence),
+    outputManifest: mapProcessingOutputManifest(row.output_manifest),
+  }));
 }
 
 export async function listProcessingHistory(
