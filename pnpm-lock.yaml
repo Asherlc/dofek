@@ -367,8 +367,8 @@ importers:
         specifier: 15.1.1
         version: 15.1.1(expo-font@57.0.1)(react-native@0.86.0(@babel/core@7.29.7)(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       '@formatjs/intl-getcanonicallocales':
-        specifier: 3.2.10
-        version: 3.2.10
+        specifier: 3.2.11
+        version: 3.2.11
       '@formatjs/intl-locale':
         specifier: 5.3.9
         version: 5.3.9
@@ -2605,6 +2605,9 @@ packages:
 
   '@formatjs/intl-getcanonicallocales@3.2.10':
     resolution: {integrity: sha512-iH9faynSJ7EO8h7VgMfkjGBMUvmmalyio2dTqB2tSSi8UZuWWfHmeQ/RT+Ztl/SUdrN5tm0SO3218uLQIkCGXw==}
+
+  '@formatjs/intl-getcanonicallocales@3.2.11':
+    resolution: {integrity: sha512-3FX+dgs+n7IZ6LGewqKV+JhAN7PeknS17j2QH0Qq4yQ64QJCmd8ST5FIRRvVgM93T6L2sARpcSH1gNiVMgVy6w==}
 
   '@formatjs/intl-locale@5.3.9':
     resolution: {integrity: sha512-h8xk+FFg0R9jZmX2r+75BglH5Bd++7pnCn5veN4Fv9a+E6TiYgD0QnYXbYOzOskLPKaTnFrUFkQ7OYJUasuONw==}
@@ -16909,6 +16912,8 @@ snapshots:
 
   '@formatjs/intl-getcanonicallocales@3.2.10': {}
 
+  '@formatjs/intl-getcanonicallocales@3.2.11': {}
+
   '@formatjs/intl-locale@5.3.9':
     dependencies:
       '@formatjs/intl-getcanonicallocales': 3.2.10
@@ -19424,9 +19429,7 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
