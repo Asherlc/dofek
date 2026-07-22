@@ -15074,3 +15074,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   on a clean GitHub runner. No retries, timeouts, fallback behavior, or
   memory-limit changes were added.
 - **Remaining risk / follow-up:** None for this test-fixture collision.
+
+## 2026-07-22 — Expo Compatibility Drift Blocked the Metro Bundle
+
+- **Status:** Root cause fixed locally; pull-request CI validation is pending.
+- **Symptoms:** `Build Mobile / Metro Bundle` stopped before exporting the iOS
+  bundle because Expo reported fourteen dependencies outside the versions
+  expected by SDK 57.
+- **User impact:** Pull request 1858 was blocked; no production bundle or runtime
+  was affected.
+- **Evidence:** The exact failing step was `Verify dependencies match Expo SDK`,
+  and its first fatal result was `Found outdated dependencies` in
+  [GitHub Actions job 88992791430](https://github.com/Asherlc/dofek/actions/runs/29940462015/job/88992791430).
+- **Root cause:** Expo's SDK compatibility metadata advanced to newer patch
+  versions after the repository dependencies were last locked. Expo documents
+  `npx expo install --check` as the dependency-version validation command in its
+  [CLI installation guidance](https://docs.expo.dev/more/expo-cli/#install).
+- **Fix / mitigation:** The fourteen SDK-managed packages and lockfile were
+  refreshed to the versions selected by `expo install --fix`; the resulting
+  versions are recorded in the
+  [mobile package manifest](https://github.com/Asherlc/dofek/blob/Asherlc/combine-into-one-table/packages/mobile/package.json#L37-L84).
+- **Validation:** `pnpm expo install --check` now reports `Dependencies are up to
+  date`; lint, type-checks, and the complete Docker-free suite of 12,962 tests
+  pass locally. No compatibility-check bypass or dependency exclusion was added.
+- **Remaining risk / follow-up:** Confirm the Metro bundle and native mobile
+  builds pass on a clean GitHub runner.
