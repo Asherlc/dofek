@@ -103,6 +103,8 @@ export interface ClimbingActivityEntryRow {
   gradeSystem: ClimbingGradeSystem;
   grade: string;
   sent: boolean;
+  attemptCount: number;
+  ascentType: "Flash" | "Onsight" | "Redpoint" | "Repeat" | null;
   routeName: string | null;
   locationName: string | null;
   sourceName: string;
@@ -122,6 +124,7 @@ export class ClimbingActivityEntry {
 
 const climbTypeSchema = z.enum(["boulder", "route"]);
 const gradeSystemSchema = z.enum(["v_scale", "yds"]);
+const ascentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Repeat"]);
 
 const progressionRowSchema = z.object({
   session_date: dateStringSchema,
@@ -159,6 +162,8 @@ const activityEntryRowSchema = z.object({
   grade_system: gradeSystemSchema,
   grade: z.string(),
   sent: z.boolean(),
+  attempt_count: z.coerce.number().int().positive(),
+  ascent_type: ascentTypeSchema.nullable(),
   route_name: z.string().nullable(),
   location_name: z.string().nullable(),
   source_name: z.string(),
@@ -335,6 +340,8 @@ export class ClimbingRepository extends BaseRepository {
             ce.grade_system,
             ce.grade,
             ce.sent,
+            ce.attempt_count,
+            ce.raw->>'ascentType' AS ascent_type,
             ce.route_name,
             ce.location_name,
             ce.source_name
@@ -354,6 +361,8 @@ export class ClimbingRepository extends BaseRepository {
           gradeSystem: row.grade_system,
           grade: normalizedGrade(row.grade),
           sent: row.sent,
+          attemptCount: row.attempt_count,
+          ascentType: row.ascent_type,
           routeName: row.route_name,
           locationName: row.location_name,
           sourceName: row.source_name,

@@ -1,4 +1,5 @@
 import {
+  formatClimbingAttemptResult,
   formatDateLong,
   formatDateTime,
   formatDurationSeconds,
@@ -301,8 +302,11 @@ function ClimbingEntryBreakdown({ entries }: { entries: ClimbingActivityEntryRow
             </div>
           </div>
           <div className="shrink-0 text-right">
+            {entry.ascentType && (
+              <p className="text-sm font-medium text-green-500">{entry.ascentType}</p>
+            )}
             <p className={entry.sent ? "text-sm text-green-500" : "text-sm text-subtle"}>
-              {entry.sent ? "Sent" : "Attempted"}
+              {formatClimbingAttemptResult(entry.sent, entry.attemptCount)}
             </p>
             <p className="text-xs text-dim">{entry.sourceName}</p>
           </div>

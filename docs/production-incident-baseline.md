@@ -15226,3 +15226,44 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [merged image](https://github.com/Asherlc/dofek/actions/runs/29945041858), and
   [complete archive](https://github.com/Asherlc/dofek/actions/runs/29948084505),
   and [partial active-migration restoration](https://github.com/Asherlc/dofek/actions/runs/29950485728).
+
+## 2026-07-22 — Climbing Detail Hid Per-Climb Attempt Counts
+
+- **Status:** Fixed locally and validated; pending review and deployment.
+- **Symptoms:** Every Kaya row on activity
+  `734b5d3e-df2b-4ee0-888e-55ea539d913a` appeared as `Sent`, suggesting every
+  attempt was successful.
+- **User impact:** The detail page does not distinguish an onsight from a climb
+  eventually sent after several attempts.
+- **Evidence:** The production rows contain 20 attempts across eight eventual
+  sends. In particular, two V4 rows have `attempt_count` values of 7 and 6 with
+  Kaya ascent type `Redpoint`; the remaining rows are `Redpoint`, `Repeat`, or
+  `Onsight`. The Kaya importer persists `attemptCount`, but the activity-entry
+  repository omits it from its response
+  ([repository](../packages/server/src/repositories/climbing-repository.ts)), and
+  the web and mobile detail components therefore render only the eventual
+  `sent` flag
+  ([web detail](../packages/web/src/pages/ActivityDetailPage.tsx),
+  [mobile detail](../packages/mobile/app/activity/[id].tsx)). No Kaya import
+  failure for this activity appeared in the retained worker logs.
+- **Root cause:** The per-activity detail API discards the canonical
+  `climbing_entry.attempt_count` value, so clients cannot explain that `Sent`
+  means the climb was eventually completed after one or more attempts.
+- **Fix / mitigation:** The activity-entry response now includes the canonical
+  attempt count and Kaya's recorded ascent type. Web and mobile show route or
+  problem names when present, ascent classifications when present, and explicit
+  `Sent in N attempts` or `Attempted N times` wording. Kaya imports now accept
+  `Flash` as a successful ascent type. Missing route names keep the generic
+  `Boulder` or `Route` label; no color-derived identity is invented.
+- **Validation:** The test-first reproduction failed because the repository
+  omitted `attempt_count` and ascent type, both clients rendered plain `Sent`,
+  and the importer rejected `Flash`. After the fix, 76 focused repository,
+  importer, web, and mobile tests passed. The four-test climbing router suite
+  also passed against real Postgres through `pnpm test:integration`; repository
+  lint and TypeScript checks passed, and the changed-file suite passed all 3,643
+  selected unit and mobile tests.
+- **Remaining risk / follow-up:** The current production activity will still
+  report eight eventual sends because that is what its Kaya source rows record.
+  Dofek cannot reconstruct attempt-only climbs that the exported file omitted,
+  distinguish onsight from flash without a provider-supplied classification, or
+  recover a route/problem name when Kaya's `climb_name` field is empty.

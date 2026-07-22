@@ -238,18 +238,24 @@ describe("climbing router integration", () => {
         grade: "V2",
         routeName: "Warmup",
         sent: true,
+        attemptCount: 2,
+        ascentType: null,
       }),
       expect.objectContaining({
         climbType: "boulder",
         grade: "V4",
         routeName: "Blue Circuit",
         sent: true,
+        attemptCount: 3,
+        ascentType: null,
       }),
       expect.objectContaining({
         climbType: "boulder",
         grade: "V5",
         routeName: "Project",
         sent: false,
+        attemptCount: 4,
+        ascentType: null,
       }),
     ]);
   });
