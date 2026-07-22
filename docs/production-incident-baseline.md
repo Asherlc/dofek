@@ -15261,7 +15261,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   importer, web, and mobile tests passed. The four-test climbing router suite
   also passed against real Postgres through `pnpm test:integration`; repository
   lint and TypeScript checks passed, and the changed-file suite passed all 3,643
-  selected unit and mobile tests.
+  selected unit and mobile tests. The first PR CI attempt's web E2E job stopped
+  because the server container remained unhealthy for 44 seconds without
+  emitting an application log. The same image and full E2E stack became healthy
+  locally, and the isolated GitHub job rerun passed server startup and Cypress
+  without a code, timeout, or retry-policy change; all 93 PR checks then passed.
 - **Remaining risk / follow-up:** The current production activity will still
   report eight eventual sends because that is what its Kaya source rows record.
   Dofek cannot reconstruct attempt-only climbs that the exported file omitted,
