@@ -113,15 +113,16 @@ export function ClimbingTab() {
         title="Recent Climbing Activities"
         subtitle="Recent climbing activities with attempts, sends, and hardest grades"
       >
-        {sessionSummary.error && !sessionSummary.data ? (
-          <QueryStatePanel error={sessionSummary.error} />
-        ) : (
+        <div className="space-y-4">
+          {sessionSummary.error ? (
+            <QueryStatePanel error={sessionSummary.error} height={0} />
+          ) : null}
           <RecentActivitiesSection
             activityTypes={CLIMBING_ACTIVITY_TYPES}
             additionalColumns={climbingSessionColumns(sessionSummary.data ?? [])}
             additionalDataLoading={sessionSummary.isLoading}
           />
-        )}
+        </div>
       </Section>
     </>
   );

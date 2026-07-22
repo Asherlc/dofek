@@ -15048,7 +15048,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-22 — Power-Curve Integration Fixture Collided During Deduplication
 
-- **Status:** Root cause fixed; pull-request CI validation is pending.
+- **Status:** Root cause fixed and validated in pull-request CI.
 - **Symptoms:** `Test / Integration Tests (3/4)` failed in
   `activity-power-curve-read-model.integration.test.ts` because the five-second
   power row belonged to a different activity UUID than the test expected.
@@ -15060,13 +15060,17 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   recorded in [GitHub Actions run 29933279646](https://github.com/Asherlc/dofek/actions/runs/29933279646).
 - **Root cause:** Multiple fixtures used the same fixed start time and duration,
   so the activity read model correctly deduplicated them and selected a
-  canonical UUID by ordering randomly generated IDs.
+  canonical UUID by ordering randomly generated IDs. The canonical-ID ordering
+  is defined in the
+  [`v_activity` read model](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/src/db/clickhouse-read-models.ts#L249-L310).
 - **Fix / mitigation:** Test timestamps are unique per run and separated within
   the suite, and the assertion query is scoped to the two activity IDs created
-  by the test.
-- **Validation:** Docker-free lint, type-check, and unit gates are rerun locally;
-  the database-backed assertion will be validated by pull-request CI because the
-  local ClickHouse recursive model exceeds this workspace's fixed memory limit.
-  No retries, timeouts, fallback behavior, or memory-limit changes were added.
-- **Remaining risk / follow-up:** Confirm all pull-request integration shards pass
-  on a clean GitHub runner.
+  by the test, as shown in the
+  [updated integration fixture](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/packages/server/src/routers/activity-power-curve-read-model.integration.test.ts#L16-L26)
+  and its
+  [scoped assertion query](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/packages/server/src/routers/activity-power-curve-read-model.integration.test.ts#L171-L230).
+- **Validation:** The previously failing
+  [integration shard 3 passed](https://github.com/Asherlc/dofek/actions/runs/29940462015/job/88992934160)
+  on a clean GitHub runner. No retries, timeouts, fallback behavior, or
+  memory-limit changes were added.
+- **Remaining risk / follow-up:** None for this test-fixture collision.

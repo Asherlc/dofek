@@ -186,6 +186,46 @@ describe("ClimbingTab", () => {
     expect(screen.getByText("Grade Progression component")).toBeTruthy();
   });
 
+  it("keeps recent activities visible when session metrics initially fail", async () => {
+    sessionSummaryQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error("Session query failed"),
+    });
+
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+
+    expect(screen.getByText("Error: Session query failed")).toBeTruthy();
+    expect(screen.getByText("Recent Climbing Activities component")).toBeTruthy();
+    const sectionProps = recentActivitiesSection.mock.calls[0]?.[0];
+    expect(sectionProps.additionalColumns[0].renderCell({ id: "activity-1" })).toBe("—");
+  });
+
+  it("surfaces session refetch errors while retaining cached metrics", async () => {
+    sessionSummaryQuery.mockReturnValue({
+      data: [
+        {
+          activityId: "activity-1",
+          attempts: 8,
+          sends: 7,
+          hardestBoulderGrade: "V4",
+          hardestRouteGrade: null,
+        },
+      ],
+      isLoading: false,
+      error: new Error("Session refetch failed"),
+    });
+
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+
+    expect(screen.getByText("Error: Session refetch failed")).toBeTruthy();
+    expect(screen.getByText("Recent Climbing Activities component")).toBeTruthy();
+    const sectionProps = recentActivitiesSection.mock.calls[0]?.[0];
+    expect(sectionProps.additionalColumns[0].renderCell({ id: "activity-1" })).toBe(8);
+  });
+
   it("passes session loading state to the unified activities table", async () => {
     sessionSummaryQuery.mockReturnValue({ data: [], isLoading: true, error: null });
 
