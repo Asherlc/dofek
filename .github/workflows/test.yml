@@ -263,7 +263,19 @@ jobs:
         with:
           persist-credentials: false
       - name: Install actionlint
-        run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+        env:
+          ACTIONLINT_ARCHIVE_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          ACTIONLINT_VERSION: 1.7.12
+        run: |
+          set -euo pipefail
+          archive_name="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          archive_path="$RUNNER_TEMP/$archive_name"
+          curl --fail --silent --show-error --location \
+            --output "$archive_path" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive_name}"
+          printf '%s  %s\n' "$ACTIONLINT_ARCHIVE_SHA256" "$archive_path" \
+            | sha256sum --check --strict -
+          tar --extract --gzip --file "$archive_path" actionlint
       - name: Run actionlint (without shellcheck)
         run: ./actionlint -shellcheck=
 
@@ -345,7 +357,8 @@ jobs:
           persist-credentials: false
       - name: Install dotenv-linter
         run: |
-          curl -sSfL https://raw.githubusercontent.com/dotenv-linter/dotenv-linter/v4.0.0/install.sh -o "$RUNNER_TEMP/dotenv-linter-install.sh"
+          # dotenv-linter v4.0.0
+          curl -sSfL https://raw.githubusercontent.com/dotenv-linter/dotenv-linter/f9076b02daed89f54ed0bd23951a4cfa5ccceac4/install.sh -o "$RUNNER_TEMP/dotenv-linter-install.sh"
           sh "$RUNNER_TEMP/dotenv-linter-install.sh" -b "$HOME/.local/bin" v4.0.0
       - name: Run dotenv-linter
         env:
