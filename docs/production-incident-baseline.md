@@ -15183,11 +15183,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `0002` files) in a non-executable migration archive. Production's migration
   ledger confirmed these are the complete missing applied filenames, so the
   repair does not rely on repeated deploy failures to discover them.
-  Restored `0042_strength_set_activity_id_not_null.sql` to the exact bytes that
-  production applied from PR #1552's first commit. Later commits in that PR
-  added a redundant constraint validation before merge, changing the file hash
-  after the production ledger had recorded it; migration `0004` had already
-  created and validated that constraint.
+  Restored migrations `0042` through `0045` to the exact bytes that production
+  applied from [PR #1552](https://github.com/Asherlc/dofek/pull/1552)'s first
+  commit. Later commits in that PR rewrote all four
+  already-applied files before merge, changing their hashes after the production
+  ledger had recorded them. A complete comparison of all 73 production ledger
+  entries against the repository found no missing files and no other unexpected
+  mismatches, as recorded in the
+  [repair PR](https://github.com/Asherlc/dofek/pull/1864); the remaining eight
+  differing hashes are the explicit transaction-compatibility variants
+  [accepted by the migrator](../src/db/postgres-migrator.ts).
 - **Validation:** Canonical Postgres rows, merged member IDs, ClickHouse summary,
   stream, and zone rows were queried directly in production. Focused web,
   mobile, repository, router, and real-Postgres migration tests passed, including
@@ -15205,11 +15210,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `cd280085ab7d7092897b537b8994d0906dd3c3d0f75ef1b9c0a3eaa3a6cae2a2`.
   The failed deploy quiesced both ClickHouse consumers; they were restored to
   one healthy replica each on the prior production image.
-- **Remaining risk / follow-up:** Merge and deploy the `0042` restoration, then
+  The next deploy accepted the restored `0042` and then failed on the same PR's
+  mutated `0043`, confirming the need to restore the complete four-file set; its
+  quiesced consumers were also restored to one healthy replica each.
+- **Remaining risk / follow-up:** Merge and deploy the complete `0042`–`0045`
+  restoration, then
   verify migrations, the web/worker rollout, both ClickHouse consumers, and the
   original climbing activity page. Until that deployment succeeds, production
   remains on the previous app image and the user-visible climbing fix is not
   live. Failed deploy runs:
   [preceding image](https://github.com/Asherlc/dofek/actions/runs/29944229608)
   [merged image](https://github.com/Asherlc/dofek/actions/runs/29945041858), and
-  [complete archive](https://github.com/Asherlc/dofek/actions/runs/29948084505).
+  [complete archive](https://github.com/Asherlc/dofek/actions/runs/29948084505),
+  and [partial active-migration restoration](https://github.com/Asherlc/dofek/actions/runs/29950485728).
