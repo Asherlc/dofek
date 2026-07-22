@@ -15046,6 +15046,61 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   then verify the next production deployment restores both consumers only after
   CDC setup succeeds.
 
+## 2026-07-22 — Power-Curve Integration Fixture Collided During Deduplication
+
+- **Status:** Root cause fixed and validated in pull-request CI.
+- **Symptoms:** `Test / Integration Tests (3/4)` failed in
+  `activity-power-curve-read-model.integration.test.ts` because the five-second
+  power row belonged to a different activity UUID than the test expected.
+- **User impact:** The pull request was blocked; production behavior was not
+  affected.
+- **Evidence:** The exact failing step was the integration shard's Vitest run.
+  Its first fatal assertion expected the current test's `regularActivityId` but
+  received another UUID with the same `best_power` and duration. The failure is
+  recorded in [GitHub Actions run 29933279646](https://github.com/Asherlc/dofek/actions/runs/29933279646).
+- **Root cause:** Multiple fixtures used the same fixed start time and duration,
+  so the activity read model correctly deduplicated them and selected a
+  canonical UUID by ordering randomly generated IDs. The canonical-ID ordering
+  is defined in the
+  [`v_activity` read model](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/src/db/clickhouse-read-models.ts#L249-L310).
+- **Fix / mitigation:** Test timestamps are unique per run and separated within
+  the suite, and the assertion query is scoped to the two activity IDs created
+  by the test, as shown in the
+  [updated integration fixture](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/packages/server/src/routers/activity-power-curve-read-model.integration.test.ts#L16-L26)
+  and its
+  [scoped assertion query](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/packages/server/src/routers/activity-power-curve-read-model.integration.test.ts#L171-L230).
+- **Validation:** The previously failing
+  [integration shard 3 passed](https://github.com/Asherlc/dofek/actions/runs/29940462015/job/88992934160)
+  on a clean GitHub runner. No retries, timeouts, fallback behavior, or
+  memory-limit changes were added.
+- **Remaining risk / follow-up:** None for this test-fixture collision.
+
+## 2026-07-22 — Expo Compatibility Drift Blocked the Metro Bundle
+
+- **Status:** Root cause fixed and validated in pull-request CI.
+- **Symptoms:** `Build Mobile / Metro Bundle` stopped before exporting the iOS
+  bundle because Expo reported fourteen dependencies outside the versions
+  expected by SDK 57.
+- **User impact:** Pull request 1858 was blocked; no production bundle or runtime
+  was affected.
+- **Evidence:** The exact failing step was `Verify dependencies match Expo SDK`,
+  and its first fatal result was `Found outdated dependencies` in
+  [GitHub Actions job 88992791430](https://github.com/Asherlc/dofek/actions/runs/29940462015/job/88992791430).
+- **Root cause:** Expo's SDK compatibility metadata advanced to newer patch
+  versions after the repository dependencies were last locked. Expo documents
+  `npx expo install --check` as the dependency-version validation command in its
+  [CLI installation guidance](https://docs.expo.dev/more/expo-cli/#install).
+- **Fix / mitigation:** The fourteen SDK-managed packages and lockfile were
+  refreshed to the versions selected by `expo install --fix`; the resulting
+  versions are recorded in the
+  [mobile package manifest](https://github.com/Asherlc/dofek/blob/Asherlc/combine-into-one-table/packages/mobile/package.json#L37-L84).
+- **Validation:** `pnpm expo install --check` reports `Dependencies are up to
+  date`; lint, type-checks, and the complete Docker-free suite of 12,962 tests
+  passed locally. The Metro bundle and iOS native build also passed in
+  [GitHub Actions run 29943460108](https://github.com/Asherlc/dofek/actions/runs/29943460108).
+  No compatibility-check bypass or dependency exclusion was added.
+- **Remaining risk / follow-up:** None for the Expo dependency alignment.
+
 ## 2026-07-22 — Climbing Entries Missing From Activity Detail
 
 - **Status:** Resolved by the member-aware climbing detail API/UI and immutable

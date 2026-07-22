@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
 import { type Activity, ActivityList } from "./ActivityList";
+import type { ActivityTableColumn } from "./ActivityTable.tsx";
 
 // Mock @tanstack/react-router
 const mockNavigate = vi.fn();
@@ -72,6 +73,23 @@ describe("ActivityList", () => {
     expect(screen.getByText("Running")).toBeDefined();
     expect(screen.getByText("5.0 km")).toBeDefined();
     expect(screen.getByText("450 kcal")).toBeDefined();
+  });
+
+  it("appends activity-specific columns", () => {
+    const additionalColumns: Array<ActivityTableColumn<Activity>> = [
+      {
+        key: "attempts",
+        label: "Attempts",
+        renderCell: () => 8,
+      },
+    ];
+
+    renderWithUnits(
+      <ActivityList activities={mockActivities} additionalColumns={additionalColumns} />,
+    );
+
+    expect(screen.getByText("Attempts")).toBeDefined();
+    expect(screen.getByText("8")).toBeDefined();
   });
 
   it("renders distances in imperial units", () => {
