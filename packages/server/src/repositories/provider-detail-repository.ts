@@ -34,7 +34,7 @@ export const dataTypeEnum = z.enum([
   "journalEntries",
 ]);
 
-type DataType = z.infer<typeof dataTypeEnum>;
+export type DataType = z.infer<typeof dataTypeEnum>;
 
 interface ProviderDataDeletionTransaction {
   execute(query: SQL): Promise<unknown>;
@@ -355,6 +355,7 @@ export const DISCONNECT_CHILD_TABLES = [...PROVIDER_DATA_TABLES, "fitness.oauth_
 
 const ownerCheckSchema = z.object({ id: z.string() });
 const genericRowSchema = z.record(z.string(), z.unknown());
+const availableDataTypeRowSchema = z.object({ data_type: dataTypeEnum });
 const distinctValueSchema = z.object({ value: z.coerce.string() });
 const distinctLabeledValueSchema = z.object({
   value: z.string(),
@@ -449,6 +450,76 @@ export class ProviderDetailRepository {
     );
 
     return Object.fromEntries(entries);
+  }
+
+  /** Data types that currently have at least one provider record. */
+  async getAvailableDataTypes(providerId: string): Promise<DataType[]> {
+    if (!this.#clickHouse) {
+      throw new Error("providerDetail record availability requires the ClickHouse store");
+    }
+
+    const [postgresRows, clickHouseRows] = await Promise.all([
+      executeWithSchema(
+        this.#db,
+        availableDataTypeRowSchema,
+        sql`SELECT data_type
+            FROM (
+              SELECT 'activities'::text AS data_type
+              WHERE EXISTS (SELECT 1 FROM fitness.activity WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+              UNION ALL
+              SELECT 'dailyMetrics'::text
+              WHERE EXISTS (SELECT 1 FROM fitness.daily_metrics WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+              UNION ALL
+              SELECT 'sleepSessions'::text
+              WHERE EXISTS (SELECT 1 FROM fitness.sleep_session WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+              UNION ALL
+              SELECT 'foodEntries'::text
+              WHERE EXISTS (SELECT 1 FROM fitness.food_entry WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+              UNION ALL
+              SELECT 'healthEvents'::text
+              WHERE EXISTS (SELECT 1 FROM fitness.health_event WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+              UNION ALL
+              SELECT 'nutritionDaily'::text
+              WHERE EXISTS (SELECT 1 FROM fitness.v_nutrition_daily WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+              UNION ALL
+              SELECT 'labPanels'::text
+              WHERE EXISTS (SELECT 1 FROM fitness.lab_panel WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+              UNION ALL
+              SELECT 'labResults'::text
+              WHERE EXISTS (SELECT 1 FROM fitness.lab_result WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+              UNION ALL
+              SELECT 'journalEntries'::text
+              WHERE EXISTS (SELECT 1 FROM fitness.journal_entry WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+            ) AS available_data_types`,
+      ),
+      this.#clickHouse.query(
+        availableDataTypeRowSchema,
+        `
+          SELECT data_type
+          FROM (
+            SELECT 'bodyMeasurements' AS data_type
+            FROM analytics.v_body_measurement
+            WHERE user_id = {userId:UUID}
+              AND provider_id = {providerId:String}
+            LIMIT 1
+
+            UNION ALL
+
+            SELECT 'metricStream' AS data_type
+            FROM ingest.metric_stream
+            WHERE user_id = {userId:UUID}
+              AND provider_id = {providerId:String}
+              AND is_deleted = 0
+            LIMIT 1
+          )
+        `,
+        { userId: this.#userId, providerId },
+      ),
+    ]);
+
+    const available = new Set([...postgresRows, ...clickHouseRows].map((row) => row.data_type));
+
+    return dataTypeEnum.options.filter((dataType) => available.has(dataType));
   }
 
   /** Paginated records for a provider by data type. */

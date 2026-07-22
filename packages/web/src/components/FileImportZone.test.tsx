@@ -13,6 +13,10 @@ const mocks = vi.hoisted(() => ({
   captureException: vi.fn(),
   sessionGet: vi.fn(async (): Promise<unknown> => null),
   sessionDelete: vi.fn(),
+  invalidateAvailableDataTypes: vi.fn(),
+  invalidateLogs: vi.fn(),
+  invalidateProviderStats: vi.fn(),
+  invalidateRecords: vi.fn(),
   freshMutationResults: false,
 }));
 
@@ -27,7 +31,15 @@ vi.mock("../lib/trpc.ts", () => {
   const authorizePartsResult = { mutateAsync: mocks.authorizeParts };
   const completeResult = { mutateAsync: mocks.complete };
   const abortResult = { mutateAsync: mocks.abort };
-  const trpcUtils = { client: { fileUpload: { resume: { query: mocks.resume } } } };
+  const trpcUtils = {
+    client: { fileUpload: { resume: { query: mocks.resume } } },
+    providerDetail: {
+      availableDataTypes: { invalidate: mocks.invalidateAvailableDataTypes },
+      logs: { invalidate: mocks.invalidateLogs },
+      records: { invalidate: mocks.invalidateRecords },
+    },
+    sync: { providerStats: { invalidate: mocks.invalidateProviderStats } },
+  };
   return {
     trpc: {
       fileUpload: {
@@ -123,6 +135,12 @@ describe("FileImportZone", () => {
 
     await waitFor(() => expect(mocks.runUpload).toHaveBeenCalledOnce());
     await waitFor(() => expect(screen.getByText("Import completed")).toBeTruthy());
+    expect(mocks.invalidateAvailableDataTypes).toHaveBeenCalledWith({
+      providerId: "garmin-dump",
+    });
+    expect(mocks.invalidateLogs).toHaveBeenCalledWith({ providerId: "garmin-dump" });
+    expect(mocks.invalidateProviderStats).toHaveBeenCalledOnce();
+    expect(mocks.invalidateRecords).toHaveBeenCalledOnce();
   });
 
   it("keeps an upload active across mutation-result rerenders", async () => {

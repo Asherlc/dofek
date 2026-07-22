@@ -159,6 +159,33 @@ describe("ProviderDetailRepository", () => {
 
   // ── getRecords ──
 
+  describe("getAvailableDataTypes", () => {
+    it("uses the provider's actual records instead of aggregate provider stats", async () => {
+      const { db, execute } = makeRepository([
+        { data_type: "activities" },
+        { data_type: "foodEntries" },
+      ]);
+      const { bodyStore, query } = makeBodyStore([{ data_type: "metricStream" }]);
+      const repo = new ProviderDetailRepository(db, "user-1", bodyStore);
+
+      await expect(repo.getAvailableDataTypes("kaya-export")).resolves.toEqual([
+        "activities",
+        "foodEntries",
+        "metricStream",
+      ]);
+      expect(execute).toHaveBeenCalledOnce();
+      expect(query).toHaveBeenCalledOnce();
+    });
+
+    it("fails loudly when ClickHouse availability cannot be checked", async () => {
+      const { repo } = makeRepository();
+
+      await expect(repo.getAvailableDataTypes("kaya-export")).rejects.toThrow(
+        "providerDetail record availability requires the ClickHouse store",
+      );
+    });
+  });
+
   describe("getRecords", () => {
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);

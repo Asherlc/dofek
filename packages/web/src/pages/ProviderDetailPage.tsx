@@ -143,6 +143,7 @@ export function ProviderDetailPage() {
           onComplete: () => {
             trpcUtils.sync.providers.invalidate();
             trpcUtils.sync.providerStats.invalidate();
+            trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId });
             trpcUtils.providerDetail.logs.invalidate();
             trpcUtils.providerDetail.records.invalidate();
           },
@@ -279,6 +280,7 @@ export function ProviderDetailPage() {
         data={dataHealth.data}
         error={dataHealth.error}
         loading={dataHealth.isLoading}
+        contextLabel="Account-wide data status"
       />
 
       {importConfig && (
@@ -440,7 +442,6 @@ export function ProviderDetailPage() {
         key={`records-browser-${providerId}`}
         providerId={providerId}
         stats={providerStats}
-        statsLoading={stats.isLoading}
       />
 
       <ProviderDataDeleteControl
@@ -641,16 +642,14 @@ function getStatCount(stats: ProviderStats, key: DataType): number {
 function RecordsBrowser({
   providerId,
   stats,
-  statsLoading,
 }: {
   providerId: string;
   stats: ProviderStats | undefined;
-  statsLoading: boolean;
 }) {
-  const availableTypes = DATA_TYPE_LABELS.filter((dt) => {
-    if (!stats) return false;
-    return getStatCount(stats, dt.key) > 0;
-  });
+  const availability = trpc.providerDetail.availableDataTypes.useQuery({ providerId });
+  const availableTypes = DATA_TYPE_LABELS.filter((dataType) =>
+    availability.data?.includes(dataType.key),
+  );
 
   const [selectedTab, setSelectedTab] = useState<DataType>("activities");
   const activeTab = useMemo(() => {
@@ -660,11 +659,20 @@ function RecordsBrowser({
     return availableTypes[0]?.key ?? "activities";
   }, [availableTypes, selectedTab]);
 
-  if (statsLoading) {
+  if (availability.isLoading) {
     return (
       <section>
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
         <div className="text-xs text-subtle">Loading records...</div>
+      </section>
+    );
+  }
+
+  if (availability.isError) {
+    return (
+      <section>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
+        <QueryStatePanel error={availability.error} height={80} />
       </section>
     );
   }
@@ -696,7 +704,7 @@ function RecordsBrowser({
             }`}
           >
             {dt.label}
-            {stats && (
+            {stats && getStatCount(stats, dt.key) > 0 && (
               <span className="ml-1 text-dim">
                 ({getStatCount(stats, dt.key).toLocaleString()})
               </span>

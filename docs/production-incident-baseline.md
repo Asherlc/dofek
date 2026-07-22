@@ -7,6 +7,92 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-21: Provider availability mutation shard lacked router coverage
+
+### Symptoms
+
+`Test / Stryker (1)` failed on PR #1850 even though the provider-detail unit
+tests passed.
+
+### User Impact
+
+No production users were affected. The pull request was blocked because the
+new public tRPC procedure was not covered through the router interface.
+
+### Evidence
+
+The failing command was
+`pnpm exec stryker run stryker.ci.config.json --mutate "packages/server/src/routers/provider-detail.ts:171-179"`.
+The first fatal line reported `Final mutation score 0.00 under breaking
+threshold 75`. Its mutation report showed that replacing the
+`availableDataTypes` query body with an empty function had no test coverage.
+
+### Root Cause
+
+Repository tests covered the availability calculation, but the router test
+suite did not call the newly exposed `availableDataTypes` procedure. Therefore,
+the tRPC delegation and its required Postgres and ClickHouse dependencies could
+be removed without failing a test.
+
+### Fix or Mitigation
+
+Added a router-level test that calls `availableDataTypes`, verifies the combined
+result, and proves that both stores receive the request with the correct user
+and provider identifiers.
+
+### Validation
+
+The focused router suite passes all 94 cases. The exact focused Stryker command
+now reports a 100% mutation score with the mutant killed and no uncovered or
+surviving mutants.
+
+### Remaining Risk
+
+The replacement full CI matrix must complete before the pull request is ready
+to merge.
+
+## 2026-07-21: Mobile provider-detail typecheck failed in PR CI
+
+### Symptoms
+
+`Test / Typecheck (dofek-mobile)` failed on PR #1850 while the root, server,
+and web TypeScript checks passed.
+
+### User Impact
+
+No production users were affected. The pull request was blocked until the
+mobile component contract was corrected.
+
+### Evidence
+
+The failing command was the mobile package TypeScript check. The first fatal
+line was `app/providers/[id].tsx(680,26): error TS2322`; the new record
+availability error branch passed an `error` prop to `QueryStatePanel`, but the
+mobile component accepts `variant` and `message` instead.
+
+### Root Cause
+
+The provider-detail change reused the web error-panel calling convention in
+the mobile implementation, and the initial local pre-push matrix omitted the
+mobile package TypeScript command.
+
+### Fix or Mitigation
+
+Changed the mobile branch to use `variant="error"` and the shared
+`getQueryErrorMessage()` helper, then added a regression test proving that the
+availability error is displayed to the user.
+
+### Validation
+
+The focused mobile test now passes all 32 cases; mobile TypeScript, repository
+lint, root/server/web TypeScript, and the full unit/mobile suite pass locally
+without retries or relaxed checks.
+
+### Remaining Risk
+
+The pre-push workflow should add an explicit mobile TypeScript command so this
+class of platform-only contract error is caught before push.
+
 ## 2026-07-21: PR image vulnerability scan blocked CI
 
 ### Symptoms
@@ -14644,6 +14730,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   credentialed artifacts before merge. Their secretless checks still exercise
   the affected source; the full credentialed builds run from trusted repository
   contexts.
+## 2026-07-21 — OTA Deploy Probe Accepted an Invalid Manifest Request
+
+- **Symptoms:** The OTA deployment workflow reported the origin healthy while
+  production iOS manifest requests timed out. Its probe omitted the Expo
+  protocol, platform, runtime, and channel headers and accepted every HTTP
+  response below 500, including the resulting HTTP 400.
+- **User impact:** OTA publishes could receive a false-green readiness result
+  even when devices could not discover or download updates.
+- **Evidence:** The workflow-equivalent request returned HTTP 400 with `No
+  channel name provided`. Requests matching the shipped app configuration
+  timed out after ten seconds while the OTA service's cold stored-update lookup
+  took 60–65 seconds; the identical request returned HTTP 200 in 0.409 seconds
+  after the lookup cache was populated. On July 21, a fresh production request
+  with the shipped headers returned HTTP 200 multipart content in 2.844 seconds,
+  and the OTA service log recorded the matching `GET /manifest` completion.
+- **Root cause:** The deploy probe exercised an invalid headerless request and
+  classified its expected client error as healthy, so it never reached the
+  stored-update path used by the app.
+- **Fix / mitigation:** The workflow now runs `check-ota-manifest.ts`, which
+  sends the production iOS request shape with a five-second timeout. It accepts
+  only HTTP 204 or an HTTP 200 response containing Expo protocol version 1 and
+  a parseable multipart manifest. Expo defines these request headers and
+  response structures in the
+  [Expo Updates v1 specification](https://docs.expo.dev/technical-specs/expo-updates-1/).
+- **Validation:** The focused Vitest suite covers HTTP 204 success, valid HTTP
+  200 success, HTTP 400 failure, malformed HTTP 200 failure, and timeout
+  failure. The same script succeeds against the live production endpoint inside
+  the app's five-second fallback window.
+- **Remaining risk / follow-up:** The upstream OTA service still enumerates and
+  validates stored updates serially on a cold cache. The corrected deploy probe
+  will now fail loudly if that path exceeds the client budget; continue tracking
+  an upstream indexing or cache-warming fix if production cold misses recur.
+
 ## 2026-07-21 — Local Test Runs Exhausted Docker Across Conductor Workspaces
 
 - **Symptoms:** YouTube playback stuttered while dozens of TimescaleDB test
@@ -14771,3 +14890,83 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   checks pass without added waits or retries.
 - **Remaining risk / follow-up:** Deploy the fix, retry the Kaya CSV, and confirm
   the production upload row advances through queued and completed states.
+
+## 2026-07-21 — Kaya Import History and Records Browser Disagreed
+
+- **Status:** Root cause fixed and validated locally; production deployment is
+  pending.
+- **Symptoms:** Kaya sync history reported a successful import with 63 records,
+  while the Records section said `No records yet for this provider.` The same
+  provider page also showed Strava, WHOOP, and Zepp processing without making
+  clear that the readiness banner was account-wide.
+- **User impact:** A successful Kaya import appeared to have stored no
+  browseable records, and unrelated account processing looked like Kaya status.
+- **Evidence:** Postgres contained 7 `kaya-export` activities created at
+  `2026-07-22 00:11:28 UTC` and 63 associated climbing entries. The screenshot
+  was captured at `00:12:18 UTC`; PeerDB mirrored those activities at
+  `00:12:28 UTC`. The `analytics-worker` started `analytics.provider_stats` at
+  `00:11:50 UTC`, before the activity mirror arrived, and completed it at
+  `00:13:24 UTC`. All three production replication slots were active with
+  `wal_status = reserved`, and `cdc-health` continuously reported all slots and
+  its monitored mirror healthy. The storage and refresh path is documented in
+  the [repository architecture](../README.md#architecture), and the aggregate
+  is defined by the incremental
+  [`provider_stats` model](../analytics/models/read_models/provider_stats.sql).
+- **Root cause:** Sync history reads canonical Postgres immediately and Kaya's
+  import count represents climbing-entry rows, while the Records browser used
+  the eventually consistent ClickHouse `provider_stats` aggregate both for
+  counts and as proof that any records existed. The dbt model's snapshot began
+  before PeerDB delivered the seven activity rows, so the UI interpreted a
+  temporarily absent aggregate row as canonical emptiness. No CDC slot failure
+  caused this incident.
+- **Fix / mitigation:** Provider detail now discovers available record types
+  through the actual provider record queries and uses `provider_stats` only for
+  optional displayed counts. Web and mobile invalidate availability after
+  sync, refresh, and web file-import completion. Provider-detail readiness
+  banners are labeled `Account-wide data status` on both platforms.
+- **Validation:** The web and mobile regression tests failed against the old
+  aggregate-gated behavior, then passed with canonical Kaya activity rows and
+  missing aggregate stats. Import-completion invalidation likewise failed first
+  and passed after the fix. The focused server, web, and mobile suites pass with
+  247 tests. Production `analytics.provider_stats` later caught up to 7 Kaya
+  activities with `refreshed_at = 2026-07-22 00:41:49 UTC`, confirming the
+  discrepancy was transient aggregate lag rather than lost canonical data.
+- **Remaining risk / follow-up:** Deploy and confirm the production Kaya page
+  immediately shows its seven activity sessions after import. The analytics
+  worker also logged an unrelated ClickHouse code 159 failure in
+  `activity_power_curve`; `provider_stats` itself succeeded, so that failure was
+  not causal here but should be investigated separately.
+## 2026-07-21 — Deploy Audit Found CDC Failure Could Start ClickHouse Consumers
+
+- **Status:** Root cause fixed and validated locally; PR and production deploy
+  validation are pending.
+- **Symptoms:** A workflow audit found that the final ClickHouse consumer stack
+  deploy remained eligible after a post-quiesce readiness or CDC setup failure.
+  No production failure was reproduced; this was a preventative control-flow
+  finding.
+- **User impact:** A failed PeerDB, Temporal, or ClickHouse CDC setup could have
+  started `analytics-worker` and `metric-stream-clickhouse-sink` against missing,
+  stale, or unverified CDC state, compounding the failed deploy with ingestion
+  errors or stale analytics.
+- **Evidence:** The exact prerequisite command is the `Configure ClickHouse CDC`
+  step's `docker run ... src/db/setup-clickhouse-cdc.ts`. Its nonzero exit would
+  set the step conclusion to `failure`; there was no captured fatal production
+  log because the defect was identified statically. The subsequent `Deploy
+  ClickHouse consumer services` step used `if: always() &&
+  steps.deploy_stack_quiesced.conclusion != 'skipped'`. GitHub documents that
+  `always()` returns true even after prior failures, whereas `success()` requires
+  all previous steps to have succeeded
+  ([GitHub Actions status check functions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)).
+- **Root cause:** The final consumer-start step replaced GitHub's normal success
+  gate with `always()` and checked only that the quiesced deploy was not skipped,
+  so a failed CDC prerequisite did not block restoring consumer replicas.
+- **Fix / mitigation:** The consumer deploy now requires `success()`, a successful
+  quiesced deploy, and a successful `configure_clickhouse_cdc` conclusion. A
+  separate failure-only reporting step leaves the consumers at zero replicas and
+  tells the operator to resolve the failed prerequisite and rerun the deployment.
+- **Validation:** A focused workflow policy test failed against the original
+  `always()` condition and now passes, covering both the failed-CDC gate and the
+  operator report. No retries, timeouts, or fallback defaults were added.
+- **Remaining risk / follow-up:** Confirm the PR's Actionlint and test checks pass,
+  then verify the next production deployment restores both consumers only after
+  CDC setup succeeds.
