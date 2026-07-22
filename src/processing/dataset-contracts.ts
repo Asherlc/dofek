@@ -473,9 +473,12 @@ export function processingDatasetKeysForOutputPath(
   datasetKeys: readonly ProcessingDatasetKey[],
   outputPath: ProcessingOutputPath,
 ): ProcessingDatasetKey[] {
-  const contractsByKey = new Map(DATASET_CONTRACTS.map((contract) => [contract.key, contract]));
   return datasetKeys.filter((datasetKey) =>
-    contractsByKey.get(datasetKey)?.outputPaths.some((candidate) => candidate.path === outputPath),
+    DATASET_CONTRACTS.some(
+      (contract) =>
+        contract.key === datasetKey &&
+        contract.outputPaths.some((candidate) => candidate.path === outputPath),
+    ),
   );
 }
 
