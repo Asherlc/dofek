@@ -855,6 +855,20 @@ describe("ProviderDetailScreen", () => {
       expect(screen.queryByText("No records yet for this provider.")).toBeNull();
     });
 
+    it("shows the record availability query error", async () => {
+      mockAvailableDataTypesQuery.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        error: new Error("Record availability is temporarily unavailable"),
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Record availability is temporarily unavailable")).toBeTruthy();
+    });
+
     it("navigates from the record modal to the activity detail screen", async () => {
       mockProviderStatsQuery.mockReturnValue({
         data: [{ ...appleHealthStats, providerId: "wahoo", totalRecords: 1, activities: 1 }],

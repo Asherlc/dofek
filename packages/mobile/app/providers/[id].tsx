@@ -24,7 +24,7 @@ import {
 import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
-import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAuth } from "../../lib/auth-context";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
@@ -677,7 +677,7 @@ function RecordsBrowser({
     return (
       <View>
         <Text style={styles.sectionTitle}>Records</Text>
-        <QueryStatePanel error={availability.error} />
+        <QueryStatePanel variant="error" message={getQueryErrorMessage(availability.error)} />
       </View>
     );
   }
