@@ -15157,9 +15157,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-22 — Climbing Entries Missing From Activity Detail
 
-- **Status:** Member-aware climbing detail and the historical migration archive
-  are merged; production rollout remains pending restoration of one active
-  migration that was changed after production applied it.
+- **Status:** Resolved. Member-aware climbing detail and the repaired historical
+  migration archive are deployed in production.
 - **Symptoms:** The production detail page for activity
   `734b5d3e-df2b-4ee0-888e-55ea539d913a` showed generic activity metrics but no
   Kaya climbing attempts, grades, or sends.
@@ -15212,13 +15211,17 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   one healthy replica each on the prior production image.
   The next deploy accepted the restored `0042` and then failed on the same PR's
   mutated `0043`, confirming the need to restore the complete four-file set; its
-  quiesced consumers were also restored to one healthy replica each.
-- **Remaining risk / follow-up:** Merge and deploy the complete `0042`–`0045`
-  restoration, then
-  verify migrations, the web/worker rollout, both ClickHouse consumers, and the
-  original climbing activity page. Until that deployment succeeds, production
-  remains on the previous app image and the user-visible climbing fix is not
-  live. Failed deploy runs:
+  quiesced consumers were also restored to one healthy replica each. The
+  [successful production deploy](https://github.com/Asherlc/dofek/actions/runs/29953296577)
+  then passed migration integrity without retries, rolled the web and worker
+  services to `sha-c8c8a64`, and restored both ClickHouse consumers to one
+  healthy replica each on the same image. A post-deploy production query through
+  the member-aware join returned all eight requested activity entries: one V0,
+  one V1, one V2, two V3s, and three V4s, all marked sent.
+- **Remaining risk / follow-up:** The incident is resolved. Add a CI guard that
+  compares active migration bytes against an immutable applied-migration
+  registry so a PR cannot rewrite a migration that an earlier commit deployed.
+  Failed deploy runs retained for incident history:
   [preceding image](https://github.com/Asherlc/dofek/actions/runs/29944229608)
   [merged image](https://github.com/Asherlc/dofek/actions/runs/29945041858), and
   [complete archive](https://github.com/Asherlc/dofek/actions/runs/29948084505),
