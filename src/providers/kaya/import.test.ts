@@ -114,6 +114,7 @@ describe("parseKayaExport", () => {
         gradeSystem: "v_scale",
         grade: "V0",
         sent: true,
+        attemptCount: 1,
         routeName: null,
         locationName: "Touchstone Pacific Pipe",
         sourceName: "Kaya",
@@ -124,6 +125,7 @@ describe("parseKayaExport", () => {
         gradeSystem: "v_scale",
         grade: "V3",
         sent: true,
+        attemptCount: 2,
         routeName: null,
         raw: expect.objectContaining({
           attempts: 2,
@@ -143,6 +145,7 @@ describe("parseKayaExport", () => {
         gradeSystem: "v_scale",
         grade: "V3",
         sent: true,
+        attemptCount: 1,
         routeName: null,
         raw: expect.objectContaining({
           attempts: 1,
@@ -240,6 +243,10 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touch
         message: "row 2: ascent_type is unsupported",
       },
       {
+        csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,0,v3,Pink,,Touchstone Pacific Pipe,,`,
+        message: "row 2: attempts must be a positive integer",
+      },
+      {
         csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe`,
         message: "row 2: malformed CSV row",
       },
@@ -317,6 +324,7 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,"Route, With 
           activityId: "activity-1",
           externalId: expect.stringMatching(/^kaya:entry:[a-f0-9]{16}$/),
           grade: "V0",
+          attemptCount: 1,
           sourceName: "Kaya",
         }),
       ]),

@@ -70,6 +70,7 @@ export const climbingEntry = fitness.table(
     gradeSystem: climbingGradeSystemEnum("grade_system").notNull(),
     grade: text("grade").notNull(),
     sent: boolean("sent").notNull(),
+    attemptCount: integer("attempt_count").notNull().default(1),
     routeName: text("route_name"),
     locationName: text("location_name"),
     sourceName: text("source_name"),
@@ -83,6 +84,7 @@ export const climbingEntry = fitness.table(
       .on(table.activityId, table.externalId)
       .where(sql`${table.externalId} IS NOT NULL`),
     check("climbing_entry_grade_nonempty", sql`btrim(${table.grade}) <> ''`),
+    check("climbing_entry_attempt_count_positive", sql`${table.attemptCount} > 0`),
     check(
       "climbing_entry_external_id_nonempty",
       sql`${table.externalId} IS NULL OR btrim(${table.externalId}) <> ''`,

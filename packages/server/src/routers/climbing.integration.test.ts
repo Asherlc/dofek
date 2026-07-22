@@ -77,6 +77,7 @@ describe("climbing router integration", () => {
             grade_system,
             grade,
             sent,
+            attempt_count,
             route_name,
             location_name,
             source_name,
@@ -89,6 +90,7 @@ describe("climbing router integration", () => {
             'v_scale',
             'V2',
             true,
+            2,
             'Warmup',
             'Touchstone Pacific Pipe',
             'Kaya',
@@ -101,6 +103,7 @@ describe("climbing router integration", () => {
             'v_scale',
             'V4',
             true,
+            3,
             'Blue Circuit',
             'Touchstone Pacific Pipe',
             'Kaya',
@@ -113,6 +116,7 @@ describe("climbing router integration", () => {
             'v_scale',
             'V5',
             false,
+            4,
             'Project',
             'Touchstone Pacific Pipe',
             'Kaya',
@@ -125,6 +129,7 @@ describe("climbing router integration", () => {
             'yds',
             '5.10a',
             true,
+            2,
             'Lead Route',
             'Mission Cliffs',
             'Kaya',
@@ -158,29 +163,41 @@ describe("climbing router integration", () => {
     );
     expect(volumeByGrade).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ climbType: "boulder", grade: "V4", attempts: 1, sends: 1 }),
-        expect.objectContaining({ climbType: "boulder", grade: "V5", attempts: 1, sends: 0 }),
-        expect.objectContaining({ climbType: "route", grade: "5.10a", attempts: 1, sends: 1 }),
+        expect.objectContaining({ climbType: "boulder", grade: "V4", attempts: 3, sends: 1 }),
+        expect.objectContaining({ climbType: "boulder", grade: "V5", attempts: 4, sends: 0 }),
+        expect.objectContaining({ climbType: "route", grade: "5.10a", attempts: 2, sends: 1 }),
       ]),
     );
     expect(sessionSummary).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           activityId: climbingActivityId,
-          attempts: 3,
+          attempts: 9,
           sends: 2,
           hardestBoulderGrade: "V4",
           hardestRouteGrade: null,
         }),
         expect.objectContaining({
           activityId: routeActivityId,
-          attempts: 1,
+          attempts: 2,
           sends: 1,
           hardestBoulderGrade: null,
           hardestRouteGrade: "5.10a",
         }),
       ]),
     );
+  });
+
+  it("rejects non-positive climbing attempt counts", async () => {
+    await expect(
+      testContext.db.execute(sql`
+        INSERT INTO fitness.climbing_entry (
+          activity_id, climb_type, grade_system, grade, sent, attempt_count
+        ) VALUES (
+          ${routeActivityId}, 'route', 'yds', '5.9', false, 0
+        )
+      `),
+    ).rejects.toThrow("Failed query");
   });
 
   it("cascades climbing entries when an activity is deleted", async () => {

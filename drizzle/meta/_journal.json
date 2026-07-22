@@ -456,6 +456,13 @@
       "when": 1784656907000,
       "tag": "0054_stripe_webhook_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1784734909000,
+      "tag": "0055_climbing_attempt_count",
+      "breakpoints": true
     }
   ]
 }

@@ -211,7 +211,7 @@ export class ClimbingRepository extends BaseRepository {
             ce.grade_system,
             ce.grade,
             ${climbingGradeSortSql} AS grade_sort_value,
-            COUNT(ce.id)::int AS attempts,
+            SUM(ce.attempt_count)::int AS attempts,
             COUNT(*) FILTER (WHERE ce.sent)::int AS sends
           FROM fitness.v_activity a
           JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
@@ -244,7 +244,7 @@ export class ClimbingRepository extends BaseRepository {
               (a.started_at AT TIME ZONE ${this.timezone})::date::text AS session_date,
               COALESCE(a.name, 'Climbing') AS name,
               ce.location_name,
-              ce.id AS entry_id,
+              ce.attempt_count,
               ce.sent,
               ce.climb_type,
               ce.grade,
@@ -259,7 +259,7 @@ export class ClimbingRepository extends BaseRepository {
             session_date,
             name,
             MAX(location_name) FILTER (WHERE location_name IS NOT NULL) AS location_name,
-            COUNT(entry_id)::int AS attempts,
+            SUM(attempt_count)::int AS attempts,
             COUNT(*) FILTER (WHERE sent)::int AS sends,
             (ARRAY_AGG(grade ORDER BY grade_sort_value DESC NULLS LAST)
               FILTER (WHERE sent AND climb_type = 'boulder'))[1] AS hardest_boulder_grade,

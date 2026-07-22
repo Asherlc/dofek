@@ -39,3 +39,11 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - ClickHouse migrations live in `clickhouse-migrations/` as one TypeScript module per migration, ordered by `clickhouse-migrations/registry.ts`.
 - Deploy migrations are for schema changes only. Historical backfills and full read-model rebuilds should run as explicit resumable scripts or jobs, not inside the deploy migration path.
 - Run `pnpm analytics:build`, `pnpm lint:migrations`, `pnpm lint:analytics-sql`, and `pnpm lint:analytics-policy` before pushing migration or ClickHouse analytics changes.
+
+## Climbing Attempt Count Backfill
+
+After deploying migration `0055_climbing_attempt_count`, preview the Kaya backfill with
+`pnpm backfill:climbing-attempt-count`. Run it again with `--execute` to copy valid positive
+integer attempt counts from preserved Kaya raw payloads into the canonical `attempt_count`
+column. The operation is idempotent and reports how many rows would change or changed; see
+the [backfill implementation](../../scripts/backfill-climbing-attempt-count.ts).

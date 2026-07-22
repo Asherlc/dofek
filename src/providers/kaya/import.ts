@@ -78,6 +78,7 @@ export interface KayaClimbingEntry {
   gradeSystem: "v_scale" | "yds";
   grade: string;
   sent: boolean;
+  attemptCount: number;
   routeName: string | null;
   locationName: string | null;
   sourceName: "Kaya";
@@ -198,6 +199,7 @@ class KayaExportImporter {
         gradeSystem: entry.gradeSystem,
         grade: entry.grade,
         sent: entry.sent,
+        attemptCount: entry.attemptCount,
         routeName: entry.routeName,
         locationName: entry.locationName,
         sourceName: entry.sourceName,
@@ -315,6 +317,10 @@ class KayaExportParser {
       location: nullableText(row.location),
       country: nullableText(row.country),
     };
+    const attemptCount = raw.attempts ?? 1;
+    if (!Number.isInteger(attemptCount) || attemptCount < 1) {
+      return { rowNumber, message: `row ${rowNumber}: attempts must be a positive integer` };
+    }
     const routeName = nullableText(row.climb_name);
     const entryHash = stableHash([
       row.date,
@@ -336,6 +342,7 @@ class KayaExportParser {
         gradeSystem: parsedGrade.gradeSystem,
         grade: parsedGrade.grade,
         sent: true,
+        attemptCount,
         routeName,
         locationName: gym,
         sourceName: KAYA_PROVIDER_NAME,
