@@ -28,13 +28,14 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
-import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { DaySelector } from "../../components/DaySelector";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { safeParseRows } from "../../lib/safe-parse";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
@@ -182,7 +183,7 @@ export default function StrainScreen() {
     { days, endDate },
     { placeholderData: (previousData) => previousData },
   );
-  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["activity"] });
+  const processingStatus = useProcessingStatus({ datasets: ["activity", "recovery", "training"] });
 
   useEffect(() => {
     if (trainingQuery.isError && trainingQuery.error) {
@@ -275,10 +276,10 @@ export default function StrainScreen() {
     >
       <DaySelector days={days} onChange={setDays} />
 
-      <DataReadinessBanner
-        data={dataHealth.data}
-        error={dataHealth.error}
-        loading={dataHealth.isLoading}
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
       />
 
       {isLoading ? (

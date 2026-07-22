@@ -57,8 +57,8 @@ vi.mock("../../lib/trpc", () => ({
         },
       },
     },
-    sync: {
-      dataHealth: {
+    processing: {
+      status: {
         useQuery: (...parameters: unknown[]) => {
           mockDataHealthUseQuery(...parameters);
           return {
@@ -188,8 +188,10 @@ describe("TodayScreen independent loading states", () => {
 
   it("shows data readiness when dashboard summaries are stale", async () => {
     mockDataHealthData = {
-      overallStatus: "stale",
+      overallStatus: "delayed",
       generatedAt: "2026-06-30T08:00:00.000Z",
+      scope: { providerId: null, datasets: ["activity", "sleep", "recovery", "training", "body"] },
+      operations: [],
       datasets: [
         {
           key: "dailyMetrics",
@@ -208,13 +210,13 @@ describe("TodayScreen independent loading states", () => {
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
-    expect(mockDataHealthUseQuery).toHaveBeenCalledWith({ datasets: ["dailyMetrics"] });
-    expect(screen.getByText("Dashboard summaries are catching up")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Daily metrics data is synced, but dashboard summaries are still catching up.",
-      ),
-    ).toBeTruthy();
+    expect(mockDataHealthUseQuery).toHaveBeenCalledWith(
+      {
+        datasets: ["activity", "sleep", "recovery", "training", "body"],
+      },
+      expect.any(Object),
+    );
+    expect(screen.getByText("Processing is taking longer than expected")).toBeTruthy();
   });
 
   afterEach(() => {

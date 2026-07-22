@@ -33,8 +33,10 @@ vi.mock("./trpc", () => ({
     },
     useUtils: () => ({
       invalidate: mockInvalidate,
+      processing: {
+        status: { invalidate: mockDataHealthInvalidate },
+      },
       sync: {
-        dataHealth: { invalidate: mockDataHealthInvalidate },
         syncStatus: { fetch: mockSyncStatusFetch },
       },
       mobileDashboard: {

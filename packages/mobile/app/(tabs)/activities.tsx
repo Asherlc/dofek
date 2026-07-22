@@ -23,10 +23,11 @@ import {
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
-import { DataReadinessBanner } from "../../components/DataReadinessBanner";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors, radius, spacing } from "../../theme";
 
@@ -81,7 +82,7 @@ export default function ActivitiesScreen() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
-  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["activity"] });
+  const processingStatus = useProcessingStatus({ datasets: ["activity"] });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await trpcUtils.calendar.weekList.invalidate();
@@ -97,7 +98,7 @@ export default function ActivitiesScreen() {
         trpcUtils.calendar.weekList.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.activity.list.invalidate(),
-        trpcUtils.sync.dataHealth.invalidate(),
+        trpcUtils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
 
@@ -165,10 +166,10 @@ export default function ActivitiesScreen() {
         <Text style={styles.recordButtonText}>Record Activity</Text>
       </TouchableOpacity>
 
-      <DataReadinessBanner
-        data={dataHealth.data}
-        error={dataHealth.error}
-        loading={dataHealth.isLoading}
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
       />
 
       <ActivityControls

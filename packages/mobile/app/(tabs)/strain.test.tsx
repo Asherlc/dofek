@@ -74,8 +74,8 @@ vi.mock("../../lib/trpc", () => ({
         }),
       },
     },
-    sync: {
-      dataHealth: {
+    processing: {
+      status: {
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
       },
     },

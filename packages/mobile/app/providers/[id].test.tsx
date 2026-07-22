@@ -12,6 +12,10 @@ const mockRequestPermissions = vi.fn().mockResolvedValue(true);
 const mockSyncHealthKit = vi.fn();
 
 vi.mock("react-native", () => ({
+  AppState: {
+    currentState: "active",
+    addEventListener: () => ({ remove: vi.fn() }),
+  },
   View: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) => {
     const { style: _s, contentContainerStyle: _cs, activeOpacity: _ao, ...rest } = props;
     return React.createElement("div", rest, children);
@@ -217,10 +221,12 @@ vi.mock("../../lib/useRefresh", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    processing: {
+      status: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
+    },
     sync: {
       providers: { useQuery: (...args: unknown[]) => mockProvidersQuery(...args) },
       providerStats: { useQuery: (...args: unknown[]) => mockProviderStatsQuery(...args) },
-      dataHealth: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
       triggerSync: {
         useMutation: () => ({ mutateAsync: mockSyncMutateAsync, isPending: false }),
       },
@@ -246,10 +252,12 @@ vi.mock("../../lib/trpc", () => ({
     useUtils: () => ({
       client: {},
       invalidate: vi.fn(),
+      processing: {
+        status: { invalidate: mockInvalidateDataHealth },
+      },
       sync: {
         providers: { invalidate: mockInvalidateProviders },
         providerStats: { invalidate: mockInvalidateProviderStats },
-        dataHealth: { invalidate: mockInvalidateDataHealth },
         logs: { invalidate: mockInvalidateLogs },
         syncStatus: { fetch: mockSyncStatusFetch },
       },
@@ -471,6 +479,8 @@ describe("ProviderDetailScreen", () => {
         data: {
           overallStatus: "blocked",
           generatedAt: "2026-06-30T12:00:00Z",
+          scope: { providerId: "wahoo", datasets: ["activity"] },
+          operations: [],
           datasets: [
             {
               key: "activity",
@@ -492,11 +502,8 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      expect(screen.getByText("Account-wide data status")).toBeTruthy();
-      expect(screen.getByText("Some data is temporarily unavailable")).toBeTruthy();
-      expect(
-        screen.getByText("Activities data is still being prepared. Please check back soon."),
-      ).toBeTruthy();
+      expect(screen.getByText("Wahoo data status")).toBeTruthy();
+      expect(screen.getByText("Processing needs attention")).toBeTruthy();
     });
 
     it("triggers generic provider sync with sinceDays=7 when Sync is clicked", async () => {

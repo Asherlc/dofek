@@ -21,13 +21,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { DataReadinessBanner } from "../../components/DataReadinessBanner";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAuth } from "../../lib/auth-context";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals";
@@ -756,7 +757,7 @@ export default function ProviderDetailScreen() {
   const trpcUtils = trpc.useUtils();
 
   const stats = trpc.sync.providerStats.useQuery();
-  const dataHealth = trpc.sync.dataHealth.useQuery();
+  const processingStatus = useProcessingStatus({ providerId });
   const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
   const providerStats = (stats.data ?? []).find(
     (s: { providerId: string }) => s.providerId === providerId,
@@ -817,7 +818,7 @@ export default function ProviderDetailScreen() {
         trpcUtils.providerDetail.logs.invalidate({ providerId }),
         trpcUtils.sync.providers.invalidate(),
         trpcUtils.sync.providerStats.invalidate(),
-        trpcUtils.sync.dataHealth.invalidate(),
+        trpcUtils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
 
@@ -879,11 +880,11 @@ export default function ProviderDetailScreen() {
         </View>
       </View>
 
-      <DataReadinessBanner
-        data={dataHealth.data}
-        error={dataHealth.error}
-        loading={dataHealth.isLoading}
-        contextLabel="Account-wide data status"
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
+        contextLabel={`${formatProviderName(providerId)} data status`}
       />
 
       {/* Actions */}
