@@ -187,6 +187,7 @@ vi.mock("@dofek/format/format", () => ({
 const mockProvidersQuery = vi.fn();
 const mockProviderStatsQuery = vi.fn();
 const mockDataHealthQuery = vi.fn();
+const mockAvailableDataTypesQuery = vi.fn();
 const mockRecordsQuery = vi.fn();
 const mockLogsQuery = vi.fn();
 const mockSyncMutateAsync = vi.fn();
@@ -195,6 +196,7 @@ const mockDeleteAllDataMutateAsync = vi.fn();
 const mockInvalidateProviders = vi.fn();
 const mockInvalidateProviderStats = vi.fn();
 const mockInvalidateDataHealth = vi.fn();
+const mockInvalidateAvailableDataTypes = vi.fn();
 const mockInvalidateRecords = vi.fn();
 const mockInvalidateDetailLogs = vi.fn();
 const mockInvalidateLogs = vi.fn();
@@ -224,6 +226,9 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     providerDetail: {
+      availableDataTypes: {
+        useQuery: (...args: unknown[]) => mockAvailableDataTypesQuery(...args),
+      },
       records: { useQuery: (...args: unknown[]) => mockRecordsQuery(...args) },
       logs: { useQuery: (...args: unknown[]) => mockLogsQuery(...args) },
       disconnect: {
@@ -249,6 +254,7 @@ vi.mock("../../lib/trpc", () => ({
         syncStatus: { fetch: mockSyncStatusFetch },
       },
       providerDetail: {
+        availableDataTypes: { invalidate: mockInvalidateAvailableDataTypes },
         records: { invalidate: mockInvalidateRecords },
         logs: { invalidate: mockInvalidateDetailLogs },
       },
@@ -336,6 +342,12 @@ function setupDefaultMocks() {
   mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
   mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false });
   mockDataHealthQuery.mockReturnValue({ data: null, isLoading: false, error: null });
+  mockAvailableDataTypesQuery.mockReturnValue({
+    data: ["activities"],
+    isLoading: false,
+    isError: false,
+    error: null,
+  });
   mockRecordsQuery.mockReturnValue({ data: { rows: [] }, isLoading: false });
   mockLogsQuery.mockReturnValue({ data: [], isLoading: false });
 }
@@ -359,6 +371,7 @@ describe("ProviderDetailScreen", () => {
     mockInvalidateProviders.mockReset();
     mockInvalidateProviderStats.mockReset();
     mockInvalidateDataHealth.mockReset();
+    mockInvalidateAvailableDataTypes.mockReset();
     mockInvalidateRecords.mockReset();
     mockInvalidateDetailLogs.mockReset();
     mockInvalidateLogs.mockReset();
@@ -479,6 +492,7 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
+      expect(screen.getByText("Account-wide data status")).toBeTruthy();
       expect(screen.getByText("Some data is temporarily unavailable")).toBeTruthy();
       expect(
         screen.getByText("Activities data is still being prepared. Please check back soon."),
@@ -787,6 +801,7 @@ describe("ProviderDetailScreen", () => {
       await refreshOptions?.invalidate?.();
 
       expect(mockInvalidateRecords).toHaveBeenCalledWith({ providerId: "wahoo" });
+      expect(mockInvalidateAvailableDataTypes).toHaveBeenCalledWith({ providerId: "wahoo" });
       expect(mockInvalidateDetailLogs).toHaveBeenCalledWith({ providerId: "wahoo" });
       expect(mockInvalidateProviders).toHaveBeenCalled();
       expect(mockInvalidateProviderStats).toHaveBeenCalled();
@@ -821,6 +836,25 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Activity records", () => {
+    it("shows canonical activity records while aggregate provider stats are catching up", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "kaya-export" });
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...importOnlyProvider, id: "kaya-export", name: "Kaya" }],
+        isLoading: false,
+      });
+      mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false });
+      mockRecordsQuery.mockReturnValue({
+        data: { rows: [{ id: "activity-123", name: "Kaya climbing" }] },
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Kaya climbing")).toBeTruthy();
+      expect(screen.queryByText("No records yet for this provider.")).toBeNull();
+    });
+
     it("navigates from the record modal to the activity detail screen", async () => {
       mockProviderStatsQuery.mockReturnValue({
         data: [{ ...appleHealthStats, providerId: "wahoo", totalRecords: 1, activities: 1 }],

@@ -168,6 +168,15 @@ export const providerDetailRouter = router({
       return repo.getSyncLogFilterOptions(input.providerId);
     }),
 
+  /** Data types that currently contain records for a provider. */
+  availableDataTypes: protectedProcedure
+    .input(z.object({ providerId: z.string() }))
+    .output(z.array(dataTypeEnum))
+    .query(async ({ ctx, input }) => {
+      const repo = new ProviderDetailRepository(ctx.db, ctx.userId, ctx.sensorStore);
+      return repo.getAvailableDataTypes(input.providerId);
+    }),
+
   /** Paginated records for a provider by data type */
   records: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(

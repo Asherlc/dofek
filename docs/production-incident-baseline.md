@@ -14771,3 +14771,49 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   checks pass without added waits or retries.
 - **Remaining risk / follow-up:** Deploy the fix, retry the Kaya CSV, and confirm
   the production upload row advances through queued and completed states.
+
+## 2026-07-21 — Kaya Import History and Records Browser Disagreed
+
+- **Status:** Root cause fixed and validated locally; production deployment is
+  pending.
+- **Symptoms:** Kaya sync history reported a successful import with 63 records,
+  while the Records section said `No records yet for this provider.` The same
+  provider page also showed Strava, WHOOP, and Zepp processing without making
+  clear that the readiness banner was account-wide.
+- **User impact:** A successful Kaya import appeared to have stored no
+  browseable records, and unrelated account processing looked like Kaya status.
+- **Evidence:** Postgres contained 7 `kaya-export` activities created at
+  `2026-07-22 00:11:28 UTC` and 63 associated climbing entries. The screenshot
+  was captured at `00:12:18 UTC`; PeerDB mirrored those activities at
+  `00:12:28 UTC`. The `analytics-worker` started `analytics.provider_stats` at
+  `00:11:50 UTC`, before the activity mirror arrived, and completed it at
+  `00:13:24 UTC`. All three production replication slots were active with
+  `wal_status = reserved`, and `cdc-health` continuously reported all slots and
+  its monitored mirror healthy. The storage and refresh path is documented in
+  the [repository architecture](../README.md#architecture), and the aggregate
+  is defined by the incremental
+  [`provider_stats` model](../analytics/models/read_models/provider_stats.sql).
+- **Root cause:** Sync history reads canonical Postgres immediately and Kaya's
+  import count represents climbing-entry rows, while the Records browser used
+  the eventually consistent ClickHouse `provider_stats` aggregate both for
+  counts and as proof that any records existed. The dbt model's snapshot began
+  before PeerDB delivered the seven activity rows, so the UI interpreted a
+  temporarily absent aggregate row as canonical emptiness. No CDC slot failure
+  caused this incident.
+- **Fix / mitigation:** Provider detail now discovers available record types
+  through the actual provider record queries and uses `provider_stats` only for
+  optional displayed counts. Web and mobile invalidate availability after
+  sync, refresh, and web file-import completion. Provider-detail readiness
+  banners are labeled `Account-wide data status` on both platforms.
+- **Validation:** The web and mobile regression tests failed against the old
+  aggregate-gated behavior, then passed with canonical Kaya activity rows and
+  missing aggregate stats. Import-completion invalidation likewise failed first
+  and passed after the fix. The focused server, web, and mobile suites pass with
+  247 tests. Production `analytics.provider_stats` later caught up to 7 Kaya
+  activities with `refreshed_at = 2026-07-22 00:41:49 UTC`, confirming the
+  discrepancy was transient aggregate lag rather than lost canonical data.
+- **Remaining risk / follow-up:** Deploy and confirm the production Kaya page
+  immediately shows its seven activity sessions after import. The analytics
+  worker also logged an unrelated ClickHouse code 159 failure in
+  `activity_power_curve`; `provider_stats` itself succeeded, so that failure was
+  not causal here but should be investigated separately.
