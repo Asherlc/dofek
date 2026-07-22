@@ -7,6 +7,50 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-21: Provider availability mutation shard lacked router coverage
+
+### Symptoms
+
+`Test / Stryker (1)` failed on PR #1850 even though the provider-detail unit
+tests passed.
+
+### User Impact
+
+No production users were affected. The pull request was blocked because the
+new public tRPC procedure was not covered through the router interface.
+
+### Evidence
+
+The failing command was
+`pnpm exec stryker run stryker.ci.config.json --mutate "packages/server/src/routers/provider-detail.ts:171-179"`.
+The first fatal line reported `Final mutation score 0.00 under breaking
+threshold 75`. Its mutation report showed that replacing the
+`availableDataTypes` query body with an empty function had no test coverage.
+
+### Root Cause
+
+Repository tests covered the availability calculation, but the router test
+suite did not call the newly exposed `availableDataTypes` procedure. Therefore,
+the tRPC delegation and its required Postgres and ClickHouse dependencies could
+be removed without failing a test.
+
+### Fix or Mitigation
+
+Added a router-level test that calls `availableDataTypes`, verifies the combined
+result, and proves that both stores receive the request with the correct user
+and provider identifiers.
+
+### Validation
+
+The focused router suite passes all 94 cases. The exact focused Stryker command
+now reports a 100% mutation score with the mutant killed and no uncovered or
+surviving mutants.
+
+### Remaining Risk
+
+The replacement full CI matrix must complete before the pull request is ready
+to merge.
+
 ## 2026-07-21: Mobile provider-detail typecheck failed in PR CI
 
 ### Symptoms
