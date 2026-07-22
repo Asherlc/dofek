@@ -22,4 +22,12 @@ describe("backfillClimbingAttemptCount", () => {
     expect(query).toContain("UPDATE fitness.climbing_entry");
     expect(query).toContain("SET attempt_count = (raw->>'attempts')::int");
   });
+
+  it("rejects a missing count row", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+
+    await expect(backfillClimbingAttemptCount({ execute }, false)).rejects.toThrow(
+      "Expected one backfill count row",
+    );
+  });
 });

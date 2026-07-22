@@ -19,14 +19,18 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   initializeSentry();
   try {
     const db = createDatabaseFromEnv();
-    const count = await backfillClimbingAttemptCount(db, execute);
-    console.log(
-      `[climbing-attempt-count-backfill] ${execute ? "updated" : "found"} ${count} climbing entries`,
-    );
-    if (!execute) {
+    try {
+      const count = await backfillClimbingAttemptCount(db, execute);
       console.log(
-        "[climbing-attempt-count-backfill] dry run only; add --execute to update Postgres",
+        `[climbing-attempt-count-backfill] ${execute ? "updated" : "found"} ${count} climbing entries`,
       );
+      if (!execute) {
+        console.log(
+          "[climbing-attempt-count-backfill] dry run only; add --execute to update Postgres",
+        );
+      }
+    } finally {
+      await db.$client.end();
     }
   } catch (error: unknown) {
     Sentry.captureException(error);

@@ -22,7 +22,8 @@ afterEach(() => {
 
 describe("main", () => {
   it("defaults to a dry run and reports the eligible count", async () => {
-    const db = { execute: vi.fn() };
+    const end = vi.fn().mockResolvedValue(undefined);
+    const db = { execute: vi.fn(), $client: { end } };
     vi.mocked(createDatabaseFromEnv).mockReturnValue(db);
     vi.mocked(backfillClimbingAttemptCount).mockResolvedValue(3);
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -34,10 +35,25 @@ describe("main", () => {
       "[climbing-attempt-count-backfill] dry run only; add --execute to update Postgres",
     );
     expect(Sentry.close).toHaveBeenCalledWith(2_000);
+    expect(end).toHaveBeenCalledOnce();
   });
 
   it("rejects unknown options before opening a database connection", async () => {
     await expect(main(["--unexpected"])).rejects.toThrow("Unknown option: --unexpected");
     expect(createDatabaseFromEnv).not.toHaveBeenCalled();
+  });
+
+  it("reports unexpected errors, closes the database pool, and rethrows", async () => {
+    const end = vi.fn().mockResolvedValue(undefined);
+    const db = { execute: vi.fn(), $client: { end } };
+    const error = new Error("backfill failed");
+    vi.mocked(createDatabaseFromEnv).mockReturnValue(db);
+    vi.mocked(backfillClimbingAttemptCount).mockRejectedValue(error);
+
+    await expect(main([])).rejects.toThrow("backfill failed");
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(end).toHaveBeenCalledOnce();
+    expect(Sentry.close).toHaveBeenCalledWith(2_000);
   });
 });

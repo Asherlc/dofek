@@ -1,8 +1,9 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { Database } from "./index.ts";
 
-const countRowSchema = z.tuple([z.object({ count: z.number() })]);
+const countRowSchema = z.object({ count: z.number() });
 
 export async function backfillClimbingAttemptCount(
   db: Pick<Database, "execute">,
@@ -17,7 +18,10 @@ export async function backfillClimbingAttemptCount(
   `;
 
   const rows = execute
-    ? await db.execute(sql`
+    ? await executeWithSchema(
+        db,
+        countRowSchema,
+        sql`
         WITH updated AS (
           UPDATE fitness.climbing_entry
           SET attempt_count = (raw->>'attempts')::int
@@ -25,12 +29,21 @@ export async function backfillClimbingAttemptCount(
           RETURNING 1
         )
         SELECT COUNT(*)::int AS count FROM updated
-      `)
-    : await db.execute(sql`
+      `,
+      )
+    : await executeWithSchema(
+        db,
+        countRowSchema,
+        sql`
         SELECT COUNT(*)::int AS count
         FROM fitness.climbing_entry
         WHERE ${eligiblePredicate}
-      `);
+      `,
+      );
 
-  return countRowSchema.parse(rows)[0].count;
+  const [row] = rows;
+  if (!row || rows.length !== 1) {
+    throw new Error("Expected one backfill count row");
+  }
+  return row.count;
 }

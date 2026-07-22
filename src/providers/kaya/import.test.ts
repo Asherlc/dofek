@@ -247,6 +247,10 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touch
         message: "row 2: attempts must be a positive integer",
       },
       {
+        csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,2147483648,v3,Pink,,Touchstone Pacific Pipe,,`,
+        message: "row 2: attempts must be a positive integer",
+      },
+      {
         csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe`,
         message: "row 2: malformed CSV row",
       },
@@ -261,6 +265,15 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touch
         expect.objectContaining({ message: testCase.message }),
       );
     }
+  });
+
+  it("accepts the largest Postgres integer attempt count", () => {
+    const csv = `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,2147483647,v3,Pink,,Touchstone Pacific Pipe,,`;
+
+    const result = parseKayaExport(csv);
+
+    expect(result.errors).toEqual([]);
+    expect(result.activities[0]?.entries[0]?.attemptCount).toBe(2_147_483_647);
   });
 
   it("preserves original CSV row numbers when blank lines are skipped", () => {

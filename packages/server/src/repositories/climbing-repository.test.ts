@@ -261,7 +261,8 @@ describe("ClimbingRepository", () => {
       await repo.getVolumeByGrade(30);
 
       const text = queryText(execute.mock.calls[0]?.[0]);
-      expect(text).toContain("SUM(ce.attempt_count)::int AS attempts");
+      expect(text).toContain("SUM(ce.attempt_count) AS attempts");
+      expect(text).not.toContain("SUM(ce.attempt_count)::int AS attempts");
       expect(text).toContain("COUNT(*) FILTER (WHERE ce.sent)::int AS sends");
       expect(text).toContain("GROUP BY ce.climb_type, ce.grade_system, ce.grade, grade_sort_value");
       expect(text).toContain("ORDER BY grade_sort_value");
@@ -344,7 +345,8 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
       expect(text).toContain("a.activity_type IN ('climbing', 'rock_climbing')");
       expect(text).toContain("IS NOT NULL");
-      expect(text).toContain("SUM(attempt_count)::int AS attempts");
+      expect(text).toContain("SUM(attempt_count) AS attempts");
+      expect(text).not.toContain("SUM(attempt_count)::int AS attempts");
       expect(text).toContain("COUNT(*) FILTER (WHERE sent)::int AS sends");
     });
   });

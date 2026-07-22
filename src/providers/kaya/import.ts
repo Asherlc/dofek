@@ -24,6 +24,7 @@ const KAYA_HEADER = [
 ] as const;
 
 const SENT_ASCENT_TYPES = new Set(["Redpoint", "Repeat", "Onsight"]);
+const attemptCountSchema = z.number().int().min(1).max(2_147_483_647);
 
 interface KayaDecodedRow {
   date: string;
@@ -318,7 +319,7 @@ class KayaExportParser {
       country: nullableText(row.country),
     };
     const attemptCount = raw.attempts ?? 1;
-    if (!Number.isInteger(attemptCount) || attemptCount < 1) {
+    if (!attemptCountSchema.safeParse(attemptCount).success) {
       return { rowNumber, message: `row ${rowNumber}: attempts must be a positive integer` };
     }
     const routeName = nullableText(row.climb_name);
