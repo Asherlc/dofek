@@ -97,6 +97,29 @@ export class ClimbingSessionSummary {
   }
 }
 
+export interface ClimbingActivityEntryRow {
+  id: string;
+  climbType: ClimbingClimbType;
+  gradeSystem: ClimbingGradeSystem;
+  grade: string;
+  sent: boolean;
+  routeName: string | null;
+  locationName: string | null;
+  sourceName: string;
+}
+
+export class ClimbingActivityEntry {
+  readonly #row: ClimbingActivityEntryRow;
+
+  constructor(row: ClimbingActivityEntryRow) {
+    this.#row = row;
+  }
+
+  toDetail(): ClimbingActivityEntryRow {
+    return this.#row;
+  }
+}
+
 const climbTypeSchema = z.enum(["boulder", "route"]);
 const gradeSystemSchema = z.enum(["v_scale", "yds"]);
 
@@ -128,6 +151,17 @@ const sessionSummaryRowSchema = z.object({
   hardest_boulder_grade_sort_value: z.coerce.number().nullable(),
   hardest_route_grade: z.string().nullable(),
   hardest_route_grade_sort_value: z.coerce.number().nullable(),
+});
+
+const activityEntryRowSchema = z.object({
+  id: z.string(),
+  climb_type: climbTypeSchema,
+  grade_system: gradeSystemSchema,
+  grade: z.string(),
+  sent: z.boolean(),
+  route_name: z.string().nullable(),
+  location_name: z.string().nullable(),
+  source_name: z.string(),
 });
 
 const climbingGradeSortSql = sql`
@@ -287,6 +321,42 @@ export class ClimbingRepository extends BaseRepository {
           hardestBoulderGradeSortValue: row.hardest_boulder_grade_sort_value,
           hardestRouteGrade: nullableNormalizedGrade(row.hardest_route_grade),
           hardestRouteGradeSortValue: row.hardest_route_grade_sort_value,
+        }),
+    );
+  }
+
+  async getActivityEntries(activityId: string): Promise<ClimbingActivityEntry[]> {
+    const rows = await executeWithSchema(
+      this.db,
+      activityEntryRowSchema,
+      sql`SELECT
+            ce.id::text AS id,
+            ce.climb_type,
+            ce.grade_system,
+            ce.grade,
+            ce.sent,
+            ce.route_name,
+            ce.location_name,
+            ce.source_name
+          FROM fitness.v_activity a
+          JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
+          WHERE a.user_id = ${this.userId}::uuid
+            AND ${activityId}::uuid = ANY(a.member_activity_ids)
+            ${this.timestampAccessPredicate(sql`a.started_at`)}
+          ORDER BY ${climbingGradeSortSql} NULLS LAST, ce.route_name NULLS LAST, ce.id`,
+    );
+
+    return rows.map(
+      (row) =>
+        new ClimbingActivityEntry({
+          id: row.id,
+          climbType: row.climb_type,
+          gradeSystem: row.grade_system,
+          grade: normalizedGrade(row.grade),
+          sent: row.sent,
+          routeName: row.route_name,
+          locationName: row.location_name,
+          sourceName: row.source_name,
         }),
     );
   }

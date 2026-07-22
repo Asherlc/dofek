@@ -15100,3 +15100,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Expo's mutable online baseline can make an
   unchanged commit fail after a new recommendation is published. This is an
   accepted trade-off of following Expo's mainstream CI policy.
+## 2026-07-22 — Climbing Entries Missing From Activity Detail
+
+- **Status:** Resolved by the member-aware climbing detail API/UI and immutable
+  migration-history repair described below.
+- **Symptoms:** The production detail page for activity
+  `734b5d3e-df2b-4ee0-888e-55ea539d913a` showed generic activity metrics but no
+  Kaya climbing attempts, grades, or sends.
+- **User impact:** Eight successfully imported bouldering entries were invisible
+  on their merged activity's detail page.
+- **Evidence:** Postgres contained eight `fitness.climbing_entry` rows linked to
+  the activity's `kaya-export` member ID, covering V0 through V4; ClickHouse also
+  contained 2,884 stream points and six heart-rate-zone buckets for the canonical
+  activity. The web detail page requests `activity.byId`, `activity.stream`, and
+  zone data but no climbing-entry procedure
+  ([activity detail source](../packages/web/src/pages/ActivityDetailPage.tsx)).
+  The climbing router exposes only range aggregates and session summaries
+  ([climbing router](../packages/server/src/routers/climbing.ts)).
+- **Root cause:** Ingestion and activity deduplication worked, but no server
+  procedure or web/mobile detail component exposes per-activity climbing entries.
+- **Fix / mitigation:** Added a member-aware per-activity climbing-entry query and
+  rendered it on both web and mobile activity detail screens. Restored the exact
+  historical `0003_drop_percent_recorded.sql` bytes in a non-executable
+  migration archive so production integrity checks can reconcile the applied
+  row without replaying the compacted migration on fresh databases.
+- **Validation:** Canonical Postgres rows, merged member IDs, ClickHouse summary,
+  stream, and zone rows were queried directly in production. Focused web,
+  mobile, repository, router, and real-Postgres migration tests passed, including
+  proof that archived SQL is integrity-checked but never executed. Lint,
+  workspace and package TypeScript checks, and the full 12,965-test unit/mobile
+  suite passed before deployment.
+- **Remaining risk / follow-up:** No code-level risk remains from the incident.
+  Continue monitoring migration integrity and the two ClickHouse consumers after
+  deploys; the original failure left `analytics-worker` and
+  `metric-stream-clickhouse-sink` quiesced at `0/0`
+  ([failed deploy run](https://github.com/Asherlc/dofek/actions/runs/29926938914)).

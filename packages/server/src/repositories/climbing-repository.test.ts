@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  ClimbingActivityEntry,
   ClimbingGradeProgression,
   ClimbingRepository,
   ClimbingSessionSummary,
@@ -83,6 +84,32 @@ describe("ClimbingSessionSummary", () => {
       hardestBoulderGradeSortValue: 4,
       hardestRouteGrade: "5.10c",
       hardestRouteGradeSortValue: 5103,
+    });
+  });
+});
+
+describe("ClimbingActivityEntry", () => {
+  it("serializes to API shape", () => {
+    const row = new ClimbingActivityEntry({
+      id: "entry-1",
+      climbType: "boulder",
+      gradeSystem: "v_scale",
+      grade: "V4",
+      sent: true,
+      routeName: "Blue Arete",
+      locationName: "Pacific Pipe",
+      sourceName: "Kaya",
+    });
+
+    expect(row.toDetail()).toEqual({
+      id: "entry-1",
+      climbType: "boulder",
+      gradeSystem: "v_scale",
+      grade: "V4",
+      sent: true,
+      routeName: "Blue Arete",
+      locationName: "Pacific Pipe",
+      sourceName: "Kaya",
     });
   });
 });
@@ -319,6 +346,51 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("IS NOT NULL");
       expect(text).toContain("SUM(attempt_count)::int AS attempts");
       expect(text).toContain("COUNT(*) FILTER (WHERE sent)::int AS sends");
+    });
+  });
+
+  describe("getActivityEntries", () => {
+    it("returns normalized entries for an activity member", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "entry-1",
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "v4",
+          sent: true,
+          route_name: "Blue Arete",
+          location_name: "Pacific Pipe",
+          source_name: "Kaya",
+        },
+      ]);
+
+      const result = await repo.getActivityEntries("activity-1");
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBeInstanceOf(ClimbingActivityEntry);
+      expect(result[0]?.toDetail()).toEqual({
+        id: "entry-1",
+        climbType: "boulder",
+        gradeSystem: "v_scale",
+        grade: "V4",
+        sent: true,
+        routeName: "Blue Arete",
+        locationName: "Pacific Pipe",
+        sourceName: "Kaya",
+      });
+    });
+
+    it("queries entries through deduped activity members", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getActivityEntries("activity-1");
+
+      const text = queryText(execute.mock.calls[0]?.[0]);
+      expect(text).toContain("fitness.v_activity");
+      expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
+      expect(text).toContain("ANY(a.member_activity_ids)");
+      expect(text).toContain("a.user_id = ");
+      expect(text).toContain("ORDER BY");
     });
   });
 });

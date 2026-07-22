@@ -19,6 +19,7 @@ const countRowSchema = z.object({
 describe("climbing router integration", () => {
   let testContext: TestContext;
   let climbingActivityId: string;
+  let visibleClimbingActivityId: string;
   let routeActivityId: string;
 
   beforeAll(async () => {
@@ -26,7 +27,9 @@ describe("climbing router integration", () => {
 
     await testContext.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('kaya-export', 'Kaya', ${TEST_USER_ID})
+          VALUES
+            ('kaya-export', 'Kaya', ${TEST_USER_ID}),
+            ('strava', 'Strava', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -53,6 +56,15 @@ describe("climbing router integration", () => {
             '2026-07-07T10:00:00Z'::timestamptz,
             '2026-07-07T11:30:00Z'::timestamptz,
             'Kaya climbing at Mission Cliffs'
+          ),
+          (
+            'strava',
+            ${TEST_USER_ID},
+            'climbing-router-strava-overlap',
+            'rock_climbing',
+            '2026-07-06T10:00:00Z'::timestamptz,
+            '2026-07-06T11:30:00Z'::timestamptz,
+            'Morning Rock Climb'
           )
           RETURNING id, external_id`,
     );
@@ -68,6 +80,19 @@ describe("climbing router integration", () => {
     }
     climbingActivityId = boulderActivity.id;
     routeActivityId = routeActivity.id;
+
+    const visibleActivities = await executeWithSchema(
+      testContext.db,
+      z.object({ id: z.string() }),
+      sql`SELECT id::text AS id
+          FROM fitness.v_activity
+          WHERE ${climbingActivityId}::uuid = ANY(member_activity_ids)`,
+    );
+    const visibleClimbingActivity = visibleActivities[0];
+    if (!visibleClimbingActivity) {
+      throw new Error("Failed to resolve the merged climbing activity");
+    }
+    visibleClimbingActivityId = visibleClimbingActivity.id;
 
     await testContext.db.execute(
       sql`INSERT INTO fitness.climbing_entry (
@@ -171,7 +196,7 @@ describe("climbing router integration", () => {
     expect(sessionSummary).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          activityId: climbingActivityId,
+          activityId: visibleClimbingActivityId,
           attempts: 9,
           sends: 2,
           hardestBoulderGrade: "V4",
@@ -198,6 +223,35 @@ describe("climbing router integration", () => {
         )
       `),
     ).rejects.toThrow("Failed query");
+  });
+
+  it("returns climbing entries attached to a merged activity member", async () => {
+    const caller = createCaller({
+      db: testContext.db,
+      userId: TEST_USER_ID,
+      timezone: "UTC",
+    });
+
+    await expect(caller.activityEntries({ id: visibleClimbingActivityId })).resolves.toEqual([
+      expect.objectContaining({
+        climbType: "boulder",
+        grade: "V2",
+        routeName: "Warmup",
+        sent: true,
+      }),
+      expect.objectContaining({
+        climbType: "boulder",
+        grade: "V4",
+        routeName: "Blue Circuit",
+        sent: true,
+      }),
+      expect.objectContaining({
+        climbType: "boulder",
+        grade: "V5",
+        routeName: "Project",
+        sent: false,
+      }),
+    ]);
   });
 
   it("cascades climbing entries when an activity is deleted", async () => {
