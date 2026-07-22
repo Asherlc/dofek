@@ -43,7 +43,7 @@ describe("buildProcessingAnalyticsEvents", () => {
         errorMessage: null,
         message: "Analytics calculation completed",
         servingWatermark: "dbt-run-1",
-        idempotencyKey: "dbt-run-1:providers:provider_stats:succeeded",
+        idempotencyKey: `dbt-run-1:${operationId}:providers:provider_stats:succeeded`,
       },
       {
         operationId,
@@ -54,7 +54,7 @@ describe("buildProcessingAnalyticsEvents", () => {
         errorMessage: null,
         message: "Analytics calculations completed",
         servingWatermark: "dbt-run-1",
-        idempotencyKey: "dbt-run-1:providers:aggregate:succeeded",
+        idempotencyKey: `dbt-run-1:${operationId}:providers:aggregate:succeeded`,
       },
     ]);
   });
@@ -83,7 +83,7 @@ describe("buildProcessingAnalyticsEvents", () => {
         errorMessage: "upstream model did not run",
         message: "Analytics calculation did not complete",
         servingWatermark: "dbt-run-1",
-        idempotencyKey: "dbt-run-1:providers:provider_stats:skipped",
+        idempotencyKey: `dbt-run-1:${operationId}:providers:provider_stats:skipped`,
       },
       {
         operationId,
@@ -94,7 +94,7 @@ describe("buildProcessingAnalyticsEvents", () => {
         errorMessage: "Some analytics calculations could not be completed. Try the update again.",
         message: "Some analytics calculations did not complete",
         servingWatermark: "dbt-run-1",
-        idempotencyKey: "dbt-run-1:providers:aggregate:failed",
+        idempotencyKey: `dbt-run-1:${operationId}:providers:aggregate:failed`,
       },
     ]);
   });
@@ -110,6 +110,33 @@ describe("buildProcessingAnalyticsEvents", () => {
       status: "failed",
       errorCode: "required_model_unattempted",
     });
+  });
+
+  it("keeps event keys distinct when operations share a dataset", () => {
+    const secondOperationId = "30000000-0000-4000-8000-000000000002";
+    const events = buildProcessingAnalyticsEvents({
+      runId: "dbt-run-shared",
+      pendingDatasets: [
+        { operationId, datasetKey: "providers" },
+        { operationId: secondOperationId, datasetKey: "providers" },
+      ],
+      modelResults: [
+        {
+          name: "provider_stats",
+          status: "succeeded",
+          errorCode: null,
+          message: null,
+        },
+      ],
+    });
+
+    expect(new Set(events.map((event) => event.idempotencyKey))).toHaveLength(events.length);
+    expect(events.map((event) => event.idempotencyKey)).toEqual([
+      `dbt-run-shared:${operationId}:providers:provider_stats:succeeded`,
+      `dbt-run-shared:${operationId}:providers:aggregate:succeeded`,
+      `dbt-run-shared:${secondOperationId}:providers:provider_stats:succeeded`,
+      `dbt-run-shared:${secondOperationId}:providers:aggregate:succeeded`,
+    ]);
   });
 
   it("skips analytics for a dataset with no analytics models", () => {
@@ -186,7 +213,7 @@ describe("recordAnalyticsRunForPendingProcessing", () => {
         message: "Analytics calculation completed",
         errorCode: null,
         errorMessage: null,
-        idempotencyKey: "dbt-run-1:providers:provider_stats:succeeded",
+        idempotencyKey: `dbt-run-1:${operationId}:providers:provider_stats:succeeded`,
       },
     );
     expect(processingEventStoreMocks.appendProcessingStageEvent).toHaveBeenNthCalledWith(
@@ -199,7 +226,7 @@ describe("recordAnalyticsRunForPendingProcessing", () => {
         datasetKey: "providers",
         servingWatermark: "dbt-run-1",
         message: "Waiting for cached views to refresh",
-        idempotencyKey: "cache:dbt-run-1:providers:aggregate:succeeded",
+        idempotencyKey: `cache:dbt-run-1:${operationId}:providers:aggregate:succeeded`,
       },
     );
   });
@@ -243,7 +270,7 @@ describe("recordAnalyticsRunForPendingProcessing", () => {
         datasetKey: "nutrition",
         servingWatermark: "dbt-run-3",
         message: "Waiting for cached views to refresh",
-        idempotencyKey: "cache:dbt-run-3:nutrition:skipped",
+        idempotencyKey: `cache:dbt-run-3:${operationId}:nutrition:skipped`,
       },
     );
   });
