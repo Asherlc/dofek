@@ -35,6 +35,7 @@ interface ObservedRelationalMarker {
   datasetKey: ProcessingDatasetKey;
   flowName: string;
   batchKey: string;
+  sourceWatermark: string;
 }
 
 interface ObservedMetricBatch {
@@ -85,6 +86,7 @@ const observedRelationalMarkerRowsSchema = z.array(
     dataset_key: datasetKeySchema,
     flow_name: z.string().min(1),
     batch_key: z.string().min(1),
+    source_watermark: z.string().min(1),
   }),
 );
 const observedMetricBatchRowsSchema = z.array(
@@ -153,13 +155,15 @@ function reconcileRelationalOutput(
         (marker) =>
           marker.operationId === input.operationId && marker.datasetKey === output.datasetKey,
       )
-      .map((marker) => `${marker.flowName}:${marker.batchKey}`),
+      .map((marker) => `${marker.flowName}:${marker.batchKey}:${marker.sourceWatermark}`),
   );
   const expectedFlows = new Set(expectedMarkers.map((marker) => marker.flowName));
   const hasEveryRequiredFlow = requiredFlowNames.every((flowName) => expectedFlows.has(flowName));
   const complete =
     hasEveryRequiredFlow &&
-    expectedMarkers.every((marker) => observedMarkers.has(`${marker.flowName}:${marker.batchKey}`));
+    expectedMarkers.every((marker) =>
+      observedMarkers.has(`${marker.flowName}:${marker.batchKey}:${marker.sourceWatermark}`),
+    );
   const sourceWatermark = expectedMarkers.at(-1)?.sourceWatermark ?? null;
 
   return evidenceDecision(input.operationId, output, complete, sourceWatermark);
@@ -249,13 +253,14 @@ async function loadReconciliationInput(
             ORDER BY published_at, id`,
       ),
       clickHouseClient.query({
-        query: `SELECT operation_id, dataset_key, flow_name, batch_key
+        query: `SELECT operation_id, dataset_key, flow_name, batch_key, source_watermark
           FROM (
             SELECT
               toString(raw_marker.operation_id) AS operation_id,
               raw_marker.dataset_key AS dataset_key,
               raw_marker.flow_name AS flow_name,
-              raw_marker.batch_key AS batch_key
+              raw_marker.batch_key AS batch_key,
+              raw_marker.source_watermark AS source_watermark
             FROM postgres_fitness.processing_flow_marker AS raw_marker FINAL
             WHERE raw_marker.operation_id = {operation_id:UUID}
               AND raw_marker.flow_name = 'dofek_fitness_raw_analytics'
@@ -265,7 +270,8 @@ async function loadReconciliationInput(
               toString(inventory_marker.operation_id) AS operation_id,
               inventory_marker.dataset_key AS dataset_key,
               inventory_marker.flow_name AS flow_name,
-              inventory_marker.batch_key AS batch_key
+              inventory_marker.batch_key AS batch_key,
+              inventory_marker.source_watermark AS source_watermark
             FROM postgres_fitness.processing_flow_marker_provider_inventory AS inventory_marker FINAL
             WHERE inventory_marker.operation_id = {operation_id:UUID}
               AND inventory_marker.flow_name = 'dofek_provider_inventory_raw_analytics'
@@ -313,6 +319,7 @@ async function loadReconciliationInput(
       datasetKey: marker.dataset_key,
       flowName: marker.flow_name,
       batchKey: marker.batch_key,
+      sourceWatermark: marker.source_watermark,
     })),
     observedMetricBatches: observedMetricBatches.map((batch) => ({
       operationId: batch.operation_id,
@@ -388,7 +395,7 @@ export async function reconcilePendingProcessingOperations({
           datasetKey,
           servingWatermark: servingWatermark || undefined,
           message: "Waiting for analytics calculations",
-          idempotencyKey: `analytics:${servingWatermark || "no-cdc-transport"}`,
+          idempotencyKey: `analytics:${datasetKey}:${servingWatermark || "no-cdc-transport"}`,
         });
       }
     }
