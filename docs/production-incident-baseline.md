@@ -15157,8 +15157,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-22 — Climbing Entries Missing From Activity Detail
 
-- **Status:** Member-aware climbing detail is merged; production rollout is
-  pending a complete immutable migration-history repair described below.
+- **Status:** Member-aware climbing detail and the historical migration archive
+  are merged; production rollout remains pending restoration of one active
+  migration that was changed after production applied it.
 - **Symptoms:** The production detail page for activity
   `734b5d3e-df2b-4ee0-888e-55ea539d913a` showed generic activity metrics but no
   Kaya climbing attempts, grades, or sends.
@@ -15182,6 +15183,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `0002` files) in a non-executable migration archive. Production's migration
   ledger confirmed these are the complete missing applied filenames, so the
   repair does not rely on repeated deploy failures to discover them.
+  Restored `0042_strength_set_activity_id_not_null.sql` to the exact bytes that
+  production applied from PR #1552's first commit. Later commits in that PR
+  added a redundant constraint validation before merge, changing the file hash
+  after the production ledger had recorded it; migration `0004` had already
+  created and validated that constraint.
 - **Validation:** Canonical Postgres rows, merged member IDs, ClickHouse summary,
   stream, and zone rows were queried directly in production. Focused web,
   mobile, repository, router, and real-Postgres migration tests passed, including
@@ -15192,10 +15198,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `sha-56763ed` image and failed on missing `0003`; the merged `sha-b611e39`
   image accepted `0003` and then failed on missing `0004`, proving the archive
   lookup works and that the compacted migration set needed a complete audit.
-- **Remaining risk / follow-up:** Merge and deploy the complete archive, then
+  The complete archive then passed integrity checks, exposing the independent
+  `0042` mutation: production expected SHA-256
+  `bdbd8c4dafa0b1f72c3f9adcfcc88316fe3aa95b278d7a422dc8fd0ee6cd125c`
+  while the merged file had
+  `cd280085ab7d7092897b537b8994d0906dd3c3d0f75ef1b9c0a3eaa3a6cae2a2`.
+  The failed deploy quiesced both ClickHouse consumers; they were restored to
+  one healthy replica each on the prior production image.
+- **Remaining risk / follow-up:** Merge and deploy the `0042` restoration, then
   verify migrations, the web/worker rollout, both ClickHouse consumers, and the
   original climbing activity page. Until that deployment succeeds, production
   remains on the previous app image and the user-visible climbing fix is not
   live. Failed deploy runs:
   [preceding image](https://github.com/Asherlc/dofek/actions/runs/29944229608)
-  and [merged image](https://github.com/Asherlc/dofek/actions/runs/29945041858).
+  [merged image](https://github.com/Asherlc/dofek/actions/runs/29945041858), and
+  [complete archive](https://github.com/Asherlc/dofek/actions/runs/29948084505).
