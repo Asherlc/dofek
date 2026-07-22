@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+const require = createRequire(import.meta.url);
 const policyScript = path.resolve("scripts/workflow-download-policy.ts");
-const tsxCli = path.resolve("node_modules/tsx/dist/cli.mjs");
+const tsxCli = require.resolve("tsx/cli");
 
 function runPolicy(fixtureName: string) {
   return spawnSync(
