@@ -8,7 +8,6 @@ import type { ActivitySensorStore } from "../repositories/activity-repository.ts
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
-  executeClickHouseTestCommand,
   getClickHouseTestClient,
   seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
@@ -169,7 +168,6 @@ describe("activity_power_curve read model", () => {
   it("uses elapsed timestamp duration instead of sample count for power windows", async () => {
     const renderedSql = renderNonIncrementalActivityPowerCurveSql();
 
-    await executeClickHouseTestCommand(testContext, "TRUNCATE TABLE ingest.metric_stream");
     await insertActivity(
       testContext,
       regularActivityId,
@@ -213,7 +211,8 @@ describe("activity_power_curve read model", () => {
           best_power,
           is_deleted
         FROM (${renderedSql}) AS power_curve
-        WHERE duration_seconds = 5
+        WHERE activity_id IN ('${regularActivityId}', '${gappedActivityId}')
+          AND duration_seconds = 5
         ORDER BY activity_id
       `,
     );
