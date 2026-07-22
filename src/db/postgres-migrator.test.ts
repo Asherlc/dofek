@@ -1,14 +1,21 @@
+import { createHash } from "node:crypto";
 import { Client } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   drizzle: vi.fn(),
+  existsSync: vi.fn(),
   migrate: vi.fn(),
+  readdirSync: vi.fn(),
   readFileSync: vi.fn(),
   readMigrationFiles: vi.fn(),
 }));
 
-vi.mock("node:fs", () => ({ readFileSync: mocks.readFileSync }));
+vi.mock("node:fs", () => ({
+  existsSync: mocks.existsSync,
+  readdirSync: mocks.readdirSync,
+  readFileSync: mocks.readFileSync,
+}));
 vi.mock("drizzle-orm/migrator", () => ({ readMigrationFiles: mocks.readMigrationFiles }));
 vi.mock("drizzle-orm/node-postgres", () => ({ drizzle: mocks.drizzle }));
 vi.mock("drizzle-orm/node-postgres/migrator", () => ({ migrate: mocks.migrate }));
@@ -111,7 +118,9 @@ describe("postgres migrator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.drizzle.mockReturnValue("drizzle-database");
+    mocks.existsSync.mockReturnValue(false);
     mocks.migrate.mockResolvedValue(undefined);
+    mocks.readdirSync.mockReturnValue([]);
     setMigrationHistory([{ hash: "current-hash", tag: "0001_create_table", when: 100 }]);
   });
 
@@ -186,6 +195,33 @@ describe("postgres migrator", () => {
       ],
     );
     expect(mocks.drizzle).toHaveBeenCalledWith(client);
+    expect(mocks.migrate).toHaveBeenCalledWith("drizzle-database", {
+      migrationsFolder: "/migrations",
+    });
+  });
+
+  it("reconciles an applied archived migration without adding it to Drizzle execution", async () => {
+    const archivedSql = "DROP VIEW fitness.v_activity;";
+    const archivedHash = createHash("sha256").update(archivedSql).digest("hex");
+    mocks.existsSync.mockReturnValue(true);
+    mocks.readdirSync.mockReturnValue(["0000_archived.sql", "README.md"]);
+    mocks.readFileSync.mockImplementation((path: string) =>
+      path.endsWith("0000_archived.sql")
+        ? archivedSql
+        : JSON.stringify({ entries: [{ tag: "0001_create_table", when: 100 }] }),
+    );
+    const { client, queryMock } = makeClient([
+      { content_hash: archivedHash, created_at: 50, hash: "0000_archived.sql" },
+    ]);
+
+    await runDrizzleMigrations(client, "/migrations");
+
+    expect(queryMock).toHaveBeenNthCalledWith(
+      4,
+      expect.stringContaining("FROM unnest($1::text[], $2::text[])"),
+      [["0000_archived.sql"], [archivedHash]],
+    );
+    expect(mocks.readMigrationFiles).toHaveBeenCalledWith({ migrationsFolder: "/migrations" });
     expect(mocks.migrate).toHaveBeenCalledWith("drizzle-database", {
       migrationsFolder: "/migrations",
     });

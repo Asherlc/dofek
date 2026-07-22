@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -11,8 +12,12 @@ interface BaselineMigration {
   hash: string;
 }
 
-interface MigrationHistoryEntry extends BaselineMigration {
+interface ImmutableMigration {
   file: string;
+  hash: string;
+}
+
+interface MigrationHistoryEntry extends BaselineMigration, ImmutableMigration {
   tag: string;
 }
 
@@ -90,6 +95,23 @@ function readMigrationHistory(migrationsFolder: string): MigrationHistoryEntry[]
   });
 }
 
+function readArchivedMigrationHistory(migrationsFolder: string): ImmutableMigration[] {
+  const historyFolder = join(migrationsFolder, "_history");
+  if (!existsSync(historyFolder)) {
+    return [];
+  }
+
+  return readdirSync(historyFolder)
+    .filter((file) => file.endsWith(".sql"))
+    .sort()
+    .map((file) => ({
+      file,
+      hash: createHash("sha256")
+        .update(readFileSync(join(historyFolder, file)))
+        .digest("hex"),
+    }));
+}
+
 export function readBaselineMigration(migrationsFolder: string): BaselineMigration | undefined {
   return readMigrationHistory(migrationsFolder).find((migration) =>
     /^\d+_baseline(?:_.*)?$/.test(migration.tag),
@@ -99,12 +121,14 @@ export function readBaselineMigration(migrationsFolder: string): BaselineMigrati
 function assertAppliedMigrationIntegrity(
   appliedMigrations: AppliedMigration[],
   migrationHistory: MigrationHistoryEntry[],
+  archivedMigrationHistory: ImmutableMigration[],
 ): void {
+  const immutableMigrations = [...migrationHistory, ...archivedMigrationHistory];
   const migrationsByFile = new Map(
-    migrationHistory.map((migration) => [migration.file, migration]),
+    immutableMigrations.map((migration) => [migration.file, migration]),
   );
   const migrationsByHash = new Map(
-    migrationHistory.map((migration) => [migration.hash, migration]),
+    immutableMigrations.map((migration) => [migration.hash, migration]),
   );
   const migrationsByCreatedAt = new Map(
     migrationHistory.map((migration) => [migration.folderMillis, migration]),
@@ -159,6 +183,7 @@ async function reconcileLegacyMigrationHistory(
   migrationsFolder: string,
 ): Promise<void> {
   const migrationHistory = readMigrationHistory(migrationsFolder);
+  const archivedMigrationHistory = readArchivedMigrationHistory(migrationsFolder);
   await client.query(`ALTER TABLE drizzle.__drizzle_migrations
     ADD COLUMN IF NOT EXISTS content_hash TEXT`);
   const appliedResult = await client.query(
@@ -170,7 +195,7 @@ async function reconcileLegacyMigrationHistory(
     createdAt: row.created_at,
     hash: row.hash,
   }));
-  assertAppliedMigrationIntegrity(appliedMigrations, migrationHistory);
+  assertAppliedMigrationIntegrity(appliedMigrations, migrationHistory, archivedMigrationHistory);
 
   await client.query(
     `UPDATE drizzle.__drizzle_migrations AS applied
@@ -185,6 +210,20 @@ async function reconcileLegacyMigrationHistory(
       migrationHistory.map((migration) => migration.file),
       migrationHistory.map((migration) => migration.hash),
       migrationHistory.map((migration) => migration.folderMillis),
+    ],
+  );
+
+  await client.query(
+    `UPDATE drizzle.__drizzle_migrations AS applied
+     SET hash = history.content_hash,
+         content_hash = history.content_hash
+     FROM unnest($1::text[], $2::text[])
+       AS history(file_name, content_hash)
+     WHERE applied.hash = history.file_name
+        OR applied.hash = history.content_hash`,
+    [
+      archivedMigrationHistory.map((migration) => migration.file),
+      archivedMigrationHistory.map((migration) => migration.hash),
     ],
   );
 }

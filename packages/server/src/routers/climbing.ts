@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
+  type ClimbingActivityEntryRow,
   type ClimbingGradeProgressionRow,
   ClimbingRepository,
   type ClimbingSessionSummaryRow,
@@ -24,6 +25,14 @@ async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
 }
 
 export const climbingRouter = router({
+  activityEntries: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+    .input(z.object({ id: z.guid() }))
+    .query(async ({ ctx, input }): Promise<ClimbingActivityEntryRow[]> => {
+      const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const rows = await runClimbingQuery(() => repository.getActivityEntries(input.id));
+      return rows.map((row) => row.toDetail());
+    }),
+
   gradeProgression: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionRow[]> => {
