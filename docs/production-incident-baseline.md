@@ -15045,3 +15045,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the PR's Actionlint and test checks pass,
   then verify the next production deployment restores both consumers only after
   CDC setup succeeds.
+
+## 2026-07-22 — Power-Curve Integration Fixture Collided During Deduplication
+
+- **Status:** Root cause fixed; pull-request CI validation is pending.
+- **Symptoms:** `Test / Integration Tests (3/4)` failed in
+  `activity-power-curve-read-model.integration.test.ts` because the five-second
+  power row belonged to a different activity UUID than the test expected.
+- **User impact:** The pull request was blocked; production behavior was not
+  affected.
+- **Evidence:** The exact failing step was the integration shard's Vitest run.
+  Its first fatal assertion expected the current test's `regularActivityId` but
+  received another UUID with the same `best_power` and duration. The failure is
+  recorded in [GitHub Actions run 29933279646](https://github.com/Asherlc/dofek/actions/runs/29933279646).
+- **Root cause:** Multiple fixtures used the same fixed start time and duration,
+  so the activity read model correctly deduplicated them and selected a
+  canonical UUID by ordering randomly generated IDs.
+- **Fix / mitigation:** Test timestamps are unique per run and separated within
+  the suite, and the assertion query is scoped to the two activity IDs created
+  by the test.
+- **Validation:** Docker-free lint, type-check, and unit gates are rerun locally;
+  the database-backed assertion will be validated by pull-request CI because the
+  local ClickHouse recursive model exceeds this workspace's fixed memory limit.
+  No retries, timeouts, fallback behavior, or memory-limit changes were added.
+- **Remaining risk / follow-up:** Confirm all pull-request integration shards pass
+  on a clean GitHub runner.

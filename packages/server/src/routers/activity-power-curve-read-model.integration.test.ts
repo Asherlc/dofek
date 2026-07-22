@@ -14,9 +14,16 @@ import {
 } from "./clickhouse-integration-test-helpers.ts";
 
 const testUserId = "00000000-0000-0000-0000-000000000001";
-const regularActivityStartedAt = "2026-07-01T12:00:00.000Z";
-const gappedActivityStartedAt = "2026-07-01T13:00:00.000Z";
-const varyingPowerStartedAt = "2026-07-01T14:00:00.000Z";
+const testRunStartedAtMs = Date.now();
+
+function testTimestamp(offsetSeconds: number): string {
+  return new Date(testRunStartedAtMs + offsetSeconds * 1000).toISOString();
+}
+
+const unchangedActivityStartedAt = testTimestamp(-3600);
+const regularActivityStartedAt = testTimestamp(0);
+const gappedActivityStartedAt = testTimestamp(3600);
+const varyingPowerStartedAt = testTimestamp(7200);
 const readModelRowSchema = z.object({
   activity_id: z.string(),
   duration_seconds: z.coerce.number(),
@@ -113,8 +120,8 @@ describe("activity_power_curve read model", () => {
       testContext,
       unchangedActivityId,
       "unchanged-power",
-      regularActivityStartedAt,
-      "2026-07-01T12:00:30.000Z",
+      unchangedActivityStartedAt,
+      testTimestamp(-3570),
     );
     await syncClickHouseTestActivitySensorStore(testContext);
     await client.command({
@@ -140,7 +147,7 @@ describe("activity_power_curve read model", () => {
         )`,
         query_params: {
           activityId: unchangedActivityId,
-          startedAt: regularActivityStartedAt,
+          startedAt: unchangedActivityStartedAt,
           userId: testUserId,
         },
       });
@@ -171,14 +178,14 @@ describe("activity_power_curve read model", () => {
       regularActivityId,
       "regular-power",
       regularActivityStartedAt,
-      "2026-07-01T12:00:30.000Z",
+      testTimestamp(30),
     );
     await insertActivity(
       testContext,
       gappedActivityId,
       "gapped-power",
       gappedActivityStartedAt,
-      "2026-07-01T13:00:30.000Z",
+      testTimestamp(3630),
     );
     await syncClickHouseTestActivitySensorStore(testContext);
     await seedClickHouseMetricStreamRows(testContext, [
@@ -209,7 +216,8 @@ describe("activity_power_curve read model", () => {
           best_power,
           is_deleted
         FROM (${renderedSql}) AS power_curve
-        WHERE duration_seconds = 5
+        WHERE activity_id IN ('${regularActivityId}', '${gappedActivityId}')
+          AND duration_seconds = 5
         ORDER BY activity_id
       `,
     );
@@ -233,7 +241,7 @@ describe("activity_power_curve read model", () => {
       varyingActivityId,
       "varying-power",
       varyingPowerStartedAt,
-      "2026-07-01T14:00:06.000Z",
+      testTimestamp(7206),
     );
     await syncClickHouseTestActivitySensorStore(testContext);
     await seedClickHouseMetricStreamRows(testContext, [
