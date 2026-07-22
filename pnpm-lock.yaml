@@ -376,8 +376,8 @@ importers:
         specifier: 9.3.11
         version: 9.3.11
       '@formatjs/intl-pluralrules':
-        specifier: 6.3.9
-        version: 6.3.9
+        specifier: 6.3.12
+        version: 6.3.12
       '@opentelemetry/api-logs':
         specifier: 0.218.0
         version: 0.218.0
@@ -2591,17 +2591,17 @@ packages:
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
 
-  '@formatjs/bigdecimal@0.2.5':
-    resolution: {integrity: sha512-2XTKNrZRaCUyXK2976wfutqxMBuPO/S/zbJnQdysLI2Zy5mWPVNVEkE6tsTcSVWSE7DgO88t8DtBy+uf3I8bxg==}
-
   '@formatjs/bigdecimal@0.2.6':
     resolution: {integrity: sha512-aPzKsGQOkQRHUEbyO/ZtYfr4EqaBQnSs6U4tzTla1xBnIdEHgY2GqEqso28UMwWRkzKqqTj5+/6BmuOsRkfn2A==}
 
-  '@formatjs/fast-memoize@3.1.5':
-    resolution: {integrity: sha512-KLi3fan6WnCHmigd9pmEEN8Hid0v4wiFBW576M/d07KMWYecf1CvyMI3n34vCmHT4AoVqG2n702kiHbXjzZX2A==}
+  '@formatjs/bigdecimal@0.2.7':
+    resolution: {integrity: sha512-B4+XY/e4u5v261r3a37Kq2ax91gPZSKGyVpx8X5dygAggLlUz+6MeBpmAhaBFGB8WQ4JB1qD+QtKHk9aJkEb9Q==}
 
   '@formatjs/fast-memoize@3.1.6':
     resolution: {integrity: sha512-H5aexk1Le7T9TPmscacZ+1pR6CTa2n1wq+HDVGXhH8TzUlQQpeXzZs91dRtmFHrbeNbjPFPfQujUqm7MHgVoXQ==}
+
+  '@formatjs/fast-memoize@3.1.7':
+    resolution: {integrity: sha512-zXfhLpvA6T7+efdt9JLbBwZ00tT7NsBMDVnDu8rpHeNNv8KfRZAMo2gkG0k9lK/Nzc//3kJ9pImsfuJxk3KhUA==}
 
   '@formatjs/intl-getcanonicallocales@3.2.10':
     resolution: {integrity: sha512-iH9faynSJ7EO8h7VgMfkjGBMUvmmalyio2dTqB2tSSi8UZuWWfHmeQ/RT+Ztl/SUdrN5tm0SO3218uLQIkCGXw==}
@@ -2612,14 +2612,14 @@ packages:
   '@formatjs/intl-localematcher@0.8.10':
     resolution: {integrity: sha512-P/IC3qws3jH+1fEs+o0RIFgXKRaQlFehjS5W0FPAqdo6hgzawLl+eD0q0JjheQ3XtoOe5n8WSYfX06KQZI/QJA==}
 
-  '@formatjs/intl-localematcher@0.8.9':
-    resolution: {integrity: sha512-GmB0F/gYh4Hdl4rLWjgDsgT+x4pB54fkJeRh8kAZ4XFzKeCK8dGs+SBJWXO42QZtOUni+IDWKNuCw6wiL4lTvw==}
+  '@formatjs/intl-localematcher@0.8.12':
+    resolution: {integrity: sha512-5H3r5ZJ2jZqHEv9K343lvHmeMDKMxssawAVD2H4J9xtu0ZXb6MlNxwLqdwBxJSHFU0C24KSZnffgmAi+59mK4A==}
 
   '@formatjs/intl-numberformat@9.3.11':
     resolution: {integrity: sha512-AF7I2OIV/kSTvUBBV5nnP+SBA71DiSRcK5O9buEcHohqcg5ZhAcWmLf9FCpMya/saHahi2E0IOS2oSP+keRP5g==}
 
-  '@formatjs/intl-pluralrules@6.3.9':
-    resolution: {integrity: sha512-0405uU1npNs5/N04tfIQ3pme96Xb51tEkCBTBKy8HMjAsssbhnK70gf8v3ogj1WqHf7WFRoFZu8clQTsvwBQNg==}
+  '@formatjs/intl-pluralrules@6.3.12':
+    resolution: {integrity: sha512-MurVhCc7dYMX/mDA+asdV/GeNiZE+BH0SLktOsd84X+fJZFjJCgqVvFVLKzqkLVMze9FbNqO7n9xaCty/cHCHQ==}
 
   '@formatjs/intl-supportedvaluesof@2.3.8':
     resolution: {integrity: sha512-webY7Ylc4CRRgxXFxZ4yRIr+9SKZyMLh+Hrsim4vG3HKSpD+T7d9XXvTdd6UDILyXf7BsqAa8l5/Nn2eENWCqw==}
@@ -16899,13 +16899,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@formatjs/bigdecimal@0.2.5': {}
-
   '@formatjs/bigdecimal@0.2.6': {}
 
-  '@formatjs/fast-memoize@3.1.5': {}
+  '@formatjs/bigdecimal@0.2.7': {}
 
   '@formatjs/fast-memoize@3.1.6': {}
+
+  '@formatjs/fast-memoize@3.1.7': {}
 
   '@formatjs/intl-getcanonicallocales@3.2.10': {}
 
@@ -16918,19 +16918,19 @@ snapshots:
     dependencies:
       '@formatjs/fast-memoize': 3.1.6
 
-  '@formatjs/intl-localematcher@0.8.9':
+  '@formatjs/intl-localematcher@0.8.12':
     dependencies:
-      '@formatjs/fast-memoize': 3.1.5
+      '@formatjs/fast-memoize': 3.1.7
 
   '@formatjs/intl-numberformat@9.3.11':
     dependencies:
       '@formatjs/bigdecimal': 0.2.6
       '@formatjs/intl-localematcher': 0.8.10
 
-  '@formatjs/intl-pluralrules@6.3.9':
+  '@formatjs/intl-pluralrules@6.3.12':
     dependencies:
-      '@formatjs/bigdecimal': 0.2.5
-      '@formatjs/intl-localematcher': 0.8.9
+      '@formatjs/bigdecimal': 0.2.7
+      '@formatjs/intl-localematcher': 0.8.12
 
   '@formatjs/intl-supportedvaluesof@2.3.8':
     dependencies:
@@ -19424,9 +19424,7 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
