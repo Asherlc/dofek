@@ -14,6 +14,7 @@ import {
 } from "./clickhouse-integration-test-helpers.ts";
 
 const testUserId = "00000000-0000-0000-0000-000000000001";
+const unchangedActivityStartedAt = "2026-07-01T11:00:00.000Z";
 const regularActivityStartedAt = "2026-07-01T12:00:00.000Z";
 const gappedActivityStartedAt = "2026-07-01T13:00:00.000Z";
 const varyingPowerStartedAt = "2026-07-01T14:00:00.000Z";
@@ -117,8 +118,8 @@ describe("activity_power_curve read model", () => {
       testContext,
       unchangedActivityId,
       "unchanged-power",
-      regularActivityStartedAt,
-      "2026-07-01T12:00:30.000Z",
+      unchangedActivityStartedAt,
+      "2026-07-01T11:00:30.000Z",
     );
     await syncClickHouseTestActivitySensorStore(testContext);
     await client.command({
@@ -144,7 +145,7 @@ describe("activity_power_curve read model", () => {
         )`,
         query_params: {
           activityId: unchangedActivityId,
-          startedAt: regularActivityStartedAt,
+          startedAt: unchangedActivityStartedAt,
           userId: testUserId,
         },
       });
