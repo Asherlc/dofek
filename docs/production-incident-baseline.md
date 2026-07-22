@@ -14602,3 +14602,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   credentialed artifacts before merge. Their secretless checks still exercise
   the affected source; the full credentialed builds run from trusted repository
   contexts.
+
+## 2026-07-21 — OTA Deploy Probe Accepted an Invalid Manifest Request
+
+- **Symptoms:** The OTA deployment workflow reported the origin healthy while
+  production iOS manifest requests timed out. Its probe omitted the Expo
+  protocol, platform, runtime, and channel headers and accepted every HTTP
+  response below 500, including the resulting HTTP 400.
+- **User impact:** OTA publishes could receive a false-green readiness result
+  even when devices could not discover or download updates.
+- **Evidence:** The workflow-equivalent request returned HTTP 400 with `No
+  channel name provided`. Requests matching the shipped app configuration
+  timed out after ten seconds while the OTA service's cold stored-update lookup
+  took 60–65 seconds; the identical request returned HTTP 200 in 0.409 seconds
+  after the lookup cache was populated. On July 21, a fresh production request
+  with the shipped headers returned HTTP 200 multipart content in 2.844 seconds,
+  and the OTA service log recorded the matching `GET /manifest` completion.
+- **Root cause:** The deploy probe exercised an invalid headerless request and
+  classified its expected client error as healthy, so it never reached the
+  stored-update path used by the app.
+- **Fix / mitigation:** The workflow now runs `check-ota-manifest.ts`, which
+  sends the production iOS request shape with a five-second timeout. It accepts
+  only HTTP 204 or an HTTP 200 response containing Expo protocol version 1 and
+  a parseable multipart manifest. Expo defines these request headers and
+  response structures in the
+  [Expo Updates v1 specification](https://docs.expo.dev/technical-specs/expo-updates-1/).
+- **Validation:** The focused Vitest suite covers HTTP 204 success, valid HTTP
+  200 success, HTTP 400 failure, malformed HTTP 200 failure, and timeout
+  failure. The same script succeeds against the live production endpoint inside
+  the app's five-second fallback window.
+- **Remaining risk / follow-up:** The upstream OTA service still enumerates and
+  validates stored updates serially on a cold cache. The corrected deploy probe
+  will now fail loudly if that path exceeds the client budget; continue tracking
+  an upstream indexing or cache-warming fix if production cold misses recur.
