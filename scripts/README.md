@@ -15,6 +15,7 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 
 - `with-env.sh`: Wrapper script that loads environment variables from `.env`, `.env.local`, and **Infisical**.
   - Automatically constructs OpenTelemetry auth headers from `AXIOM_API_TOKEN`.
+  - Exits before running the command when Infisical export fails or no command is provided.
   - Usage: `./scripts/with-env.sh <command>`
 - `make-admin.sh`: Promotes a user to admin in the production database via SSH.
   - Resolves server IP via Infisical, finds the `dofek-db` container, and executes `UPDATE fitness.user_profile SET is_admin = true ...`.

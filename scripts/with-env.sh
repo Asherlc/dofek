@@ -6,6 +6,11 @@
 # Requires: infisical CLI installed and authenticated (run `infisical login` first)
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+if [ "$#" -eq 0 ]; then
+  echo "Usage: $(basename "$0") <command>" >&2
+  exit 64
+fi
+
 # Load .env as defaults (don't overwrite existing vars)
 if [ -f "$REPO_ROOT/.env" ]; then
   while IFS='=' read -r key value; do
@@ -24,7 +29,11 @@ if [ -f "$REPO_ROOT/.env.local" ]; then
 fi
 
 # Fetch secrets from Infisical and export them
-eval "$(infisical export --env=prod --format=dotenv-export)"
+if ! infisical_exports="$(infisical export --env=prod --format=dotenv-export)"; then
+  echo "Failed to export secrets from Infisical" >&2
+  exit 1
+fi
+eval "$infisical_exports"
 
 # Construct OTEL auth headers from Axiom API token (config concern, not a secret)
 if [ -n "$AXIOM_API_TOKEN" ]; then
