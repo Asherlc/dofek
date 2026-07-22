@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import type {
+  ClimbingActivityEntryRow,
   ClimbingGradeProgressionRow,
   ClimbingSessionSummaryRow,
   ClimbingVolumeByGradeRow,
@@ -53,6 +54,39 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
 }
 
 describe("climbingRouter", () => {
+  it("returns activity entry rows", async () => {
+    const { caller, execute } = makeCaller([
+      {
+        id: "entry-1",
+        climb_type: "boulder",
+        grade_system: "v_scale",
+        grade: "v4",
+        sent: true,
+        route_name: "Blue Arete",
+        location_name: "Pacific Pipe",
+        source_name: "Kaya",
+      },
+    ]);
+
+    const result: ClimbingActivityEntryRow[] = await caller.activityEntries({
+      id: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
+    });
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(result).toEqual([
+      {
+        id: "entry-1",
+        climbType: "boulder",
+        gradeSystem: "v_scale",
+        grade: "V4",
+        sent: true,
+        routeName: "Blue Arete",
+        locationName: "Pacific Pipe",
+        sourceName: "Kaya",
+      },
+    ]);
+  });
+
   it("returns grade progression rows", async () => {
     const { caller, execute } = makeCaller([
       {

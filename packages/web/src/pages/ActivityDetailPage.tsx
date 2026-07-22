@@ -25,6 +25,7 @@ import {
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
+import type { ClimbingActivityEntryRow } from "../../../server/src/repositories/climbing-repository.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
@@ -82,8 +83,13 @@ function buildAxisPointerEvents(
 }
 
 const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
+const CLIMBING_ACTIVITY_TYPES = new Set(["climbing", "rock_climbing"]);
 function isStrengthActivityType(activityType: string): boolean {
   return STRENGTH_ACTIVITY_TYPES.has(activityType);
+}
+
+function isClimbingActivityType(activityType: string): boolean {
+  return CLIMBING_ACTIVITY_TYPES.has(activityType);
 }
 
 export function ActivityDetailPage() {
@@ -111,6 +117,12 @@ export function ActivityDetailPage() {
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id },
     { enabled: isStrengthActivity },
+  );
+  const isClimbingActivity =
+    detail.data != null && isClimbingActivityType(detail.data.activityType);
+  const climbingEntries = trpc.climbing.activityEntries.useQuery(
+    { id },
+    { enabled: isClimbingActivity },
   );
 
   // Ref-based hover callback avoids re-rendering the entire page on every mouse move.
@@ -209,6 +221,19 @@ export function ActivityDetailPage() {
         </Section>
       )}
 
+      {isClimbingActivity && (climbingEntries.error || (climbingEntries.data?.length ?? 0) > 0) && (
+        <Section
+          title="Climbs"
+          description="The climbs recorded during this session, including grades and send status."
+        >
+          {climbingEntries.error ? (
+            <p className="text-sm text-red-400">{climbingEntries.error.message}</p>
+          ) : (
+            <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
+          )}
+        </Section>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {hasAltitude && (
           <Section
@@ -251,6 +276,39 @@ export function ActivityDetailPage() {
         )}
       </div>
     </PageLayout>
+  );
+}
+
+function ClimbingEntryBreakdown({ entries }: { entries: ClimbingActivityEntryRow[] }) {
+  return (
+    <div className="divide-y divide-border">
+      {entries.map((entry) => (
+        <div
+          key={entry.id}
+          className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="min-w-12 rounded bg-accent/10 px-2 py-1 text-center text-sm font-semibold text-accent">
+              {entry.grade}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-foreground">
+                {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
+              </p>
+              {entry.locationName && (
+                <p className="truncate text-xs text-subtle">{entry.locationName}</p>
+              )}
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className={entry.sent ? "text-sm text-green-500" : "text-sm text-subtle"}>
+              {entry.sent ? "Sent" : "Attempted"}
+            </p>
+            <p className="text-xs text-dim">{entry.sourceName}</p>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
