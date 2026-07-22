@@ -164,7 +164,9 @@ describe("instrumentation", () => {
     expect(config?.metricReader).toBeDefined();
     expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
     expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
-    expect(BatchLogRecordProcessor).toHaveBeenCalledWith(expect.any(OTLPLogExporter));
+    expect(BatchLogRecordProcessor).toHaveBeenCalledWith({
+      exporter: expect.any(OTLPLogExporter),
+    });
     expect(PeriodicExportingMetricReader).toHaveBeenCalledWith(
       expect.objectContaining({ exporter: expect.any(OTLPMetricExporter) }),
     );

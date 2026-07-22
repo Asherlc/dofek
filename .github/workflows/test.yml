@@ -42,10 +42,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
-      # GitHub's advisory currently marks every @tanstack/history version as
-      # vulnerable, while the known compromised releases are specific versions.
-      # The lockfile pins TanStack Router packages away from those releases.
-      - run: pnpm audit --prod --audit-level=critical --ignore-registry-errors --ignore GHSA-rmmr-r34h-pfm5
+      - run: pnpm audit --prod --audit-level=high --ignore-registry-errors
 
   license-check:
     name: License Check
