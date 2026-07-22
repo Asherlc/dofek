@@ -133,6 +133,7 @@
     "check:clickhouse-cdc": "./scripts/with-env.sh tsx scripts/check-clickhouse-cdc.ts",
     "catch-up:metric-stream": "./scripts/with-env.sh tsx scripts/catch-up-clickhouse-metric-stream.ts",
     "backfill:body-measurements": "./scripts/with-env.sh tsx scripts/backfill-body-measurement-sample.ts",
+    "backfill:climbing-attempt-count": "./scripts/with-env.sh tsx scripts/backfill-climbing-attempt-count.ts",
     "test:all": "tsx scripts/run-tests.ts all",
     "test:changed": "vitest run --changed origin/main --project unit --project mobile",
     "test:changed:all": "tsx scripts/run-tests.ts changed",

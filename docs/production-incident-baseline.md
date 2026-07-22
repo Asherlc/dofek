@@ -15046,6 +15046,115 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   then verify the next production deployment restores both consumers only after
   CDC setup succeeds.
 
+## 2026-07-22 — Kaya Climbing Attempts Matched Sends 1:1
+
+- **Status:** Root cause fixed and validated locally; production deployment and
+  historical backfill are pending.
+- **Symptoms:** Climbing volume by grade displayed 52 attempts and 52 sends, with
+  identical attempt and send counts for every grade.
+- **User impact:** The climbing dashboard understated attempts and made send
+  rates appear to be 100%.
+- **Evidence:** Kaya CSV rows preserve a numeric `attempts` value, but the importer
+  previously stored that value only in the raw payload while creating one sent
+  climbing entry per CSV row. The repository then used row count as its attempt
+  total; see the [Kaya importer](../src/providers/kaya/import.ts) and
+  [climbing repository](../packages/server/src/repositories/climbing-repository.ts).
+- **Root cause:** The canonical climbing model represented a sent ascent row but
+  had no canonical attempt-count field, so server aggregation treated every sent
+  row as exactly one attempt.
+- **Fix / mitigation:** Migration `0055_climbing_attempt_count` adds a positive
+  canonical `attempt_count`; Kaya imports populate it, and climbing volume and
+  session summaries sum it server-side. A dry-run-by-default
+  [backfill](../scripts/backfill-climbing-attempt-count.ts) copies valid historical
+  Kaya counts from preserved raw payloads.
+- **Validation:** Parser and repository regression tests pass, the router
+  integration test verifies non-1:1 totals and the positive-count constraint in
+  Postgres, and the backfill integration test verifies dry-run behavior,
+  execution, and idempotence. Typecheck, repository lint, and migration policy
+  checks pass without retries or resilience changes.
+- **Remaining risk / follow-up:** Deploy the migration, run
+  `pnpm backfill:climbing-attempt-count --execute`, and confirm the production
+  climbing chart no longer reports identical attempt and send totals.
+
+## 2026-07-22 — Expo Compatibility Baseline Advanced During PR Validation
+
+- **Status:** Compatible patches applied; the online Expo validation policy is
+  retained intentionally.
+- **Symptoms:** The Metro Bundle job began rejecting 14 pinned mobile packages
+  even though the same dependency graph had passed earlier that morning.
+- **User impact:** Unrelated pull requests were blocked from merging.
+- **Evidence:** `pnpm expo install --check` passed at `15:46 UTC`, Expo published
+  `expo@57.0.8` at `16:31 UTC`, and the first failure occurred at `17:00 UTC`
+  with `Found outdated dependencies`. Expo documents the command as its CI
+  dependency-validation workflow
+  ([Expo CLI dependency validation](https://docs.expo.dev/more/expo-cli/#dependency-validation)).
+- **Root cause:** The blocking compatibility check consulted Expo's mutable
+  online version metadata, so its acceptance criteria could change without a
+  repository commit even though pnpm installed the frozen lockfile.
+- **Fix / mitigation:** The compatible Expo patch set was updated and committed
+  to the lockfile. The blocking check continues to use Expo's online
+  compatibility recommendations, following Expo's documented CI workflow.
+- **Validation:** Online dependency validation, YAML lint, the
+  repository-pinned Actionlint 1.7.12, and the hosted Metro Bundle job pass with
+  the updated dependency set.
+- **Remaining risk / follow-up:** Expo's mutable online baseline can make an
+  unchanged commit fail after a new recommendation is published. This is an
+  accepted trade-off of following Expo's mainstream CI policy.
+## 2026-07-22 — Power-Curve Integration Fixture Collided During Deduplication
+
+- **Status:** Root cause fixed and validated in pull-request CI.
+- **Symptoms:** `Test / Integration Tests (3/4)` failed in
+  `activity-power-curve-read-model.integration.test.ts` because the five-second
+  power row belonged to a different activity UUID than the test expected.
+- **User impact:** The pull request was blocked; production behavior was not
+  affected.
+- **Evidence:** The exact failing step was the integration shard's Vitest run.
+  Its first fatal assertion expected the current test's `regularActivityId` but
+  received another UUID with the same `best_power` and duration. The failure is
+  recorded in [GitHub Actions run 29933279646](https://github.com/Asherlc/dofek/actions/runs/29933279646).
+- **Root cause:** Multiple fixtures used the same fixed start time and duration,
+  so the activity read model correctly deduplicated them and selected a
+  canonical UUID by ordering randomly generated IDs. The canonical-ID ordering
+  is defined in the
+  [`v_activity` read model](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/src/db/clickhouse-read-models.ts#L249-L310).
+- **Fix / mitigation:** Test timestamps are unique per run and separated within
+  the suite, and the assertion query is scoped to the two activity IDs created
+  by the test, as shown in the
+  [updated integration fixture](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/packages/server/src/routers/activity-power-curve-read-model.integration.test.ts#L16-L26)
+  and its
+  [scoped assertion query](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/packages/server/src/routers/activity-power-curve-read-model.integration.test.ts#L171-L230).
+- **Validation:** The previously failing
+  [integration shard 3 passed](https://github.com/Asherlc/dofek/actions/runs/29940462015/job/88992934160)
+  on a clean GitHub runner. No retries, timeouts, fallback behavior, or
+  memory-limit changes were added.
+- **Remaining risk / follow-up:** None for this test-fixture collision.
+
+## 2026-07-22 — Expo Compatibility Drift Blocked the Metro Bundle
+
+- **Status:** Root cause fixed and validated in pull-request CI.
+- **Symptoms:** `Build Mobile / Metro Bundle` stopped before exporting the iOS
+  bundle because Expo reported fourteen dependencies outside the versions
+  expected by SDK 57.
+- **User impact:** Pull request 1858 was blocked; no production bundle or runtime
+  was affected.
+- **Evidence:** The exact failing step was `Verify dependencies match Expo SDK`,
+  and its first fatal result was `Found outdated dependencies` in
+  [GitHub Actions job 88992791430](https://github.com/Asherlc/dofek/actions/runs/29940462015/job/88992791430).
+- **Root cause:** Expo's SDK compatibility metadata advanced to newer patch
+  versions after the repository dependencies were last locked. Expo documents
+  `npx expo install --check` as the dependency-version validation command in its
+  [CLI installation guidance](https://docs.expo.dev/more/expo-cli/#install).
+- **Fix / mitigation:** The fourteen SDK-managed packages and lockfile were
+  refreshed to the versions selected by `expo install --fix`; the resulting
+  versions are recorded in the
+  [mobile package manifest](https://github.com/Asherlc/dofek/blob/Asherlc/combine-into-one-table/packages/mobile/package.json#L37-L84).
+- **Validation:** `pnpm expo install --check` reports `Dependencies are up to
+  date`; lint, type-checks, and the complete Docker-free suite of 12,962 tests
+  passed locally. The Metro bundle and iOS native build also passed in
+  [GitHub Actions run 29943460108](https://github.com/Asherlc/dofek/actions/runs/29943460108).
+  No compatibility-check bypass or dependency exclusion was added.
+- **Remaining risk / follow-up:** None for the Expo dependency alignment.
+
 ## 2026-07-22 — Climbing Entries Missing From Activity Detail
 
 - **Status:** Member-aware climbing detail is merged; production rollout is

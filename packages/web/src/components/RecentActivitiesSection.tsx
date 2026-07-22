@@ -4,7 +4,8 @@ import { z } from "zod";
 import { useTrainingDays } from "../lib/trainingDaysContext.ts";
 import { trpc } from "../lib/trpc.ts";
 import { assertRows } from "../lib/utils.ts";
-import { ActivityList } from "./ActivityList.tsx";
+import { type Activity, ActivityList } from "./ActivityList.tsx";
+import type { ActivityTableColumn } from "./ActivityTable.tsx";
 
 const activityRowSchema = z.object({
   id: z.string(),
@@ -45,9 +46,15 @@ const PAGE_SIZE = 20;
 
 interface RecentActivitiesSectionProps {
   activityTypes?: readonly string[];
+  additionalColumns?: Array<ActivityTableColumn<Activity>>;
+  additionalDataLoading?: boolean;
 }
 
-export function RecentActivitiesSection({ activityTypes }: RecentActivitiesSectionProps) {
+export function RecentActivitiesSection({
+  activityTypes,
+  additionalColumns,
+  additionalDataLoading = false,
+}: RecentActivitiesSectionProps) {
   const { days } = useTrainingDays();
   const [page, setPage] = useState(0);
   const endDate = useMemo(() => formatDateYmd(new Date()), []);
@@ -73,7 +80,8 @@ export function RecentActivitiesSection({ activityTypes }: RecentActivitiesSecti
   return (
     <ActivityList
       activities={assertRows(activities.data?.items, activityRowSchema)}
-      loading={activities.isLoading}
+      additionalColumns={additionalColumns}
+      loading={activities.isLoading || additionalDataLoading}
       error={activities.error?.message}
       totalCount={activities.data?.totalCount}
       page={page}
