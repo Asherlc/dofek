@@ -14804,3 +14804,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   checks pass without added waits or retries.
 - **Remaining risk / follow-up:** Deploy the fix, retry the Kaya CSV, and confirm
   the production upload row advances through queued and completed states.
+
+## 2026-07-21 — Deploy Audit Found CDC Failure Could Start ClickHouse Consumers
+
+- **Status:** Root cause fixed and validated locally; PR and production deploy
+  validation are pending.
+- **Symptoms:** A workflow audit found that the final ClickHouse consumer stack
+  deploy remained eligible after a post-quiesce readiness or CDC setup failure.
+  No production failure was reproduced; this was a preventative control-flow
+  finding.
+- **User impact:** A failed PeerDB, Temporal, or ClickHouse CDC setup could have
+  started `analytics-worker` and `metric-stream-clickhouse-sink` against missing,
+  stale, or unverified CDC state, compounding the failed deploy with ingestion
+  errors or stale analytics.
+- **Evidence:** The exact prerequisite command is the `Configure ClickHouse CDC`
+  step's `docker run ... src/db/setup-clickhouse-cdc.ts`. Its nonzero exit would
+  set the step conclusion to `failure`; there was no captured fatal production
+  log because the defect was identified statically. The subsequent `Deploy
+  ClickHouse consumer services` step used `if: always() &&
+  steps.deploy_stack_quiesced.conclusion != 'skipped'`. GitHub documents that
+  `always()` returns true even after prior failures, whereas `success()` requires
+  all previous steps to have succeeded
+  ([GitHub Actions status check functions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)).
+- **Root cause:** The final consumer-start step replaced GitHub's normal success
+  gate with `always()` and checked only that the quiesced deploy was not skipped,
+  so a failed CDC prerequisite did not block restoring consumer replicas.
+- **Fix / mitigation:** The consumer deploy now requires `success()`, a successful
+  quiesced deploy, and a successful `configure_clickhouse_cdc` conclusion. A
+  separate failure-only reporting step leaves the consumers at zero replicas and
+  tells the operator to resolve the failed prerequisite and rerun the deployment.
+- **Validation:** A focused workflow policy test failed against the original
+  `always()` condition and now passes, covering both the failed-CDC gate and the
+  operator report. No retries, timeouts, or fallback defaults were added.
+- **Remaining risk / follow-up:** Confirm the PR's Actionlint and test checks pass,
+  then verify the next production deployment restores both consumers only after
+  CDC setup succeeds.
