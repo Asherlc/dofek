@@ -15046,6 +15046,60 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   then verify the next production deployment restores both consumers only after
   CDC setup succeeds.
 
+## 2026-07-22 — Kaya Climbing Attempts Matched Sends 1:1
+
+- **Status:** Root cause fixed and validated locally; production deployment and
+  historical backfill are pending.
+- **Symptoms:** Climbing volume by grade displayed 52 attempts and 52 sends, with
+  identical attempt and send counts for every grade.
+- **User impact:** The climbing dashboard understated attempts and made send
+  rates appear to be 100%.
+- **Evidence:** Kaya CSV rows preserve a numeric `attempts` value, but the importer
+  previously stored that value only in the raw payload while creating one sent
+  climbing entry per CSV row. The repository then used row count as its attempt
+  total; see the [Kaya importer](../src/providers/kaya/import.ts) and
+  [climbing repository](../packages/server/src/repositories/climbing-repository.ts).
+- **Root cause:** The canonical climbing model represented a sent ascent row but
+  had no canonical attempt-count field, so server aggregation treated every sent
+  row as exactly one attempt.
+- **Fix / mitigation:** Migration `0055_climbing_attempt_count` adds a positive
+  canonical `attempt_count`; Kaya imports populate it, and climbing volume and
+  session summaries sum it server-side. A dry-run-by-default
+  [backfill](../scripts/backfill-climbing-attempt-count.ts) copies valid historical
+  Kaya counts from preserved raw payloads.
+- **Validation:** Parser and repository regression tests pass, the router
+  integration test verifies non-1:1 totals and the positive-count constraint in
+  Postgres, and the backfill integration test verifies dry-run behavior,
+  execution, and idempotence. Typecheck, repository lint, and migration policy
+  checks pass without retries or resilience changes.
+- **Remaining risk / follow-up:** Deploy the migration, run
+  `pnpm backfill:climbing-attempt-count --execute`, and confirm the production
+  climbing chart no longer reports identical attempt and send totals.
+
+## 2026-07-22 — Expo Compatibility Baseline Advanced During PR Validation
+
+- **Status:** Compatible patches applied; the online Expo validation policy is
+  retained intentionally.
+- **Symptoms:** The Metro Bundle job began rejecting 14 pinned mobile packages
+  even though the same dependency graph had passed earlier that morning.
+- **User impact:** Unrelated pull requests were blocked from merging.
+- **Evidence:** `pnpm expo install --check` passed at `15:46 UTC`, Expo published
+  `expo@57.0.8` at `16:31 UTC`, and the first failure occurred at `17:00 UTC`
+  with `Found outdated dependencies`. Expo documents the command as its CI
+  dependency-validation workflow
+  ([Expo CLI dependency validation](https://docs.expo.dev/more/expo-cli/#dependency-validation)).
+- **Root cause:** The blocking compatibility check consulted Expo's mutable
+  online version metadata, so its acceptance criteria could change without a
+  repository commit even though pnpm installed the frozen lockfile.
+- **Fix / mitigation:** The compatible Expo patch set was updated and committed
+  to the lockfile. The blocking check continues to use Expo's online
+  compatibility recommendations, following Expo's documented CI workflow.
+- **Validation:** Online dependency validation, YAML lint, the
+  repository-pinned Actionlint 1.7.12, and the hosted Metro Bundle job pass with
+  the updated dependency set.
+- **Remaining risk / follow-up:** Expo's mutable online baseline can make an
+  unchanged commit fail after a new recommendation is published. This is an
+  accepted trade-off of following Expo's mainstream CI policy.
 ## 2026-07-22 — Power-Curve Integration Fixture Collided During Deduplication
 
 - **Status:** Root cause fixed and validated in pull-request CI.
