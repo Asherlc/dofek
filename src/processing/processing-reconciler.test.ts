@@ -253,8 +253,8 @@ describe("reconcilePendingProcessingOperations", () => {
     mockExecuteWithSchema
       .mockResolvedValueOnce([{ operation_id: operationId }])
       .mockResolvedValueOnce([
-        { dataset_key: "activity", output_path: "relational" },
         { dataset_key: "activity", output_path: "metric_stream" },
+        { dataset_key: "activity", output_path: "relational" },
       ])
       .mockResolvedValueOnce([
         {
@@ -304,20 +304,6 @@ describe("reconcilePendingProcessingOperations", () => {
           stage: "cdc",
           status: "succeeded",
           datasetKey: "activity",
-          outputPath: "relational",
-          sourceWatermark: "commit-1",
-          servingWatermark: "commit-1",
-          message: "Stored data is available for analysis",
-          idempotencyKey: `cdc:${operationId}:activity:relational:succeeded:commit-1`,
-        },
-      ],
-      [
-        reconciliationDatabase,
-        {
-          operationId,
-          stage: "cdc",
-          status: "succeeded",
-          datasetKey: "activity",
           outputPath: "metric_stream",
           sourceWatermark: "metric-batch-1",
           servingWatermark: "metric-batch-1",
@@ -329,12 +315,26 @@ describe("reconcilePendingProcessingOperations", () => {
         reconciliationDatabase,
         {
           operationId,
+          stage: "cdc",
+          status: "succeeded",
+          datasetKey: "activity",
+          outputPath: "relational",
+          sourceWatermark: "commit-1",
+          servingWatermark: "commit-1",
+          message: "Stored data is available for analysis",
+          idempotencyKey: `cdc:${operationId}:activity:relational:succeeded:commit-1`,
+        },
+      ],
+      [
+        reconciliationDatabase,
+        {
+          operationId,
           stage: "analytics",
           status: "queued",
           datasetKey: "activity",
-          servingWatermark: "commit-1:metric-batch-1",
+          servingWatermark: "metric-batch-1:commit-1",
           message: "Waiting for analytics calculations",
-          idempotencyKey: "analytics:activity:commit-1:metric-batch-1",
+          idempotencyKey: "analytics:activity:metric-batch-1:commit-1",
         },
       ],
     ]);
