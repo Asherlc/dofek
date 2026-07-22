@@ -49,9 +49,10 @@ import {
   requestWatchSync,
 } from "../modules/watch-motion";
 import {
+  confirmSamplesDrain as confirmWhoopSamplesDrain,
   findWhoop,
-  getBufferedSamples as getWhoopSamples,
   isBluetoothAvailable,
+  peekBufferedSamples as peekWhoopSamples,
   startImuStreaming,
   stopImuStreaming,
   connect as whoopConnect,
@@ -140,9 +141,8 @@ export default function RecordScreen() {
           },
           startStreaming: startImuStreaming,
           stopStreaming: stopImuStreaming,
-          getBufferedSamples: async () => {
-            return getWhoopSamples();
-          },
+          peekBufferedSamples: () => peekWhoopSamples(),
+          confirmSamplesDrain: confirmWhoopSamplesDrain,
         },
         trpcClient,
         deviceId: `iPhone (${Platform.OS} ${Platform.Version})`,

@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("./telemetry", () => ({ captureException: vi.fn() }));
+
 import {
   createInertialMeasurementUnitService,
   type InertialMeasurementUnitService,
   type InertialMeasurementUnitServiceDeps,
 } from "./inertial-measurement-unit-service.ts";
+import { captureException } from "./telemetry";
 
 function makeMockWhoopBle() {
   return {
@@ -11,7 +15,8 @@ function makeMockWhoopBle() {
     findAndConnect: vi.fn().mockResolvedValue(true),
     startStreaming: vi.fn().mockResolvedValue(true),
     stopStreaming: vi.fn().mockResolvedValue(true),
-    getBufferedSamples: vi.fn().mockResolvedValue([]),
+    peekBufferedSamples: vi.fn().mockResolvedValue([]),
+    confirmSamplesDrain: vi.fn(),
   };
 }
 
@@ -249,7 +254,7 @@ describe("InertialMeasurementUnitService", () => {
       ];
       const whoopBle = deps.whoopBle;
       if (!whoopBle) throw new Error("whoopBle not initialized");
-      vi.mocked(whoopBle.getBufferedSamples).mockResolvedValue(whoopSamples);
+      vi.mocked(whoopBle.peekBufferedSamples).mockResolvedValue(whoopSamples);
 
       await service.syncForTimeRange(startedAt, endedAt);
 
@@ -263,6 +268,43 @@ describe("InertialMeasurementUnitService", () => {
       expect(whoopCalls[0][0].samples).toHaveLength(2);
     });
 
+    it("retains WHOOP samples after a failed upload and confirms them after a successful retry", async () => {
+      const whoopSamples = [{ timestamp: "2026-03-25T08:00:01.000Z", x: 100, y: -200, z: 300 }];
+      let bufferedSamples = whoopSamples;
+      const whoopBle = makeMockWhoopBle();
+      vi.mocked(whoopBle.peekBufferedSamples).mockImplementation(async () => bufferedSamples);
+      vi.mocked(whoopBle.confirmSamplesDrain).mockImplementation((count) => {
+        bufferedSamples = bufferedSamples.slice(count);
+      });
+      const retryDeps = makeMockDeps();
+      vi.mocked(retryDeps.coreMotion.isAccelerometerRecordingAvailable).mockReturnValue(false);
+      vi.mocked(retryDeps.watch.isAvailable).mockReturnValue(false);
+      retryDeps.whoopBle = whoopBle;
+      const uploadError = new Error("Upload failed");
+      vi.mocked(retryDeps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate)
+        .mockRejectedValueOnce(uploadError)
+        .mockResolvedValueOnce({ inserted: 1 });
+      const retryService = createInertialMeasurementUnitService(retryDeps);
+
+      await retryService.syncForTimeRange(startedAt, endedAt);
+
+      expect(bufferedSamples).toEqual(whoopSamples);
+      expect(whoopBle.confirmSamplesDrain).not.toHaveBeenCalled();
+      expect(captureException).toHaveBeenCalledWith(uploadError, {
+        source: "activity-save-whoop-imu-upload",
+        bufferedSampleCount: 1,
+      });
+
+      await retryService.syncForTimeRange(startedAt, endedAt);
+
+      expect(whoopBle.peekBufferedSamples).toHaveBeenCalledTimes(2);
+      expect(
+        retryDeps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate,
+      ).toHaveBeenCalledTimes(2);
+      expect(whoopBle.confirmSamplesDrain).toHaveBeenCalledWith(1);
+      expect(bufferedSamples).toEqual([]);
+    });
+
     it("stops WHOOP streaming after sync", async () => {
       await service.syncForTimeRange(startedAt, endedAt);
 
@@ -272,7 +314,7 @@ describe("InertialMeasurementUnitService", () => {
     it("does not upload when WHOOP buffer is empty", async () => {
       const whoopBle = deps.whoopBle;
       if (!whoopBle) throw new Error("whoopBle not initialized");
-      vi.mocked(whoopBle.getBufferedSamples).mockResolvedValue([]);
+      vi.mocked(whoopBle.peekBufferedSamples).mockResolvedValue([]);
 
       await service.syncForTimeRange(startedAt, endedAt);
 
