@@ -14,6 +14,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 - [adding-a-provider.md](adding-a-provider.md): how to build or extend a provider.
 - [exercise-metadata.md](exercise-metadata.md): Free Exercise DB source file, Dofek exercise metadata overrides, and update workflow.
 - [testing.md](testing.md): testing patterns that come up repeatedly in this codebase.
+- [processing-status-runbook.md](processing-status-runbook.md): durable processing evidence, deployment order, and stage diagnosis.
 - [roadmap.md](roadmap.md): product-level roadmap notes and planned user-facing improvements.
 
 ## Architecture And Product Flows
@@ -66,6 +67,7 @@ Cross-provider reverse-engineering references:
 | [performance/loading-baseline-2026-07-18.md](performance/loading-baseline-2026-07-18.md) | Current Axiom-backed loading taxonomy and backend evidence gate. |
 | [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md) | Deploy failures around ClickHouse CDC, analytics read models, and hot fitness views. |
 | [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering lost PeerDB CDC slots. |
+| [processing-status-runbook.md](processing-status-runbook.md) | Deploying and diagnosing provider/import processing across Postgres, Redpanda, PeerDB, ClickHouse, dbt, and cache refresh. |
 | [metric-stream-redpanda-r2-runbook.md](metric-stream-redpanda-r2-runbook.md) | Target Redpanda and R2 replay path for durable `metric_stream` rebuilds. |
 | [provider-data-deletion-runbook.md](provider-data-deletion-runbook.md) | Generation-fenced provider deletion, transactional outbox delivery, BullMQ checkpoints, and ClickHouse tombstone verification. |
 | [clickhouse-activity-dedup-runbook.md](clickhouse-activity-dedup-runbook.md) | Keeping ClickHouse activity read models on canonical deduped activity IDs. |
