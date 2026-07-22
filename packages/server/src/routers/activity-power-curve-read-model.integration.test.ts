@@ -24,6 +24,10 @@ const unchangedActivityStartedAt = testTimestamp(-3600);
 const regularActivityStartedAt = testTimestamp(0);
 const gappedActivityStartedAt = testTimestamp(3600);
 const varyingPowerStartedAt = testTimestamp(7200);
+const unchangedActivityId = randomUUID();
+const regularActivityId = randomUUID();
+const gappedActivityId = randomUUID();
+const varyingActivityId = randomUUID();
 const readModelRowSchema = z.object({
   activity_id: z.string(),
   duration_seconds: z.coerce.number(),
@@ -90,6 +94,7 @@ async function insertActivity(
       ${activityId}, 'test_provider', ${testUserId}, ${`${name}-${activityId}`}, 'cycling',
       ${startedAt}, ${endedAt}, ${name}
     )
+    ON CONFLICT (id) DO NOTHING
   `);
 }
 
@@ -112,7 +117,6 @@ describe("activity_power_curve read model", () => {
   });
 
   it("does not recompute unchanged activities during an incremental build", async () => {
-    const unchangedActivityId = randomUUID();
     const client = getClickHouseTestClient(testContext);
     const targetTable = `analytics.test_activity_power_curve_${randomUUID().replaceAll("-", "")}`;
 
@@ -169,8 +173,6 @@ describe("activity_power_curve read model", () => {
   });
 
   it("uses elapsed timestamp duration instead of sample count for power windows", async () => {
-    const regularActivityId = randomUUID();
-    const gappedActivityId = randomUUID();
     const renderedSql = renderNonIncrementalActivityPowerCurveSql();
 
     await insertActivity(
@@ -233,7 +235,6 @@ describe("activity_power_curve read model", () => {
   });
 
   it("computes average power correctly for varying-power windows", async () => {
-    const varyingActivityId = randomUUID();
     const renderedSql = renderNonIncrementalActivityPowerCurveSql();
 
     await insertActivity(
