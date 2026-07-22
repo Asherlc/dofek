@@ -89,17 +89,23 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
       `[migrate] Found ${files.length} Postgres migration file(s), ${appliedSet.size} already applied`,
     );
 
-    // Detect in-place edits to already-applied migration files
+    // Verify the integrity of already-applied migration files
     for (const row of applied) {
-      if (!row.content_hash) continue;
       const filePath = join(dir, row.hash);
-      if (!existsSync(filePath)) continue;
+      if (!existsSync(filePath)) {
+        throw new Error(
+          `[migrate] Integrity check failed: ${row.hash} is recorded as applied but is missing. ` +
+            "Applied migrations are immutable; restore the original migration file before starting the service.",
+        );
+      }
+      if (!row.content_hash) continue;
       const currentContent = readFileSync(filePath, "utf-8");
       const currentHash = computeContentHash(currentContent);
       if (currentHash !== row.content_hash) {
-        logger.warn(
-          `[migrate] ${row.hash} has been modified since it was applied. ` +
-            "Editing applied migrations has no effect — write a new migration instead.",
+        throw new Error(
+          `[migrate] Integrity check failed: ${row.hash} has changed: ` +
+            `expected SHA-256 ${row.content_hash}, actual SHA-256 ${currentHash}. ` +
+            "Applied migrations are immutable; restore the original file or add a new forward migration.",
         );
       }
     }
