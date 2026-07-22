@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { ClimbingSessionSummaryRow } from "dofek-server/types";
+import type { Activity } from "../../components/ActivityList.tsx";
+import type { ActivityTableColumn } from "../../components/ActivityTable.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
-import { ClimbingSessionSummaryTable } from "../../components/ClimbingSessionSummaryTable.tsx";
 import { ClimbingVolumeByGradeChart } from "../../components/ClimbingVolumeByGradeChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
@@ -17,6 +19,52 @@ const CLIMBING_ACTIVITY_TYPES = ["climbing", "rock_climbing"] as const;
 
 function climbingRangeInput(days: number | null): { days?: number } {
   return days === null ? {} : { days };
+}
+
+function climbingSessionColumns(
+  sessionSummaries: ClimbingSessionSummaryRow[],
+): Array<ActivityTableColumn<Activity>> {
+  const summariesByActivityId = new Map(
+    sessionSummaries.map((summary) => [summary.activityId, summary]),
+  );
+  const summaryFor = (activity: Activity) => summariesByActivityId.get(activity.id);
+
+  return [
+    {
+      key: "attempts",
+      label: "Attempts",
+      headerClassName: "pb-2 pr-4 whitespace-nowrap",
+      cellClassName: "py-2 pr-4 text-muted tabular-nums whitespace-nowrap",
+      renderCell: (activity) => summaryFor(activity)?.attempts ?? "—",
+    },
+    {
+      key: "sends",
+      label: "Sends",
+      headerClassName: "pb-2 pr-4 whitespace-nowrap",
+      cellClassName: "py-2 pr-4 text-muted tabular-nums whitespace-nowrap",
+      renderCell: (activity) => summaryFor(activity)?.sends ?? "—",
+    },
+    {
+      key: "best-boulder-grade",
+      label: "Best Boulder Grade",
+      headerClassName: "pb-2 pr-4 whitespace-nowrap",
+      cellClassName: "py-2 pr-4 text-muted whitespace-nowrap",
+      renderCell: (activity) => {
+        const summary = summaryFor(activity);
+        return summary ? (summary.hardestBoulderGrade ?? "None") : "—";
+      },
+    },
+    {
+      key: "best-route-grade",
+      label: "Best Route Grade",
+      headerClassName: "pb-2 whitespace-nowrap",
+      cellClassName: "py-2 text-muted whitespace-nowrap",
+      renderCell: (activity) => {
+        const summary = summaryFor(activity);
+        return summary ? (summary.hardestRouteGrade ?? "None") : "—";
+      },
+    },
+  ];
 }
 
 export function ClimbingTab() {
@@ -61,19 +109,19 @@ export function ClimbingTab() {
         </Section>
       </div>
 
-      <Section title="Recent Climbing Sessions" subtitle="Recent sessions with hardest grades">
+      <Section
+        title="Recent Climbing Activities"
+        subtitle="Recent climbing activities with attempts, sends, and hardest grades"
+      >
         {sessionSummary.error && !sessionSummary.data ? (
           <QueryStatePanel error={sessionSummary.error} />
         ) : (
-          <ClimbingSessionSummaryTable
-            data={sessionSummary.data ?? []}
-            loading={sessionSummary.isLoading}
+          <RecentActivitiesSection
+            activityTypes={CLIMBING_ACTIVITY_TYPES}
+            additionalColumns={climbingSessionColumns(sessionSummary.data ?? [])}
+            additionalDataLoading={sessionSummary.isLoading}
           />
         )}
-      </Section>
-
-      <Section title="Recent Climbing Activities" subtitle="Recent climbing activity records">
-        <RecentActivitiesSection activityTypes={CLIMBING_ACTIVITY_TYPES} />
       </Section>
     </>
   );

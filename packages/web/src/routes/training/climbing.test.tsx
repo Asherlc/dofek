@@ -25,14 +25,15 @@ vi.mock("../../components/ClimbingVolumeByGradeChart.tsx", () => ({
   ClimbingVolumeByGradeChart: () => <div>Volume by Grade component</div>,
 }));
 
-vi.mock("../../components/ClimbingSessionSummaryTable.tsx", () => ({
-  ClimbingSessionSummaryTable: (props: { loading?: boolean }) => (
-    <div>Recent Climbing Sessions component {String(props.loading)}</div>
-  ),
-}));
-
 vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
-  RecentActivitiesSection: (props: { activityTypes?: readonly string[] }) => {
+  RecentActivitiesSection: (props: {
+    activityTypes?: readonly string[];
+    additionalColumns?: Array<{
+      key: string;
+      renderCell: (activity: { id: string }) => React.ReactNode;
+    }>;
+    additionalDataLoading?: boolean;
+  }) => {
     recentActivitiesSection(props);
     return <div>Recent Climbing Activities component</div>;
   },
@@ -79,16 +80,36 @@ describe("ClimbingTab", () => {
     cleanup();
   });
 
-  it("queries the climbing router and filters recent activities to climbing types", async () => {
+  it("queries the climbing router and adds session metrics to the climbing activity table", async () => {
+    sessionSummaryQuery.mockReturnValue({
+      data: [
+        {
+          activityId: "activity-1",
+          attempts: 8,
+          sends: 7,
+          hardestBoulderGrade: "V4",
+          hardestRouteGrade: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
 
     expect(gradeProgressionQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     expect(volumeByGradeQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     expect(sessionSummaryQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
-    expect(recentActivitiesSection).toHaveBeenCalledWith({
-      activityTypes: ["climbing", "rock_climbing"],
-    });
+    const sectionProps = recentActivitiesSection.mock.calls[0]?.[0];
+    expect(sectionProps.activityTypes).toEqual(["climbing", "rock_climbing"]);
+    expect(sectionProps.additionalColumns.map((column: { key: string }) => column.key)).toEqual([
+      "attempts",
+      "sends",
+      "best-boulder-grade",
+      "best-route-grade",
+    ]);
+    expect(sectionProps.additionalColumns[0].renderCell({ id: "activity-1" })).toBe(8);
+    expect(sectionProps.additionalColumns[3].renderCell({ id: "activity-1" })).toBe("None");
   });
 
   it("omits days when the selected training range is all time", async () => {
@@ -102,14 +123,14 @@ describe("ClimbingTab", () => {
     expect(sessionSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
   });
 
-  it("renders the four climbing sections", async () => {
+  it("renders one recent climbing table", async () => {
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
 
     expect(screen.getByText("Grade Progression")).toBeTruthy();
     expect(screen.getByText("Volume by Grade")).toBeTruthy();
-    expect(screen.getByText("Recent Climbing Sessions")).toBeTruthy();
     expect(screen.getByText("Recent Climbing Activities")).toBeTruthy();
+    expect(screen.queryByText("Recent Climbing Sessions")).toBeNull();
   });
 
   it("shows an error only for the failing section", async () => {
@@ -126,7 +147,7 @@ describe("ClimbingTab", () => {
     expect(screen.queryByText("Error: Grade query failed")).toBeNull();
     expect(screen.queryByText("Error: Session query failed")).toBeNull();
     expect(screen.getByText("Grade Progression component")).toBeTruthy();
-    expect(screen.getByText("Recent Climbing Sessions component false")).toBeTruthy();
+    expect(screen.getByText("Recent Climbing Activities component")).toBeTruthy();
   });
 
   it("keeps empty cached section data visible during refetch errors", async () => {
@@ -165,12 +186,12 @@ describe("ClimbingTab", () => {
     expect(screen.getByText("Grade Progression component")).toBeTruthy();
   });
 
-  it("passes session loading state to the sessions table", async () => {
+  it("passes session loading state to the unified activities table", async () => {
     sessionSummaryQuery.mockReturnValue({ data: [], isLoading: true, error: null });
 
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
 
-    expect(screen.getByText("Recent Climbing Sessions component true")).toBeTruthy();
+    expect(recentActivitiesSection.mock.calls[0]?.[0].additionalDataLoading).toBe(true);
   });
 });
