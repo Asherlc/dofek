@@ -87,6 +87,20 @@ export function FileImportZone({
   const { mutateAsync: abortUpload } = trpc.fileUpload.abort.useMutation();
   const trpcUtils = trpc.useUtils();
 
+  const invalidateImportedData = useCallback(async () => {
+    if (!validProviderId) return;
+    try {
+      await Promise.all([
+        trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId: validProviderId }),
+        trpcUtils.providerDetail.logs.invalidate({ providerId: validProviderId }),
+        trpcUtils.providerDetail.records.invalidate(),
+        trpcUtils.sync.providerStats.invalidate(),
+      ]);
+    } catch (error) {
+      captureException(error, { tags: { providerId: validProviderId } });
+    }
+  }, [trpcUtils, validProviderId]);
+
   const uploadApi = useMemo<FileUploadApi>(
     () => ({
       initiate: initiateUpload,
@@ -130,6 +144,7 @@ export function FileImportZone({
         const upload = result.upload;
         if (upload.state === "completed") {
           setState({ phase: "completed", progress: 100, message: "Import completed" });
+          await invalidateImportedData();
           return;
         }
         if (upload.state === "failed") {
@@ -156,7 +171,7 @@ export function FileImportZone({
         await waitForNextPoll();
       }
     },
-    [uploadApi, waitForNextPoll],
+    [invalidateImportedData, uploadApi, waitForNextPoll],
   );
 
   useEffect(() => {

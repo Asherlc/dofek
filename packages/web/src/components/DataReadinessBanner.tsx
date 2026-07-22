@@ -30,6 +30,7 @@ interface DataReadinessBannerProps {
   data?: DataReadinessSnapshot;
   error?: { message?: string } | null;
   loading?: boolean;
+  contextLabel?: string;
 }
 
 const classNameByStatus: Record<Exclude<DataReadinessStatus, "healthy">, string> = {
@@ -64,12 +65,18 @@ export function DataReadinessBanner({
   data,
   error = null,
   loading = false,
+  contextLabel,
 }: DataReadinessBannerProps) {
   if (loading) return null;
 
   if (error) {
     return (
       <output className="block w-full rounded-lg border border-l-4 border-slate-200 border-l-red-500 bg-white px-3 py-2.5 text-slate-950 shadow-sm">
+        {contextLabel ? (
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            {contextLabel}
+          </p>
+        ) : null}
         <h2 className="text-sm font-semibold">Data readiness is unavailable</h2>
         <p className="mt-0.5 text-xs text-slate-600">{DATA_READINESS_ERROR_MESSAGE}</p>
       </output>
@@ -101,6 +108,11 @@ export function DataReadinessBanner({
           />
         )}
         <div className="min-w-0 flex-1">
+          {contextLabel ? (
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              {contextLabel}
+            </p>
+          ) : null}
           <h2 className="text-sm font-semibold leading-5">{bannerHeading(data)}</h2>
           {checkedAt ? <p className="text-xs leading-4 text-slate-600">{checkedAt}</p> : null}
         </div>

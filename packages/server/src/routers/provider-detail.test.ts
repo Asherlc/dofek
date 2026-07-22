@@ -555,6 +555,30 @@ describe("providerDetailRouter", () => {
     });
   });
 
+  describe("availableDataTypes", () => {
+    it("returns the provider data types reported by both stores", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([{ data_type: "activities" }]);
+      const sensorQuery = vi.fn().mockResolvedValue([{ data_type: "metricStream" }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore: { query: sensorQuery },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.availableDataTypes({ providerId: "whoop" })).resolves.toEqual([
+        "activities",
+        "metricStream",
+      ]);
+      expect(mockExecute).toHaveBeenCalledOnce();
+      expect(sensorQuery).toHaveBeenCalledOnce();
+      expect(sensorQuery.mock.calls[0]?.[2]).toEqual({
+        userId: "user-1",
+        providerId: "whoop",
+      });
+    });
+  });
+
   // ── records ──
 
   describe("records", () => {

@@ -40,18 +40,21 @@ interface DataReadinessBannerProps {
   data?: DataReadinessSnapshot;
   error?: { message?: string } | null;
   loading?: boolean;
+  contextLabel?: string;
 }
 
 export function DataReadinessBanner({
   data,
   error = null,
   loading = false,
+  contextLabel,
 }: DataReadinessBannerProps) {
   if (loading) return null;
 
   if (error) {
     return (
       <View style={[styles.banner, stylesByStatus.blocked]}>
+        {contextLabel ? <Text style={styles.contextLabel}>{contextLabel}</Text> : null}
         <Text style={styles.heading}>Data readiness is unavailable</Text>
         <Text style={styles.datasetMessage}>{DATA_READINESS_ERROR_MESSAGE}</Text>
       </View>
@@ -73,6 +76,7 @@ export function DataReadinessBanner({
           <View style={[styles.statusDot, { backgroundColor: indicatorColorByStatus[status] }]} />
         )}
         <View style={styles.headingContent}>
+          {contextLabel ? <Text style={styles.contextLabel}>{contextLabel}</Text> : null}
           <Text style={styles.heading}>{bannerHeading(data)}</Text>
           {checkedAt ? <Text style={styles.freshness}>{checkedAt}</Text> : null}
         </View>
@@ -104,6 +108,12 @@ const styles = StyleSheet.create({
   },
   headingContent: {
     flex: 1,
+  },
+  contextLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
   },
   heading: {
     color: colors.text,
