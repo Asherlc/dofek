@@ -7,6 +7,48 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-21: Mobile provider-detail typecheck failed in PR CI
+
+### Symptoms
+
+`Test / Typecheck (dofek-mobile)` failed on PR #1850 while the root, server,
+and web TypeScript checks passed.
+
+### User Impact
+
+No production users were affected. The pull request was blocked until the
+mobile component contract was corrected.
+
+### Evidence
+
+The failing command was the mobile package TypeScript check. The first fatal
+line was `app/providers/[id].tsx(680,26): error TS2322`; the new record
+availability error branch passed an `error` prop to `QueryStatePanel`, but the
+mobile component accepts `variant` and `message` instead.
+
+### Root Cause
+
+The provider-detail change reused the web error-panel calling convention in
+the mobile implementation, and the initial local pre-push matrix omitted the
+mobile package TypeScript command.
+
+### Fix or Mitigation
+
+Changed the mobile branch to use `variant="error"` and the shared
+`getQueryErrorMessage()` helper, then added a regression test proving that the
+availability error is displayed to the user.
+
+### Validation
+
+The focused mobile test now passes all 32 cases; mobile TypeScript, repository
+lint, root/server/web TypeScript, and the full unit/mobile suite pass locally
+without retries or relaxed checks.
+
+### Remaining Risk
+
+The pre-push workflow should add an explicit mobile TypeScript command so this
+class of platform-only contract error is caught before push.
+
 ## 2026-07-21: PR image vulnerability scan blocked CI
 
 ### Symptoms

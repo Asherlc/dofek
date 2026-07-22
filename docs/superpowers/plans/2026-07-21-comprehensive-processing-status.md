@@ -34,7 +34,7 @@
 
 ## File Structure
 
-- Create: `src/db/schema/processing.ts` — processing operation and append-only stage-event tables.
+- Create: `src/db/schema/processing.ts` — processing operation, append-only stage-event, flow-marker, and queue-outbox tables.
 - Create: `drizzle/0055_processing_status.sql` and journal metadata — schema migration.
 - Create: `src/processing/dataset-contracts.ts` — typed user-facing dataset dependency registry.
 - Create: `src/processing/processing-event-store.ts` — persistence and current-state queries.
@@ -61,7 +61,7 @@
 - Create: `src/processing/processing-state.ts`
 
 - [ ] Write failing tests requiring every production dbt model to be assigned to a user-facing dataset or explicitly marked internal.
-- [ ] Cover provider/dataset applicability, dependency validation, failure-first precedence, partial readiness, stalled stages, and terminal-state reduction.
+- [ ] Cover provider/dataset applicability, dependency validation, failure-first precedence, partial readiness, stalled-stage derivation, and terminal-state reduction without persisting derived conditions.
 - [ ] Run `rtk pnpm vitest run src/processing/dataset-contracts.test.ts src/processing/processing-state.test.ts --project unit` and confirm expected failures.
 - [ ] Implement the minimum typed registry and pure reducer.
 - [ ] Re-run the focused unit tests and confirm they pass.
@@ -75,7 +75,7 @@
 - Create: `src/processing/processing-event-store.integration.test.ts`
 - Create: `src/processing/processing-event-store.ts`
 
-- [ ] Write failing Postgres integration tests for operation creation, append-only stage events, tenant isolation, idempotent event insertion, ordered history, and current-state projection.
+- [ ] Write failing Postgres integration tests for operation creation, append-only stage events, monotonic ordering, tenant isolation, idempotent event insertion, CDC markers/outbox rows in the canonical transaction, ordered history, and current-state projection.
 - [ ] Run the focused suite through `rtk pnpm test:integration -- src/processing/processing-event-store.integration.test.ts` and verify the first failure.
 - [ ] Add schema, constraints, indexes, migration, runtime Zod parsing, and repository implementation.
 - [ ] Apply the migration in the workspace integration database and rerun the suite.
@@ -100,7 +100,7 @@
 - Create: `src/processing/processing-reconciler.integration.test.ts`
 - Create: `src/processing/processing-reconciler.ts`
 
-- [ ] Write real ClickHouse integration fixtures proving CDC remains waiting until every required mirror covers the canonical commit watermark.
+- [ ] Write real ClickHouse integration fixtures proving CDC remains waiting until every required mirror contains the exact operation marker.
 - [ ] Cover partial mirrors, inactive/lost slots, historical records, deletions, unknown evidence, and idempotent reruns.
 - [ ] Expand mirror freshness observations to every registered source table without replacing per-operation watermark proof with a broad health check.
 - [ ] Implement and schedule the reconciler.
@@ -116,7 +116,7 @@
 
 - [ ] Write failing tests against success, skipped, warning, error, and malformed `run_results.json` fixtures.
 - [ ] Require all 35 production models to emit a terminal model event for each attempted run.
-- [ ] Implement a TypeScript analytics runner that invokes pinned dbt commands, parses artifacts through Zod, persists run/model events, and exits nonzero on model failures.
+- [ ] Implement a TypeScript analytics runner that gives each invocation a distinct artifact directory, invokes pinned dbt commands, reconciles `run_results.json` with `manifest.json` and `sources.json` through Zod, persists run/model events, and exits nonzero on failed or selected-but-unattempted required models.
 - [ ] Preserve strict sequential resource limits and current retry semantics without adding waits or fallbacks.
 - [ ] Validate a successful local analytics build and a controlled failing-model fixture.
 
@@ -166,7 +166,7 @@
 - Modify: relevant web page hosts.
 
 - [ ] Write failing component tests and stories for all material states and provider/dataset scopes.
-- [ ] Implement compact and expanded timeline views with accessible live-region behavior that avoids repetitive announcements.
+- [ ] Implement compact and expanded timeline views with determinate/indeterminate progress semantics, polite live-region behavior that avoids repetitive announcements, and adaptive polling that stops at terminal state.
 - [ ] Preserve previous page data during background processing and show API failures through the existing query error model.
 - [ ] Run focused web tests and Storybook build.
 
@@ -179,7 +179,7 @@
 - Modify: relevant mobile screen hosts.
 
 - [ ] Mirror every web state and scope in mobile tests and stories.
-- [ ] Implement an accessible expandable stage timeline and refresh behavior.
+- [ ] Implement an accessible expandable stage timeline, equivalent progress semantics, and adaptive foreground polling tied to native app state.
 - [ ] Preserve rendered data during background refetches and report unexpected client errors to Sentry.
 - [ ] Run focused mobile tests and Storybook build.
 
@@ -203,4 +203,3 @@
 - [ ] Document deployment ordering, migration, event retention, reconciliation, dashboards/alerts, and incident diagnosis.
 - [ ] Append the confirmed Kaya discrepancy and replacement architecture to `docs/production-incident-baseline.md`.
 - [ ] Confirm success without ad-hoc waits, retries, warning-and-continue behavior, or threshold inflation.
-

@@ -42,17 +42,18 @@ Each event records:
 - sanitized message, error code, and error message;
 - schema-versioned structured metadata for stage-specific evidence.
 
-The allowed stages are:
+The persisted stages are:
 
-1. `queued`
-2. `ingest`
-3. `canonical_commit`
-4. `cdc`
-5. `analytics`
-6. `cache_refresh`
-7. `ready`
+1. `ingest`
+2. `canonical_commit`
+3. `cdc`
+4. `analytics`
+5. `cache_refresh`
 
-Allowed statuses are `waiting`, `running`, `succeeded`, `delayed`, `blocked`, `failed`, and `cancelled`. Empty/no-data is a dataset result, not a processing failure.
+Persist only factual lifecycle states: `queued`, `running`, `succeeded`,
+`failed`, `cancelled`, and `skipped`. The projection derives `waiting`,
+`delayed`, `blocked`, and `ready` from those facts, dependency evidence, and
+stage deadlines. Empty/no-data is a dataset result, not a processing failure.
 
 ### Dataset contracts
 
@@ -71,12 +72,12 @@ Internal dbt models are represented in analytics-run detail, while the user widg
 
 ## Stage completion rules
 
-- **Ingest:** the provider/import worker emits started, progress, succeeded, or failed events.
-- **Canonical commit:** emitted only after the database transaction commits. Its watermark is ingestion time, not the health record's domain timestamp, so historical imports remain observable.
-- **CDC:** complete when every required mirror has observed the canonical commit watermark or an equivalent source revision. Replication-slot health is supporting evidence, not proof that a user's rows arrived.
-- **Analytics:** complete when every model required by the dataset succeeded in a dbt run that started after the CDC watermark. Per-model results come from dbt artifacts, not log-text parsing.
+- **Ingest:** the provider/import worker emits started, progress, succeeded, or failed events. BullMQ jobs remain small, atomic, and idempotent so a retry has the same final result ([BullMQ idempotent jobs](https://docs.bullmq.io/patterns/idempotent-jobs), [BullMQ flows](https://docs.bullmq.io/guide/flows)).
+- **Canonical commit:** the canonical health rows, commit-stage event, and one CDC marker for each affected PeerDB flow are inserted in the same Postgres transaction. This avoids a dual write where data commits without its durable processing evidence ([AWS transactional outbox pattern](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html)). The operation watermark is ingestion/commit identity, not the health record's domain timestamp, so historical imports remain observable.
+- **CDC:** complete only when every required ClickHouse mirror contains the exact operation marker written by the source transaction. Replication-slot health and unrelated newer `_peerdb_synced_at` values are supporting evidence, not proof that a user's transaction arrived.
+- **Analytics:** complete when every model required by the dataset succeeded in a dbt run that began after the CDC marker became visible. Per-model results come from Zod-validated `run_results.json`, mapped through `manifest.json`; source evidence comes from `sources.json`, never log-text parsing. Because only executed nodes appear in run results, the attempted selection is reconciled against the manifest, and each invocation writes to a distinct artifact directory ([dbt run results](https://docs.getdbt.com/reference/artifacts/run-results-json), [dbt state and source status](https://docs.getdbt.com/reference/node-selection/configure-state)).
 - **Cache refresh:** complete when every registered query family required by the dataset has been refreshed successfully after the analytics run.
-- **Ready:** emitted by the reconciler only after all required stages succeed. A failed or blocked stage remains visible even if an unrelated operation is running.
+- **Ready:** derived by the reconciler only after all required stages succeed. A failed or blocked stage remains visible even if an unrelated operation is running.
 
 ## API
 
@@ -108,14 +109,22 @@ Expanded state shows a vertical stage timeline, per-dataset rows, exact timestam
 
 The widget does not replace query-level loading or error states. Existing data remains rendered during background processing.
 
+Clients poll adaptively while work is active, slow down while delayed, and stop
+after terminal state rather than introducing a second real-time transport
+([TanStack Query polling](https://tanstack.com/query/v5/docs/framework/react/guides/polling)).
+Determinate work uses progress-bar semantics; indeterminate work omits a
+numeric value. Material status changes use a polite live region without moving
+focus or announcing every percentage update
+([W3C status-message technique](https://www.w3.org/WAI/WCAG21/Techniques/aria/ARIA25)).
+
 ## Reliability and observability
 
-- Event creation is idempotent through an operation/stage/dataset/status/idempotency-key constraint.
-- Provider/import events are written transactionally where the stage corresponds to a Postgres commit.
+- Event creation is idempotent through an operation/stage/dataset/status/idempotency-key constraint and ordered by a monotonic sequence, not wall-clock timestamps alone.
+- Provider/import commit events and CDC markers are written in the same transaction as canonical data; queue dispatch uses the existing transactional-outbox pattern.
 - Unexpected instrumentation failures are reported to Sentry and fail the owning operational step when correctness would otherwise become unknowable.
 - A reconciler advances CDC, analytics, cache, and ready stages from durable evidence and is safe to run repeatedly.
 - Metrics cover operations by stage/status, stage duration, stalled operations, model failures, and reconciliation failures.
-- OpenTelemetry trace/span identifiers may be retained as metadata for correlation, without making telemetry the source of truth.
+- OpenTelemetry trace/span identifiers may be retained as metadata for correlation, without making telemetry the source of truth. Producer and consumer spans use trace links for asynchronous/batched work ([OpenTelemetry messaging spans](https://opentelemetry.io/docs/specs/semconv/messaging/messaging-spans/)).
 
 ## Security and privacy
 
@@ -134,4 +143,4 @@ The new processing API and widget replace `sync.dataHealth` and `DataReadinessBa
 - Persisting duplicate health or analytics values in Postgres.
 - Treating a running provider job as proof that a particular dataset is stale.
 - Exposing raw dbt, PeerDB, Redis, or ClickHouse terminology to ordinary users.
-
+- Adding Temporal alongside BullMQ solely for status reporting. Temporal is appropriate if pipeline execution is intentionally migrated to one durable workflow engine, not as a parallel observer ([Temporal workflow execution](https://docs.temporal.io/workflows)).
