@@ -19,24 +19,74 @@ describe("dataset contracts", () => {
     expect(assignedModels.sort()).toEqual([...PRODUCTION_DBT_MODELS].sort());
   });
 
-  it("rejects missing, duplicate, and unknown model assignments", () => {
+  it("rejects a duplicate output path", () => {
     const [firstContract, ...remainingContracts] = DATASET_CONTRACTS;
-    const duplicateModel = firstContract.analyticsModels[0];
-    const contractsWithInvalidAssignments = [
+    const firstOutputPath = firstContract.outputPaths[0];
+    const contractsWithDuplicateOutput = [
       {
         ...firstContract,
-        analyticsModels: [...firstContract.analyticsModels.slice(0, -1), "not_a_production_model"],
+        outputPaths: [...firstContract.outputPaths, firstOutputPath],
       },
-      {
-        ...remainingContracts[0],
-        analyticsModels: [...remainingContracts[0].analyticsModels, duplicateModel],
-      },
-      ...remainingContracts.slice(1),
+      ...remainingContracts,
     ];
 
     expect(() =>
-      validateDatasetContracts(contractsWithInvalidAssignments, PRODUCTION_DBT_MODELS),
-    ).toThrowError(/missing.*unknown.*duplicate/i);
+      validateDatasetContracts(contractsWithDuplicateOutput, PRODUCTION_DBT_MODELS),
+    ).toThrowError(`Dataset ${firstContract.key} defines a duplicate output path`);
+  });
+
+  it("reports a missing model assignment", () => {
+    const [firstContract, ...remainingContracts] = DATASET_CONTRACTS;
+    const missingModel = firstContract.analyticsModels[0];
+    const contractsWithMissingModel = [
+      {
+        ...firstContract,
+        analyticsModels: firstContract.analyticsModels.filter((model) => model !== missingModel),
+      },
+      ...remainingContracts,
+    ];
+
+    expect(() =>
+      validateDatasetContracts(contractsWithMissingModel, PRODUCTION_DBT_MODELS),
+    ).toThrowError(
+      `Invalid dataset contracts: missing=[${missingModel}], unknown=[], duplicate=[]`,
+    );
+  });
+
+  it("reports an unknown model assignment", () => {
+    const [firstContract, ...remainingContracts] = DATASET_CONTRACTS;
+    const contractsWithUnknownModel = [
+      {
+        ...firstContract,
+        analyticsModels: [...firstContract.analyticsModels, "not_a_production_model"],
+      },
+      ...remainingContracts,
+    ];
+
+    expect(() =>
+      validateDatasetContracts(contractsWithUnknownModel, PRODUCTION_DBT_MODELS),
+    ).toThrowError(
+      "Invalid dataset contracts: missing=[], unknown=[not_a_production_model], duplicate=[]",
+    );
+  });
+
+  it("reports a duplicate model assignment", () => {
+    const [firstContract, secondContract, ...remainingContracts] = DATASET_CONTRACTS;
+    const duplicateModel = firstContract.analyticsModels[0];
+    const contractsWithDuplicateModel = [
+      firstContract,
+      {
+        ...secondContract,
+        analyticsModels: [...secondContract.analyticsModels, duplicateModel],
+      },
+      ...remainingContracts,
+    ];
+
+    expect(() =>
+      validateDatasetContracts(contractsWithDuplicateModel, PRODUCTION_DBT_MODELS),
+    ).toThrowError(
+      `Invalid dataset contracts: missing=[], unknown=[], duplicate=[${duplicateModel}]`,
+    );
   });
 
   it("selects only datasets applicable to a provider and its emitted data types", () => {
@@ -49,6 +99,7 @@ describe("dataset contracts", () => {
     expect(datasetsForProvider("cronometer", ["nutrition"]).map(({ key }) => key)).toEqual([
       "nutrition",
     ]);
+    expect(datasetsForProvider("kaya", ["nutrition"])).toEqual([]);
   });
 
   it("keeps provider processing scopes limited to datasets they can affect", () => {
@@ -60,6 +111,11 @@ describe("dataset contracts", () => {
       "providers",
     ]);
     expect(processingDatasetKeysForProvider("unknown-provider")).toEqual(["providers"]);
+    const declaredDatasetKeys = ["nutrition"] as const;
+    expect(processingDatasetKeysForProvider("garmin", declaredDatasetKeys)).toBe(
+      declaredDatasetKeys,
+    );
+    expect(processingDatasetKeysForProvider("bodyspec", [])).toEqual(["body", "providers"]);
   });
 
   it("maps imports to bounded scopes and selects only emitted output paths", () => {
@@ -79,6 +135,7 @@ describe("dataset contracts", () => {
       "body",
       "providers",
     ]);
+    expect(processingDatasetKeysForImport("unknown-import")).toEqual(["providers"]);
   });
 
   it("tracks every independent input used by provider analytics", () => {
