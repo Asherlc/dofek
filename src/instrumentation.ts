@@ -28,7 +28,9 @@ export function startInstrumentation(
 
   const sdk = new NodeSDK({
     spanProcessors: hasTraceExport ? [new BatchSpanProcessor(new OTLPTraceExporter())] : [],
-    logRecordProcessors: hasLogExport ? [new BatchLogRecordProcessor(new OTLPLogExporter())] : [],
+    logRecordProcessors: hasLogExport
+      ? [new BatchLogRecordProcessor({ exporter: new OTLPLogExporter() })]
+      : [],
     metricReader: hasMetricExport
       ? new PeriodicExportingMetricReader({
           exporter: new OTLPMetricExporter(),

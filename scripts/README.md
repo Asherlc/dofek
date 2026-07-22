@@ -15,6 +15,7 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 
 - `with-env.sh`: Wrapper script that loads environment variables from `.env`, `.env.local`, and **Infisical**.
   - Automatically constructs OpenTelemetry auth headers from `AXIOM_API_TOKEN`.
+  - Exits before running the command when Infisical export fails or no command is provided.
   - Usage: `./scripts/with-env.sh <command>`
 - `make-admin.sh`: Promotes a user to admin in the production database via SSH.
   - Resolves server IP via Infisical, finds the `dofek-db` container, and executes `UPDATE fitness.user_profile SET is_admin = true ...`.
@@ -47,6 +48,10 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   are lost, inactive, or retaining dangerous WAL, and when active ClickHouse
   mirrors have stale `_peerdb_synced_at` values.
   - Usage: `pnpm check:clickhouse-cdc`
+- `check-ota-manifest.ts`: Sends the production iOS Expo Updates request and
+  fails unless the OTA origin returns a conformant manifest or no-update
+  response within five seconds.
+  - Usage: `pnpm tsx scripts/check-ota-manifest.ts`
 
 ## Reverse Engineering (WHOOP)
 

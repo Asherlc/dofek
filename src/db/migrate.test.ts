@@ -61,6 +61,9 @@ function executedQueries(): string[] {
 describe("runMigrations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockReaddirSync.mockReturnValue([]);
+    mockReadFileSync.mockReturnValue("");
+    mockExistsSync.mockReturnValue(true);
     mockClientConnect.mockResolvedValue(undefined);
     mockClientEnd.mockResolvedValue(undefined);
     mockClientQuery.mockResolvedValue({ rows: [] });
@@ -244,11 +247,16 @@ describe("runMigrations", () => {
     expect(hashArg).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("warns when an applied migration file has been modified", async () => {
-    const { runMigrations } = await import("./migrate.ts");
+  it("rejects before applying pending migrations when an applied migration was modified", async () => {
+    const { computeContentHash, runMigrations } = await import("./migrate.ts");
 
-    mockReaddirSync.mockReturnValue(["0001_init.sql"]);
-    mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT) -- modified");
+    const modifiedContent = "CREATE TABLE foo (id INT) -- modified";
+    const storedHash = "0000000000000000000000000000000000000000000000000000000000000000";
+    mockReaddirSync.mockReturnValue(["0001_init.sql", "0002_pending.sql"]);
+    mockReadFileSync.mockImplementation((path: string) => {
+      if (path.endsWith("0001_init.sql")) return modifiedContent;
+      return "CREATE TABLE pending_table (id INT)";
+    });
     mockExistsSync.mockReturnValue(true);
     mockClientQuery.mockImplementation((text: string) => {
       if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
@@ -256,7 +264,7 @@ describe("runMigrations", () => {
           rows: [
             {
               hash: "0001_init.sql",
-              content_hash: "0000000000000000000000000000000000000000000000000000000000000000",
+              content_hash: storedHash,
             },
           ],
         });
@@ -264,11 +272,39 @@ describe("runMigrations", () => {
       return Promise.resolve({ rows: [] });
     });
 
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(mockLoggerWarn).toHaveBeenCalledWith(
-      expect.stringContaining("0001_init.sql has been modified"),
+    const currentHash = computeContentHash(modifiedContent);
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).rejects.toThrow(
+      `0001_init.sql has changed: expected SHA-256 ${storedHash}, actual SHA-256 ${currentHash}. Applied migrations are immutable`,
     );
+
+    expect(executedQueries()).not.toContain("CREATE TABLE pending_table (id INT)");
+  });
+
+  it("rejects before applying pending migrations when an applied migration file is missing", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0002_pending.sql"]);
+    mockReadFileSync.mockReturnValue("CREATE TABLE pending_table (id INT)");
+    mockExistsSync.mockReturnValue(false);
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({
+          rows: [
+            {
+              hash: "0001_init.sql",
+              content_hash: null,
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).rejects.toThrow(
+      "0001_init.sql is recorded as applied but is missing. Applied migrations are immutable",
+    );
+
+    expect(executedQueries()).not.toContain("CREATE TABLE pending_table (id INT)");
   });
 
   it("skips content hash check for migrations without stored hash", async () => {

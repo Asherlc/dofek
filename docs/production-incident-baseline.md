@@ -14730,6 +14730,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   credentialed artifacts before merge. Their secretless checks still exercise
   the affected source; the full credentialed builds run from trusted repository
   contexts.
+## 2026-07-21 — OTA Deploy Probe Accepted an Invalid Manifest Request
+
+- **Symptoms:** The OTA deployment workflow reported the origin healthy while
+  production iOS manifest requests timed out. Its probe omitted the Expo
+  protocol, platform, runtime, and channel headers and accepted every HTTP
+  response below 500, including the resulting HTTP 400.
+- **User impact:** OTA publishes could receive a false-green readiness result
+  even when devices could not discover or download updates.
+- **Evidence:** The workflow-equivalent request returned HTTP 400 with `No
+  channel name provided`. Requests matching the shipped app configuration
+  timed out after ten seconds while the OTA service's cold stored-update lookup
+  took 60–65 seconds; the identical request returned HTTP 200 in 0.409 seconds
+  after the lookup cache was populated. On July 21, a fresh production request
+  with the shipped headers returned HTTP 200 multipart content in 2.844 seconds,
+  and the OTA service log recorded the matching `GET /manifest` completion.
+- **Root cause:** The deploy probe exercised an invalid headerless request and
+  classified its expected client error as healthy, so it never reached the
+  stored-update path used by the app.
+- **Fix / mitigation:** The workflow now runs `check-ota-manifest.ts`, which
+  sends the production iOS request shape with a five-second timeout. It accepts
+  only HTTP 204 or an HTTP 200 response containing Expo protocol version 1 and
+  a parseable multipart manifest. Expo defines these request headers and
+  response structures in the
+  [Expo Updates v1 specification](https://docs.expo.dev/technical-specs/expo-updates-1/).
+- **Validation:** The focused Vitest suite covers HTTP 204 success, valid HTTP
+  200 success, HTTP 400 failure, malformed HTTP 200 failure, and timeout
+  failure. The same script succeeds against the live production endpoint inside
+  the app's five-second fallback window.
+- **Remaining risk / follow-up:** The upstream OTA service still enumerates and
+  validates stored updates serially on a cold cache. The corrected deploy probe
+  will now fail loudly if that path exceeds the client budget; continue tracking
+  an upstream indexing or cache-warming fix if production cold misses recur.
+
 ## 2026-07-21 — Local Test Runs Exhausted Docker Across Conductor Workspaces
 
 - **Symptoms:** YouTube playback stuttered while dozens of TimescaleDB test
@@ -14903,3 +14936,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   worker also logged an unrelated ClickHouse code 159 failure in
   `activity_power_curve`; `provider_stats` itself succeeded, so that failure was
   not causal here but should be investigated separately.
+## 2026-07-21 — Deploy Audit Found CDC Failure Could Start ClickHouse Consumers
+
+- **Status:** Root cause fixed and validated locally; PR and production deploy
+  validation are pending.
+- **Symptoms:** A workflow audit found that the final ClickHouse consumer stack
+  deploy remained eligible after a post-quiesce readiness or CDC setup failure.
+  No production failure was reproduced; this was a preventative control-flow
+  finding.
+- **User impact:** A failed PeerDB, Temporal, or ClickHouse CDC setup could have
+  started `analytics-worker` and `metric-stream-clickhouse-sink` against missing,
+  stale, or unverified CDC state, compounding the failed deploy with ingestion
+  errors or stale analytics.
+- **Evidence:** The exact prerequisite command is the `Configure ClickHouse CDC`
+  step's `docker run ... src/db/setup-clickhouse-cdc.ts`. Its nonzero exit would
+  set the step conclusion to `failure`; there was no captured fatal production
+  log because the defect was identified statically. The subsequent `Deploy
+  ClickHouse consumer services` step used `if: always() &&
+  steps.deploy_stack_quiesced.conclusion != 'skipped'`. GitHub documents that
+  `always()` returns true even after prior failures, whereas `success()` requires
+  all previous steps to have succeeded
+  ([GitHub Actions status check functions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)).
+- **Root cause:** The final consumer-start step replaced GitHub's normal success
+  gate with `always()` and checked only that the quiesced deploy was not skipped,
+  so a failed CDC prerequisite did not block restoring consumer replicas.
+- **Fix / mitigation:** The consumer deploy now requires `success()`, a successful
+  quiesced deploy, and a successful `configure_clickhouse_cdc` conclusion. A
+  separate failure-only reporting step leaves the consumers at zero replicas and
+  tells the operator to resolve the failed prerequisite and rerun the deployment.
+- **Validation:** A focused workflow policy test failed against the original
+  `always()` condition and now passes, covering both the failed-CDC gate and the
+  operator report. No retries, timeouts, or fallback defaults were added.
+- **Remaining risk / follow-up:** Confirm the PR's Actionlint and test checks pass,
+  then verify the next production deployment restores both consumers only after
+  CDC setup succeeds.
