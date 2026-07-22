@@ -15184,12 +15184,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   ledger confirmed these are the complete missing applied filenames, so the
   repair does not rely on repeated deploy failures to discover them.
   Restored migrations `0042` through `0045` to the exact bytes that production
-  applied from PR #1552's first commit. Later commits in that PR rewrote all four
+  applied from [PR #1552](https://github.com/Asherlc/dofek/pull/1552)'s first
+  commit. Later commits in that PR rewrote all four
   already-applied files before merge, changing their hashes after the production
   ledger had recorded them. A complete comparison of all 73 production ledger
   entries against the repository found no missing files and no other unexpected
-  mismatches; the remaining eight differing hashes are the explicit
-  transaction-compatibility variants accepted by the migrator.
+  mismatches, as recorded in the
+  [repair PR](https://github.com/Asherlc/dofek/pull/1864); the remaining eight
+  differing hashes are the explicit transaction-compatibility variants
+  [accepted by the migrator](../src/db/postgres-migrator.ts).
 - **Validation:** Canonical Postgres rows, merged member IDs, ClickHouse summary,
   stream, and zone rows were queried directly in production. Focused web,
   mobile, repository, router, and real-Postgres migration tests passed, including
