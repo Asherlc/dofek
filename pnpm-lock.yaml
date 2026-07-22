@@ -373,8 +373,8 @@ importers:
         specifier: 5.3.9
         version: 5.3.9
       '@formatjs/intl-numberformat':
-        specifier: 9.3.11
-        version: 9.3.11
+        specifier: 9.3.13
+        version: 9.3.13
       '@formatjs/intl-pluralrules':
         specifier: 6.3.12
         version: 6.3.12
@@ -2575,9 +2575,6 @@ packages:
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
 
-  '@formatjs/bigdecimal@0.2.6':
-    resolution: {integrity: sha512-aPzKsGQOkQRHUEbyO/ZtYfr4EqaBQnSs6U4tzTla1xBnIdEHgY2GqEqso28UMwWRkzKqqTj5+/6BmuOsRkfn2A==}
-
   '@formatjs/bigdecimal@0.2.7':
     resolution: {integrity: sha512-B4+XY/e4u5v261r3a37Kq2ax91gPZSKGyVpx8X5dygAggLlUz+6MeBpmAhaBFGB8WQ4JB1qD+QtKHk9aJkEb9Q==}
 
@@ -2596,14 +2593,11 @@ packages:
   '@formatjs/intl-locale@5.3.9':
     resolution: {integrity: sha512-h8xk+FFg0R9jZmX2r+75BglH5Bd++7pnCn5veN4Fv9a+E6TiYgD0QnYXbYOzOskLPKaTnFrUFkQ7OYJUasuONw==}
 
-  '@formatjs/intl-localematcher@0.8.10':
-    resolution: {integrity: sha512-P/IC3qws3jH+1fEs+o0RIFgXKRaQlFehjS5W0FPAqdo6hgzawLl+eD0q0JjheQ3XtoOe5n8WSYfX06KQZI/QJA==}
-
   '@formatjs/intl-localematcher@0.8.12':
     resolution: {integrity: sha512-5H3r5ZJ2jZqHEv9K343lvHmeMDKMxssawAVD2H4J9xtu0ZXb6MlNxwLqdwBxJSHFU0C24KSZnffgmAi+59mK4A==}
 
-  '@formatjs/intl-numberformat@9.3.11':
-    resolution: {integrity: sha512-AF7I2OIV/kSTvUBBV5nnP+SBA71DiSRcK5O9buEcHohqcg5ZhAcWmLf9FCpMya/saHahi2E0IOS2oSP+keRP5g==}
+  '@formatjs/intl-numberformat@9.3.13':
+    resolution: {integrity: sha512-xJ3itWsqligfqorbMLCROYr1P6mG/r5LzLpexgpZhlL6CgQWt9TUcoZHrvXdkubgl2uGB1f7cCoVT7XFrZalmA==}
 
   '@formatjs/intl-pluralrules@6.3.12':
     resolution: {integrity: sha512-MurVhCc7dYMX/mDA+asdV/GeNiZE+BH0SLktOsd84X+fJZFjJCgqVvFVLKzqkLVMze9FbNqO7n9xaCty/cHCHQ==}
@@ -16999,8 +16993,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@formatjs/bigdecimal@0.2.6': {}
-
   '@formatjs/bigdecimal@0.2.7': {}
 
   '@formatjs/fast-memoize@3.1.6': {}
@@ -17016,18 +17008,14 @@ snapshots:
       '@formatjs/intl-getcanonicallocales': 3.2.10
       '@formatjs/intl-supportedvaluesof': 2.3.8
 
-  '@formatjs/intl-localematcher@0.8.10':
-    dependencies:
-      '@formatjs/fast-memoize': 3.1.6
-
   '@formatjs/intl-localematcher@0.8.12':
     dependencies:
       '@formatjs/fast-memoize': 3.1.7
 
-  '@formatjs/intl-numberformat@9.3.11':
+  '@formatjs/intl-numberformat@9.3.13':
     dependencies:
-      '@formatjs/bigdecimal': 0.2.6
-      '@formatjs/intl-localematcher': 0.8.10
+      '@formatjs/bigdecimal': 0.2.7
+      '@formatjs/intl-localematcher': 0.8.12
 
   '@formatjs/intl-pluralrules@6.3.12':
     dependencies:
@@ -19536,7 +19524,9 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
