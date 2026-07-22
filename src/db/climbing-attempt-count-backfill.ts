@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "./index.ts";
 
-const countRowSchema = z.array(z.object({ count: z.number() }));
+const countRowSchema = z.tuple([z.object({ count: z.number() })]);
 
 export async function backfillClimbingAttemptCount(
   db: Pick<Database, "execute">,
@@ -32,5 +32,5 @@ export async function backfillClimbingAttemptCount(
         WHERE ${eligiblePredicate}
       `);
 
-  return countRowSchema.parse(rows)[0]?.count ?? 0;
+  return countRowSchema.parse(rows)[0].count;
 }
