@@ -1,11 +1,12 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { runMigrations } from "./migrate.ts";
-import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { setupTestDatabase, type TestContext, writeTestMigrationFiles } from "./test-helpers.ts";
 
 // cspell:ignore pkey relkind relname relnamespace relreplident nspname
 
@@ -13,6 +14,18 @@ const tableNameRowsSchema = z.array(z.object({ table_name: z.string() }));
 const relationExistsRowsSchema = z.array(z.object({ relation_exists: z.boolean() }));
 const nullableRowsSchema = z.array(z.object({ is_nullable: z.enum(["YES", "NO"]) }));
 const primaryKeyRowsSchema = z.array(z.object({ columns: z.string() }));
+const migrationRollbackRowsSchema = z.array(
+  z.object({
+    migration_record_exists: z.boolean(),
+    relation_exists: z.boolean(),
+  }),
+);
+const migrationHashRowsSchema = z.array(z.object({ hash: z.string() }));
+let nextMigrationTimestamp = 2_000_000_000_000;
+
+function writeTestMigration(migrationsDir: string, file: string, content: string): void {
+  writeTestMigrationFiles(migrationsDir, [{ content, file, when: nextMigrationTimestamp++ }]);
+}
 
 describe("runMigrations", () => {
   let ctx: TestContext;
@@ -29,8 +42,9 @@ describe("runMigrations", () => {
     // Create a fresh database for this test (the test helper already ran migrations,
     // so we test with a temporary migrations directory containing a single migration)
     const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-"));
-    writeFileSync(
-      join(tmpDir, "0001_test.sql"),
+    writeTestMigration(
+      tmpDir,
+      "0001_test.sql",
       "CREATE TABLE IF NOT EXISTS fitness.migrate_test (id serial PRIMARY KEY, name text);",
     );
 
@@ -50,8 +64,9 @@ describe("runMigrations", () => {
 
   it("skips already-applied migrations on second run", async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-idempotent-"));
-    writeFileSync(
-      join(tmpDir, "0001_test_idempotent.sql"),
+    writeTestMigration(
+      tmpDir,
+      "0001_test_idempotent.sql",
       "CREATE TABLE IF NOT EXISTS fitness.migrate_idempotent_test (id serial PRIMARY KEY);",
     );
 
@@ -62,10 +77,176 @@ describe("runMigrations", () => {
     expect(secondCount).toBe(0);
   });
 
+  it("rejects a modified applied Drizzle migration before applying pending work", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-modified-history-"));
+    const appliedMigration = {
+      content: "CREATE TABLE fitness.integrity_applied (id integer PRIMARY KEY);",
+      file: "0001_integrity_applied.sql",
+      when: nextMigrationTimestamp++,
+    };
+    writeTestMigrationFiles(tmpDir, [appliedMigration]);
+    await runMigrations(ctx.connectionString, tmpDir);
+
+    const pendingMigration = {
+      content: "CREATE TABLE fitness.integrity_pending (id integer PRIMARY KEY);",
+      file: "0002_integrity_pending.sql",
+      when: nextMigrationTimestamp++,
+    };
+    writeTestMigrationFiles(tmpDir, [
+      { ...appliedMigration, content: `${appliedMigration.content}\n-- modified` },
+      pendingMigration,
+    ]);
+
+    await expect(runMigrations(ctx.connectionString, tmpDir)).rejects.toThrow(
+      "0001_integrity_applied.sql has changed",
+    );
+
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      const result = await client.query(
+        "SELECT to_regclass('fitness.integrity_pending') IS NOT NULL AS relation_exists",
+      );
+      expect(relationExistsRowsSchema.parse(result.rows)).toEqual([{ relation_exists: false }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("rejects a missing applied Drizzle journal entry before applying pending work", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-missing-history-"));
+    const appliedMigration = {
+      content: "CREATE TABLE fitness.missing_history_applied (id integer PRIMARY KEY);",
+      file: "0001_missing_history_applied.sql",
+      when: nextMigrationTimestamp++,
+    };
+    writeTestMigrationFiles(tmpDir, [appliedMigration]);
+    await runMigrations(ctx.connectionString, tmpDir);
+
+    const pendingMigration = {
+      content: "CREATE TABLE fitness.missing_history_pending (id integer PRIMARY KEY);",
+      file: "0002_missing_history_pending.sql",
+      when: nextMigrationTimestamp++,
+    };
+    writeTestMigrationFiles(tmpDir, [pendingMigration]);
+
+    await expect(runMigrations(ctx.connectionString, tmpDir)).rejects.toThrow(
+      `migration tracked at ${appliedMigration.when} is recorded as applied but is missing`,
+    );
+
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      const result = await client.query(
+        "SELECT to_regclass('fitness.missing_history_pending') IS NOT NULL AS relation_exists",
+      );
+      expect(relationExistsRowsSchema.parse(result.rows)).toEqual([{ relation_exists: false }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("continues after migrations recorded by the legacy filename tracker", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-legacy-history-"));
+    const firstMigration = {
+      content: "CREATE TABLE fitness.legacy_history_first (id integer PRIMARY KEY);",
+      file: "0001_legacy_history_first.sql",
+      when: 2_300_000_000_000,
+    };
+    const secondMigration = {
+      content: "CREATE TABLE fitness.legacy_history_second (id integer PRIMARY KEY);",
+      file: "0002_legacy_history_second.sql",
+      when: 2_300_000_000_001,
+    };
+    writeTestMigrationFiles(tmpDir, [firstMigration, secondMigration]);
+
+    await client.connect();
+    try {
+      await client.query("CREATE SCHEMA IF NOT EXISTS drizzle");
+      await client.query(`CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
+        id serial PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint
+      )`);
+      await client.query(firstMigration.content);
+      await client.query(
+        `INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
+         VALUES ($1, $2)`,
+        [firstMigration.file, 9_000_000_000_000],
+      );
+
+      const count = await runMigrations(ctx.connectionString, tmpDir);
+
+      expect(count).toBe(1);
+      const result = await client.query(
+        "SELECT to_regclass('fitness.legacy_history_second') IS NOT NULL AS relation_exists",
+      );
+      expect(relationExistsRowsSchema.parse(result.rows)).toEqual([{ relation_exists: true }]);
+    } finally {
+      await client.query(
+        `DELETE FROM drizzle.__drizzle_migrations
+         WHERE created_at IN ($1, $2, $3)`,
+        [firstMigration.when, secondMigration.when, 9_000_000_000_000],
+      );
+      await client.query("DROP TABLE IF EXISTS fitness.legacy_history_second");
+      await client.query("DROP TABLE IF EXISTS fitness.legacy_history_first");
+      await client.end();
+    }
+  });
+
+  it("reconciles the approved transaction-compatibility hash for a legacy migration", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-legacy-content-hash-"));
+    const migrationFile = "0048_mcp_oauth.sql";
+    const migrationContent = readFileSync(
+      join(import.meta.dirname, `../../drizzle/${migrationFile}`),
+      "utf8",
+    );
+    const migration = {
+      content: migrationContent,
+      file: migrationFile,
+      when: nextMigrationTimestamp++,
+    };
+    writeTestMigrationFiles(tmpDir, [migration]);
+
+    await client.connect();
+    try {
+      await client.query("CREATE SCHEMA drizzle");
+      await client.query(`CREATE TABLE drizzle.__drizzle_migrations (
+        id serial PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint
+      )`);
+      await client.query(`ALTER TABLE drizzle.__drizzle_migrations
+        ADD COLUMN IF NOT EXISTS content_hash text`);
+      await client.query(
+        `INSERT INTO drizzle.__drizzle_migrations (hash, created_at, content_hash)
+         VALUES ($1, $2, $3)`,
+        [
+          migration.file,
+          9_000_000_000_001,
+          "40680a71ef18d7f5463b87ce5c89ccfe28f080a3501c0ebe5f192ff84996c1da",
+        ],
+      );
+
+      expect(await runMigrations(ctx.connectionString, tmpDir)).toBe(0);
+      const result = await client.query(
+        "SELECT hash FROM drizzle.__drizzle_migrations WHERE created_at = $1",
+        [migration.when],
+      );
+      const expectedHash = createHash("sha256").update(migrationContent).digest("hex");
+      expect(migrationHashRowsSchema.parse(result.rows)).toEqual([{ hash: expectedHash }]);
+    } finally {
+      await client.end();
+    }
+  });
+
   it("handles multiple statement breakpoints", async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-multi-"));
-    writeFileSync(
-      join(tmpDir, "0001_multi.sql"),
+    writeTestMigration(
+      tmpDir,
+      "0001_multi.sql",
       [
         "CREATE TABLE IF NOT EXISTS fitness.multi_a (id serial PRIMARY KEY);",
         "--> statement-breakpoint",
@@ -89,13 +270,56 @@ describe("runMigrations", () => {
     await client.end();
   });
 
+  it("rolls back every statement and the tracking row when a migration file fails", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-atomic-"));
+    const migration = {
+      content: [
+        "CREATE TABLE fitness.atomic_migration_test (id integer PRIMARY KEY);",
+        "--> statement-breakpoint",
+        "ALTER TABLE fitness.atomic_migration_missing ADD COLUMN value integer;",
+      ].join("\n"),
+      file: "9998_atomic_failure.sql",
+      when: nextMigrationTimestamp++,
+    };
+    writeTestMigrationFiles(tmpDir, [migration]);
+
+    const expectAtomicFailure = async (): Promise<void> => {
+      await expect(runMigrations(ctx.connectionString, tmpDir)).rejects.toThrow(
+        "ALTER TABLE fitness.atomic_migration_missing ADD COLUMN value integer",
+      );
+
+      const client = new Client({ connectionString: ctx.connectionString });
+      await client.connect();
+      try {
+        const result = await client.query(
+          `SELECT
+            to_regclass('fitness.atomic_migration_test') IS NOT NULL AS relation_exists,
+            EXISTS (
+              SELECT 1
+              FROM drizzle.__drizzle_migrations
+              WHERE created_at = $1
+            ) AS migration_record_exists`,
+          [migration.when],
+        );
+        expect(migrationRollbackRowsSchema.parse(result.rows)).toEqual([
+          { migration_record_exists: false, relation_exists: false },
+        ]);
+      } finally {
+        await client.end();
+      }
+    };
+
+    await expectAtomicFailure();
+    await expectAtomicFailure();
+  });
+
   it("applies pending billing migration when billing indexes already exist", async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-billing-"));
     const billingMigration = readFileSync(
       join(import.meta.dirname, "../../drizzle/0002_add_user_billing.sql"),
       "utf-8",
     );
-    writeFileSync(join(tmpDir, "0002_add_user_billing.sql"), billingMigration);
+    writeTestMigration(tmpDir, "0002_add_user_billing.sql", billingMigration);
 
     const count = await runMigrations(ctx.connectionString, tmpDir);
 
@@ -141,7 +365,7 @@ describe("runMigrations", () => {
       join(import.meta.dirname, "../../drizzle/0017_drop_derived_resting_heart_rate.sql"),
       "utf-8",
     );
-    writeFileSync(join(tmpDir, "9999_drop_derived_resting_heart_rate.sql"), migration);
+    writeTestMigration(tmpDir, "9999_drop_derived_resting_heart_rate.sql", migration);
 
     const count = await runMigrations(ctx.connectionString, tmpDir);
 

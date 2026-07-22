@@ -211,8 +211,19 @@ Local Compose commands should run through `pnpm compose -- <arguments>`. The wra
 ### Migration Baseline (Squashed History)
 
 - `drizzle/0000_baseline.sql` is the canonical baseline for fresh databases.
+- `runMigrations()` holds the existing PostgreSQL advisory lock and delegates the complete
+  `drizzle/meta/_journal.json` history to Drizzle's node-postgres migrator. Every tracked SQL
+  migration must have a journal entry. See [Drizzle's runtime migration workflow](https://orm.drizzle.team/docs/migrations)
+  and [PostgreSQL advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS).
 - `drizzle/0001_seed_journal_questions.sql` seeds canonical journal questions on fresh installs and is idempotent for existing environments.
-- For existing environments that already have rows in `drizzle.__drizzle_migrations`, `runMigrations()` auto-marks pending `*_baseline.sql` files as applied without executing them.
+- For an existing schema with empty migration tracking, `runMigrations()` marks the
+  `*_baseline.sql` journal entry as applied without executing it. Legacy filename-based
+  tracking rows are reconciled to Drizzle content hashes before pending migrations run.
+- Postgres migration SQL must be transaction-compatible: do not add file-level transaction
+  control or `CREATE INDEX CONCURRENTLY`. PostgreSQL transactions provide all-or-nothing
+  execution, while concurrent index creation cannot run inside a transaction block. See
+  [PostgreSQL transactions](https://www.postgresql.org/docs/current/tutorial-transactions.html)
+  and [`CREATE INDEX`](https://www.postgresql.org/docs/current/sql-createindex.html).
 - Add all new migrations as forward-only files in `drizzle/` (for example, `0003_add_...sql`, `0004_add_...sql`).
 - ClickHouse migrations live as ordered TypeScript modules in `src/db/clickhouse-migrations/`; add one file per migration and register it in `src/db/clickhouse-migrations/registry.ts`.
 - Deploy migrations must be schema-only. Do not inline historical backfills, full read-model refreshes, `INSERT ... SELECT` data moves, ClickHouse mutations, or `OPTIMIZE FINAL` in deploy migrations. Put large data work in resumable scripts or jobs with progress tracking and a separate cutover/validation step.

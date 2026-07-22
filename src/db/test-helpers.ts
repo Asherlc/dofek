@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Client, escapeIdentifier } from "pg";
 import { drizzleSchema as schema } from "./drizzle-schema.ts";
@@ -12,6 +12,36 @@ export interface TestContext {
   connectionString: string;
   addCleanup: (cleanup: () => Promise<void>) => void;
   cleanup: () => Promise<void>;
+}
+
+interface TestMigrationFile {
+  content: string;
+  file: string;
+  when: number;
+}
+
+export function writeTestMigrationFiles(
+  migrationsDir: string,
+  migrations: TestMigrationFile[],
+): void {
+  mkdirSync(join(migrationsDir, "meta"), { recursive: true });
+  for (const migration of migrations) {
+    writeFileSync(join(migrationsDir, migration.file), migration.content);
+  }
+  writeFileSync(
+    join(migrationsDir, "meta/_journal.json"),
+    JSON.stringify({
+      dialect: "postgresql",
+      entries: migrations.map((migration, index) => ({
+        breakpoints: true,
+        idx: index,
+        tag: migration.file.replace(/\.sql$/, ""),
+        version: "7",
+        when: migration.when,
+      })),
+      version: "7",
+    }),
+  );
 }
 
 const isRunnableMigrationStatement = (statement: string): boolean =>

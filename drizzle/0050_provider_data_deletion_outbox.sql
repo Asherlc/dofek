@@ -23,5 +23,5 @@ CREATE TABLE fitness.provider_data_deletion_outbox (
 );
 --> statement-breakpoint
 
-CREATE INDEX CONCURRENTLY provider_data_deletion_outbox_dispatch_idx
+CREATE INDEX provider_data_deletion_outbox_dispatch_idx
 ON fitness.provider_data_deletion_outbox (status, created_at);
