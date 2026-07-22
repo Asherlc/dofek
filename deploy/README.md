@@ -191,21 +191,28 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       of schema changes. The overlay keeps analytics-worker and the metric-stream
       ClickHouse sink at zero replicas during the migration and CDC setup window.
       On clean-slate hosts the stack apply uses the deploy image tag so the DB
-      service and overlay network exist before readiness checks. The final stack
-      deploy rolls out the requested app image and restores the quiesced consumer
-      replicas from `deploy/stack.yml`. The deploy workflow waits explicitly for
-      Postgres and ClickHouse before running migrations instead of keeping a
-      long-lived Docker-over-SSH stack-deploy wait open while the single-node
-      host restarts services.
+      service and overlay network exist before readiness checks. After migrations,
+      the workflow deploys the requested app image with the consumer-quiesce
+      overlay still applied. The deploy workflow waits explicitly for Postgres
+      and ClickHouse instead of keeping a long-lived Docker-over-SSH stack-deploy
+      wait open while the single-node host restarts services.
    7. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
    8. Run **schema migrations** as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.
       When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
       analytics migrations before the stack update.
    9. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
-   10. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=true <stack>` — swarm performs a single stack-wide update and CI then polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
+   10. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
    11. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
+   12. Run the final `docker stack deploy -c deploy/stack.yml ...` to restore
+       `analytics-worker` and `metric-stream-clickhouse-sink` only when every
+       post-quiesce readiness step and ClickHouse CDC setup succeeds. If a
+       prerequisite fails, the workflow leaves both consumers at zero replicas
+       and reports that the operator must resolve the failed step and rerun the
+       deployment. GitHub applies `success()` to successful prior steps, while
+       `always()` runs even after failures, so critical deploy steps must not use
+       `always()` as their status gate ([GitHub Actions status check functions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)).
 
 When adding a new host bind mount under `/mnt/dofek-data`, update both
 `deploy/stack.yml` and the Terraform provisioner that creates the directory. If
