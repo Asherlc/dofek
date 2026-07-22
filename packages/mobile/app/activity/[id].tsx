@@ -1,4 +1,5 @@
 import {
+  formatClimbingAttemptResult,
   formatDateLong,
   formatDurationRange,
   formatDurationSeconds,
@@ -358,6 +359,8 @@ interface ClimbingEntry {
   climbType: "boulder" | "route";
   grade: string;
   sent: boolean;
+  attemptCount: number;
+  ascentType: "Flash" | "Onsight" | "Redpoint" | "Repeat" | null;
   routeName: string | null;
   locationName: string | null;
   sourceName: string;
@@ -385,8 +388,9 @@ function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
             )}
           </View>
           <View style={climbingStyles.resultDetails}>
+            {entry.ascentType && <Text style={climbingStyles.sent}>{entry.ascentType}</Text>}
             <Text style={entry.sent ? climbingStyles.sent : climbingStyles.attempted}>
-              {entry.sent ? "Sent" : "Attempted"}
+              {formatClimbingAttemptResult(entry.sent, entry.attemptCount)}
             </Text>
             <Text style={climbingStyles.sourceName}>{entry.sourceName}</Text>
           </View>
