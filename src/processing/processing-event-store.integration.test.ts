@@ -10,6 +10,7 @@ import {
   listProcessingDatasetsAwaitingAnalytics,
   listProcessingDatasetsAwaitingCacheRefresh,
   listProcessingHistory,
+  listScopedProcessingOperations,
   recordCanonicalCommit,
   recordMetricStreamBatchPublished,
   recordProcessingOutput,
@@ -98,6 +99,39 @@ describe("processing event store (integration)", () => {
     expect(await getProcessingOutputManifest(testContext.db, operation.id)).toEqual({
       activity: ["relational", "metric_stream"],
     });
+  });
+
+  it("loads scoped operations with their latest events and output manifests", async () => {
+    const operation = await createOperation();
+    await recordProcessingOutput(testContext.db, {
+      operationId: operation.id,
+      datasetKey: "activity",
+      outputPath: "relational",
+    });
+    const event = await appendProcessingStageEvent(testContext.db, {
+      operationId: operation.id,
+      stage: "ingest",
+      status: "succeeded",
+      datasetKey: "activity",
+      idempotencyKey: `scoped:${operation.id}`,
+    });
+
+    await expect(
+      listScopedProcessingOperations(testContext.db, {
+        userId,
+        providerId: "kaya",
+        datasetKeys: ["activity"],
+        limit: 100,
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: operation.id,
+          events: [event],
+          outputManifest: { activity: ["relational"] },
+        }),
+      ]),
+    );
   });
 
   it("keeps relational and metric-stream stage facts independent", async () => {

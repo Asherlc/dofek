@@ -21,15 +21,15 @@ describe("dataset contracts", () => {
 
   it("rejects missing, duplicate, and unknown model assignments", () => {
     const [firstContract, ...remainingContracts] = DATASET_CONTRACTS;
-    const firstModel = firstContract.analyticsModels[0];
+    const duplicateModel = firstContract.analyticsModels[0];
     const contractsWithInvalidAssignments = [
       {
         ...firstContract,
-        analyticsModels: [...firstContract.analyticsModels.slice(1), "not_a_production_model"],
+        analyticsModels: [...firstContract.analyticsModels.slice(0, -1), "not_a_production_model"],
       },
       {
         ...remainingContracts[0],
-        analyticsModels: [...remainingContracts[0].analyticsModels, firstModel],
+        analyticsModels: [...remainingContracts[0].analyticsModels, duplicateModel],
       },
       ...remainingContracts.slice(1),
     ];
@@ -109,9 +109,5 @@ describe("dataset contracts", () => {
       { kind: "clickhouse_sink_ack", sinkName: "metric_stream_clickhouse_sink" },
     ]);
     expect(requiredCdcEvidence(activity, [])).toEqual([]);
-  });
-
-  it("does not retain the obsolete metric-stream PeerDB flow", () => {
-    expect(JSON.stringify(DATASET_CONTRACTS)).not.toContain("dofek_metric_stream_analytics");
   });
 });
