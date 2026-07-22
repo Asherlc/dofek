@@ -1606,7 +1606,8 @@ describe("bot.ts — registerHandlers", () => {
     it("shows error message when confirm fails", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
-      const internalErrorDetail = "duplicate key fitness.food_entry primary key on db-primary.internal";
+      const internalErrorDetail =
+        "duplicate key fitness.food_entry primary key on db-primary.internal";
       const confirmError = new Error(internalErrorDetail);
 
       const { confirmHandler } = setupHandlers(db);
