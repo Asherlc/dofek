@@ -66,6 +66,23 @@ describe("runMigrations", () => {
     mockDatabaseState();
   });
 
+  it("marks the baseline before Drizzle migrates an existing untracked schema", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    mockDatabaseState({ migrationCounts: [0, 1, 3], schemaHasTables: true });
+
+    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(count).toBe(2);
+    expect(migratorMocks.readBaselineMigration).toHaveBeenCalledWith("/tmp/migrations");
+    expect(postgresMocks.query).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO drizzle.__drizzle_migrations"),
+      ["baseline-content-hash", 1_773_118_304_010],
+    );
+    expect(loggerMocks.info).toHaveBeenCalledWith(
+      expect.stringContaining("Marking baseline migration as applied"),
+    );
+  });
+
   it("runs Drizzle migrations and returns the number applied", async () => {
     const { runMigrations } = await import("./migrate.ts");
     mockDatabaseState({ migrationCounts: [0, 0, 2] });
@@ -77,6 +94,51 @@ describe("runMigrations", () => {
       postgresMocks.client,
       "/tmp/migrations",
     );
+    expect(migratorMocks.readBaselineMigration).not.toHaveBeenCalled();
+  });
+
+  it("treats an empty migration count result as no applied migrations", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    let migrationCountQueryIndex = 0;
+    postgresMocks.query.mockImplementation((query: string) => {
+      if (query === "SELECT count(*) AS count FROM drizzle.__drizzle_migrations") {
+        migrationCountQueryIndex += 1;
+        return Promise.resolve({
+          rows: migrationCountQueryIndex === 1 ? [] : [{ count: "0" }],
+        });
+      }
+      if (query.includes("information_schema.tables")) {
+        return Promise.resolve({ rows: [{ has_tables: false }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).resolves.toBe(0);
+    expect(migratorMocks.readBaselineMigration).not.toHaveBeenCalled();
+  });
+
+  it("treats an empty schema inspection result as no existing tables", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    postgresMocks.query.mockImplementation((query: string) => {
+      if (query === "SELECT count(*) AS count FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({ rows: [{ count: "0" }] });
+      }
+      if (query.includes("information_schema.tables")) {
+        return Promise.resolve({ rows: [] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).resolves.toBe(0);
+    expect(migratorMocks.readBaselineMigration).not.toHaveBeenCalled();
+  });
+
+  it("does not mark a baseline when migration history already exists", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    mockDatabaseState({ migrationCounts: [1, 1, 1], schemaHasTables: true });
+
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).resolves.toBe(0);
+    expect(migratorMocks.readBaselineMigration).not.toHaveBeenCalled();
   });
 
   it("holds the advisory lock while Drizzle migrates", async () => {
@@ -96,23 +158,6 @@ describe("runMigrations", () => {
 
     expect(lockCallOrder).toBeLessThan(migrationCallOrder ?? 0);
     expect(migrationCallOrder).toBeLessThan(unlockCallOrder ?? 0);
-  });
-
-  it("marks the baseline before Drizzle migrates an existing untracked schema", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-    mockDatabaseState({ migrationCounts: [0, 1, 3], schemaHasTables: true });
-
-    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    expect(count).toBe(2);
-    expect(migratorMocks.readBaselineMigration).toHaveBeenCalledWith("/tmp/migrations");
-    expect(postgresMocks.query).toHaveBeenCalledWith(
-      expect.stringContaining("INSERT INTO drizzle.__drizzle_migrations"),
-      ["baseline-content-hash", 1_773_118_304_010],
-    );
-    expect(loggerMocks.info).toHaveBeenCalledWith(
-      expect.stringContaining("Marking baseline migration as applied"),
-    );
   });
 
   it("runs a custom migration folder without a baseline against an existing schema", async () => {
