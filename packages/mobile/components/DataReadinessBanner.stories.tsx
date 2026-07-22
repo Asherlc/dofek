@@ -71,6 +71,10 @@ type Story = StoryObj<typeof meta>;
 
 export const Stale: Story = {};
 
+export const ProviderDetailContext: Story = {
+  args: { contextLabel: "Account-wide data status" },
+};
+
 export const Blocked: Story = {
   args: { data: blockedSnapshot },
 };

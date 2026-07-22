@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { runMigrations } from "./migrate.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
@@ -17,11 +17,11 @@ const primaryKeyRowsSchema = z.array(z.object({ columns: z.string() }));
 describe("runMigrations", () => {
   let ctx: TestContext;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     ctx = await setupTestDatabase();
   }, 120_000);
 
-  afterAll(async () => {
+  afterEach(async () => {
     await ctx?.cleanup();
   });
 

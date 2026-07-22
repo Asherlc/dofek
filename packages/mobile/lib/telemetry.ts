@@ -77,7 +77,7 @@ export function initTelemetry() {
 
     loggerProvider = new LoggerProvider({
       resource,
-      processors: [new BatchLogRecordProcessor(exporter)],
+      processors: [new BatchLogRecordProcessor({ exporter })],
     });
   }
 }

@@ -101,7 +101,12 @@ export function useProviderDetailActions(
     trpcUtils.sync.providers.invalidate();
     trpcUtils.sync.providerStats.invalidate();
     trpcUtils.sync.logs.invalidate();
-  }, [trpcUtils]);
+    if (providerId) {
+      trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId });
+      trpcUtils.providerDetail.logs.invalidate({ providerId });
+      trpcUtils.providerDetail.records.invalidate({ providerId });
+    }
+  }, [providerId, trpcUtils]);
 
   const pollSyncJob = useCallback(
     async (jobId: string) => {

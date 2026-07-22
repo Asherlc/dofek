@@ -48,6 +48,10 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   are lost, inactive, or retaining dangerous WAL, and when active ClickHouse
   mirrors have stale `_peerdb_synced_at` values.
   - Usage: `pnpm check:clickhouse-cdc`
+- `check-ota-manifest.ts`: Sends the production iOS Expo Updates request and
+  fails unless the OTA origin returns a conformant manifest or no-update
+  response within five seconds.
+  - Usage: `pnpm tsx scripts/check-ota-manifest.ts`
 
 ## Reverse Engineering (WHOOP)
 

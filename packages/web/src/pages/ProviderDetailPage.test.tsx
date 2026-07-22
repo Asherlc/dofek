@@ -91,6 +91,12 @@ const mockRecords: {
   isError: false,
   error: null,
 };
+const mockAvailableDataTypes = {
+  data: ["activities"] as const,
+  isLoading: false,
+  isError: false,
+  error: null,
+};
 const mockActiveImports: { data: Array<Record<string, unknown>>; isLoading: boolean } = {
   data: [],
   isLoading: false,
@@ -147,6 +153,7 @@ vi.mock("../lib/trpc.ts", () => ({
       deletionStatus: { useQuery: () => ({ data: undefined, error: null }) },
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
       logFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
+      availableDataTypes: { useQuery: () => mockAvailableDataTypes },
       records: { useQuery: () => mockRecords },
       recordFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
     },
@@ -372,6 +379,7 @@ describe("ProviderDetailPage import-only providers", () => {
     const { ProviderDetailPage } = await import("./ProviderDetailPage");
     render(<ProviderDetailPage />);
 
+    expect(screen.getByText("Account-wide data status")).toBeTruthy();
     expect(screen.getByText("Some data is temporarily unavailable")).toBeTruthy();
     expect(
       screen.getByText("Activities data is still being prepared. Please check back soon."),
@@ -527,6 +535,31 @@ describe("ProviderDetailPage delete all data", () => {
 });
 
 describe("ProviderDetailPage activity records", () => {
+  it("shows canonical activity records while aggregate provider stats are catching up", async () => {
+    mockUseParams.mockReturnValue({ id: "kaya-export" });
+    mockProviders.data = [
+      {
+        id: "kaya-export",
+        name: "Kaya",
+        authorized: true,
+        authType: "file-import",
+        lastSyncedAt: null,
+        importOnly: true,
+      },
+    ];
+    mockStats.data = [];
+    mockRecords.data = {
+      rows: [{ id: "activity-123", name: "Kaya climbing" }],
+      columns: ["id", "name"],
+    };
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Kaya climbing")).toBeTruthy();
+    expect(screen.queryByText("No records yet for this provider.")).toBeNull();
+  });
+
   it("links from an activity record modal to the activity detail page", async () => {
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
