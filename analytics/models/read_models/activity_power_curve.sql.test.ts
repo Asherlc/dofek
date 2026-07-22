@@ -11,6 +11,18 @@ describe("activity_power_curve model", () => {
     expect(activityBoundsSql).toContain("is_deleted = 0");
   });
 
+  it("limits incremental power work to changed activity summaries", () => {
+    const dirtyKeysSql = extractCteSql(modelSql, "source_dirty_activity_keys");
+    const powerSamplesSql = extractCteSql(modelSql, "power_samples");
+
+    expect(modelSql).toContain("max(refreshed_at) AS refreshed_at");
+    expect(dirtyKeysSql).toContain(
+      "current_activity.refreshed_at > existing_activity_state.refreshed_at",
+    );
+    expect(powerSamplesSql).toContain("WHERE (sensor.user_id, sensor.activity_id) IN (");
+    expect(powerSamplesSql).toContain("FROM activity_bounds");
+  });
+
   it("emits per-duration tombstones for deleted activities", () => {
     const tombstoneRowsSql = extractCteSql(modelSql, "tombstone_rows");
 

@@ -14771,3 +14771,77 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   checks pass without added waits or retries.
 - **Remaining risk / follow-up:** Deploy the fix, retry the Kaya CSV, and confirm
   the production upload row advances through queued and completed states.
+
+## 2026-07-21 — Body Analytics Stayed Partial After Projection Repair
+
+- **Symptoms:** The Body page showed no weight trend, no recomposition data, and
+  empty Body Weight / Body Fat overview values even though current readings
+  existed. After rebuilding the serving table once, the newest reading appeared
+  but the chart was still missing most of the selected range.
+- **User impact:** Weight and body-composition history was absent or partial on
+  the production Body page while resting heart rate remained available through
+  its separate daily-metrics path.
+- **Evidence:** `ingest.metric_stream`, `analytics.body_measurement_sample`, and
+  `analytics.v_body_measurement` all had weight through `2026-07-21 13:23:36
+  UTC`, while `analytics.daily_body_measurement` stopped at `2026-06-21
+  14:52:45 UTC`. The analytics worker's first fatal line was ClickHouse exception
+  159 for `activity_power_curve`: `Timeout exceeded: elapsed 240009.582279 ms,
+  maximum: 240000 ms`. The worker retried the activity selection before reaching
+  the chained sleep/dashboard selection that contains `daily_body_measurement`.
+  A bounded anti-join then found 120 body-channel source rows missing from the
+  projection between June 21 and July 22, including 35 weight rows.
+- **Root cause:** The earlier projection repair restored live ingestion but the
+  missed interval had not been backfilled. Separately, the incremental power
+  curve model recalculated every historical endurance activity and timed out;
+  the worker command ordering prevented the body model from running afterward.
+  dbt documents incremental models as processing only the rows selected by their
+  incremental filter: <https://docs.getdbt.com/docs/build/incremental-models>.
+- **Fix / mitigation:** Backfilled only the 120 missing body-channel rows,
+  explicitly refreshed `analytics.v_body_measurement`, and ran a one-time full
+  rebuild of only `analytics.daily_body_measurement`. A subsequent full-history
+  anti-join repair brought the raw body projection up to date as well; the
+  additional historical source rows were duplicate measurements and deletion
+  records, so the deduplicated serving view correctly retained the same daily
+  history. The recurrence fix now selects power-curve work by activity-summary
+  refresh state instead of recalculating all historical activities. No timeout,
+  retry, or resource limit was increased.
+- **Validation:** After the repair, `analytics.v_body_measurement` and
+  `analytics.daily_body_measurement FINAL` matched at 2,525 weight rows, 2,044
+  body-fat rows, the same `2015-01-30` through `2026-07-21` weight span, and zero
+  live source weight or body-fat dates absent from the serving view. The exact
+  dashboard query returned 7, 28, 74, and 159 weight days for the selected 7-,
+  30-, 90-, and 180-day windows, plus 148 recomposition days in 180 days. The
+  targeted full rebuild completed successfully in 0.87 seconds, the user cache
+  was invalidated, and the analytics worker was restored to one running replica.
+- **Remaining risk / follow-up:** Deploy and validate the dirty-key power-curve
+  model against production-scale data so scheduled analytics completes without
+  the 240-second timeout. Local analytics-policy and formatting checks pass, but
+  focused Vitest validation could not collect while the shared host was under
+  sustained workspace-install contention.
+
+## 2026-07-21 — Failed Migration Integrity Check Left Analytics Quiesced
+
+- **Symptoms:** Deploy run
+  [29888514144](https://github.com/Asherlc/dofek/actions/runs/29888514144)
+  failed after applying the dependency stack, and `dofek_analytics-worker`
+  remained at `0/0` replicas.
+- **User impact:** Scheduled ClickHouse/dbt analytics builds stopped until the
+  worker replica count was restored manually.
+- **Evidence:** The exact failing step was `Run migrations`. Its first fatal
+  line was `[migrate] Integrity check failed: 0003_drop_percent_recorded.sql is
+  recorded as applied but is missing. Applied migrations are immutable; restore
+  the original migration file before starting the service.` The later consumer
+  restore steps were skipped, leaving the pre-migration quiesce spec active.
+- **Root cause:** The deployed database recorded a historical migration that the
+  requested image no longer contained, so the new immutable-migration integrity
+  check correctly stopped deployment before schema or app rollout. The failure
+  path did not restore the previously running analytics-worker replica count.
+- **Fix / mitigation:** Restored `dofek_analytics-worker` to one replica after
+  capturing the failure evidence. The integrity check was not bypassed and the
+  failed deployment was not treated as successful.
+- **Validation:** Docker Swarm reported `Service dofek_analytics-worker
+  converged` with the replacement task running. Production body tables remained
+  populated after the service restoration.
+- **Remaining risk / follow-up:** Restore the original immutable migration file
+  in the deploy image and make the quiesce failure path restore prior consumer
+  replica counts before rerunning the failed deployment.
