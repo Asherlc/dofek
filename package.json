@@ -177,7 +177,7 @@
     "@aws-sdk/s3-request-presigner": "3.1050.0",
     "@bull-board/api": "8.1.2",
     "@bull-board/express": "8.1.2",
-    "@clickhouse/client": "1.12.1",
+    "@clickhouse/client": "1.23.1",
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
     "@dofek/provider-http": "workspace:*",
