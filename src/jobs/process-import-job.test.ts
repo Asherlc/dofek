@@ -1095,6 +1095,46 @@ describe("processImportJob", () => {
         idempotencyKey: "worker-failed",
       });
     });
+    it("preserves the uploaded file when a persisted metric batch still needs publishing", async () => {
+      mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("broker unavailable"));
+      mockImportAppleHealthFile.mockImplementationOnce(
+        async (
+          _database: unknown,
+          _filePath: unknown,
+          _since: unknown,
+          _onProgress: unknown,
+          metricStreamPublisher: {
+            publishRows(
+              rows: readonly MetricStreamRowInput[],
+              options: MetricStreamPublishOptions,
+            ): Promise<unknown>;
+          },
+        ) => {
+          await metricStreamPublisher.publishRows(
+            [
+              {
+                recordedAt: "2026-06-02T10:00:00.000Z",
+                userId: "00000000-0000-4000-8000-000000000001",
+                providerId: "apple_health",
+                externalId: "heart-rate-retry",
+                sourceType: "file",
+                channel: "heart_rate",
+                scalar: 72,
+              },
+            ],
+            { operationRevision: "1000000000000000" },
+          );
+          return { recordsSynced: 1, errors: [] };
+        },
+      );
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await expect(runImportJob(job, mockDb)).rejects.toThrow("broker unavailable");
+
+      await expect(access(tempFilePath)).resolves.toBeUndefined();
+      expect(mockRecordMetricStreamBatchPublished).toHaveBeenCalledOnce();
+      expect(mockUnlink).not.toHaveBeenCalled();
+    });
     it("reports and propagates unlink failures so cleanup remains retryable", async () => {
       const cleanupError = new Error("EACCES: permission denied");
       mockUnlink.mockRejectedValueOnce(cleanupError);

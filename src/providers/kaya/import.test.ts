@@ -220,6 +220,20 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touch
     });
   });
 
+  it("imports a flash as a successful first-attempt ascent", () => {
+    const csv = `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Flash,1,v3,Pink,Named Problem,Touchstone Pacific Pipe,,`;
+
+    const result = parseKayaExport(csv);
+
+    expect(result.errors).toEqual([]);
+    expect(result.activities[0]?.entries[0]).toMatchObject({
+      sent: true,
+      attemptCount: 1,
+      routeName: "Named Problem",
+      raw: expect.objectContaining({ ascentType: "Flash" }),
+    });
+  });
+
   it("reports invalid rows with specific messages", () => {
     const cases = [
       {

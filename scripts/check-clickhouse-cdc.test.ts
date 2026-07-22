@@ -76,6 +76,9 @@ const trackedEnvVars = [
 ] as const;
 
 describe("check-clickhouse-cdc", () => {
+  let clickHouseClient: ClickHouseClient;
+  let reconciliationDatabase: ReturnType<typeof createProcessingReconciliationDatabaseFromEnv>;
+
   const originalValues: Record<(typeof trackedEnvVars)[number], string | undefined> = {
     CLICKHOUSE_URL: undefined,
     DATABASE_URL: undefined,
@@ -96,13 +99,14 @@ describe("check-clickhouse-cdc", () => {
     pgClientInstances.length = 0;
     vi.clearAllMocks();
     vi.spyOn(process, "exit").mockImplementation(() => undefined);
-    const clickHouseClient: ClickHouseClient = {
+    clickHouseClient = {
       close: vi.fn().mockResolvedValue(undefined),
       command: vi.fn().mockResolvedValue(undefined),
       query: vi.fn().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) }),
     };
     mockedCreateClickHouseClientFromEnv.mockReturnValue(clickHouseClient);
-    mockedCreateProcessingReconciliationDatabaseFromEnv.mockReturnValue({ execute: vi.fn() });
+    reconciliationDatabase = { execute: vi.fn() };
+    mockedCreateProcessingReconciliationDatabaseFromEnv.mockReturnValue(reconciliationDatabase);
     mockedReconcilePendingProcessingOperations.mockResolvedValue({
       checked: 2,
       completed: 1,
@@ -195,6 +199,8 @@ describe("check-clickhouse-cdc", () => {
     process.env.PEERDB_CDC_PASSWORD = "peerdb-dedicated-password";
     process.env.PEERDB_CDC_PORT = "9900";
 
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
     await expect(main()).resolves.toBeUndefined();
 
     expect(pgClientInstances.map((client) => client.connectionString)).toEqual([
@@ -203,8 +209,14 @@ describe("check-clickhouse-cdc", () => {
     ]);
     expect(process.exit).toHaveBeenCalledWith(0);
     expect(mockedReconcilePendingProcessingOperations).toHaveBeenCalledWith({
-      clickHouseClient: expect.any(Object),
-      database: expect.any(Object),
+      clickHouseClient,
+      database: reconciliationDatabase,
     });
+    expect(mockedAssertClickHouseCdcHealth.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedReconcilePendingProcessingOperations.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(consoleLog).toHaveBeenCalledWith(
+      "[clickhouse-cdc-health] processing reconciliation: checked 2, completed 1, waiting 1",
+    );
   });
 });

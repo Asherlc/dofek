@@ -856,31 +856,42 @@ async function ensureExistingMirrorTableMappings(
       flowJobName: mirrorName,
       requestedFlowState: "STATUS_PAUSED",
     });
-    await waitForPeerDbMirror(
-      peerDbMirrorApiClient,
-      mirrorName,
-      "reach STATUS_PAUSED",
-      (currentStatus) => currentStatus.currentFlowState === "STATUS_PAUSED",
-    );
-    await peerDbMirrorApiClient.changeMirrorState({
-      flowJobName: mirrorName,
-      requestedFlowState: "STATUS_RUNNING",
-      flowConfigUpdate: {
-        cdcFlowConfigUpdate: {
-          additional_tables: missingMappings,
+    let resumedWithRequiredMappings = false;
+    try {
+      await waitForPeerDbMirror(
+        peerDbMirrorApiClient,
+        mirrorName,
+        "reach STATUS_PAUSED",
+        (currentStatus) => currentStatus.currentFlowState === "STATUS_PAUSED",
+      );
+      await peerDbMirrorApiClient.changeMirrorState({
+        flowJobName: mirrorName,
+        requestedFlowState: "STATUS_RUNNING",
+        flowConfigUpdate: {
+          cdcFlowConfigUpdate: {
+            additional_tables: missingMappings,
+          },
         },
-      },
-    });
-    await waitForPeerDbMirror(
-      peerDbMirrorApiClient,
-      mirrorName,
-      "include required processing marker mappings and resume CDC",
-      (currentStatus) =>
-        currentStatus.currentFlowState === "STATUS_RUNNING" &&
-        missingMappings.every((requiredMapping) =>
-          mirrorHasTableMapping(currentStatus, requiredMapping),
-        ),
-    );
+      });
+      await waitForPeerDbMirror(
+        peerDbMirrorApiClient,
+        mirrorName,
+        "include required processing marker mappings and resume CDC",
+        (currentStatus) =>
+          currentStatus.currentFlowState === "STATUS_RUNNING" &&
+          missingMappings.every((requiredMapping) =>
+            mirrorHasTableMapping(currentStatus, requiredMapping),
+          ),
+      );
+      resumedWithRequiredMappings = true;
+    } finally {
+      if (!resumedWithRequiredMappings) {
+        await peerDbMirrorApiClient.changeMirrorState({
+          flowJobName: mirrorName,
+          requestedFlowState: "STATUS_RUNNING",
+        });
+      }
+    }
   }
 }
 

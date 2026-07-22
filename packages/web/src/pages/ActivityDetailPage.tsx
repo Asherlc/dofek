@@ -22,10 +22,9 @@ import {
   formatActivityTypeLabel,
   isCyclingActivity,
 } from "@dofek/training/training";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
-import type { ClimbingActivityEntryRow } from "../../../server/src/repositories/climbing-repository.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
@@ -43,6 +42,8 @@ import {
 } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { ClimbingEntryBreakdown } from "./activity-detail/components/ClimbingEntryBreakdown.tsx";
+import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 
@@ -276,89 +277,6 @@ export function ActivityDetailPage() {
         )}
       </div>
     </PageLayout>
-  );
-}
-
-function ClimbingEntryBreakdown({ entries }: { entries: ClimbingActivityEntryRow[] }) {
-  return (
-    <div className="divide-y divide-border">
-      {entries.map((entry) => (
-        <div
-          key={entry.id}
-          className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
-        >
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="min-w-12 rounded bg-accent/10 px-2 py-1 text-center text-sm font-semibold text-accent">
-              {entry.grade}
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-foreground">
-                {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
-              </p>
-              {entry.locationName && (
-                <p className="truncate text-xs text-subtle">{entry.locationName}</p>
-              )}
-            </div>
-          </div>
-          <div className="shrink-0 text-right">
-            <p className={entry.sent ? "text-sm text-green-500" : "text-sm text-subtle"}>
-              {entry.sent ? "Sent" : "Attempted"}
-            </p>
-            <p className="text-xs text-dim">{entry.sourceName}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function DeleteActivityButton({ activityId }: { activityId: string }) {
-  const [showConfirm, setShowConfirm] = useState(false);
-  const navigate = useNavigate();
-  const trpcUtils = trpc.useUtils();
-  const deleteMutation = trpc.activity.delete.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        trpcUtils.activity.list.invalidate(),
-        trpcUtils.calendar.weekList.invalidate(),
-        trpcUtils.calendar.activityOverview.invalidate(),
-      ]);
-      navigate({ to: "/dashboard" });
-    },
-  });
-
-  if (showConfirm) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted">Delete this activity? This cannot be undone.</span>
-        <button
-          type="button"
-          onClick={() => deleteMutation.mutate({ id: activityId })}
-          disabled={deleteMutation.isPending}
-          className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors cursor-pointer"
-        >
-          {deleteMutation.isPending ? "Deleting..." : "Confirm Delete"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowConfirm(false)}
-          disabled={deleteMutation.isPending}
-          className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
-        >
-          Cancel
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setShowConfirm(true)}
-      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors cursor-pointer"
-    >
-      Delete Activity
-    </button>
   );
 }
 

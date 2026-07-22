@@ -3,7 +3,9 @@ import type { SchemaExecutionDatabase } from "../db/typed-sql.ts";
 
 const { mockAppendProcessingStageEvent, mockCreateDatabaseFromEnv, mockExecuteWithSchema } =
   vi.hoisted(() => ({
-    mockAppendProcessingStageEvent: vi.fn(async () => undefined),
+    mockAppendProcessingStageEvent: vi.fn(
+      async (_database: unknown, _event: { stage: string; idempotencyKey: string }) => undefined,
+    ),
     mockCreateDatabaseFromEnv: vi.fn(),
     mockExecuteWithSchema: vi.fn(),
   }));
@@ -67,6 +69,7 @@ describe("reconcileProcessingEvidence", () => {
             datasetKey: "activity",
             flowName: "dofek_fitness_raw_analytics",
             batchKey: "activity-batch-1",
+            sourceWatermark: "commit-1",
           },
         ],
       }),
@@ -78,6 +81,34 @@ describe("reconcileProcessingEvidence", () => {
         sourceWatermark: "commit-1",
       }),
     ]);
+  });
+
+  it("keeps relational CDC running when the observed source watermark differs", () => {
+    expect(
+      reconcileProcessingEvidence({
+        operationId,
+        outputs: [{ datasetKey: "activity", outputPath: "relational" }],
+        relationalMarkers: [
+          {
+            datasetKey: "activity",
+            flowName: "dofek_fitness_raw_analytics",
+            batchKey: "activity-batch-1",
+            sourceWatermark: "commit-expected",
+          },
+        ],
+        metricBatches: [],
+        observedRelationalMarkers: [
+          {
+            operationId,
+            datasetKey: "activity",
+            flowName: "dofek_fitness_raw_analytics",
+            batchKey: "activity-batch-1",
+            sourceWatermark: "commit-stale",
+          },
+        ],
+        observedMetricBatches: [],
+      })[0]?.status,
+    ).toBe("running");
   });
 
   it("requires every metric batch and ignores unrelated acknowledgements", () => {
@@ -199,6 +230,7 @@ describe("reconcilePendingProcessingOperations", () => {
                   dataset_key: "activity",
                   flow_name: "dofek_fitness_raw_analytics",
                   batch_key: "activity-batch-1",
+                  source_watermark: "commit-1",
                 },
               ]
             : [],
@@ -221,8 +253,8 @@ describe("reconcilePendingProcessingOperations", () => {
     mockExecuteWithSchema
       .mockResolvedValueOnce([{ operation_id: operationId }])
       .mockResolvedValueOnce([
-        { dataset_key: "activity", output_path: "relational" },
         { dataset_key: "activity", output_path: "metric_stream" },
+        { dataset_key: "activity", output_path: "relational" },
       ])
       .mockResolvedValueOnce([
         {
@@ -272,20 +304,6 @@ describe("reconcilePendingProcessingOperations", () => {
           stage: "cdc",
           status: "succeeded",
           datasetKey: "activity",
-          outputPath: "relational",
-          sourceWatermark: "commit-1",
-          servingWatermark: "commit-1",
-          message: "Stored data is available for analysis",
-          idempotencyKey: `cdc:${operationId}:activity:relational:succeeded:commit-1`,
-        },
-      ],
-      [
-        reconciliationDatabase,
-        {
-          operationId,
-          stage: "cdc",
-          status: "succeeded",
-          datasetKey: "activity",
           outputPath: "metric_stream",
           sourceWatermark: "metric-batch-1",
           servingWatermark: "metric-batch-1",
@@ -297,16 +315,87 @@ describe("reconcilePendingProcessingOperations", () => {
         reconciliationDatabase,
         {
           operationId,
+          stage: "cdc",
+          status: "succeeded",
+          datasetKey: "activity",
+          outputPath: "relational",
+          sourceWatermark: "commit-1",
+          servingWatermark: "commit-1",
+          message: "Stored data is available for analysis",
+          idempotencyKey: `cdc:${operationId}:activity:relational:succeeded:commit-1`,
+        },
+      ],
+      [
+        reconciliationDatabase,
+        {
+          operationId,
           stage: "analytics",
           status: "queued",
           datasetKey: "activity",
-          servingWatermark: "commit-1:metric-batch-1",
+          servingWatermark: "metric-batch-1:commit-1",
           message: "Waiting for analytics calculations",
-          idempotencyKey: "analytics:commit-1:metric-batch-1",
+          idempotencyKey: "analytics:activity:metric-batch-1:commit-1",
         },
       ],
     ]);
     expect(reconciliationDatabase.execute).toHaveBeenCalledOnce();
+  });
+
+  it("queues distinct analytics events when datasets share a serving watermark", async () => {
+    mockExecuteWithSchema
+      .mockResolvedValueOnce([{ operation_id: operationId }])
+      .mockResolvedValueOnce([
+        { dataset_key: "activity", output_path: "relational" },
+        { dataset_key: "hiking", output_path: "relational" },
+      ])
+      .mockResolvedValueOnce([
+        {
+          dataset_key: "activity",
+          flow_name: "dofek_fitness_raw_analytics",
+          batch_key: "activity-batch-1",
+          source_watermark: "commit-1",
+        },
+        {
+          dataset_key: "hiking",
+          flow_name: "dofek_fitness_raw_analytics",
+          batch_key: "hiking-batch-1",
+          source_watermark: "commit-1",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => [
+          {
+            operation_id: operationId,
+            dataset_key: "activity",
+            flow_name: "dofek_fitness_raw_analytics",
+            batch_key: "activity-batch-1",
+            source_watermark: "commit-1",
+          },
+          {
+            operation_id: operationId,
+            dataset_key: "hiking",
+            flow_name: "dofek_fitness_raw_analytics",
+            batch_key: "hiking-batch-1",
+            source_watermark: "commit-1",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ json: async () => [] });
+
+    await reconcilePendingProcessingOperations({
+      database: database(),
+      clickHouseClient: { query },
+    });
+
+    expect(
+      mockAppendProcessingStageEvent.mock.calls
+        .map(([, event]) => event)
+        .filter((event) => event.stage === "analytics")
+        .map((event) => event.idempotencyKey),
+    ).toEqual(["analytics:activity:commit-1", "analytics:hiking:commit-1"]);
   });
 
   it("persists running evidence without advancing analytics or completing the outbox", async () => {

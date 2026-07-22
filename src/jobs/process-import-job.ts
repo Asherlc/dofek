@@ -349,7 +349,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     importError = error;
   }
 
-  if (shouldCleanUpUploadedFile) {
+  if (shouldCleanUpUploadedFile && !metricStreamPublisher?.hasUnpublishedBatchIntents) {
     const { unlink } = await import("node:fs/promises");
     try {
       await unlink(filePath);

@@ -23,7 +23,7 @@ const KAYA_HEADER = [
   "country",
 ] as const;
 
-const SENT_ASCENT_TYPES = new Set(["Redpoint", "Repeat", "Onsight"]);
+const SENT_ASCENT_TYPES = new Set(["Flash", "Onsight", "Redpoint", "Repeat"]);
 const attemptCountSchema = z.number().int().min(1).max(2_147_483_647);
 
 interface KayaDecodedRow {
