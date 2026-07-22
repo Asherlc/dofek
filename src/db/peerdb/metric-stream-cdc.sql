@@ -50,6 +50,10 @@ WITH TABLE MAPPING
     to: device_priority
   },
   {
+    from: fitness.processing_flow_marker,
+    to: processing_flow_marker
+  },
+  {
     from: fitness.user_profile,
     to: user_profile
   }
@@ -88,6 +92,10 @@ WITH TABLE MAPPING
   {
     from: fitness.journal_entry,
     to: journal_entry
+  },
+  {
+    from: fitness.processing_flow_marker,
+    to: processing_flow_marker_provider_inventory
   }
 )
 WITH (

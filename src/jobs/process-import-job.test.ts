@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { WaitingChildrenError } from "bullmq";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import { createMetricStreamEvent, type MetricStreamRowInput } from "../metric-stream/events.ts";
+import type { MetricStreamPublishOptions } from "../metric-stream/redpanda-producer.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
 import type { LocalImportJobData as ImportJobData } from "./local-import-job-data.ts";
 
@@ -29,6 +31,57 @@ vi.mock("../logger.ts", () => ({
     warn: (...args: unknown[]) => mockLoggerWarn(...args),
     debug: vi.fn(),
   },
+}));
+const processingOperationId = "30000000-0000-4000-8000-000000000002";
+const mockCreateProcessingOperation = vi.fn(
+  async (
+    _database: unknown,
+    input: {
+      userId: string | null;
+      providerId?: string | null;
+      kind: "file_import";
+      externalCorrelationKey?: string | null;
+      datasetKeys: string[];
+    },
+  ) => ({
+    id: processingOperationId,
+    userId: input.userId,
+    providerId: input.providerId ?? null,
+    kind: input.kind,
+    externalCorrelationKey: input.externalCorrelationKey ?? null,
+    datasetKeys: input.datasetKeys,
+    createdAt: new Date("2026-06-02T12:00:00.000Z"),
+  }),
+);
+const mockAppendProcessingStageEvent = vi.fn(
+  async (_database: unknown, _input: unknown) => undefined,
+);
+const mockRecordMetricStreamBatchPublished = vi.fn(
+  async (_database: unknown, _input: unknown) => undefined,
+);
+const mockRecordRelationalCanonicalCommits = vi.fn(
+  async (_database: unknown, _input: unknown) => undefined,
+);
+vi.mock("../processing/processing-event-store.ts", () => ({
+  appendProcessingStageEvent: (database: unknown, input: unknown) =>
+    mockAppendProcessingStageEvent(database, input),
+  createProcessingOperation: (
+    database: unknown,
+    input: Parameters<typeof mockCreateProcessingOperation>[1],
+  ) => mockCreateProcessingOperation(database, input),
+  recordMetricStreamBatchPublished: (database: unknown, input: unknown) =>
+    mockRecordMetricStreamBatchPublished(database, input),
+  recordRelationalCanonicalCommits: (database: unknown, input: unknown) =>
+    mockRecordRelationalCanonicalCommits(database, input),
+}));
+const mockMetricStreamPublishRows = vi.fn(
+  async (rows: readonly MetricStreamRowInput[], options: MetricStreamPublishOptions) =>
+    rows.map((row) => createMetricStreamEvent(row, options.operationRevision)),
+);
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: vi.fn(async () => ({
+    publishRows: mockMetricStreamPublishRows,
+  })),
 }));
 // Mock dependencies with module-level mock functions (avoids `as` casts)
 const mockLogSync = vi.fn().mockResolvedValue(undefined);
@@ -183,11 +236,121 @@ describe("processImportJob", () => {
     mockImportFitFile.mockResolvedValue({ recordsSynced: 1, errors: [] });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
+    mockCreateProcessingOperation.mockClear();
+    mockAppendProcessingStageEvent.mockClear();
+    mockRecordMetricStreamBatchPublished.mockClear();
+    mockRecordRelationalCanonicalCommits.mockClear();
+    mockMetricStreamPublishRows.mockClear();
   });
   afterEach(() => {
     vi.restoreAllMocks();
   });
   describe("apple-health import", () => {
+    it("records the import lifecycle and correlates emitted metric batches", async () => {
+      mockImportAppleHealthFile.mockImplementationOnce(
+        async (
+          _database: unknown,
+          _filePath: unknown,
+          _since: unknown,
+          _onProgress: unknown,
+          metricStreamPublisher: {
+            publishRows(
+              rows: readonly MetricStreamRowInput[],
+              options: MetricStreamPublishOptions,
+            ): Promise<unknown>;
+          },
+        ) => {
+          await metricStreamPublisher.publishRows(
+            [
+              {
+                recordedAt: "2026-06-02T10:00:00.000Z",
+                userId: "00000000-0000-4000-8000-000000000001",
+                providerId: "apple_health",
+                externalId: "heart-rate-1",
+                sourceType: "file",
+                channel: "heart_rate",
+                scalar: 72,
+              },
+            ],
+            { operationRevision: "1000000000000000" },
+          );
+          return { recordsSynced: 1, errors: [] };
+        },
+      );
+      const job = createMockJob({
+        filePath: tempFilePath,
+        importType: "apple-health",
+        userId: "00000000-0000-4000-8000-000000000001",
+      });
+
+      await runImportJob(job, mockDb);
+
+      expect(mockCreateProcessingOperation).toHaveBeenCalledWith(mockDb, {
+        userId: "00000000-0000-4000-8000-000000000001",
+        providerId: "apple_health",
+        kind: "file_import",
+        externalCorrelationKey: "import-job-1",
+        datasetKeys: [
+          "activity",
+          "hiking",
+          "cycling",
+          "sleep",
+          "recovery",
+          "training",
+          "body",
+          "nutrition",
+          "providers",
+        ],
+      });
+      expect(mockAppendProcessingStageEvent).toHaveBeenNthCalledWith(1, mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "queued",
+        progressPercentage: 0,
+        idempotencyKey: "worker-queued",
+      });
+      expect(mockAppendProcessingStageEvent).toHaveBeenNthCalledWith(2, mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "running",
+        progressPercentage: 0,
+        idempotencyKey: "worker-running",
+      });
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.objectContaining({
+          processing: expect.objectContaining({ operationId: processingOperationId }),
+        }),
+      );
+      expect(mockRecordMetricStreamBatchPublished).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ operationId: processingOperationId, expectedEventCount: 1 }),
+      );
+      expect(mockRecordRelationalCanonicalCommits).toHaveBeenCalledWith(mockDb, {
+        operationId: processingOperationId,
+        datasetKeys: [
+          "activity",
+          "hiking",
+          "cycling",
+          "sleep",
+          "recovery",
+          "training",
+          "nutrition",
+          "providers",
+        ],
+        idempotencyKey: "worker-relational-commit:import-job-1",
+      });
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          operationId: processingOperationId,
+          stage: "ingest",
+          status: "succeeded",
+          idempotencyKey: "worker-succeeded",
+        }),
+      );
+    });
+
     it("calls importAppleHealthFile with correct args and reports progress", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
@@ -196,6 +359,121 @@ describe("processImportJob", () => {
         tempFilePath,
         new Date("2024-01-01T00:00:00.000Z"),
         expect.any(Function),
+        expect.any(Object),
+      );
+    });
+
+    it("omits empty record, workout, and sleep counts from progress", async () => {
+      mockImportAppleHealthFile.mockImplementationOnce(
+        async (
+          _database: unknown,
+          _filePath: unknown,
+          _since: unknown,
+          onProgress: (info: {
+            percentage: number;
+            recordCount: number;
+            workoutCount: number;
+            sleepCount: number;
+          }) => void,
+        ) => {
+          onProgress({ percentage: 10, recordCount: 0, workoutCount: 0, sleepCount: 0 });
+          return { recordsSynced: 0, errors: [] };
+        },
+      );
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await runImportJob(job, mockDb);
+
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        percentage: 9,
+        message: "Importing health data...",
+      });
+    });
+
+    it("fails metric publication when the database has no transaction support", async () => {
+      mockImportAppleHealthFile.mockImplementationOnce(
+        async (
+          _database: unknown,
+          _filePath: unknown,
+          _since: unknown,
+          _onProgress: unknown,
+          metricStreamPublisher: {
+            publishRows(
+              rows: readonly MetricStreamRowInput[],
+              options: MetricStreamPublishOptions,
+            ): Promise<unknown>;
+          },
+        ) => {
+          await metricStreamPublisher.publishRows(
+            [
+              {
+                recordedAt: "2026-06-02T10:00:00.000Z",
+                userId: "00000000-0000-4000-8000-000000000001",
+                providerId: "apple_health",
+                externalId: "heart-rate-1",
+                sourceType: "file",
+                channel: "heart_rate",
+                scalar: 72,
+              },
+            ],
+            { operationRevision: "1000000000000000" },
+          );
+          return { recordsSynced: 0, errors: [] };
+        },
+      );
+      const nonTransactionalDatabase: SyncDatabase = {
+        select: vi.fn(),
+        insert: vi.fn(),
+        delete: vi.fn(),
+        execute: vi.fn(),
+      };
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await expect(runImportJob(job, nonTransactionalDatabase)).rejects.toThrow(
+        "Processing metric-stream publication requires a transactional database",
+      );
+    });
+
+    it("does not fabricate relational or no-output events for a metric-only result", async () => {
+      mockImportAppleHealthFile.mockImplementationOnce(
+        async (
+          _database: unknown,
+          _filePath: unknown,
+          _since: unknown,
+          _onProgress: unknown,
+          metricStreamPublisher: {
+            publishRows(
+              rows: readonly MetricStreamRowInput[],
+              options: MetricStreamPublishOptions,
+            ): Promise<unknown>;
+          },
+        ) => {
+          await metricStreamPublisher.publishRows(
+            [
+              {
+                recordedAt: "2026-06-02T10:00:00.000Z",
+                userId: "00000000-0000-4000-8000-000000000001",
+                providerId: "apple_health",
+                externalId: "heart-rate-1",
+                sourceType: "file",
+                channel: "heart_rate",
+                scalar: 72,
+              },
+            ],
+            { operationRevision: "1000000000000000" },
+          );
+          return { recordsSynced: 0, errors: [] };
+        },
+      );
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await runImportJob(job, mockDb);
+
+      expect(mockRecordMetricStreamBatchPublished).toHaveBeenCalledOnce();
+      expect(mockRecordRelationalCanonicalCommits).not.toHaveBeenCalled();
+      expect(mockAppendProcessingStageEvent).not.toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ status: "skipped" }),
       );
     });
 
@@ -470,6 +748,10 @@ describe("processImportJob", () => {
         expect.stringContaining("Touchstone Pacific Pipe"),
         "user-1",
       );
+      expect(mockCreateProcessingOperation).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ providerId: "kaya" }),
+      );
     });
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
@@ -742,6 +1024,7 @@ describe("processImportJob", () => {
           sourceName: "FIT File",
         },
         expect.any(Function),
+        expect.any(Object),
       );
       expect(mockEnsureProvider).toHaveBeenCalledWith(
         mockDb,
@@ -803,6 +1086,54 @@ describe("processImportJob", () => {
       await expect(runImportJob(job, mockDb)).rejects.toThrow("parse error");
 
       await expect(access(tempFilePath)).rejects.toThrow();
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "failed",
+        errorCode: "file_import_failed",
+        errorMessage: "The file could not be imported. Check the file and try again.",
+        idempotencyKey: "worker-failed",
+      });
+    });
+    it("preserves the uploaded file when a persisted metric batch still needs publishing", async () => {
+      mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("broker unavailable"));
+      mockImportAppleHealthFile.mockImplementationOnce(
+        async (
+          _database: unknown,
+          _filePath: unknown,
+          _since: unknown,
+          _onProgress: unknown,
+          metricStreamPublisher: {
+            publishRows(
+              rows: readonly MetricStreamRowInput[],
+              options: MetricStreamPublishOptions,
+            ): Promise<unknown>;
+          },
+        ) => {
+          await metricStreamPublisher.publishRows(
+            [
+              {
+                recordedAt: "2026-06-02T10:00:00.000Z",
+                userId: "00000000-0000-4000-8000-000000000001",
+                providerId: "apple_health",
+                externalId: "heart-rate-retry",
+                sourceType: "file",
+                channel: "heart_rate",
+                scalar: 72,
+              },
+            ],
+            { operationRevision: "1000000000000000" },
+          );
+          return { recordsSynced: 1, errors: [] };
+        },
+      );
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await expect(runImportJob(job, mockDb)).rejects.toThrow("broker unavailable");
+
+      await expect(access(tempFilePath)).resolves.toBeUndefined();
+      expect(mockRecordMetricStreamBatchPublished).toHaveBeenCalledOnce();
+      expect(mockUnlink).not.toHaveBeenCalled();
     });
     it("reports and propagates unlink failures so cleanup remains retryable", async () => {
       const cleanupError = new Error("EACCES: permission denied");
@@ -811,6 +1142,14 @@ describe("processImportJob", () => {
       await expect(runImportJob(job, mockDb)).rejects.toBe(cleanupError);
       expect(mockCaptureException).toHaveBeenCalledWith(cleanupError, {
         tags: { phase: "uploaded-file-cleanup" },
+      });
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "failed",
+        errorCode: "file_cleanup_failed",
+        errorMessage: "The import finished, but its uploaded file could not be cleaned up.",
+        idempotencyKey: "worker-failed",
       });
     });
     it("preserves both errors when import and cleanup fail", async () => {
@@ -828,6 +1167,95 @@ describe("processImportJob", () => {
       );
       expect(mockCaptureException).toHaveBeenCalledWith(cleanupError, {
         tags: { phase: "uploaded-file-cleanup" },
+      });
+    });
+  });
+  describe("processing output evidence", () => {
+    it("records relational output after a non-empty import", async () => {
+      await writeFile(tempFilePath, "csv data");
+      const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
+
+      await runImportJob(job, mockDb);
+
+      expect(mockCreateProcessingOperation).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ providerId: "strong-csv" }),
+      );
+      expect(mockRecordRelationalCanonicalCommits).toHaveBeenCalledWith(mockDb, {
+        operationId: processingOperationId,
+        datasetKeys: ["activity", "recovery", "training", "providers"],
+        idempotencyKey: "worker-relational-commit:import-job-1",
+      });
+      expect(mockAppendProcessingStageEvent).not.toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ status: "skipped" }),
+      );
+    });
+
+    it("records exact analytics and cache skips when an import emits no output", async () => {
+      mockImportCronometerCsv.mockResolvedValueOnce({ recordsSynced: 0, errors: [] });
+      await writeFile(tempFilePath, "csv data");
+      const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
+
+      await runImportJob(job, mockDb);
+
+      expect(mockRecordRelationalCanonicalCommits).not.toHaveBeenCalled();
+      expect(mockAppendProcessingStageEvent.mock.calls).toEqual(
+        expect.arrayContaining([
+          [
+            mockDb,
+            {
+              operationId: processingOperationId,
+              stage: "analytics",
+              status: "skipped",
+              datasetKey: "nutrition",
+              message: "No new data was emitted for this dataset",
+              idempotencyKey: "no-output:nutrition:analytics",
+            },
+          ],
+          [
+            mockDb,
+            {
+              operationId: processingOperationId,
+              stage: "cache_refresh",
+              status: "skipped",
+              datasetKey: "nutrition",
+              message: "No new data was emitted for this dataset",
+              idempotencyKey: "no-output:nutrition:cache_refresh",
+            },
+          ],
+          [
+            mockDb,
+            {
+              operationId: processingOperationId,
+              stage: "analytics",
+              status: "skipped",
+              datasetKey: "providers",
+              message: "No new data was emitted for this dataset",
+              idempotencyKey: "no-output:providers:analytics",
+            },
+          ],
+          [
+            mockDb,
+            {
+              operationId: processingOperationId,
+              stage: "cache_refresh",
+              status: "skipped",
+              datasetKey: "providers",
+              message: "No new data was emitted for this dataset",
+              idempotencyKey: "no-output:providers:cache_refresh",
+            },
+          ],
+        ]),
+      );
+      expect(mockAppendProcessingStageEvent).toHaveBeenLastCalledWith(mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "succeeded",
+        progressPercentage: 100,
+        errorCode: undefined,
+        errorMessage: undefined,
+        idempotencyKey: "worker-succeeded",
       });
     });
   });

@@ -1,6 +1,7 @@
 import {
   createMetricStreamDeletePartitionKey,
   type MetricStreamDeleteScopeInput,
+  type MetricStreamProcessingContext,
   type MetricStreamRowInput,
   metricStreamRowInputSchema,
 } from "../metric-stream/events.ts";
@@ -94,6 +95,7 @@ interface ReplacementCapableMetricStreamPublisher extends MetricStreamEventPubli
     scope: MetricStreamDeleteScopeInput,
     rows: readonly MetricStreamRowInput[],
     operationRevision: string,
+    processing?: MetricStreamProcessingContext,
   ): Promise<MetricStreamReplacementPublishResult>;
 }
 

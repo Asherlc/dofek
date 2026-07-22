@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createMetricStreamBatchCompletedEvent,
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
   type MetricStreamDeleteScopeInput,
@@ -179,5 +180,52 @@ describe("createMetricStreamDeletedEvent", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe("createMetricStreamBatchCompletedEvent", () => {
+  it("creates an operation-correlated marker with a stable partition key", () => {
+    const marker = createMetricStreamBatchCompletedEvent(
+      {
+        operationId: "30000000-0000-4000-8000-000000000001",
+        batchId: "heart-rate-1",
+        datasetKeys: ["recovery", "training"],
+      },
+      2,
+    );
+
+    expect(marker).toEqual({
+      version: 1,
+      eventType: "metric_stream_batch_completed",
+      operationId: "30000000-0000-4000-8000-000000000001",
+      batchId: "heart-rate-1",
+      datasetKeys: ["recovery", "training"],
+      expectedEventCount: 2,
+      partitionKey: "processing:30000000-0000-4000-8000-000000000001:heart-rate-1",
+    });
+  });
+
+  it("rejects empty dataset manifests and zero-event markers", () => {
+    expect(() =>
+      createMetricStreamBatchCompletedEvent(
+        {
+          operationId: "30000000-0000-4000-8000-000000000001",
+          batchId: "heart-rate-1",
+          datasetKeys: [],
+        },
+        1,
+      ),
+    ).toThrow();
+
+    expect(() =>
+      createMetricStreamBatchCompletedEvent(
+        {
+          operationId: "30000000-0000-4000-8000-000000000001",
+          batchId: "heart-rate-1",
+          datasetKeys: ["recovery"],
+        },
+        0,
+      ),
+    ).toThrow();
   });
 });

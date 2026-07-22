@@ -82,6 +82,84 @@ describe("KafkaMetricStreamEventPublisher", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("publishes a trailing processing marker on the same partition as every row", async () => {
+    const { producer, send } = makeProducer();
+    const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+
+    const events = await publisher.publishRows([metricStreamRow], {
+      operationRevision,
+      processing: {
+        operationId: "30000000-0000-4000-8000-000000000001",
+        batchId: "heart-rate-1",
+        datasetKeys: ["recovery"],
+      },
+    });
+
+    const sentMessages = send.mock.calls.flatMap((call) => call[0].messages);
+    const marker = JSON.parse(sentMessages[1]?.value ?? "{}");
+    expect(sentMessages).toEqual([
+      {
+        key: "processing:30000000-0000-4000-8000-000000000001:heart-rate-1",
+        value: JSON.stringify(events[0]),
+      },
+      {
+        key: "processing:30000000-0000-4000-8000-000000000001:heart-rate-1",
+        value: JSON.stringify(marker),
+      },
+    ]);
+    expect(marker).toMatchObject({
+      eventType: "metric_stream_batch_completed",
+      operationId: "30000000-0000-4000-8000-000000000001",
+      batchId: "heart-rate-1",
+      datasetKeys: ["recovery"],
+      expectedEventCount: 1,
+    });
+  });
+
+  it("keeps the processing marker last when a correlated batch is chunked", async () => {
+    const { producer, send } = makeProducer();
+    const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+    const rows = [0, 1].map((index) => ({
+      ...metricStreamRow,
+      externalId: `hk:correlated-${index}`,
+      metadata: { blob: "x".repeat(500_000) },
+    }));
+
+    await publisher.publishRows(rows, {
+      operationRevision,
+      processing: {
+        operationId: "30000000-0000-4000-8000-000000000001",
+        batchId: "heart-rate-1",
+        datasetKeys: ["recovery"],
+      },
+    });
+
+    const sentMessages = send.mock.calls.flatMap((call) => call[0].messages);
+    expect(send.mock.calls.length).toBeGreaterThan(1);
+    expect(JSON.parse(sentMessages.at(-1)?.value ?? "{}").eventType).toBe(
+      "metric_stream_batch_completed",
+    );
+    expect(new Set(sentMessages.map((message) => message.key))).toEqual(
+      new Set(["processing:30000000-0000-4000-8000-000000000001:heart-rate-1"]),
+    );
+  });
+
+  it("does not publish a processing marker for an empty row batch", async () => {
+    const { producer, send } = makeProducer();
+    const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+
+    await publisher.publishRows([], {
+      operationRevision,
+      processing: {
+        operationId: "30000000-0000-4000-8000-000000000001",
+        batchId: "heart-rate-1",
+        datasetKeys: ["recovery"],
+      },
+    });
+
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("publishes row batches on a supplied replacement partition key", async () => {
     const { producer, send } = makeProducer();
     const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
@@ -128,6 +206,38 @@ describe("KafkaMetricStreamEventPublisher", () => {
         },
       ],
     });
+  });
+
+  it("publishes a processing marker after a scoped replacement", async () => {
+    const { producer, send } = makeProducer();
+    const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+
+    const result = await publisher.replaceRows(
+      { activityId: "20000000-0000-4000-8000-000000000001" },
+      [metricStreamRow],
+      operationRevision,
+      {
+        operationId: "30000000-0000-4000-8000-000000000001",
+        batchId: "activity-replacement-1",
+        datasetKeys: ["activity"],
+      },
+    );
+
+    const sentMessages = send.mock.calls.flatMap((call) => call[0].messages);
+    expect(sentMessages).toHaveLength(3);
+    expect(JSON.parse(sentMessages[0]?.value ?? "{}")).toEqual(result.deleted);
+    expect(JSON.parse(sentMessages[1]?.value ?? "{}")).toEqual(result.rows[0]);
+    expect(JSON.parse(sentMessages[2]?.value ?? "{}")).toMatchObject({
+      eventType: "metric_stream_batch_completed",
+      operationId: "30000000-0000-4000-8000-000000000001",
+      batchId: "activity-replacement-1",
+      datasetKeys: ["activity"],
+      expectedEventCount: 2,
+      partitionKey: "activity:20000000-0000-4000-8000-000000000001",
+    });
+    expect(new Set(sentMessages.map((message) => message.key))).toEqual(
+      new Set(["activity:20000000-0000-4000-8000-000000000001"]),
+    );
   });
 
   it("splits oversized publish batches into multiple produce requests", async () => {
