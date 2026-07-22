@@ -1,3 +1,4 @@
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -159,7 +160,7 @@ describe("ios telemetry", () => {
       "service.name": "dofek-mobile",
     });
     expect(mocks.mockBatchLogRecordProcessor).toHaveBeenCalledWith({
-      exporter: expect.anything(),
+      exporter: expect.any(OTLPLogExporter),
     });
     expect(mocks.mockLoggerProvider).toHaveBeenCalledWith({
       resource: { resource: "mock" },

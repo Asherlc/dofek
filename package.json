@@ -309,11 +309,6 @@
     "patchedDependencies": {
       "@expo/plist@0.0.18": "patches/@expo__plist@0.0.18.patch",
       "@expo/plist@0.8.1": "patches/@expo__plist@0.8.1.patch"
-    },
-    "auditConfig": {
-      "ignoreCves": [
-        "GHSA-rmmr-r34h-pfm5"
-      ]
     }
   },
   "engines": {
