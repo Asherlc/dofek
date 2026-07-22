@@ -244,7 +244,7 @@
     "msw": "2.12.11",
     "nyc": "18.0.0",
     "plantuml-encoder": "1.4.0",
-    "sharp": "0.34.5",
+    "sharp": "0.35.0",
     "sherif": "1.13.0",
     "size-limit": "12.0.1",
     "stylelint": "17.14.0",
