@@ -1,7 +1,7 @@
 import { formatDateMedium, formatDurationMinutes } from "@dofek/format/format";
 import { statusColors, surfaceColors } from "@dofek/scoring/colors";
 import type { CalendarDay } from "dofek-server/types";
-import { chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
+import { chartThemeColors, dofekTooltip, escapeTooltipHtml } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface TrainingCalendarProps {
@@ -45,10 +45,10 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
         if (!day) return formatDateMedium(date);
         const types = day.activityTypes.join(", ");
         return [
-          `<strong>${formatDateMedium(date)}</strong>`,
+          `<strong>${escapeTooltipHtml(formatDateMedium(date))}</strong>`,
           `Activities: ${day.activityCount}`,
           `Duration: ${formatDurationMinutes(minutes)}`,
-          `Types: ${types}`,
+          `Types: ${escapeTooltipHtml(types)}`,
         ].join("<br/>");
       },
     }),

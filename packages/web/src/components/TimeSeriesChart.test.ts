@@ -117,7 +117,7 @@ describe("TimeSeriesChart", () => {
       },
     ]);
 
-    expect(html).toContain('Mood &lt;script&gt;alert("x")&lt;/script&gt;');
+    expect(html).toContain("Mood &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<img src=x");

@@ -8,17 +8,10 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
   seriesColor,
 } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 export function DailyHeartRatePage() {
   const [date, setDate] = useState(() => formatDateYmd());
@@ -50,6 +43,7 @@ export function DailyHeartRatePage() {
           empty={sources.length === 0}
           height={400}
           emptyMessage="No heart rate data for this day"
+          timeRangeMode="data"
         />
       </div>
 
@@ -75,12 +69,12 @@ function buildChartOption(sources: HeartRateSourceSeries[]) {
         const firstParam = params[0];
         if (!firstParam) return "";
         const time = formatTimeOnly(firstParam.data[0]);
-        let html = `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(time)}</div>`;
+        let html = `<div style="font-weight:600;margin-bottom:4px">${escapeTooltipHtml(time)}</div>`;
         for (const param of params) {
           if (param.data[1] == null) continue;
           html += `<div style="display:flex;align-items:center;gap:6px">`;
-          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${escapeHtml(param.color)}"></span>`;
-          html += `<span>${escapeHtml(param.seriesName)}: <b>${param.data[1]} bpm</b></span>`;
+          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${escapeTooltipHtml(param.color)}"></span>`;
+          html += `<span>${escapeTooltipHtml(param.seriesName)}: <b>${param.data[1]} bpm</b></span>`;
           html += `</div>`;
         }
         return html;

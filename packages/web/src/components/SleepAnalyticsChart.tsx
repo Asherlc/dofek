@@ -2,7 +2,14 @@ import { formatDateMedium, formatDurationMinutes, formatNumber } from "@dofek/fo
 import { sleepStageColors, statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNightlyRow } from "dofek-server/types";
-import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import {
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+  escapeTooltipHtml,
+} from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepAnalyticsChartProps {
@@ -38,17 +45,17 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         const night = nightly[idx];
         if (!night) return "";
         const dateLabel = formatDateMedium(night.date);
-        let html = `<div style="font-weight:600;margin-bottom:4px">${dateLabel} (${formatDurationMinutes(night.durationMinutes)})</div>`;
+        let html = `<div style="font-weight:600;margin-bottom:4px">${escapeTooltipHtml(dateLabel)} (${formatDurationMinutes(night.durationMinutes)})</div>`;
         for (const p of params) {
           if (p.seriesName === "7d Avg") {
             if (p.value[1] != null) {
-              html += `<div>${p.marker} ${p.seriesName}: <b>${formatDurationMinutes(p.value[1])}</b></div>`;
+              html += `<div>${p.marker} ${escapeTooltipHtml(p.seriesName)}: <b>${formatDurationMinutes(p.value[1])}</b></div>`;
             }
             continue;
           }
           if (p.value[1] == null) continue;
           const mins = Math.round((p.value[1] / 100) * night.durationMinutes);
-          html += `<div>${p.marker} ${p.seriesName}: <b>${formatNumber(p.value[1])}%</b> (${formatDurationMinutes(mins)})</div>`;
+          html += `<div>${p.marker} ${escapeTooltipHtml(p.seriesName)}: <b>${formatNumber(p.value[1])}%</b> (${formatDurationMinutes(mins)})</div>`;
         }
         return html;
       },

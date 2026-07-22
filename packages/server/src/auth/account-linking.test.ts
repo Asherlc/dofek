@@ -15,6 +15,7 @@ function createMockDb() {
 const identity = {
   providerAccountId: "provider-acc-123",
   email: "test@example.com",
+  emailVerified: true,
   name: "Test User",
 };
 
@@ -60,6 +61,19 @@ describe("resolveOrCreateUser", () => {
       expect(db.execute).toHaveBeenCalledTimes(3);
     });
 
+    it("does not link by email when the provider has not verified it", async () => {
+      const unverifiedIdentity = { ...identity, emailVerified: false };
+
+      db.execute.mockResolvedValueOnce([]);
+      db.execute.mockResolvedValueOnce([{ id: "new-user-1" }]);
+      db.execute.mockResolvedValueOnce([]);
+
+      const result = await resolveOrCreateUser(db, "google", unverifiedIdentity);
+
+      expect(result).toEqual({ userId: "new-user-1", isNewUser: true });
+      expect(db.execute).toHaveBeenCalledTimes(3);
+    });
+
     it("skips email lookup when email is null", async () => {
       const noEmailIdentity = { ...identity, email: null };
 
@@ -92,6 +106,7 @@ describe("resolveOrCreateUser", () => {
       const stravaIdentity = {
         providerAccountId: "strava-123",
         email: "strava@example.com",
+        emailVerified: true,
         name: "Test User",
       };
 
@@ -109,6 +124,7 @@ describe("resolveOrCreateUser", () => {
       const noEmailIdentity = {
         providerAccountId: "strava-456",
         email: null,
+        emailVerified: false,
         name: "No Email User",
       };
 

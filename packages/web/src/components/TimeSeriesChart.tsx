@@ -1,6 +1,12 @@
 import { formatDateShort } from "@dofek/format/format";
-import DOMPurify from "dompurify";
-import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import {
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+  escapeTooltipHtml,
+} from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface Series {
@@ -15,12 +21,6 @@ interface Series {
 /** Returns true when every value across all series is null or data is empty. */
 export function isSeriesEmpty(series: Pick<Series, "data">[]): boolean {
   return series.every((s) => s.data.every(([, value]) => value == null));
-}
-
-function escapeHtml(value: string): string {
-  const textContainer = document.createElement("span");
-  textContainer.textContent = value;
-  return DOMPurify.sanitize(textContainer.innerHTML, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
 }
 
 interface TimeSeriesChartProps {
@@ -58,14 +58,14 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
         const firstParam = params[0];
         const point = firstParam?.value ?? firstParam?.data;
         if (!point) return "";
-        const date = escapeHtml(formatDateShort(point[0]));
+        const date = escapeTooltipHtml(formatDateShort(point[0]));
         const lines = params.flatMap((param) => {
           const dataPoint = param.value ?? param.data;
           const value = dataPoint?.[1];
           if (value == null) return [];
           const formatter = seriesFormatters.get(param.seriesName);
           const displayValue = formatter ? formatter(value) : String(value);
-          return `${escapeHtml(param.seriesName)}: <b>${escapeHtml(displayValue)}</b>`;
+          return `${escapeTooltipHtml(param.seriesName)}: <b>${escapeTooltipHtml(displayValue)}</b>`;
         });
         return `<div style="font-weight:600;margin-bottom:4px">${date}</div>${lines.join("<br/>")}`;
       },

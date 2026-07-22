@@ -19,6 +19,7 @@
  */
 import { chartColors, chartThemeColors } from "@dofek/scoring/colors";
 import { chart as chartTokens, duration, easing } from "@dofek/scoring/tokens";
+import { escape as escapeHtml } from "html-escaper";
 
 // Re-export for inline use in custom formatters
 export { chartThemeColors, chartColors };
@@ -29,6 +30,11 @@ interface TooltipOverrides {
   trigger?: "axis" | "item" | "none";
   formatter?: unknown;
   axisPointer?: unknown;
+}
+
+/** Escape an untrusted value before interpolating it into an ECharts HTML tooltip. */
+export function escapeTooltipHtml(value: string): string {
+  return escapeHtml(value);
 }
 
 /** Standard Dofek tooltip. Override trigger or add a custom formatter. */

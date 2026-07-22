@@ -1,6 +1,6 @@
 ---
 name: check-logs
-description: Check production logs for errors — queries Axiom (structured logs) and falls back to Docker container logs via SSH.
+description: Check production logs for errors — queries Axiom (structured logs) and falls back to Docker Swarm service logs via SSH.
 ---
 
 # Check Production Logs
@@ -8,7 +8,7 @@ description: Check production logs for errors — queries Axiom (structured logs
 Query production logs to diagnose errors. Three sources are available (in priority order):
 
 1. **Axiom MCP tools** — preferred, use `mcp__axiom__*` tools to query directly
-2. **Docker container logs** (SSH) — fallback, ephemeral, reset on container restart
+2. **Docker Swarm service logs** (SSH) — fallback, ephemeral, limited by Docker log rotation
 3. **In-app system logs** — last 500 entries in the web UI
 
 ## Arguments
@@ -19,51 +19,64 @@ Query production logs to diagnose errors. Three sources are available (in priori
 
 ### 1. Query Axiom via MCP tools (preferred)
 
-The Axiom MCP server is configured in `.mcp.json`. Use the `mcp__axiom__*` tools to query directly. Two datasets exist: `dofek-app-logs` (Winston application logs) and `dofek-traces` (OTel HTTP spans). For most debugging, start with `dofek-app-logs`. Service names are `dofek-web`, `dofek-worker`, `dofek-sync`.
+Use the available Axiom MCP tools when connected. Application and infrastructure logs are in `dofek-logs`; HTTP spans are in `dofek-traces`. For most debugging, start with `dofek-logs`. Discover the live `service.name` values before applying a service filter instead of assuming an obsolete service list.
 
 Use `ToolSearch` to load the Axiom MCP tools, then query with APL (Axiom Processing Language):
 
 ```apl
 // Search for errors in the last 24 hours
-['dofek-app-logs'] | where _time > ago(24h) | search "<SEARCH_TERM>" | sort by _time desc | limit 50
+['dofek-logs'] | where _time > ago(24h) | search "<SEARCH_TERM>" | sort by _time desc | limit 50
 
 // Filter by service
-['dofek-app-logs'] | where _time > ago(24h) and ['service.name'] == "dofek-web" | where severity_text == "ERROR" | sort by _time desc | limit 50
+['dofek-logs'] | where _time > ago(24h) and ['service.name'] == "dofek-web" | where severity_text == "ERROR" | sort by _time desc | limit 50
 
 // Apple Health import errors
-['dofek-app-logs'] | where _time > ago(7d) | search "apple" or search "health" or search "import" | sort by _time desc | limit 50
+['dofek-logs'] | where _time > ago(7d) | search "apple" or "health" or "import" | sort by _time desc | limit 50
 ```
 
 If the Axiom MCP server is not connected, fall back to step 2.
 
-### 2. Docker container logs (SSH fallback)
+### 2. Docker Swarm service logs (SSH fallback)
 
-If Axiom isn't available, SSH into the server and read Docker logs directly.
+If Axiom isn't available, SSH into the production Swarm manager and read service logs directly. Read `deploy/README.md` first. Prefer the configured `dofek-server` SSH alias. If it is unavailable, resolve the host from the repository's `ORACLE_SERVER_HOST` GitHub Actions variable without printing it and connect as `ubuntu`.
 
-**Server:** SSH to your production server (e.g., `ssh root@<SERVER_IP>` or use alias `ssh dofek` if configured)
-**Compose project:** `/opt/dofek`
+Current Swarm service names use the `<stack>_<service>` form. Production normally uses stack `dofek`, including:
 
-Container names and what they handle:
-- `dofek-web-1` — Express API server (OAuth, file uploads, tRPC, sync triggers)
-- `dofek-worker` — BullMQ worker (sync jobs, Apple Health import, CSV import)
-- `dofek-sync-1` — Cron-triggered sync runner
-- `dofek-caddy-1` — TLS termination / reverse proxy
+- `dofek_web` — Express API server (OAuth, file uploads, tRPC, sync triggers)
+- `dofek_worker` — BullMQ worker (sync jobs, Apple Health import, CSV import)
+- `dofek_analytics-worker` — scheduled dbt analytics builds and cache refreshes
+- `dofek_cdc-health` — continuous PeerDB/ClickHouse CDC checks
+- `dofek_ota` — Expo OTA manifest/update server
+- `dofek_traefik` — TLS termination and reverse proxy
 
 ```bash
 # Recent logs from the web server (filter out noisy polling endpoints)
-ssh <SERVER> 'docker logs dofek-web-1 --since 24h 2>&1 | grep -iv "syncStatus\|providers" | tail -100'
+ssh dofek-server 'docker service logs --raw --timestamps --since 24h dofek_web 2>&1 | grep -iv "syncStatus\|providers" | tail -100'
 
 # Worker logs (Apple Health import, sync jobs)
-ssh <SERVER> 'docker logs dofek-worker --since 24h 2>&1 | tail -100'
+ssh dofek-server 'docker service logs --raw --timestamps --since 24h dofek_worker 2>&1 | tail -100'
 
-# Search for specific errors
-ssh <SERVER> 'docker logs dofek-web-1 --since 24h 2>&1 | grep -i "error\|fail\|<SEARCH_TERM>"'
+# Search for specific errors. Fetch a fixed log window remotely, then apply the
+# operator-provided term locally so it is never interpreted by the SSH shell.
+search_term='<SEARCH_TERM>'
+target_service='<SERVICE_NAME>'
+case "$target_service" in
+  dofek_web|dofek_worker|dofek_analytics-worker|dofek_cdc-health|dofek_ota|dofek_traefik) ;;
+  *) echo "Unsupported service: $target_service" >&2; exit 1 ;;
+esac
+if ! log_output=$(ssh dofek-server "docker service logs --raw --timestamps --since 24h --tail 2000 $target_service 2>&1"); then
+  echo "Unable to retrieve $target_service logs" >&2
+  exit 1
+fi
+printf '%s\n' "$log_output" \
+  | grep -i -e 'error' -e 'fail' -e "$search_term" \
+  | tail -100
 
 # Follow logs in real-time
-ssh <SERVER> 'docker logs dofek-web-1 -f 2>&1'
+ssh dofek-server 'docker service logs --raw --timestamps --since 10m --follow dofek_web 2>&1'
 ```
 
-Replace `<SERVER>` with your production server address (e.g., `root@159.69.3.40` or the configured SSH alias).
+Before reading logs, use `docker service ls` and `docker service ps <service> --no-trunc` to confirm the live service name and task state. Never inspect or print a service's environment because it can contain secrets.
 
 ### 3. In-app system logs
 
@@ -79,11 +92,11 @@ The Data Sources page has a "System Logs" panel showing the last 500 log entries
 
 ## Environment details
 
-- **Secret injection**: Secrets are fetched from Infisical at container startup via `infisical run`. Variables injected by Infisical are NOT visible via `docker exec printenv` — they only exist in the Node process. To check if a variable is set, inspect the Infisical dashboard or use `infisical secrets get <VAR_NAME> --env=prod`.
-- **OTel config**: Endpoint is `https://api.axiom.co` via an OTel Collector sidecar. Traces go to `dofek-traces`, logs go to `dofek-app-logs`. Service names: `dofek-web`, `dofek-worker`, `dofek-sync`.
+- **Secret injection**: Secrets are rendered by CI into a temporary deploy environment file and passed to `docker stack deploy`; the file is not stored on the server. Check secret presence through the authorized secret-management workflow, never through `docker service inspect` environment output.
+- **OTel config**: The production OTel Collector exports traces to `dofek-traces` and logs to `dofek-logs`.
 
 ## Important
 
 - Never print full secret values (tokens, passwords) — only check presence or use them directly in API calls
-- Docker logs are ephemeral — they reset when containers restart
+- Docker logs are rotated and task-local; use Axiom for durable history
 - The `syncStatus` and `providers` tRPC endpoints are polled every few seconds and create noise — filter them out when reading web logs

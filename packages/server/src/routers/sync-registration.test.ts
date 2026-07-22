@@ -128,10 +128,17 @@ vi.mock("dofek/providers/velohero", () => ({
 vi.mock("dofek/providers/auto-supplements", () => ({
   AutoSupplementsProvider: vi.fn(() => ({ id: "auto-supplements" })),
 }));
+vi.mock("dofek/providers/kaya/provider", () => ({
+  KayaProvider: vi.fn(() => ({ id: "kaya-export" })),
+}));
+vi.mock("dofek/providers/zos-app/provider", () => ({
+  ZosAppProvider: vi.fn(() => ({ id: "zos-app" })),
+}));
 
 describe("ensureProvidersRegistered failure path", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    mockRegisterProvider.mockReset();
     vi.resetModules();
   });
 
@@ -147,5 +154,13 @@ describe("ensureProvidersRegistered failure path", () => {
     await expect(ensureProvidersRegistered()).rejects.toThrow(
       "Failed to register fatsecret provider: FATSECRET_CONSUMER_KEY is not set",
     );
+  });
+
+  it("registers the Kaya file-import provider", async () => {
+    const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
+
+    await ensureProvidersRegistered();
+
+    expect(mockRegisterProvider).toHaveBeenCalledWith({ id: "kaya-export" });
   });
 });

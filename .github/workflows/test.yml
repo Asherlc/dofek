@@ -57,7 +57,7 @@ jobs:
       - uses: ./.github/actions/setup-node-pnpm
       - name: Check for forbidden licenses
         run: |
-          npx license-checker --production --excludePrivatePackages \
+          pnpm exec license-checker --production --excludePrivatePackages \
             --failOn "GPL-2.0-only;GPL-2.0-or-later;GPL-3.0-only;GPL-3.0-or-later;AGPL-1.0-only;AGPL-3.0-only;AGPL-3.0-or-later" \
             --summary
 
@@ -86,6 +86,30 @@ jobs:
             exit 1
           fi
           echo "All actions are SHA-pinned"
+      - name: Verify all job containers are digest-pinned
+        run: |
+          UNPINNED=$(awk '
+            function is_pinned(line) {
+              return line ~ /@sha256:[0-9a-f]{64}([[:space:]]*(#.*)?)?$/
+            }
+            /^    container:[[:space:]]*[^[:space:]#]/ {
+              if (!is_pinned($0)) print FILENAME ":" FNR ":" $0
+              next
+            }
+            /^    container:[[:space:]]*$/ { in_container=1; next }
+            in_container && /^      image:/ {
+              if (!is_pinned($0)) print FILENAME ":" FNR ":" $0
+              in_container=0
+              next
+            }
+            in_container && !/^      / { in_container=0 }
+          ' .github/workflows/*.yml)
+          if [ -n "$UNPINNED" ]; then
+            echo "::error::Found unpinned job containers (must use a SHA-256 digest):"
+            echo "$UNPINNED"
+            exit 1
+          fi
+          echo "All job containers are digest-pinned"
 
   image-scan:
     name: Image Vulnerability Scan
@@ -117,6 +141,7 @@ jobs:
           target: server
           load: true
           tags: e2e-server:latest
+          build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
           cache-from: |
             type=gha,scope=e2e
             type=registry,ref=ghcr.io/${{ github.repository }}:e2e-buildcache
@@ -175,7 +200,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install actionlint
-        run: bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+        run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
       - name: Run actionlint (without shellcheck)
         run: ./actionlint -shellcheck=
 
@@ -807,6 +832,7 @@ jobs:
           target: server
           load: true
           tags: e2e-server:latest
+          build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
           cache-from: |
             type=gha,scope=e2e
             type=registry,ref=ghcr.io/${{ github.repository }}:e2e-buildcache

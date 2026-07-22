@@ -2,34 +2,100 @@
 
 ## Integration Dependencies
 
-Start the local backing services before running integration tests:
+The default and changed-test commands are intentionally Docker-free:
 
 ```bash
-docker compose up -d db clickhouse redis
-docker compose ps db clickhouse redis
-pnpm exec vitest run --project integration
+pnpm test
+pnpm test:changed
+pnpm test:coverage
 ```
 
-For faster local integration runs against the shared compose database, point
-`TEST_DATABASE_URL` at the generated local Postgres URL:
+Use an explicit integration command when database behavior is under test:
 
 ```bash
-pnpm compose:up
-set -a; . ./.env.local; set +a
-TEST_DATABASE_URL="$DATABASE_URL" pnpm exec vitest run --project integration
+pnpm test:integration
+pnpm test:integration -- src/db/db.integration.test.ts
+pnpm test:all
+pnpm test:changed:all
+pnpm test:coverage:all
 ```
 
-When `TEST_DATABASE_URL` is set, `setupTestDatabase()` creates one migrated
-template database for the current Vitest process and clones each isolated test
-database from that template. PostgreSQL supports creating a database from a
-template database with `CREATE DATABASE ... TEMPLATE ...`; cloning avoids
-replaying the full migration set for every integration test file while keeping
-per-file database isolation.
+These commands start the current workspace's Postgres, ClickHouse, and Redis
+services through `pnpm compose:up`, load `.env.local`, and set
+`TEST_DATABASE_URL` to the workspace Postgres URL. `setupTestDatabase()` fails
+immediately when that URL is absent; it never creates an unbounded generic
+Testcontainers instance. Within a Vitest process it creates one migrated
+template database and clones an isolated database for each test file.
+
+The Vitest projects remain separate in CI: unit, mobile, and four integration
+shards are invoked explicitly. Stryker uses the Docker-free mutation config and
+must not collect `*.integration.test.ts` files. Use `pnpm test:integration` for
+integration behavior and `pnpm test:mutation` for mutation quality; do not mix
+the two execution models.
 
 Sources:
 
 - PostgreSQL `CREATE DATABASE` template option: https://www.postgresql.org/docs/current/sql-createdatabase.html
+- Vitest test projects: https://vitest.dev/guide/projects
 - Vitest `--shard` option for splitting CI test runs: https://vitest.dev/guide/cli.html#shard
+- Stryker Vitest runner configuration: https://stryker-mutator.io/docs/stryker-js/vitest-runner/
+
+### Isolated browser end-to-end stack
+
+Generate a unique Compose project name for each browser E2E run, keep every
+command in the same shell, and reuse that name so concurrent or stale runs
+cannot share resources:
+
+```bash
+e2e_project_name="dofek-e2e-audit-$(date +%s)-$$"
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
+if ! pnpm e2e:web:run; then
+  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
+  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml logs --no-color
+  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
+  exit 1
+fi
+docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
+```
+
+Use a task-specific project name rather than Compose's directory-derived
+default; Docker documents project-name isolation and precedence here:
+<https://docs.docker.com/compose/how-tos/project-name/>.
+
+The failure branch preserves container state and complete service logs before
+teardown. Both paths remove only this isolated project's containers and fresh
+volumes.
+
+This topology currently validates browser paths. It is not a complete mobile
+write-path environment because the metric-stream broker prerequisites are
+missing; that confirmed gap is tracked in
+[#1806](https://github.com/Asherlc/dofek/issues/1806). Do not treat its healthy
+server status as proof that activity recording can save.
+
+### Native FIT Decoder
+
+Wahoo, Coros, and Suunto integration tests invoke the native FIT decoder at
+`.build/fit-decoder/bin/dofek-fit-decoder`. If they report `Unable to start the
+native FIT decoder`, first verify that the file exists and matches the host
+architecture:
+
+```bash
+file .build/fit-decoder/bin/dofek-fit-decoder
+```
+
+The `fit-decoder-linux` CI artifact is an ELF executable and cannot run on
+macOS. On macOS, build a native decoder with the repository's pinned vcpkg
+toolchain:
+
+```bash
+VCPKG_ROOT=/path/to/full/vcpkg/checkout pnpm build:fit-decoder
+```
+
+Use the vcpkg commit and bootstrap sequence from
+[`test.yml`](../.github/workflows/test.yml); the project uses vcpkg manifest
+mode as documented by Microsoft:
+<https://learn.microsoft.com/vcpkg/concepts/manifest-mode>.
 
 ### Docker Disk Recovery
 
@@ -40,11 +106,11 @@ deleting anything:
 docker system df -v
 ```
 
-Remove disposable containers and volumes created by the current workspace, then prune the
-rebuildable build cache:
+Remove disposable containers and volumes created by the current workspace,
+then prune the build cache, which Docker can recreate:
 
 ```bash
-docker compose down -v
+pnpm compose -- down --remove-orphans --volumes
 docker builder prune -af
 ```
 
@@ -58,6 +124,13 @@ Preserve running containers and named volumes belonging to other workspaces. Do 
 `docker volume prune` or `docker system prune --volumes` unless the user explicitly approves
 deleting unused cross-workspace data. Docker documents which object types each prune command
 removes in its [resource pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
+
+Conductor's archive hook runs the equivalent Compose shutdown for both the
+default and E2E files using the archived workspace's physical directory and
+project name. It removes that project's containers, networks, anonymous
+volumes, and declared named volumes while preserving shared images, build
+cache, and resources belonging to other workspaces. This matches Docker
+Compose's documented [`down --volumes` behavior](https://docs.docker.com/reference/cli/docker/compose/down/).
 
 Router integration tests that exercise activity sensor analytics use ClickHouse-backed
 test stores. The test helper isolates ClickHouse databases per test database, creates

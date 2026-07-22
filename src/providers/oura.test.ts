@@ -1179,6 +1179,7 @@ describe("OuraProvider.getUserIdentity()", () => {
     const identity = await setup.getUserIdentity("test-token");
     expect(identity.providerAccountId).toBe("abc-123");
     expect(identity.email).toBe("ring@test.com");
+    expect(identity.emailVerified).toBe(false);
     expect(identity.name).toBeNull();
   });
 

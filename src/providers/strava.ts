@@ -567,6 +567,7 @@ export class StravaProvider implements WebhookProvider {
         return {
           providerAccountId: String(athlete.id),
           email: null,
+          emailVerified: false,
           name: nameParts.length > 0 ? nameParts.join(" ") : null,
         };
       },

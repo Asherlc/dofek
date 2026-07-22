@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   captureException: vi.fn(),
   sessionGet: vi.fn(async (): Promise<unknown> => null),
   sessionDelete: vi.fn(),
+  freshMutationResults: false,
 }));
 
 vi.mock("@sentry/react", () => ({ captureException: mocks.captureException }));
@@ -30,10 +31,24 @@ vi.mock("../lib/trpc.ts", () => {
   return {
     trpc: {
       fileUpload: {
-        initiate: { useMutation: () => initiateResult },
-        authorizeParts: { useMutation: () => authorizePartsResult },
-        complete: { useMutation: () => completeResult },
-        abort: { useMutation: () => abortResult },
+        initiate: {
+          useMutation: () =>
+            mocks.freshMutationResults ? { mutateAsync: mocks.initiate } : initiateResult,
+        },
+        authorizeParts: {
+          useMutation: () =>
+            mocks.freshMutationResults
+              ? { mutateAsync: mocks.authorizeParts }
+              : authorizePartsResult,
+        },
+        complete: {
+          useMutation: () =>
+            mocks.freshMutationResults ? { mutateAsync: mocks.complete } : completeResult,
+        },
+        abort: {
+          useMutation: () =>
+            mocks.freshMutationResults ? { mutateAsync: mocks.abort } : abortResult,
+        },
       },
       useUtils: () => trpcUtils,
     },
@@ -59,6 +74,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mocks.sessionGet.mockResolvedValue(null);
+  mocks.freshMutationResults = false;
 });
 
 describe("FileImportZone", () => {
@@ -107,6 +123,44 @@ describe("FileImportZone", () => {
 
     await waitFor(() => expect(mocks.runUpload).toHaveBeenCalledOnce());
     await waitFor(() => expect(screen.getByText("Import completed")).toBeTruthy());
+  });
+
+  it("keeps an upload active across mutation-result rerenders", async () => {
+    mocks.freshMutationResults = true;
+    let uploadSignal: AbortSignal | undefined;
+    mocks.runUpload.mockImplementation(
+      async ({
+        onProgress,
+        signal,
+      }: {
+        onProgress: (progress: { phase: "uploading"; percentage: number; message: string }) => void;
+        signal: AbortSignal;
+      }) => {
+        uploadSignal = signal;
+        onProgress({ phase: "uploading", percentage: 25, message: "Uploading Kaya export..." });
+        await new Promise(() => undefined);
+        throw new Error("unreachable");
+      },
+    );
+
+    render(
+      <FileImportZone
+        providerId="kaya-export"
+        importType="kaya-export"
+        title="Kaya"
+        description=".csv export from Kaya"
+        accept=".csv"
+      />,
+    );
+
+    fireEvent.drop(screen.getByRole("region", { name: "Kaya file drop zone" }), {
+      dataTransfer: {
+        files: [new File(["kaya-data"], "kaya-export.csv", { type: "text/csv" })],
+      },
+    });
+
+    await waitFor(() => expect(screen.getByText("Uploading Kaya export...")).toBeTruthy());
+    expect(uploadSignal?.aborted).toBe(false);
   });
 
   it("prompts for the same file when resumable metadata exists", async () => {

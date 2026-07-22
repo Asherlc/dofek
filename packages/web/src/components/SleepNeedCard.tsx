@@ -13,6 +13,7 @@ import {
   dofekGrid,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { formatSleepProvenance } from "../lib/sleepSource.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -50,7 +51,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         if (!params?.[0]) return "";
         const night = data.recentNights[params[0].dataIndex];
         if (!night) return "";
-        const date = formatDateLong(night.date);
+        const date = escapeTooltipHtml(formatDateLong(night.date));
         if (night.actualMinutes == null) {
           return `<div style="font-weight:600;margin-bottom:4px">${date}</div><div style="color:#6b7280">No data</div>`;
         }
@@ -62,8 +63,8 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         }
         if (night.providerId) {
           const { primary, alsoFrom } = formatSleepProvenance(night);
-          html += `<div style="color:#9ca3af;margin-top:4px">Source: ${primary}${
-            alsoFrom ? ` · also ${alsoFrom}` : ""
+          html += `<div style="color:#9ca3af;margin-top:4px">Source: ${escapeTooltipHtml(primary)}${
+            alsoFrom ? ` · also ${escapeTooltipHtml(alsoFrom)}` : ""
           }</div>`;
         }
         return html;

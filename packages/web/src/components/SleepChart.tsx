@@ -1,6 +1,13 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { sleepStageColors } from "@dofek/scoring/colors";
-import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import {
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+  escapeTooltipHtml,
+} from "../lib/chartTheme.ts";
 import { formatSleepProvenance } from "../lib/sleepSource.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -39,7 +46,7 @@ export function SleepChart({ data, loading }: SleepChartProps) {
         const lines = params.map((p) => {
           const val = p.value[1] ?? 0;
           total += val;
-          return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${val}m`;
+          return `<span style="color:${escapeTooltipHtml(p.color)}">\u25CF</span> ${escapeTooltipHtml(p.seriesName)}: ${val}m`;
         });
         const sourceRow = sourceByStartedAt.get(String(firstParam.value[0]));
         const sourceLine = sourceRow
@@ -49,12 +56,12 @@ export function SleepChart({ data, loading }: SleepChartProps) {
                 source_name: sourceRow.source_name ?? null,
                 source_providers: sourceRow.source_providers ?? [],
               });
-              return `<br/><span style="color:#9ca3af">Source: ${primary}${
-                alsoFrom ? ` · also ${alsoFrom}` : ""
+              return `<br/><span style="color:#9ca3af">Source: ${escapeTooltipHtml(primary)}${
+                alsoFrom ? ` · also ${escapeTooltipHtml(alsoFrom)}` : ""
               }</span>`;
             })()
           : "";
-        return `<strong>${date}</strong> (${Math.floor(total / 60)}h ${total % 60}m)<br/>${lines.join("<br/>")}${sourceLine}`;
+        return `<strong>${escapeTooltipHtml(date)}</strong> (${Math.floor(total / 60)}h ${total % 60}m)<br/>${lines.join("<br/>")}${sourceLine}`;
       },
     }),
     xAxis: dofekAxis.time(),

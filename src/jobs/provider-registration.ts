@@ -82,6 +82,10 @@ async function doRegisterProviders() {
       () => import("../providers/amazfit-zepp.ts").then((m) => new m.AmazfitZeppProvider()),
     ],
     [
+      "kaya-export",
+      () => import("../providers/kaya/provider.ts").then((m) => new m.KayaProvider()),
+    ],
+    [
       "zos-app",
       () => import("../providers/zos-app/provider.ts").then((m) => new m.ZosAppProvider()),
     ],

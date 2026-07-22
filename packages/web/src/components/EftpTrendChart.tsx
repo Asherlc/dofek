@@ -5,6 +5,7 @@ import {
   dofekGrid,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -51,8 +52,12 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
         const [dateStr, watts] = point.data;
         const match = data.find((d) => d.date === dateStr);
         const name = match?.activityName ?? "";
-        const lines = [`<strong>${watts}W</strong>`, point.axisValueLabel];
-        if (name) lines.push(`<span style="color:${chartThemeColors.legendText}">${name}</span>`);
+        const lines = [`<strong>${watts}W</strong>`, escapeTooltipHtml(point.axisValueLabel)];
+        if (name) {
+          lines.push(
+            `<span style="color:${chartThemeColors.legendText}">${escapeTooltipHtml(name)}</span>`,
+          );
+        }
         return lines.join("<br/>");
       },
     }),

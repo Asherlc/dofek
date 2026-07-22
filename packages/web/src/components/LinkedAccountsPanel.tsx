@@ -56,14 +56,10 @@ export function LinkedAccountsPanel() {
               </div>
               <button
                 type="button"
-                disabled={accounts.length < 2 || unlinkMutation.isPending}
+                disabled={!account.canUnlink || unlinkMutation.isPending}
                 onClick={() => unlinkMutation.mutate({ accountId: account.id })}
                 className="text-xs text-red-400 hover:text-red-300 disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
-                title={
-                  accounts.length < 2
-                    ? "Cannot unlink your only login method"
-                    : "Unlink this account"
-                }
+                title={account.unlinkReason ?? "Unlink this account"}
               >
                 Unlink
               </button>

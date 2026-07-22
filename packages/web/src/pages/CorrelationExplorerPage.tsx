@@ -6,7 +6,13 @@ import { ChartRangeProvider, DofekChart } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
-import { chartThemeColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
+import {
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekTooltip,
+  escapeTooltipHtml,
+} from "../lib/chartTheme.ts";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -335,7 +341,7 @@ function ScatterPlot({
         const rawValue = Array.isArray(params.value) ? params.value : [0, 0];
         const v0 = Number(rawValue[0] ?? 0);
         const v1 = Number(rawValue[1] ?? 0);
-        return `${xLabel}: ${formatValue(v0)}<br/>${yLabel}: ${formatValue(v1)}`;
+        return `${escapeTooltipHtml(xLabel)}: ${formatValue(v0)}<br/>${escapeTooltipHtml(yLabel)}: ${formatValue(v1)}`;
       },
     }),
   };

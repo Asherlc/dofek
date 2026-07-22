@@ -81,21 +81,21 @@ export function FileImportZone({
   const stoppedRef = useRef(false);
   const validProviderId = providerId?.length ? providerId : null;
   const sessionKey = providerId ?? importType;
-  const initiateMutation = trpc.fileUpload.initiate.useMutation();
-  const authorizePartsMutation = trpc.fileUpload.authorizeParts.useMutation();
-  const completeMutation = trpc.fileUpload.complete.useMutation();
-  const abortMutation = trpc.fileUpload.abort.useMutation();
+  const { mutateAsync: initiateUpload } = trpc.fileUpload.initiate.useMutation();
+  const { mutateAsync: authorizeUploadParts } = trpc.fileUpload.authorizeParts.useMutation();
+  const { mutateAsync: completeUpload } = trpc.fileUpload.complete.useMutation();
+  const { mutateAsync: abortUpload } = trpc.fileUpload.abort.useMutation();
   const trpcUtils = trpc.useUtils();
 
   const uploadApi = useMemo<FileUploadApi>(
     () => ({
-      initiate: (input) => initiateMutation.mutateAsync(input),
-      authorizeParts: (input) => authorizePartsMutation.mutateAsync(input),
-      complete: (input) => completeMutation.mutateAsync(input),
-      abort: (input) => abortMutation.mutateAsync(input),
+      initiate: initiateUpload,
+      authorizeParts: authorizeUploadParts,
+      complete: completeUpload,
+      abort: abortUpload,
       resume: (input) => trpcUtils.client.fileUpload.resume.query(input),
     }),
-    [abortMutation, authorizePartsMutation, completeMutation, initiateMutation, trpcUtils],
+    [abortUpload, authorizeUploadParts, completeUpload, initiateUpload, trpcUtils],
   );
 
   const waitForNextPoll = useCallback(

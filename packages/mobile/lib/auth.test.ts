@@ -10,6 +10,7 @@ import {
   AuthUserSchema,
   ConfiguredProvidersSchema,
   clearSessionToken,
+  createProviderHandoffCode,
   fetchConfiguredProviders,
   fetchCurrentUser,
   getSessionToken,
@@ -361,8 +362,11 @@ describe("startOAuthLogin", () => {
   it("returns auth result from successful deep link", async () => {
     vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
       type: "success",
-      url: "dofek://auth/callback?session=sess-oauth-1&new_user=true",
+      url: "dofek://auth/callback?code=exchange-oauth-1",
     });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ session: "sess-oauth-1", isNewUser: true }), { status: 200 }),
+    );
 
     const result = await startOAuthLogin("https://srv", "google", false);
 
@@ -376,8 +380,11 @@ describe("startOAuthLogin", () => {
   it("uses data-provider auth path when isDataProvider is true", async () => {
     vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
       type: "success",
-      url: "dofek://auth/callback?session=sess-data-1&new_user=false",
+      url: "dofek://auth/callback?code=exchange-data-1",
     });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ session: "sess-data-1", isNewUser: false }), { status: 200 }),
+    );
 
     const result = await startOAuthLogin("https://srv", "strava", true);
 
@@ -391,11 +398,30 @@ describe("startOAuthLogin", () => {
   it("throws when OAuth callback is missing new_user", async () => {
     vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
       type: "success",
-      url: "dofek://auth/callback?session=sess-oauth-1",
+      url: "dofek://auth/callback?code=exchange-oauth-1",
     });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ session: "sess-oauth-1" }), { status: 200 }),
+    );
 
     await expect(startOAuthLogin("https://srv", "google", false)).rejects.toThrow(
       "Authentication failed",
+    );
+  });
+
+  it("preserves an OAuth exchange error response", async () => {
+    vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
+      type: "success",
+      url: "dofek://auth/callback?code=exchange-oauth-1",
+    });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Exchange code is invalid or expired" }), {
+        status: 400,
+      }),
+    );
+
+    await expect(startOAuthLogin("https://srv", "google", false)).rejects.toThrow(
+      "Exchange code is invalid or expired",
     );
   });
 
@@ -405,6 +431,29 @@ describe("startOAuthLogin", () => {
     });
 
     await expect(startOAuthLogin("https://srv", "google", false)).resolves.toBeNull();
+  });
+});
+
+describe("createProviderHandoffCode", () => {
+  it("preserves a provider handoff error response", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Session expired" }), { status: 401 }),
+    );
+
+    await expect(
+      createProviderHandoffCode("https://srv", "strava", "session-token"),
+    ).rejects.toThrow("Session expired");
+  });
+
+  it("reports malformed JSON responses", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("not-json", { status: 500 }));
+
+    await expect(
+      createProviderHandoffCode("https://srv", "strava", "session-token"),
+    ).rejects.toThrow("Provider connection failed");
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(SyntaxError), {
+      source: "provider-handoff-parse",
+    });
   });
 });
 
@@ -503,7 +552,7 @@ describe("registerWithPassword", () => {
 
   it("throws server error message when registration fails", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: "An account with this email already exists" }), {
+      new Response(JSON.stringify({ error: "Unable to create an account with these details" }), {
         status: 409,
         headers: { "content-type": "application/json" },
       }),
@@ -511,7 +560,7 @@ describe("registerWithPassword", () => {
 
     await expect(
       registerWithPassword("https://srv", "user@example.com", "password123", "User"),
-    ).rejects.toThrow("An account with this email already exists");
+    ).rejects.toThrow("Unable to create an account with these details");
   });
 
   it("throws generic message when registration response is invalid", async () => {

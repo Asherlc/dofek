@@ -79,7 +79,10 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Colocated unit tests**: Unit test files live next to the source file they test, named `<source>.test.ts`. Do not use `__tests__/` directories. For example, `src/db/tokens.ts` has its unit test at `src/db/tokens.test.ts`. Integration tests (`*.integration.test.ts`) can live wherever makes sense.
 - **Test files map 1:1 to source files**: A unit test file should test one source file. If a test file grows too large because it covers several responsibilities, split the production source into smaller SOLID modules/classes and give each source file its own focused colocated test file. Do not split tests by arbitrary scenario while leaving the source file monolithic.
 - **Test separation**: Unit tests use `*.test.ts`, integration tests use `*.integration.test.ts`. Unit tests must never need access to external services (databases, APIs). Integration tests must never mock at the module level (`vi.mock`). For 3rd party services in integration tests, mock at the network level with [MSW](https://mswjs.io/) (`setupServer` from `msw/node`), not with constructor-injected fetch or `vi.spyOn(globalThis, 'fetch')`.
-- **Start integration dependencies first**: Before running any integration tests (including `pnpm test:changed`), ensure Docker dependencies are up: `docker compose up -d db redis`. Verify they are running with `docker compose ps db redis`. Do not run integration suites against a stopped local stack.
+- **Use explicit test tiers**: `pnpm test`, `pnpm test:changed`, and `pnpm test:coverage` are Docker-free unit/mobile tiers. Run database-backed tests through `pnpm test:integration`, `pnpm test:all`, `pnpm test:changed:all`, or `pnpm test:coverage:all`; these commands start the current workspace's Compose dependencies and provide `TEST_DATABASE_URL`. Keep CI's unit, mobile, integration-shard, and mutation commands explicit. See [`docs/testing.md`](docs/testing.md#integration-dependencies) and [Vitest test projects](https://vitest.dev/guide/projects).
+- **Keep mutation tests Docker-free**: The Stryker Vitest config must exclude `*.integration.test.ts`. Never broaden mutation collection to integration suites; run integration behavior and mutation quality as separate strict gates. See the [Stryker Vitest runner configuration](https://stryker-mutator.io/docs/stryker-js/vitest-runner/).
+- **Use the workspace Compose wrapper**: Run local Compose operations through `pnpm compose -- <arguments>` or repository scripts that use the same physical-workspace identity. Do not call raw `docker compose` from Conductor automation because an inherited stale working-directory environment can associate resources with another workspace. Compose documents [project-name isolation](https://docs.docker.com/compose/how-tos/project-name/) and [`--project-directory`](https://docs.docker.com/reference/cli/docker/compose/).
+- **Archive workspace Docker state**: The Conductor archive hook must remove the archived workspace's default and E2E Compose containers, networks, and named volumes with `down --remove-orphans --volumes`, while preserving shared images/build cache and every other workspace's resources. Docker documents the [`down --volumes` scope](https://docs.docker.com/reference/cli/docker/compose/down/).
 - **Docker cleanup is in scope for required validation**: When Docker disk exhaustion blocks lint, tests, or builds, remove disposable resources created by the current workspace and prune the rebuildable build cache first (`docker builder prune -af`). Prune unused images only if more space is required. Preserve running containers and named volumes belonging to other workspaces; never run `docker volume prune` or `docker system prune --volumes` without explicit user approval. Follow [Docker's pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/) and the local recovery steps in [`docs/testing.md`](docs/testing.md#docker-disk-recovery).
 - **Mutation testing (Stryker)**: High coverage is a baseline, but the goal is to kill every mutant. When the `Test / Stryker` job fails, check the logs for surviving mutants even if unit/integration tests pass. Add targeted test cases to cover the exact branch, operator, or boundary that survived.
 - **Provider-agnostic**: The schema and sync framework must not be coupled to any specific provider. Providers implement a plugin interface.
@@ -141,10 +144,13 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Flag linter-catchable issues**: During code reviews, still flag violations even if they would be caught by a linter. Do not skip issues just because a linter or Biome plugin enforces them — the review should catch everything, not defer to CI.
 
 ## Commands
-- `pnpm test` — run tests
+- `pnpm test` — run Docker-free unit and mobile tests
 - `pnpm test:unit` — run local unit tests
 - `pnpm test:mobile` — run local mobile unit tests
-- `pnpm test:changed` — run tests affected by files changed from `origin/main` when broader local coverage is intentionally needed
+- `pnpm test:changed` — run Docker-free tests affected by files changed from `origin/main`
+- `pnpm test:integration` — start the workspace Compose dependencies and run integration tests
+- `pnpm test:all` — start the workspace Compose dependencies and run every Vitest project
+- `pnpm test:changed:all` — start dependencies and run every test tier affected by `origin/main`
 - `pnpm test:watch` — run tests in watch mode
 - `pnpm dev` — run sync in dev mode
 - `pnpm generate` — generate Drizzle migrations from schema changes
@@ -234,14 +240,15 @@ Durable, non-obvious notes for working in the Cursor Cloud VM. The startup updat
 - `ubuntu` is in the `docker` group, so `docker`/`docker compose` work without `sudo` once the daemon is up. On a brand-new session the socket may be `root:docker`; if you hit a permission error, `sudo chmod 666 /var/run/docker.sock`.
 
 ### Secrets / Infisical
-- The Infisical CLI is NOT installed. `scripts/with-env.sh` calls `infisical export` and prints `infisical: command not found`, then continues (the script has no `set -e`) using `.env` + `.env.local`. This is expected in the VM — local dev only needs `DATABASE_URL`, `CLICKHOUSE_URL`, `REDIS_URL`, which `pnpm compose:up` writes into `.env.local`.
+- The Infisical CLI is NOT installed. [`scripts/with-env.sh`](scripts/with-env.sh) deliberately fails before running its command when Infisical export is unavailable. For VM commands that only need the local `DATABASE_URL`, `CLICKHOUSE_URL`, and `REDIS_URL` written by `pnpm compose:up`, source `.env.local` explicitly and run the underlying command directly.
 - Provider OAuth/credentials and other secret-gated features are unavailable without Infisical. Use the dev-login bypass below instead of real auth.
 
 ### Bring up the full local stack (web + API, no PeerDB needed)
+
 Run from the repo root, in order:
 1. `pnpm compose:up` — starts Postgres/TimescaleDB + ClickHouse + Redis on random host ports and writes `.env.local`.
 2. `pnpm setup-db` — applies Postgres + ClickHouse migrations. The ClickHouse migrations pre-create the `analytics.*` serving tables that the API boot waits for, so PeerDB/Temporal and the Redpanda metric-stream stack are NOT required for dev.
-3. `./scripts/with-env.sh pnpm seed` — seeds demo data and creates the `dev-session`. Note `pnpm seed` does not wrap `with-env.sh` itself, so it must be run through `with-env.sh` (or with `DATABASE_URL` exported) to pick up `.env.local`.
+3. `set -a; . ./.env.local; set +a; pnpm seed` — exports the local service URLs, seeds demo data, and creates the `dev-session` without requiring unavailable provider secrets.
 4. `pnpm analytics:build` (optional) — dbt build via `uv`; populates ClickHouse activity/sleep read models from seeded Postgres data. The API boots without it (tables exist empty), but activity-stream analytics need it.
 5. API: `cd packages/server && pnpm dev` (Express + tRPC on `:3000`). Web: `cd packages/web && pnpm dev` (Vite on `:5173`, proxies `/api`, `/auth`, `/callback` to `:3000`).
 

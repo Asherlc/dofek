@@ -1,6 +1,10 @@
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { oauthSuccessHtml } from "./auth/shared.ts";
+import {
+  getMobileAuthExchangeStoreRef,
+  getOAuthStateStoreRef,
+  oauthSuccessHtml,
+} from "./auth/shared.ts";
 
 // Mock all heavy dependencies
 vi.mock("../auth/cookies.ts", () => ({
@@ -38,7 +42,7 @@ vi.mock("../auth/password-credential.ts", () => ({
   authenticatePasswordUser: vi.fn(() => Promise.resolve({ userId: "user-1" })),
   DuplicateEmailError: class DuplicateEmailError extends Error {
     constructor() {
-      super("An account with this email already exists");
+      super("Unable to create an account with these details");
       this.name = "DuplicateEmailError";
     }
   },
@@ -48,7 +52,6 @@ vi.mock("../auth/password-credential.ts", () => ({
       this.name = "InvalidCredentialsError";
     }
   },
-  isPasswordAuthEnabled: vi.fn(() => true),
 }));
 
 vi.mock("../auth/session.ts", () => ({
@@ -153,6 +156,7 @@ import {
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 import { logger } from "../logger.ts";
+import { handleMobileProviderHandoff } from "./auth/data-provider-oauth.ts";
 import { createAuthRouter } from "./auth/index.ts";
 import { registerWebhookForProvider } from "./webhooks.ts";
 
@@ -258,6 +262,237 @@ describe("createAuthRouter", () => {
       expect(data.redirect).toBe("/?newUser=true");
       expect(data.isNewUser).toBe(true);
       expect(setSessionCookie).toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /auth/mobile/exchange", () => {
+    it("returns 400 when the exchange code is missing", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/mobile/exchange", { jsonBody: {} });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Missing exchange code");
+    });
+
+    it("consumes a valid session exchange code", async () => {
+      const { app } = createTestApp();
+      const code = await getMobileAuthExchangeStoreRef().issue({
+        kind: "session",
+        sessionId: "session-1",
+        isNewUser: true,
+      });
+
+      const res = await request(app, "post", "/auth/mobile/exchange", {
+        jsonBody: { code },
+      });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({
+        session: "session-1",
+        isNewUser: true,
+      });
+    });
+
+    it("rejects an invalid or expired exchange code", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/mobile/exchange", {
+        jsonBody: { code: "expired-code" },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Exchange code is invalid or expired");
+    });
+  });
+
+  describe("POST /auth/provider/:provider/hand-off", () => {
+    it("returns 400 when the provider path is missing", async () => {
+      const app = express();
+      app.post("/hand-off", handleMobileProviderHandoff);
+
+      const res = await request(app, "post", "/hand-off");
+
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Missing provider");
+    });
+
+    it("returns 401 when the mobile handoff has no session", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+
+      const res = await request(app, "post", "/auth/provider/strava/hand-off");
+
+      expect(res.status).toBe(401);
+      expect(res.body).toContain("logged in");
+    });
+
+    it("returns 401 when the mobile handoff session is expired", async () => {
+      vi.mocked(validateSession).mockResolvedValue(null);
+      const { app } = createTestApp();
+
+      const res = await request(app, "post", "/auth/provider/strava/hand-off");
+
+      expect(res.status).toBe(401);
+      expect(res.body).toContain("Session expired");
+    });
+
+    it("returns 404 for an unknown mobile handoff provider", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([]);
+      const { app } = createTestApp();
+
+      const res = await request(app, "post", "/auth/provider/unknown/hand-off");
+
+      expect(res.status).toBe(404);
+      expect(res.body).toContain("Unknown provider");
+    });
+
+    it("issues a provider exchange code for an authenticated mobile handoff", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        { id: "strava", name: "Strava", authSetup: () => ({ oauthConfig: null }) },
+      ]);
+      const { app } = createTestApp();
+
+      const res = await request(app, "post", "/auth/provider/strava/hand-off", {
+        jsonBody: {},
+      });
+
+      expect(res.status).toBe(200);
+      const code = JSON.parse(res.body).code;
+      await expect(getMobileAuthExchangeStoreRef().consume(code)).resolves.toEqual({
+        kind: "provider",
+        userId: "user-1",
+        providerId: "strava",
+      });
+    });
+  });
+
+  describe("mobile provider handoff validation", () => {
+    it("rejects a session exchange code on a data provider route", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        { id: "strava", name: "Strava", authSetup: () => ({ oauthConfig: null }) },
+      ]);
+      const { app } = createTestApp();
+      const code = await getMobileAuthExchangeStoreRef().issue({
+        kind: "session",
+        sessionId: "session-1",
+        isNewUser: false,
+      });
+
+      const res = await request(app, "get", `/auth/provider/strava?code=${code}`);
+
+      expect(res.status).toBe(401);
+      expect(res.body).toContain("Invalid provider handoff code");
+    });
+
+    it("rejects an expired provider exchange code instead of falling back to a session", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        { id: "strava", name: "Strava", authSetup: () => ({ oauthConfig: null }) },
+      ]);
+      const { app } = createTestApp();
+
+      const res = await request(app, "get", "/auth/provider/strava?code=expired-code");
+
+      expect(res.status).toBe(401);
+      expect(res.body).toContain("Invalid provider handoff code");
+    });
+
+    it("accepts a matching provider exchange code on a data provider route", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+          }),
+        },
+      ]);
+      const { app } = createTestApp();
+      const code = await getMobileAuthExchangeStoreRef().issue({
+        kind: "provider",
+        userId: "user-1",
+        providerId: "strava",
+      });
+
+      const res = await request(app, "get", `/auth/provider/strava?code=${code}`);
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain("oauth.example.com/authorize");
+    });
+
+    it("rejects a session exchange code on Slack OAuth", async () => {
+      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
+      process.env.SLACK_CLIENT_ID = "slack-client-id";
+      try {
+        const { app } = createTestApp();
+        const code = await getMobileAuthExchangeStoreRef().issue({
+          kind: "session",
+          sessionId: "session-1",
+          isNewUser: false,
+        });
+
+        const res = await request(app, "get", `/auth/provider/slack?code=${code}`);
+
+        expect(res.status).toBe(401);
+        expect(res.body).toContain("Invalid Slack handoff code");
+      } finally {
+        if (originalSlackClientId === undefined) {
+          delete process.env.SLACK_CLIENT_ID;
+        } else {
+          process.env.SLACK_CLIENT_ID = originalSlackClientId;
+        }
+      }
+    });
+
+    it("accepts a Slack provider exchange code and stores its user ID", async () => {
+      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
+      process.env.SLACK_CLIENT_ID = "slack-client-id";
+      try {
+        const { app } = createTestApp();
+        const code = await getMobileAuthExchangeStoreRef().issue({
+          kind: "provider",
+          userId: "slack-user-1",
+          providerId: "slack",
+        });
+
+        const res = await request(app, "get", `/auth/provider/slack?code=${code}`);
+
+        expect(res.status).toBe(302);
+        const location = res.headers.location;
+        if (typeof location !== "string") throw new Error("Expected Slack OAuth location");
+        const state = new URL(location).searchParams.get("state");
+        if (!state) throw new Error("Expected Slack OAuth state");
+        await expect(getOAuthStateStoreRef().get(state)).resolves.toMatchObject({
+          providerId: "slack",
+          userId: "slack-user-1",
+        });
+      } finally {
+        if (originalSlackClientId === undefined) {
+          delete process.env.SLACK_CLIENT_ID;
+        } else {
+          process.env.SLACK_CLIENT_ID = originalSlackClientId;
+        }
+      }
+    });
+
+    it("uses the session when Slack handoff code is not a string", async () => {
+      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
+      process.env.SLACK_CLIENT_ID = "slack-client-id";
+      try {
+        const { app } = createTestApp();
+        const res = await request(app, "get", "/auth/provider/slack?code=one&code=two");
+
+        expect(res.status).toBe(302);
+      } finally {
+        if (originalSlackClientId === undefined) {
+          delete process.env.SLACK_CLIENT_ID;
+        } else {
+          process.env.SLACK_CLIENT_ID = originalSlackClientId;
+        }
+      }
     });
   });
 
@@ -414,11 +649,37 @@ describe("createAuthRouter", () => {
     });
 
     it("redirects to Slack OAuth when configured", async () => {
+      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
       process.env.SLACK_CLIENT_ID = "test-client-id";
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/auth/provider/slack");
-      expect(res.status).toBe(302);
-      delete process.env.SLACK_CLIENT_ID;
+      try {
+        const { app } = createTestApp();
+        const res = await request(app, "get", "/auth/provider/slack");
+        expect(res.status).toBe(302);
+      } finally {
+        if (originalSlackClientId === undefined) {
+          delete process.env.SLACK_CLIENT_ID;
+        } else {
+          process.env.SLACK_CLIENT_ID = originalSlackClientId;
+        }
+      }
+    });
+
+    it("returns 401 when no session is available", async () => {
+      const originalSlackClientId = process.env.SLACK_CLIENT_ID;
+      process.env.SLACK_CLIENT_ID = "test-client-id";
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      try {
+        const { app } = createTestApp();
+        const res = await request(app, "get", "/auth/provider/slack");
+        expect(res.status).toBe(401);
+        expect(res.body).toContain("You must be logged in to connect Slack");
+      } finally {
+        if (originalSlackClientId === undefined) {
+          delete process.env.SLACK_CLIENT_ID;
+        } else {
+          process.env.SLACK_CLIENT_ID = originalSlackClientId;
+        }
+      }
     });
   });
 
@@ -1021,8 +1282,16 @@ describe("createAuthRouter", () => {
       );
       expect(res.status).toBe(302);
       const location = res.headers.location;
-      expect(typeof location).toBe("string");
-      expect(location).toContain("dofek://auth/callback?session=");
+      if (typeof location !== "string")
+        throw new Error("Mobile callback did not include a location");
+      expect(location).toContain("dofek://auth/callback?code=");
+      const exchangeCode = new URL(location).searchParams.get("code");
+      if (!exchangeCode) throw new Error("Mobile callback did not include an exchange code");
+      await expect(getMobileAuthExchangeStoreRef().consume(exchangeCode)).resolves.toEqual({
+        kind: "session",
+        sessionId: "sess-1",
+        isNewUser: false,
+      });
       // Restore
       vi.mocked(getMobileSchemeCookie).mockReturnValue(undefined);
     });
@@ -1233,7 +1502,7 @@ describe("createAuthRouter", () => {
         formBody: { code: "apple-code", state: "apple:mock-state" },
       });
       expect(callbackRes.status).toBe(302);
-      expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
+      expect(callbackRes.headers.location).toContain("dofek://auth/callback?code=");
 
       // Restore
       vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
@@ -1615,9 +1884,16 @@ describe("createAuthRouter", () => {
         "/auth/callback/google?code=authcode&state=google:mobile-state",
       );
       expect(res.status).toBe(302);
-      expect(res.headers.location).toContain("dofek://auth/callback?session=sess-1");
+      expect(res.headers.location).toContain("dofek://auth/callback?code=");
       // Should have created a session
       expect(createSession).toHaveBeenCalled();
+      const exchangeCode = new URL(res.headers.location ?? "").searchParams.get("code");
+      if (!exchangeCode) throw new Error("Mobile callback did not include an exchange code");
+      await expect(getMobileAuthExchangeStoreRef().consume(exchangeCode)).resolves.toEqual({
+        kind: "session",
+        sessionId: "sess-1",
+        isNewUser: false,
+      });
       // Should NOT have set a session cookie (mobile uses deep link instead)
       expect(setSessionCookie).not.toHaveBeenCalled();
       vi.mocked(getMobileSchemeCookie).mockReturnValue(undefined);
@@ -2057,8 +2333,17 @@ describe("createAuthRouter", () => {
         `/callback?code=strava-mobile-code&state=${state}`,
       );
       expect(callbackRes.status).toBe(302);
-      expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
-      expect(callbackRes.headers.location).toContain("new_user=false");
+      const callbackLocation = callbackRes.headers.location;
+      if (typeof callbackLocation !== "string")
+        throw new Error("Expected mobile callback location");
+      expect(callbackLocation).toContain("dofek://auth/callback?code=");
+      const exchangeCode = new URL(callbackLocation).searchParams.get("code");
+      if (!exchangeCode) throw new Error("Expected mobile exchange code");
+      await expect(getMobileAuthExchangeStoreRef().consume(exchangeCode)).resolves.toEqual({
+        kind: "session",
+        sessionId: "sess-1",
+        isNewUser: false,
+      });
       expect(setSessionCookie).not.toHaveBeenCalled();
       expect(resolveOrCreateUser).toHaveBeenCalledWith(
         expect.anything(),
@@ -2213,6 +2498,7 @@ describe("createAuthRouter", () => {
         expect.objectContaining({
           providerAccountId: "strava-web-signup-1",
           email: "runner@example.com",
+          emailVerified: false,
         }),
       );
       expect(ensureProvider).toHaveBeenCalledWith(
@@ -2349,8 +2635,17 @@ describe("createAuthRouter", () => {
       const { ensureProvider } = await import("dofek/db/tokens");
 
       expect(completeRes.status).toBe(302);
-      expect(completeRes.headers.location).toContain("dofek://auth/callback?session=");
-      expect(completeRes.headers.location).toContain("new_user=true");
+      const completeLocation = completeRes.headers.location;
+      if (typeof completeLocation !== "string")
+        throw new Error("Expected mobile callback location");
+      expect(completeLocation).toContain("dofek://auth/callback?code=");
+      const exchangeCode = new URL(completeLocation).searchParams.get("code");
+      if (!exchangeCode) throw new Error("Expected mobile exchange code");
+      await expect(getMobileAuthExchangeStoreRef().consume(exchangeCode)).resolves.toEqual({
+        kind: "session",
+        sessionId: "sess-1",
+        isNewUser: true,
+      });
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),
         "strava",
@@ -3422,7 +3717,17 @@ describe("createAuthRouter", () => {
         `/callback?code=mobile-data-code&state=${state}`,
       );
       expect(callbackRes.status).toBe(302);
-      expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
+      const callbackLocation = callbackRes.headers.location;
+      if (typeof callbackLocation !== "string")
+        throw new Error("Expected mobile callback location");
+      expect(callbackLocation).toContain("dofek://auth/callback?code=");
+      const exchangeCode = new URL(callbackLocation).searchParams.get("code");
+      if (!exchangeCode) throw new Error("Expected mobile exchange code");
+      await expect(getMobileAuthExchangeStoreRef().consume(exchangeCode)).resolves.toEqual({
+        kind: "session",
+        sessionId: "sess-1",
+        isNewUser: false,
+      });
       expect(setSessionCookie).not.toHaveBeenCalled();
     });
 

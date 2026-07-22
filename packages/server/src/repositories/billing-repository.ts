@@ -11,6 +11,8 @@ export const billingRowSchema = z.object({
   stripe_subscription_id: z.string().nullable(),
   stripe_subscription_status: z.string().nullable(),
   stripe_current_period_end: timestampStringSchema.nullable(),
+  stripe_subscription_event_id: z.string().nullable(),
+  stripe_subscription_event_created: z.coerce.number().nullable(),
   paid_grant_reason: z.string().nullable(),
   created_at: timestampStringSchema,
   updated_at: timestampStringSchema,
@@ -47,6 +49,8 @@ export class BillingRepository {
             stripe_subscription_id,
             stripe_subscription_status,
             stripe_current_period_end::text AS stripe_current_period_end,
+            stripe_subscription_event_id,
+            stripe_subscription_event_created,
             paid_grant_reason,
             created_at::text AS created_at,
             updated_at::text AS updated_at
@@ -98,18 +102,33 @@ export class BillingRepository {
   }
 
   async updateSubscriptionForStripeCustomer(input: {
+    stripeEventId: string;
+    stripeEventCreated: number;
     stripeCustomerId: string;
     stripeSubscriptionId: string;
     stripeSubscriptionStatus: string;
     stripeCurrentPeriodEnd: Date | null;
   }): Promise<void> {
     await this.#db.execute(
-      sql`UPDATE fitness.user_billing
+      sql`WITH recorded_event AS (
+            INSERT INTO fitness.stripe_webhook_event (event_id, event_created)
+            VALUES (${input.stripeEventId}, ${input.stripeEventCreated})
+            ON CONFLICT (event_id) DO NOTHING
+            RETURNING event_id
+          )
+          UPDATE fitness.user_billing
           SET stripe_subscription_id = ${input.stripeSubscriptionId},
               stripe_subscription_status = ${input.stripeSubscriptionStatus},
               stripe_current_period_end = ${input.stripeCurrentPeriodEnd},
+              stripe_subscription_event_id = ${input.stripeEventId},
+              stripe_subscription_event_created = ${input.stripeEventCreated},
               updated_at = now()
-          WHERE stripe_customer_id = ${input.stripeCustomerId}`,
+          WHERE stripe_customer_id = ${input.stripeCustomerId}
+            AND EXISTS (SELECT 1 FROM recorded_event)
+            AND (
+              stripe_subscription_event_created IS NULL
+              OR stripe_subscription_event_created < ${input.stripeEventCreated}
+            )`,
     );
   }
 }

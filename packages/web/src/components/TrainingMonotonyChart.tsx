@@ -8,6 +8,7 @@ import {
   dofekLegend,
   dofekSeries,
   dofekTooltip,
+  escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -37,7 +38,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         const dateLabel = formatDateMedium(dataPoint.week);
         const monotonyColor = dataPoint.monotony > 2.0 ? statusColors.danger : chartColors.blue;
         return [
-          `<strong>${dateLabel}</strong>`,
+          `<strong>${escapeTooltipHtml(dateLabel)}</strong>`,
           `Monotony: <span style="color:${monotonyColor}">${formatNumber(dataPoint.monotony, 2)}</span>${dataPoint.monotony > 2.0 ? " (high!)" : ""}`,
           `Strain: ${formatNumber(dataPoint.strain)}`,
         ].join("<br/>");
