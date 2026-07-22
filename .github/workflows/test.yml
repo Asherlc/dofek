@@ -398,7 +398,8 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - name: Lint new migration SQL
         run: |
-          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/${BASE_REF}...HEAD" -- 'drizzle/*.sql' \
+          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/${BASE_REF}...HEAD" -- \
+            'drizzle/*.sql' ':(exclude)drizzle/_history/*.sql' \
             | grep -v '_baseline' \
             || true)
           if [ -z "$NEW_MIGRATIONS" ]; then
@@ -1308,7 +1309,8 @@ jobs:
       - uses: ./.github/actions/setup-node-pnpm
       - name: Lint new migration SQL
         run: |
-          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only origin/${{ github.base_ref }}...HEAD -- 'drizzle/*.sql' \
+          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only origin/${{ github.base_ref }}...HEAD -- \
+            'drizzle/*.sql' ':(exclude)drizzle/_history/*.sql' \
             | grep -v '_baseline' \
             || true)
           if [ -z "$NEW_MIGRATIONS" ]; then
