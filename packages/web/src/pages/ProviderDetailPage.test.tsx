@@ -3,6 +3,7 @@ import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ProcessingStatusSnapshot } from "../components/ProcessingStatusWidget.tsx";
 
 const mockUseParams = vi.fn().mockReturnValue({ id: "strong-csv" });
 
@@ -102,24 +103,8 @@ const mockActiveImports: { data: Array<Record<string, unknown>>; isLoading: bool
   isLoading: false,
 };
 
-interface MockDataHealthSnapshot {
-  overallStatus: "blocked";
-  generatedAt: string;
-  datasets: Array<{
-    key: "activity";
-    label: string;
-    rawRows: number;
-    latestRawAt: string;
-    latestReadModelAt: null;
-    cdcLagSeconds: number;
-    readModelLagSeconds: null;
-    status: "blocked";
-    message: string;
-  }>;
-}
-
 const mockDataHealth: {
-  data: MockDataHealthSnapshot | null;
+  data: ProcessingStatusSnapshot | null;
   isLoading: boolean;
   error: { message?: string } | null;
 } = {
@@ -139,11 +124,13 @@ const mockSettingsGetInvalidate = vi.fn();
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    processing: {
+      status: { useQuery: () => mockDataHealth },
+    },
     sync: {
       providers: { useQuery: () => mockProviders },
       providerStats: { useQuery: () => mockStats },
       activeImports: { useQuery: () => mockActiveImports },
-      dataHealth: { useQuery: () => mockDataHealth },
       triggerSync: { useMutation: () => mockSyncMutation },
       syncStatus: { fetch: vi.fn() },
     },
@@ -162,10 +149,12 @@ vi.mock("../lib/trpc.ts", () => ({
       set: { useMutation: () => ({ mutate: mockSettingsSetMutate, isPending: false }) },
     },
     useUtils: () => ({
+      processing: {
+        status: { invalidate: vi.fn() },
+      },
       sync: {
         providers: { invalidate: vi.fn() },
         providerStats: { invalidate: vi.fn() },
-        dataHealth: { invalidate: vi.fn() },
         syncStatus: { fetch: vi.fn() },
       },
       providerDetail: {
@@ -361,17 +350,17 @@ describe("ProviderDetailPage import-only providers", () => {
     mockDataHealth.data = {
       overallStatus: "blocked",
       generatedAt: "2026-06-30T12:00:00Z",
+      scope: { providerId: "wahoo", datasets: ["activity"] },
+      operations: [],
       datasets: [
         {
           key: "activity",
           label: "Activities",
-          rawRows: 12,
-          latestRawAt: "2026-06-29T12:00:00Z",
-          latestReadModelAt: null,
-          cdcLagSeconds: 90000,
-          readModelLagSeconds: null,
           status: "blocked",
-          message: "Activity data is available, but ClickHouse mirrors are not current.",
+          currentStage: "cdc",
+          progressPercentage: null,
+          lastAdvancedAt: "2026-06-29T12:00:00Z",
+          lastReadyAt: null,
         },
       ],
     };
@@ -379,11 +368,8 @@ describe("ProviderDetailPage import-only providers", () => {
     const { ProviderDetailPage } = await import("./ProviderDetailPage");
     render(<ProviderDetailPage />);
 
-    expect(screen.getByText("Account-wide data status")).toBeTruthy();
-    expect(screen.getByText("Some data is temporarily unavailable")).toBeTruthy();
-    expect(
-      screen.getByText("Activities data is still being prepared. Please check back soon."),
-    ).toBeTruthy();
+    expect(screen.getByText("Wahoo data status")).toBeTruthy();
+    expect(screen.getByText("Processing needs attention")).toBeTruthy();
   });
 
   it("shows single-provider cooldown outcome without polling a fake job", async () => {

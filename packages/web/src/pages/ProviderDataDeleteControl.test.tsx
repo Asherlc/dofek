@@ -11,10 +11,12 @@ vi.mock("../lib/telemetry.ts", () => ({ captureException: vi.fn() }));
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     useUtils: () => ({
+      processing: {
+        status: { invalidate: mockInvalidate },
+      },
       sync: {
         providers: { invalidate: mockInvalidate },
         providerStats: { invalidate: mockInvalidate },
-        dataHealth: { invalidate: mockInvalidate },
       },
       providerDetail: {
         logs: { invalidate: mockInvalidate },

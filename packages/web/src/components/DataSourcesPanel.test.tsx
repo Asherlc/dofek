@@ -62,6 +62,9 @@ const mockProviderStatsQuery = vi.hoisted(() =>
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    processing: {
+      status: { useQuery: mockDataHealthQuery },
+    },
     sync: {
       providers: {
         useQuery: mockProvidersQuery,
@@ -70,7 +73,6 @@ vi.mock("../lib/trpc.ts", () => ({
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
       activeImports: { useQuery: mockActiveImportsQuery },
-      dataHealth: { useQuery: mockDataHealthQuery },
       triggerSync: { useMutation: () => ({ mutateAsync: mockSyncMutateAsync, isPending: false }) },
       syncStatus: { fetch: vi.fn() },
     },
@@ -209,6 +211,8 @@ describe("DataSourcesPanel", () => {
       data: {
         overallStatus: "blocked",
         generatedAt: "2026-06-30T08:00:00.000Z",
+        scope: { providerId: null, datasets: ["providers"] },
+        operations: [],
         datasets: [
           {
             key: "activity",
@@ -229,14 +233,11 @@ describe("DataSourcesPanel", () => {
 
     render(<DataSourcesPanel />);
 
-    const readiness = screen.getByText("Some data is temporarily unavailable");
+    const readiness = screen.getByText("Processing needs attention");
     const provider = screen.getByText("Garmin");
 
     expect(
       readiness.compareDocumentPosition(provider) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Activities data is still being prepared. Please check back soon."),
     ).toBeTruthy();
   });
 

@@ -11,9 +11,10 @@ import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { ActivityCardContent, type ActivityCardData } from "../components/ActivityCardContent.tsx";
-import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
@@ -50,7 +51,7 @@ export function ActivitiesPage() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
-  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["activity"] });
+  const processingStatus = useProcessingStatus({ datasets: ["activity"] });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await Promise.all([
@@ -163,10 +164,10 @@ export function ActivitiesPage() {
 
   return (
     <PageLayout title="Activities" subtitle={subtitle}>
-      <DataReadinessBanner
-        data={dataHealth.data}
-        error={dataHealth.error}
-        loading={dataHealth.isLoading}
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
       />
       <div className="space-y-4">
         <ActivityControls

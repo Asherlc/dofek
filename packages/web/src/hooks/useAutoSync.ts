@@ -14,7 +14,7 @@ type AutoSyncTrpcUtils = {
   recovery: { readinessScore: InvalidatableQuery };
   calendar: { activityOverview: InvalidatableQuery };
   activity: { list: InvalidatableQuery };
-  sync: { dataHealth: InvalidatableQuery };
+  processing: { status: InvalidatableQuery };
   bodyAnalytics: { weightOverview: InvalidatableQuery };
 };
 
@@ -24,7 +24,7 @@ export function getAutoSyncInvalidationTargets(trpcUtils: AutoSyncTrpcUtils): In
     trpcUtils.recovery.readinessScore,
     trpcUtils.calendar.activityOverview,
     trpcUtils.activity.list,
-    trpcUtils.sync.dataHealth,
+    trpcUtils.processing.status,
     trpcUtils.bodyAnalytics.weightOverview,
   ];
 }

@@ -14,7 +14,7 @@ import { useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { DataSourcesPanel } from "./DataSourcesPanel.tsx";
 
-type DataSourcesScenario = "default" | "blocked" | "providersLoading" | "empty";
+type DataSourcesScenario = "default" | "providersLoading" | "empty";
 
 const providers = [
   {
@@ -41,30 +41,6 @@ const providers = [
   },
 ];
 
-const blockedDataHealth = {
-  overallStatus: "blocked",
-  generatedAt: "2026-06-30T08:00:00.000Z",
-  datasets: [
-    {
-      key: "activity",
-      label: "Activities",
-      rawRows: 120,
-      latestRawAt: "2026-06-30T07:00:00.000Z",
-      latestReadModelAt: null,
-      cdcLagSeconds: null,
-      readModelLagSeconds: null,
-      status: "blocked",
-      message: "Activities are synced, but activity summaries need attention.",
-    },
-  ],
-};
-
-const healthyDataHealth = {
-  overallStatus: "healthy",
-  generatedAt: "2026-06-30T08:00:00.000Z",
-  datasets: [],
-};
-
 function createMockLink(scenario: DataSourcesScenario): TRPCLink<AppRouter> {
   return () =>
     ({ op }) =>
@@ -86,10 +62,6 @@ function createMockObservable(
         path === "sync.activeSyncs"
       ) {
         observer.next?.({ result: { data: [] } });
-      } else if (path === "sync.dataHealth") {
-        observer.next?.({
-          result: { data: scenario === "blocked" ? blockedDataHealth : healthyDataHealth },
-        });
       }
       observer.complete?.();
       return { unsubscribe: () => {} };
@@ -153,10 +125,6 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
   render: () => <DataSourcesPanelStoryFrame scenario="default" />,
-};
-
-export const BlockedReadiness: Story = {
-  render: () => <DataSourcesPanelStoryFrame scenario="blocked" />,
 };
 
 export const Loading: Story = {
