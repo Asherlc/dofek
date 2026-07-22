@@ -447,9 +447,13 @@ describe("processing event store", () => {
 
   it("lists scoped operations with latest events and output manifests", async () => {
     const { database, execute } = makeDatabase([
-      [operationRow()],
-      [eventRow()],
-      [{ dataset_key: "activity", output_path: "relational" }],
+      [
+        {
+          ...operationRow(),
+          events: [eventRow()],
+          output_manifest: [{ dataset_key: "activity", output_path: "relational" }],
+        },
+      ],
     ]);
 
     await expect(
@@ -466,6 +470,7 @@ describe("processing event store", () => {
         outputManifest: { activity: ["relational"] },
       },
     ]);
+    expect(execute).toHaveBeenCalledOnce();
     expect(compiledCall(execute, 0).params).toEqual([userId, "garmin", "garmin", "activity", 5]);
   });
 

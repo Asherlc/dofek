@@ -55,7 +55,7 @@ export function buildProcessingAnalyticsEvents({
         errorMessage: null,
         message: "No analytics build is required for this dataset",
         servingWatermark: runId,
-        idempotencyKey: `${runId}:${pendingDataset.datasetKey}:skipped`,
+        idempotencyKey: `${runId}:${pendingDataset.operationId}:${pendingDataset.datasetKey}:skipped`,
       });
       continue;
     }
@@ -71,7 +71,7 @@ export function buildProcessingAnalyticsEvents({
           errorMessage: `Required analytics model ${modelName} was not attempted`,
           message: "A required analytics calculation did not run",
           servingWatermark: runId,
-          idempotencyKey: `${runId}:${pendingDataset.datasetKey}:${modelName}:failed`,
+          idempotencyKey: `${runId}:${pendingDataset.operationId}:${pendingDataset.datasetKey}:${modelName}:failed`,
         };
       }
       return {
@@ -85,7 +85,7 @@ export function buildProcessingAnalyticsEvents({
             ? "Analytics calculation completed"
             : "Analytics calculation did not complete",
         servingWatermark: runId,
-        idempotencyKey: `${runId}:${pendingDataset.datasetKey}:${modelName}:${result.status}`,
+        idempotencyKey: `${runId}:${pendingDataset.operationId}:${pendingDataset.datasetKey}:${modelName}:${result.status}`,
       };
     });
     events.push(...datasetModelEvents);
@@ -103,7 +103,7 @@ export function buildProcessingAnalyticsEvents({
         ? "Some analytics calculations did not complete"
         : "Analytics calculations completed",
       servingWatermark: runId,
-      idempotencyKey: `${runId}:${pendingDataset.datasetKey}:aggregate:${firstIncomplete ? "failed" : "succeeded"}`,
+      idempotencyKey: `${runId}:${pendingDataset.operationId}:${pendingDataset.datasetKey}:aggregate:${firstIncomplete ? "failed" : "succeeded"}`,
     });
   }
 
