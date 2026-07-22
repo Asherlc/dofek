@@ -162,6 +162,24 @@ describe("deriveProcessingState", () => {
     });
   });
 
+  it("surfaces a cancelled dataset while a sibling dataset is active", () => {
+    const state = deriveProcessingState({
+      datasetKeys: ["activity", "sleep"],
+      outputManifest: {},
+      events: [event(1, "ingest", "cancelled", "activity"), event(2, "ingest", "running", "sleep")],
+      now,
+      delayedAfterMs: 300_000,
+    });
+
+    expect(state.overallStatus).toBe("cancelled");
+    expect(state.datasets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ datasetKey: "activity", status: "cancelled" }),
+        expect.objectContaining({ datasetKey: "sleep", status: "active" }),
+      ]),
+    );
+  });
+
   it("reports partial readiness while one dataset remains active", () => {
     const completedActivity = [
       event(1, "ingest", "succeeded", "activity"),
