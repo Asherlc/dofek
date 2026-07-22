@@ -285,6 +285,7 @@ describe("bot.ts — registerHandlers", () => {
       };
 
       await messageHandler({
+        body: { team_id: "T-message" },
         message: {
           user: "U123",
           text: "mystery food",
@@ -320,8 +321,13 @@ describe("bot.ts — registerHandlers", () => {
               channelId: "C123",
               eventType: "message",
               operation: "nutrition_analysis",
+              teamId: "T-message",
               threadTimestamp: "1700000000.000000",
             }),
+          },
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "nutrition_analysis",
           },
         }),
       );
@@ -378,6 +384,7 @@ describe("bot.ts — registerHandlers", () => {
       };
 
       await messageHandler({
+        body: { team: { id: "T-nested" } },
         message: {
           user: "U123",
           text: "some food",
@@ -413,8 +420,13 @@ describe("bot.ts — registerHandlers", () => {
               channelId: "C123",
               eventType: "message",
               operation: "message_processing",
+              teamId: "T-nested",
               threadTimestamp: "1700000000.000000",
             }),
+          },
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "message_processing",
           },
         }),
       );
@@ -516,6 +528,83 @@ describe("bot.ts — registerHandlers", () => {
         lookupUserSpy.mockRestore();
         saveUnconfirmedSpy.mockRestore();
       }
+    });
+
+    it("does not crash when Slack body is absent during successful analysis", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId: existing slack link found
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      await messageHandler({
+        body: null,
+        message: {
+          user: "U123",
+          text: "eggs",
+          ts: "1700000000.000000",
+          channel: "C123",
+        },
+        say: vi.fn(),
+        client: {
+          users: { info: vi.fn().mockResolvedValue({ user: { tz: "America/New_York" } }) },
+          conversations: { replies: vi.fn() },
+          chat: { postMessage: chatPostMessage, update: chatUpdate },
+        },
+      });
+
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Test Food: 200 kcal"),
+        }),
+      );
+    });
+
+    it("falls back from empty team_id to nested team id in error context", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+      const lookupError = new Error("database lookup failed for dofek-slack");
+
+      mockExecute.mockRejectedValueOnce(lookupError);
+
+      const { messageHandler } = setupHandlers(db);
+      const say = vi.fn();
+
+      await messageHandler({
+        body: { team_id: "", team: { id: "T-fallback" } },
+        message: {
+          user: "U123",
+          text: "some food",
+          ts: "1700000000.000000",
+          channel: "C123",
+        },
+        say,
+        client: {
+          users: { info: vi.fn() },
+          chat: { postMessage: vi.fn().mockResolvedValue({}) },
+        },
+      });
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        lookupError,
+        expect.objectContaining({
+          contexts: {
+            slack: expect.objectContaining({
+              teamId: "T-fallback",
+            }),
+          },
+        }),
+      );
     });
   });
 
@@ -1621,6 +1710,7 @@ describe("bot.ts — registerHandlers", () => {
         ack,
         body: {
           type: "block_actions",
+          team: { id: "T123" },
           actions: [{ action_id: "confirm_food", value: "entry-1" }],
           channel: { id: "C123" },
           message: { ts: "1700000000.000000" },
@@ -1652,11 +1742,112 @@ describe("bot.ts — registerHandlers", () => {
               channelId: "C123",
               eventType: "action",
               operation: "food_confirmation",
+              teamId: "T123",
               threadTimestamp: "1700000000.000000",
             }),
           },
+          tags: {
+            slack_event_type: "action",
+            slack_operation: "food_confirmation",
+          },
         }),
       );
+    });
+
+    it("captures confirm failures without undefined optional Slack context fields", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+      const confirmError = new Error("database save failed for confirm action");
+
+      const { confirmHandler } = setupHandlers(db);
+
+      mockExecute.mockRejectedValueOnce(confirmError);
+
+      const ack = vi.fn();
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "entry-1" }],
+        },
+        client: { chat: { update: vi.fn() } },
+      });
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(confirmError, {
+        contexts: {
+          slack: {
+            eventType: "action",
+            operation: "food_confirmation",
+          },
+        },
+        tags: {
+          slack_event_type: "action",
+          slack_operation: "food_confirmation",
+        },
+      });
+    });
+
+    it("shows saved-but-incomplete message when confirm succeeds before follow-up fails", async () => {
+      const db = createMockDb();
+      const { confirmHandler } = setupHandlers(db);
+      const updateError = new Error("chat.update failed after database save");
+      const findPendingIdsSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "findPendingIdsByMessage")
+        .mockResolvedValueOnce([]);
+      const confirmSpy = vi.spyOn(FoodEntryRepository.prototype, "confirm").mockResolvedValue({
+        confirmedCount: 1,
+        confirmedEntryIds: ["entry-1"],
+        userId: null,
+      });
+      const loadSummarySpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary")
+        .mockResolvedValue([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockRejectedValueOnce(updateError).mockResolvedValueOnce({});
+
+      try {
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            team: { id: "T123" },
+            actions: [{ action_id: "confirm_food", value: "entry-1" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        expect(chatUpdate).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            text: expect.stringContaining("Saved those food entries"),
+            blocks: [],
+          }),
+        );
+        expect(chatUpdate).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            text: expect.not.stringContaining("Nothing was saved"),
+          }),
+        );
+        expect(Sentry.captureException).toHaveBeenCalledWith(
+          updateError,
+          expect.objectContaining({
+            contexts: {
+              slack: expect.objectContaining({
+                operation: "food_confirmation",
+                teamId: "T123",
+              }),
+            },
+          }),
+        );
+      } finally {
+        findPendingIdsSpy.mockRestore();
+        confirmSpy.mockRestore();
+        loadSummarySpy.mockRestore();
+      }
     });
 
     it("does not update already-saved message when channel exists but message.ts is missing", async () => {
@@ -2141,8 +2332,10 @@ describe("bot.ts — registerHandlers", () => {
       expect(say).toHaveBeenCalledWith(
         expect.objectContaining({
           text: expect.stringContaining("Could not match your Slack account"),
+          thread_ts: "1700000000.000000",
         }),
       );
+      expect(Sentry.captureException).not.toHaveBeenCalled();
     });
 
     it("finds user by user_profile email", async () => {
