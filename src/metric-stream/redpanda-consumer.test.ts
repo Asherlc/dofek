@@ -216,7 +216,7 @@ describe("runMetricStreamEventConsumer", () => {
     expect(commitOffsetsIfNecessary).toHaveBeenCalledOnce();
   });
 
-  it("reports malformed messages and still commits the batch offset", async () => {
+  it("reports malformed messages and leaves the batch uncommitted for retry", async () => {
     const resolveOffset = vi.fn();
     const handleEvents = vi.fn(async () => undefined);
     const commitOffsetsIfNecessary = vi.fn(async () => undefined);
@@ -238,19 +238,22 @@ describe("runMetricStreamEventConsumer", () => {
       }),
     };
 
-    await runMetricStreamEventConsumer({
-      consumer,
-      handleEvents,
-      topic: "metric-stream-v1",
-    });
+    await expect(
+      runMetricStreamEventConsumer({
+        consumer,
+        handleEvents,
+        topic: "metric-stream-v1",
+      }),
+    ).rejects.toThrow();
 
     expect(handleEvents).not.toHaveBeenCalled();
     expect(loggerError).toHaveBeenCalledWith(
-      expect.stringContaining("Skipping malformed Redpanda message at offset 14"),
+      expect.stringContaining("Rejecting malformed Redpanda message at offset 14"),
     );
     expect(captureException).toHaveBeenCalledOnce();
-    expect(resolveOffset).toHaveBeenCalledWith("14");
-    expect(commitOffsetsIfNecessary).toHaveBeenCalledOnce();
+    expect(resolveOffset).not.toHaveBeenCalled();
+    expect(heartbeat).not.toHaveBeenCalled();
+    expect(commitOffsetsIfNecessary).not.toHaveBeenCalled();
   });
 });
 
