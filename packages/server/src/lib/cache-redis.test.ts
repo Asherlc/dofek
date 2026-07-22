@@ -74,13 +74,13 @@ describe("RedisCacheStore", () => {
     "{bad json",
     '{"incomplete":',
   ])("evicts malformed payload %s and treats it as a cache miss", async (malformedPayload) => {
-    await fakeRedis.client.set("query-cache:data:user-1:sync.dataHealth:{}", malformedPayload);
-    await fakeRedis.client.sadd("query-cache:keys", "query-cache:data:user-1:sync.dataHealth:{}");
+    await fakeRedis.client.set("query-cache:data:user-1:processing.status:{}", malformedPayload);
+    await fakeRedis.client.sadd("query-cache:keys", "query-cache:data:user-1:processing.status:{}");
 
-    expect(await store.get("user-1:sync.dataHealth:{}")).toBeUndefined();
-    expect(fakeRedis.values.has("query-cache:data:user-1:sync.dataHealth:{}")).toBe(false);
+    expect(await store.get("user-1:processing.status:{}")).toBeUndefined();
+    expect(fakeRedis.values.has("query-cache:data:user-1:processing.status:{}")).toBe(false);
     expect(
-      fakeRedis.sets.get("query-cache:keys")?.has("query-cache:data:user-1:sync.dataHealth:{}"),
+      fakeRedis.sets.get("query-cache:keys")?.has("query-cache:data:user-1:processing.status:{}"),
     ).toBe(false);
   });
   it("invalidateByPrefix removes only matching keys", async () => {
