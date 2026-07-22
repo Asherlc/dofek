@@ -7,12 +7,14 @@
         "src/db/setup-clickhouse-cdc.ts",
         "src/jobs/worker.ts",
         "src/opentelemetry-hook.mjs",
+        "scripts/run-analytics-build.ts",
+        "scripts/warm-query-cache.ts",
         "vitest.config.mutation.ts"
       ],
       "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js}"],
       "ignoreDependencies": ["sharp", "tsx"],
       "ignoreBinaries": [
-        "cmake", "expo", "open", "openssl",
+        "cmake", "dbt", "expo", "open", "openssl",
         "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
         "AGPL-1.0-only", "AGPL-3.0-only", "AGPL-3.0-or-later"
       ],

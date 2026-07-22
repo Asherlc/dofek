@@ -463,6 +463,13 @@
       "when": 1784734909000,
       "tag": "0055_climbing_attempt_count",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1784735000000,
+      "tag": "0056_processing_status",
+      "breakpoints": true
     }
   ]
 }
