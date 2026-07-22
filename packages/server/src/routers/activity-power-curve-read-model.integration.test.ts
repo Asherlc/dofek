@@ -8,6 +8,7 @@ import type { ActivitySensorStore } from "../repositories/activity-repository.ts
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
+  executeClickHouseTestCommand,
   getClickHouseTestClient,
   seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
@@ -166,6 +167,7 @@ describe("activity_power_curve read model", () => {
     const gappedActivityId = randomUUID();
     const renderedSql = renderNonIncrementalActivityPowerCurveSql();
 
+    await executeClickHouseTestCommand(testContext, "TRUNCATE TABLE ingest.metric_stream");
     await insertActivity(
       testContext,
       regularActivityId,
