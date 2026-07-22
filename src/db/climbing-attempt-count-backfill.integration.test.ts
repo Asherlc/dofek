@@ -40,7 +40,7 @@ describe("backfillClimbingAttemptCount integration", () => {
     await testContext?.cleanup();
   });
 
-  it("backfills Kaya raw attempt counts idempotently after a dry run", async () => {
+  it("backfills Kaya raw attempt counts in an idempotent way after a dry run", async () => {
     await expect(backfillClimbingAttemptCount(testContext.db, false)).resolves.toBe(1);
 
     const beforeRows = attemptCountRowSchema.parse(
