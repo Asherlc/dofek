@@ -264,7 +264,7 @@ describe("bot.ts — registerHandlers", () => {
     it("sends error message when AI analysis fails", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
-      const internalErrorDetail = "SQLSTATE 23505 fitness.food_entry provider_secret=sk-test";
+      const internalErrorDetail = "database state 23505 fitness.food_entry provider_secret=sk-test";
       const analysisError = new Error(internalErrorDetail);
 
       // lookupOrCreateUserId: existing slack link found
@@ -1606,7 +1606,7 @@ describe("bot.ts — registerHandlers", () => {
     it("shows error message when confirm fails", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
-      const internalErrorDetail = "duplicate key fitness.food_entry_pkey on db-primary.internal";
+      const internalErrorDetail = "duplicate key fitness.food_entry primary key on db-primary.internal";
       const confirmError = new Error(internalErrorDetail);
 
       const { confirmHandler } = setupHandlers(db);
