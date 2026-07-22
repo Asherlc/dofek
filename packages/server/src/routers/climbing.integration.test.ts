@@ -119,7 +119,7 @@ describe("climbing router integration", () => {
             'Warmup',
             'Touchstone Pacific Pipe',
             'Kaya',
-            '{}'::jsonb
+            '{"ascentType":"Redpoint"}'::jsonb
           ),
           (
             ${climbingActivityId},
@@ -239,7 +239,7 @@ describe("climbing router integration", () => {
         routeName: "Warmup",
         sent: true,
         attemptCount: 2,
-        ascentType: null,
+        ascentType: "Redpoint",
       }),
       expect.objectContaining({
         climbType: "boulder",

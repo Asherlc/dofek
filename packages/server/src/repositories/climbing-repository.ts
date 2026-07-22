@@ -97,6 +97,24 @@ export class ClimbingSessionSummary {
   }
 }
 
+const climbTypeSchema = z.enum(["boulder", "route"]);
+const gradeSystemSchema = z.enum(["v_scale", "yds"]);
+const ascentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Repeat"]);
+
+const activityEntryRowSchema = z.object({
+  id: z.string(),
+  climb_type: climbTypeSchema,
+  grade_system: gradeSystemSchema,
+  grade: z.string(),
+  sent: z.boolean(),
+  attempt_count: z.coerce.number().int().positive(),
+  ascent_type: ascentTypeSchema.nullable(),
+  route_name: z.string().nullable(),
+  location_name: z.string().nullable(),
+  source_name: z.string(),
+});
+type ClimbingActivityEntryDatabaseRow = z.infer<typeof activityEntryRowSchema>;
+
 export interface ClimbingActivityEntryRow {
   id: string;
   climbType: ClimbingClimbType;
@@ -104,7 +122,7 @@ export interface ClimbingActivityEntryRow {
   grade: string;
   sent: boolean;
   attemptCount: number;
-  ascentType: "Flash" | "Onsight" | "Redpoint" | "Repeat" | null;
+  ascentType: ClimbingActivityEntryDatabaseRow["ascent_type"];
   routeName: string | null;
   locationName: string | null;
   sourceName: string;
@@ -121,10 +139,6 @@ export class ClimbingActivityEntry {
     return this.#row;
   }
 }
-
-const climbTypeSchema = z.enum(["boulder", "route"]);
-const gradeSystemSchema = z.enum(["v_scale", "yds"]);
-const ascentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Repeat"]);
 
 const progressionRowSchema = z.object({
   session_date: dateStringSchema,
@@ -154,19 +168,6 @@ const sessionSummaryRowSchema = z.object({
   hardest_boulder_grade_sort_value: z.coerce.number().nullable(),
   hardest_route_grade: z.string().nullable(),
   hardest_route_grade_sort_value: z.coerce.number().nullable(),
-});
-
-const activityEntryRowSchema = z.object({
-  id: z.string(),
-  climb_type: climbTypeSchema,
-  grade_system: gradeSystemSchema,
-  grade: z.string(),
-  sent: z.boolean(),
-  attempt_count: z.coerce.number().int().positive(),
-  ascent_type: ascentTypeSchema.nullable(),
-  route_name: z.string().nullable(),
-  location_name: z.string().nullable(),
-  source_name: z.string(),
 });
 
 const climbingGradeSortSql = sql`
