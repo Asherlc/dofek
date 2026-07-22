@@ -264,11 +264,13 @@ describe("bot.ts — registerHandlers", () => {
     it("sends error message when AI analysis fails", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const internalErrorDetail = "database state 23505 fitness.food_entry provider_secret=sk-test";
+      const analysisError = new Error(internalErrorDetail);
 
       // lookupOrCreateUserId: existing slack link found
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
 
-      mockAnalyze.mockRejectedValueOnce(new Error("AI provider down"));
+      mockAnalyze.mockRejectedValueOnce(analysisError);
 
       const { messageHandler } = setupHandlers(db);
 
@@ -283,6 +285,7 @@ describe("bot.ts — registerHandlers", () => {
       };
 
       await messageHandler({
+        body: { team_id: "T-message" },
         message: {
           user: "U123",
           text: "mystery food",
@@ -296,8 +299,36 @@ describe("bot.ts — registerHandlers", () => {
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           ts: "thinking-ts",
-          text: expect.stringContaining("AI provider down"),
+          text: expect.not.stringContaining(internalErrorDetail),
           blocks: [],
+        }),
+      );
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Nothing was saved"),
+        }),
+      );
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Try describing what you ate"),
+        }),
+      );
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        analysisError,
+        expect.objectContaining({
+          contexts: {
+            slack: expect.objectContaining({
+              channelId: "C123",
+              eventType: "message",
+              operation: "nutrition_analysis",
+              teamId: "T-message",
+              threadTimestamp: "1700000000.000000",
+            }),
+          },
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "nutrition_analysis",
+          },
         }),
       );
     });
@@ -336,21 +367,24 @@ describe("bot.ts — registerHandlers", () => {
     it("replies with error when lookupOrCreateUserId fails", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const internalErrorDetail = "redis://cache.internal auth token missing";
+      const lookupError = new Error(internalErrorDetail);
 
       // lookupOrCreateUserId: users.info fails
-      mockExecute.mockRejectedValueOnce(new Error("Slack API unavailable"));
+      mockExecute.mockRejectedValueOnce(lookupError);
 
       const { messageHandler } = setupHandlers(db);
 
       const say = vi.fn();
       const client = {
         users: {
-          info: vi.fn().mockRejectedValue(new Error("Slack API unavailable")),
+          info: vi.fn().mockRejectedValue(lookupError),
         },
         chat: { postMessage: vi.fn() },
       };
 
       await messageHandler({
+        body: { team: { id: "T-nested" } },
         message: {
           user: "U123",
           text: "some food",
@@ -364,8 +398,36 @@ describe("bot.ts — registerHandlers", () => {
       // The top-level catch should send an error reply
       expect(say).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("Slack API unavailable"),
+          text: expect.not.stringContaining(internalErrorDetail),
           thread_ts: "1700000000.000000",
+        }),
+      );
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Nothing was saved"),
+        }),
+      );
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Please try again"),
+        }),
+      );
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        lookupError,
+        expect.objectContaining({
+          contexts: {
+            slack: expect.objectContaining({
+              channelId: "C123",
+              eventType: "message",
+              operation: "message_processing",
+              teamId: "T-nested",
+              threadTimestamp: "1700000000.000000",
+            }),
+          },
+          tags: {
+            slack_event_type: "message",
+            slack_operation: "message_processing",
+          },
         }),
       );
     });
@@ -466,6 +528,83 @@ describe("bot.ts — registerHandlers", () => {
         lookupUserSpy.mockRestore();
         saveUnconfirmedSpy.mockRestore();
       }
+    });
+
+    it("does not crash when Slack body is absent during successful analysis", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId: existing slack link found
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      await messageHandler({
+        body: null,
+        message: {
+          user: "U123",
+          text: "eggs",
+          ts: "1700000000.000000",
+          channel: "C123",
+        },
+        say: vi.fn(),
+        client: {
+          users: { info: vi.fn().mockResolvedValue({ user: { tz: "America/New_York" } }) },
+          conversations: { replies: vi.fn() },
+          chat: { postMessage: chatPostMessage, update: chatUpdate },
+        },
+      });
+
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Test Food: 200 kcal"),
+        }),
+      );
+    });
+
+    it("falls back from empty team_id to nested team id in error context", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+      const lookupError = new Error("database lookup failed for dofek-slack");
+
+      mockExecute.mockRejectedValueOnce(lookupError);
+
+      const { messageHandler } = setupHandlers(db);
+      const say = vi.fn();
+
+      await messageHandler({
+        body: { team_id: "", team: { id: "T-fallback" } },
+        message: {
+          user: "U123",
+          text: "some food",
+          ts: "1700000000.000000",
+          channel: "C123",
+        },
+        say,
+        client: {
+          users: { info: vi.fn() },
+          chat: { postMessage: vi.fn().mockResolvedValue({}) },
+        },
+      });
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        lookupError,
+        expect.objectContaining({
+          contexts: {
+            slack: expect.objectContaining({
+              teamId: "T-fallback",
+            }),
+          },
+        }),
+      );
     });
   });
 
@@ -932,6 +1071,8 @@ describe("bot.ts — registerHandlers", () => {
     it("sends error via say() when refinement throws", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const internalErrorDetail = "provider payload included access_token=secret-token";
+      const refinementError = new Error(internalErrorDetail);
 
       // lookupOrCreateUserId
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
@@ -940,7 +1081,7 @@ describe("bot.ts — registerHandlers", () => {
         .spyOn(FoodEntryRepository.prototype, "loadForRefinement")
         .mockResolvedValueOnce([makeFoodItem()]);
 
-      mockRefine.mockRejectedValueOnce(new Error("AI refinement failed"));
+      mockRefine.mockRejectedValueOnce(refinementError);
 
       const { messageHandler } = setupHandlers(db);
 
@@ -980,8 +1121,31 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(say).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("AI refinement failed"),
+          text: expect.not.stringContaining(internalErrorDetail),
           thread_ts: "1000.000",
+        }),
+      );
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("The edit was not saved"),
+        }),
+      );
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Please try again"),
+        }),
+      );
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        refinementError,
+        expect.objectContaining({
+          contexts: {
+            slack: expect.objectContaining({
+              channelId: "C1",
+              eventType: "message",
+              operation: "nutrition_refinement",
+              threadTimestamp: "1000.000",
+            }),
+          },
         }),
       );
 
@@ -1531,10 +1695,13 @@ describe("bot.ts — registerHandlers", () => {
     it("shows error message when confirm fails", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const internalErrorDetail =
+        "duplicate key fitness.food_entry primary key on db-primary.internal";
+      const confirmError = new Error(internalErrorDetail);
 
       const { confirmHandler } = setupHandlers(db);
 
-      mockExecute.mockRejectedValueOnce(new Error("DB connection failed"));
+      mockExecute.mockRejectedValueOnce(confirmError);
 
       const ack = vi.fn();
       const chatUpdate = vi.fn().mockResolvedValue({});
@@ -1543,6 +1710,7 @@ describe("bot.ts — registerHandlers", () => {
         ack,
         body: {
           type: "block_actions",
+          team: { id: "T123" },
           actions: [{ action_id: "confirm_food", value: "entry-1" }],
           channel: { id: "C123" },
           message: { ts: "1700000000.000000" },
@@ -1552,10 +1720,134 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("DB connection failed"),
+          text: expect.not.stringContaining(internalErrorDetail),
           blocks: [],
         }),
       );
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Nothing was saved"),
+        }),
+      );
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Please try confirming"),
+        }),
+      );
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        confirmError,
+        expect.objectContaining({
+          contexts: {
+            slack: expect.objectContaining({
+              channelId: "C123",
+              eventType: "action",
+              operation: "food_confirmation",
+              teamId: "T123",
+              threadTimestamp: "1700000000.000000",
+            }),
+          },
+          tags: {
+            slack_event_type: "action",
+            slack_operation: "food_confirmation",
+          },
+        }),
+      );
+    });
+
+    it("captures confirm failures without undefined optional Slack context fields", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+      const confirmError = new Error("database save failed for confirm action");
+
+      const { confirmHandler } = setupHandlers(db);
+
+      mockExecute.mockRejectedValueOnce(confirmError);
+
+      const ack = vi.fn();
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "entry-1" }],
+        },
+        client: { chat: { update: vi.fn() } },
+      });
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(confirmError, {
+        contexts: {
+          slack: {
+            eventType: "action",
+            operation: "food_confirmation",
+          },
+        },
+        tags: {
+          slack_event_type: "action",
+          slack_operation: "food_confirmation",
+        },
+      });
+    });
+
+    it("shows saved-but-incomplete message when confirm succeeds before follow-up fails", async () => {
+      const db = createMockDb();
+      const { confirmHandler } = setupHandlers(db);
+      const updateError = new Error("chat.update failed after database save");
+      const findPendingIdsSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "findPendingIdsByMessage")
+        .mockResolvedValueOnce([]);
+      const confirmSpy = vi.spyOn(FoodEntryRepository.prototype, "confirm").mockResolvedValue({
+        confirmedCount: 1,
+        confirmedEntryIds: ["entry-1"],
+        userId: null,
+      });
+      const loadSummarySpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary")
+        .mockResolvedValue([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockRejectedValueOnce(updateError).mockResolvedValueOnce({});
+
+      try {
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            team: { id: "T123" },
+            actions: [{ action_id: "confirm_food", value: "entry-1" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        expect(chatUpdate).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            text: expect.stringContaining("Saved those food entries"),
+            blocks: [],
+          }),
+        );
+        expect(chatUpdate).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            text: expect.not.stringContaining("Nothing was saved"),
+          }),
+        );
+        expect(Sentry.captureException).toHaveBeenCalledWith(
+          updateError,
+          expect.objectContaining({
+            contexts: {
+              slack: expect.objectContaining({
+                operation: "food_confirmation",
+                teamId: "T123",
+              }),
+            },
+          }),
+        );
+      } finally {
+        findPendingIdsSpy.mockRestore();
+        confirmSpy.mockRestore();
+        loadSummarySpy.mockRestore();
+      }
     });
 
     it("does not update already-saved message when channel exists but message.ts is missing", async () => {
@@ -2040,8 +2332,10 @@ describe("bot.ts — registerHandlers", () => {
       expect(say).toHaveBeenCalledWith(
         expect.objectContaining({
           text: expect.stringContaining("Could not match your Slack account"),
+          thread_ts: "1700000000.000000",
         }),
       );
+      expect(Sentry.captureException).not.toHaveBeenCalled();
     });
 
     it("finds user by user_profile email", async () => {
@@ -2580,8 +2874,13 @@ describe("bot.ts — registerHandlers", () => {
       expect(chatUpdate).not.toHaveBeenCalled();
       expect(say).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("AI down"),
+          text: expect.not.stringContaining("AI down"),
           thread_ts: "1700000000.000000",
+        }),
+      );
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Nothing was saved"),
         }),
       );
     });
