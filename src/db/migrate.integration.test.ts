@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
@@ -191,6 +191,102 @@ describe("runMigrations", () => {
       );
       await client.query("DROP TABLE IF EXISTS fitness.legacy_history_second");
       await client.query("DROP TABLE IF EXISTS fitness.legacy_history_first");
+      await client.end();
+    }
+  });
+
+  it("reconciles archived migration history without executing it", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-archived-history-"));
+    const archivedMigration = {
+      content: "CREATE TABLE fitness.archived_history_must_not_run (id integer PRIMARY KEY);",
+      file: "0003_archived_history.sql",
+    };
+    const pendingMigration = {
+      content: "CREATE TABLE fitness.archived_history_pending (id integer PRIMARY KEY);",
+      file: "0004_archived_history_pending.sql",
+      when: 2_300_000_000_004,
+    };
+    writeTestMigrationFiles(tmpDir, [pendingMigration]);
+    mkdirSync(join(tmpDir, "_history"));
+    writeFileSync(join(tmpDir, "_history", archivedMigration.file), archivedMigration.content);
+
+    await client.connect();
+    try {
+      await client.query("CREATE SCHEMA drizzle");
+      await client.query(`CREATE TABLE drizzle.__drizzle_migrations (
+        id serial PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint,
+        content_hash text
+      )`);
+      await client.query(
+        `INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
+         VALUES ($1, $2)`,
+        [archivedMigration.file, 1],
+      );
+
+      await expect(runMigrations(ctx.connectionString, tmpDir)).resolves.toBe(1);
+
+      const expectedHash = createHash("sha256").update(archivedMigration.content).digest("hex");
+      const migrationRows = await client.query(
+        `SELECT hash, content_hash
+         FROM drizzle.__drizzle_migrations
+         WHERE created_at = 1`,
+      );
+      expect(migrationRows.rows).toEqual([{ content_hash: expectedHash, hash: expectedHash }]);
+
+      const relationRows = await client.query(`SELECT
+        to_regclass('fitness.archived_history_must_not_run') IS NOT NULL AS archived_ran,
+        to_regclass('fitness.archived_history_pending') IS NOT NULL AS pending_ran`);
+      expect(relationRows.rows).toEqual([{ archived_ran: false, pending_ran: true }]);
+    } finally {
+      await client.query(
+        `DELETE FROM drizzle.__drizzle_migrations
+         WHERE created_at IN ($1, $2)`,
+        [1, pendingMigration.when],
+      );
+      await client.query("DROP TABLE IF EXISTS fitness.archived_history_pending");
+      await client.end();
+    }
+  });
+
+  it("rejects modified archived migration history", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-modified-archive-"));
+    const archivedFile = "0003_modified_archive.sql";
+    const originalContent = "SELECT 1;";
+    const modifiedContent = "SELECT 2;";
+    writeTestMigrationFiles(tmpDir, [
+      {
+        content: "SELECT 1;",
+        file: "0004_pending.sql",
+        when: 2_300_000_000_005,
+      },
+    ]);
+    mkdirSync(join(tmpDir, "_history"));
+    writeFileSync(join(tmpDir, "_history", archivedFile), modifiedContent);
+
+    await client.connect();
+    try {
+      await client.query("CREATE SCHEMA drizzle");
+      await client.query(`CREATE TABLE drizzle.__drizzle_migrations (
+        id serial PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint,
+        content_hash text
+      )`);
+      await client.query(
+        `INSERT INTO drizzle.__drizzle_migrations (hash, created_at, content_hash)
+         VALUES ($1, $2, $3)`,
+        [archivedFile, 2, createHash("sha256").update(originalContent).digest("hex")],
+      );
+
+      await expect(runMigrations(ctx.connectionString, tmpDir)).rejects.toThrow(
+        `${archivedFile} has changed`,
+      );
+    } finally {
+      await client.query("DELETE FROM drizzle.__drizzle_migrations WHERE created_at = 2");
       await client.end();
     }
   });

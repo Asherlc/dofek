@@ -202,6 +202,7 @@ const mockStreamQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
 const mockPowerZonesQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
+const mockClimbingEntriesQuery = vi.fn();
 const mockRecomputeMutate = vi.fn();
 const mockRecomputeShouldFail = vi.fn(() => false);
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -238,6 +239,9 @@ vi.mock("../../lib/trpc", () => ({
         }),
       },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+    },
+    climbing: {
+      activityEntries: { useQuery: (...args: unknown[]) => mockClimbingEntriesQuery(...args) },
     },
     useUtils: () => ({
       activity: {
@@ -315,6 +319,7 @@ beforeEach(() => {
   mockHrZonesQuery.mockClear();
   mockPowerZonesQuery.mockClear();
   mockStrengthExercisesQuery.mockClear();
+  mockClimbingEntriesQuery.mockClear();
   mockRecomputeMutate.mockClear();
   mockRecomputeShouldFail.mockReset();
   mockRecomputeShouldFail.mockReturnValue(false);
@@ -333,6 +338,7 @@ beforeEach(() => {
   mockHrZonesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockPowerZonesQuery.mockReturnValue({ data: null, isLoading: false });
   mockStrengthExercisesQuery.mockReturnValue({ data: [], isLoading: false });
+  mockClimbingEntriesQuery.mockReturnValue({ data: [], isLoading: false });
 });
 
 describe("ActivityDetailScreen", () => {
@@ -540,6 +546,43 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Heart Rate")).toBeTruthy();
     const enabled = getQueryEnabledFlag(mockPowerZonesQuery.mock.calls[0]?.[1]);
     expect(enabled).toBe(false);
+  });
+
+  it("shows the climbs attached to a merged rock-climbing activity", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        activityType: "rock_climbing",
+        name: "Morning Rock Climb",
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockClimbingEntriesQuery.mockReturnValue({
+      data: [
+        {
+          id: "climb-v4",
+          climbType: "boulder",
+          gradeSystem: "v_scale",
+          grade: "V4",
+          sent: true,
+          routeName: "Blue Circuit",
+          locationName: "Touchstone Pacific Pipe",
+          sourceName: "Kaya",
+        },
+      ],
+      isLoading: false,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(getQueryEnabledFlag(mockClimbingEntriesQuery.mock.calls[0]?.[1])).toBe(true);
+    expect(screen.getByText("Climbs")).toBeTruthy();
+    expect(screen.getByText("V4")).toBeTruthy();
+    expect(screen.getByText("Blue Circuit")).toBeTruthy();
+    expect(screen.getByText("Sent")).toBeTruthy();
+    expect(screen.getByText("Touchstone Pacific Pipe")).toBeTruthy();
   });
 
   it("shows Apple Health upstream app names when subsource is present", async () => {
