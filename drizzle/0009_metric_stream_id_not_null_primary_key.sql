@@ -83,8 +83,6 @@ BEGIN
 
         GET DIAGNOSTICS updated_count = ROW_COUNT;
         RAISE NOTICE 'metric_stream id backfill table fallback chunk %/% updated % rows', current_chunk_index, chunk_count, updated_count;
-        COMMIT;
-
         EXIT WHEN updated_count = 0;
       END LOOP;
 
@@ -110,7 +108,6 @@ BEGIN
 
     IF current_chunk_regclass IS NOT NULL THEN
       PERFORM decompress_chunk(current_chunk_regclass, if_compressed => true);
-      COMMIT;
     END IF;
 
     LOOP
@@ -132,14 +129,11 @@ BEGIN
 
       GET DIAGNOSTICS updated_count = ROW_COUNT;
       RAISE NOTICE 'metric_stream id backfill chunk %/% updated % rows', current_chunk_index, chunk_count, updated_count;
-      COMMIT;
-
       EXIT WHEN updated_count = 0;
     END LOOP;
 
     IF current_chunk_regclass IS NOT NULL AND should_recompress THEN
       PERFORM compress_chunk(current_chunk_regclass, if_not_compressed => true);
-      COMMIT;
     END IF;
 
     current_chunk_index := current_chunk_index + 1;

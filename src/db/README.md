@@ -29,7 +29,13 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 
 ## Migrations
 
-- Postgres migrations live in `drizzle/` and are applied by `runMigrations()`.
+- Postgres migrations live in `drizzle/`, must be registered in
+  `drizzle/meta/_journal.json`, and are applied by Drizzle's node-postgres migrator inside the
+  repository's advisory-lock wrapper. See [Drizzle migrations](https://orm.drizzle.team/docs/migrations)
+  and [PostgreSQL advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS).
+- Postgres migration files must remain transaction-compatible. Do not use file-level
+  transaction control or `CREATE INDEX CONCURRENTLY`; PostgreSQL documents that concurrent
+  index creation cannot run inside a transaction block in [`CREATE INDEX`](https://www.postgresql.org/docs/current/sql-createindex.html).
 - ClickHouse migrations live in `clickhouse-migrations/` as one TypeScript module per migration, ordered by `clickhouse-migrations/registry.ts`.
 - Deploy migrations are for schema changes only. Historical backfills and full read-model rebuilds should run as explicit resumable scripts or jobs, not inside the deploy migration path.
 - Run `pnpm analytics:build`, `pnpm lint:migrations`, `pnpm lint:analytics-sql`, and `pnpm lint:analytics-policy` before pushing migration or ClickHouse analytics changes.
