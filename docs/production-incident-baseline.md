@@ -15075,3 +15075,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Deploy the migration, run
   `pnpm backfill:climbing-attempt-count --execute`, and confirm the production
   climbing chart no longer reports identical attempt and send totals.
+
+## 2026-07-22 — Live Expo Metadata Broke Unchanged Mobile CI
+
+- **Status:** Root cause fixed; deterministic Metro validation passes in PR CI.
+- **Symptoms:** The Metro Bundle job began rejecting 14 pinned mobile packages
+  even though the same dependency graph had passed earlier that morning.
+- **User impact:** Unrelated pull requests were blocked from merging.
+- **Evidence:** `pnpm expo install --check` passed at `15:46 UTC`, Expo published
+  `expo@57.0.8` at `16:31 UTC`, and the first failure occurred at `17:00 UTC`
+  with `Found outdated dependencies`. Expo documents that `EXPO_OFFLINE` skips
+  network requests ([Expo CLI environment variables](https://docs.expo.dev/more/expo-cli/#environment-variables)).
+- **Root cause:** The blocking compatibility check consulted Expo's mutable
+  online version metadata, so its acceptance criteria could change without a
+  repository commit even though pnpm installed the frozen lockfile.
+- **Fix / mitigation:** Mobile CI now sets `EXPO_OFFLINE=1` for dependency
+  compatibility validation, making Expo use the dependency map bundled in the
+  repository-pinned `expo` package. The compatible patch set was also updated
+  and committed to the lockfile.
+- **Validation:** Offline validation, YAML lint, the repository-pinned
+  Actionlint 1.7.12, and the hosted Metro Bundle job all pass.
+- **Remaining risk / follow-up:** Add a scheduled, non-blocking online Expo
+  compatibility check that opens or requests a dependency-update PR when the
+  upstream recommendations change.
