@@ -1,4 +1,5 @@
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
+import { captureException } from "./telemetry";
 
 const TWELVE_HOURS_SECONDS = 12 * 3600;
 const UPLOAD_BATCH_SIZE = 5000;
@@ -24,7 +25,8 @@ export interface WhoopBleDeps {
   findAndConnect(): Promise<boolean>;
   startStreaming(): Promise<boolean>;
   stopStreaming(): Promise<boolean>;
-  getBufferedSamples(): Promise<InertialMeasurementUnitSample[]>;
+  peekBufferedSamples(): Promise<InertialMeasurementUnitSample[]>;
+  confirmSamplesDrain(count: number): void;
 }
 
 /** tRPC client interface for IMU sample upload */
@@ -145,15 +147,23 @@ export function createInertialMeasurementUnitService(
         }
       }
 
-      // Retrieve and upload WHOOP BLE IMU samples
+      // Peek and upload WHOOP BLE IMU samples, then drain only after the server
+      // acknowledges every batch so failed uploads can be retried.
       if (whoopBle?.isAvailable()) {
+        let bufferedSampleCount = 0;
         try {
-          const whoopSamples = await whoopBle.getBufferedSamples();
+          const whoopSamples = await whoopBle.peekBufferedSamples();
+          bufferedSampleCount = whoopSamples.length;
           if (whoopSamples.length > 0) {
             await uploadBatched("WHOOP Strap", "whoop", whoopSamples);
+            whoopBle.confirmSamplesDrain(whoopSamples.length);
           }
           await whoopBle.stopStreaming();
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, {
+            source: "activity-save-whoop-imu-upload",
+            bufferedSampleCount,
+          });
           // Best-effort — don't fail activity save
         }
       }
