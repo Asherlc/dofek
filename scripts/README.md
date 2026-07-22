@@ -42,7 +42,7 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Handles standalone lines, inline comments, and specific test patterns like `MockFetchFn`.
 - `no-suppressions.sh`: Checks for lint or type suppressions (e.g., `eslint-disable`, `biome-ignore`).
 - `exact-versions.sh`: Ensures all dependencies in `package.json` use exact versions (no `^` or `~`).
-- `workflow-download-policy.ts`: Rejects GitHub workflow and action downloads from mutable or non-versioned Git refs; executable CI dependencies must use a full commit SHA or versioned release. This complements GitHub's guidance to pin third-party workflow code to immutable references: https://docs.github.com/en/actions/how-tos/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-third-party-actions
+- `workflow-download-policy.ts`: Rejects GitHub workflow and action source downloads unless they use a full commit SHA; versioned release artifacts must instead be protected by a reviewed checksum. This follows GitHub's guidance that only full commit SHAs are immutable unless immutable releases are enabled: https://docs.github.com/en/actions/how-tos/create-and-publish-actions/using-immutable-releases-and-tags-to-manage-your-actions-releases
 - `migration-policy.ts`: Checks changed deploy migration SQL for inline backfills, refreshes, and other long-running data work that must live in resumable jobs instead.
 - `generate-icons.mjs`: Script to generate app icons for web and mobile.
 - `check-clickhouse-cdc.ts`: Fails loudly when required PeerDB replication slots

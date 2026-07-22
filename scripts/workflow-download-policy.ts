@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
-const immutableGitRefPattern = /^(?:[0-9a-f]{40}|v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$/i;
-const githubUrlPattern = /https:\/\/(?:raw\.githubusercontent\.com|github\.com)\/[^\s"'`<>)]+/g;
+const immutableGitRefPattern = /^[0-9a-f]{40}$/i;
+const githubUrlPattern =
+  /https:\/\/(?:raw\.githubusercontent\.com|github\.com|codeload\.github\.com)\/[^\s"'`<>)]+/g;
 
 interface MutableGitRefDownload {
   filePath: string;
@@ -34,6 +35,25 @@ function gitReferenceFromUrl(url: string): string | undefined {
     (pathSegments[2] === "raw" || pathSegments[2] === "blob")
   ) {
     return pathSegments[3];
+  }
+
+  if (parsedUrl.hostname === "github.com" && pathSegments[2] === "archive") {
+    const referenceSegments =
+      pathSegments[3] === "refs" && (pathSegments[4] === "heads" || pathSegments[4] === "tags")
+        ? pathSegments.slice(5)
+        : pathSegments.slice(3);
+    return referenceSegments.join("/").replace(/\.(?:tar\.gz|zip)$/, "");
+  }
+
+  if (
+    parsedUrl.hostname === "codeload.github.com" &&
+    (pathSegments[2] === "tar.gz" || pathSegments[2] === "zip")
+  ) {
+    return (
+      pathSegments[3] === "refs" && (pathSegments[4] === "heads" || pathSegments[4] === "tags")
+        ? pathSegments.slice(5)
+        : pathSegments.slice(3)
+    ).join("/");
   }
 
   return undefined;

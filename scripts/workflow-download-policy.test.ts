@@ -22,8 +22,11 @@ describe("workflow executable-download policy", () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("mutable Git ref 'main'");
     expect(result.stdout).toContain("mutable Git ref 'master'");
+    expect(result.stdout).toContain("mutable Git ref 'v1.7.12'");
     expect(result.stdout).toContain("download-actionlint.bash");
     expect(result.stdout).toContain("actionlint_checksums.txt");
+    expect(result.stdout).toContain("archive/refs/heads/main.tar.gz");
+    expect(result.stdout).toContain("codeload.github.com/example/tool/tar.gz/main");
   });
 
   it("accepts release artifacts protected by reviewed or immutable checksums", () => {
