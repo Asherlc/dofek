@@ -1507,7 +1507,7 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
     expect(store.clear).not.toHaveBeenCalled();
   });
 
-  it("returns a hard failure for developer workout API errors", async () => {
+  it("returns a hard failure after exhausting developer workout API retries", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
     await mockStoredWhoopTokens();
@@ -1541,7 +1541,7 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       recordsSynced: 0,
       errors: [
         expect.objectContaining({
-          message: "WHOOP API error (500): developer error",
+          message: "WHOOP API service unavailable (500): developer error",
         }),
       ],
       duration: 0,
