@@ -158,6 +158,11 @@ describe("computeCorrelation", () => {
     expect(result).not.toHaveProperty("pearsonR");
     expect(result).not.toHaveProperty("pearsonPValue");
     expect(result).not.toHaveProperty("regression");
+    expect(result.insight).toBe(
+      `Insufficient data to analyze the relationship between Resting Heart Rate and Heart Rate Variability (only ${pairCount} overlapping data points; ${
+        pairCount === 4 ? "1 more sample is required" : "5 more samples are required"
+      }).`,
+    );
   });
 
   it("returns inferential statistics at the 5-pair boundary", () => {
