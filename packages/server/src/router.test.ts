@@ -144,6 +144,7 @@ describe("appRouter", () => {
       "lifeEvents",
       "supplements",
       "providerDetail",
+      "processing",
       "providerGuide",
       "sync",
       "training",

@@ -44,6 +44,7 @@ import { personalizationRouter } from "./routers/personalization.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
 import { predictionsRouter } from "./routers/predictions.ts";
+import { processingRouter } from "./routers/processing.ts";
 import { providerDetailRouter } from "./routers/provider-detail.ts";
 import { providerGuideRouter } from "./routers/provider-guide.ts";
 import { recoveryRouter } from "./routers/recovery.ts";
@@ -117,6 +118,7 @@ const appRouterProcedures = {
   cycling: cyclingRouter,
   hiking: hikingRouter,
   predictions: predictionsRouter,
+  processing: processingRouter,
   recovery: recoveryRouter,
   running: runningRouter,
   settings: settingsRouter,
