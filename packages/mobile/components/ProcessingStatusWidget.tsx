@@ -4,11 +4,9 @@ import {
   processingAggregateProgress,
   processingCurrentFailure,
   processingHeading,
-  processingStageLabel,
   processingStatusMessage,
 } from "@dofek/providers/processing-status";
-import { useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
 export interface ProcessingStatusSnapshot {
@@ -53,15 +51,6 @@ interface ProcessingStatusWidgetProps {
   alwaysVisible?: boolean;
 }
 
-function statusLabel(status: string): string {
-  if (status === "succeeded") return "Completed";
-  if (status === "running") return "In progress";
-  if (status === "queued") return "Waiting";
-  if (status === "failed") return "Failed";
-  if (status === "cancelled") return "Cancelled";
-  return "Skipped";
-}
-
 export function ProcessingStatusWidget({
   data,
   error = null,
@@ -69,7 +58,6 @@ export function ProcessingStatusWidget({
   contextLabel,
   alwaysVisible = false,
 }: ProcessingStatusWidgetProps) {
-  const [expanded, setExpanded] = useState(false);
   if (loading && !data) return null;
   if (error && !data) {
     return (
@@ -111,35 +99,6 @@ export function ProcessingStatusWidget({
           <View style={[styles.progressFill, { width: `${progress}%` }]} />
         </View>
       ) : null}
-      {data.operations.length > 0 ? (
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel={expanded ? "Hide processing details" : "Show processing details"}
-          accessibilityState={{ expanded }}
-          onPress={() => setExpanded((current) => !current)}
-        >
-          <Text style={styles.buttonText}>
-            {expanded ? "Hide processing details" : "Show processing details"}
-          </Text>
-        </TouchableOpacity>
-      ) : null}
-      {expanded ? (
-        <View style={styles.timeline}>
-          {data.operations.flatMap((operation) =>
-            operation.timeline.map((event) => (
-              <View
-                key={`${operation.id}-${event.stage}-${event.datasetKey ?? "all"}-${event.outputPath ?? "dataset"}-${event.occurredAt}`}
-                style={styles.timelineRow}
-              >
-                <Text style={styles.timelineStage}>{processingStageLabel(event.stage)}</Text>
-                <Text style={styles.message}>
-                  {statusLabel(event.status)} · {new Date(event.occurredAt).toLocaleString()}
-                </Text>
-              </View>
-            )),
-          )}
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -162,7 +121,6 @@ const styles = StyleSheet.create({
   },
   heading: { color: colors.text, fontSize: 14, fontWeight: "700" },
   message: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
-  buttonText: { color: colors.accent, fontSize: 12, fontWeight: "700", marginTop: spacing.xs },
   progressTrack: {
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.full,
@@ -171,14 +129,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   progressFill: { backgroundColor: colors.accent, height: 6 },
-  timeline: {
-    borderLeftColor: colors.surfaceSecondary,
-    borderLeftWidth: 1,
-    gap: spacing.sm,
-    paddingLeft: spacing.sm,
-  },
-  timelineRow: { gap: 2 },
-  timelineStage: { color: colors.text, fontSize: 12, fontWeight: "700" },
   failed: { borderLeftColor: colors.negative },
 });
 

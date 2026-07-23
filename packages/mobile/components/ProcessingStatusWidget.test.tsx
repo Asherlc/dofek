@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { type ProcessingStatusSnapshot, ProcessingStatusWidget } from "./ProcessingStatusWidget";
 
@@ -52,14 +52,13 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.getByText("Data is ready")).toBeTruthy();
   });
 
-  it("shows equivalent progress and timeline behavior", () => {
+  it("shows progress without exposing internal processing stages", () => {
     render(<ProcessingStatusWidget data={snapshot} />);
     expect(
       screen.getByTestId("processing-status-progress").getAttribute("accessibilityValue"),
     ).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
-    expect(screen.getByText("Receiving data")).toBeTruthy();
-    expect(screen.getByText(/Completed/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show processing details" })).toBeNull();
+    expect(screen.queryByText("Receiving data")).toBeNull();
   });
 
   it("surfaces the server error message", () => {

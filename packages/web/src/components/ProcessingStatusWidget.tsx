@@ -4,10 +4,8 @@ import {
   processingAggregateProgress,
   processingCurrentFailure,
   processingHeading,
-  processingStageLabel,
   processingStatusMessage,
 } from "@dofek/providers/processing-status";
-import { useState } from "react";
 
 export interface ProcessingStatusSnapshot {
   generatedAt: string;
@@ -63,15 +61,6 @@ const borderClassByStatus: Record<ProcessingDisplayStatus, string> = {
   cancelled: "border-l-slate-400",
 };
 
-function statusLabel(status: string): string {
-  if (status === "succeeded") return "Completed";
-  if (status === "running") return "In progress";
-  if (status === "queued") return "Waiting";
-  if (status === "failed") return "Failed";
-  if (status === "cancelled") return "Cancelled";
-  return "Skipped";
-}
-
 export function ProcessingStatusWidget({
   data,
   error = null,
@@ -79,7 +68,6 @@ export function ProcessingStatusWidget({
   contextLabel,
   alwaysVisible = false,
 }: ProcessingStatusWidgetProps) {
-  const [expanded, setExpanded] = useState(false);
   if (loading && !data) {
     return (
       <section
@@ -135,30 +123,6 @@ export function ProcessingStatusWidget({
         >
           <div className="h-full bg-blue-500" style={{ width: `${progress}%` }} />
         </div>
-      ) : null}
-      {data.operations.length > 0 ? (
-        <button
-          type="button"
-          className="mt-2 text-xs font-semibold text-blue-700"
-          onClick={() => setExpanded((current) => !current)}
-          aria-expanded={expanded}
-        >
-          {expanded ? "Hide processing details" : "Show processing details"}
-        </button>
-      ) : null}
-      {expanded ? (
-        <ol className="mt-2 space-y-2 border-l border-slate-200 pl-3">
-          {data.operations.flatMap((operation) =>
-            operation.timeline.map((event) => (
-              <li key={`${operation.id}-${event.sequence}`}>
-                <p className="text-xs font-semibold">{processingStageLabel(event.stage)}</p>
-                <p className="text-xs text-slate-600">
-                  {statusLabel(event.status)} · {new Date(event.occurredAt).toLocaleString()}
-                </p>
-              </li>
-            )),
-          )}
-        </ol>
       ) : null}
     </section>
   );
