@@ -42,6 +42,7 @@ export interface ProcessingStatusOperation {
   status: DerivedProcessingStatus;
   datasets: ProcessingDatasetKey[];
   timeline: Array<{
+    sequence: number;
     stage: ProcessingStage;
     status: ProcessingEventStatus;
     datasetKey: ProcessingDatasetKey | null;
@@ -180,6 +181,7 @@ export class ProcessingRepository {
               (event.datasetKey === null || requestedDatasetSet.has(event.datasetKey)),
           )
           .map((event) => ({
+            sequence: event.sequence,
             stage: event.stage,
             status: event.status,
             datasetKey: event.datasetKey,

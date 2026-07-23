@@ -28,6 +28,7 @@ export interface ProcessingStatusSnapshot {
     status: ProcessingDisplayStatus;
     datasets: string[];
     timeline: Array<{
+      sequence: number;
       stage: ProcessingDisplayStage;
       status: string;
       datasetKey: string | null;
@@ -142,9 +143,7 @@ export function ProcessingStatusWidget({
         <ol className="mt-2 space-y-2 border-l border-slate-200 pl-3">
           {data.operations.flatMap((operation) =>
             operation.timeline.map((event) => (
-              <li
-                key={`${operation.id}-${event.stage}-${event.datasetKey ?? "all"}-${event.outputPath ?? "dataset"}-${event.occurredAt}`}
-              >
+              <li key={`${operation.id}-${event.sequence}`}>
                 <p className="text-xs font-semibold">{processingStageLabel(event.stage)}</p>
                 <p className="text-xs text-slate-600">
                   {statusLabel(event.status)} · {new Date(event.occurredAt).toLocaleString()}

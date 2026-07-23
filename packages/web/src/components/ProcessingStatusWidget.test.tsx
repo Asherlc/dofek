@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type ProcessingStatusSnapshot,
   ProcessingStatusWidget,
@@ -31,6 +31,7 @@ const snapshot: ProcessingStatusSnapshot = {
       datasets: ["activity"],
       timeline: [
         {
+          sequence: 1,
           stage: "ingest",
           status: "succeeded",
           datasetKey: "activity",
@@ -47,6 +48,10 @@ const snapshot: ProcessingStatusSnapshot = {
 };
 
 describe("ProcessingStatusWidget", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("stays quiet when ready unless always visible", () => {
     const ready = { ...snapshot, overallStatus: "ready" as const };
     expect(render(<ProcessingStatusWidget data={ready} />).container.innerHTML).toBe("");
@@ -102,5 +107,31 @@ describe("ProcessingStatusWidget", () => {
 
     expect(screen.getByText("Reconnect Kaya and try again.")).toBeTruthy();
     expect(screen.queryByText("The earlier attempt failed.")).toBeNull();
+  });
+
+  it("renders same-millisecond timeline events with unique keys", () => {
+    const operation = snapshot.operations.at(0);
+    const timelineEvent = operation?.timeline.at(0);
+    if (!operation || !timelineEvent) {
+      throw new Error("Expected the processing snapshot fixture to include a timeline event");
+    }
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          operations: [
+            {
+              ...operation,
+              timeline: [timelineEvent, { ...timelineEvent, sequence: timelineEvent.sequence + 1 }],
+            },
+          ],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
+
+    expect(consoleError.mock.calls.flat().join(" ")).not.toContain("same key");
   });
 });

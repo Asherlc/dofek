@@ -29,6 +29,7 @@ const activeSnapshot: ProcessingStatusSnapshot = {
       datasets: ["activity"],
       timeline: [
         {
+          sequence: 1,
           stage: "ingest",
           status: "succeeded",
           datasetKey: "activity",

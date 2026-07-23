@@ -37,6 +37,7 @@ const statusInputSchema = z.object({
   datasets: z.array(datasetKeySchema).min(1).optional(),
 });
 const timelineEventSchema = z.object({
+  sequence: z.number().int().positive(),
   stage: stageSchema,
   status: eventStatusSchema,
   datasetKey: datasetKeySchema.nullable(),

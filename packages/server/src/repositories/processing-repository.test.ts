@@ -445,6 +445,7 @@ describe("ProcessingRepository", () => {
 
     expect(result.operations[0]?.timeline).toEqual([
       {
+        sequence: 1,
         stage: "ingest",
         status: "succeeded",
         datasetKey: "activity",
@@ -456,6 +457,7 @@ describe("ProcessingRepository", () => {
         errorMessage: null,
       },
       {
+        sequence: 2,
         stage: "canonical_commit",
         status: "succeeded",
         datasetKey: "activity",
@@ -467,6 +469,7 @@ describe("ProcessingRepository", () => {
         errorMessage: null,
       },
       {
+        sequence: 3,
         stage: "canonical_commit",
         status: "succeeded",
         datasetKey: "activity",
