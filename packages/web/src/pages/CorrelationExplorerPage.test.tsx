@@ -98,6 +98,20 @@ describe("CorrelationExplorerPage", () => {
     expect(screen.queryByText(/^p =/)).toBeNull();
   });
 
+  it("uses singular sample wording when one additional sample is required", async () => {
+    state.correlationData = {
+      ...state.correlationData,
+      sampleCount: 4,
+      additionalSamplesRequired: 1,
+    };
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.getByText("1 more overlapping sample needed")).toBeTruthy();
+    expect(screen.queryByText("1 more overlapping samples needed")).toBeNull();
+  });
+
   it("preserves inferential statistics when data is available", async () => {
     state.correlationData = {
       availability: "available",

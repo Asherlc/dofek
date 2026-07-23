@@ -236,7 +236,10 @@ export function CorrelationExplorerPage() {
                 ) : (
                   <div className="flex flex-wrap gap-4 text-[11px] text-dim pt-1">
                     <span>n = {data.sampleCount}</span>
-                    <span>{data.additionalSamplesRequired} more overlapping samples needed</span>
+                    <span>
+                      {data.additionalSamplesRequired} more overlapping{" "}
+                      {data.additionalSamplesRequired === 1 ? "sample" : "samples"} needed
+                    </span>
                   </div>
                 )}
               </div>

@@ -1,26 +1,11 @@
 /** @vitest-environment jsdom */
 
 import { render, screen } from "@testing-library/react";
-import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted<{ correlationData: Record<string, unknown> }>(() => ({
   correlationData: {},
 }));
-
-function stripNativeProps(props: Record<string, unknown>) {
-  const {
-    activeOpacity: _activeOpacity,
-    contentContainerStyle: _contentContainerStyle,
-    horizontal: _horizontal,
-    onPress: _onPress,
-    refreshControl: _refreshControl,
-    showsHorizontalScrollIndicator: _showsHorizontalScrollIndicator,
-    style: _style,
-    ...domProps
-  } = props;
-  return domProps;
-}
 
 vi.mock("@dofek/format/format", () => ({
   formatNumber: (value: number, precision = 1) => value.toFixed(precision),
@@ -34,34 +19,6 @@ vi.mock("@dofek/scoring/colors", () => ({
     positive: "positive",
     warning: "warning",
   },
-}));
-
-vi.mock("react-native", () => ({
-  RefreshControl: () => null,
-  ScrollView: ({ children, ...props }: Record<string, unknown>) =>
-    React.createElement("div", stripNativeProps(props), ...(children == null ? [] : [children])),
-  StyleSheet: {
-    create: <T extends Record<string, unknown>>(styles: T) => styles,
-  },
-  Text: ({ children, ...props }: Record<string, unknown>) =>
-    React.createElement("span", stripNativeProps(props), ...(children == null ? [] : [children])),
-  TouchableOpacity: ({ children, onPress, ...props }: Record<string, unknown>) =>
-    React.createElement(
-      "button",
-      { ...stripNativeProps(props), onClick: onPress, type: "button" },
-      ...(children == null ? [] : [children]),
-    ),
-  useWindowDimensions: () => ({ width: 390, height: 844 }),
-  View: ({ children, ...props }: Record<string, unknown>) =>
-    React.createElement("div", stripNativeProps(props), ...(children == null ? [] : [children])),
-}));
-
-vi.mock("react-native-svg", () => ({
-  __esModule: true,
-  default: ({ children, ...props }: Record<string, unknown>) =>
-    React.createElement("svg", props, ...(children == null ? [] : [children])),
-  Circle: (props: Record<string, unknown>) => React.createElement("circle", props),
-  Line: (props: Record<string, unknown>) => React.createElement("line", props),
 }));
 
 vi.mock("../components/ChartTitleWithTooltip", () => ({
@@ -121,6 +78,20 @@ describe("CorrelationScreen", () => {
     expect(screen.queryByText("Pearson")).toBeNull();
     expect(screen.queryByText(/R²/)).toBeNull();
     expect(screen.queryByText(/^p =/)).toBeNull();
+  });
+
+  it("uses singular sample wording when one additional sample is required", async () => {
+    state.correlationData = {
+      ...state.correlationData,
+      sampleCount: 4,
+      additionalSamplesRequired: 1,
+    };
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("1 more overlapping sample needed")).toBeTruthy();
+    expect(screen.queryByText("1 more overlapping samples needed")).toBeNull();
   });
 
   it("preserves inferential statistics when data is available", async () => {

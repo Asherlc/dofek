@@ -377,7 +377,8 @@ export default function CorrelationScreen() {
               <View style={styles.statsRow}>
                 <Text style={styles.statText}>n = {data.sampleCount}</Text>
                 <Text style={styles.statText}>
-                  {data.additionalSamplesRequired} more overlapping samples needed
+                  {data.additionalSamplesRequired} more overlapping{" "}
+                  {data.additionalSamplesRequired === 1 ? "sample" : "samples"} needed
                 </Text>
               </View>
             )}
