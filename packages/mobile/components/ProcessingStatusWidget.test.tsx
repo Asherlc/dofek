@@ -46,7 +46,7 @@ if (!activityDataset) throw new Error("Expected the processing snapshot fixture 
 
 describe("ProcessingStatusWidget", () => {
   it("stays quiet when ready unless always visible", () => {
-    const ready = { ...snapshot, overallStatus: "ready" as const };
+    const ready: ProcessingStatusSnapshot = { ...snapshot, overallStatus: "ready" };
     expect(render(<ProcessingStatusWidget data={ready} />).container.innerHTML).toBe("");
     render(<ProcessingStatusWidget data={ready} alwaysVisible />);
     expect(screen.getByText("Data is ready")).toBeTruthy();
