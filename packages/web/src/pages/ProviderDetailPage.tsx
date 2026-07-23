@@ -8,15 +8,16 @@ import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { FileImportProviderCard } from "../components/FileImportProviderCard.tsx";
 import { getFileImportConfig } from "../components/file-import-configs.ts";
 import { OperationProgressBar } from "../components/OperationProgressBar.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { toFilterOptions } from "../lib/provider-detail-filter-options.ts";
 import { captureException } from "../lib/telemetry.ts";
@@ -61,7 +62,7 @@ export function ProviderDetailPage() {
 
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
-  const dataHealth = trpc.sync.dataHealth.useQuery();
+  const processingStatus = useProcessingStatus({ providerId });
   const trpcUtils = trpc.useUtils();
 
   const provider = (providers.data ?? []).find((p) => p.id === providerId);
@@ -141,6 +142,7 @@ export function ProviderDetailPage() {
             }
           },
           onComplete: () => {
+            trpcUtils.processing.status.invalidate();
             trpcUtils.sync.providers.invalidate();
             trpcUtils.sync.providerStats.invalidate();
             trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId });
@@ -276,11 +278,11 @@ export function ProviderDetailPage() {
         </div>
       </div>
 
-      <DataReadinessBanner
-        data={dataHealth.data}
-        error={dataHealth.error}
-        loading={dataHealth.isLoading}
-        contextLabel="Account-wide data status"
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
+        contextLabel={`${formatProviderName(providerId)} data status`}
       />
 
       {importConfig && (

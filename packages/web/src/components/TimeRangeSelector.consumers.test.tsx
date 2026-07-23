@@ -174,12 +174,13 @@ vi.mock("../lib/trpc.ts", () => {
       stress: {
         scores: recordQuery("stress.scores"),
       },
-      sync: {
-        dataHealth: recordQuery("sync.dataHealth", {
-          overallStatus: "healthy",
+      processing: {
+        status: recordQuery("processing.status", {
+          overallStatus: "ready",
           generatedAt: "2026-07-08T00:00:00.000Z",
-          syncingProviders: [],
+          scope: { datasets: [] },
           datasets: [],
+          operations: [],
         }),
       },
     },

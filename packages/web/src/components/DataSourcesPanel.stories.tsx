@@ -14,7 +14,7 @@ import { useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { DataSourcesPanel } from "./DataSourcesPanel.tsx";
 
-type DataSourcesScenario = "default" | "blocked" | "providersLoading" | "empty";
+type DataSourcesScenario = "default" | "providersLoading" | "empty" | "processingBlocked";
 
 const providers = [
   {
@@ -41,30 +41,6 @@ const providers = [
   },
 ];
 
-const blockedDataHealth = {
-  overallStatus: "blocked",
-  generatedAt: "2026-06-30T08:00:00.000Z",
-  datasets: [
-    {
-      key: "activity",
-      label: "Activities",
-      rawRows: 120,
-      latestRawAt: "2026-06-30T07:00:00.000Z",
-      latestReadModelAt: null,
-      cdcLagSeconds: null,
-      readModelLagSeconds: null,
-      status: "blocked",
-      message: "Activities are synced, but activity summaries need attention.",
-    },
-  ],
-};
-
-const healthyDataHealth = {
-  overallStatus: "healthy",
-  generatedAt: "2026-06-30T08:00:00.000Z",
-  datasets: [],
-};
-
 function createMockLink(scenario: DataSourcesScenario): TRPCLink<AppRouter> {
   return () =>
     ({ op }) =>
@@ -86,9 +62,36 @@ function createMockObservable(
         path === "sync.activeSyncs"
       ) {
         observer.next?.({ result: { data: [] } });
-      } else if (path === "sync.dataHealth") {
+      } else if (path === "processing.status") {
         observer.next?.({
-          result: { data: scenario === "blocked" ? blockedDataHealth : healthyDataHealth },
+          result: {
+            data:
+              scenario === "processingBlocked"
+                ? {
+                    generatedAt: "2026-06-30T08:00:00.000Z",
+                    scope: { providerId: null, datasets: ["providers"] },
+                    overallStatus: "blocked",
+                    operations: [],
+                    datasets: [
+                      {
+                        key: "providers",
+                        label: "Provider data",
+                        status: "blocked",
+                        currentStage: "cdc",
+                        progressPercentage: null,
+                        lastAdvancedAt: "2026-06-29T08:00:00.000Z",
+                        lastReadyAt: null,
+                      },
+                    ],
+                  }
+                : {
+                    generatedAt: "2026-06-30T08:00:00.000Z",
+                    scope: { providerId: null, datasets: ["providers"] },
+                    overallStatus: "ready",
+                    operations: [],
+                    datasets: [],
+                  },
+          },
         });
       }
       observer.complete?.();
@@ -155,14 +158,14 @@ export const Default: Story = {
   render: () => <DataSourcesPanelStoryFrame scenario="default" />,
 };
 
-export const BlockedReadiness: Story = {
-  render: () => <DataSourcesPanelStoryFrame scenario="blocked" />,
-};
-
 export const Loading: Story = {
   render: () => <DataSourcesPanelStoryFrame scenario="providersLoading" />,
 };
 
 export const Empty: Story = {
   render: () => <DataSourcesPanelStoryFrame scenario="empty" />,
+};
+
+export const ProcessingBlocked: Story = {
+  render: () => <DataSourcesPanelStoryFrame scenario="processingBlocked" />,
 };

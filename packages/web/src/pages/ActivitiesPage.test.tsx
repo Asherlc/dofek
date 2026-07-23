@@ -41,7 +41,7 @@ let mockDataHealthQuery: {
   isLoading: boolean;
   error: Error | null;
 };
-let dataHealthInput: unknown;
+let processingStatusInput: unknown;
 
 interface BulkDeleteVariables {
   ids: string[];
@@ -110,10 +110,10 @@ vi.mock("../lib/trpc.ts", () => ({
         }),
       },
     },
-    sync: {
-      dataHealth: {
+    processing: {
+      status: {
         useQuery: (input: unknown) => {
-          dataHealthInput = input;
+          processingStatusInput = input;
           return mockDataHealthQuery;
         },
       },
@@ -203,7 +203,7 @@ describe("ActivitiesPage", () => {
     invalidateActivityList = vi.fn();
     mockBulkDeleteShouldFail = false;
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
-    dataHealthInput = undefined;
+    processingStatusInput = undefined;
   });
 
   it("shows activity readiness when activity summaries are blocked", () => {
@@ -211,6 +211,8 @@ describe("ActivitiesPage", () => {
       data: {
         overallStatus: "blocked",
         generatedAt: "2026-06-30T08:00:00.000Z",
+        scope: { providerId: null, datasets: ["activity"] },
+        operations: [],
         datasets: [
           {
             key: "activity",
@@ -221,6 +223,7 @@ describe("ActivitiesPage", () => {
             cdcLagSeconds: null,
             readModelLagSeconds: null,
             status: "blocked",
+            progressPercentage: null,
             message: "Activities data is available, but ClickHouse mirrors are not current.",
           },
         ],
@@ -231,11 +234,9 @@ describe("ActivitiesPage", () => {
 
     render(<ActivitiesPage />);
 
-    expect(dataHealthInput).toEqual({ datasets: ["activity"] });
-    expect(screen.getByText("Some data is temporarily unavailable")).toBeDefined();
-    expect(
-      screen.getByText("Activities data is still being prepared. Please check back soon."),
-    ).toBeDefined();
+    expect(processingStatusInput).toEqual({ datasets: ["activity"] });
+    expect(screen.getByText("Processing needs attention")).toBeDefined();
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
   it("uses QueryStatePanel for loading state", () => {

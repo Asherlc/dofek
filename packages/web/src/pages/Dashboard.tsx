@@ -10,11 +10,12 @@ import { z } from "zod";
 import type { Insight } from "../components/CorrelationCard.tsx";
 import { DailyOverview } from "../components/DailyOverview.tsx";
 import { DashboardEvidenceOverview } from "../components/DashboardEvidenceOverview.tsx";
-import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { useAutoSync } from "../hooks/useAutoSync.ts";
+import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -198,7 +199,9 @@ export function Dashboard() {
     { days, endDate },
     { enabled: coreDashboardReady },
   );
-  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["dailyMetrics"] });
+  const processingStatus = useProcessingStatus({
+    datasets: ["activity", "sleep", "recovery", "training", "body"],
+  });
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
     : undefined;
@@ -242,10 +245,10 @@ export function Dashboard() {
 
   return (
     <PageLayout headerChildren={undefined}>
-      <DataReadinessBanner
-        data={dataHealth.data}
-        error={dataHealth.error}
-        loading={dataHealth.isLoading}
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
       />
       <DailyOverview
         endDate={endDate}

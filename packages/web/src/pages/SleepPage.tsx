@@ -6,17 +6,18 @@ import {
   CorrelationCardSkeleton,
   type Insight,
 } from "../components/CorrelationCard.tsx";
-import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { Hypnogram } from "../components/Hypnogram.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
+import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepDataSourcesTable } from "../components/SleepDataSourcesTable.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SleepPerformanceCard } from "../components/SleepPerformanceCard.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import {
   minimumSelectedRangeQueryInput,
@@ -56,7 +57,7 @@ export function SleepPage() {
     ...minimumSelectedRangeQueryInput(days, 90),
     endDate,
   });
-  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["sleep"] });
+  const processingStatus = useProcessingStatus({ datasets: ["sleep"] });
 
   const sleepInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -85,10 +86,10 @@ export function SleepPage() {
         title="Sleep"
         subtitle="Sleep stages, debt, and patterns over time"
       >
-        <DataReadinessBanner
-          data={dataHealth.data}
-          error={dataHealth.error}
-          loading={dataHealth.isLoading}
+        <ProcessingStatusWidget
+          data={processingStatus.data}
+          error={processingStatus.error}
+          loading={processingStatus.isLoading}
         />
         {/* Sleep Performance Score + Bedtime Recommendation */}
         {((sleepPerformance.isError && !sleepPerformance.data) ||
