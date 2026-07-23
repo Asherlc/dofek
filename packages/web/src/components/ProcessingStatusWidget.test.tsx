@@ -53,7 +53,7 @@ describe("ProcessingStatusWidget", () => {
   });
 
   it("stays quiet when ready unless always visible", () => {
-    const ready = { ...snapshot, overallStatus: "ready" as const };
+    const ready: ProcessingStatusSnapshot = { ...snapshot, overallStatus: "ready" };
     expect(render(<ProcessingStatusWidget data={ready} />).container.innerHTML).toBe("");
     render(<ProcessingStatusWidget data={ready} alwaysVisible />);
     expect(screen.getByText("Data is ready")).toBeTruthy();
@@ -70,6 +70,18 @@ describe("ProcessingStatusWidget", () => {
   it("surfaces the server error message", () => {
     render(<ProcessingStatusWidget error={new Error("Reconnect Kaya and try again.")} />);
     expect(screen.getByText("Reconnect Kaya and try again.")).toBeTruthy();
+    const region = screen.getByRole("region", { name: "Processing status" });
+    expect(region.tagName).toBe("SECTION");
+    expect(region.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("renders an accessible initial loading state", () => {
+    render(<ProcessingStatusWidget loading />);
+
+    const region = screen.getByRole("region", { name: "Processing status" });
+    expect(region.tagName).toBe("SECTION");
+    expect(region.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByText("Loading processing status")).toBeTruthy();
   });
 
   it("shows the most recent failure message", () => {

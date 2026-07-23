@@ -42,4 +42,26 @@ describe("processingRouter", () => {
 
     await expect(caller.history({ limit: 20 })).rejects.toThrow();
   });
+
+  it("normalizes processing history timestamps to ISO strings", async () => {
+    mockHistory.mockResolvedValue({
+      operations: [
+        {
+          id: "10000000-0000-4000-8000-000000000002",
+          userId,
+          providerId: "kaya-export",
+          kind: "file_import",
+          externalCorrelationKey: "import-1",
+          datasetKeys: ["activity"],
+          createdAt: new Date("2026-07-22T12:00:00.000Z"),
+        },
+      ],
+      nextCursor: null,
+    });
+    const caller = createCaller({ db: {}, userId, timezone: "UTC" });
+
+    const result = await caller.history({ limit: 20 });
+
+    expect(result.operations[0]?.createdAt).toBe("2026-07-22T12:00:00.000Z");
+  });
 });

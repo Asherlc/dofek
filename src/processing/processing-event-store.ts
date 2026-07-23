@@ -9,25 +9,15 @@ import {
   type ProcessingDatasetKey,
   type ProcessingOutputPath,
 } from "./dataset-contracts.ts";
-import { PROCESSING_STAGES } from "./processing-state.ts";
+import {
+  PROCESSING_EVENT_STATUSES,
+  PROCESSING_OPERATION_KINDS,
+  PROCESSING_STAGES,
+} from "./processing-state.ts";
 
-const operationKindSchema = z.enum([
-  "provider_sync",
-  "file_import",
-  "push_ingest",
-  "data_deletion",
-  "analytics_build",
-  "cache_refresh",
-]);
+const operationKindSchema = z.enum(PROCESSING_OPERATION_KINDS);
 const stageSchema = z.enum(PROCESSING_STAGES);
-const eventStatusSchema = z.enum([
-  "queued",
-  "running",
-  "succeeded",
-  "failed",
-  "cancelled",
-  "skipped",
-]);
+const eventStatusSchema = z.enum(PROCESSING_EVENT_STATUSES);
 const datasetKeySchema = z.enum(PROCESSING_DATASET_KEYS);
 const outputPathSchema = z.enum(PROCESSING_OUTPUT_PATHS);
 const metadataValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);

@@ -9,23 +9,40 @@ export const PROCESSING_STAGES = [
 ] as const;
 
 export type ProcessingStage = (typeof PROCESSING_STAGES)[number];
-export type ProcessingEventStatus =
-  | "queued"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "cancelled"
-  | "skipped";
+
+export const PROCESSING_EVENT_STATUSES = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "skipped",
+] as const;
+
+export type ProcessingEventStatus = (typeof PROCESSING_EVENT_STATUSES)[number];
+
+export const PROCESSING_OPERATION_KINDS = [
+  "provider_sync",
+  "file_import",
+  "push_ingest",
+  "data_deletion",
+  "analytics_build",
+  "cache_refresh",
+] as const;
 export type ProcessingOperationStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
-export type DerivedProcessingStatus =
-  | "ready"
-  | "waiting"
-  | "active"
-  | "partial"
-  | "delayed"
-  | "blocked"
-  | "failed"
-  | "cancelled";
+
+export const DERIVED_PROCESSING_STATUSES = [
+  "ready",
+  "waiting",
+  "active",
+  "partial",
+  "delayed",
+  "blocked",
+  "failed",
+  "cancelled",
+] as const;
+
+export type DerivedProcessingStatus = (typeof DERIVED_PROCESSING_STATUSES)[number];
 
 export interface ProcessingStageEvent {
   sequence: number;
