@@ -483,6 +483,53 @@ describe("ProcessingRepository", () => {
     );
   });
 
+  it("limits operation details and status to the requested datasets", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        datasetKeys: ["activity", "sleep"],
+        outputManifest: { activity: ["relational"], sleep: ["relational"] },
+        events: [
+          event(1, { datasetKey: null }),
+          event(2, { datasetKey: "activity", stage: "cdc" }),
+          event(3, { datasetKey: "sleep", stage: "cdc", status: "failed" }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "cache_refresh",
+          status: "ready",
+          progressPercentage: 100,
+          lastAdvancedAt: now,
+        },
+        {
+          datasetKey: "sleep",
+          currentStage: "cdc",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["activity"] });
+
+    expect(result.operations[0]).toEqual(
+      expect.objectContaining({
+        status: "ready",
+        datasets: ["activity"],
+        timeline: [
+          expect.objectContaining({ datasetKey: null }),
+          expect.objectContaining({ datasetKey: "activity" }),
+        ],
+      }),
+    );
+  });
+
   it("delegates history with the authenticated user and pagination", async () => {
     const page = { operations: [], nextCursor: null };
     mockListProcessingHistory.mockResolvedValue(page);

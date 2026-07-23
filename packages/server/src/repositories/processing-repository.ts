@@ -120,6 +120,7 @@ export class ProcessingRepository {
   }): Promise<ProcessingStatusSnapshot> {
     const now = new Date();
     const requestedDatasets = [...(input.datasets ?? PROCESSING_DATASET_KEYS)];
+    const requestedDatasetSet: ReadonlySet<string> = new Set(requestedDatasets);
     const operations = await listScopedProcessingOperations(this.#database, {
       userId: this.#userId,
       providerId: input.providerId,
@@ -166,10 +167,18 @@ export class ProcessingRepository {
         providerId: operation.providerId,
         kind: operation.kind,
         createdAt: operation.createdAt.toISOString(),
-        status: state.overallStatus,
-        datasets: operation.datasetKeys,
+        status: aggregateStatus(
+          state.datasets
+            .filter((dataset) => requestedDatasetSet.has(dataset.datasetKey))
+            .map((dataset) => dataset.status),
+        ),
+        datasets: operation.datasetKeys.filter((datasetKey) => requestedDatasetSet.has(datasetKey)),
         timeline: operation.events
-          .filter((event) => event.modelName === null)
+          .filter(
+            (event) =>
+              event.modelName === null &&
+              (event.datasetKey === null || requestedDatasetSet.has(event.datasetKey)),
+          )
           .map((event) => ({
             stage: event.stage,
             status: event.status,
