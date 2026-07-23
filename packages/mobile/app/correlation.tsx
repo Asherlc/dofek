@@ -357,16 +357,31 @@ export default function CorrelationScreen() {
               </View>
             </View>
 
-            <CorrelationBar rho={data.spearmanRho} label="Spearman" />
-            <CorrelationBar rho={data.pearsonR} label="Pearson" />
+            {data.availability === "available" ? (
+              <>
+                <CorrelationBar rho={data.spearmanRho} label="Spearman" />
+                <CorrelationBar rho={data.pearsonR} label="Pearson" />
 
-            <View style={styles.statsRow}>
-              <Text style={styles.statText}>R² = {formatNumber(data.regression.rSquared, 3)}</Text>
-              <Text style={styles.statText}>n = {data.sampleCount}</Text>
-              <Text style={styles.statText}>
-                p = {data.spearmanPValue < 0.001 ? "< 0.001" : formatNumber(data.spearmanPValue, 3)}
-              </Text>
-            </View>
+                <View style={styles.statsRow}>
+                  <Text style={styles.statText}>
+                    R² = {formatNumber(data.regression.rSquared, 3)}
+                  </Text>
+                  <Text style={styles.statText}>n = {data.sampleCount}</Text>
+                  <Text style={styles.statText}>
+                    p ={" "}
+                    {data.spearmanPValue < 0.001 ? "< 0.001" : formatNumber(data.spearmanPValue, 3)}
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <View style={styles.statsRow}>
+                <Text style={styles.statText}>n = {data.sampleCount}</Text>
+                <Text style={styles.statText}>
+                  {data.additionalSamplesRequired} more overlapping{" "}
+                  {data.additionalSamplesRequired === 1 ? "sample" : "samples"} needed
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Insight card */}
@@ -374,7 +389,7 @@ export default function CorrelationScreen() {
             <Text style={styles.cardTitle}>Finding</Text>
             <Text style={styles.insightText}>{data.insight}</Text>
 
-            {data.sampleCount > 0 && (
+            {data.availability === "available" && (
               <View style={styles.statsGrid}>
                 <View style={styles.statsGridItem}>
                   <Text style={styles.statsGridLabel}>{xMetric?.label ?? metricX}</Text>
@@ -395,7 +410,7 @@ export default function CorrelationScreen() {
           </View>
 
           {/* Scatter plot */}
-          {data.dataPoints.length > 0 && (
+          {data.availability === "available" && data.dataPoints.length > 0 && (
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Scatter Plot"

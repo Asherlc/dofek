@@ -436,6 +436,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 
 // Must import router AFTER vi.mock declarations
 const { correlationRouter } = await import("./correlation.ts");
+const { CorrelationRepository } = await import("../repositories/correlation-repository.ts");
 const { createTestCallerFactory } = await import("./test-helpers.ts");
 
 const createCaller = createTestCallerFactory(correlationRouter);
@@ -465,6 +466,42 @@ describe("correlationRouter", () => {
   });
 
   describe("compute", () => {
+    it("validates and strips unknown repository output fields", async () => {
+      const repositoryResult = {
+        availability: "insufficient",
+        dataPoints: [],
+        sampleCount: 0,
+        additionalSamplesRequired: 5,
+        insight: "Insufficient data",
+        confidenceLevel: "insufficient",
+        correlationColor: "#71717a",
+        unexpected: "not part of the API contract",
+      } as const;
+      const compute = vi
+        .spyOn(CorrelationRepository.prototype, "compute")
+        .mockResolvedValue(repositoryResult);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
+      });
+
+      const result = await caller.compute({
+        metricX: "resting_hr",
+        metricY: "hrv",
+        days: 90,
+        lag: 0,
+      });
+
+      expect(result).toMatchObject({
+        availability: "insufficient",
+        additionalSamplesRequired: 5,
+      });
+      expect(result).not.toHaveProperty("unexpected");
+      compute.mockRestore();
+    });
+
     it("returns correlation result with insufficient data", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -479,9 +516,13 @@ describe("correlationRouter", () => {
         lag: 0,
       });
 
-      expect(result).toHaveProperty("sampleCount");
-      expect(result).toHaveProperty("pearsonR");
-      expect(result.confidenceLevel).toBe("insufficient");
+      expect(result).toMatchObject({
+        availability: "insufficient",
+        sampleCount: 0,
+        additionalSamplesRequired: 5,
+        confidenceLevel: "insufficient",
+      });
+      expect(result).not.toHaveProperty("pearsonR");
     });
 
     it("uses default days (365) and lag (0) when not specified", async () => {
