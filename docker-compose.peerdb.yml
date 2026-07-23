@@ -63,22 +63,25 @@ services:
       - |
         temporal_address=peerdb-temporal:7233
         search_attributes="$$(temporal operator search-attribute list \
-          --address "$$temporal_address" --namespace default)"
-        case "$$search_attributes" in
-          *MirrorName*) exit 0 ;;
-        esac
+          --address "$$temporal_address" --namespace default --output json)"
+        if printf '%s\n' "$$search_attributes" | \
+          grep -Eq '"MirrorName"[[:space:]]*:[[:space:]]*"INDEXED_VALUE_TYPE_TEXT"'; then
+          exit 0
+        fi
+        if printf '%s\n' "$$search_attributes" | grep -Eq '"MirrorName"[[:space:]]*:'; then
+          echo "Temporal search attribute MirrorName must have type Text" >&2
+          exit 1
+        fi
         temporal operator search-attribute create \
           --address "$$temporal_address" --namespace default \
-          --name MirrorName --type Keyword
+          --name MirrorName --type Text
         search_attributes="$$(temporal operator search-attribute list \
-          --address "$$temporal_address" --namespace default)"
-        case "$$search_attributes" in
-          *MirrorName*) ;;
-          *)
-            echo "Temporal search attribute MirrorName was not registered" >&2
-            exit 1
-            ;;
-        esac
+          --address "$$temporal_address" --namespace default --output json)"
+        if ! printf '%s\n' "$$search_attributes" | \
+          grep -Eq '"MirrorName"[[:space:]]*:[[:space:]]*"INDEXED_VALUE_TYPE_TEXT"'; then
+          echo "Temporal search attribute MirrorName was not registered as Text" >&2
+          exit 1
+        fi
 
   peerdb-minio:
     image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e

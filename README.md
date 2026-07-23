@@ -188,6 +188,10 @@ pnpm storybook:web
 pnpm storybook:mobile
 ```
 
+The PeerDB flow API uses Compose's `service_completed_successfully` dependency
+on `peerdb-temporal-init`, so a failed `MirrorName` verification blocks startup;
+see the [local PeerDB Compose definition](docker-compose.peerdb.yml#L51-L84).
+
 ### Exercise Metadata
 
 Strength exercise muscle metadata uses a minified copy of Free Exercise DB in `src/free-exercise-db.json`, plus local aliases/corrections from `src/exercise-metadata-overrides.json`.

@@ -15647,9 +15647,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   remains gated on successful completion of the initializer.
 - **Validation:** Before the fix, the live regression reproduced
   `tctl: not found` and failed because `MirrorName` was absent. After the fix,
-  the same regression created and found `MirrorName`; a second run passed
-  without recreating it. Docker Compose configuration validation passed, and
-  `peerdb-temporal-init` exited 0 before `peerdb-flow-api` became healthy.
+  the same regression created and found `MirrorName` with its canonical `Text`
+  type; a second run passed without recreating it. Docker Compose configuration
+  validation passed, and `peerdb-temporal-init` exited 0 before
+  `peerdb-flow-api` became healthy.
 - **Remaining risk / follow-up:** The local process was tagged as production
   because it ran with production environment configuration. Keep host and
   deployment context visible in Sentry triage so local operational failures are
