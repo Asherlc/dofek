@@ -931,23 +931,23 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
-  it("retries service-unavailable developer workout requests before succeeding", async () => {
+  it("retries HTTP 500 developer workout requests before succeeding", async () => {
     const fetchFn = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(
         createMockResponse({
-          status: 503,
+          status: 500,
           ok: false,
-          text: "Encountered ServiceUnavailableException",
-          body: "Encountered ServiceUnavailableException",
+          text: "Request failed.",
+          body: "Request failed.",
         }),
       )
       .mockResolvedValueOnce(
         createMockResponse({
-          status: 503,
+          status: 500,
           ok: false,
-          text: "Encountered ServiceUnavailableException",
-          body: "Encountered ServiceUnavailableException",
+          text: "Request failed.",
+          body: "Request failed.",
         }),
       )
       .mockResolvedValueOnce(

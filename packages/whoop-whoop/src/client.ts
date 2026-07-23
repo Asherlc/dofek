@@ -419,7 +419,12 @@ export class WhoopClient {
     return userId;
   }
 
-  async #get<T>(url: string, params?: Record<string, string>, attempt = 0): Promise<T> {
+  async #get<T>(
+    url: string,
+    params?: Record<string, string>,
+    attempt = 0,
+    treatInternalServerErrorAsUnavailable = false,
+  ): Promise<T> {
     const requestUrl = new URL(url);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -461,7 +466,10 @@ export class WhoopClient {
     }
 
     const text = await response.text();
-    if (isServiceUnavailableStatus(response.status)) {
+    if (
+      isServiceUnavailableStatus(response.status) ||
+      (treatInternalServerErrorAsUnavailable && response.status === 500)
+    ) {
       throw createWhoopServiceUnavailableError(response, text);
     }
     throw new Error(`WHOOP API error (${response.status}): ${text}`);
@@ -475,7 +483,7 @@ export class WhoopClient {
     let attempt = 0;
     while (true) {
       try {
-        return await this.#get<T>(url, params, attempt);
+        return await this.#get<T>(url, params, attempt, true);
       } catch (err) {
         if (err instanceof ProviderServiceUnavailableError && attempt < maxRetries) {
           attempt++;

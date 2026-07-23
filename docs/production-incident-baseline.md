@@ -15553,3 +15553,42 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Keep both production scripts in Knip's
   explicit entrypoint list, and run both SQLFluff and Squawk locally for every
   newly generated migration before pushing.
+
+## 2026-07-23 — WHOOP Workout Collection HTTP 500 Was Not Retried
+
+- **Status:** Fixed and validated locally; deployment is pending.
+- **Symptoms:** A production WHOOP sync stopped while fetching the first page
+  of `/developer/v2/activity/workout` and raised
+  [Sentry issue DOFEK-SERVER-4Z](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4Z).
+- **User impact:** One provider sync failed before workout reconciliation
+  completed. Sentry reported one occurrence and no directly identified user.
+- **Evidence:** At `2026-07-23T18:30:04.714Z`, WHOOP returned an HTML HTTP 500
+  response on request attempt 0. The following worker error was recorded at
+  `18:30:04.828Z`. Across the preceding seven days, the endpoint produced 494
+  HTTP 200 responses and this single HTTP 500 response, with no subsequent
+  retry attempt in the observed window
+  ([Axiom query](https://app.axiom.co/asherlc-9e63/query?initForm=%7B%0A%20%20%22apl%22%3A%20%22%5B%27dofek-logs%27%5D%20%7C%20where%20%5B%27attributes.endpoint%27%5D%20%3D%3D%20%27%2Fdeveloper%2Fv2%2Factivity%2Fworkout%27%20%7C%20summarize%20count_%3Dcount%28%29%2C%20first_seen%3Dmin%28_time%29%2C%20last_seen%3Dmax%28_time%29%20by%20%5B%27attributes.status%27%5D%20%7C%20order%20by%20%5B%27attributes.status%27%5D%20asc%22%2C%0A%20%20%22queryOptions%22%3A%20%7B%0A%20%20%20%20%22quickRange%22%3A%20%227d%22%0A%20%20%7D%0A%7D)).
+  WHOOP documents HTTP 500 as a server error for the workout collection
+  endpoint in its
+  [Developer API reference](https://developer.whoop.com/api/#tag/Workout/operation/getWorkoutCollection),
+  while its public status page reported no incident that day
+  ([WHOOP Status](https://status.whoop.com/)).
+- **Root cause:** `isServiceUnavailableStatus()` classifies only HTTP 502, 503,
+  and 504 as transient provider failures. The HTTP 500 therefore became a
+  generic `Error`, bypassed `WhoopClient.#getWithRateLimitRetry()`, and was
+  handled as a terminal provider-sync failure instead of reaching the existing
+  retry path. This is a scope gap in the service-unavailable handling introduced
+  by [pull request 1324](https://github.com/Asherlc/dofek/pull/1324), whose
+  stated policy covered only 502, 503, and 504.
+- **Fix / mitigation:** Classified HTTP 500 as service-unavailable only for
+  WHOOP developer workout requests that use the existing bounded retry path.
+  Other WHOOP endpoints and the shared provider HTTP policy retain their
+  existing behavior, and the attempt count is unchanged.
+- **Validation:** Before the fix, the focused WHOOP client suite failed the new
+  HTTP 500 retry expectation while its other 82 tests passed: the client threw
+  after attempt 0. After the fix, all 83 WHOOP client tests pass. The complete
+  Docker-free unit/mobile tier, full lint, root/server/web TypeScript checks,
+  and the `whoop-whoop` package build also pass.
+- **Remaining risk / follow-up:** Deploy the fix, then verify that any future
+  WHOOP workout HTTP 500 event records attempts 0 through 3 before surfacing
+  `ProviderServiceUnavailableError`, or that an earlier attempt succeeds.
