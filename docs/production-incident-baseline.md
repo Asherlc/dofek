@@ -15618,3 +15618,46 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Keep dbt tooling on Python 3.13 until the
   complete pinned dbt stack installs and starts successfully on Alpine with
   Python 3.14.
+
+## 2026-07-23 — Local PeerDB Authentication Failure Was Tagged as Production
+
+- **Status:** Fixed and validated locally; production was unaffected.
+- **Symptoms:** [Sentry issue DOFEK-SERVER-50](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-50)
+  reported `Password authentication failed for user "peerdb"` at
+  `2026-07-23T23:06:37.629Z` with the `production` environment tag.
+- **User impact:** None. The sole event came from
+  `Ashers-MacBook-Pro.local` in the `majuro` Conductor workspace, and Sentry
+  reported zero affected users.
+- **Evidence:** The local PeerDB proxy recorded the matching login attempt at
+  `23:06:37.611Z` from the Docker host gateway. An authentication probe using
+  the workspace `.env.local` `POSTGRES_PASSWORD` succeeded, while the same
+  probe using the credential exported by the former `scripts/with-env.sh`
+  failed with the exact Sentry error. Axiom contained no matching authentication
+  failure in `dofek-logs` from `23:00Z` through `23:15Z`; the five production
+  error logs in that window were unrelated BullMQ stalled-job events.
+- **Root cause:** `pnpm compose:up` writes the local Compose credential to
+  `.env.local` and starts PeerDB with it, but `pnpm clickhouse-cdc` ran through
+  the former `scripts/with-env.sh`, which loaded `.env.local` and then
+  overwrote its values with the Infisical production export.
+  `buildRuntimeConfig()` uses that overwritten `POSTGRES_PASSWORD` to
+  authenticate to the local PeerDB proxy. The CDC script also initializes Sentry
+  without an explicit local environment, so the handled local failure was
+  reported under `production`.
+- **Fix / mitigation:** Replaced the shell wrapper with `scripts/with-env.ts`,
+  which parses Infisical's supported JSON export without shell evaluation and
+  applies `.env.local` after Infisical so workspace-local credentials have
+  highest precedence. Locally wrapped commands now set
+  `SENTRY_ENVIRONMENT=development` unless `.env.local` explicitly selects a
+  different environment. Updated every command and documentation reference to
+  the TypeScript wrapper.
+- **Validation:** The new regression test first failed with Infisical's
+  credential and `production` environment winning, then passed after the fix
+  with the workspace-local credential and `development` environment winning.
+  The complete focused wrapper suite passes all four tests. A real
+  `pnpm compose:up` generated this workspace's `.env.local`, after which the
+  actual wrapper verified that `POSTGRES_PASSWORD` matched the password in
+  `DATABASE_URL` and that Sentry selected `development`.
+- **Remaining risk / follow-up:** The exact second-workspace PeerDB probe could
+  not run concurrently because the existing `majuro` workspace already owns
+  fixed host port `9900`; the isolated executable regression test covers the
+  same credential-precedence mechanism without disturbing that workspace.

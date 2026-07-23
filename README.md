@@ -506,7 +506,7 @@ Non-secret config is loaded automatically from `.env`. Secrets are injected by t
 infisical run --env=prod -- pnpm dev
 
 # Or use the helper script (sources .env + Infisical)
-./scripts/with-env.sh pnpm dev
+pnpm tsx scripts/with-env.ts -- pnpm dev
 
 # Vite dev server (VITE_ vars come from packages/web/.env)
 infisical run --env=prod -- sh -c 'cd packages/web && pnpm dev'

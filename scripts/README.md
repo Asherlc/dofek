@@ -13,10 +13,15 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 
 ## Environment & Secrets
 
-- `with-env.sh`: Wrapper script that loads environment variables from `.env`, `.env.local`, and **Infisical**.
+- `with-env.ts`: Wrapper script that loads `.env` defaults, fetches **Infisical**
+  secrets as JSON, and then applies `.env.local` as the highest-precedence local
+  override. Infisical documents JSON as a supported export format in the
+  [CLI export command](https://github.com/Infisical/cli/blob/main/packages/cmd/export.go).
   - Automatically constructs OpenTelemetry auth headers from `AXIOM_API_TOKEN`.
+  - Tags locally wrapped Sentry events with the `development` environment unless
+    `.env.local` explicitly selects another environment.
   - Exits before running the command when Infisical export fails or no command is provided.
-  - Usage: `./scripts/with-env.sh <command>`
+  - Usage: `pnpm tsx scripts/with-env.ts -- <command>`
 - `make-admin.sh`: Promotes a user to admin in the production database via SSH.
   - Resolves server IP via Infisical, finds the `dofek-db` container, and executes `UPDATE fitness.user_profile SET is_admin = true ...`.
   - Usage: `./scripts/make-admin.sh user@example.com`

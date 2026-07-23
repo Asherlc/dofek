@@ -54,7 +54,7 @@ curl -sS \
 If the read token is stored in Infisical:
 
 ```bash
-./scripts/with-env.sh sh -c '
+pnpm tsx scripts/with-env.ts -- sh -c '
   export SENTRY_AUTH_TOKEN="${SENTRY_READ_AUTH_TOKEN}"
   sentry-cli issues list \
     --org east-bay-software \

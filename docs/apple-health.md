@@ -129,7 +129,7 @@ To avoid this inflation, both ingestion paths (XML import and iOS HealthKit sync
 ### CLI
 
 ```bash
-./scripts/with-env.sh tsx src/index.ts import apple-health <path-to-export.zip|xml> [--full-sync] [--since-days=N]
+pnpm tsx scripts/with-env.ts -- tsx src/index.ts import apple-health <path-to-export.zip|xml> [--full-sync] [--since-days=N]
 ```
 
 ### Backpressure

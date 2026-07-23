@@ -122,7 +122,7 @@ path and does not restore durability for new metric-stream events.
 5. Run the checked-in setup path:
 
    ```bash
-   ./scripts/with-env.sh tsx src/db/setup-clickhouse-cdc.ts
+   pnpm tsx scripts/with-env.ts -- tsx src/db/setup-clickhouse-cdc.ts
    ```
 
 6. If setup claims the mirror exists but PeerDB catalog does not list it, check
