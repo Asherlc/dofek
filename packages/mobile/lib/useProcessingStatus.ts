@@ -18,15 +18,20 @@ export function useProcessingStatus(input: {
   >;
 }) {
   const [foreground, setForeground] = useState(AppState.currentState === "active");
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (state) => {
-      setForeground(state === "active");
-    });
-    return () => subscription.remove();
-  }, []);
-  return trpc.processing.status.useQuery(input, {
-    refetchInterval: (query) =>
-      foreground ? processingPollInterval(query.state.data?.overallStatus ?? "ready") : false,
+  const query = trpc.processing.status.useQuery(input, {
+    refetchInterval: (currentQuery) =>
+      foreground
+        ? processingPollInterval(currentQuery.state.data?.overallStatus ?? "ready")
+        : false,
     refetchIntervalInBackground: false,
   });
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      const active = state === "active";
+      setForeground(active);
+      if (active) void query.refetch();
+    });
+    return () => subscription.remove();
+  }, [query.refetch]);
+  return query;
 }

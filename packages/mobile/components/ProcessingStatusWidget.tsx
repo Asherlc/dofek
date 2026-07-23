@@ -1,6 +1,8 @@
 import {
   type ProcessingDisplayStage,
   type ProcessingDisplayStatus,
+  processingAggregateProgress,
+  processingCurrentFailure,
   processingHeading,
   processingStageLabel,
   processingStatusMessage,
@@ -69,7 +71,7 @@ export function ProcessingStatusWidget({
 }: ProcessingStatusWidgetProps) {
   const [expanded, setExpanded] = useState(false);
   if (loading && !data) return null;
-  if (error) {
+  if (error && !data) {
     return (
       <View style={[styles.container, styles.failed]} accessibilityRole="summary">
         <Text style={styles.heading}>Processing status is unavailable</Text>
@@ -79,13 +81,8 @@ export function ProcessingStatusWidget({
   }
   if (!data || (data.overallStatus === "ready" && !alwaysVisible)) return null;
 
-  const firstFailure = data.operations
-    .flatMap((operation) => operation.timeline)
-    .find((event) => event.status === "failed")?.errorMessage;
-  const progressValues = data.datasets.flatMap((dataset) =>
-    dataset.progressPercentage === null ? [] : [dataset.progressPercentage],
-  );
-  const progress = progressValues.length > 0 ? Math.min(...progressValues) : null;
+  const currentFailure = processingCurrentFailure(data);
+  const progress = processingAggregateProgress(data.datasets);
 
   return (
     <View
@@ -100,7 +97,7 @@ export function ProcessingStatusWidget({
       <Text style={styles.message}>
         {processingStatusMessage({
           status: data.overallStatus,
-          errorMessage: firstFailure ?? null,
+          errorMessage: currentFailure,
         })}
       </Text>
       {progress !== null && data.overallStatus !== "ready" ? (

@@ -1,6 +1,8 @@
 import {
   type ProcessingDisplayStage,
   type ProcessingDisplayStatus,
+  processingAggregateProgress,
+  processingCurrentFailure,
   processingHeading,
   processingStageLabel,
   processingStatusMessage,
@@ -89,7 +91,7 @@ export function ProcessingStatusWidget({
       </section>
     );
   }
-  if (error) {
+  if (error && !data) {
     return (
       <section
         className="w-full rounded-lg border border-l-4 border-l-red-500 bg-white px-3 py-2.5 text-slate-950 shadow-sm"
@@ -102,14 +104,8 @@ export function ProcessingStatusWidget({
   }
   if (!data || (data.overallStatus === "ready" && !alwaysVisible)) return null;
 
-  const latestFailure = data.operations
-    .flatMap((operation) => operation.timeline)
-    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
-    .find((event) => event.status === "failed")?.errorMessage;
-  const progressValues = data.datasets.flatMap((dataset) =>
-    dataset.progressPercentage === null ? [] : [dataset.progressPercentage],
-  );
-  const progress = progressValues.length > 0 ? Math.min(...progressValues) : null;
+  const currentFailure = processingCurrentFailure(data);
+  const progress = processingAggregateProgress(data.datasets);
 
   return (
     <section
@@ -125,7 +121,7 @@ export function ProcessingStatusWidget({
       <p className="mt-0.5 text-xs text-slate-600">
         {processingStatusMessage({
           status: data.overallStatus,
-          errorMessage: latestFailure ?? null,
+          errorMessage: currentFailure,
         })}
       </p>
       {progress !== null && data.overallStatus !== "ready" ? (
