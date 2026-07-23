@@ -2,6 +2,30 @@
 import ExpoModulesCore
 import HealthKit
 
+private final class HealthKitModuleException: Exception {
+    private let exceptionCode: String
+    private let exceptionReason: String
+
+    override var code: String {
+        return exceptionCode
+    }
+
+    override var reason: String {
+        return exceptionReason
+    }
+
+    override var debugDescription: String {
+        return "\(exceptionCode): \(exceptionReason)"
+    }
+
+    init(code: String, reason: String, cause: Error? = nil) {
+        self.exceptionCode = code
+        self.exceptionReason = reason
+        super.init()
+        self.cause = cause
+    }
+}
+
 // swiftlint:disable:next type_body_length
 public class HealthKitModule: Module {
     private let healthStore = HKHealthStore()
@@ -13,6 +37,26 @@ public class HealthKitModule: Module {
             return false
         }
         return healthKitError.code == .errorAuthorizationNotDetermined
+    }
+
+    private func rejectPromise(_ promise: Promise, code: String, reason: String) {
+        promise.reject(HealthKitModuleException(code: code, reason: reason))
+    }
+
+    private func rejectHealthKitError(
+        _ promise: Promise,
+        operation: String,
+        fallbackCode: String,
+        error: Error
+    ) {
+        let details = HealthKitErrorDetails(
+            operation: operation,
+            fallbackCode: fallbackCode,
+            error: error
+        )
+        promise.reject(
+            HealthKitModuleException(code: details.code, reason: details.reason, cause: error)
+        )
     }
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
@@ -66,7 +110,12 @@ public class HealthKitModule: Module {
                         promise.resolve("unknown")
                     }
                 } catch {
-                    promise.reject("HEALTHKIT_STATUS_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "getRequestStatus",
+                        fallbackCode: "HEALTHKIT_STATUS_ERROR",
+                        error: error
+                    )
                 }
             }
         }
@@ -86,7 +135,12 @@ public class HealthKitModule: Module {
                         promise.resolve(false)
                         return
                     }
-                    promise.reject("HEALTHKIT_AUTH_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "requestPermissions",
+                        fallbackCode: "HEALTHKIT_AUTH_ERROR",
+                        error: error
+                    )
                 }
             }
         }
@@ -94,12 +148,20 @@ public class HealthKitModule: Module {
         // swiftlint:disable:next line_length
         AsyncFunction("queryQuantitySamples") { (typeIdentifier: String, startDateStr: String, endDateStr: String, limit: Int, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
-                promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_TYPE",
+                    reason: "Unknown quantity type: \(typeIdentifier)"
+                )
                 return
             }
             guard let startDate = HealthKitQueries.parseDate(startDateStr),
                   let endDate = HealthKitQueries.parseDate(endDateStr) else {
-                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_DATE",
+                    reason: "Invalid ISO 8601 date format"
+                )
                 return
             }
 
@@ -112,11 +174,16 @@ public class HealthKitModule: Module {
                 limit: queryLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
-                    if error.localizedDescription.contains("Authorization not determined") {
+                    if self.isAuthorizationNotDetermined(error) {
                         promise.resolve([[String: Any]]())
                         return
                     }
-                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "queryQuantitySamples(\(typeIdentifier))",
+                        fallbackCode: "QUERY_ERROR",
+                        error: error
+                    )
                     return
                 }
                 let samples = (results as? [HKQuantitySample])?.map { sample -> [String: Any] in
@@ -140,7 +207,11 @@ public class HealthKitModule: Module {
         AsyncFunction("queryWorkouts") { (startDateStr: String, endDateStr: String, promise: Promise) in
             guard let startDate = HealthKitQueries.parseDate(startDateStr),
                   let endDate = HealthKitQueries.parseDate(endDateStr) else {
-                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_DATE",
+                    reason: "Invalid ISO 8601 date format"
+                )
                 return
             }
 
@@ -152,11 +223,16 @@ public class HealthKitModule: Module {
                 limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
-                    if error.localizedDescription.contains("Authorization not determined") {
+                    if self.isAuthorizationNotDetermined(error) {
                         promise.resolve([[String: Any]]())
                         return
                     }
-                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "queryWorkouts",
+                        fallbackCode: "QUERY_ERROR",
+                        error: error
+                    )
                     return
                 }
                 let workouts = (results as? [HKWorkout])?.map { workout -> [String: Any] in
@@ -234,12 +310,20 @@ public class HealthKitModule: Module {
 
         AsyncFunction("querySleepSamples") { (startDateStr: String, endDateStr: String, promise: Promise) in
             guard let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else {
-                promise.reject("INVALID_TYPE", "Sleep analysis type not available")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_TYPE",
+                    reason: "Sleep analysis type not available"
+                )
                 return
             }
             guard let startDate = HealthKitQueries.parseDate(startDateStr),
                   let endDate = HealthKitQueries.parseDate(endDateStr) else {
-                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_DATE",
+                    reason: "Invalid ISO 8601 date format"
+                )
                 return
             }
 
@@ -251,11 +335,16 @@ public class HealthKitModule: Module {
                 limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
-                    if error.localizedDescription.contains("Authorization not determined") {
+                    if self.isAuthorizationNotDetermined(error) {
                         promise.resolve([[String: Any]]())
                         return
                     }
-                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "querySleepSamples",
+                        fallbackCode: "QUERY_ERROR",
+                        error: error
+                    )
                     return
                 }
                 let samples = (results as? [HKCategorySample])?.map { sample -> [String: Any] in
@@ -292,12 +381,20 @@ public class HealthKitModule: Module {
 
         AsyncFunction("queryCategorySamples") { (typeIdentifier: String, startDateStr: String, endDateStr: String, promise: Promise) in
             guard let categoryType = HKCategoryType.categoryType(forIdentifier: HKCategoryTypeIdentifier(rawValue: typeIdentifier)) else {
-                promise.reject("INVALID_TYPE", "Unknown category type: \(typeIdentifier)")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_TYPE",
+                    reason: "Unknown category type: \(typeIdentifier)"
+                )
                 return
             }
             guard let startDate = HealthKitQueries.parseDate(startDateStr),
                   let endDate = HealthKitQueries.parseDate(endDateStr) else {
-                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_DATE",
+                    reason: "Invalid ISO 8601 date format"
+                )
                 return
             }
 
@@ -309,7 +406,12 @@ public class HealthKitModule: Module {
                 limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
-                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "queryCategorySamples(\(typeIdentifier))",
+                        fallbackCode: "QUERY_ERROR",
+                        error: error
+                    )
                     return
                 }
                 let samples = (results as? [HKCategorySample])?.map { sample -> [String: Any] in
@@ -334,18 +436,30 @@ public class HealthKitModule: Module {
             for sampleInput in sampleInputs {
                 guard let typeIdentifier = sampleInput["typeIdentifier"] as? String,
                       let quantityType = dietaryWriteQuantityType(for: typeIdentifier) else {
-                    promise.reject("INVALID_TYPE", "Unsupported dietary quantity type")
+                    self.rejectPromise(
+                        promise,
+                        code: "INVALID_TYPE",
+                        reason: "Unsupported dietary quantity type"
+                    )
                     return
                 }
                 guard let valueNumber = sampleInput["value"] as? NSNumber else {
-                    promise.reject("INVALID_VALUE", "Dietary sample value must be a number")
+                    self.rejectPromise(
+                        promise,
+                        code: "INVALID_VALUE",
+                        reason: "Dietary sample value must be a number"
+                    )
                     return
                 }
                 guard let startDateString = sampleInput["startDate"] as? String,
                       let endDateString = sampleInput["endDate"] as? String,
                       let startDate = HealthKitQueries.parseDate(startDateString),
                       let endDate = HealthKitQueries.parseDate(endDateString) else {
-                    promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                    self.rejectPromise(
+                        promise,
+                        code: "INVALID_DATE",
+                        reason: "Invalid ISO 8601 date format"
+                    )
                     return
                 }
                 guard let syncIdentifier = sampleInput["syncIdentifier"] as? String,
@@ -353,7 +467,11 @@ public class HealthKitModule: Module {
                       let foodEntryId = sampleInput["foodEntryId"] as? String,
                       let foodName = sampleInput["foodName"] as? String,
                       let fingerprint = sampleInput["fingerprint"] as? String else {
-                    promise.reject("INVALID_METADATA", "Dietary sample metadata is required")
+                    self.rejectPromise(
+                        promise,
+                        code: "INVALID_METADATA",
+                        reason: "Dietary sample metadata is required"
+                    )
                     return
                 }
 
@@ -383,7 +501,12 @@ public class HealthKitModule: Module {
                     try await self.healthStore.save(samples)
                     promise.resolve(true)
                 } catch {
-                    promise.reject("WRITE_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "writeDietarySamples",
+                        fallbackCode: "WRITE_ERROR",
+                        error: error
+                    )
                 }
             }
         }
@@ -415,7 +538,12 @@ public class HealthKitModule: Module {
                     }
                     promise.resolve(deletedTotal)
                 } catch {
-                    promise.reject("DELETE_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "deleteDietarySamples",
+                        fallbackCode: "DELETE_ERROR",
+                        error: error
+                    )
                 }
             }
         }
@@ -429,7 +557,11 @@ public class HealthKitModule: Module {
 
         AsyncFunction("queryAnchoredSamples") { (typeIdentifier: String, anchorValue: Int, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
-                promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_TYPE",
+                    reason: "Unknown quantity type: \(typeIdentifier)"
+                )
                 return
             }
 
@@ -441,7 +573,12 @@ public class HealthKitModule: Module {
                 limit: HKObjectQueryNoLimit
             ) { _, added, deleted, newAnchor, error in
                 if let error = error {
-                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "queryAnchoredSamples(\(typeIdentifier))",
+                        fallbackCode: "QUERY_ERROR",
+                        error: error
+                    )
                     return
                 }
 
@@ -481,12 +618,20 @@ public class HealthKitModule: Module {
 
         AsyncFunction("queryDailyStatistics") { (typeIdentifier: String, startDateStr: String, endDateStr: String, promise: Promise) in
             guard let quantityType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
-                promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_TYPE",
+                    reason: "Unknown quantity type: \(typeIdentifier)"
+                )
                 return
             }
             guard let startDate = HealthKitQueries.parseDate(startDateStr),
                   let endDate = HealthKitQueries.parseDate(endDateStr) else {
-                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_DATE",
+                    reason: "Invalid ISO 8601 date format"
+                )
                 return
             }
 
@@ -505,13 +650,20 @@ public class HealthKitModule: Module {
             query.initialResultsHandler = { _, results, error in
                 if let error = error {
                     if self.isAuthorizationNotDetermined(error) {
-                        promise.reject(
-                            "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
-                            "HealthKit authorization not determined"
+                        self.rejectHealthKitError(
+                            promise,
+                            operation: "queryDailyStatistics(\(typeIdentifier))",
+                            fallbackCode: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+                            error: error
                         )
                         return
                     }
-                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "queryDailyStatistics(\(typeIdentifier))",
+                        fallbackCode: "QUERY_ERROR",
+                        error: error
+                    )
                     return
                 }
 
@@ -547,7 +699,11 @@ public class HealthKitModule: Module {
 
         AsyncFunction("enableBackgroundDelivery") { (typeIdentifier: String, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
-                promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_TYPE",
+                    reason: "Unknown quantity type: \(typeIdentifier)"
+                )
                 return
             }
 
@@ -557,7 +713,12 @@ public class HealthKitModule: Module {
                     UserDefaults.standard.set(true, forKey: "healthkit_background_delivery_enabled")
                     promise.resolve(true)
                 } catch {
-                    promise.reject("BG_DELIVERY_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "enableBackgroundDelivery(\(typeIdentifier))",
+                        fallbackCode: "BG_DELIVERY_ERROR",
+                        error: error
+                    )
                 }
             }
         }
@@ -607,9 +768,13 @@ public class HealthKitModule: Module {
                     if let error = error {
                         // Skip types that haven't been authorized yet — they'll be
                         // registered after the user grants permission via requestPermissions().
-                        if !error.localizedDescription.contains("Authorization not determined") {
+                        if !self.isAuthorizationNotDetermined(error) {
                             errorLock.lock()
-                            backgroundDeliveryErrors.append("\(sampleType.identifier): \(error.localizedDescription)")
+                            let nativeError = error as NSError
+                            backgroundDeliveryErrors.append(
+                                "\(sampleType.identifier): \(nativeError.localizedDescription) " +
+                                    "(\(nativeError.domain):\(nativeError.code))"
+                            )
                             errorLock.unlock()
                         }
                     }
@@ -621,9 +786,10 @@ public class HealthKitModule: Module {
                 if backgroundDeliveryErrors.isEmpty {
                     promise.resolve(true)
                 } else {
-                    promise.reject(
-                        "BG_DELIVERY_ERROR",
-                        backgroundDeliveryErrors.sorted().joined(separator: "; ")
+                    self.rejectPromise(
+                        promise,
+                        code: "BG_DELIVERY_ERROR",
+                        reason: backgroundDeliveryErrors.sorted().joined(separator: "; ")
                     )
                 }
             }
@@ -635,7 +801,11 @@ public class HealthKitModule: Module {
 
         AsyncFunction("queryWorkoutRoutes") { (workoutUuid: String, promise: Promise) in
             guard let uuid = UUID(uuidString: workoutUuid) else {
-                promise.reject("INVALID_UUID", "Invalid workout UUID: \(workoutUuid)")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_UUID",
+                    reason: "Invalid workout UUID: \(workoutUuid)"
+                )
                 return
             }
 
@@ -652,7 +822,12 @@ public class HealthKitModule: Module {
                     return
                 }
                 if let error = error {
-                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    self.rejectHealthKitError(
+                        promise,
+                        operation: "queryWorkoutRoutes.lookupWorkout(\(workoutUuid))",
+                        fallbackCode: "QUERY_ERROR",
+                        error: error
+                    )
                     return
                 }
                 guard let workout = results?.first as? HKWorkout else {
@@ -669,7 +844,12 @@ public class HealthKitModule: Module {
                     sortDescriptors: nil
                 ) { _, routeResults, routeError in
                     if let routeError = routeError {
-                        promise.reject("ROUTE_QUERY_ERROR", routeError.localizedDescription)
+                        self.rejectHealthKitError(
+                            promise,
+                            operation: "queryWorkoutRoutes.lookupRoutes(\(workoutUuid))",
+                            fallbackCode: "ROUTE_QUERY_ERROR",
+                            error: routeError
+                        )
                         return
                     }
                     guard let routes = routeResults as? [HKWorkoutRoute], !routes.isEmpty else {
@@ -750,11 +930,20 @@ public class HealthKitModule: Module {
                         )
                         promise.resolve(true)
                     } catch {
-                        promise.reject("MEDICATION_AUTH_ERROR", error.localizedDescription)
+                        self.rejectHealthKitError(
+                            promise,
+                            operation: "requestMedicationPermissions",
+                            fallbackCode: "MEDICATION_AUTH_ERROR",
+                            error: error
+                        )
                     }
                 }
             } else {
-                promise.reject("UNSUPPORTED", "Medications API requires iOS 26+")
+                self.rejectPromise(
+                    promise,
+                    code: "UNSUPPORTED",
+                    reason: "Medications API requires iOS 26+"
+                )
             }
         }
 
@@ -782,7 +971,12 @@ public class HealthKitModule: Module {
                         }
                         promise.resolve(results)
                     } catch {
-                        promise.reject("MEDICATION_QUERY_ERROR", error.localizedDescription)
+                        self.rejectHealthKitError(
+                            promise,
+                            operation: "queryMedications",
+                            fallbackCode: "MEDICATION_QUERY_ERROR",
+                            error: error
+                        )
                     }
                 }
             } else {
@@ -793,7 +987,11 @@ public class HealthKitModule: Module {
         AsyncFunction("queryMedicationDoseEvents") { (startDateStr: String, endDateStr: String, promise: Promise) in
             guard let startDate = HealthKitQueries.parseDate(startDateStr),
                   let endDate = HealthKitQueries.parseDate(endDateStr) else {
-                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_DATE",
+                    reason: "Invalid ISO 8601 date format"
+                )
                 return
             }
             if #available(iOS 26.0, *) {
@@ -806,7 +1004,12 @@ public class HealthKitModule: Module {
                     limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
                 ) { _, results, error in
                     if let error = error {
-                        promise.reject("QUERY_ERROR", error.localizedDescription)
+                        self.rejectHealthKitError(
+                            promise,
+                            operation: "queryMedicationDoseEvents",
+                            fallbackCode: "QUERY_ERROR",
+                            error: error
+                        )
                         return
                     }
                     let samples = (results as? [HKMedicationDoseEvent])?.map { event -> [String: Any] in
