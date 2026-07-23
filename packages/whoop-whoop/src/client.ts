@@ -22,6 +22,7 @@ import type {
 
 const WHOOP_API_BASE = "https://api.prod.whoop.com";
 const WHOOP_API_VERSION = "7";
+const WHOOP_DEVELOPER_WORKOUT_PATH = "/developer/v2/activity/workout";
 /** Minimum delay between consecutive WHOOP API requests (ms). */
 export const WHOOP_API_THROTTLE_MS = 1_000;
 const WHOOP_AUTH_ORIGIN = "https://id.whoop.com";
@@ -419,12 +420,7 @@ export class WhoopClient {
     return userId;
   }
 
-  async #get<T>(
-    url: string,
-    params?: Record<string, string>,
-    attempt = 0,
-    treatInternalServerErrorAsUnavailable = false,
-  ): Promise<T> {
+  async #get<T>(url: string, params?: Record<string, string>, attempt = 0): Promise<T> {
     const requestUrl = new URL(url);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -468,7 +464,7 @@ export class WhoopClient {
     const text = await response.text();
     if (
       isServiceUnavailableStatus(response.status) ||
-      (treatInternalServerErrorAsUnavailable && response.status === 500)
+      (requestUrl.pathname === WHOOP_DEVELOPER_WORKOUT_PATH && response.status === 500)
     ) {
       throw createWhoopServiceUnavailableError(response, text);
     }
@@ -483,7 +479,7 @@ export class WhoopClient {
     let attempt = 0;
     while (true) {
       try {
-        return await this.#get<T>(url, params, attempt, true);
+        return await this.#get<T>(url, params, attempt);
       } catch (err) {
         if (err instanceof ProviderServiceUnavailableError && attempt < maxRetries) {
           attempt++;
@@ -572,7 +568,7 @@ export class WhoopClient {
       params.next_token = options.nextToken;
     }
     const raw = await this.#getWithRateLimitRetry<unknown>(
-      `${WHOOP_API_BASE}/developer/v2/activity/workout`,
+      `${WHOOP_API_BASE}${WHOOP_DEVELOPER_WORKOUT_PATH}`,
       params,
     );
     const parsed = whoopDeveloperWorkoutListResponseSchema.parse(raw);

@@ -931,6 +931,49 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  it("retries service-unavailable developer workout requests before succeeding", async () => {
+    const fetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 503,
+          ok: false,
+          text: "Encountered ServiceUnavailableException",
+          body: "Encountered ServiceUnavailableException",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 503,
+          ok: false,
+          text: "Encountered ServiceUnavailableException",
+          body: "Encountered ServiceUnavailableException",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 200,
+          ok: true,
+          body: {
+            records: [
+              {
+                id: "after-service-retry",
+                start: "2024-01-15T10:00:00Z",
+                end: "2024-01-15T11:00:00Z",
+              },
+            ],
+            next_token: null,
+          },
+        }),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.listDeveloperWorkouts();
+
+    expect(result.records.map((record) => record.id)).toEqual(["after-service-retry"]);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
   it("retries HTTP 500 developer workout requests before succeeding", async () => {
     const fetchFn = vi
       .fn<typeof globalThis.fetch>()
@@ -957,7 +1000,7 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
           body: {
             records: [
               {
-                id: "after-service-retry",
+                id: "after-internal-server-retry",
                 start: "2024-01-15T10:00:00Z",
                 end: "2024-01-15T11:00:00Z",
               },
@@ -970,7 +1013,7 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
 
     const result = await client.listDeveloperWorkouts();
 
-    expect(result.records.map((record) => record.id)).toEqual(["after-service-retry"]);
+    expect(result.records.map((record) => record.id)).toEqual(["after-internal-server-retry"]);
     expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 

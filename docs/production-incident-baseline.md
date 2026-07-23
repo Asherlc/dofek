@@ -15586,7 +15586,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   existing behavior, and the attempt count is unchanged.
 - **Validation:** Before the fix, the focused WHOOP client suite failed the new
   HTTP 500 retry expectation while its other 82 tests passed: the client threw
-  after attempt 0. After the fix, all 83 WHOOP client tests pass. The complete
+  after attempt 0. After the fix, all 84 WHOOP client tests pass. The complete
   Docker-free unit/mobile tier, full lint, root/server/web TypeScript checks,
   and the `whoop-whoop` package build also pass.
 - **Remaining risk / follow-up:** Deploy the fix, then verify that any future
