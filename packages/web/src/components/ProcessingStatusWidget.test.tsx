@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type ProcessingStatusSnapshot,
   ProcessingStatusWidget,
@@ -31,6 +31,7 @@ const snapshot: ProcessingStatusSnapshot = {
       datasets: ["activity"],
       timeline: [
         {
+          sequence: 1,
           stage: "ingest",
           status: "succeeded",
           datasetKey: "activity",
@@ -47,8 +48,12 @@ const snapshot: ProcessingStatusSnapshot = {
 };
 
 describe("ProcessingStatusWidget", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("stays quiet when ready unless always visible", () => {
-    const ready = { ...snapshot, overallStatus: "ready" as const };
+    const ready: ProcessingStatusSnapshot = { ...snapshot, overallStatus: "ready" };
     expect(render(<ProcessingStatusWidget data={ready} />).container.innerHTML).toBe("");
     render(<ProcessingStatusWidget data={ready} alwaysVisible />);
     expect(screen.getByText("Data is ready")).toBeTruthy();
@@ -57,6 +62,7 @@ describe("ProcessingStatusWidget", () => {
   it("shows progress and an accessible expanded timeline", () => {
     render(<ProcessingStatusWidget data={snapshot} contextLabel="Kaya" />);
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("60");
+    expect(screen.getByText("Updating your data").closest("section")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
     expect(screen.getByText("Receiving data")).toBeTruthy();
     expect(screen.getByText(/Completed/)).toBeTruthy();
@@ -65,5 +71,78 @@ describe("ProcessingStatusWidget", () => {
   it("surfaces the server error message", () => {
     render(<ProcessingStatusWidget error={new Error("Reconnect Kaya and try again.")} />);
     expect(screen.getByText("Reconnect Kaya and try again.")).toBeTruthy();
+    expect(screen.getByText("Processing status is unavailable").closest("section")).not.toBeNull();
+  });
+
+  it("renders an accessible loading state when no snapshot is available", () => {
+    render(<ProcessingStatusWidget loading alwaysVisible />);
+
+    expect(screen.getByText("Loading processing status…")).toBeTruthy();
+    expect(
+      screen.getByText("Loading processing status…").closest("section")?.getAttribute("aria-busy"),
+    ).toBe("true");
+  });
+
+  it("shows the most recent failure message", () => {
+    const operation = snapshot.operations.at(0);
+    const timelineEvent = operation?.timeline.at(0);
+    if (!operation || !timelineEvent) {
+      throw new Error("Expected the processing snapshot fixture to include a timeline event");
+    }
+    const failed: ProcessingStatusSnapshot = {
+      ...snapshot,
+      overallStatus: "failed",
+      operations: [
+        {
+          ...operation,
+          status: "failed",
+          timeline: [
+            {
+              ...timelineEvent,
+              status: "failed",
+              occurredAt: "2026-07-22T11:58:30.000Z",
+              errorMessage: "The earlier attempt failed.",
+            },
+            {
+              ...timelineEvent,
+              status: "failed",
+              occurredAt: "2026-07-22T11:59:30.000Z",
+              errorMessage: "Reconnect Kaya and try again.",
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<ProcessingStatusWidget data={failed} />);
+
+    expect(screen.getByText("Reconnect Kaya and try again.")).toBeTruthy();
+    expect(screen.queryByText("The earlier attempt failed.")).toBeNull();
+  });
+
+  it("renders same-millisecond timeline events with unique keys", () => {
+    const operation = snapshot.operations.at(0);
+    const timelineEvent = operation?.timeline.at(0);
+    if (!operation || !timelineEvent) {
+      throw new Error("Expected the processing snapshot fixture to include a timeline event");
+    }
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          operations: [
+            {
+              ...operation,
+              timeline: [timelineEvent, { ...timelineEvent, sequence: timelineEvent.sequence + 1 }],
+            },
+          ],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
+
+    expect(consoleError.mock.calls.flat().join(" ")).not.toContain("same key");
   });
 });

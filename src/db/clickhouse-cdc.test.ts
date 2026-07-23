@@ -1923,6 +1923,51 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(changeMirrorState).not.toHaveBeenCalled();
   });
 
+  it("requests that a mirror resume when mapping reconciliation fails after pausing", async () => {
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+    let statusReadCount = 0;
+    const changeMirrorState = vi.fn(async () => undefined);
+
+    await expect(
+      setupClickHouseCdc({
+        peerDbMirrorApiClient: {
+          async getMirrorStatus() {
+            statusReadCount += 1;
+            if (statusReadCount === 1) {
+              return { currentFlowState: "STATUS_RUNNING", tableMappings: [] };
+            }
+            throw new Error("PeerDB status unavailable");
+          },
+          changeMirrorState,
+        },
+        peerDbClient: createExistingFitnessMirrorPeerDbClient(),
+        sourcePostgresClient: { async query() {} },
+        clickHouseClient: createTestClickHouseClient(),
+        templateSql,
+        templateValues: {
+          clickHouseHost: "clickhouse",
+          clickHouseCredential: "clickhouse-fixture",
+          clickHousePort: 9000,
+          clickHouseUser: "default",
+          postgresDatabase: "health",
+          postgresHost: "db",
+          postgresCredential: "fixture",
+          postgresPort: 5432,
+          postgresUser: "health",
+        },
+      }),
+    ).rejects.toThrow("PeerDB status unavailable");
+
+    expect(changeMirrorState).toHaveBeenNthCalledWith(1, {
+      flowJobName: "dofek_fitness_raw_analytics",
+      requestedFlowState: "STATUS_PAUSED",
+    });
+    expect(changeMirrorState).toHaveBeenNthCalledWith(2, {
+      flowJobName: "dofek_fitness_raw_analytics",
+      requestedFlowState: "STATUS_RUNNING",
+    });
+  });
+
   it("maps localhost source hosts to Docker compose service names", async () => {
     process.env.DATABASE_URL = credentialedUrl(
       "postgres",

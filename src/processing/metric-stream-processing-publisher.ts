@@ -51,6 +51,7 @@ export class MetricStreamProcessingPublisher implements MetricStreamEventPublish
   readonly #operationId: string;
   readonly #datasetKeys: ProcessingDatasetKey[];
   readonly #recordPublishedBatch: (batch: MetricStreamPublishedBatch) => Promise<void>;
+  #recordedBatchCount = 0;
   #publishedBatchCount = 0;
 
   constructor(
@@ -81,11 +82,15 @@ export class MetricStreamProcessingPublisher implements MetricStreamEventPublish
       datasetKeys: this.#datasetKeys,
       expectedEventCount,
     });
-    this.#publishedBatchCount += 1;
+    this.#recordedBatchCount += 1;
   }
 
   get hasPublishedBatches(): boolean {
     return this.#publishedBatchCount > 0;
+  }
+
+  get hasUnpublishedBatchIntents(): boolean {
+    return this.#recordedBatchCount > this.#publishedBatchCount;
   }
 
   async publishRows(rows: readonly MetricStreamRowInput[], options: MetricStreamPublishOptions) {
@@ -101,11 +106,12 @@ export class MetricStreamProcessingPublisher implements MetricStreamEventPublish
       options.partitionKey ?? "rows",
       rows,
     );
+    await this.#record(batchId, rows.length);
     const events = await this.#delegate.publishRows(rows, {
       ...options,
       processing: this.#processingContext(batchId),
     });
-    await this.#record(batchId, events.length);
+    this.#publishedBatchCount += 1;
     return events;
   }
 
@@ -123,13 +129,14 @@ export class MetricStreamProcessingPublisher implements MetricStreamEventPublish
       createMetricStreamDeletePartitionKey(scope),
       rows,
     );
+    await this.#record(batchId, rows.length + 1);
     const result = await this.#delegate.replaceRows(
       scope,
       rows,
       operationRevision,
       this.#processingContext(batchId),
     );
-    await this.#record(batchId, result.rows.length + 1);
+    this.#publishedBatchCount += 1;
     return result;
   }
 }

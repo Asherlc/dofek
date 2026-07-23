@@ -4,6 +4,7 @@ import {
   formatBodyCompositionPercent,
   formatCalories,
   formatCaloriesMeasurement,
+  formatClimbingAttemptResult,
   formatDateForDisplay,
   formatDateLong,
   formatDateMedium,
@@ -173,6 +174,15 @@ describe("formatDurationSeconds", () => {
 
   it("returns placeholder for non-finite values", () => {
     expect(formatDurationSeconds(Number.NaN)).toBe("--");
+  });
+});
+
+describe("formatClimbingAttemptResult", () => {
+  it("formats sent and attempted climbs with singular and plural counts", () => {
+    expect(formatClimbingAttemptResult(true, 1)).toBe("Sent in 1 attempt");
+    expect(formatClimbingAttemptResult(true, 7)).toBe("Sent in 7 attempts");
+    expect(formatClimbingAttemptResult(false, 1)).toBe("Attempted 1 time");
+    expect(formatClimbingAttemptResult(false, 3)).toBe("Attempted 3 times");
   });
 });
 
