@@ -15592,3 +15592,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Deploy the fix, then verify that any future
   WHOOP workout HTTP 500 event records attempts 0 through 3 before surfacing
   `ProviderServiceUnavailableError`, or that an earlier attempt succeeds.
+## 2026-07-23 — Dependabot Reintroduced Unsupported Python 3.14 dbt Runtime
+
+- **Symptoms:** PR #1830 failed `Test / Image Vulnerability Scan` while building
+  the server image.
+- **User impact:** The dependency update was blocked from merging; production
+  was unaffected.
+- **Evidence:** CI run
+  [29878580337](https://github.com/Asherlc/dofek/actions/runs/29878580337)
+  failed while copying `/usr/local/bin/python3.13` from a Python 3.14
+  `dbt-tools` stage. Updating only the copy paths exposed the previously
+  documented `mashumaro.exceptions.UnserializableField` crash on `dbt
+  --version`. Trying the current `dbt-core==1.12.0` instead failed installation
+  because `dbt-core-experimental-parser==2.0.0a5` publishes no Alpine-compatible
+  musllinux wheel; the published artifacts are listed on
+  [PyPI](https://pypi.org/project/dbt-core-experimental-parser/2.0.0a5/#files).
+- **Root cause:** Dependabot upgraded the Python base image independently of the
+  Python-version-specific runtime paths and the dbt stack's current Python 3.14
+  compatibility.
+- **Fix / mitigation:** Restored the latest Python 3.13 patch image,
+  `python:3.13.14-alpine3.24`, which matches the copied runtime paths and the
+  working dbt toolchain.
+- **Validation:** A clean server-target image build succeeds with the restored
+  Python 3.13 stage.
+- **Remaining risk / follow-up:** Keep dbt tooling on Python 3.13 until the
+  complete pinned dbt stack installs and starts successfully on Alpine with
+  Python 3.14.
