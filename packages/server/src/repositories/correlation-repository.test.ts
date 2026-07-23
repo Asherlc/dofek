@@ -131,7 +131,7 @@ describe("emptyStats", () => {
 
 describe("computeCorrelation", () => {
   it.each([
-    0, 4,
+    0, 1, 4,
   ])("returns no inferential statistics when only %i paired points are available", (pairCount) => {
     const joined = Array.from({ length: pairCount }, (_, index) =>
       makeJoinedDay({
@@ -159,9 +159,9 @@ describe("computeCorrelation", () => {
     expect(result).not.toHaveProperty("pearsonPValue");
     expect(result).not.toHaveProperty("regression");
     expect(result.insight).toBe(
-      `Insufficient data to analyze the relationship between Resting Heart Rate and Heart Rate Variability (only ${pairCount} overlapping data points; ${
-        pairCount === 4 ? "1 more sample is required" : "5 more samples are required"
-      }).`,
+      `Insufficient data to analyze the relationship between Resting Heart Rate and Heart Rate Variability (only ${pairCount} overlapping data ${
+        pairCount === 1 ? "point" : "points"
+      }; ${5 - pairCount} more ${5 - pairCount === 1 ? "sample is" : "samples are"} required).`,
     );
   });
 

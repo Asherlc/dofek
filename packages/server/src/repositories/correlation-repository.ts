@@ -116,7 +116,7 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
       dataPoints: pairs,
       sampleCount: pairCount,
       additionalSamplesRequired,
-      insight: `Insufficient data to analyze the relationship between ${METRIC_LABEL_MAP.get(metricX) ?? metricX} and ${METRIC_LABEL_MAP.get(metricY) ?? metricY} (only ${pairCount} overlapping data points; ${additionalSamplesRequired} more ${additionalSamplesRequired === 1 ? "sample is" : "samples are"} required).`,
+      insight: `Insufficient data to analyze the relationship between ${METRIC_LABEL_MAP.get(metricX) ?? metricX} and ${METRIC_LABEL_MAP.get(metricY) ?? metricY} (only ${pairCount} overlapping data ${pairCount === 1 ? "point" : "points"}; ${additionalSamplesRequired} more ${additionalSamplesRequired === 1 ? "sample is" : "samples are"} required).`,
       confidenceLevel: "insufficient" as const,
       correlationColor: "#71717a",
     };

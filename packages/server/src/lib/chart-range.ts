@@ -1,6 +1,6 @@
 import type { UnsetMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { SQL } from "drizzle-orm";
-import type { z } from "zod";
+import { z } from "zod";
 import type { AuthenticatedContext } from "../trpc.ts";
 import { cachedProtectedQuery } from "../trpc.ts";
 import {
@@ -178,10 +178,12 @@ export function selectedChartCustomRangeQuery<TInput extends { days: RangeDays }
   resolve: (
     args: SelectedChartRangeResolveArgs<ParsedChartRangeInput<TInput>>,
   ) => MaybePromise<TResult>,
+  outputSchema: z.ZodType<TResult> = z.custom<TResult>(),
 ) {
   assertSelectedChartInputKind(endpoint, "custom");
   return cachedProtectedQuery({ maxAge: ttlMs })
     .input(inputSchema)
+    .output(outputSchema)
     .query(({ ctx, input }) => {
       if (!hasSelectedChartRangeInput(input)) {
         throw new Error(`${endpoint} selected chart range input is required`);
