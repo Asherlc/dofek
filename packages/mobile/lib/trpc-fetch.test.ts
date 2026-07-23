@@ -90,10 +90,10 @@ describe("createTrpcFetch", () => {
     );
     const trpcFetch = createTrpcFetch(fetchImpl);
 
-    const response = await trpcFetch("https://dofek.test/api/trpc/sync.dataHealth");
+    const response = await trpcFetch("https://dofek.test/api/trpc/processing.status");
 
     await expect(response.json()).rejects.toThrow(
-      "The server returned an empty response for sync.dataHealth: 204 No Content, content-type application/json",
+      "The server returned an empty response for processing.status: 204 No Content, content-type application/json",
     );
   });
 
@@ -107,10 +107,10 @@ describe("createTrpcFetch", () => {
     );
     const trpcFetch = createTrpcFetch(fetchImpl);
 
-    const response = await trpcFetch("https://dofek.test/api/trpc/sync.dataHealth");
+    const response = await trpcFetch("https://dofek.test/api/trpc/processing.status");
 
     await expect(response.json()).rejects.toThrow(
-      "The server returned an empty response for sync.dataHealth: 200 OK, content-type application/json",
+      "The server returned an empty response for processing.status: 200 OK, content-type application/json",
     );
   });
 
@@ -124,7 +124,7 @@ describe("createTrpcFetch", () => {
     );
     const trpcFetch = createTrpcFetch(fetchImpl);
 
-    const response = await trpcFetch("https://dofek.test/api/trpc/sync.dataHealth");
+    const response = await trpcFetch("https://dofek.test/api/trpc/processing.status");
 
     let thrownError: unknown;
     try {
@@ -136,7 +136,7 @@ describe("createTrpcFetch", () => {
     expect(thrownError).toBeInstanceOf(Error);
     if (!(thrownError instanceof Error)) throw new Error("Expected an Error");
     expect(thrownError.message).toBe(
-      "The server returned an invalid response for sync.dataHealth: 200 OK, content-type application/json",
+      "The server returned an invalid response for processing.status: 200 OK, content-type application/json",
     );
     expect(thrownError.cause).toBeInstanceOf(SyntaxError);
     expect(mockCaptureException).toHaveBeenCalledWith(thrownError);

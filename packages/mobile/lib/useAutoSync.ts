@@ -29,7 +29,7 @@ async function invalidateSyncedHealthData(trpcUtils: TrpcUtils): Promise<void> {
     trpcUtils.calendar.activityOverview.invalidate(),
     trpcUtils.activity.list.invalidate(),
     trpcUtils.food.byDate.invalidate(),
-    trpcUtils.sync.dataHealth.invalidate(),
+    trpcUtils.processing.status.invalidate(),
     trpcUtils.nutritionAnalytics.adaptiveTdee.invalidate(),
     trpcUtils.nutritionAnalytics.caloricBalance.invalidate(),
     trpcUtils.nutritionAnalytics.macroRatios.invalidate(),
