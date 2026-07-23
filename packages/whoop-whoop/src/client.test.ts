@@ -974,6 +974,63 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 
+  it("retries HTTP 500 developer workout requests before succeeding", async () => {
+    const fetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 500,
+          ok: false,
+          text: "Request failed.",
+          body: "Request failed.",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 500,
+          ok: false,
+          text: "Request failed.",
+          body: "Request failed.",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 200,
+          ok: true,
+          body: {
+            records: [
+              {
+                id: "after-internal-server-retry",
+                start: "2024-01-15T10:00:00Z",
+                end: "2024-01-15T11:00:00Z",
+              },
+            ],
+            next_token: null,
+          },
+        }),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.listDeveloperWorkouts();
+
+    expect(result.records.map((record) => record.id)).toEqual(["after-internal-server-retry"]);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry non-transient developer workout errors", async () => {
+    const fetchFn = createMockFetch({
+      status: 403,
+      ok: false,
+      body: "Forbidden",
+    });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(client.listDeveloperWorkouts()).rejects.toThrow(
+      "WHOOP API error (403): Forbidden",
+    );
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
   it("throws the rate-limit error without retrying developer workout requests", async () => {
     const fetchFn = vi
       .fn<typeof globalThis.fetch>()
@@ -1359,6 +1416,21 @@ describe("WhoopClient API error handling", () => {
     await expect(
       client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z"),
     ).rejects.toThrow("WHOOP API error (403): Forbidden");
+  });
+
+  it("does not retry HTTP 500 responses from other endpoints", async () => {
+    const fetchFn = createMockFetch({
+      ok: false,
+      status: 500,
+      body: "Request failed.",
+    });
+
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(
+      client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z"),
+    ).rejects.toThrow("WHOOP API error (500): Request failed.");
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -22,6 +22,7 @@ import type {
 
 const WHOOP_API_BASE = "https://api.prod.whoop.com";
 const WHOOP_API_VERSION = "7";
+const WHOOP_DEVELOPER_WORKOUT_PATH = "/developer/v2/activity/workout";
 /** Minimum delay between consecutive WHOOP API requests (ms). */
 export const WHOOP_API_THROTTLE_MS = 1_000;
 const WHOOP_AUTH_ORIGIN = "https://id.whoop.com";
@@ -461,7 +462,10 @@ export class WhoopClient {
     }
 
     const text = await response.text();
-    if (isServiceUnavailableStatus(response.status)) {
+    if (
+      isServiceUnavailableStatus(response.status) ||
+      (requestUrl.pathname === WHOOP_DEVELOPER_WORKOUT_PATH && response.status === 500)
+    ) {
       throw createWhoopServiceUnavailableError(response, text);
     }
     throw new Error(`WHOOP API error (${response.status}): ${text}`);
@@ -564,7 +568,7 @@ export class WhoopClient {
       params.next_token = options.nextToken;
     }
     const raw = await this.#getWithRateLimitRetry<unknown>(
-      `${WHOOP_API_BASE}/developer/v2/activity/workout`,
+      `${WHOOP_API_BASE}${WHOOP_DEVELOPER_WORKOUT_PATH}`,
       params,
     );
     const parsed = whoopDeveloperWorkoutListResponseSchema.parse(raw);
