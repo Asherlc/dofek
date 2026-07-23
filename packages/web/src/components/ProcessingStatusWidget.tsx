@@ -1,6 +1,8 @@
 import {
   type ProcessingDisplayStage,
   type ProcessingDisplayStatus,
+  processingAggregateProgress,
+  processingCurrentFailure,
   processingHeading,
   processingStageLabel,
   processingStatusMessage,
@@ -28,6 +30,7 @@ export interface ProcessingStatusSnapshot {
     status: ProcessingDisplayStatus;
     datasets: string[];
     timeline: Array<{
+      sequence: number;
       stage: ProcessingDisplayStage;
       status: string;
       datasetKey: string | null;
@@ -77,31 +80,37 @@ export function ProcessingStatusWidget({
   alwaysVisible = false,
 }: ProcessingStatusWidgetProps) {
   const [expanded, setExpanded] = useState(false);
-  if (loading && !data) return null;
-  if (error) {
+  if (loading && !data) {
     return (
-      <output className="block w-full rounded-lg border border-l-4 border-l-red-500 bg-white px-3 py-2.5 text-slate-950 shadow-sm">
+      <section
+        className="w-full rounded-lg border border-l-4 border-l-blue-500 bg-white px-3 py-2.5 text-slate-950 shadow-sm"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <p className="text-sm font-semibold">Loading processing status…</p>
+      </section>
+    );
+  }
+  if (error && !data) {
+    return (
+      <section
+        className="w-full rounded-lg border border-l-4 border-l-red-500 bg-white px-3 py-2.5 text-slate-950 shadow-sm"
+        aria-live="polite"
+      >
         <h2 className="text-sm font-semibold">Processing status is unavailable</h2>
         <p className="mt-0.5 text-xs text-slate-600">{error.message}</p>
-      </output>
+      </section>
     );
   }
   if (!data || (data.overallStatus === "ready" && !alwaysVisible)) return null;
 
-  const firstFailure = data.operations
-    .flatMap((operation) => operation.timeline)
-    .find((event) => event.status === "failed")?.errorMessage;
-  const progressValues = data.datasets.flatMap((dataset) =>
-    dataset.progressPercentage === null ? [] : [dataset.progressPercentage],
-  );
-  const progress = progressValues.length > 0 ? Math.min(...progressValues) : null;
+  const currentFailure = processingCurrentFailure(data);
+  const progress = processingAggregateProgress(data.datasets);
 
   return (
-    <output
-      className={`block w-full rounded-lg border border-l-4 bg-white px-3 py-2.5 text-slate-950 shadow-sm ${borderClassByStatus[data.overallStatus]}`}
-      aria-live={
-        data.overallStatus === "active" || data.overallStatus === "partial" ? "polite" : undefined
-      }
+    <section
+      className={`w-full rounded-lg border border-l-4 bg-white px-3 py-2.5 text-slate-950 shadow-sm ${borderClassByStatus[data.overallStatus]}`}
+      aria-live="polite"
     >
       {contextLabel ? (
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -112,7 +121,7 @@ export function ProcessingStatusWidget({
       <p className="mt-0.5 text-xs text-slate-600">
         {processingStatusMessage({
           status: data.overallStatus,
-          errorMessage: firstFailure ?? null,
+          errorMessage: currentFailure,
         })}
       </p>
       {progress !== null && data.overallStatus !== "ready" ? (
@@ -141,9 +150,7 @@ export function ProcessingStatusWidget({
         <ol className="mt-2 space-y-2 border-l border-slate-200 pl-3">
           {data.operations.flatMap((operation) =>
             operation.timeline.map((event) => (
-              <li
-                key={`${operation.id}-${event.stage}-${event.datasetKey ?? "all"}-${event.outputPath ?? "dataset"}-${event.occurredAt}`}
-              >
+              <li key={`${operation.id}-${event.sequence}`}>
                 <p className="text-xs font-semibold">{processingStageLabel(event.stage)}</p>
                 <p className="text-xs text-slate-600">
                   {statusLabel(event.status)} · {new Date(event.occurredAt).toLocaleString()}
@@ -153,6 +160,6 @@ export function ProcessingStatusWidget({
           )}
         </ol>
       ) : null}
-    </output>
+    </section>
   );
 }

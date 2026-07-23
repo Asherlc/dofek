@@ -67,8 +67,50 @@ export function processingStatusMessage(input: {
   }
 }
 
-export function processingPollInterval(status: ProcessingDisplayStatus): number | false {
+export function processingPollInterval(status: ProcessingDisplayStatus): number {
   if (status === "active" || status === "partial" || status === "waiting") return 3_000;
-  if (status === "delayed") return 15_000;
-  return false;
+  return 15_000;
+}
+
+export function processingAggregateProgress(
+  datasets: readonly {
+    status: ProcessingDisplayStatus;
+    progressPercentage: number | null;
+  }[],
+): number | null {
+  const progressValues = datasets.flatMap((dataset) => {
+    if (dataset.status === "ready") return [100];
+    return dataset.progressPercentage === null ? [] : [dataset.progressPercentage];
+  });
+  if (progressValues.length === 0 || progressValues.length !== datasets.length) return null;
+  return Math.min(...progressValues);
+}
+
+export function processingCurrentFailure(input: {
+  datasets: readonly { key: string }[];
+  operations: readonly {
+    id: string;
+    datasets: readonly string[];
+    timeline: readonly {
+      status: string;
+      occurredAt: string;
+      errorMessage: string | null;
+    }[];
+  }[];
+}): string | null {
+  const currentOperationIds = new Set<string>();
+  for (const dataset of input.datasets) {
+    const currentOperation = input.operations.find((operation) =>
+      operation.datasets.includes(dataset.key),
+    );
+    if (currentOperation) currentOperationIds.add(currentOperation.id);
+  }
+  return (
+    input.operations
+      .filter((operation) => currentOperationIds.has(operation.id))
+      .flatMap((operation) => operation.timeline)
+      .filter((event) => event.status === "failed" && event.errorMessage !== null)
+      .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0]?.errorMessage ??
+    null
+  );
 }

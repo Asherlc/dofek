@@ -124,7 +124,7 @@ export async function main(): Promise<void> {
       `[clickhouse-cdc-health] ok: checked ${report.slotCount} slots and ${report.mirrorCount} ${mirrorLabel}`,
     );
     console.log(
-      `[clickhouse-cdc-health] processing reconciliation: ${reconciliation.completed} completed, ${reconciliation.waiting} waiting`,
+      `[clickhouse-cdc-health] processing reconciliation: checked ${reconciliation.checked}, completed ${reconciliation.completed}, waiting ${reconciliation.waiting}`,
     );
     await Sentry.close(2_000);
   } catch (error: unknown) {

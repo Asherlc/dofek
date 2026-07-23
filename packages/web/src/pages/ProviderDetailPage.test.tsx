@@ -121,6 +121,8 @@ const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: fa
 const mockSettingsSetMutate = vi.fn();
 const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
+const mockProcessingStatusInvalidate = vi.fn();
+const mockPollSyncJob = vi.fn();
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -150,7 +152,7 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     useUtils: () => ({
       processing: {
-        status: { invalidate: vi.fn() },
+        status: { invalidate: mockProcessingStatusInvalidate },
       },
       sync: {
         providers: { invalidate: vi.fn() },
@@ -158,6 +160,7 @@ vi.mock("../lib/trpc.ts", () => ({
         syncStatus: { fetch: vi.fn() },
       },
       providerDetail: {
+        availableDataTypes: { invalidate: vi.fn() },
         logs: { invalidate: vi.fn() },
         records: { invalidate: vi.fn() },
       },
@@ -169,7 +172,7 @@ vi.mock("../lib/trpc.ts", () => ({
 }));
 
 vi.mock("../lib/poll-sync-job.ts", () => ({
-  pollSyncJob: vi.fn(),
+  pollSyncJob: mockPollSyncJob,
 }));
 
 vi.mock("../lib/telemetry.ts", () => ({
@@ -407,6 +410,38 @@ describe("ProviderDetailPage import-only providers", () => {
 
     expect(screen.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
     expect(pollSyncJob).not.toHaveBeenCalled();
+  });
+
+  it("invalidates processing status when a manual sync completes", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      jobId: "job-1",
+      jobIds: ["job-1"],
+      providerJobs: [{ providerId: "wahoo", jobId: "job-1", queueName: "sync-wahoo" }],
+      providerResults: [{ providerId: "wahoo", status: "started", jobId: "job-1" }],
+    });
+    mockPollSyncJob.mockImplementationOnce(async ({ onComplete }: { onComplete: () => void }) =>
+      onComplete(),
+    );
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+
+    expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
   it("reports unexpected provider sync failures", async () => {

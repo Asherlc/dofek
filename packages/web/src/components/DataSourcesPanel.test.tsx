@@ -233,6 +233,10 @@ describe("DataSourcesPanel", () => {
 
     render(<DataSourcesPanel />);
 
+    expect(mockDataHealthQuery).toHaveBeenCalledWith(
+      { datasets: ["providers"] },
+      expect.any(Object),
+    );
     const readiness = screen.getByText("Processing needs attention");
     const provider = screen.getByText("Garmin");
 

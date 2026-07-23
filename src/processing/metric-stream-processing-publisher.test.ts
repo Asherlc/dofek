@@ -95,6 +95,58 @@ describe("MetricStreamProcessingPublisher", () => {
     });
   });
 
+  it("persists batch intent before publishing and does not publish when persistence fails", async () => {
+    const callOrder: string[] = [];
+    const publishRows = vi.fn(async () => {
+      callOrder.push("publish");
+      return [];
+    });
+    const recordPublishedBatch = vi.fn(async () => {
+      callOrder.push("persist");
+    });
+    const publisher = new MetricStreamProcessingPublisher(
+      { publishRows },
+      {
+        operationId: "30000000-0000-4000-8000-000000000001",
+        datasetKeys: ["recovery"],
+        recordPublishedBatch,
+      },
+    );
+
+    await publisher.publishRows([metricStreamRow], { operationRevision });
+
+    expect(callOrder).toEqual(["persist", "publish"]);
+
+    recordPublishedBatch.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(
+      publisher.publishRows([{ ...metricStreamRow, externalId: "hk:heart-rate-2" }], {
+        operationRevision,
+      }),
+    ).rejects.toThrow("database unavailable");
+    expect(publishRows).toHaveBeenCalledOnce();
+  });
+
+  it("reports persisted intents whose broker publish has not completed", async () => {
+    const publisher = new MetricStreamProcessingPublisher(
+      {
+        publishRows: vi.fn(async () => {
+          throw new Error("broker unavailable");
+        }),
+      },
+      {
+        operationId: "30000000-0000-4000-8000-000000000001",
+        datasetKeys: ["recovery"],
+        recordPublishedBatch: vi.fn(async () => undefined),
+      },
+    );
+
+    expect(publisher.hasUnpublishedBatchIntents).toBe(false);
+    await expect(publisher.publishRows([metricStreamRow], { operationRevision })).rejects.toThrow(
+      "broker unavailable",
+    );
+    expect(publisher.hasUnpublishedBatchIntents).toBe(true);
+  });
+
   it("rejects preassigned processing context", async () => {
     const { publisher, recordPublishedBatch } = makePublisher();
 

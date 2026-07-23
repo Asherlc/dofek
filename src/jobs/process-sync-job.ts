@@ -19,6 +19,7 @@ import {
 import {
   appendProcessingStageEvent,
   createProcessingOperation,
+  getProcessingOutputManifest,
   recordMetricStreamBatchPublished,
   recordRelationalCanonicalCommits,
 } from "../processing/processing-event-store.ts";
@@ -375,8 +376,12 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           idempotencyKey: `worker-relational-commit:${job.id ?? "unidentified-job"}`,
         });
       }
-      if (result.recordsSynced === 0 && !metricStreamPublisher?.hasPublishedBatches) {
-        await recordNoOutputStageSkips(db, processingOperation.id, processingOperation.datasetKeys);
+      const outputManifest = await getProcessingOutputManifest(db, processingOperation.id);
+      const noOutputDatasetKeys = processingOperation.datasetKeys.filter(
+        (datasetKey) => (outputManifest[datasetKey]?.length ?? 0) === 0,
+      );
+      if (noOutputDatasetKeys.length > 0) {
+        await recordNoOutputStageSkips(db, processingOperation.id, noOutputDatasetKeys);
       }
       const parts = [`${result.recordsSynced} synced`];
       if (hasErrors) parts.push(`${result.errors.length} errors`);

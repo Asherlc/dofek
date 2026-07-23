@@ -1,42 +1,31 @@
-import { PROCESSING_DATASET_KEYS } from "dofek/processing/dataset-contracts";
+import { processingPollInterval } from "@dofek/providers/processing-status";
+import {
+  PROCESSING_DATASET_KEYS,
+  PROCESSING_OUTPUT_PATHS,
+} from "dofek/processing/dataset-contracts";
+import { PROCESSING_OPERATION_KINDS } from "dofek/processing/processing-event-store";
+import {
+  DERIVED_PROCESSING_STATUSES,
+  PROCESSING_EVENT_STATUSES,
+  PROCESSING_STAGES,
+} from "dofek/processing/processing-state";
 import { z } from "zod";
+import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { ProcessingRepository } from "../repositories/processing-repository.ts";
-import { protectedProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 const datasetKeySchema = z.enum(PROCESSING_DATASET_KEYS);
-const outputPathSchema = z.enum(["relational", "metric_stream"]);
-const stageSchema = z.enum(["ingest", "canonical_commit", "cdc", "analytics", "cache_refresh"]);
-const eventStatusSchema = z.enum([
-  "queued",
-  "running",
-  "succeeded",
-  "failed",
-  "cancelled",
-  "skipped",
-]);
-const operationKindSchema = z.enum([
-  "provider_sync",
-  "file_import",
-  "push_ingest",
-  "data_deletion",
-  "analytics_build",
-  "cache_refresh",
-]);
-const derivedStatusSchema = z.enum([
-  "ready",
-  "waiting",
-  "active",
-  "partial",
-  "delayed",
-  "blocked",
-  "failed",
-  "cancelled",
-]);
+const outputPathSchema = z.enum(PROCESSING_OUTPUT_PATHS);
+const stageSchema = z.enum(PROCESSING_STAGES);
+const eventStatusSchema = z.enum(PROCESSING_EVENT_STATUSES);
+const operationKindSchema = z.enum(PROCESSING_OPERATION_KINDS);
+const derivedStatusSchema = z.enum(DERIVED_PROCESSING_STATUSES);
 const statusInputSchema = z.object({
   providerId: z.string().min(1).optional(),
   datasets: z.array(datasetKeySchema).min(1).optional(),
 });
 const timelineEventSchema = z.object({
+  sequence: z.number().int().positive(),
   stage: stageSchema,
   status: eventStatusSchema,
   datasetKey: datasetKeySchema.nullable(),
@@ -86,18 +75,18 @@ const historyOutputSchema = z.object({
       kind: operationKindSchema,
       externalCorrelationKey: z.string().nullable(),
       datasetKeys: z.array(datasetKeySchema).min(1),
-      createdAt: z.date(),
+      createdAt: timestampStringSchema.pipe(z.string().datetime()),
     }),
   ),
   nextCursor: z.uuid().nullable(),
 });
 
 export const processingRouter = router({
-  status: protectedProcedure
+  status: cachedProtectedQuery({ maxAge: processingPollInterval("active") })
     .input(statusInputSchema)
     .output(statusOutputSchema)
     .query(({ ctx, input }) => new ProcessingRepository(ctx.db, ctx.userId).status(input)),
-  history: protectedProcedure
+  history: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(
       z.object({
         cursor: z.uuid().nullable().optional(),

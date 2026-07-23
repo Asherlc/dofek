@@ -49,6 +49,23 @@ vi.mock("../logger.ts", () => ({
 }));
 
 const processingOperationId = "30000000-0000-4000-8000-000000000001";
+const mockProcessingOutputManifest = vi.hoisted<
+  Partial<Record<ProcessingDatasetKey, Array<"metric_stream" | "relational">>>
+>(() => ({}));
+
+function recordMockProcessingOutputs(
+  datasetKeys: readonly ProcessingDatasetKey[],
+  outputPath: "metric_stream" | "relational",
+): void {
+  for (const datasetKey of datasetKeys) {
+    const outputPaths = mockProcessingOutputManifest[datasetKey] ?? [];
+    if (!outputPaths.includes(outputPath)) {
+      outputPaths.push(outputPath);
+    }
+    mockProcessingOutputManifest[datasetKey] = outputPaths;
+  }
+}
+
 const mockCreateProcessingOperation = vi.fn(
   async (
     _database: unknown,
@@ -73,10 +90,17 @@ const mockAppendProcessingStageEvent = vi.fn(
   async (_database: unknown, _input: unknown) => undefined,
 );
 const mockRecordMetricStreamBatchPublished = vi.fn(
-  async (_database: unknown, _input: unknown) => undefined,
+  async (_database: unknown, input: { datasetKeys: ProcessingDatasetKey[] }) => {
+    recordMockProcessingOutputs(input.datasetKeys, "metric_stream");
+  },
 );
 const mockRecordRelationalCanonicalCommits = vi.fn(
-  async (_database: unknown, _input: unknown) => undefined,
+  async (_database: unknown, input: { datasetKeys: ProcessingDatasetKey[] }) => {
+    recordMockProcessingOutputs(input.datasetKeys, "relational");
+  },
+);
+const mockGetProcessingOutputManifest = vi.fn(
+  async (_database: unknown, _operationId: string) => mockProcessingOutputManifest,
 );
 vi.mock("../processing/processing-event-store.ts", () => ({
   appendProcessingStageEvent: (database: unknown, input: unknown) =>
@@ -85,10 +109,16 @@ vi.mock("../processing/processing-event-store.ts", () => ({
     database: unknown,
     input: Parameters<typeof mockCreateProcessingOperation>[1],
   ) => mockCreateProcessingOperation(database, input),
-  recordMetricStreamBatchPublished: (database: unknown, input: unknown) =>
-    mockRecordMetricStreamBatchPublished(database, input),
-  recordRelationalCanonicalCommits: (database: unknown, input: unknown) =>
-    mockRecordRelationalCanonicalCommits(database, input),
+  getProcessingOutputManifest: (database: unknown, operationId: string) =>
+    mockGetProcessingOutputManifest(database, operationId),
+  recordMetricStreamBatchPublished: (
+    database: unknown,
+    input: { datasetKeys: ProcessingDatasetKey[] },
+  ) => mockRecordMetricStreamBatchPublished(database, input),
+  recordRelationalCanonicalCommits: (
+    database: unknown,
+    input: { datasetKeys: ProcessingDatasetKey[] },
+  ) => mockRecordRelationalCanonicalCommits(database, input),
 }));
 
 const mockMetricStreamPublishRows = vi.fn(
@@ -307,6 +337,9 @@ describe("processSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockProviderRateLimitCooldownRecords.clear();
+    for (const datasetKey of Object.keys(mockProcessingOutputManifest)) {
+      Reflect.deleteProperty(mockProcessingOutputManifest, datasetKey);
+    }
     // Restore default return values after clearAllMocks
     mockGetEnabledSyncProviders.mockReturnValue([]);
     mockGetProvider.mockReturnValue(undefined);
@@ -327,6 +360,10 @@ describe("processSyncJob", () => {
     mockAppendProcessingStageEvent.mockClear();
     mockRecordMetricStreamBatchPublished.mockClear();
     mockRecordRelationalCanonicalCommits.mockClear();
+    mockGetProcessingOutputManifest.mockReset();
+    mockGetProcessingOutputManifest.mockImplementation(
+      async (_database: unknown, _operationId: string) => mockProcessingOutputManifest,
+    );
     mockMetricStreamPublishRows.mockClear();
     mockMetricStreamReplaceRows.mockClear();
   });
@@ -484,12 +521,28 @@ describe("processSyncJob", () => {
   it("does not record relational output for a metric-only dataset", async () => {
     const provider = createMockProvider({
       processingDatasetKeys: ["body"],
-      sync: vi.fn().mockResolvedValue({
-        provider: "test-provider",
-        recordsSynced: 1,
-        errors: [],
-        duration: 100,
-      } satisfies SyncResult),
+      sync: vi.fn(async (run: SyncRun) => {
+        await run.options.metricStreamPublisher?.publishRows(
+          [
+            {
+              recordedAt: "2026-06-02T10:00:00.000Z",
+              userId: "00000000-0000-4000-8000-000000000001",
+              providerId: "test-provider",
+              externalId: "body-only",
+              sourceType: "api",
+              channel: "weight",
+              scalar: 75,
+            },
+          ],
+          { operationRevision: "1000000000000001" },
+        );
+        return {
+          provider: "test-provider",
+          recordsSynced: 1,
+          errors: [],
+          duration: 100,
+        } satisfies SyncResult;
+      }),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
@@ -598,6 +651,43 @@ describe("processSyncJob", () => {
       message: "No new data was emitted for this dataset",
       idempotencyKey: "no-output:nutrition:cache_refresh",
     });
+  });
+
+  it("does not mark output from an earlier continuation attempt as skipped", async () => {
+    const provider = createMockProvider({
+      id: "garmin",
+      sync: vi.fn().mockResolvedValue({
+        provider: "garmin",
+        recordsSynced: 0,
+        errors: [],
+        duration: 100,
+      } satisfies SyncResult),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    mockGetProcessingOutputManifest.mockResolvedValue({ recovery: ["metric_stream"] });
+
+    await runSyncJob(
+      createMockJob({
+        providerId: "garmin",
+        processingOperationIds: { garmin: processingOperationId },
+      }),
+      mockDb,
+    );
+
+    expect(mockAppendProcessingStageEvent).not.toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        datasetKey: "recovery",
+        status: "skipped",
+      }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        datasetKey: "training",
+        status: "skipped",
+      }),
+    );
   });
 
   it("reuses the persisted processing operation on retry", async () => {

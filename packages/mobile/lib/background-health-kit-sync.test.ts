@@ -190,7 +190,9 @@ describe("initBackgroundHealthKitSync", () => {
   it("does not report locked-device errors to Sentry", async () => {
     vi.useFakeTimers();
     vi.mocked(queryWorkouts).mockRejectedValueOnce(
-      new Error("Protected health data is inaccessible"),
+      Object.assign(new Error("HealthKit data is unavailable while the device is locked"), {
+        code: "HEALTHKIT_DATABASE_INACCESSIBLE",
+      }),
     );
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);

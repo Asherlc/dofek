@@ -259,7 +259,11 @@ export default function StrainScreen() {
     isLoading: trainingQuery.isLoading,
   });
   const { refreshing, onRefresh } = useRefresh({
-    invalidate: () => utils.mobileDashboard.training.invalidate().then(() => undefined),
+    invalidate: () =>
+      Promise.all([
+        utils.mobileDashboard.training.invalidate(),
+        utils.processing.status.invalidate(),
+      ]).then(() => undefined),
   });
 
   return (

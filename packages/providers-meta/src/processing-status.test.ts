@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  processingAggregateProgress,
+  processingCurrentFailure,
   processingHeading,
   processingPollInterval,
   processingStageLabel,
@@ -57,12 +59,66 @@ describe("processing status presentation", () => {
     );
   });
 
-  it("polls adaptively and stops for terminal state", () => {
+  it("polls active work frequently and recoverable snapshots at a lower frequency", () => {
     expect(processingPollInterval("active")).toBe(3_000);
     expect(processingPollInterval("partial")).toBe(3_000);
     expect(processingPollInterval("waiting")).toBe(3_000);
     expect(processingPollInterval("delayed")).toBe(15_000);
-    expect(processingPollInterval("ready")).toBe(false);
-    expect(processingPollInterval("failed")).toBe(false);
+    expect(processingPollInterval("ready")).toBe(15_000);
+    expect(processingPollInterval("failed")).toBe(15_000);
+    expect(processingPollInterval("blocked")).toBe(15_000);
+    expect(processingPollInterval("cancelled")).toBe(15_000);
+  });
+
+  it("keeps aggregate progress unknown until every non-ready dataset reports progress", () => {
+    expect(
+      processingAggregateProgress([
+        { status: "active", progressPercentage: 80 },
+        { status: "waiting", progressPercentage: null },
+      ]),
+    ).toBeNull();
+    expect(
+      processingAggregateProgress([
+        { status: "active", progressPercentage: 80 },
+        { status: "ready", progressPercentage: null },
+      ]),
+    ).toBe(80);
+  });
+
+  it("selects failures only from the current operation for each dataset", () => {
+    expect(
+      processingCurrentFailure({
+        datasets: [{ key: "activity" }, { key: "sleep" }],
+        operations: [
+          {
+            id: "current-activity",
+            datasets: ["activity"],
+            timeline: [],
+          },
+          {
+            id: "historical-activity",
+            datasets: ["activity"],
+            timeline: [
+              {
+                status: "failed",
+                occurredAt: "2026-07-23T12:00:00.000Z",
+                errorMessage: "Historical failure",
+              },
+            ],
+          },
+          {
+            id: "current-sleep",
+            datasets: ["sleep"],
+            timeline: [
+              {
+                status: "failed",
+                occurredAt: "2026-07-22T12:00:00.000Z",
+                errorMessage: "Current failure",
+              },
+            ],
+          },
+        ],
+      }),
+    ).toBe("Current failure");
   });
 });

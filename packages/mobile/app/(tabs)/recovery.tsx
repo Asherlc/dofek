@@ -240,7 +240,11 @@ export default function RecoveryScreen() {
     isFetching: recoveryQuery.isFetching,
   });
   const { refreshing, onRefresh } = useRefresh({
-    invalidate: () => utils.mobileDashboard.recovery.invalidate().then(() => undefined),
+    invalidate: () =>
+      Promise.all([
+        utils.mobileDashboard.recovery.invalidate(),
+        utils.processing.status.invalidate(),
+      ]).then(() => undefined),
   });
 
   return (

@@ -4,6 +4,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
+const mockTrainingInvalidate = vi.fn();
+const mockProcessingStatusInvalidate = vi.fn();
+let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 
 type MockTrainingData = Record<string, unknown>;
 type MockTrainingState = {
@@ -81,14 +84,20 @@ vi.mock("../../lib/trpc", () => ({
     },
     useUtils: () => ({
       mobileDashboard: {
-        training: { invalidate: vi.fn() },
+        training: { invalidate: mockTrainingInvalidate },
+      },
+      processing: {
+        status: { invalidate: mockProcessingStatusInvalidate },
       },
     }),
   },
 }));
 
 vi.mock("../../lib/useRefresh", () => ({
-  useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
+  useRefresh: (input: { invalidate?: (() => Promise<void> | void) | null }) => {
+    mockRefreshInvalidate = input.invalidate;
+    return { refreshing: false, onRefresh: vi.fn() };
+  },
 }));
 
 vi.mock("../../lib/useTodayQueryDate", () => ({
@@ -114,7 +123,23 @@ describe("StrainScreen recent activity navigation", () => {
   beforeEach(() => {
     mockRouterPush.mockReset();
     vi.mocked(captureException).mockReset();
+    mockTrainingInvalidate.mockReset();
+    mockProcessingStatusInvalidate.mockReset();
+    mockTrainingInvalidate.mockResolvedValue(undefined);
+    mockProcessingStatusInvalidate.mockResolvedValue(undefined);
+    mockRefreshInvalidate = undefined;
     resetMockTrainingState();
+  });
+
+  it("refreshes training data and processing status together", async () => {
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(mockRefreshInvalidate).toBeTypeOf("function");
+    await mockRefreshInvalidate?.();
+
+    expect(mockTrainingInvalidate).toHaveBeenCalledOnce();
+    expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
   it("keeps day selector visible while training data is loading", async () => {
