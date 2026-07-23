@@ -117,6 +117,8 @@ function ActivitySourceLinkLabel({ link, prefix }: { link: ActivitySourceLink; p
           }}
           hitSlop={4}
           style={styles.sourceLinkPressable}
+          accessibilityRole="link"
+          accessibilityLabel={`Open ${link.label}`}
         >
           <Text style={styles.sourceLink}>{link.label} ↗</Text>
         </Pressable>
@@ -823,6 +825,12 @@ export default function ActivityDetailScreen() {
       <Pressable
         onPress={handleRecompute}
         disabled={recomputeMutation.isPending || isRecomputing}
+        accessibilityRole="button"
+        accessibilityLabel="Recompute activity"
+        accessibilityState={{
+          busy: recomputeMutation.isPending || isRecomputing,
+          disabled: recomputeMutation.isPending || isRecomputing,
+        }}
         style={({ pressed }) => [
           styles.recomputeButton,
           pressed && styles.recomputeButtonPressed,
@@ -837,6 +845,12 @@ export default function ActivityDetailScreen() {
       <Pressable
         onPress={handleExport}
         disabled={exportingFormat != null || !sessionToken}
+        accessibilityRole="button"
+        accessibilityLabel="Export Activity"
+        accessibilityState={{
+          busy: exportingFormat != null,
+          disabled: exportingFormat != null || !sessionToken,
+        }}
         style={({ pressed }) => [
           styles.exportButton,
           pressed && styles.exportButtonPressed,
@@ -856,8 +870,12 @@ export default function ActivityDetailScreen() {
         animationType="fade"
         onRequestClose={() => setExportModalVisible(false)}
       >
-        <Pressable style={styles.exportModalBackdrop} onPress={() => setExportModalVisible(false)}>
-          <Pressable style={styles.exportModalCard} onPress={() => undefined}>
+        <Pressable
+          style={styles.exportModalBackdrop}
+          onPress={() => setExportModalVisible(false)}
+          accessible={false}
+        >
+          <Pressable style={styles.exportModalCard} onPress={() => undefined} accessible={false}>
             <Text style={styles.exportModalTitle}>Export Activity</Text>
             <Text style={styles.exportModalSubtitle}>Choose a file format</Text>
             {exportOptions.map(({ label, format, disabled }) => (
@@ -865,6 +883,12 @@ export default function ActivityDetailScreen() {
                 key={format}
                 disabled={disabled || exportingFormat != null}
                 onPress={() => handleExportFormatSelect(format)}
+                accessibilityRole="button"
+                accessibilityLabel={`Export as ${label}`}
+                accessibilityState={{
+                  busy: exportingFormat === format,
+                  disabled: disabled || exportingFormat != null,
+                }}
                 style={({ pressed }) => [
                   styles.exportModalOption,
                   pressed && !disabled && styles.exportModalOptionPressed,
@@ -878,6 +902,8 @@ export default function ActivityDetailScreen() {
             ))}
             <Pressable
               onPress={() => setExportModalVisible(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel export"
               style={({ pressed }) => [
                 styles.exportModalCancel,
                 pressed && styles.exportModalOptionPressed,
@@ -893,6 +919,12 @@ export default function ActivityDetailScreen() {
       <Pressable
         onPress={handleDelete}
         disabled={deleteMutation.isPending}
+        accessibilityRole="button"
+        accessibilityLabel="Delete Activity"
+        accessibilityState={{
+          busy: deleteMutation.isPending,
+          disabled: deleteMutation.isPending,
+        }}
         style={({ pressed }) => [
           styles.deleteButton,
           pressed && styles.deleteButtonPressed,

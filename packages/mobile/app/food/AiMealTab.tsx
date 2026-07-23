@@ -60,6 +60,9 @@ export function AiMealTab({
         onPress={onAnalyze}
         activeOpacity={0.8}
         disabled={!value.trim() || isBusy}
+        accessibilityRole="button"
+        accessibilityLabel="Log with AI"
+        accessibilityState={{ busy: isBusy, disabled: !value.trim() || isBusy }}
       >
         <Text style={styles.saveButtonText}>{isBusy ? "Logging..." : "Log with AI"}</Text>
       </TouchableOpacity>
@@ -87,6 +90,9 @@ export function AiMealTab({
               onPress={onCancel}
               activeOpacity={0.8}
               disabled={isSaving}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel AI meal"
+              accessibilityState={{ busy: isSaving, disabled: isSaving }}
             >
               <Text style={styles.aiMealCancelText}>Cancel</Text>
             </TouchableOpacity>
@@ -95,6 +101,9 @@ export function AiMealTab({
               onPress={onConfirm}
               activeOpacity={0.8}
               disabled={isSaving}
+              accessibilityRole="button"
+              accessibilityLabel="Confirm and log AI meal"
+              accessibilityState={{ busy: isSaving, disabled: isSaving }}
             >
               <Text style={styles.aiMealConfirmText}>
                 {isSaving ? "Logging..." : "Confirm and log"}

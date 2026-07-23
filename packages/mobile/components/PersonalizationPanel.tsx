@@ -159,6 +159,12 @@ export function PersonalizationPanel() {
           onPress={() => refitMutation.mutate()}
           disabled={refitMutation.isPending}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Refit Now"
+          accessibilityState={{
+            busy: refitMutation.isPending,
+            disabled: refitMutation.isPending,
+          }}
         >
           <Text style={[styles.refitText, refitMutation.isPending && styles.textDisabled]}>
             {refitMutation.isPending ? "Refitting..." : "Refit Now"}
@@ -170,6 +176,12 @@ export function PersonalizationPanel() {
             onPress={handleReset}
             disabled={resetMutation.isPending}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Reset to Defaults"
+            accessibilityState={{
+              busy: resetMutation.isPending,
+              disabled: resetMutation.isPending,
+            }}
           >
             <Text style={[styles.resetText, resetMutation.isPending && styles.textDisabled]}>
               Reset to Defaults

@@ -22,6 +22,16 @@ describe("OnboardingScreen", () => {
     expect(screen.getByText("Check your dashboard")).toBeTruthy();
   });
 
+  it("exposes setup navigation as named accessibility actions", () => {
+    render(<OnboardingScreen />);
+
+    const setupButton = screen.getByRole("button", { name: "Set up data sources" });
+    const dashboardButton = screen.getByRole("button", { name: "Open dashboard" });
+
+    expect(setupButton.getAttribute("aria-label")).toBe("Set up data sources");
+    expect(dashboardButton.getAttribute("aria-label")).toBe("Open dashboard");
+  });
+
   it("navigates to provider setup", () => {
     render(<OnboardingScreen />);
 

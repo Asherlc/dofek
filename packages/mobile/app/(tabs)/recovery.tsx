@@ -279,6 +279,9 @@ export default function RecoveryScreen() {
                 LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                 setRecoveryExpanded((prev) => !prev);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={`${recoveryExpanded ? "Collapse" : "Expand"} recovery score`}
+              accessibilityState={{ expanded: recoveryExpanded }}
             >
               <Card title="Recovery Score">
                 <View style={styles.chartRow}>
@@ -562,6 +565,8 @@ export default function RecoveryScreen() {
             style={styles.navLink}
             onPress={() => router.push("/sleep")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Sleep Detail"
           >
             <Text style={styles.navLinkText}>Sleep Detail</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
@@ -570,6 +575,8 @@ export default function RecoveryScreen() {
             style={styles.navLink}
             onPress={() => router.push("/correlation")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Correlation Explorer"
           >
             <Text style={styles.navLinkText}>Correlation Explorer</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
@@ -578,6 +585,8 @@ export default function RecoveryScreen() {
             style={styles.navLink}
             onPress={() => router.push("/daily-heart-rate")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Heart Rate by Source"
           >
             <Text style={styles.navLinkText}>Heart Rate by Source</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>

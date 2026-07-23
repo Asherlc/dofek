@@ -188,6 +188,9 @@ export default function SettingsScreen() {
           style={styles.card}
           onPress={() => router.push("/providers")}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Data Sources"
+          accessibilityState={{ busy: providers.isLoading }}
         >
           <View style={styles.dataSourcesRow}>
             <View style={styles.dataSourcesInfo}>
@@ -266,6 +269,14 @@ export default function SettingsScreen() {
               ]}
               onPress={handleSetPassword}
               disabled={setPasswordMutation.isPending}
+              accessibilityRole="button"
+              accessibilityLabel={
+                passwordStatus.data?.hasPassword ? "Change Password" : "Set Password"
+              }
+              accessibilityState={{
+                busy: setPasswordMutation.isPending,
+                disabled: setPasswordMutation.isPending,
+              }}
             >
               <Text style={styles.passwordButtonText}>
                 {passwordStatus.data?.hasPassword ? "Change Password" : "Set Password"}
@@ -291,6 +302,13 @@ export default function SettingsScreen() {
                 onPress={() => handleUnitChange(option.value)}
                 activeOpacity={0.7}
                 disabled={setSettingMutation.isPending}
+                accessibilityRole="button"
+                accessibilityLabel={option.label}
+                accessibilityState={{
+                  busy: setSettingMutation.isPending,
+                  disabled: setSettingMutation.isPending,
+                  selected: isSelected,
+                }}
               >
                 <Text style={[styles.unitLabel, isSelected && styles.unitLabelSelected]}>
                   {option.label}
@@ -358,6 +376,12 @@ export default function SettingsScreen() {
                     onPress={() => checkoutSessionMutation.mutate()}
                     activeOpacity={0.7}
                     disabled={checkoutSessionMutation.isPending}
+                    accessibilityRole="button"
+                    accessibilityLabel="Upgrade to Full Access"
+                    accessibilityState={{
+                      busy: checkoutSessionMutation.isPending,
+                      disabled: checkoutSessionMutation.isPending,
+                    }}
                   >
                     <Text style={styles.billingButtonText}>
                       {checkoutSessionMutation.isPending
@@ -375,6 +399,12 @@ export default function SettingsScreen() {
                     onPress={() => portalSessionMutation.mutate()}
                     activeOpacity={0.7}
                     disabled={portalSessionMutation.isPending}
+                    accessibilityRole="button"
+                    accessibilityLabel="Manage Billing"
+                    accessibilityState={{
+                      busy: portalSessionMutation.isPending,
+                      disabled: portalSessionMutation.isPending,
+                    }}
                   >
                     <Text style={styles.billingButtonText}>
                       {portalSessionMutation.isPending
@@ -416,10 +446,17 @@ export default function SettingsScreen() {
                   }
                   setEditingGoal(false);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel="Save goal weight"
+                accessibilityState={{ busy: goalWeightMutation.isPending }}
               >
                 <Text style={styles.goalSaveText}>Save</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setEditingGoal(false)}>
+              <TouchableOpacity
+                onPress={() => setEditingGoal(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel goal weight edit"
+              >
                 <Text style={styles.goalCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -437,10 +474,17 @@ export default function SettingsScreen() {
                   );
                   setEditingGoal(true);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel="Edit goal weight"
               >
                 <Text style={styles.goalEditText}>Edit</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => goalWeightMutation.mutate({ weightKg: null })}>
+              <TouchableOpacity
+                onPress={() => goalWeightMutation.mutate({ weightKg: null })}
+                accessibilityRole="button"
+                accessibilityLabel="Clear goal weight"
+                accessibilityState={{ busy: goalWeightMutation.isPending }}
+              >
                 <Text style={styles.goalCancelText}>Clear</Text>
               </TouchableOpacity>
             </View>
@@ -450,6 +494,8 @@ export default function SettingsScreen() {
                 setGoalInput("");
                 setEditingGoal(true);
               }}
+              accessibilityRole="button"
+              accessibilityLabel="Set Goal Weight"
             >
               <Text style={styles.goalEditText}>Set Goal Weight</Text>
             </TouchableOpacity>
@@ -487,6 +533,8 @@ export default function SettingsScreen() {
           style={styles.card}
           onPress={() => router.push("/support")}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Contact Support"
         >
           <View style={styles.dataSourcesRow}>
             <Text style={styles.devToolLabel}>Contact Support</Text>
@@ -507,6 +555,8 @@ export default function SettingsScreen() {
               router.push("/ble-probe");
             }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="BLE Probe"
           >
             <Text style={styles.devToolLabel}>BLE Probe</Text>
             <Text style={styles.devToolChevron}>›</Text>
@@ -518,6 +568,8 @@ export default function SettingsScreen() {
               router.push("/imu-visualization");
             }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="IMU Visualization"
           >
             <Text style={styles.devToolLabel}>IMU Visualization</Text>
             <Text style={styles.devToolChevron}>›</Text>
@@ -529,6 +581,8 @@ export default function SettingsScreen() {
               router.push("/heart-rate-visualization");
             }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Heart Rate Visualization"
           >
             <Text style={styles.devToolLabel}>Heart Rate Visualization</Text>
             <Text style={styles.devToolChevron}>›</Text>
@@ -565,6 +619,12 @@ export default function SettingsScreen() {
             onPress={handleDeleteAllUserData}
             activeOpacity={0.7}
             disabled={deleteAllDataMutation.isPending}
+            accessibilityRole="button"
+            accessibilityLabel="Delete All User Data"
+            accessibilityState={{
+              busy: deleteAllDataMutation.isPending,
+              disabled: deleteAllDataMutation.isPending,
+            }}
           >
             <Text style={styles.deleteButtonText}>
               {deleteAllDataMutation.isPending ? "Deleting..." : "Delete All User Data"}
@@ -575,7 +635,13 @@ export default function SettingsScreen() {
 
       {/* ── Logout ── */}
       <View style={styles.section}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.logoutButton}
+          onPress={handleLogout}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Log Out"
+        >
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
       </View>

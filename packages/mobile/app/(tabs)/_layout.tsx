@@ -17,7 +17,12 @@ export default function TabsLayout() {
             <Ionicons name={getTabIconName("index", focused)} size={size} color={color} />
           ),
           headerRight: () => (
-            <Pressable onPress={() => router.push("/settings")} style={styles.headerButton}>
+            <Pressable
+              onPress={() => router.push("/settings")}
+              style={styles.headerButton}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+            >
               <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
             </Pressable>
           ),

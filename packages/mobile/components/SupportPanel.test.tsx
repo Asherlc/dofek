@@ -58,6 +58,23 @@ describe("SupportPanel", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it("exposes submission as a named disabled accessibility action", () => {
+    render(<SupportPanel onSubmit={vi.fn()} onReset={vi.fn()} isPending={false} />);
+
+    const submitButton = screen.getByRole("button", { name: "Send Message" });
+
+    expect(submitButton.getAttribute("aria-label")).toBe("Send Message");
+    expect(submitButton.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("announces pending submission as busy", () => {
+    render(<SupportPanel onSubmit={vi.fn()} onReset={vi.fn()} isPending />);
+
+    const submitButton = screen.getByRole("button", { name: "Send Message" });
+    expect(submitButton.getAttribute("aria-busy")).toBe("true");
+    expect(submitButton.getAttribute("aria-disabled")).toBe("true");
+  });
+
   it("shows the error message", () => {
     render(
       <SupportPanel

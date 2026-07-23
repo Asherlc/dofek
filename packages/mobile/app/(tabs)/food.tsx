@@ -218,11 +218,21 @@ export default function FoodScreen() {
       >
         {/* Date navigation */}
         <View style={styles.dateNav}>
-          <TouchableOpacity onPress={goToPreviousDay} style={styles.dateArrow}>
+          <TouchableOpacity
+            onPress={goToPreviousDay}
+            style={styles.dateArrow}
+            accessibilityRole="button"
+            accessibilityLabel="Previous day"
+          >
             <Text style={styles.dateArrowText}>{"\u2039"}</Text>
           </TouchableOpacity>
           <Text style={styles.dateHeader}>{formatDateForDisplay(selectedDate)}</Text>
-          <TouchableOpacity onPress={goToNextDay} style={styles.dateArrow}>
+          <TouchableOpacity
+            onPress={goToNextDay}
+            style={styles.dateArrow}
+            accessibilityRole="button"
+            accessibilityLabel="Next day"
+          >
             <Text style={styles.dateArrowText}>{"\u203A"}</Text>
           </TouchableOpacity>
         </View>
@@ -232,12 +242,16 @@ export default function FoodScreen() {
           <TouchableOpacity
             onPress={() => router.push("/nutrition-analytics")}
             style={styles.sectionLinkButton}
+            accessibilityRole="button"
+            accessibilityLabel="Nutrition Analytics"
           >
             <Text style={styles.sectionLinkText}>Analytics</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push("/supplements")}
             style={styles.sectionLinkButton}
+            accessibilityRole="button"
+            accessibilityLabel="Supplements"
           >
             <Text style={styles.sectionLinkText}>Supplements</Text>
           </TouchableOpacity>
@@ -252,6 +266,8 @@ export default function FoodScreen() {
                 onPress={() => handleOpenFoodInput(key)}
                 style={styles.foodInputButton}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={label}
               >
                 <Text style={styles.foodInputButtonText}>{label}</Text>
               </TouchableOpacity>
@@ -283,6 +299,12 @@ export default function FoodScreen() {
             onPress={handleLogAiMeal}
             disabled={aiLoggingInProgress || !aiMealInput.trim()}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Log with AI"
+            accessibilityState={{
+              busy: aiLoggingInProgress,
+              disabled: aiLoggingInProgress || !aiMealInput.trim(),
+            }}
           >
             <Text style={styles.aiInputButtonText}>
               {aiLoggingInProgress ? "Logging..." : "Log with AI"}
@@ -308,6 +330,8 @@ export default function FoodScreen() {
                   style={styles.aiReviewCancelButton}
                   onPress={() => setPendingAiMealItems([])}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel AI meal"
                 >
                   <Text style={styles.aiReviewCancelText}>Cancel</Text>
                 </TouchableOpacity>
@@ -319,6 +343,12 @@ export default function FoodScreen() {
                   onPress={handleConfirmAiMeal}
                   disabled={createAiEntryMutation.isPending}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Confirm and log AI meal"
+                  accessibilityState={{
+                    busy: createAiEntryMutation.isPending,
+                    disabled: createAiEntryMutation.isPending,
+                  }}
                 >
                   <Text style={styles.aiReviewConfirmText}>
                     {createAiEntryMutation.isPending ? "Logging..." : "Confirm and log"}
@@ -330,7 +360,12 @@ export default function FoodScreen() {
         </View>
 
         {!isToday(selectedDate) && (
-          <TouchableOpacity onPress={() => setSelectedDate(new Date())} style={styles.todayButton}>
+          <TouchableOpacity
+            onPress={() => setSelectedDate(new Date())}
+            style={styles.todayButton}
+            accessibilityRole="button"
+            accessibilityLabel="Go to Today"
+          >
             <Text style={styles.todayButtonText}>Go to Today</Text>
           </TouchableOpacity>
         )}

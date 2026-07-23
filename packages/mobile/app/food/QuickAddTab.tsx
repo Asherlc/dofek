@@ -62,6 +62,9 @@ export function QuickAddTab({
             style={[styles.mealChip, selectedMeal === value && styles.mealChipSelected]}
             onPress={() => onMealChange(value)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityState={{ selected: selectedMeal === value }}
           >
             <Text
               style={[styles.mealChipText, selectedMeal === value && styles.mealChipTextSelected]}
@@ -138,6 +141,9 @@ export function QuickAddTab({
         onPress={onSave}
         activeOpacity={0.8}
         disabled={isSaving}
+        accessibilityRole="button"
+        accessibilityLabel="Log food"
+        accessibilityState={{ busy: isSaving, disabled: isSaving }}
       >
         <Text style={styles.saveButtonText}>{isSaving ? "Saving..." : "Log"}</Text>
       </TouchableOpacity>

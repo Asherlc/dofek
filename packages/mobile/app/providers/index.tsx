@@ -621,6 +621,9 @@ export default function ProvidersScreen() {
             onPress={() => handleSyncAll(false)}
             activeOpacity={0.7}
             disabled={anySyncing}
+            accessibilityRole="button"
+            accessibilityLabel="Sync All"
+            accessibilityState={{ busy: anySyncing, disabled: anySyncing }}
           >
             {anySyncing ? (
               <ActivityIndicator color={colors.text} size="small" />
@@ -633,6 +636,9 @@ export default function ProvidersScreen() {
             onPress={() => handleSyncAll(true)}
             activeOpacity={0.7}
             disabled={anySyncing}
+            accessibilityRole="button"
+            accessibilityLabel="Full Sync All"
+            accessibilityState={{ busy: anySyncing, disabled: anySyncing }}
           >
             <Text style={styles.fullSyncAllButtonText}>Full Sync All</Text>
           </TouchableOpacity>
@@ -699,7 +705,12 @@ export default function ProvidersScreen() {
         onPress={() => router.push("/providers/apple_health")}
       />
       {appleHealth.model.shouldShowPermissionBanner() && (
-        <TouchableOpacity style={styles.permissionBanner} onPress={handleHealthKitConnect}>
+        <TouchableOpacity
+          style={styles.permissionBanner}
+          onPress={handleHealthKitConnect}
+          accessibilityRole="button"
+          accessibilityLabel="Review Apple Health permissions"
+        >
           <Text style={styles.permissionBannerText}>
             Apple Health permissions need updating — tap to review
           </Text>

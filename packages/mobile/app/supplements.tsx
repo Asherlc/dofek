@@ -57,6 +57,9 @@ function ChipPicker<T extends string>({
           style={[styles.chip, value === opt.value && styles.chipSelected]}
           onPress={() => onChange(value === opt.value ? "" : opt.value)}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={opt.label}
+          accessibilityState={{ selected: value === opt.value }}
         >
           <Text style={[styles.chipText, value === opt.value && styles.chipTextSelected]}>
             {opt.label}
@@ -126,6 +129,9 @@ export default function SupplementsScreen() {
           style={styles.addButton}
           onPress={() => setShowForm(!showForm)}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={showForm ? "Cancel adding supplement" : "Add Supplement"}
+          accessibilityState={{ expanded: showForm }}
         >
           <Text style={styles.addButtonText}>{showForm ? "Cancel" : "+ Add Supplement"}</Text>
         </TouchableOpacity>
@@ -153,6 +159,8 @@ export default function SupplementsScreen() {
                     onPress={() => handleReorder(index, index - 1)}
                     activeOpacity={0.6}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Move ${supp.name} up`}
                   >
                     <Text style={styles.reorderArrow}>{"\u25B2"}</Text>
                   </TouchableOpacity>
@@ -162,6 +170,8 @@ export default function SupplementsScreen() {
                     onPress={() => handleReorder(index, index + 1)}
                     activeOpacity={0.6}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Move ${supp.name} down`}
                   >
                     <Text style={styles.reorderArrow}>{"\u25BC"}</Text>
                   </TouchableOpacity>
@@ -176,6 +186,8 @@ export default function SupplementsScreen() {
                 style={styles.deleteButton}
                 onPress={() => handleDelete(index)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${supp.name}`}
               >
                 <Text style={styles.deleteButtonText}>Delete</Text>
               </TouchableOpacity>
@@ -283,6 +295,9 @@ function AddSupplementForm({
         onPress={handleSubmit}
         activeOpacity={0.8}
         disabled={loading}
+        accessibilityRole="button"
+        accessibilityLabel="Add Supplement"
+        accessibilityState={{ busy: loading, disabled: loading }}
       >
         <Text style={styles.saveButtonText}>{loading ? "Saving..." : "Add Supplement"}</Text>
       </TouchableOpacity>

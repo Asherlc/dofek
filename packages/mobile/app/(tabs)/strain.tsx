@@ -491,6 +491,8 @@ export default function StrainScreen() {
                 activeOpacity={0.7}
                 onPress={() => router.push("/activities")}
                 style={styles.sectionLinkButton}
+                accessibilityRole="button"
+                accessibilityLabel="View all activities"
               >
                 <Text style={styles.sectionLinkButtonText}>View all</Text>
               </TouchableOpacity>
@@ -508,6 +510,8 @@ export default function StrainScreen() {
                     key={String(activity.id)}
                     activeOpacity={0.7}
                     onPress={() => router.push(`/activity/${activity.id}`)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${activity.name ?? "activity"}`}
                   >
                     <ActivityCard
                       name={activity.name ?? ""}

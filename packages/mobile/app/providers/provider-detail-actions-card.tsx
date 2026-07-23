@@ -30,6 +30,9 @@ export function ProviderDetailActionsCard({
           onPress={onPrimaryAction}
           activeOpacity={0.7}
           disabled={isSyncing}
+          accessibilityRole="button"
+          accessibilityLabel={primaryActionLabel}
+          accessibilityState={{ busy: isSyncing, disabled: isSyncing }}
         >
           <Text style={styles.syncButtonText}>{primaryActionLabel}</Text>
         </TouchableOpacity>
@@ -39,6 +42,9 @@ export function ProviderDetailActionsCard({
             onPress={onFullSync}
             activeOpacity={0.7}
             disabled={isSyncing}
+            accessibilityRole="button"
+            accessibilityLabel="Full sync"
+            accessibilityState={{ busy: isSyncing, disabled: isSyncing }}
           >
             <Text style={styles.secondaryButtonText}>Full sync</Text>
           </TouchableOpacity>
@@ -54,7 +60,12 @@ export function ProviderDetailActionsCard({
         <Text style={styles.syncMessageText}>{syncMessage}</Text>
       )}
       {shouldShowAppleHealthPermissionBanner && (
-        <TouchableOpacity onPress={onPrimaryAction} activeOpacity={0.7}>
+        <TouchableOpacity
+          onPress={onPrimaryAction}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Review Apple Health permissions"
+        >
           <Text style={styles.permissionBannerText}>
             Apple Health permissions need updating — tap to review
           </Text>

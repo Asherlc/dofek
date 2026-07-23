@@ -214,6 +214,12 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
           onPress={handleExport}
           activeOpacity={0.7}
           disabled={exportBlocked}
+          accessibilityRole="button"
+          accessibilityLabel="Start Export"
+          accessibilityState={{
+            busy: exportState === "processing" || hasActiveExport,
+            disabled: exportBlocked,
+          }}
         >
           <Text style={styles.exportButtonText}>
             {exportState === "processing"
@@ -243,6 +249,12 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
                   onPress={() => handleDownloadExport(dataExport)}
                   activeOpacity={0.7}
                   disabled={downloadingExportId !== null}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Download ${dataExport.filename}`}
+                  accessibilityState={{
+                    busy: downloadingExportId === dataExport.id,
+                    disabled: downloadingExportId !== null,
+                  }}
                 >
                   <Text style={styles.exportDownloadText}>
                     {downloadingExportId === dataExport.id

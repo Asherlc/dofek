@@ -76,6 +76,20 @@ describe("LoginScreen", () => {
     expect(screen.getByText("Sign in with Apple")).toBeTruthy();
   });
 
+  it("exposes provider sign-in as a named accessibility action", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: ["google"],
+      data: [],
+    });
+    render(<LoginScreen />);
+
+    const signInButton = await screen.findByRole("button", {
+      name: "Sign in with Google",
+    });
+
+    expect(signInButton.getAttribute("aria-label")).toBe("Sign in with Google");
+  });
+
   it("hides generic Apple OAuth button when native Apple Sign In is available and server supports it", async () => {
     mockIsNativeAppleSignInAvailable.mockResolvedValue(true);
     mockFetchConfiguredProviders.mockResolvedValue({

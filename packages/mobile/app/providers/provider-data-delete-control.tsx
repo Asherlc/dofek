@@ -112,6 +112,8 @@ export function ProviderDataDeleteControl({
         style={styles.deleteAllDataButton}
         onPress={() => setShowConfirm(true)}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Delete All Data"
       >
         <Text style={styles.deleteAllDataButtonText}>Delete All Data</Text>
       </TouchableOpacity>
@@ -144,6 +146,12 @@ export function ProviderDataDeleteControl({
                     onPress={closeConfirm}
                     disabled={deleteAllDataMutation.isPending}
                     activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel provider data deletion"
+                    accessibilityState={{
+                      busy: deleteAllDataMutation.isPending,
+                      disabled: deleteAllDataMutation.isPending,
+                    }}
                   >
                     <Text style={styles.cancelText}>Cancel</Text>
                   </TouchableOpacity>
@@ -151,8 +159,11 @@ export function ProviderDataDeleteControl({
                     onPress={() => void deleteAllData()}
                     disabled={confirmation !== "DELETE" || deleteAllDataMutation.isPending}
                     accessibilityState={{
+                      busy: deleteAllDataMutation.isPending,
                       disabled: confirmation !== "DELETE" || deleteAllDataMutation.isPending,
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Permanently Delete Data"
                     activeOpacity={0.7}
                     style={[
                       styles.confirmButton,

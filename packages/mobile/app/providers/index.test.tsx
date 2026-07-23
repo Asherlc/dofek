@@ -59,13 +59,29 @@ vi.mock("react-native", () => ({
     onPress?: () => void;
     disabled?: boolean;
   } & Record<string, unknown>) => {
-    const { style: _s, activeOpacity: _ao, testID, ...rest } = props;
+    const {
+      accessibilityLabel,
+      accessibilityRole,
+      accessibilityState,
+      style: _s,
+      activeOpacity: _ao,
+      testID,
+      ...rest
+    } = props;
+    const state =
+      typeof accessibilityState === "object" && accessibilityState !== null
+        ? accessibilityState
+        : {};
     return React.createElement(
       "button",
       {
         type: "button",
         onClick: onPress,
         disabled,
+        "aria-busy": "busy" in state ? state.busy : undefined,
+        "aria-disabled": "disabled" in state ? state.disabled : undefined,
+        "aria-label": accessibilityLabel,
+        role: accessibilityRole ?? "presentation",
         ...(testID ? { "data-testid": testID } : {}),
         ...rest,
       },
@@ -447,6 +463,52 @@ describe("providerActionLabel", () => {
 });
 
 describe("ProviderCard", () => {
+  it("exposes provider detail and sync controls as named accessibility actions", async () => {
+    const { ProviderCard } = await import("./provider-card.tsx");
+    render(
+      <ProviderCard
+        provider={makeProvider({ label: "Wahoo" })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onFullSync={noopFn}
+        onConnect={noopFn}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Open Wahoo details" }).getAttribute("aria-label"),
+    ).toBe("Open Wahoo details");
+    expect(screen.getByRole("button", { name: "Sync Wahoo" }).getAttribute("aria-label")).toBe(
+      "Sync Wahoo",
+    );
+    expect(screen.getByRole("button", { name: "Full sync Wahoo" }).getAttribute("aria-label")).toBe(
+      "Full sync Wahoo",
+    );
+  });
+
+  it("announces a syncing provider action as busy and disabled", async () => {
+    const { ProviderCard } = await import("./provider-card.tsx");
+    render(
+      <ProviderCard
+        provider={makeProvider({ label: "Wahoo" })}
+        stats={undefined}
+        syncing
+        syncProgress={{ message: "Syncing..." }}
+        onSync={noopFn}
+        onFullSync={noopFn}
+        onConnect={noopFn}
+        onPress={noopFn}
+      />,
+    );
+
+    const syncButton = screen.getByRole("button", { name: "Sync Wahoo" });
+    expect(syncButton.getAttribute("aria-busy")).toBe("true");
+    expect(syncButton.getAttribute("aria-disabled")).toBe("true");
+  });
+
   it("does not nest action buttons inside the card detail button", async () => {
     const { ProviderCard } = await import("./provider-card.tsx");
     const { container } = render(

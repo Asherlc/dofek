@@ -111,7 +111,13 @@ export function ProviderCard({
   return (
     <View style={styles.card} testID={`provider-card-${provider.id}`}>
       <View style={styles.cardHeader}>
-        <TouchableOpacity style={styles.cardTitleRow} onPress={onPress} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.cardTitleRow}
+          onPress={onPress}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${provider.label} details`}
+        >
           <ProviderLogo provider={provider.id} serverUrl={serverUrl} size={24} />
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
@@ -124,6 +130,9 @@ export function ProviderCard({
                 onPress={provider.authStatus === "connected" ? onSync : onConnect}
                 activeOpacity={0.7}
                 disabled={syncing}
+                accessibilityRole="button"
+                accessibilityLabel={`${providerActionLabel(provider.authStatus)} ${provider.label}`}
+                accessibilityState={{ busy: syncing, disabled: syncing }}
               >
                 {syncing ? (
                   <ActivityIndicator color={colors.text} size="small" />
@@ -135,7 +144,12 @@ export function ProviderCard({
               </TouchableOpacity>
             ) : null}
             {canImport ? (
-              <FileImportButton disabled={importing} loading={importing} onPress={onImport} />
+              <FileImportButton
+                accessibilityLabel={`Import file for ${provider.label}`}
+                disabled={importing}
+                loading={importing}
+                onPress={onImport}
+              />
             ) : null}
           </View>
         )}
@@ -175,7 +189,12 @@ export function ProviderCard({
               <Text style={styles.cardMetaText}>Never synced</Text>
             ))}
           {provider.authStatus === "connected" && !syncing && canRunManualSync && (
-            <TouchableOpacity onPress={onFullSync} activeOpacity={0.7}>
+            <TouchableOpacity
+              onPress={onFullSync}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Full sync ${provider.label}`}
+            >
               <Text style={styles.fullSyncLink}>Full sync</Text>
             </TouchableOpacity>
           )}

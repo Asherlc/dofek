@@ -29,6 +29,8 @@ export default function OnboardingScreen() {
               style={styles.stepButton}
               onPress={() => router.push(step.mobilePath)}
               activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityLabel={step.actionLabel}
             >
               <Text style={styles.stepButtonText}>{step.actionLabel}</Text>
             </TouchableOpacity>

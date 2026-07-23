@@ -65,7 +65,12 @@ export default function DailyHeartRateScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* Date Navigator */}
         <View style={styles.dateNav}>
-          <Pressable style={styles.dateButton} onPress={goBack}>
+          <Pressable
+            style={styles.dateButton}
+            onPress={goBack}
+            accessibilityRole="button"
+            accessibilityLabel="Previous day"
+          >
             <Text style={styles.dateButtonText}>{"<"}</Text>
           </Pressable>
           <Text style={styles.dateLabel}>{formatDisplayDate(date)}</Text>
@@ -73,6 +78,9 @@ export default function DailyHeartRateScreen() {
             style={[styles.dateButton, isToday && styles.dateButtonDisabled]}
             onPress={goForward}
             disabled={isToday}
+            accessibilityRole="button"
+            accessibilityLabel="Next day"
+            accessibilityState={{ disabled: isToday }}
           >
             <Text style={[styles.dateButtonText, isToday && styles.dateButtonTextDisabled]}>
               {">"}

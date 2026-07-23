@@ -162,6 +162,8 @@ export default function ActivitiesScreen() {
         style={styles.recordButton}
         onPress={() => router.push("/record")}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Record Activity"
       >
         <Text style={styles.recordButtonText}>Record Activity</Text>
       </TouchableOpacity>
@@ -246,6 +248,17 @@ export default function ActivitiesScreen() {
                     styles.card,
                     selectedActivityIds.has(activity.id) ? styles.cardSelected : null,
                   ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    selectMode
+                      ? `${selectedActivityIds.has(activity.id) ? "Deselect" : "Select"} ${
+                          activity.name ?? formatActivityTypeLabel(activity.activityType)
+                        }`
+                      : `Open ${activity.name ?? formatActivityTypeLabel(activity.activityType)}`
+                  }
+                  accessibilityState={{
+                    selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,
+                  }}
                 >
                   <View style={styles.cardContent}>
                     <View style={styles.cardMain}>
@@ -325,7 +338,13 @@ function ActivityControls({
       <View style={styles.controlsHeader}>
         <Text style={styles.controlsTitle}>Activity log</Text>
         {canSelect && !selectMode ? (
-          <TouchableOpacity style={styles.selectButton} onPress={onSelect} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.selectButton}
+            onPress={onSelect}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Select activities"
+          >
             <Text style={styles.selectButtonText}>Select</Text>
           </TouchableOpacity>
         ) : null}
@@ -341,6 +360,12 @@ function ActivityControls({
             onPress={onDeleteSelected}
             disabled={selectedCount === 0 || deletePending}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Delete selected activities"
+            accessibilityState={{
+              busy: deletePending,
+              disabled: selectedCount === 0 || deletePending,
+            }}
           >
             <Text style={styles.deleteSelectionButtonText}>
               {deletePending ? "Deleting..." : "Delete"}
@@ -351,6 +376,9 @@ function ActivityControls({
             onPress={onCancelSelection}
             disabled={deletePending}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel activity selection"
+            accessibilityState={{ busy: deletePending, disabled: deletePending }}
           >
             <Text style={styles.cancelSelectionButtonText}>Cancel</Text>
           </TouchableOpacity>
@@ -363,6 +391,9 @@ function ActivityControls({
             style={[styles.filterChip, weeks === option.value ? styles.filterChipSelected : null]}
             onPress={() => onWeeksChange(option.value)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={option.label}
+            accessibilityState={{ selected: weeks === option.value }}
           >
             <Text
               style={[
@@ -383,6 +414,9 @@ function ActivityControls({
           ]}
           onPress={() => onActivityTypeChange(ALL_ACTIVITY_TYPES)}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="All activities"
+          accessibilityState={{ selected: activityType === ALL_ACTIVITY_TYPES }}
         >
           <Text
             style={[
@@ -399,6 +433,9 @@ function ActivityControls({
             style={[styles.filterChip, activityType === type ? styles.filterChipSelected : null]}
             onPress={() => onActivityTypeChange(type)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={formatActivityTypeLabel(type)}
+            accessibilityState={{ selected: activityType === type }}
           >
             <Text
               style={[

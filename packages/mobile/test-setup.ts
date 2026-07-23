@@ -110,6 +110,7 @@ vi.mock("react-native", () => {
   const Text = createMockComponent("Text");
   const ScrollView = createMockComponent("ScrollView");
   const Pressable = ({
+    accessibilityState,
     children,
     onPress,
     accessibilityRole,
@@ -122,8 +123,32 @@ vi.mock("react-native", () => {
       "button",
       {
         ...props,
+        "aria-busy":
+          typeof accessibilityState === "object" &&
+          accessibilityState !== null &&
+          "busy" in accessibilityState
+            ? accessibilityState.busy
+            : undefined,
+        "aria-disabled":
+          typeof accessibilityState === "object" &&
+          accessibilityState !== null &&
+          "disabled" in accessibilityState
+            ? accessibilityState.disabled
+            : undefined,
+        "aria-expanded":
+          typeof accessibilityState === "object" &&
+          accessibilityState !== null &&
+          "expanded" in accessibilityState
+            ? accessibilityState.expanded
+            : undefined,
+        "aria-selected":
+          typeof accessibilityState === "object" &&
+          accessibilityState !== null &&
+          "selected" in accessibilityState
+            ? accessibilityState.selected
+            : undefined,
         onClick: onPress,
-        role: accessibilityRole,
+        role: accessibilityRole ?? "presentation",
         "aria-label": accessibilityLabel,
         "aria-description": accessibilityHint,
         style: flattenStyle(style),
@@ -185,10 +210,51 @@ vi.mock("react-native", () => {
     });
   ActivityIndicator.displayName = "ActivityIndicator";
 
-  const TouchableOpacity = ({ children, onPress, style, ...props }: Record<string, unknown>) =>
+  const TouchableOpacity = ({
+    accessibilityHint,
+    accessibilityLabel,
+    accessibilityRole,
+    accessibilityState,
+    children,
+    onPress,
+    style,
+    ...props
+  }: Record<string, unknown>) =>
     el(
       "button",
-      { ...props, onClick: onPress, style: flattenStyle(style), type: "button" },
+      {
+        ...props,
+        "aria-busy":
+          typeof accessibilityState === "object" &&
+          accessibilityState !== null &&
+          "busy" in accessibilityState
+            ? accessibilityState.busy
+            : undefined,
+        "aria-description": accessibilityHint,
+        "aria-disabled":
+          typeof accessibilityState === "object" &&
+          accessibilityState !== null &&
+          "disabled" in accessibilityState
+            ? accessibilityState.disabled
+            : undefined,
+        "aria-expanded":
+          typeof accessibilityState === "object" &&
+          accessibilityState !== null &&
+          "expanded" in accessibilityState
+            ? accessibilityState.expanded
+            : undefined,
+        "aria-label": accessibilityLabel,
+        "aria-selected":
+          typeof accessibilityState === "object" &&
+          accessibilityState !== null &&
+          "selected" in accessibilityState
+            ? accessibilityState.selected
+            : undefined,
+        onClick: onPress,
+        role: accessibilityRole ?? "presentation",
+        style: flattenStyle(style),
+        type: "button",
+      },
       children,
     );
   TouchableOpacity.displayName = "TouchableOpacity";

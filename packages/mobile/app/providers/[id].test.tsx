@@ -49,10 +49,30 @@ vi.mock("react-native", () => ({
     onPress?: () => void;
     disabled?: boolean;
   } & Record<string, unknown>) => {
-    const { style: _s, activeOpacity: _ao, ...rest } = props;
+    const {
+      accessibilityLabel,
+      accessibilityRole,
+      accessibilityState,
+      style: _s,
+      activeOpacity: _ao,
+      ...rest
+    } = props;
+    const state =
+      typeof accessibilityState === "object" && accessibilityState !== null
+        ? accessibilityState
+        : {};
     return React.createElement(
       "button",
-      { type: "button", onClick: onPress, disabled, ...rest },
+      {
+        type: "button",
+        onClick: onPress,
+        disabled,
+        "aria-busy": "busy" in state ? state.busy : undefined,
+        "aria-disabled": "disabled" in state ? state.disabled : undefined,
+        "aria-label": accessibilityLabel,
+        role: accessibilityRole ?? "presentation",
+        ...rest,
+      },
       children,
     );
   },
@@ -398,6 +418,16 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Actions", () => {
+    it("exposes provider actions by accessible role and name", async () => {
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByRole("button", { name: "Sync" }).getAttribute("aria-label")).toBe("Sync");
+      expect(screen.getByRole("button", { name: "Full sync" }).getAttribute("aria-label")).toBe(
+        "Full sync",
+      );
+    });
+
     it("renders Sync and Full sync actions for connected providers", async () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);

@@ -3,10 +3,12 @@ import { colors } from "../../theme";
 import { styles } from "./styles.ts";
 
 export function FileImportButton({
+  accessibilityLabel,
   disabled,
   loading,
   onPress,
 }: {
+  accessibilityLabel: string;
   disabled: boolean;
   loading: boolean;
   onPress: () => void;
@@ -17,6 +19,9 @@ export function FileImportButton({
       onPress={onPress}
       activeOpacity={0.7}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ busy: loading, disabled }}
     >
       {loading ? (
         <ActivityIndicator color={colors.text} size="small" />

@@ -352,19 +352,44 @@ export default function BleProbeScreen() {
       />
 
       <View style={styles.quickButtons}>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("whoop")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("whoop")}
+          accessibilityRole="button"
+          accessibilityLabel="WHOOP"
+        >
           <Text style={styles.quickButtonText}>WHOOP</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("discover")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("discover")}
+          accessibilityRole="button"
+          accessibilityLabel="Discover"
+        >
           <Text style={styles.quickButtonText}>Discover</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("subscribe 0003")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("subscribe 0003")}
+          accessibilityRole="button"
+          accessibilityLabel="Subscribe 0003"
+        >
           <Text style={styles.quickButtonText}>Sub 0003</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("subscribe 0005")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("subscribe 0005")}
+          accessibilityRole="button"
+          accessibilityLabel="Subscribe 0005"
+        >
           <Text style={styles.quickButtonText}>Sub 0005</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("status")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("status")}
+          accessibilityRole="button"
+          accessibilityLabel="Status"
+        >
           <Text style={styles.quickButtonText}>Status</Text>
         </Pressable>
       </View>
@@ -383,24 +408,32 @@ export default function BleProbeScreen() {
               addLog(`Error: ${error}`, "error");
             }
           }}
+          accessibilityRole="button"
+          accessibilityLabel="Hello and IMU"
         >
           <Text style={styles.quickButtonText}>Hello+IMU</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa010c000001e741236b6a01010000002ac0d9b7")}
+          accessibilityRole="button"
+          accessibilityLabel="IMU sequence 6B"
         >
           <Text style={styles.quickButtonText}>IMU seq=6B</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa0102006a01")}
+          accessibilityRole="button"
+          accessibilityLabel="IMU version 3"
         >
           <Text style={styles.quickButtonText}>IMU v3</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa0101006a")}
+          accessibilityRole="button"
+          accessibilityLabel="IMU version 4"
         >
           <Text style={styles.quickButtonText}>IMU v4</Text>
         </Pressable>
@@ -409,19 +442,33 @@ export default function BleProbeScreen() {
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa010100016a")}
+          accessibilityRole="button"
+          accessibilityLabel="IMU version 5"
         >
           <Text style={styles.quickButtonText}>IMU v5</Text>
         </Pressable>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa01020051016a0101000000")}
+          accessibilityRole="button"
+          accessibilityLabel="Start and IMU"
         >
           <Text style={styles.quickButtonText}>Start+IMU</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("status")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("status")}
+          accessibilityRole="button"
+          accessibilityLabel="Status"
+        >
           <Text style={styles.quickButtonText}>Status</Text>
         </Pressable>
-        <Pressable style={styles.quickButton} onPress={() => executeCommand("clear")}>
+        <Pressable
+          style={styles.quickButton}
+          onPress={() => executeCommand("clear")}
+          accessibilityRole="button"
+          accessibilityLabel="Clear logs"
+        >
           <Text style={styles.quickButtonText}>Clear</Text>
         </Pressable>
       </View>
@@ -438,7 +485,12 @@ export default function BleProbeScreen() {
           returnKeyType="send"
           onSubmitEditing={handleSubmit}
         />
-        <Pressable style={styles.sendButton} onPress={handleSubmit}>
+        <Pressable
+          style={styles.sendButton}
+          onPress={handleSubmit}
+          accessibilityRole="button"
+          accessibilityLabel="Send command"
+        >
           <Text style={styles.sendButtonText}>Send</Text>
         </Pressable>
       </View>

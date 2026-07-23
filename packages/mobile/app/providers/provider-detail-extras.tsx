@@ -53,6 +53,9 @@ function WhoopWearLocationPicker() {
               style={[styles.option, isSelected && styles.optionSelected]}
               onPress={() => handleChange(location.id)}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={location.label}
+              accessibilityState={{ selected: isSelected }}
             >
               <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>
                 {location.label}

@@ -68,7 +68,13 @@ export function SlackIntegrationPanel() {
           <Text style={styles.label}>Log food via Slack</Text>
           <Text style={styles.dimText}>Add the bot to your workspace, then DM it what you ate</Text>
         </View>
-        <TouchableOpacity style={styles.connectButton} onPress={handleConnect} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.connectButton}
+          onPress={handleConnect}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Add to Slack"
+        >
           <Text style={styles.connectButtonText}>Add to Slack</Text>
         </TouchableOpacity>
       </View>
