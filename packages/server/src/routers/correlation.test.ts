@@ -479,9 +479,13 @@ describe("correlationRouter", () => {
         lag: 0,
       });
 
-      expect(result).toHaveProperty("sampleCount");
-      expect(result).toHaveProperty("pearsonR");
-      expect(result.confidenceLevel).toBe("insufficient");
+      expect(result).toMatchObject({
+        availability: "insufficient",
+        sampleCount: 0,
+        additionalSamplesRequired: 5,
+        confidenceLevel: "insufficient",
+      });
+      expect(result).not.toHaveProperty("pearsonR");
     });
 
     it("uses default days (365) and lag (0) when not specified", async () => {

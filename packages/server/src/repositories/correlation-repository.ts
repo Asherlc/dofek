@@ -110,17 +110,13 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
   const pairCount = pairs.length;
 
   if (pairCount < 5) {
+    const additionalSamplesRequired = 5 - pairCount;
     return {
-      spearmanRho: 0,
-      spearmanPValue: 1,
-      pearsonR: 0,
-      pearsonPValue: 1,
-      regression: { slope: 0, intercept: 0, rSquared: 0 },
+      availability: "insufficient" as const,
       dataPoints: pairs,
       sampleCount: pairCount,
-      xStats: emptyStats(),
-      yStats: emptyStats(),
-      insight: `Insufficient data to analyze the relationship between ${METRIC_LABEL_MAP.get(metricX) ?? metricX} and ${METRIC_LABEL_MAP.get(metricY) ?? metricY} (only ${pairCount} overlapping data points).`,
+      additionalSamplesRequired,
+      insight: `Insufficient data to analyze the relationship between ${METRIC_LABEL_MAP.get(metricX) ?? metricX} and ${METRIC_LABEL_MAP.get(metricY) ?? metricY} (only ${pairCount} overlapping data points; ${additionalSamplesRequired} more ${additionalSamplesRequired === 1 ? "sample is" : "samples are"} required).`,
       confidenceLevel: "insufficient" as const,
       correlationColor: "#71717a",
     };
@@ -151,6 +147,7 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
   const insight = spearmanResult.generateInsight({ xLabel, yLabel, lag });
 
   return {
+    availability: "available" as const,
     spearmanRho: spearman.rho,
     spearmanPValue: spearman.pValue,
     pearsonR: pearson.r,

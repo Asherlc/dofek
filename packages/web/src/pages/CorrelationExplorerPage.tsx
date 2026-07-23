@@ -209,25 +209,36 @@ export function CorrelationExplorerPage() {
                   </span>
                 </div>
 
-                <div className="space-y-2">
-                  <div>
-                    <p className="text-[10px] text-dim mb-0.5">Spearman (rank)</p>
-                    <CorrelationStrengthBar rho={data.spearmanRho} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-dim mb-0.5">Pearson (linear)</p>
-                    <CorrelationStrengthBar rho={data.pearsonR} />
-                  </div>
-                </div>
+                {data.availability === "available" ? (
+                  <>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-[10px] text-dim mb-0.5">Spearman (rank)</p>
+                        <CorrelationStrengthBar rho={data.spearmanRho} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-dim mb-0.5">Pearson (linear)</p>
+                        <CorrelationStrengthBar rho={data.pearsonR} />
+                      </div>
+                    </div>
 
-                <div className="flex gap-4 text-[11px] text-dim pt-1">
-                  <span>R² = {formatNumber(data.regression.rSquared, 3)}</span>
-                  <span>n = {data.sampleCount}</span>
-                  <span>
-                    p ={" "}
-                    {data.spearmanPValue < 0.001 ? "< 0.001" : formatNumber(data.spearmanPValue, 3)}
-                  </span>
-                </div>
+                    <div className="flex gap-4 text-[11px] text-dim pt-1">
+                      <span>R² = {formatNumber(data.regression.rSquared, 3)}</span>
+                      <span>n = {data.sampleCount}</span>
+                      <span>
+                        p ={" "}
+                        {data.spearmanPValue < 0.001
+                          ? "< 0.001"
+                          : formatNumber(data.spearmanPValue, 3)}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-wrap gap-4 text-[11px] text-dim pt-1">
+                    <span>n = {data.sampleCount}</span>
+                    <span>{data.additionalSamplesRequired} more overlapping samples needed</span>
+                  </div>
+                )}
               </div>
 
               {/* Insight card */}
@@ -235,7 +246,7 @@ export function CorrelationExplorerPage() {
                 <h3 className="text-xs text-subtle uppercase tracking-wider">Finding</h3>
                 <p className="text-sm text-foreground leading-relaxed">{data.insight}</p>
 
-                {data.sampleCount > 0 && (
+                {data.availability === "available" && (
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     <div>
                       <p className="text-[10px] text-dim">{xMetric?.label ?? metricX}</p>
@@ -257,7 +268,7 @@ export function CorrelationExplorerPage() {
             </div>
 
             {/* Scatter plot */}
-            {dataPoints.length > 0 && (
+            {data.availability === "available" && dataPoints.length > 0 && (
               <div
                 className="card p-4"
                 title="This chart plots each data point and overlays a trend line so you can see whether two metrics move together."

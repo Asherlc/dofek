@@ -130,35 +130,60 @@ describe("emptyStats", () => {
 // ── computeCorrelation with empty data ──────────────────────────────────
 
 describe("computeCorrelation", () => {
-  it("returns insufficient result when data is empty", () => {
-    const result = computeCorrelation([], {
-      metricX: "resting_hr",
-      metricY: "hrv",
-      days: 90,
-      lag: 0,
-    });
-    expect(result.sampleCount).toBe(0);
-    expect(result.confidenceLevel).toBe("insufficient");
-    expect(result.spearmanRho).toBe(0);
-    expect(result.pearsonR).toBe(0);
-    expect(result.dataPoints).toEqual([]);
-  });
-
-  it("returns insufficient result with fewer than 5 paired points", () => {
-    const joined = [
-      makeJoinedDay({ date: "2024-01-01", resting_hr: 60, hrv: 40 }),
-      makeJoinedDay({ date: "2024-01-02", resting_hr: 62, hrv: 38 }),
-      makeJoinedDay({ date: "2024-01-03", resting_hr: 58, hrv: 42 }),
-    ];
+  it.each([
+    0, 4,
+  ])("returns no inferential statistics when only %i paired points are available", (pairCount) => {
+    const joined = Array.from({ length: pairCount }, (_, index) =>
+      makeJoinedDay({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        resting_hr: 60 + index,
+        hrv: 40 - index,
+      }),
+    );
     const result = computeCorrelation(joined, {
       metricX: "resting_hr",
       metricY: "hrv",
       days: 90,
       lag: 0,
     });
-    expect(result.sampleCount).toBe(3);
-    expect(result.confidenceLevel).toBe("insufficient");
-    expect(result.insight).toContain("Insufficient data");
+
+    expect(result).toMatchObject({
+      availability: "insufficient",
+      sampleCount: pairCount,
+      additionalSamplesRequired: 5 - pairCount,
+      confidenceLevel: "insufficient",
+    });
+    expect(result).not.toHaveProperty("spearmanRho");
+    expect(result).not.toHaveProperty("spearmanPValue");
+    expect(result).not.toHaveProperty("pearsonR");
+    expect(result).not.toHaveProperty("pearsonPValue");
+    expect(result).not.toHaveProperty("regression");
+  });
+
+  it("returns inferential statistics at the 5-pair boundary", () => {
+    const joined = Array.from({ length: 5 }, (_, index) =>
+      makeJoinedDay({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        resting_hr: 60 + index,
+        hrv: 40 - index,
+      }),
+    );
+    const result = computeCorrelation(joined, {
+      metricX: "resting_hr",
+      metricY: "hrv",
+      days: 90,
+      lag: 0,
+    });
+
+    expect(result).toMatchObject({
+      availability: "available",
+      sampleCount: 5,
+    });
+    expect(result).toHaveProperty("spearmanRho");
+    expect(result).toHaveProperty("spearmanPValue");
+    expect(result).toHaveProperty("pearsonR");
+    expect(result).toHaveProperty("pearsonPValue");
+    expect(result).toHaveProperty("regression");
   });
 
   it("computes correlation with sufficient data", () => {
