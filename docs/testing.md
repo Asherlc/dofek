@@ -59,6 +59,14 @@ fi
 docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
 ```
 
+The isolated topology includes Redpanda and explicit metric-stream producer
+configuration. Server startup connects the producer before opening the HTTP
+listener, and Compose waits for both broker health and `/readyz`; Docker
+documents health-gated dependency startup in its
+[startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
+The `activity-recording.cy.ts` API test exercises this dependency by saving a
+recorded activity with sensor samples through the authenticated tRPC endpoint.
+
 Use a task-specific project name rather than Compose's directory-derived
 default; Docker documents project-name isolation and precedence here:
 <https://docs.docker.com/compose/how-tos/project-name/>.

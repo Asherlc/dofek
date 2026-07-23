@@ -915,7 +915,7 @@ jobs:
             type=registry,ref=ghcr.io/${{ github.repository }}:e2e-buildcache
           cache-to: type=gha,mode=max,scope=e2e
       - name: Start e2e dependencies
-        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis redpanda
       - name: Run e2e migrations
         run: |
           docker compose -f docker-compose.e2e.yml up -d --no-build migrate
@@ -935,7 +935,7 @@ jobs:
       - run: pnpm e2e:web:run
       - name: Dump e2e service logs
         if: failure()
-        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis migrate analytics server
+        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis redpanda migrate analytics server
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:

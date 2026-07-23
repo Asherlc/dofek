@@ -13,6 +13,7 @@ const mockQueue = {
 };
 const mockLoggerInfo = vi.fn();
 const mockSentryCaptureException = vi.fn();
+const mockGetDefaultMetricStreamEventPublisher = vi.fn();
 const mockFitFileImportQueue = { ...mockQueue, name: "fit-file-import" };
 const mockFitFileImportBatchQueue = { ...mockQueue, name: "fit-file-import-batch" };
 const mockZipEntryExtractQueue = { ...mockQueue, name: "zip-entry-extract" };
@@ -66,6 +67,9 @@ vi.mock("dofek/db", () => ({ createDatabaseFromEnv: vi.fn(() => ({ execute: mock
 vi.mock("dofek/db/clickhouse", () => ({
   bootstrapClickHouseFromEnv: vi.fn(),
   createClickHouseClientFromEnv: vi.fn(),
+}));
+vi.mock("../../../src/metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: mockGetDefaultMetricStreamEventPublisher,
 }));
 vi.mock("dofek/jobs/queues", () => ({
   createActivityDeleteAnalyticsQueue: vi.fn(() => mockQueue),
@@ -133,7 +137,7 @@ vi.mock("../slack/bot.ts", () => ({ startSlackBot: vi.fn() }));
 
 import { makeMockSensorStore } from "./routers/test-helpers.ts";
 
-const { createApp } = await import("./index.ts");
+const { createApp, main } = await import("./index.ts");
 
 function request(
   app: express.Express,
@@ -345,5 +349,23 @@ describe("createApp", () => {
         queues: "ok",
       },
     });
+  });
+});
+
+describe("main", () => {
+  it("does not listen when the metric-stream producer cannot connect", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://health:health@db:5432/health");
+    vi.stubEnv("CLICKHOUSE_URL", "http://default:health@clickhouse:8123");
+    const brokerError = new Error("connect ECONNREFUSED redpanda:9092");
+    mockGetDefaultMetricStreamEventPublisher.mockRejectedValue(brokerError);
+    const listen = vi.spyOn(express.application, "listen");
+
+    try {
+      await expect(main()).rejects.toThrow(brokerError);
+      expect(listen).not.toHaveBeenCalled();
+    } finally {
+      listen.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 });

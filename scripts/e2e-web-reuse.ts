@@ -38,7 +38,7 @@ function runOneShotService(service: string): void {
 const cypressArgs = process.argv.slice(2).filter((arg) => arg !== upOnlyFlag);
 const upOnly = process.argv.includes(upOnlyFlag);
 
-dockerCompose(["up", "-d", "--wait", "--no-build", "db", "clickhouse", "redis"]);
+dockerCompose(["up", "-d", "--wait", "--no-build", "db", "clickhouse", "redis", "redpanda"]);
 runOneShotService("migrate");
 runOneShotService("analytics");
 dockerCompose(["up", "-d", "--wait", "--no-build", "server"]);

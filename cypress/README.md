@@ -5,6 +5,7 @@ Automated E2E testing suite for the Dofek web application.
 ## Structure
 
 - `e2e/`: Test specifications (written in TypeScript).
+  - `activity-recording.cy.ts`: Saves a recorded mobile activity through tRPC and verifies the metric-stream-backed write path succeeds.
   - `dashboard.cy.ts`: Verifies the main dashboard, including chart rendering (ECharts canvas) and tRPC data fetching.
   - `login.cy.ts`: Tests authentication redirects and sign-in page visibility.
   - `training.cy.ts`: Tests the training calendar, fitness/fatigue charts, and sub-tab navigation (`/training/endurance`, etc.).
@@ -35,6 +36,7 @@ Tests verify both the UI and the underlying API:
 
 - **E2E_DATABASE_URL**: Points to the test database (default: `postgres://health:health@localhost:5436/health`).
 - **E2E_SERVER_URL**: Points to the web server (default: `http://localhost:3100`).
+- **Metric stream**: The isolated Compose stack starts a health-checked Redpanda broker and configures the server producer before readiness succeeds. Docker documents health-gated dependency startup in its [startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
 - **Retries**: Configured for 1 retry in CI to handle minor flakes without excessive noise.
 - **Tasks**:
   - `seedTestUser`: Inserts into `fitness.user_profile`.
