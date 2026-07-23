@@ -15618,3 +15618,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Keep dbt tooling on Python 3.13 until the
   complete pinned dbt stack installs and starts successfully on Alpine with
   Python 3.14.
+
+## 2026-07-23 — Local PeerDB Temporal Initializer Silently Skipped MirrorName
+
+- **Status:** Fixed and validated locally; production was not affected.
+- **Symptoms:** Running ClickHouse CDC setup from a Conductor workspace raised
+  [Sentry issue DOFEK-SERVER-51](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-51):
+  PeerDB could not start a workflow because Temporal's `default` namespace had
+  no `MirrorName` search-attribute mapping.
+- **User impact:** No users were affected. Sentry recorded one handled event
+  from a local macOS host, despite the process carrying an `environment:
+  production` tag.
+- **Evidence:** The exact failing application step was the PeerDB
+  `CREATE MIRROR` statement submitted by `setupClickHouseCdc()`. The first
+  fatal initializer line was `/bin/sh: tctl: not found` from
+  `majuro-peerdb-temporal-init-1`. That container nevertheless exited with
+  status 0. A clean isolated Compose reproduction produced the same line, and
+  `temporal operator search-attribute list` confirmed that `MirrorName` was
+  absent. Temporal 1.31 admin-tools releases include the newer Temporal CLI
+  ([Temporal v1.31.1 release](https://github.com/temporalio/temporal/releases/tag/v1.31.1)).
+- **Root cause:** `peerdb-temporal-init` invoked the unavailable legacy `tctl`
+  executable and appended `|| true`, masking the command failure and allowing
+  PeerDB services to start without their required search attribute.
+- **Fix / mitigation:** Replaced `tctl` with
+  `temporal operator search-attribute`, made registration explicitly
+  idempotent by checking the namespace first, removed unconditional error
+  suppression, and verified `MirrorName` after creation. PeerDB's flow API
+  remains gated on successful completion of the initializer.
+- **Validation:** Before the fix, the live regression reproduced
+  `tctl: not found` and failed because `MirrorName` was absent. After the fix,
+  the same regression created and found `MirrorName`; a second run passed
+  without recreating it. Docker Compose configuration validation passed, and
+  `peerdb-temporal-init` exited 0 before `peerdb-flow-api` became healthy.
+- **Remaining risk / follow-up:** The local process was tagged as production
+  because it ran with production environment configuration. Keep host and
+  deployment context visible in Sentry triage so local operational failures are
+  not mistaken for production outages.

@@ -59,10 +59,26 @@ services:
     restart: "no"
     entrypoint: /bin/sh
     command:
-      - -c
+      - -euc
       - |
-        printf 'Y\n' | tctl admin cluster add-search-attributes \
-          --name MirrorName --type Keyword || true
+        temporal_address=peerdb-temporal:7233
+        search_attributes="$$(temporal operator search-attribute list \
+          --address "$$temporal_address" --namespace default)"
+        case "$$search_attributes" in
+          *MirrorName*) exit 0 ;;
+        esac
+        temporal operator search-attribute create \
+          --address "$$temporal_address" --namespace default \
+          --name MirrorName --type Keyword
+        search_attributes="$$(temporal operator search-attribute list \
+          --address "$$temporal_address" --namespace default)"
+        case "$$search_attributes" in
+          *MirrorName*) ;;
+          *)
+            echo "Temporal search attribute MirrorName was not registered" >&2
+            exit 1
+            ;;
+        esac
 
   peerdb-minio:
     image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
