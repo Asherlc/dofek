@@ -66,4 +66,41 @@ describe("ProcessingStatusWidget", () => {
     render(<ProcessingStatusWidget error={new Error("Reconnect Kaya and try again.")} />);
     expect(screen.getByText("Reconnect Kaya and try again.")).toBeTruthy();
   });
+
+  it("shows the most recent failure message", () => {
+    const operation = snapshot.operations.at(0);
+    const timelineEvent = operation?.timeline.at(0);
+    if (!operation || !timelineEvent) {
+      throw new Error("Expected the processing snapshot fixture to include a timeline event");
+    }
+    const failed: ProcessingStatusSnapshot = {
+      ...snapshot,
+      overallStatus: "failed",
+      operations: [
+        {
+          ...operation,
+          status: "failed",
+          timeline: [
+            {
+              ...timelineEvent,
+              status: "failed",
+              occurredAt: "2026-07-22T11:58:30.000Z",
+              errorMessage: "The earlier attempt failed.",
+            },
+            {
+              ...timelineEvent,
+              status: "failed",
+              occurredAt: "2026-07-22T11:59:30.000Z",
+              errorMessage: "Reconnect Kaya and try again.",
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<ProcessingStatusWidget data={failed} />);
+
+    expect(screen.getByText("Reconnect Kaya and try again.")).toBeTruthy();
+    expect(screen.queryByText("The earlier attempt failed.")).toBeNull();
+  });
 });

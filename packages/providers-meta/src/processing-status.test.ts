@@ -57,12 +57,12 @@ describe("processing status presentation", () => {
     );
   });
 
-  it("polls adaptively and stops for terminal state", () => {
+  it("polls adaptively and stops for failure states", () => {
     expect(processingPollInterval("active")).toBe(3_000);
     expect(processingPollInterval("partial")).toBe(3_000);
     expect(processingPollInterval("waiting")).toBe(3_000);
     expect(processingPollInterval("delayed")).toBe(15_000);
-    expect(processingPollInterval("ready")).toBe(false);
+    expect(processingPollInterval("ready")).toBe(15_000);
     expect(processingPollInterval("failed")).toBe(false);
   });
 });

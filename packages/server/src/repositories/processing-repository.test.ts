@@ -389,6 +389,36 @@ describe("ProcessingRepository", () => {
     expect(result.overallStatus).toBe(status);
   });
 
+  it("prioritizes cancellation over non-failure in-progress statuses", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({ datasetKeys: ["activity", "sleep"] }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "cancelled",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "ingest",
+          status: "cancelled",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+        {
+          datasetKey: "sleep",
+          currentStage: "cdc",
+          status: "active",
+          progressPercentage: 50,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["activity", "sleep"] });
+
+    expect(result.overallStatus).toBe("cancelled");
+  });
+
   it("keeps model details private while preserving independent output paths", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([
       operation({

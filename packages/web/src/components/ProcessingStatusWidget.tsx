@@ -88,8 +88,9 @@ export function ProcessingStatusWidget({
   }
   if (!data || (data.overallStatus === "ready" && !alwaysVisible)) return null;
 
-  const firstFailure = data.operations
+  const latestFailure = data.operations
     .flatMap((operation) => operation.timeline)
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
     .find((event) => event.status === "failed")?.errorMessage;
   const progressValues = data.datasets.flatMap((dataset) =>
     dataset.progressPercentage === null ? [] : [dataset.progressPercentage],
@@ -112,7 +113,7 @@ export function ProcessingStatusWidget({
       <p className="mt-0.5 text-xs text-slate-600">
         {processingStatusMessage({
           status: data.overallStatus,
-          errorMessage: firstFailure ?? null,
+          errorMessage: latestFailure ?? null,
         })}
       </p>
       {progress !== null && data.overallStatus !== "ready" ? (

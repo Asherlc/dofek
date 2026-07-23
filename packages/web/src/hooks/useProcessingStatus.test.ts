@@ -34,6 +34,7 @@ describe("useProcessingStatus", () => {
     }
     expect(options.refetchInterval({ state: { data: { overallStatus: "active" } } })).toBe(3_000);
     expect(options.refetchInterval({ state: { data: { overallStatus: "delayed" } } })).toBe(15_000);
-    expect(options.refetchInterval({ state: {} })).toBe(false);
+    expect(options.refetchInterval({ state: { data: { overallStatus: "ready" } } })).toBe(15_000);
+    expect(options.refetchInterval({ state: {} })).toBe(15_000);
   });
 });

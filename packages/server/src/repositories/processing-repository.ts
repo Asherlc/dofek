@@ -97,11 +97,11 @@ function operationState(operation: ProcessingOperationWithEvents, now: Date) {
 function aggregateStatus(statuses: readonly DerivedProcessingStatus[]): DerivedProcessingStatus {
   if (statuses.includes("failed")) return "failed";
   if (statuses.includes("blocked")) return "blocked";
+  if (statuses.includes("cancelled")) return "cancelled";
   if (statuses.includes("delayed")) return "delayed";
   if (statuses.includes("partial")) return "partial";
   if (statuses.includes("active")) return "active";
   if (statuses.includes("waiting")) return "waiting";
-  if (statuses.includes("cancelled")) return "cancelled";
   return "ready";
 }
 
