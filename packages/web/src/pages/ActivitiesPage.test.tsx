@@ -223,6 +223,7 @@ describe("ActivitiesPage", () => {
             cdcLagSeconds: null,
             readModelLagSeconds: null,
             status: "blocked",
+            progressPercentage: null,
             message: "Activities data is available, but ClickHouse mirrors are not current.",
           },
         ],
@@ -235,6 +236,7 @@ describe("ActivitiesPage", () => {
 
     expect(processingStatusInput).toEqual({ datasets: ["activity"] });
     expect(screen.getByText("Processing needs attention")).toBeDefined();
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
   it("uses QueryStatePanel for loading state", () => {

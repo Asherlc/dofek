@@ -217,6 +217,7 @@ describe("Dashboard", () => {
             cdcLagSeconds: 7200,
             readModelLagSeconds: 7200,
             status: "stale",
+            progressPercentage: null,
             message: "Daily metrics data is synced, but dashboard summaries are still catching up.",
           },
         ],
@@ -234,6 +235,7 @@ describe("Dashboard", () => {
       expect.any(Object),
     );
     expect(screen.getByText("Processing is taking longer than expected")).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
   it("does not enable insights during the initial core dashboard load", () => {

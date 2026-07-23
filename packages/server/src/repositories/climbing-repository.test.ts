@@ -96,6 +96,8 @@ describe("ClimbingActivityEntry", () => {
       gradeSystem: "v_scale",
       grade: "V4",
       sent: true,
+      attemptCount: 7,
+      ascentType: "Redpoint",
       routeName: "Blue Arete",
       locationName: "Pacific Pipe",
       sourceName: "Kaya",
@@ -107,6 +109,8 @@ describe("ClimbingActivityEntry", () => {
       gradeSystem: "v_scale",
       grade: "V4",
       sent: true,
+      attemptCount: 7,
+      ascentType: "Redpoint",
       routeName: "Blue Arete",
       locationName: "Pacific Pipe",
       sourceName: "Kaya",
@@ -360,6 +364,8 @@ describe("ClimbingRepository", () => {
           grade_system: "v_scale",
           grade: "v4",
           sent: true,
+          attempt_count: 7,
+          ascent_type: "Redpoint",
           route_name: "Blue Arete",
           location_name: "Pacific Pipe",
           source_name: "Kaya",
@@ -376,6 +382,8 @@ describe("ClimbingRepository", () => {
         gradeSystem: "v_scale",
         grade: "V4",
         sent: true,
+        attemptCount: 7,
+        ascentType: "Redpoint",
         routeName: "Blue Arete",
         locationName: "Pacific Pipe",
         sourceName: "Kaya",
@@ -390,6 +398,8 @@ describe("ClimbingRepository", () => {
       const text = queryText(execute.mock.calls[0]?.[0]);
       expect(text).toContain("fitness.v_activity");
       expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
+      expect(text).toContain("ce.attempt_count");
+      expect(text).toContain("ce.raw->>'ascentType'");
       expect(text).toContain("ANY(a.member_activity_ids)");
       expect(text).toContain("a.user_id = ");
       expect(text).toContain("ORDER BY");

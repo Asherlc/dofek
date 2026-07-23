@@ -140,14 +140,17 @@ ClickHouse migrations create and update the databases and read models:
   processing batch ID, written after the sink applies that batch's events and
   marker. Processing status requires the operation ID and expected event count
   to match the Postgres expectation; the table stores evidence, not metric
-  payloads.
+  payloads ([acknowledgement table migration](../src/db/clickhouse-migrations/0051_metric_stream_processing_acknowledgement.ts),
+  [reconciliation logic](../src/processing/processing-reconciler.ts)).
 - `postgres_fitness`: app-managed native ClickHouse raw mirrors with PeerDB CDC
   metadata columns for lower-volume Postgres-backed raw tables, including
   activity, sleep, daily metrics, provider inventory, and sensor priority
   tables. The fitness and provider-inventory mirrors write the shared Postgres
   processing marker into distinct ClickHouse destination tables so each flow's
   causal fence can be proven independently. Metric-stream rows use compatible
-  metadata columns but are not a PeerDB mirror.
+  metadata columns but are not a PeerDB mirror
+  ([marker table migration](../src/db/clickhouse-migrations/0052_processing_flow_markers.ts),
+  [reconciliation logic](../src/processing/processing-reconciler.ts)).
 - `analytics.v_activity`, `analytics.v_activity_members`, `analytics.v_sleep`,
   `analytics.v_body_measurement`, `analytics.v_daily_metrics`, and
   `analytics.provider_stats`: normal ClickHouse views over the raw mirrors and

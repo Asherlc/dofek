@@ -28,7 +28,7 @@ export function DataSourcesPanel() {
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
   const logs = trpc.sync.logs.useQuery({ limit: 100 });
-  const processingStatus = useProcessingStatus({});
+  const processingStatus = useProcessingStatus({ datasets: ["providers"] });
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
 

@@ -54,7 +54,7 @@ function parseMetricStreamMessage(
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error);
     logger.error(
-      `[metric-stream] Skipping malformed Redpanda message at offset ${message.offset}: ${messageText}`,
+      `[metric-stream] Rejecting malformed Redpanda message at offset ${message.offset}: ${messageText}`,
     );
     captureException(error, {
       extra: {
@@ -66,7 +66,7 @@ function parseMetricStreamMessage(
         metricStreamFailure: "malformed-message",
       },
     });
-    return null;
+    throw error;
   }
 }
 

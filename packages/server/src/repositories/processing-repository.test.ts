@@ -389,6 +389,36 @@ describe("ProcessingRepository", () => {
     expect(result.overallStatus).toBe(status);
   });
 
+  it("prioritizes cancellation over non-failure in-progress statuses", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({ datasetKeys: ["activity", "sleep"] }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "cancelled",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "ingest",
+          status: "cancelled",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+        {
+          datasetKey: "sleep",
+          currentStage: "cdc",
+          status: "active",
+          progressPercentage: 50,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["activity", "sleep"] });
+
+    expect(result.overallStatus).toBe("cancelled");
+  });
+
   it("keeps model details private while preserving independent output paths", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([
       operation({
@@ -415,6 +445,7 @@ describe("ProcessingRepository", () => {
 
     expect(result.operations[0]?.timeline).toEqual([
       {
+        sequence: 1,
         stage: "ingest",
         status: "succeeded",
         datasetKey: "activity",
@@ -426,6 +457,7 @@ describe("ProcessingRepository", () => {
         errorMessage: null,
       },
       {
+        sequence: 2,
         stage: "canonical_commit",
         status: "succeeded",
         datasetKey: "activity",
@@ -437,6 +469,7 @@ describe("ProcessingRepository", () => {
         errorMessage: null,
       },
       {
+        sequence: 3,
         stage: "canonical_commit",
         status: "succeeded",
         datasetKey: "activity",
@@ -450,6 +483,53 @@ describe("ProcessingRepository", () => {
     ]);
     expect(result.operations[0]?.timeline).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ modelName: expect.any(String) })]),
+    );
+  });
+
+  it("limits operation details and status to the requested datasets", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        datasetKeys: ["activity", "sleep"],
+        outputManifest: { activity: ["relational"], sleep: ["relational"] },
+        events: [
+          event(1, { datasetKey: null }),
+          event(2, { datasetKey: "activity", stage: "cdc" }),
+          event(3, { datasetKey: "sleep", stage: "cdc", status: "failed" }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "cache_refresh",
+          status: "ready",
+          progressPercentage: 100,
+          lastAdvancedAt: now,
+        },
+        {
+          datasetKey: "sleep",
+          currentStage: "cdc",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["activity"] });
+
+    expect(result.operations[0]).toEqual(
+      expect.objectContaining({
+        status: "ready",
+        datasets: ["activity"],
+        timeline: [
+          expect.objectContaining({ datasetKey: null }),
+          expect.objectContaining({ datasetKey: "activity" }),
+        ],
+      }),
     );
   });
 

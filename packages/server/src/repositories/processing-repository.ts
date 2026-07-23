@@ -42,6 +42,7 @@ export interface ProcessingStatusOperation {
   status: DerivedProcessingStatus;
   datasets: ProcessingDatasetKey[];
   timeline: Array<{
+    sequence: number;
     stage: ProcessingStage;
     status: ProcessingEventStatus;
     datasetKey: ProcessingDatasetKey | null;
@@ -97,11 +98,11 @@ function operationState(operation: ProcessingOperationWithEvents, now: Date) {
 function aggregateStatus(statuses: readonly DerivedProcessingStatus[]): DerivedProcessingStatus {
   if (statuses.includes("failed")) return "failed";
   if (statuses.includes("blocked")) return "blocked";
+  if (statuses.includes("cancelled")) return "cancelled";
   if (statuses.includes("delayed")) return "delayed";
   if (statuses.includes("partial")) return "partial";
   if (statuses.includes("active")) return "active";
   if (statuses.includes("waiting")) return "waiting";
-  if (statuses.includes("cancelled")) return "cancelled";
   return "ready";
 }
 
@@ -120,6 +121,7 @@ export class ProcessingRepository {
   }): Promise<ProcessingStatusSnapshot> {
     const now = new Date();
     const requestedDatasets = [...(input.datasets ?? PROCESSING_DATASET_KEYS)];
+    const requestedDatasetSet: ReadonlySet<string> = new Set(requestedDatasets);
     const operations = await listScopedProcessingOperations(this.#database, {
       userId: this.#userId,
       providerId: input.providerId,
@@ -166,11 +168,20 @@ export class ProcessingRepository {
         providerId: operation.providerId,
         kind: operation.kind,
         createdAt: operation.createdAt.toISOString(),
-        status: state.overallStatus,
-        datasets: operation.datasetKeys,
+        status: aggregateStatus(
+          state.datasets
+            .filter((dataset) => requestedDatasetSet.has(dataset.datasetKey))
+            .map((dataset) => dataset.status),
+        ),
+        datasets: operation.datasetKeys.filter((datasetKey) => requestedDatasetSet.has(datasetKey)),
         timeline: operation.events
-          .filter((event) => event.modelName === null)
+          .filter(
+            (event) =>
+              event.modelName === null &&
+              (event.datasetKey === null || requestedDatasetSet.has(event.datasetKey)),
+          )
           .map((event) => ({
+            sequence: event.sequence,
             stage: event.stage,
             status: event.status,
             datasetKey: event.datasetKey,

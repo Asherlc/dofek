@@ -14,7 +14,7 @@ import { useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { DataSourcesPanel } from "./DataSourcesPanel.tsx";
 
-type DataSourcesScenario = "default" | "providersLoading" | "empty";
+type DataSourcesScenario = "default" | "providersLoading" | "empty" | "processingBlocked";
 
 const providers = [
   {
@@ -62,6 +62,37 @@ function createMockObservable(
         path === "sync.activeSyncs"
       ) {
         observer.next?.({ result: { data: [] } });
+      } else if (path === "processing.status") {
+        observer.next?.({
+          result: {
+            data:
+              scenario === "processingBlocked"
+                ? {
+                    generatedAt: "2026-06-30T08:00:00.000Z",
+                    scope: { providerId: null, datasets: ["providers"] },
+                    overallStatus: "blocked",
+                    operations: [],
+                    datasets: [
+                      {
+                        key: "providers",
+                        label: "Provider data",
+                        status: "blocked",
+                        currentStage: "cdc",
+                        progressPercentage: null,
+                        lastAdvancedAt: "2026-06-29T08:00:00.000Z",
+                        lastReadyAt: null,
+                      },
+                    ],
+                  }
+                : {
+                    generatedAt: "2026-06-30T08:00:00.000Z",
+                    scope: { providerId: null, datasets: ["providers"] },
+                    overallStatus: "ready",
+                    operations: [],
+                    datasets: [],
+                  },
+          },
+        });
       }
       observer.complete?.();
       return { unsubscribe: () => {} };
@@ -133,4 +164,8 @@ export const Loading: Story = {
 
 export const Empty: Story = {
   render: () => <DataSourcesPanelStoryFrame scenario="empty" />,
+};
+
+export const ProcessingBlocked: Story = {
+  render: () => <DataSourcesPanelStoryFrame scenario="processingBlocked" />,
 };

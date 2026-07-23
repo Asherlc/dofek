@@ -142,6 +142,7 @@ export function ProviderDetailPage() {
             }
           },
           onComplete: () => {
+            trpcUtils.processing.status.invalidate();
             trpcUtils.sync.providers.invalidate();
             trpcUtils.sync.providerStats.invalidate();
             trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId });

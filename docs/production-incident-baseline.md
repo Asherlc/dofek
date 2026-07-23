@@ -15226,3 +15226,123 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [merged image](https://github.com/Asherlc/dofek/actions/runs/29945041858), and
   [complete archive](https://github.com/Asherlc/dofek/actions/runs/29948084505),
   and [partial active-migration restoration](https://github.com/Asherlc/dofek/actions/runs/29950485728).
+
+## 2026-07-22 — Climbing Detail Hid Per-Climb Attempt Counts
+
+- **Status:** Fixed locally and validated; pending review and deployment.
+- **Symptoms:** Every Kaya row on activity
+  `734b5d3e-df2b-4ee0-888e-55ea539d913a` appeared as `Sent`, suggesting every
+  attempt was successful.
+- **User impact:** The detail page does not distinguish an onsight from a climb
+  eventually sent after several attempts.
+- **Evidence:** The production rows contain 20 attempts across eight eventual
+  sends. In particular, two V4 rows have `attempt_count` values of 7 and 6 with
+  Kaya ascent type `Redpoint`; the remaining rows are `Redpoint`, `Repeat`, or
+  `Onsight`. The Kaya importer persists `attemptCount`, but the activity-entry
+  repository omits it from its response
+  ([repository](../packages/server/src/repositories/climbing-repository.ts)), and
+  the web and mobile detail components therefore render only the eventual
+  `sent` flag
+  ([web detail](../packages/web/src/pages/ActivityDetailPage.tsx),
+  [mobile detail](../packages/mobile/app/activity/[id].tsx)). No Kaya import
+  failure for this activity appeared in the retained worker logs.
+- **Root cause:** The per-activity detail API discards the canonical
+  `climbing_entry.attempt_count` value, so clients cannot explain that `Sent`
+  means the climb was eventually completed after one or more attempts.
+- **Fix / mitigation:** The activity-entry response now includes the canonical
+  attempt count and Kaya's recorded ascent type. Web and mobile show route or
+  problem names when present, ascent classifications when present, and explicit
+  `Sent in N attempts` or `Attempted N times` wording. Kaya imports now accept
+  `Flash` as a successful ascent type. Missing route names keep the generic
+  `Boulder` or `Route` label; no color-derived identity is invented.
+- **Validation:** The test-first reproduction failed because the repository
+  omitted `attempt_count` and ascent type, both clients rendered plain `Sent`,
+  and the importer rejected `Flash`. After the fix, 76 focused repository,
+  importer, web, and mobile tests passed. The four-test climbing router suite
+  also passed against real Postgres through `pnpm test:integration`; repository
+  lint and TypeScript checks passed, and the changed-file suite passed all 3,643
+  selected unit and mobile tests. The first PR CI attempt's web E2E job stopped
+  because the server container remained unhealthy for 44 seconds without
+  emitting an application log. The same image and full E2E stack became healthy
+  locally, and the isolated GitHub job rerun passed server startup and Cypress
+  without a code, timeout, or retry-policy change; all 93 PR checks then passed.
+- **Remaining risk / follow-up:** The current production activity will still
+  report eight eventual sends because that is what its Kaya source rows record.
+  Dofek cannot reconstruct attempt-only climbs that the exported file omitted,
+  distinguish onsight from flash without a provider-supplied classification, or
+  recover a route/problem name when Kaya's `climb_name` field is empty.
+
+## 2026-07-22 — Background HealthKit Errors Lost Native Context
+
+- **Status:** Fixed locally and validated; pending review, a new iOS binary, and
+  production monitoring.
+- **Symptoms:** Sentry issue `DOFEK-MOBILE-18` recorded 11 handled background
+  sync failures as `QUERY_ERROR: undefined reason
+  (at ExpoModulesCore/Promise.swift:65)`. The latest supplied event occurred at
+  `2026-07-23T00:19:14.765Z` in production release `1.0.0 (1784748405)`, about
+  five seconds after an iPhone 16 Pro launched in the background.
+- **User impact:** The affected background HealthKit sync did not complete, but
+  the app did not crash. The existing foreground catch-up path remains able to
+  import the missed interval when protected data becomes available.
+- **Evidence:** The event was marked handled and `In Foreground: false`, with a
+  `[bg-healthkit-sync] Sync failed` breadcrumb. The native module rejected query
+  errors with Expo's code-and-description overload, while the corresponding
+  Expo exception formats its JavaScript-facing message from an unset `reason`.
+  The background handler attempted to recognize the expected protected-data
+  condition by matching localized message text, but that text had already been
+  discarded. The timing and app state match HealthKit's documented
+  `errorDatabaseInaccessible` condition, which occurs when protected HealthKit
+  data is unavailable while the device is locked
+  ([Apple documentation](https://developer.apple.com/documentation/healthkit/hkerror/code/errordatabaseinaccessible)).
+  The erased native error means the exact original `HKError` code cannot be
+  recovered from the historical event.
+- **Root cause:** The HealthKit bridge rejected native errors through an Expo
+  overload whose JavaScript exception used an unset reason, erasing the native
+  `HKError` and preventing the background handler from recognizing the expected
+  locked-device condition.
+- **Fix / mitigation:** HealthKit failures are now classified from the native
+  `NSError` domain and code. Database-inaccessible failures cross the bridge
+  with the stable `HEALTHKIT_DATABASE_INACCESSIBLE` code, which the background
+  task suppresses as an expected transient condition. Other failures retain
+  their operation, native domain, native code, and localized description in a
+  custom Expo exception and continue to be reported to Sentry. Authorization
+  handling also uses typed native error codes instead of localized strings. No
+  retry, timeout, or delayed fallback was added.
+- **Validation:** Test-first regressions failed before the implementation. After
+  the fix, all 66 HealthKit Swift package tests and all 12 focused background
+  sync tests passed; the complete Docker-free mobile tier passed all 857 tests
+  across 90 files. SwiftLint, the mobile lint task, and the mobile TypeScript
+  check passed. CocoaPods resolved after refreshing the stale local specs
+  index. A complete simulator compile could not run because the installed Xcode
+  lacks the iOS 26.5 simulator platform required by the generated app; a
+  Catalyst compile reached the HealthKit target but could not import Expo's
+  iOS-only prebuilt `ExpoModulesCore` framework.
+- **Remaining risk / follow-up:** The native bridge change requires a new iOS
+  binary; an over-the-air JavaScript update alone is insufficient. Build with
+  the iOS 26.5 platform in CI or a provisioned Xcode installation, release the
+  binary, and monitor Sentry for recurrence. A physical device is required to
+  validate the locked-device HealthKit behavior end to end.
+
+## 2026-07-22 — Metric-Stream R2 Archive Key Interpolation Failed
+
+- **Status:** Unresolved; discovered incidentally while checking production logs
+  for the HealthKit incident and left for a separate investigation.
+- **Symptoms:** The `dofek_metric-stream-r2-archive` service repeatedly logged
+  `Failed to send message to aws_s3: key interpolation: method string: lower
+  slice bound 11 must be lower than or equal to upper bound (4) and target
+  length (4)`, beginning around `2026-07-23T00:22:51Z`.
+- **User impact:** The observed archive batches were not written to R2. The
+  retained logs did not establish whether later retries succeeded or how many
+  records were affected.
+- **Evidence:** The first fatal log line came from the archive service's
+  `aws_s3` output while evaluating its configured object-key interpolation. No
+  corresponding failure was observed in the mobile HealthKit path, so this is a
+  separate production issue.
+- **Root cause:** Unknown; the retained error proves an invalid substring
+  boundary during object-key interpolation, but the failing input and record
+  shape have not yet been captured.
+- **Fix / mitigation:** None applied in this workspace.
+- **Remaining risk / follow-up:** Investigate in a separate workspace with the
+  archive input and interpolation values instrumented, determine the affected
+  record range, repair the causal input or configuration, and verify successful
+  R2 writes without retries or warn-and-continue behavior.
