@@ -28,7 +28,7 @@ System-wide analytics builds and cache refreshes are durable operations without 
 
 ### Append-only stage events
 
-Operational facts are stored as append-only events. Current state is derived from the latest event for an operation/stage/dataset tuple. This avoids maintaining mutable and historical versions of the same fact.
+Operational facts are stored as append-only events. Current state is derived from the latest event for an operation/stage/dataset/output-path tuple. This avoids maintaining mutable and historical versions of the same fact.
 
 Each event records:
 
@@ -36,6 +36,7 @@ Each event records:
 - stage;
 - status;
 - optional dataset key and model name;
+- optional output path (`relational` or `metric_stream`);
 - occurrence time;
 - optional progress percentage;
 - optional source/serving watermark;
@@ -60,8 +61,9 @@ stage deadlines. Empty/no-data is a dataset result, not a processing failure.
 A typed registry defines every user-facing dataset and its dependencies. It is the canonical mapping used by the API, reconciler, tests, and clients. A contract includes:
 
 - stable dataset key and layman-readable label;
-- source tables or ingest streams;
-- ClickHouse mirror flow/table dependencies;
+- independent source/output paths and the evidence each path requires;
+- applicability rules based on outputs the operation actually emitted;
+- Postgres/PeerDB dependencies for relational output and Redpanda/ClickHouse dependencies for metric-stream output;
 - required dbt serving models;
 - registered API query families whose caches must be refreshed;
 - applicable providers/data types;
@@ -70,14 +72,16 @@ A typed registry defines every user-facing dataset and its dependencies. It is t
 
 Internal dbt models are represented in analytics-run detail, while the user widget summarizes them under the user-facing dataset contracts they support.
 
+Relational records and metric-stream samples are independent canonical facts. An activity may legitimately have no sensor samples, and sensor samples may legitimately have no activity. A processing operation therefore records an output manifest describing what it actually emitted. Dependencies are conjunctive only within an emitted output path; the system must not infer that producing one path requires the other.
+
 ## Stage completion rules
 
 - **Ingest:** the provider/import worker emits started, progress, succeeded, or failed events. BullMQ jobs remain small, atomic, and idempotent so a retry has the same final result ([BullMQ idempotent jobs](https://docs.bullmq.io/patterns/idempotent-jobs), [BullMQ flows](https://docs.bullmq.io/guide/flows)).
-- **Canonical commit:** the canonical health rows, commit-stage event, and one CDC marker for each affected PeerDB flow are inserted in the same Postgres transaction. This avoids a dual write where data commits without its durable processing evidence ([AWS transactional outbox pattern](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html)). The operation watermark is ingestion/commit identity, not the health record's domain timestamp, so historical imports remain observable.
-- **CDC:** complete only when every required ClickHouse mirror contains the exact operation marker written by the source transaction. Replication-slot health and unrelated newer `_peerdb_synced_at` values are supporting evidence, not proof that a user's transaction arrived.
-- **Analytics:** complete when every model required by the dataset succeeded in a dbt run that began after the CDC marker became visible. Per-model results come from Zod-validated `run_results.json`, mapped through `manifest.json`; source evidence comes from `sources.json`, never log-text parsing. Because only executed nodes appear in run results, the attempted selection is reconciled against the manifest, and each invocation writes to a distinct artifact directory ([dbt run results](https://docs.getdbt.com/reference/artifacts/run-results-json), [dbt state and source status](https://docs.getdbt.com/reference/node-selection/configure-state)).
+- **Canonical commit:** each emitted output path records its own canonical evidence. After relational provider/import writes complete, the worker writes a durable causal-fence transaction containing the commit-stage event, current Postgres WAL location, and one exact marker for each affected PeerDB flow. This fence does not duplicate provider rows and is not coupled to metric-stream publication. Metric-stream publication remains on the existing Redpanda path and records stable operation and batch identifiers acknowledged by the broker; metric samples are never routed through Postgres merely to coordinate status. The operation watermark is ingestion/commit identity, not the health record's domain timestamp, so historical imports remain observable. PostgreSQL LSNs are monotonically increasing WAL positions ([PostgreSQL WAL internals](https://www.postgresql.org/docs/current/wal-internals.html)); Kafka-compatible ordering is guaranteed only within a partition ([Apache Kafka introduction](https://kafka.apache.org/documentation/)).
+- **CDC:** relational output completes only when every applicable ClickHouse mirror contains the exact operation marker written by its source transaction. Metric-stream output completes only when ClickHouse contains the exact sink acknowledgement for every batch/partition the operation published. Replication-slot health, broker publication alone, and unrelated newer timestamps are supporting evidence rather than proof that a specific output arrived.
+- **Analytics:** complete when every model required by the dataset succeeded in a dbt run after CDC evidence became visible. Per-model results come from Zod-validated `run_results.json` mapped through `manifest.json`, never log-text parsing. Because only executed nodes appear in run results, the attempted selection is reconciled against the manifest, and each invocation writes to a distinct artifact directory. `sources.json` is consumed only when a separate source-freshness command produces it ([dbt run results](https://docs.getdbt.com/reference/artifacts/run-results-json), [dbt manifest](https://docs.getdbt.com/reference/artifacts/manifest-json)).
 - **Cache refresh:** complete when every registered query family required by the dataset has been refreshed successfully after the analytics run.
-- **Ready:** derived by the reconciler only after all required stages succeed. A failed or blocked stage remains visible even if an unrelated operation is running.
+- **Ready:** derived by the reconciler only after all stages required by the operation's emitted output manifest succeed. A legitimately absent output path is `skipped`, not failed or waiting. A failed or blocked stage remains visible even if an unrelated operation is running.
 
 ## API
 
@@ -90,7 +94,7 @@ Internal dbt models are represented in analytics-run detail, while the user widg
 - stage timeline and sanitized failure information;
 - model-level detail for operator/admin callers only.
 
-`processing.history` provides bounded, cursor-paginated operation history. Retention is explicit; the first implementation keeps stage events for 90 days and preserves one terminal operation summary per provider/dataset beyond that only if a later requirement justifies it.
+`processing.history` provides bounded, cursor-paginated operation history. The first implementation does not physically purge the append-only ledger; `processing.status` limits its active projection to operations created in the last 90 days while history remains available. A later retention job requires separate review before deleting facts.
 
 The API never reports CDC and analytics lag from the same value. Unknown evidence remains unknown rather than being labeled healthy.
 
@@ -120,7 +124,7 @@ focus or announcing every percentage update
 ## Reliability and observability
 
 - Event creation is idempotent through an operation/stage/dataset/status/idempotency-key constraint and ordered by a monotonic sequence, not wall-clock timestamps alone.
-- Provider/import commit events and CDC markers are written in the same transaction as canonical data; queue dispatch uses the existing transactional-outbox pattern.
+- Relational commit events, exact PeerDB markers, and reconciliation outbox rows share one causal-fence transaction after the provider/import database write completes. Metric publication and its ClickHouse receipt remain independent.
 - Unexpected instrumentation failures are reported to Sentry and fail the owning operational step when correctness would otherwise become unknowable.
 - A reconciler advances CDC, analytics, cache, and ready stages from durable evidence and is safe to run repeatedly.
 - Metrics cover operations by stage/status, stage duration, stalled operations, model failures, and reconciliation failures.
@@ -141,6 +145,8 @@ The new processing API and widget replace `sync.dataHealth` and `DataReadinessBa
 
 - Predicting an exact completion time without measured stage history.
 - Persisting duplicate health or analytics values in Postgres.
+- Routing metric-stream payloads through a Postgres outbox solely to coordinate processing status.
+- Requiring relational activity records and metric-stream samples to exist together.
 - Treating a running provider job as proof that a particular dataset is stale.
 - Exposing raw dbt, PeerDB, Redis, or ClickHouse terminology to ordinary users.
 - Adding Temporal alongside BullMQ solely for status reporting. Temporal is appropriate if pipeline execution is intentionally migrated to one durable workflow engine, not as a parallel observer ([Temporal workflow execution](https://docs.temporal.io/workflows)).

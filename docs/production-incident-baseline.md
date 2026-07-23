@@ -15046,6 +15046,64 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   then verify the next production deployment restores both consumers only after
   CDC setup succeeds.
 
+## 2026-07-22 — Readiness Status Could Not Prove Kaya Pipeline Completion
+
+- **Status:** Replacement architecture implemented and validated locally;
+  production deployment is pending.
+- **Symptoms:** Kaya import history reported success while the provider record
+  browser was temporarily empty, and Kaya's provider page displayed unrelated
+  account-wide processing. The old readiness banner could not identify whether
+  the import was waiting on PeerDB, dbt, cache refresh, or an unrelated job.
+- **User impact:** Users could not distinguish stored canonical data from delayed
+  serving data or identify which provider/dataset was actually blocked.
+- **Evidence:** Postgres committed seven Kaya activities and 63 climbing entries
+  at `2026-07-22 00:11:28 UTC`. The `provider_stats` dbt query began at
+  `00:11:50 UTC`, before PeerDB mirrored the activities at `00:12:28 UTC`, and
+  published an empty snapshot before later catching up. `sync.dataHealth`
+  covered only three datasets, reused one timestamp comparison for CDC and read
+  model lag, and provider detail requested it without provider scope. Maximum
+  domain timestamps also cannot identify a late-arriving historical import.
+- **Root cause:** Readiness was inferred from mutable aggregate timestamps and
+  account-wide job activity rather than durable, operation-specific evidence at
+  each asynchronous boundary.
+- **Fix / mitigation:** Replaced `sync.dataHealth` and both readiness banners with
+  an append-only, tenant-scoped processing ledger and scoped web/mobile widget.
+  Relational output now advances from an exact Postgres causal marker observed
+  in the destination table assigned to every applicable PeerDB flow. Existing
+  mirrors gain those marker mappings through PeerDB's supported pause/edit/resume
+  API and are never dropped by setup. Metric-stream output remains independent
+  and advances from an exact Redpanda batch receipt written by the ClickHouse
+  sink. All production dbt model and registered cache outcomes are recorded
+  separately. No metric payload is copied through Postgres.
+- **Validation:** Postgres integration tests prove append-only/idempotent facts,
+  tenant isolation, pagination, output-path independence, and atomic marker plus
+  reconciliation dispatch. Real ClickHouse integration tests prove relational
+  and metric stages remain waiting until their exact destination evidence
+  exists. The focused worker, reducer, API, web, and mobile suites pass. The
+  ClickHouse fixtures also caught and fixed a String-alias-versus-UUID query bug
+  and proved that a marker copied by one mirror cannot impersonate another
+  mirror's evidence. PeerDB setup tests prove missing mappings are edited in
+  place and existing mirror workflows are preserved. No retry or timestamp
+  fallback was added; the only polling waits for PeerDB's documented asynchronous
+  pause/snapshot/resume state transitions. The complete unit/mobile tier passed
+  12,973 tests and the clean Compose integration tier passed all 1,079 tests in
+  108 files. Web and mobile Storybook builds, the production web build, lint,
+  typecheck, and bundle-size checks also passed. After merging current main, the
+  complete unit/mobile tier passed 12,987 tests and the clean Compose integration
+  tier passed all 1,084 tests in 109 files. An initial integration attempt
+  failed first because the native FIT decoder prerequisite was absent and then
+  because stale workspace ClickHouse state restarted the container under the
+  power-curve fixture; building the documented decoder and removing only this
+  workspace's disposable Compose volumes produced clean focused and full runs.
+  A direct development-target dbt build was intentionally stopped when it tried
+  to replay 9,700 historical daily microbatches; bounded dbt compilation and
+  success/failure artifact fixtures validate the analytics runner without that
+  prohibited historical replay.
+- **Remaining risk / follow-up:** Complete CI; deploy in the documented
+  migration/PeerDB order; then confirm a production Kaya import advances through
+  every stage and create Axiom alerts for stale outbox rows and failed stage
+  events.
+
 ## 2026-07-22 — Kaya Climbing Attempts Matched Sends 1:1
 
 - **Status:** Root cause fixed and validated locally; production deployment and
@@ -15222,7 +15280,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   compares active migration bytes against an immutable applied-migration
   registry so a PR cannot rewrite a migration that an earlier commit deployed.
   Failed deploy runs retained for incident history:
-  [preceding image](https://github.com/Asherlc/dofek/actions/runs/29944229608)
+  [preceding image](https://github.com/Asherlc/dofek/actions/runs/29944229608),
   [merged image](https://github.com/Asherlc/dofek/actions/runs/29945041858), and
   [complete archive](https://github.com/Asherlc/dofek/actions/runs/29948084505),
   and [partial active-migration restoration](https://github.com/Asherlc/dofek/actions/runs/29950485728).
@@ -15346,3 +15404,152 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   archive input and interpolation values instrumented, determine the affected
   record range, repair the causal input or configuration, and verify successful
   R2 writes without retries or warn-and-continue behavior.
+## 2026-07-22 — Reused ClickHouse Test State Exhausted Container Memory
+
+- **Status:** Local validation environment recovered; the complete integration
+  tier passes on clean workspace state.
+- **Symptoms:** The first post-merge integration run passed 108 files but the
+  activity power-curve file failed three tests with `socket hang up` while
+  issuing ClickHouse test commands.
+- **User impact:** Pull-request validation was delayed; production was not
+  affected.
+- **Evidence:** The exact failing command was `pnpm test:integration`; its first
+  fatal line was a failed `DROP TABLE IF EXISTS` after the ClickHouse HTTP socket
+  reset. Docker emitted a container `oom` event at `2026-07-22 19:05:24 UTC`,
+  followed by exit code 137 and an automatic restart. A fresh-volume focused run
+  then exposed a separate cold-start race: the healthcheck still returned
+  connection-refused at `19:10:20`, the test connected at `19:10:21`, and the
+  service became healthy at `19:10:25` without restarting.
+- **Root cause:** Reused disposable ClickHouse test state was the differentiator
+  that pushed the 3 GiB local container across its memory limit during the
+  power-curve build. After volume recreation, the first focused command started
+  before the cold ClickHouse process had reached healthy state.
+- **Fix / mitigation:** Removed only the `ashgabat` workspace's Compose
+  containers, network, and named volumes with the repository Compose wrapper,
+  verified ClickHouse was healthy with zero restarts, and reran the focused and
+  full integration tiers. No timeout, retry, memory-limit, or product behavior
+  change was added.
+- **Validation:** The focused power-curve suite passed all 3 tests, then the full
+  integration tier passed all 1,084 tests in 109 files on the recreated state.
+- **Remaining risk / follow-up:** The Compose test launcher can return before a
+  cold ClickHouse healthcheck succeeds. Track a separate test-infrastructure
+  change that makes the launcher wait for declared service health before
+  starting Vitest.
+
+## 2026-07-22 — Processing Status Migration Failed New-File CI Gates
+
+- **Status:** Root causes fixed and validated locally; hosted validation is
+  tracked by [pull request 1862](https://github.com/Asherlc/dofek/pull/1862).
+- **Symptoms:** The first hosted run failed `Test / SQLFluff`; after correcting
+  that migration formatting, the next run exposed failures in `Test / Knip`,
+  `Test / Migration Lint`, and `Test / Spell Check`. Once those passed, the
+  package-specific mobile typecheck exposed an invalid theme token. The next
+  run cleared those gates but seven Stryker shards failed on the new processing
+  pipeline. After those focused fixes and a merge from the advanced target
+  branch, two previously untested Stryker shards exposed additional state-
+  derivation, presentation, and ClickHouse migration coverage gaps. The next
+  hosted retry cleared those shards but exposed four remaining changed-range
+  shards covering reconciliation, import orchestration, PeerDB mirror editing,
+  and the ClickHouse sink/web polling boundary. After those tests were added,
+  the web package's dedicated typecheck caught a type-invalid assertion in the
+  new polling test that the root TypeScript configuration does not include.
+- **User impact:** The pull request was blocked; production was not affected.
+- **Evidence:** In
+  [run 29950473340](https://github.com/Asherlc/dofek/actions/runs/29950473340),
+  the exact SQLFluff command was `sqlfluff lint
+  drizzle/0056_processing_status.sql` and the first fatal finding was `RF06` on
+  line 1. In
+  [run 29950700120](https://github.com/Asherlc/dofek/actions/runs/29950700120),
+  Knip first reported two unused processing exports, Squawk first reported
+  `constraint-missing-not-valid`, and CSpell first reported `bigserial`.
+  [Run 29951241129](https://github.com/Asherlc/dofek/actions/runs/29951241129)
+  then reported `TS2339: Property 'primary' does not exist` in the mobile
+  processing widget. In
+  [run 29951519745](https://github.com/Asherlc/dofek/actions/runs/29951519745),
+  the exact mutation command was `pnpm exec stryker run
+  stryker.ci.config.json --mutate "$MUTATE_FILES"`; the first fatal report in
+  the cache shard was `Final mutation score 54.55 under breaking threshold
+  75`. The downloaded reports also showed the new processing event store with
+  120 uncovered mutants because its behavior was covered only by integration
+  tests, which the mutation tier intentionally excludes. In
+  [run 29954329873](https://github.com/Asherlc/dofek/actions/runs/29954329873),
+  the same exact mutation command reported `Final mutation score 71.43 under
+  breaking threshold 75` for `src/processing/processing-state.ts`, followed by
+  `Final mutation score 64.81 under breaking threshold 75` for the shard that
+  included processing presentation and ClickHouse migrations `0051` and
+  `0052`. In
+  [run 29955145398](https://github.com/Asherlc/dofek/actions/runs/29955145398),
+  the same exact mutation command first reported `Final mutation score 38.04
+  under breaking threshold 75` for `processing-reconciler.ts`; the other
+  failing changed ranges scored 57.32% for import processing, 54.78% for
+  ClickHouse CDC, and 72.41% for the ClickHouse sink and web polling shard.
+  In
+  [run 29956655451](https://github.com/Asherlc/dofek/actions/runs/29956655451),
+  the exact command was `pnpm run typecheck` in `packages/web`; the first fatal
+  line was `TS2339: Property 'refetchInterval' does not exist` at
+  `src/hooks/useProcessingStatus.test.ts:30`.
+- **Root cause:** The generated migration had not been passed through the
+  new-migration SQL linters; its foreign keys were emitted as later `ALTER
+  TABLE` statements, its sequence used the legacy serial form, and two generated
+  constraint names exceeded PostgreSQL's identifier limit. Separately, the two
+  production scripts that consume the supposedly unused exports were absent
+  from Knip's entrypoint list, and one valid word was absent from CSpell's
+  project dictionary.
+  The mobile widget also used a web-style `primary` token instead of the mobile
+  palette's established `accent` token; the earlier root typecheck did not run
+  the mobile package's separate TypeScript configuration. Finally, several new
+  unit suites asserted only partial result shapes and did not exercise the
+  asynchronous event-recording paths, while the processing event store had no
+  Docker-free unit suite. The remaining state tests did not cover global
+  operation events, cancellation, or selection among multiple ordered facts;
+  the presentation test sampled only a subset of statuses, and the two new
+  ClickHouse migration factories were verified indirectly through the registry
+  rather than through their exact outputs and missing-definition behavior. The
+  remaining reconciliation and import tests also verified outcomes without
+  fully asserting event ordering, failure propagation, zero-output behavior,
+  and evidence loading. PeerDB mirror-edit tests covered the successful path
+  without distinguishing near-miss mappings or the HTTP, authentication, and
+  mirror-state failures. The ClickHouse acknowledgement and adaptive polling
+  branches were covered only indirectly. The polling test initially read a
+  query option from the hook's production `UseTRPCQueryResult` return type
+  instead of from the mocked `useQuery` call arguments.
+- **Fix / mitigation:** Formatted migration `0056`, modeled its sequence as a
+  bigint identity, placed explicitly named foreign keys in each newly created
+  table, documented the intentionally bounded 32-bit fields, registered the
+  analytics/cache scripts and their externally supplied `dbt` binary with
+  Knip, and added `idempotently` to the spelling dictionary. No CI exclusion,
+  warning-and-continue behavior, retry, or timeout was added. Replaced the five
+  invalid mobile `primary` references with the existing semantic `accent`
+  token. Added focused unit coverage for event-store SQL mapping and
+  idempotency, retry-stable sync identity, independent metric-only and
+  relational-only outputs, legitimate no-output skips, exact dbt artifact
+  outcomes, cache/analytics event recording, lazy metric publication, and
+  scoped API status mapping. Mutation thresholds and file selection were not
+  relaxed. Added focused state tests for global facts, latest-sequence
+  selection, cancellation, and omitted manifests; table-driven coverage for
+  every processing display status; and colocated tests for the exact `0051`
+  and `0052` migration results and failure behavior. Added exact event-order,
+  evidence-loading, cancellation, failure, metric-only, relational-only, and
+  no-output assertions for reconciliation and import processing. Added PeerDB
+  tests for exact pause/edit/resume requests, near-miss mappings, Basic
+  authentication, HTTP and logical failures, missing clients, and invalid
+  mirror state, plus direct ClickHouse acknowledgement and adaptive web polling
+  tests. Corrected the polling test to inspect the typed mock call arguments;
+  no production type or type assertion was changed.
+- **Validation:** SQLFluff and Squawk report zero findings; Knip, CSpell, lint,
+  and TypeScript pass. The complete unit/mobile tier passes 13,036 tests in 747
+  files, and the real-Postgres migration plus processing integration suites pass
+  all 29 tests. Focused Stryker runs now score 100% for cache processing,
+  analytics processing, dbt artifact parsing, and metric publication; the
+  larger full-file targets score 96.67% for the event store, 96.55% for the
+  processing repository, and 93.97% for sync processing, all above the strict
+  75% breaking threshold. The exact two newly failing hosted mutation commands
+  now score 87.58% for processing state and 100% for the combined presentation
+  and ClickHouse migration shard. The four changed ranges from the subsequent
+  retry now score 80.37% for reconciliation, 92.68% for import processing,
+  85.22% for ClickHouse CDC, and 100% for the ClickHouse sink/web polling shard.
+  The focused polling test and `packages/web` typecheck both pass after the
+  assertion correction.
+- **Remaining risk / follow-up:** Keep both production scripts in Knip's
+  explicit entrypoint list, and run both SQLFluff and Squawk locally for every
+  newly generated migration before pushing.

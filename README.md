@@ -21,6 +21,7 @@ If you are starting cold and do not want to hunt through agent notes, begin here
 - [docs/adding-a-provider.md](docs/adding-a-provider.md): how to add or extend a provider.
 - [docs/exercise-metadata.md](docs/exercise-metadata.md): strength exercise muscle metadata source, overrides, and update workflow.
 - [docs/testing.md](docs/testing.md): testing patterns used across the repo.
+- [docs/processing-status-runbook.md](docs/processing-status-runbook.md): durable provider/import processing evidence and operational diagnosis.
 
 ## Architecture
 
