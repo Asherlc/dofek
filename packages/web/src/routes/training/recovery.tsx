@@ -103,7 +103,7 @@ function RecoveryTab() {
           ) : (
             <SleepAnalyticsChart
               nightly={sleepData.data?.nightly ?? []}
-              sleepDebt={sleepData.data?.sleepDebt ?? 0}
+              sleepDebt={sleepData.data?.sleepDebt ?? null}
               loading={sleepData.isLoading}
             />
           )}

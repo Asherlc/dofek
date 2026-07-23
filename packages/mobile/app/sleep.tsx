@@ -19,6 +19,7 @@ import { SparkLine } from "../components/charts/SparkLine";
 import { DaySelector } from "../components/DaySelector";
 import { MetricCard } from "../components/MetricCard";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
+import { QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
 import { useProcessingStatus } from "../lib/useProcessingStatus";
 import { useRefresh } from "../lib/useRefresh";
@@ -34,7 +35,9 @@ export default function SleepScreen() {
 
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
-  const sleepDebt = sleepResult?.sleepDebt ?? 0;
+  const sleepDebt = sleepResult?.sleepDebt;
+  const averageDurationMinutes = sleepResult?.averageDurationMinutes;
+  const averageEfficiencyPercent = sleepResult?.averageEfficiencyPercent;
   const mostRecentNight = nightly[nightly.length - 1];
   const lastNight = (() => {
     if (!mostRecentNight) return undefined;
@@ -46,12 +49,6 @@ export default function SleepScreen() {
 
   const durationTrend = nightly.slice(-14).map((n) => n.sleepMinutes);
   const efficiencyTrend = nightly.slice(-14).map((n) => n.efficiency);
-
-  const avgDuration =
-    nightly.length > 0 ? nightly.reduce((sum, n) => sum + n.sleepMinutes, 0) / nightly.length : 0;
-
-  const avgEfficiency =
-    nightly.length > 0 ? nightly.reduce((sum, n) => sum + n.efficiency, 0) / nightly.length : 0;
 
   const isLoading = shouldShowBlockingLoading({
     data: nightly,
@@ -84,6 +81,12 @@ export default function SleepScreen() {
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading sleep data...</Text>
         </View>
+      ) : nightly.length === 0 ? (
+        <QueryStatePanel
+          variant="empty"
+          title="No sleep data"
+          message="No sleep data has been synced yet."
+        />
       ) : (
         <>
           {/* Last night's sleep */}
@@ -121,31 +124,35 @@ export default function SleepScreen() {
           )}
 
           {/* Sleep debt */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Sleep Debt (14 Days)</Text>
-            <Text style={[styles.debtValue, { color: sleepDebtColor(sleepDebt) }]}>
-              {formatSleepDebt(sleepDebt)}
-            </Text>
-            <Text style={styles.debtSubtitle}>vs 8 hour target per night</Text>
-          </View>
+          {sleepDebt != null && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Sleep Debt (14 Days)</Text>
+              <Text style={[styles.debtValue, { color: sleepDebtColor(sleepDebt) }]}>
+                {formatSleepDebt(sleepDebt)}
+              </Text>
+              <Text style={styles.debtSubtitle}>vs 8 hour target per night</Text>
+            </View>
+          )}
 
           {/* Trends */}
-          <View style={styles.metricsGrid}>
-            <MetricCard
-              title="Average Duration"
-              value={formatDurationMinutes(avgDuration)}
-              trend={durationTrend}
-              color={colors.blue}
-              subtitle={`Last ${days} nights`}
-            />
-            <MetricCard
-              title="Average Efficiency"
-              value={formatIntensity(avgEfficiency)}
-              trend={efficiencyTrend}
-              color={colors.purple}
-              subtitle={`Last ${days} nights`}
-            />
-          </View>
+          {averageDurationMinutes != null && averageEfficiencyPercent != null && (
+            <View style={styles.metricsGrid}>
+              <MetricCard
+                title="Average Duration"
+                value={formatDurationMinutes(averageDurationMinutes)}
+                trend={durationTrend}
+                color={colors.blue}
+                subtitle={`Last ${days} nights`}
+              />
+              <MetricCard
+                title="Average Efficiency"
+                value={formatIntensity(averageEfficiencyPercent)}
+                trend={efficiencyTrend}
+                color={colors.purple}
+                subtitle={`Last ${days} nights`}
+              />
+            </View>
+          )}
 
           {/* Sleep consistency */}
           {latestConsistency && (

@@ -613,7 +613,7 @@ describe("recoveryRouter.workloadRatio", () => {
 // ── sleepAnalytics ──────────────────────────────────────────────
 
 describe("recoveryRouter.sleepAnalytics", () => {
-  it("returns empty nightly and zero sleep debt when no data", async () => {
+  it("returns unavailable summary metrics when no sleep data exists", async () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
@@ -622,7 +622,9 @@ describe("recoveryRouter.sleepAnalytics", () => {
     const result = await caller.sleepAnalytics({});
 
     expect(result.nightly).toEqual([]);
-    expect(result.sleepDebt).toBe(0);
+    expect(result.sleepDebt).toBeNull();
+    expect(result.averageDurationMinutes).toBeNull();
+    expect(result.averageEfficiencyPercent).toBeNull();
   });
 
   it("maps ClickHouse rows to SleepNightlyRow format with rounding", async () => {
@@ -662,6 +664,8 @@ describe("recoveryRouter.sleepAnalytics", () => {
     // efficiency rounds to 1 decimal: 93.456 -> 93.5
     expect(night?.efficiency).toBeCloseTo(93.5, 1);
     expect(night?.rollingAvgDuration).toBeCloseTo(437, 1);
+    expect(result.averageDurationMinutes).toBeCloseTo(437, 1);
+    expect(result.averageEfficiencyPercent).toBe(93.5);
   });
 
   it("computes rolling average duration from available sleep rows", async () => {
@@ -675,6 +679,39 @@ describe("recoveryRouter.sleepAnalytics", () => {
     const result = await caller.sleepAnalytics({});
 
     expect(result.nightly[0]?.rollingAvgDuration).toBe(450);
+  });
+
+  it("computes summary averages across multiple sleep nights", async () => {
+    const rows = [
+      sleepAnalyticsRow({
+        date: "2026-03-01",
+        durationMinutes: 400,
+        deepPct: 20,
+        remPct: 20,
+        lightPct: 50,
+        awakePct: 10,
+        efficiency: 80,
+      }),
+      sleepAnalyticsRow({
+        date: "2026-03-02",
+        durationMinutes: 500,
+        deepPct: 20,
+        remPct: 20,
+        lightPct: 50,
+        awakePct: 10,
+        efficiency: 90,
+      }),
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.averageDurationMinutes).toBe(405);
+    expect(result.averageEfficiencyPercent).toBe(85);
   });
 
   it("computes positive sleep debt when sleep is below target", async () => {

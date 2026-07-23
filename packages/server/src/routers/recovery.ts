@@ -108,7 +108,9 @@ export interface SleepNightlyRow {
 
 export interface SleepAnalyticsResult {
   nightly: SleepNightlyRow[];
-  sleepDebt: number;
+  sleepDebt: number | null;
+  averageDurationMinutes: number | null;
+  averageEfficiencyPercent: number | null;
 }
 
 export interface SleepConsistencyRow {
@@ -414,13 +416,32 @@ export const recoveryRouter = router({
       const effective = getEffectiveParams(storedParams);
       const last14 = nightly.slice(-14);
       const targetMinutes = effective.sleepTarget.minutes;
-      const sleepDebt = last14.reduce((debt, night) => {
-        return debt + (targetMinutes - night.sleepMinutes);
-      }, 0);
+      const sleepDebt =
+        nightly.length > 0
+          ? Math.round(
+              last14.reduce((debt, night) => {
+                return debt + (targetMinutes - night.sleepMinutes);
+              }, 0),
+            )
+          : null;
+      const averageDurationMinutes =
+        nightly.length > 0
+          ? Math.round(
+              (nightly.reduce((sum, night) => sum + night.sleepMinutes, 0) / nightly.length) * 10,
+            ) / 10
+          : null;
+      const averageEfficiencyPercent =
+        nightly.length > 0
+          ? Math.round(
+              (nightly.reduce((sum, night) => sum + night.efficiency, 0) / nightly.length) * 10,
+            ) / 10
+          : null;
 
       return {
         nightly,
-        sleepDebt: Math.round(sleepDebt),
+        sleepDebt,
+        averageDurationMinutes,
+        averageEfficiencyPercent,
       };
     },
   ),
