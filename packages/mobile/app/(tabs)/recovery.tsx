@@ -30,12 +30,13 @@ import {
 } from "react-native";
 import { Card } from "../../components/Card";
 import { SparkLine } from "../../components/charts/SparkLine";
-import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
@@ -180,7 +181,7 @@ export default function RecoveryScreen() {
     { days, endDate },
     { placeholderData: (previousData) => previousData },
   );
-  const dataHealth = trpc.sync.dataHealth.useQuery({ datasets: ["dailyMetrics"] });
+  const processingStatus = useProcessingStatus({ datasets: ["activity", "sleep", "recovery"] });
   const recoveryData = recoveryQuery.data;
 
   const hrvData = recoveryData?.hrvVariability ?? [];
@@ -239,7 +240,11 @@ export default function RecoveryScreen() {
     isFetching: recoveryQuery.isFetching,
   });
   const { refreshing, onRefresh } = useRefresh({
-    invalidate: () => utils.mobileDashboard.recovery.invalidate().then(() => undefined),
+    invalidate: () =>
+      Promise.all([
+        utils.mobileDashboard.recovery.invalidate(),
+        utils.processing.status.invalidate(),
+      ]).then(() => undefined),
   });
 
   return (
@@ -256,10 +261,10 @@ export default function RecoveryScreen() {
     >
       <DaySelector days={days} onChange={setDays} />
 
-      <DataReadinessBanner
-        data={dataHealth.data}
-        error={dataHealth.error}
-        loading={dataHealth.isLoading}
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
       />
 
       {isLoading ? (

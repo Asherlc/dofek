@@ -3,6 +3,7 @@ import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ProcessingStatusSnapshot } from "../components/ProcessingStatusWidget.tsx";
 
 const mockUseParams = vi.fn().mockReturnValue({ id: "strong-csv" });
 
@@ -91,29 +92,19 @@ const mockRecords: {
   isError: false,
   error: null,
 };
+const mockAvailableDataTypes = {
+  data: ["activities"] as const,
+  isLoading: false,
+  isError: false,
+  error: null,
+};
 const mockActiveImports: { data: Array<Record<string, unknown>>; isLoading: boolean } = {
   data: [],
   isLoading: false,
 };
 
-interface MockDataHealthSnapshot {
-  overallStatus: "blocked";
-  generatedAt: string;
-  datasets: Array<{
-    key: "activity";
-    label: string;
-    rawRows: number;
-    latestRawAt: string;
-    latestReadModelAt: null;
-    cdcLagSeconds: number;
-    readModelLagSeconds: null;
-    status: "blocked";
-    message: string;
-  }>;
-}
-
 const mockDataHealth: {
-  data: MockDataHealthSnapshot | null;
+  data: ProcessingStatusSnapshot | null;
   isLoading: boolean;
   error: { message?: string } | null;
 } = {
@@ -130,14 +121,18 @@ const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: fa
 const mockSettingsSetMutate = vi.fn();
 const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
+const mockProcessingStatusInvalidate = vi.fn();
+const mockPollSyncJob = vi.fn();
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    processing: {
+      status: { useQuery: () => mockDataHealth },
+    },
     sync: {
       providers: { useQuery: () => mockProviders },
       providerStats: { useQuery: () => mockStats },
       activeImports: { useQuery: () => mockActiveImports },
-      dataHealth: { useQuery: () => mockDataHealth },
       triggerSync: { useMutation: () => mockSyncMutation },
       syncStatus: { fetch: vi.fn() },
     },
@@ -147,6 +142,7 @@ vi.mock("../lib/trpc.ts", () => ({
       deletionStatus: { useQuery: () => ({ data: undefined, error: null }) },
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
       logFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
+      availableDataTypes: { useQuery: () => mockAvailableDataTypes },
       records: { useQuery: () => mockRecords },
       recordFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
     },
@@ -155,13 +151,16 @@ vi.mock("../lib/trpc.ts", () => ({
       set: { useMutation: () => ({ mutate: mockSettingsSetMutate, isPending: false }) },
     },
     useUtils: () => ({
+      processing: {
+        status: { invalidate: mockProcessingStatusInvalidate },
+      },
       sync: {
         providers: { invalidate: vi.fn() },
         providerStats: { invalidate: vi.fn() },
-        dataHealth: { invalidate: vi.fn() },
         syncStatus: { fetch: vi.fn() },
       },
       providerDetail: {
+        availableDataTypes: { invalidate: vi.fn() },
         logs: { invalidate: vi.fn() },
         records: { invalidate: vi.fn() },
       },
@@ -173,7 +172,7 @@ vi.mock("../lib/trpc.ts", () => ({
 }));
 
 vi.mock("../lib/poll-sync-job.ts", () => ({
-  pollSyncJob: vi.fn(),
+  pollSyncJob: mockPollSyncJob,
 }));
 
 vi.mock("../lib/telemetry.ts", () => ({
@@ -354,17 +353,17 @@ describe("ProviderDetailPage import-only providers", () => {
     mockDataHealth.data = {
       overallStatus: "blocked",
       generatedAt: "2026-06-30T12:00:00Z",
+      scope: { providerId: "wahoo", datasets: ["activity"] },
+      operations: [],
       datasets: [
         {
           key: "activity",
           label: "Activities",
-          rawRows: 12,
-          latestRawAt: "2026-06-29T12:00:00Z",
-          latestReadModelAt: null,
-          cdcLagSeconds: 90000,
-          readModelLagSeconds: null,
           status: "blocked",
-          message: "Activity data is available, but ClickHouse mirrors are not current.",
+          currentStage: "cdc",
+          progressPercentage: null,
+          lastAdvancedAt: "2026-06-29T12:00:00Z",
+          lastReadyAt: null,
         },
       ],
     };
@@ -372,10 +371,8 @@ describe("ProviderDetailPage import-only providers", () => {
     const { ProviderDetailPage } = await import("./ProviderDetailPage");
     render(<ProviderDetailPage />);
 
-    expect(screen.getByText("Some data is temporarily unavailable")).toBeTruthy();
-    expect(
-      screen.getByText("Activities data is still being prepared. Please check back soon."),
-    ).toBeTruthy();
+    expect(screen.getByText("Wahoo data status")).toBeTruthy();
+    expect(screen.getByText("Processing needs attention")).toBeTruthy();
   });
 
   it("shows single-provider cooldown outcome without polling a fake job", async () => {
@@ -413,6 +410,38 @@ describe("ProviderDetailPage import-only providers", () => {
 
     expect(screen.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
     expect(pollSyncJob).not.toHaveBeenCalled();
+  });
+
+  it("invalidates processing status when a manual sync completes", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      jobId: "job-1",
+      jobIds: ["job-1"],
+      providerJobs: [{ providerId: "wahoo", jobId: "job-1", queueName: "sync-wahoo" }],
+      providerResults: [{ providerId: "wahoo", status: "started", jobId: "job-1" }],
+    });
+    mockPollSyncJob.mockImplementationOnce(async ({ onComplete }: { onComplete: () => void }) =>
+      onComplete(),
+    );
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+
+    expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
   it("reports unexpected provider sync failures", async () => {
@@ -527,6 +556,31 @@ describe("ProviderDetailPage delete all data", () => {
 });
 
 describe("ProviderDetailPage activity records", () => {
+  it("shows canonical activity records while aggregate provider stats are catching up", async () => {
+    mockUseParams.mockReturnValue({ id: "kaya-export" });
+    mockProviders.data = [
+      {
+        id: "kaya-export",
+        name: "Kaya",
+        authorized: true,
+        authType: "file-import",
+        lastSyncedAt: null,
+        importOnly: true,
+      },
+    ];
+    mockStats.data = [];
+    mockRecords.data = {
+      rows: [{ id: "activity-123", name: "Kaya climbing" }],
+      columns: ["id", "name"],
+    };
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Kaya climbing")).toBeTruthy();
+    expect(screen.queryByText("No records yet for this provider.")).toBeNull();
+  });
+
   it("links from an activity record modal to the activity detail page", async () => {
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [

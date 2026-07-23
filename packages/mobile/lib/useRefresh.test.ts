@@ -31,7 +31,7 @@ vi.mock("./trpc", () => ({
       },
       activity: { list: { invalidate: mockActivityListInvalidate } },
       food: { byDate: { invalidate: mockFoodByDateInvalidate } },
-      sync: { dataHealth: { invalidate: mockDataHealthInvalidate } },
+      processing: { status: { invalidate: mockDataHealthInvalidate } },
       nutritionAnalytics: {
         adaptiveTdee: { invalidate: mockNutritionAnalyticsAdaptiveTdeeInvalidate },
         caloricBalance: { invalidate: mockNutritionAnalyticsCaloricBalanceInvalidate },

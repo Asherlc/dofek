@@ -15,6 +15,7 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 
 - `with-env.sh`: Wrapper script that loads environment variables from `.env`, `.env.local`, and **Infisical**.
   - Automatically constructs OpenTelemetry auth headers from `AXIOM_API_TOKEN`.
+  - Exits before running the command when Infisical export fails or no command is provided.
   - Usage: `./scripts/with-env.sh <command>`
 - `make-admin.sh`: Promotes a user to admin in the production database via SSH.
   - Resolves server IP via Infisical, finds the `dofek-db` container, and executes `UPDATE fitness.user_profile SET is_admin = true ...`.
@@ -41,12 +42,17 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Handles standalone lines, inline comments, and specific test patterns like `MockFetchFn`.
 - `no-suppressions.sh`: Checks for lint or type suppressions (e.g., `eslint-disable`, `biome-ignore`).
 - `exact-versions.sh`: Ensures all dependencies in `package.json` use exact versions (no `^` or `~`).
+- `workflow-download-policy.ts`: Rejects GitHub workflow and action source downloads unless they use a full commit SHA; versioned release artifacts must instead be protected by a reviewed checksum. This follows GitHub's guidance that only full commit SHAs are immutable unless immutable releases are enabled: https://docs.github.com/en/actions/how-tos/create-and-publish-actions/using-immutable-releases-and-tags-to-manage-your-actions-releases
 - `migration-policy.ts`: Checks changed deploy migration SQL for inline backfills, refreshes, and other long-running data work that must live in resumable jobs instead.
 - `generate-icons.mjs`: Script to generate app icons for web and mobile.
 - `check-clickhouse-cdc.ts`: Fails loudly when required PeerDB replication slots
   are lost, inactive, or retaining dangerous WAL, and when active ClickHouse
   mirrors have stale `_peerdb_synced_at` values.
   - Usage: `pnpm check:clickhouse-cdc`
+- `check-ota-manifest.ts`: Sends the production iOS Expo Updates request and
+  fails unless the OTA origin returns a conformant manifest or no-update
+  response within five seconds.
+  - Usage: `pnpm tsx scripts/check-ota-manifest.ts`
 
 ## Reverse Engineering (WHOOP)
 

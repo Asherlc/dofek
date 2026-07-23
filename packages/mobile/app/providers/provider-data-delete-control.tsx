@@ -40,7 +40,7 @@ export function ProviderDataDeleteControl({
     await Promise.all([
       trpcUtils.sync.providers.invalidate(),
       trpcUtils.sync.providerStats.invalidate(),
-      trpcUtils.sync.dataHealth.invalidate(),
+      trpcUtils.processing.status.invalidate(),
       trpcUtils.providerDetail.records.invalidate({ providerId }),
       trpcUtils.providerDetail.logs.invalidate({ providerId }),
     ]);

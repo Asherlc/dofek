@@ -1,4 +1,3 @@
-import { dataReadinessMessage } from "@dofek/providers/data-readiness-banner";
 import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
 import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
@@ -22,12 +21,7 @@ import { operationStatusOutputSchema, readOperationProgress } from "../lib/opera
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 import { logger } from "../logger.ts";
-import {
-  type DataHealthSensorStore,
-  dataHealthDatasets,
-  type ProviderStatRow,
-  SyncRepository,
-} from "../repositories/sync-repository.ts";
+import { type ProviderStatRow, SyncRepository } from "../repositories/sync-repository.ts";
 import {
   adminProcedure,
   CacheTTL,
@@ -44,7 +38,6 @@ import {
   isJobDataForUser,
   parseJobId,
   providerIdForImportType,
-  providerIdFromSyncJobData,
   toJobId,
   UPLOAD_IMPORT_PROVIDERS,
 } from "./sync-helpers.ts";
@@ -216,173 +209,6 @@ const queueBackpressureOutputSchema = z.array(
 );
 
 const queueBackpressureStates = ["waiting", "active", "delayed", "failed"] as const;
-
-const dataReadinessStatusSchema = z.enum(["healthy", "syncing", "stale", "missing", "blocked"]);
-
-const dataHealthDatasetKeySchema = z.enum(["dailyMetrics", "sleep", "activity"]);
-
-const dataHealthInputSchema = z.object({
-  datasets: z.array(dataHealthDatasetKeySchema).min(1),
-});
-
-const syncingProviderSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-});
-
-const dataHealthOutputSchema = z.object({
-  overallStatus: dataReadinessStatusSchema,
-  generatedAt: z.string(),
-  syncingProviders: z.array(syncingProviderSchema),
-  datasets: z.array(
-    z.object({
-      key: dataHealthDatasetKeySchema,
-      label: z.string(),
-      rawRows: z.number(),
-      latestRawAt: z.string().nullable(),
-      latestReadModelAt: z.string().nullable(),
-      cdcLagSeconds: z.number().nullable(),
-      readModelLagSeconds: z.number().nullable(),
-      status: dataReadinessStatusSchema,
-      message: z.string(),
-    }),
-  ),
-});
-
-function hasDataHealthSensorStore(value: unknown): value is DataHealthSensorStore {
-  if (typeof value !== "object" || value === null) return false;
-  return "query" in value && typeof value.query === "function";
-}
-
-function timestampToIsoString(value: string | Date | null): string | null {
-  if (value === null) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
-}
-
-function secondsBetween(laterIso: string | null, earlierIso: string | null): number | null {
-  if (laterIso === null || earlierIso === null) return null;
-  const later = new Date(laterIso).getTime();
-  const earlier = new Date(earlierIso).getTime();
-  if (Number.isNaN(later) || Number.isNaN(earlier)) return null;
-  return Math.max(0, Math.round((later - earlier) / 1000));
-}
-
-function dateGrainSecondsBetween(
-  laterIso: string | null,
-  earlierIso: string | null,
-): number | null {
-  if (laterIso === null || earlierIso === null) return null;
-  const laterDate = timestampToIsoString(laterIso)?.slice(0, 10);
-  const earlierDate = timestampToIsoString(earlierIso)?.slice(0, 10);
-  if (laterDate === undefined || earlierDate === undefined) return null;
-  return secondsBetween(`${laterDate}T00:00:00.000Z`, `${earlierDate}T00:00:00.000Z`);
-}
-
-function datasetStatus(input: {
-  rawRows: number;
-  latestReadModelAt: string | null;
-  readModelLagSeconds: number | null;
-}): z.infer<typeof dataReadinessStatusSchema> {
-  if (input.rawRows === 0) return "missing";
-  if (input.latestReadModelAt === null) return "blocked";
-  if (input.readModelLagSeconds !== null && input.readModelLagSeconds > 3600) return "stale";
-  return "healthy";
-}
-
-function buildProviderNameById(): Map<string, string> {
-  const names = new Map<string, string>();
-  for (const provider of UPLOAD_IMPORT_PROVIDERS) {
-    names.set(provider.id, provider.name);
-  }
-  for (const provider of getAllProviders()) {
-    names.set(provider.id, provider.name);
-  }
-  for (const provider of PUSH_PROVIDERS) {
-    names.set(provider.id, provider.name);
-  }
-  return names;
-}
-
-function providerDisplayName(providerId: string, providerNameById: Map<string, string>): string {
-  return providerNameById.get(providerId) ?? providerId;
-}
-
-function overallDataHealthStatus(
-  statuses: Array<z.infer<typeof dataReadinessStatusSchema>>,
-  syncingProviders: Array<z.infer<typeof syncingProviderSchema>>,
-): z.infer<typeof dataReadinessStatusSchema> {
-  if (syncingProviders.length > 0) return "syncing";
-  if (statuses.includes("blocked")) return "blocked";
-  if (statuses.includes("stale")) return "stale";
-  if (statuses.includes("missing")) return "missing";
-  return "healthy";
-}
-
-async function getActiveSyncProvidersForUser(
-  userId: string,
-): Promise<Array<z.infer<typeof syncingProviderSchema>>> {
-  try {
-    await ensureProvidersRegistered();
-    const providerNameById = buildProviderNameById();
-    // Delayed jobs (rate-limit cooldown retries, backoff) are not actively syncing.
-    const activeStates: Array<"waiting" | "active"> = ["waiting", "active"];
-    const providerIds = new Set([
-      ...getAllConfiguredProviderIds(),
-      ...getAllProviders().map((provider) => provider.id),
-    ]);
-    const syncingProviderIds = new Set<string>();
-    const knownProviderIds = new Set(providerNameById.keys());
-    const [providerJobGroups, importJobs] = await Promise.all([
-      Promise.all(
-        [...providerIds].map(async (providerId) => ({
-          providerId,
-          jobs: await getProviderSyncQueue(providerId).getJobs(activeStates),
-        })),
-      ),
-      getImportQueue().getJobs(activeStates),
-    ]);
-
-    for (const { providerId, jobs } of providerJobGroups) {
-      for (const job of jobs) {
-        const data = job.data;
-        if (!isJobDataForUser(data, userId)) {
-          continue;
-        }
-        const resolvedProviderId = providerIdFromSyncJobData(data, providerId, knownProviderIds);
-        if (resolvedProviderId !== undefined) {
-          syncingProviderIds.add(resolvedProviderId);
-        }
-      }
-    }
-
-    for (const job of importJobs) {
-      const data = job.data;
-      if (!isJobDataForUser(data, userId)) {
-        continue;
-      }
-      const importType = importTypeFromJobData(data);
-      const providerId = importType === undefined ? undefined : providerIdForImportType(importType);
-      if (providerId !== undefined) {
-        syncingProviderIds.add(providerId);
-      }
-    }
-
-    return [...syncingProviderIds]
-      .map((id) => ({
-        id,
-        name: providerDisplayName(id, providerNameById),
-      }))
-      .sort((left, right) => left.name.localeCompare(right.name));
-  } catch (error) {
-    captureException(error);
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "We couldn't check sync status. Please try again.",
-    });
-  }
-}
 
 export { sanitizeErrorMessage };
 
@@ -724,63 +550,6 @@ const syncRouterProcedures = {
       }
       const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
       return repo.getProviderStats();
-    }),
-
-  /** User-facing freshness/readiness state for primary dashboard datasets. */
-  dataHealth: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
-    .input(dataHealthInputSchema.optional())
-    .output(dataHealthOutputSchema)
-    .query(async ({ ctx, input }) => {
-      const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
-      const repo = new SyncRepository(ctx.db, ctx.userId);
-      const requestedDatasetKeys = input ? new Set(input.datasets) : null;
-      const selectedDatasets = requestedDatasetKeys
-        ? dataHealthDatasets.filter((dataset) => requestedDatasetKeys.has(dataset.key))
-        : dataHealthDatasets;
-      const [freshnessRows, syncingProviders] = await Promise.all([
-        repo.getDataHealthFreshness(
-          selectedDatasets,
-          sensorStore ?? undefined,
-          ctx.accessWindow,
-          ctx.timezone,
-        ),
-        getActiveSyncProvidersForUser(ctx.userId),
-      ]);
-
-      const datasets = selectedDatasets.map((dataset, index) => {
-        const freshnessRow = freshnessRows[index];
-        const rawRows = freshnessRow?.rawRows ?? 0;
-        const latestRawAt = timestampToIsoString(freshnessRow?.latestRawAt ?? null);
-        const latestReadModelAt = timestampToIsoString(freshnessRow?.latestReadModelAt ?? null);
-        const readModelLagSeconds =
-          dataset.freshnessComparisonGrain === "timestamp"
-            ? secondsBetween(latestRawAt, latestReadModelAt)
-            : dateGrainSecondsBetween(latestRawAt, latestReadModelAt);
-        const status = datasetStatus({ rawRows, latestReadModelAt, readModelLagSeconds });
-        return {
-          key: dataset.key,
-          label: dataset.label,
-          rawRows,
-          latestRawAt,
-          latestReadModelAt,
-          cdcLagSeconds: readModelLagSeconds,
-          readModelLagSeconds,
-          status,
-          message: dataReadinessMessage({ label: dataset.label, status }),
-        };
-      });
-      const relevantSyncingProviders =
-        input && datasets.every((dataset) => dataset.status === "healthy") ? [] : syncingProviders;
-
-      return {
-        overallStatus: overallDataHealthStatus(
-          datasets.map((dataset) => dataset.status),
-          relevantSyncingProviders,
-        ),
-        generatedAt: new Date().toISOString(),
-        syncingProviders: relevantSyncingProviders,
-        datasets,
-      };
     }),
 };
 

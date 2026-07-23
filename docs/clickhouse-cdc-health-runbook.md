@@ -91,12 +91,12 @@ path and does not restore durability for new metric-stream events.
 
 	   | PeerDB mirror | Postgres source tables | ClickHouse destination tables |
 	   | --- | --- | --- |
-	   | `dofek_fitness_raw_analytics` | `fitness.activity`, `fitness.sleep_session`, `fitness.sleep_stage`, `fitness.daily_metrics`, `fitness.provider`, `fitness.provider_priority`, `fitness.device_priority`, `fitness.user_profile` | `postgres_fitness.activity`, `postgres_fitness.sleep_session`, `postgres_fitness.sleep_stage`, `postgres_fitness.daily_metrics`, `postgres_fitness.provider`, `postgres_fitness.provider_priority`, `postgres_fitness.device_priority`, `postgres_fitness.user_profile` |
-	   | `dofek_provider_inventory_raw_analytics` | `fitness.food_entry`, `fitness.health_event`, `fitness.lab_panel`, `fitness.lab_result`, `fitness.journal_entry` | `postgres_fitness.food_entry`, `postgres_fitness.health_event`, `postgres_fitness.lab_panel`, `postgres_fitness.lab_result`, `postgres_fitness.journal_entry` |
+	   | `dofek_fitness_raw_analytics` | `fitness.activity`, `fitness.sleep_session`, `fitness.sleep_stage`, `fitness.daily_metrics`, `fitness.provider`, `fitness.provider_priority`, `fitness.device_priority`, `fitness.processing_flow_marker`, `fitness.user_profile` | `postgres_fitness.activity`, `postgres_fitness.sleep_session`, `postgres_fitness.sleep_stage`, `postgres_fitness.daily_metrics`, `postgres_fitness.provider`, `postgres_fitness.provider_priority`, `postgres_fitness.device_priority`, `postgres_fitness.processing_flow_marker`, `postgres_fitness.user_profile` |
+	   | `dofek_provider_inventory_raw_analytics` | `fitness.food_entry`, `fitness.health_event`, `fitness.lab_panel`, `fitness.lab_result`, `fitness.journal_entry`, `fitness.processing_flow_marker` | `postgres_fitness.food_entry`, `postgres_fitness.health_event`, `postgres_fitness.lab_panel`, `postgres_fitness.lab_result`, `postgres_fitness.journal_entry`, `postgres_fitness.processing_flow_marker_provider_inventory` |
 	   | `dofek_sensor_priority_raw_analytics` | `fitness.sensor_provider_priority`, `fitness.sensor_device_priority` | `postgres_fitness.sensor_provider_priority`, `postgres_fitness.sensor_device_priority` |
 
    This mapping matches `src/db/peerdb/metric-stream-cdc.sql` and
-   `src/db/clickhouse-cdc.ts` as of commit `ec487f3`.
+   `src/db/clickhouse-cdc.ts`.
 2. Drop the affected PeerDB mirror through PeerDB SQL:
 
    ```sql

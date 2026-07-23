@@ -41,7 +41,7 @@ let mockDataHealthQuery: {
   isLoading: boolean;
   error: Error | null;
 };
-let dataHealthInput: unknown;
+let processingStatusInput: unknown;
 const routerPush = vi.fn();
 
 vi.mock("expo-router", () => ({
@@ -84,10 +84,10 @@ vi.mock("../../lib/trpc", () => ({
         }),
       },
     },
-    sync: {
-      dataHealth: {
+    processing: {
+      status: {
         useQuery: (input: unknown) => {
-          dataHealthInput = input;
+          processingStatusInput = input;
           return mockDataHealthQuery;
         },
       },
@@ -100,8 +100,8 @@ vi.mock("../../lib/trpc", () => ({
       activity: {
         list: { invalidate: invalidateActivityList },
       },
-      sync: {
-        dataHealth: { invalidate: invalidateDataHealth },
+      processing: {
+        status: { invalidate: invalidateDataHealth },
       },
     }),
   },
@@ -171,7 +171,7 @@ describe("ActivitiesScreen", () => {
     invalidateActivityOverview = vi.fn();
     invalidateActivityList = vi.fn();
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
-    dataHealthInput = undefined;
+    processingStatusInput = undefined;
     invalidateDataHealth = vi.fn();
     routerPush.mockReset();
     vi.restoreAllMocks();
@@ -182,6 +182,8 @@ describe("ActivitiesScreen", () => {
       data: {
         overallStatus: "blocked",
         generatedAt: "2026-06-30T08:00:00.000Z",
+        scope: { providerId: null, datasets: ["activity"] },
+        operations: [],
         datasets: [
           {
             key: "activity",
@@ -202,11 +204,8 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
-    expect(dataHealthInput).toEqual({ datasets: ["activity"] });
-    expect(screen.getByText("Some data is temporarily unavailable")).toBeDefined();
-    expect(
-      screen.getByText("Activities data is still being prepared. Please check back soon."),
-    ).toBeDefined();
+    expect(processingStatusInput).toEqual({ datasets: ["activity"] });
+    expect(screen.getByText("Processing needs attention")).toBeDefined();
   });
 
   it("uses QueryStatePanel for overview loading state", () => {

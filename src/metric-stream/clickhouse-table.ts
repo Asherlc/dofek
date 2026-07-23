@@ -1,6 +1,7 @@
 export const INGEST_DATABASE = "ingest";
 export const METRIC_STREAM_TABLE = `${INGEST_DATABASE}.metric_stream`;
 export const METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE = `${INGEST_DATABASE}.metric_stream_delete_acknowledgement`;
+export const METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE = `${INGEST_DATABASE}.metric_stream_processing_acknowledgement`;
 export const PROVIDER_DATA_GENERATION_TABLE = `${INGEST_DATABASE}.provider_data_generation`;
 export const LEGACY_METRIC_STREAM_TABLE = "postgres_fitness.metric_stream";
 export const METRIC_STREAM_ORDER_BY = "(user_id, activity_id, channel, recorded_at, id)";
@@ -83,6 +84,21 @@ export function buildMetricStreamDeleteAcknowledgementTableSql(): string {
 )
 ENGINE = ReplacingMergeTree(applied_at)
 ORDER BY event_id`;
+}
+
+export function buildMetricStreamProcessingAcknowledgementTableSql(): string {
+  return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE} (
+  operation_id UUID,
+  batch_id String,
+  dataset_keys Array(String),
+  expected_event_count UInt64,
+  topic String,
+  topic_partition Int32,
+  marker_offset UInt64,
+  applied_at DateTime64(9) DEFAULT now64(9)
+)
+ENGINE = ReplacingMergeTree(applied_at)
+ORDER BY (operation_id, batch_id)`;
 }
 
 export function buildProviderDataGenerationTableSql(): string {

@@ -99,6 +99,46 @@ export class ClimbingSessionSummary {
 
 const climbTypeSchema = z.enum(["boulder", "route"]);
 const gradeSystemSchema = z.enum(["v_scale", "yds"]);
+const ascentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Repeat"]);
+
+const activityEntryRowSchema = z.object({
+  id: z.string(),
+  climb_type: climbTypeSchema,
+  grade_system: gradeSystemSchema,
+  grade: z.string(),
+  sent: z.boolean(),
+  attempt_count: z.coerce.number().int().positive(),
+  ascent_type: ascentTypeSchema.nullable(),
+  route_name: z.string().nullable(),
+  location_name: z.string().nullable(),
+  source_name: z.string(),
+});
+type ClimbingActivityEntryDatabaseRow = z.infer<typeof activityEntryRowSchema>;
+
+export interface ClimbingActivityEntryRow {
+  id: string;
+  climbType: ClimbingClimbType;
+  gradeSystem: ClimbingGradeSystem;
+  grade: string;
+  sent: boolean;
+  attemptCount: number;
+  ascentType: ClimbingActivityEntryDatabaseRow["ascent_type"];
+  routeName: string | null;
+  locationName: string | null;
+  sourceName: string;
+}
+
+export class ClimbingActivityEntry {
+  readonly #row: ClimbingActivityEntryRow;
+
+  constructor(row: ClimbingActivityEntryRow) {
+    this.#row = row;
+  }
+
+  toDetail(): ClimbingActivityEntryRow {
+    return this.#row;
+  }
+}
 
 const progressionRowSchema = z.object({
   session_date: dateStringSchema,
@@ -211,7 +251,7 @@ export class ClimbingRepository extends BaseRepository {
             ce.grade_system,
             ce.grade,
             ${climbingGradeSortSql} AS grade_sort_value,
-            COUNT(ce.id)::int AS attempts,
+            SUM(ce.attempt_count) AS attempts,
             COUNT(*) FILTER (WHERE ce.sent)::int AS sends
           FROM fitness.v_activity a
           JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
@@ -244,7 +284,7 @@ export class ClimbingRepository extends BaseRepository {
               (a.started_at AT TIME ZONE ${this.timezone})::date::text AS session_date,
               COALESCE(a.name, 'Climbing') AS name,
               ce.location_name,
-              ce.id AS entry_id,
+              ce.attempt_count,
               ce.sent,
               ce.climb_type,
               ce.grade,
@@ -259,7 +299,7 @@ export class ClimbingRepository extends BaseRepository {
             session_date,
             name,
             MAX(location_name) FILTER (WHERE location_name IS NOT NULL) AS location_name,
-            COUNT(entry_id)::int AS attempts,
+            SUM(attempt_count) AS attempts,
             COUNT(*) FILTER (WHERE sent)::int AS sends,
             (ARRAY_AGG(grade ORDER BY grade_sort_value DESC NULLS LAST)
               FILTER (WHERE sent AND climb_type = 'boulder'))[1] AS hardest_boulder_grade,
@@ -287,6 +327,46 @@ export class ClimbingRepository extends BaseRepository {
           hardestBoulderGradeSortValue: row.hardest_boulder_grade_sort_value,
           hardestRouteGrade: nullableNormalizedGrade(row.hardest_route_grade),
           hardestRouteGradeSortValue: row.hardest_route_grade_sort_value,
+        }),
+    );
+  }
+
+  async getActivityEntries(activityId: string): Promise<ClimbingActivityEntry[]> {
+    const rows = await executeWithSchema(
+      this.db,
+      activityEntryRowSchema,
+      sql`SELECT
+            ce.id::text AS id,
+            ce.climb_type,
+            ce.grade_system,
+            ce.grade,
+            ce.sent,
+            ce.attempt_count,
+            ce.raw->>'ascentType' AS ascent_type,
+            ce.route_name,
+            ce.location_name,
+            ce.source_name
+          FROM fitness.v_activity a
+          JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
+          WHERE a.user_id = ${this.userId}::uuid
+            AND ${activityId}::uuid = ANY(a.member_activity_ids)
+            ${this.timestampAccessPredicate(sql`a.started_at`)}
+          ORDER BY ${climbingGradeSortSql} NULLS LAST, ce.route_name NULLS LAST, ce.id`,
+    );
+
+    return rows.map(
+      (row) =>
+        new ClimbingActivityEntry({
+          id: row.id,
+          climbType: row.climb_type,
+          gradeSystem: row.grade_system,
+          grade: normalizedGrade(row.grade),
+          sent: row.sent,
+          attemptCount: row.attempt_count,
+          ascentType: row.ascent_type,
+          routeName: row.route_name,
+          locationName: row.location_name,
+          sourceName: row.source_name,
         }),
     );
   }

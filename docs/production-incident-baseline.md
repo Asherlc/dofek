@@ -7,6 +7,92 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-21: Provider availability mutation shard lacked router coverage
+
+### Symptoms
+
+`Test / Stryker (1)` failed on PR #1850 even though the provider-detail unit
+tests passed.
+
+### User Impact
+
+No production users were affected. The pull request was blocked because the
+new public tRPC procedure was not covered through the router interface.
+
+### Evidence
+
+The failing command was
+`pnpm exec stryker run stryker.ci.config.json --mutate "packages/server/src/routers/provider-detail.ts:171-179"`.
+The first fatal line reported `Final mutation score 0.00 under breaking
+threshold 75`. Its mutation report showed that replacing the
+`availableDataTypes` query body with an empty function had no test coverage.
+
+### Root Cause
+
+Repository tests covered the availability calculation, but the router test
+suite did not call the newly exposed `availableDataTypes` procedure. Therefore,
+the tRPC delegation and its required Postgres and ClickHouse dependencies could
+be removed without failing a test.
+
+### Fix or Mitigation
+
+Added a router-level test that calls `availableDataTypes`, verifies the combined
+result, and proves that both stores receive the request with the correct user
+and provider identifiers.
+
+### Validation
+
+The focused router suite passes all 94 cases. The exact focused Stryker command
+now reports a 100% mutation score with the mutant killed and no uncovered or
+surviving mutants.
+
+### Remaining Risk
+
+The replacement full CI matrix must complete before the pull request is ready
+to merge.
+
+## 2026-07-21: Mobile provider-detail typecheck failed in PR CI
+
+### Symptoms
+
+`Test / Typecheck (dofek-mobile)` failed on PR #1850 while the root, server,
+and web TypeScript checks passed.
+
+### User Impact
+
+No production users were affected. The pull request was blocked until the
+mobile component contract was corrected.
+
+### Evidence
+
+The failing command was the mobile package TypeScript check. The first fatal
+line was `app/providers/[id].tsx(680,26): error TS2322`; the new record
+availability error branch passed an `error` prop to `QueryStatePanel`, but the
+mobile component accepts `variant` and `message` instead.
+
+### Root Cause
+
+The provider-detail change reused the web error-panel calling convention in
+the mobile implementation, and the initial local pre-push matrix omitted the
+mobile package TypeScript command.
+
+### Fix or Mitigation
+
+Changed the mobile branch to use `variant="error"` and the shared
+`getQueryErrorMessage()` helper, then added a regression test proving that the
+availability error is displayed to the user.
+
+### Validation
+
+The focused mobile test now passes all 32 cases; mobile TypeScript, repository
+lint, root/server/web TypeScript, and the full unit/mobile suite pass locally
+without retries or relaxed checks.
+
+### Remaining Risk
+
+The pre-push workflow should add an explicit mobile TypeScript command so this
+class of platform-only contract error is caught before push.
+
 ## 2026-07-21: PR image vulnerability scan blocked CI
 
 ### Symptoms
@@ -14644,6 +14730,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   credentialed artifacts before merge. Their secretless checks still exercise
   the affected source; the full credentialed builds run from trusted repository
   contexts.
+## 2026-07-21 — OTA Deploy Probe Accepted an Invalid Manifest Request
+
+- **Symptoms:** The OTA deployment workflow reported the origin healthy while
+  production iOS manifest requests timed out. Its probe omitted the Expo
+  protocol, platform, runtime, and channel headers and accepted every HTTP
+  response below 500, including the resulting HTTP 400.
+- **User impact:** OTA publishes could receive a false-green readiness result
+  even when devices could not discover or download updates.
+- **Evidence:** The workflow-equivalent request returned HTTP 400 with `No
+  channel name provided`. Requests matching the shipped app configuration
+  timed out after ten seconds while the OTA service's cold stored-update lookup
+  took 60–65 seconds; the identical request returned HTTP 200 in 0.409 seconds
+  after the lookup cache was populated. On July 21, a fresh production request
+  with the shipped headers returned HTTP 200 multipart content in 2.844 seconds,
+  and the OTA service log recorded the matching `GET /manifest` completion.
+- **Root cause:** The deploy probe exercised an invalid headerless request and
+  classified its expected client error as healthy, so it never reached the
+  stored-update path used by the app.
+- **Fix / mitigation:** The workflow now runs `check-ota-manifest.ts`, which
+  sends the production iOS request shape with a five-second timeout. It accepts
+  only HTTP 204 or an HTTP 200 response containing Expo protocol version 1 and
+  a parseable multipart manifest. Expo defines these request headers and
+  response structures in the
+  [Expo Updates v1 specification](https://docs.expo.dev/technical-specs/expo-updates-1/).
+- **Validation:** The focused Vitest suite covers HTTP 204 success, valid HTTP
+  200 success, HTTP 400 failure, malformed HTTP 200 failure, and timeout
+  failure. The same script succeeds against the live production endpoint inside
+  the app's five-second fallback window.
+- **Remaining risk / follow-up:** The upstream OTA service still enumerates and
+  validates stored updates serially on a cold cache. The corrected deploy probe
+  will now fail loudly if that path exceeds the client budget; continue tracking
+  an upstream indexing or cache-warming fix if production cold misses recur.
+
 ## 2026-07-21 — Local Test Runs Exhausted Docker Across Conductor Workspaces
 
 - **Symptoms:** YouTube playback stuttered while dozens of TimescaleDB test
@@ -14771,6 +14890,669 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   checks pass without added waits or retries.
 - **Remaining risk / follow-up:** Deploy the fix, retry the Kaya CSV, and confirm
   the production upload row advances through queued and completed states.
+
+## 2026-07-21 — Body Analytics Stayed Partial After Projection Repair
+
+- **Symptoms:** The Body page showed no weight trend, no recomposition data, and
+  empty Body Weight / Body Fat overview values even though current readings
+  existed. After rebuilding the serving table once, the newest reading appeared
+  but the chart was still missing most of the selected range.
+- **User impact:** Weight and body-composition history was absent or partial on
+  the production Body page while resting heart rate remained available through
+  its separate daily-metrics path.
+- **Evidence:** `ingest.metric_stream`, `analytics.body_measurement_sample`, and
+  `analytics.v_body_measurement` all had weight through `2026-07-21 13:23:36
+  UTC`, while `analytics.daily_body_measurement` stopped at `2026-06-21
+  14:52:45 UTC`. The analytics worker's first fatal line was ClickHouse exception
+  159 for `activity_power_curve`: `Timeout exceeded: elapsed 240009.582279 ms,
+  maximum: 240000 ms`. The worker retried the activity selection before reaching
+  the chained sleep/dashboard selection that contains `daily_body_measurement`.
+  A bounded anti-join then found 120 body-channel source rows missing from the
+  projection between June 21 and July 22, including 35 weight rows.
+- **Root cause:** The earlier projection repair restored live ingestion but the
+  missed interval had not been backfilled. Separately, the incremental power
+  curve model recalculated every historical endurance activity and timed out;
+  the worker command ordering prevented the body model from running afterward.
+  dbt documents incremental models as processing only the rows selected by their
+  incremental filter: <https://docs.getdbt.com/docs/build/incremental-models>.
+- **Fix / mitigation:** Backfilled only the 120 missing body-channel rows,
+  explicitly refreshed `analytics.v_body_measurement`, and ran a one-time full
+  rebuild of only `analytics.daily_body_measurement`. A subsequent full-history
+  anti-join repair brought the raw body projection up to date as well; the
+  additional historical source rows were duplicate measurements and deletion
+  records, so the deduplicated serving view correctly retained the same daily
+  history. The recurrence fix now selects power-curve work by activity-summary
+  refresh state instead of recalculating all historical activities. No timeout,
+  retry, or resource limit was increased.
+- **Validation:** After the repair, `analytics.v_body_measurement` and
+  `analytics.daily_body_measurement FINAL` matched at 2,525 weight rows, 2,044
+  body-fat rows, the same `2015-01-30` through `2026-07-21` weight span, and zero
+  live source weight or body-fat dates absent from the serving view. The exact
+  dashboard query returned 7, 28, 74, and 159 weight days for the selected 7-,
+  30-, 90-, and 180-day windows, plus 148 recomposition days in 180 days. The
+  targeted full rebuild completed successfully in 0.87 seconds, the user cache
+  was invalidated, and the analytics worker was restored to one running replica.
+- **Remaining risk / follow-up:** Deploy and validate the dirty-key power-curve
+  model against production-scale data so scheduled analytics completes without
+  the 240-second timeout. Local analytics-policy and formatting checks pass, but
+  focused Vitest validation could not collect while the shared host was under
+  sustained workspace-install contention.
+
+## 2026-07-21 — Failed Migration Integrity Check Left Analytics Quiesced
+
+- **Symptoms:** Deploy run
+  [29888514144](https://github.com/Asherlc/dofek/actions/runs/29888514144)
+  failed after applying the dependency stack, and `dofek_analytics-worker`
+  remained at `0/0` replicas.
+- **User impact:** Scheduled ClickHouse/dbt analytics builds stopped until the
+  worker replica count was restored manually.
+- **Evidence:** The exact failing step was `Run migrations`. Its first fatal
+  line was `[migrate] Integrity check failed: 0003_drop_percent_recorded.sql is
+  recorded as applied but is missing. Applied migrations are immutable; restore
+  the original migration file before starting the service.` The later consumer
+  restore steps were skipped, leaving the pre-migration quiesce spec active.
+- **Root cause:** The deployed database recorded a historical migration that the
+  requested image no longer contained, so the new immutable-migration integrity
+  check correctly stopped deployment before schema or app rollout. The failure
+  path did not restore the previously running analytics-worker replica count.
+- **Fix / mitigation:** Restored `dofek_analytics-worker` to one replica after
+  capturing the failure evidence. The integrity check was not bypassed and the
+  failed deployment was not treated as successful.
+- **Validation:** Docker Swarm reported `Service dofek_analytics-worker
+  converged` with the replacement task running. Production body tables remained
+  populated after the service restoration.
+- **Remaining risk / follow-up:** Restore the original immutable migration file
+  in the deploy image and make the quiesce failure path restore prior consumer
+  replica counts before rerunning the failed deployment.
+
+## 2026-07-21 — Kaya Import History and Records Browser Disagreed
+
+- **Status:** Root cause fixed and validated locally; production deployment is
+  pending.
+- **Symptoms:** Kaya sync history reported a successful import with 63 records,
+  while the Records section said `No records yet for this provider.` The same
+  provider page also showed Strava, WHOOP, and Zepp processing without making
+  clear that the readiness banner was account-wide.
+- **User impact:** A successful Kaya import appeared to have stored no
+  browseable records, and unrelated account processing looked like Kaya status.
+- **Evidence:** Postgres contained 7 `kaya-export` activities created at
+  `2026-07-22 00:11:28 UTC` and 63 associated climbing entries. The screenshot
+  was captured at `00:12:18 UTC`; PeerDB mirrored those activities at
+  `00:12:28 UTC`. The `analytics-worker` started `analytics.provider_stats` at
+  `00:11:50 UTC`, before the activity mirror arrived, and completed it at
+  `00:13:24 UTC`. All three production replication slots were active with
+  `wal_status = reserved`, and `cdc-health` continuously reported all slots and
+  its monitored mirror healthy. The storage and refresh path is documented in
+  the [repository architecture](../README.md#architecture), and the aggregate
+  is defined by the incremental
+  [`provider_stats` model](../analytics/models/read_models/provider_stats.sql).
+- **Root cause:** Sync history reads canonical Postgres immediately and Kaya's
+  import count represents climbing-entry rows, while the Records browser used
+  the eventually consistent ClickHouse `provider_stats` aggregate both for
+  counts and as proof that any records existed. The dbt model's snapshot began
+  before PeerDB delivered the seven activity rows, so the UI interpreted a
+  temporarily absent aggregate row as canonical emptiness. No CDC slot failure
+  caused this incident.
+- **Fix / mitigation:** Provider detail now discovers available record types
+  through the actual provider record queries and uses `provider_stats` only for
+  optional displayed counts. Web and mobile invalidate availability after
+  sync, refresh, and web file-import completion. Provider-detail readiness
+  banners are labeled `Account-wide data status` on both platforms.
+- **Validation:** The web and mobile regression tests failed against the old
+  aggregate-gated behavior, then passed with canonical Kaya activity rows and
+  missing aggregate stats. Import-completion invalidation likewise failed first
+  and passed after the fix. The focused server, web, and mobile suites pass with
+  247 tests. Production `analytics.provider_stats` later caught up to 7 Kaya
+  activities with `refreshed_at = 2026-07-22 00:41:49 UTC`, confirming the
+  discrepancy was transient aggregate lag rather than lost canonical data.
+- **Remaining risk / follow-up:** Deploy and confirm the production Kaya page
+  immediately shows its seven activity sessions after import. The analytics
+  worker also logged an unrelated ClickHouse code 159 failure in
+  `activity_power_curve`; `provider_stats` itself succeeded, so that failure was
+  not causal here but should be investigated separately.
+
+## 2026-07-21 — Deploy Audit Found CDC Failure Could Start ClickHouse Consumers
+
+- **Status:** Root cause fixed and validated locally; PR and production deploy
+  validation are pending.
+- **Symptoms:** A workflow audit found that the final ClickHouse consumer stack
+  deploy remained eligible after a post-quiesce readiness or CDC setup failure.
+  No production failure was reproduced; this was a preventative control-flow
+  finding.
+- **User impact:** A failed PeerDB, Temporal, or ClickHouse CDC setup could have
+  started `analytics-worker` and `metric-stream-clickhouse-sink` against missing,
+  stale, or unverified CDC state, compounding the failed deploy with ingestion
+  errors or stale analytics.
+- **Evidence:** The exact prerequisite command is the `Configure ClickHouse CDC`
+  step's `docker run ... src/db/setup-clickhouse-cdc.ts`. Its nonzero exit would
+  set the step conclusion to `failure`; there was no captured fatal production
+  log because the defect was identified statically. The subsequent `Deploy
+  ClickHouse consumer services` step used `if: always() &&
+  steps.deploy_stack_quiesced.conclusion != 'skipped'`. GitHub documents that
+  `always()` returns true even after prior failures, whereas `success()` requires
+  all previous steps to have succeeded
+  ([GitHub Actions status check functions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)).
+- **Root cause:** The final consumer-start step replaced GitHub's normal success
+  gate with `always()` and checked only that the quiesced deploy was not skipped,
+  so a failed CDC prerequisite did not block restoring consumer replicas.
+- **Fix / mitigation:** The consumer deploy now requires `success()`, a successful
+  quiesced deploy, and a successful `configure_clickhouse_cdc` conclusion. A
+  separate failure-only reporting step leaves the consumers at zero replicas and
+  tells the operator to resolve the failed prerequisite and rerun the deployment.
+- **Validation:** A focused workflow policy test failed against the original
+  `always()` condition and now passes, covering both the failed-CDC gate and the
+  operator report. No retries, timeouts, or fallback defaults were added.
+- **Remaining risk / follow-up:** Confirm the PR's Actionlint and test checks pass,
+  then verify the next production deployment restores both consumers only after
+  CDC setup succeeds.
+
+## 2026-07-22 — Readiness Status Could Not Prove Kaya Pipeline Completion
+
+- **Status:** Replacement architecture implemented and validated locally;
+  production deployment is pending.
+- **Symptoms:** Kaya import history reported success while the provider record
+  browser was temporarily empty, and Kaya's provider page displayed unrelated
+  account-wide processing. The old readiness banner could not identify whether
+  the import was waiting on PeerDB, dbt, cache refresh, or an unrelated job.
+- **User impact:** Users could not distinguish stored canonical data from delayed
+  serving data or identify which provider/dataset was actually blocked.
+- **Evidence:** Postgres committed seven Kaya activities and 63 climbing entries
+  at `2026-07-22 00:11:28 UTC`. The `provider_stats` dbt query began at
+  `00:11:50 UTC`, before PeerDB mirrored the activities at `00:12:28 UTC`, and
+  published an empty snapshot before later catching up. `sync.dataHealth`
+  covered only three datasets, reused one timestamp comparison for CDC and read
+  model lag, and provider detail requested it without provider scope. Maximum
+  domain timestamps also cannot identify a late-arriving historical import.
+- **Root cause:** Readiness was inferred from mutable aggregate timestamps and
+  account-wide job activity rather than durable, operation-specific evidence at
+  each asynchronous boundary.
+- **Fix / mitigation:** Replaced `sync.dataHealth` and both readiness banners with
+  an append-only, tenant-scoped processing ledger and scoped web/mobile widget.
+  Relational output now advances from an exact Postgres causal marker observed
+  in the destination table assigned to every applicable PeerDB flow. Existing
+  mirrors gain those marker mappings through PeerDB's supported pause/edit/resume
+  API and are never dropped by setup. Metric-stream output remains independent
+  and advances from an exact Redpanda batch receipt written by the ClickHouse
+  sink. All production dbt model and registered cache outcomes are recorded
+  separately. No metric payload is copied through Postgres.
+- **Validation:** Postgres integration tests prove append-only/idempotent facts,
+  tenant isolation, pagination, output-path independence, and atomic marker plus
+  reconciliation dispatch. Real ClickHouse integration tests prove relational
+  and metric stages remain waiting until their exact destination evidence
+  exists. The focused worker, reducer, API, web, and mobile suites pass. The
+  ClickHouse fixtures also caught and fixed a String-alias-versus-UUID query bug
+  and proved that a marker copied by one mirror cannot impersonate another
+  mirror's evidence. PeerDB setup tests prove missing mappings are edited in
+  place and existing mirror workflows are preserved. No retry or timestamp
+  fallback was added; the only polling waits for PeerDB's documented asynchronous
+  pause/snapshot/resume state transitions. The complete unit/mobile tier passed
+  12,973 tests and the clean Compose integration tier passed all 1,079 tests in
+  108 files. Web and mobile Storybook builds, the production web build, lint,
+  typecheck, and bundle-size checks also passed. After merging current main, the
+  complete unit/mobile tier passed 12,987 tests and the clean Compose integration
+  tier passed all 1,084 tests in 109 files. An initial integration attempt
+  failed first because the native FIT decoder prerequisite was absent and then
+  because stale workspace ClickHouse state restarted the container under the
+  power-curve fixture; building the documented decoder and removing only this
+  workspace's disposable Compose volumes produced clean focused and full runs.
+  A direct development-target dbt build was intentionally stopped when it tried
+  to replay 9,700 historical daily microbatches; bounded dbt compilation and
+  success/failure artifact fixtures validate the analytics runner without that
+  prohibited historical replay.
+- **Remaining risk / follow-up:** Complete CI; deploy in the documented
+  migration/PeerDB order; then confirm a production Kaya import advances through
+  every stage and create Axiom alerts for stale outbox rows and failed stage
+  events.
+
+## 2026-07-22 — Kaya Climbing Attempts Matched Sends 1:1
+
+- **Status:** Root cause fixed and validated locally; production deployment and
+  historical backfill are pending.
+- **Symptoms:** Climbing volume by grade displayed 52 attempts and 52 sends, with
+  identical attempt and send counts for every grade.
+- **User impact:** The climbing dashboard understated attempts and made send
+  rates appear to be 100%.
+- **Evidence:** Kaya CSV rows preserve a numeric `attempts` value, but the importer
+  previously stored that value only in the raw payload while creating one sent
+  climbing entry per CSV row. The repository then used row count as its attempt
+  total; see the [Kaya importer](../src/providers/kaya/import.ts) and
+  [climbing repository](../packages/server/src/repositories/climbing-repository.ts).
+- **Root cause:** The canonical climbing model represented a sent ascent row but
+  had no canonical attempt-count field, so server aggregation treated every sent
+  row as exactly one attempt.
+- **Fix / mitigation:** Migration `0055_climbing_attempt_count` adds a positive
+  canonical `attempt_count`; Kaya imports populate it, and climbing volume and
+  session summaries sum it server-side. A dry-run-by-default
+  [backfill](../scripts/backfill-climbing-attempt-count.ts) copies valid historical
+  Kaya counts from preserved raw payloads.
+- **Validation:** Parser and repository regression tests pass, the router
+  integration test verifies non-1:1 totals and the positive-count constraint in
+  Postgres, and the backfill integration test verifies dry-run behavior,
+  execution, and idempotence. Typecheck, repository lint, and migration policy
+  checks pass without retries or resilience changes.
+- **Remaining risk / follow-up:** Deploy the migration, run
+  `pnpm backfill:climbing-attempt-count --execute`, and confirm the production
+  climbing chart no longer reports identical attempt and send totals.
+
+## 2026-07-22 — Expo Compatibility Baseline Advanced During PR Validation
+
+- **Status:** Compatible patches applied; the online Expo validation policy is
+  retained intentionally.
+- **Symptoms:** The Metro Bundle job began rejecting 14 pinned mobile packages
+  even though the same dependency graph had passed earlier that morning.
+- **User impact:** Unrelated pull requests were blocked from merging.
+- **Evidence:** `pnpm expo install --check` passed at `15:46 UTC`, Expo published
+  `expo@57.0.8` at `16:31 UTC`, and the first failure occurred at `17:00 UTC`
+  with `Found outdated dependencies`. Expo documents the command as its CI
+  dependency-validation workflow
+  ([Expo CLI dependency validation](https://docs.expo.dev/more/expo-cli/#dependency-validation)).
+- **Root cause:** The blocking compatibility check consulted Expo's mutable
+  online version metadata, so its acceptance criteria could change without a
+  repository commit even though pnpm installed the frozen lockfile.
+- **Fix / mitigation:** The compatible Expo patch set was updated and committed
+  to the lockfile. The blocking check continues to use Expo's online
+  compatibility recommendations, following Expo's documented CI workflow.
+- **Validation:** Online dependency validation, YAML lint, the
+  repository-pinned Actionlint 1.7.12, and the hosted Metro Bundle job pass with
+  the updated dependency set.
+- **Remaining risk / follow-up:** Expo's mutable online baseline can make an
+  unchanged commit fail after a new recommendation is published. This is an
+  accepted trade-off of following Expo's mainstream CI policy.
+## 2026-07-22 — Power-Curve Integration Fixture Collided During Deduplication
+
+- **Status:** Root cause fixed and validated in pull-request CI.
+- **Symptoms:** `Test / Integration Tests (3/4)` failed in
+  `activity-power-curve-read-model.integration.test.ts` because the five-second
+  power row belonged to a different activity UUID than the test expected.
+- **User impact:** The pull request was blocked; production behavior was not
+  affected.
+- **Evidence:** The exact failing step was the integration shard's Vitest run.
+  Its first fatal assertion expected the current test's `regularActivityId` but
+  received another UUID with the same `best_power` and duration. The failure is
+  recorded in [GitHub Actions run 29933279646](https://github.com/Asherlc/dofek/actions/runs/29933279646).
+- **Root cause:** Multiple fixtures used the same fixed start time and duration,
+  so the activity read model correctly deduplicated them and selected a
+  canonical UUID by ordering randomly generated IDs. The canonical-ID ordering
+  is defined in the
+  [`v_activity` read model](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/src/db/clickhouse-read-models.ts#L249-L310).
+- **Fix / mitigation:** Test timestamps are unique per run and separated within
+  the suite, and the assertion query is scoped to the two activity IDs created
+  by the test, as shown in the
+  [updated integration fixture](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/packages/server/src/routers/activity-power-curve-read-model.integration.test.ts#L16-L26)
+  and its
+  [scoped assertion query](https://github.com/Asherlc/dofek/blob/bf5626dd989d61eb6525bad35dfabe3d5313b82d/packages/server/src/routers/activity-power-curve-read-model.integration.test.ts#L171-L230).
+- **Validation:** The previously failing
+  [integration shard 3 passed](https://github.com/Asherlc/dofek/actions/runs/29940462015/job/88992934160)
+  on a clean GitHub runner. No retries, timeouts, fallback behavior, or
+  memory-limit changes were added.
+- **Remaining risk / follow-up:** None for this test-fixture collision.
+
+## 2026-07-22 — Expo Compatibility Drift Blocked the Metro Bundle
+
+- **Status:** Root cause fixed and validated in pull-request CI.
+- **Symptoms:** `Build Mobile / Metro Bundle` stopped before exporting the iOS
+  bundle because Expo reported fourteen dependencies outside the versions
+  expected by SDK 57.
+- **User impact:** Pull request 1858 was blocked; no production bundle or runtime
+  was affected.
+- **Evidence:** The exact failing step was `Verify dependencies match Expo SDK`,
+  and its first fatal result was `Found outdated dependencies` in
+  [GitHub Actions job 88992791430](https://github.com/Asherlc/dofek/actions/runs/29940462015/job/88992791430).
+- **Root cause:** Expo's SDK compatibility metadata advanced to newer patch
+  versions after the repository dependencies were last locked. Expo documents
+  `npx expo install --check` as the dependency-version validation command in its
+  [CLI installation guidance](https://docs.expo.dev/more/expo-cli/#install).
+- **Fix / mitigation:** The fourteen SDK-managed packages and lockfile were
+  refreshed to the versions selected by `expo install --fix`; the resulting
+  versions are recorded in the
+  [mobile package manifest](https://github.com/Asherlc/dofek/blob/Asherlc/combine-into-one-table/packages/mobile/package.json#L37-L84).
+- **Validation:** `pnpm expo install --check` reports `Dependencies are up to
+  date`; lint, type-checks, and the complete Docker-free suite of 12,962 tests
+  passed locally. The Metro bundle and iOS native build also passed in
+  [GitHub Actions run 29943460108](https://github.com/Asherlc/dofek/actions/runs/29943460108).
+  No compatibility-check bypass or dependency exclusion was added.
+- **Remaining risk / follow-up:** None for the Expo dependency alignment.
+
+## 2026-07-22 — Climbing Entries Missing From Activity Detail
+
+- **Status:** Resolved. Member-aware climbing detail and the repaired historical
+  migration archive are deployed in production.
+- **Symptoms:** The production detail page for activity
+  `734b5d3e-df2b-4ee0-888e-55ea539d913a` showed generic activity metrics but no
+  Kaya climbing attempts, grades, or sends.
+- **User impact:** Eight successfully imported bouldering entries were invisible
+  on their merged activity's detail page.
+- **Evidence:** Postgres contained eight `fitness.climbing_entry` rows linked to
+  the activity's `kaya-export` member ID, covering V0 through V4; ClickHouse also
+  contained 2,884 stream points and six heart-rate-zone buckets for the canonical
+  activity. The web detail page requests `activity.byId`, `activity.stream`, and
+  zone data but no climbing-entry procedure
+  ([activity detail source](../packages/web/src/pages/ActivityDetailPage.tsx)).
+  The climbing router exposes only range aggregates and session summaries
+  ([climbing router](../packages/server/src/routers/climbing.ts)).
+- **Root cause:** Ingestion and activity deduplication worked, but no server
+  procedure or web/mobile detail component exposes per-activity climbing entries.
+- **Fix / mitigation:** Added a member-aware per-activity climbing-entry query and
+  rendered it on both web and mobile activity detail screens. Restored the exact
+  historical bytes for all seven applied migrations removed by the same
+  baseline-compaction commit (`0003_drop_percent_recorded.sql` through
+  `0009_enable_pg_stat_statements.sql`, excluding the still-active `0001` and
+  `0002` files) in a non-executable migration archive. Production's migration
+  ledger confirmed these are the complete missing applied filenames, so the
+  repair does not rely on repeated deploy failures to discover them.
+  Restored migrations `0042` through `0045` to the exact bytes that production
+  applied from [PR #1552](https://github.com/Asherlc/dofek/pull/1552)'s first
+  commit. Later commits in that PR rewrote all four
+  already-applied files before merge, changing their hashes after the production
+  ledger had recorded them. A complete comparison of all 73 production ledger
+  entries against the repository found no missing files and no other unexpected
+  mismatches, as recorded in the
+  [repair PR](https://github.com/Asherlc/dofek/pull/1864); the remaining eight
+  differing hashes are the explicit transaction-compatibility variants
+  [accepted by the migrator](../src/db/postgres-migrator.ts).
+- **Validation:** Canonical Postgres rows, merged member IDs, ClickHouse summary,
+  stream, and zone rows were queried directly in production. Focused web,
+  mobile, repository, router, and real-Postgres migration tests passed, including
+  proof that archived SQL is integrity-checked but never executed. Lint,
+  workspace and package TypeScript checks, and the full 12,965-test unit/mobile
+  suite passed before deployment. PR CI passed all checks and the merge commit's
+  main CI passed all 81 jobs. The first post-merge deploy used the preceding
+  `sha-56763ed` image and failed on missing `0003`; the merged `sha-b611e39`
+  image accepted `0003` and then failed on missing `0004`, proving the archive
+  lookup works and that the compacted migration set needed a complete audit.
+  The complete archive then passed integrity checks, exposing the independent
+  `0042` mutation: production expected SHA-256
+  `bdbd8c4dafa0b1f72c3f9adcfcc88316fe3aa95b278d7a422dc8fd0ee6cd125c`
+  while the merged file had
+  `cd280085ab7d7092897b537b8994d0906dd3c3d0f75ef1b9c0a3eaa3a6cae2a2`.
+  The failed deploy quiesced both ClickHouse consumers; they were restored to
+  one healthy replica each on the prior production image.
+  The next deploy accepted the restored `0042` and then failed on the same PR's
+  mutated `0043`, confirming the need to restore the complete four-file set; its
+  quiesced consumers were also restored to one healthy replica each. The
+  [successful production deploy](https://github.com/Asherlc/dofek/actions/runs/29953296577)
+  then passed migration integrity without retries, rolled the web and worker
+  services to `sha-c8c8a64`, and restored both ClickHouse consumers to one
+  healthy replica each on the same image. A post-deploy production query through
+  the member-aware join returned all eight requested activity entries: one V0,
+  one V1, one V2, two V3s, and three V4s, all marked sent.
+- **Remaining risk / follow-up:** The incident is resolved. Add a CI guard that
+  compares active migration bytes against an immutable applied-migration
+  registry so a PR cannot rewrite a migration that an earlier commit deployed.
+  Failed deploy runs retained for incident history:
+  [preceding image](https://github.com/Asherlc/dofek/actions/runs/29944229608),
+  [merged image](https://github.com/Asherlc/dofek/actions/runs/29945041858), and
+  [complete archive](https://github.com/Asherlc/dofek/actions/runs/29948084505),
+  and [partial active-migration restoration](https://github.com/Asherlc/dofek/actions/runs/29950485728).
+
+## 2026-07-22 — Climbing Detail Hid Per-Climb Attempt Counts
+
+- **Status:** Fixed locally and validated; pending review and deployment.
+- **Symptoms:** Every Kaya row on activity
+  `734b5d3e-df2b-4ee0-888e-55ea539d913a` appeared as `Sent`, suggesting every
+  attempt was successful.
+- **User impact:** The detail page does not distinguish an onsight from a climb
+  eventually sent after several attempts.
+- **Evidence:** The production rows contain 20 attempts across eight eventual
+  sends. In particular, two V4 rows have `attempt_count` values of 7 and 6 with
+  Kaya ascent type `Redpoint`; the remaining rows are `Redpoint`, `Repeat`, or
+  `Onsight`. The Kaya importer persists `attemptCount`, but the activity-entry
+  repository omits it from its response
+  ([repository](../packages/server/src/repositories/climbing-repository.ts)), and
+  the web and mobile detail components therefore render only the eventual
+  `sent` flag
+  ([web detail](../packages/web/src/pages/ActivityDetailPage.tsx),
+  [mobile detail](../packages/mobile/app/activity/[id].tsx)). No Kaya import
+  failure for this activity appeared in the retained worker logs.
+- **Root cause:** The per-activity detail API discards the canonical
+  `climbing_entry.attempt_count` value, so clients cannot explain that `Sent`
+  means the climb was eventually completed after one or more attempts.
+- **Fix / mitigation:** The activity-entry response now includes the canonical
+  attempt count and Kaya's recorded ascent type. Web and mobile show route or
+  problem names when present, ascent classifications when present, and explicit
+  `Sent in N attempts` or `Attempted N times` wording. Kaya imports now accept
+  `Flash` as a successful ascent type. Missing route names keep the generic
+  `Boulder` or `Route` label; no color-derived identity is invented.
+- **Validation:** The test-first reproduction failed because the repository
+  omitted `attempt_count` and ascent type, both clients rendered plain `Sent`,
+  and the importer rejected `Flash`. After the fix, 76 focused repository,
+  importer, web, and mobile tests passed. The four-test climbing router suite
+  also passed against real Postgres through `pnpm test:integration`; repository
+  lint and TypeScript checks passed, and the changed-file suite passed all 3,643
+  selected unit and mobile tests. The first PR CI attempt's web E2E job stopped
+  because the server container remained unhealthy for 44 seconds without
+  emitting an application log. The same image and full E2E stack became healthy
+  locally, and the isolated GitHub job rerun passed server startup and Cypress
+  without a code, timeout, or retry-policy change; all 93 PR checks then passed.
+- **Remaining risk / follow-up:** The current production activity will still
+  report eight eventual sends because that is what its Kaya source rows record.
+  Dofek cannot reconstruct attempt-only climbs that the exported file omitted,
+  distinguish onsight from flash without a provider-supplied classification, or
+  recover a route/problem name when Kaya's `climb_name` field is empty.
+
+## 2026-07-22 — Background HealthKit Errors Lost Native Context
+
+- **Status:** Fixed locally and validated; pending review, a new iOS binary, and
+  production monitoring.
+- **Symptoms:** Sentry issue `DOFEK-MOBILE-18` recorded 11 handled background
+  sync failures as `QUERY_ERROR: undefined reason
+  (at ExpoModulesCore/Promise.swift:65)`. The latest supplied event occurred at
+  `2026-07-23T00:19:14.765Z` in production release `1.0.0 (1784748405)`, about
+  five seconds after an iPhone 16 Pro launched in the background.
+- **User impact:** The affected background HealthKit sync did not complete, but
+  the app did not crash. The existing foreground catch-up path remains able to
+  import the missed interval when protected data becomes available.
+- **Evidence:** The event was marked handled and `In Foreground: false`, with a
+  `[bg-healthkit-sync] Sync failed` breadcrumb. The native module rejected query
+  errors with Expo's code-and-description overload, while the corresponding
+  Expo exception formats its JavaScript-facing message from an unset `reason`.
+  The background handler attempted to recognize the expected protected-data
+  condition by matching localized message text, but that text had already been
+  discarded. The timing and app state match HealthKit's documented
+  `errorDatabaseInaccessible` condition, which occurs when protected HealthKit
+  data is unavailable while the device is locked
+  ([Apple documentation](https://developer.apple.com/documentation/healthkit/hkerror/code/errordatabaseinaccessible)).
+  The erased native error means the exact original `HKError` code cannot be
+  recovered from the historical event.
+- **Root cause:** The HealthKit bridge rejected native errors through an Expo
+  overload whose JavaScript exception used an unset reason, erasing the native
+  `HKError` and preventing the background handler from recognizing the expected
+  locked-device condition.
+- **Fix / mitigation:** HealthKit failures are now classified from the native
+  `NSError` domain and code. Database-inaccessible failures cross the bridge
+  with the stable `HEALTHKIT_DATABASE_INACCESSIBLE` code, which the background
+  task suppresses as an expected transient condition. Other failures retain
+  their operation, native domain, native code, and localized description in a
+  custom Expo exception and continue to be reported to Sentry. Authorization
+  handling also uses typed native error codes instead of localized strings. No
+  retry, timeout, or delayed fallback was added.
+- **Validation:** Test-first regressions failed before the implementation. After
+  the fix, all 66 HealthKit Swift package tests and all 12 focused background
+  sync tests passed; the complete Docker-free mobile tier passed all 857 tests
+  across 90 files. SwiftLint, the mobile lint task, and the mobile TypeScript
+  check passed. CocoaPods resolved after refreshing the stale local specs
+  index. A complete simulator compile could not run because the installed Xcode
+  lacks the iOS 26.5 simulator platform required by the generated app; a
+  Catalyst compile reached the HealthKit target but could not import Expo's
+  iOS-only prebuilt `ExpoModulesCore` framework.
+- **Remaining risk / follow-up:** The native bridge change requires a new iOS
+  binary; an over-the-air JavaScript update alone is insufficient. Build with
+  the iOS 26.5 platform in CI or a provisioned Xcode installation, release the
+  binary, and monitor Sentry for recurrence. A physical device is required to
+  validate the locked-device HealthKit behavior end to end.
+
+## 2026-07-22 — Metric-Stream R2 Archive Key Interpolation Failed
+
+- **Status:** Unresolved; discovered incidentally while checking production logs
+  for the HealthKit incident and left for a separate investigation.
+- **Symptoms:** The `dofek_metric-stream-r2-archive` service repeatedly logged
+  `Failed to send message to aws_s3: key interpolation: method string: lower
+  slice bound 11 must be lower than or equal to upper bound (4) and target
+  length (4)`, beginning around `2026-07-23T00:22:51Z`.
+- **User impact:** The observed archive batches were not written to R2. The
+  retained logs did not establish whether later retries succeeded or how many
+  records were affected.
+- **Evidence:** The first fatal log line came from the archive service's
+  `aws_s3` output while evaluating its configured object-key interpolation. No
+  corresponding failure was observed in the mobile HealthKit path, so this is a
+  separate production issue.
+- **Root cause:** Unknown; the retained error proves an invalid substring
+  boundary during object-key interpolation, but the failing input and record
+  shape have not yet been captured.
+- **Fix / mitigation:** None applied in this workspace.
+- **Remaining risk / follow-up:** Investigate in a separate workspace with the
+  archive input and interpolation values instrumented, determine the affected
+  record range, repair the causal input or configuration, and verify successful
+  R2 writes without retries or warn-and-continue behavior.
+## 2026-07-22 — Reused ClickHouse Test State Exhausted Container Memory
+
+- **Status:** Local validation environment recovered; the complete integration
+  tier passes on clean workspace state.
+- **Symptoms:** The first post-merge integration run passed 108 files but the
+  activity power-curve file failed three tests with `socket hang up` while
+  issuing ClickHouse test commands.
+- **User impact:** Pull-request validation was delayed; production was not
+  affected.
+- **Evidence:** The exact failing command was `pnpm test:integration`; its first
+  fatal line was a failed `DROP TABLE IF EXISTS` after the ClickHouse HTTP socket
+  reset. Docker emitted a container `oom` event at `2026-07-22 19:05:24 UTC`,
+  followed by exit code 137 and an automatic restart. A fresh-volume focused run
+  then exposed a separate cold-start race: the healthcheck still returned
+  connection-refused at `19:10:20`, the test connected at `19:10:21`, and the
+  service became healthy at `19:10:25` without restarting.
+- **Root cause:** Reused disposable ClickHouse test state was the differentiator
+  that pushed the 3 GiB local container across its memory limit during the
+  power-curve build. After volume recreation, the first focused command started
+  before the cold ClickHouse process had reached healthy state.
+- **Fix / mitigation:** Removed only the `ashgabat` workspace's Compose
+  containers, network, and named volumes with the repository Compose wrapper,
+  verified ClickHouse was healthy with zero restarts, and reran the focused and
+  full integration tiers. No timeout, retry, memory-limit, or product behavior
+  change was added.
+- **Validation:** The focused power-curve suite passed all 3 tests, then the full
+  integration tier passed all 1,084 tests in 109 files on the recreated state.
+- **Remaining risk / follow-up:** The Compose test launcher can return before a
+  cold ClickHouse healthcheck succeeds. Track a separate test-infrastructure
+  change that makes the launcher wait for declared service health before
+  starting Vitest.
+
+## 2026-07-22 — Processing Status Migration Failed New-File CI Gates
+
+- **Status:** Root causes fixed and validated locally; hosted validation is
+  tracked by [pull request 1862](https://github.com/Asherlc/dofek/pull/1862).
+- **Symptoms:** The first hosted run failed `Test / SQLFluff`; after correcting
+  that migration formatting, the next run exposed failures in `Test / Knip`,
+  `Test / Migration Lint`, and `Test / Spell Check`. Once those passed, the
+  package-specific mobile typecheck exposed an invalid theme token. The next
+  run cleared those gates but seven Stryker shards failed on the new processing
+  pipeline. After those focused fixes and a merge from the advanced target
+  branch, two previously untested Stryker shards exposed additional state-
+  derivation, presentation, and ClickHouse migration coverage gaps. The next
+  hosted retry cleared those shards but exposed four remaining changed-range
+  shards covering reconciliation, import orchestration, PeerDB mirror editing,
+  and the ClickHouse sink/web polling boundary. After those tests were added,
+  the web package's dedicated typecheck caught a type-invalid assertion in the
+  new polling test that the root TypeScript configuration does not include.
+- **User impact:** The pull request was blocked; production was not affected.
+- **Evidence:** In
+  [run 29950473340](https://github.com/Asherlc/dofek/actions/runs/29950473340),
+  the exact SQLFluff command was `sqlfluff lint
+  drizzle/0056_processing_status.sql` and the first fatal finding was `RF06` on
+  line 1. In
+  [run 29950700120](https://github.com/Asherlc/dofek/actions/runs/29950700120),
+  Knip first reported two unused processing exports, Squawk first reported
+  `constraint-missing-not-valid`, and CSpell first reported `bigserial`.
+  [Run 29951241129](https://github.com/Asherlc/dofek/actions/runs/29951241129)
+  then reported `TS2339: Property 'primary' does not exist` in the mobile
+  processing widget. In
+  [run 29951519745](https://github.com/Asherlc/dofek/actions/runs/29951519745),
+  the exact mutation command was `pnpm exec stryker run
+  stryker.ci.config.json --mutate "$MUTATE_FILES"`; the first fatal report in
+  the cache shard was `Final mutation score 54.55 under breaking threshold
+  75`. The downloaded reports also showed the new processing event store with
+  120 uncovered mutants because its behavior was covered only by integration
+  tests, which the mutation tier intentionally excludes. In
+  [run 29954329873](https://github.com/Asherlc/dofek/actions/runs/29954329873),
+  the same exact mutation command reported `Final mutation score 71.43 under
+  breaking threshold 75` for `src/processing/processing-state.ts`, followed by
+  `Final mutation score 64.81 under breaking threshold 75` for the shard that
+  included processing presentation and ClickHouse migrations `0051` and
+  `0052`. In
+  [run 29955145398](https://github.com/Asherlc/dofek/actions/runs/29955145398),
+  the same exact mutation command first reported `Final mutation score 38.04
+  under breaking threshold 75` for `processing-reconciler.ts`; the other
+  failing changed ranges scored 57.32% for import processing, 54.78% for
+  ClickHouse CDC, and 72.41% for the ClickHouse sink and web polling shard.
+  In
+  [run 29956655451](https://github.com/Asherlc/dofek/actions/runs/29956655451),
+  the exact command was `pnpm run typecheck` in `packages/web`; the first fatal
+  line was `TS2339: Property 'refetchInterval' does not exist` at
+  `src/hooks/useProcessingStatus.test.ts:30`.
+- **Root cause:** The generated migration had not been passed through the
+  new-migration SQL linters; its foreign keys were emitted as later `ALTER
+  TABLE` statements, its sequence used the legacy serial form, and two generated
+  constraint names exceeded PostgreSQL's identifier limit. Separately, the two
+  production scripts that consume the supposedly unused exports were absent
+  from Knip's entrypoint list, and one valid word was absent from CSpell's
+  project dictionary.
+  The mobile widget also used a web-style `primary` token instead of the mobile
+  palette's established `accent` token; the earlier root typecheck did not run
+  the mobile package's separate TypeScript configuration. Finally, several new
+  unit suites asserted only partial result shapes and did not exercise the
+  asynchronous event-recording paths, while the processing event store had no
+  Docker-free unit suite. The remaining state tests did not cover global
+  operation events, cancellation, or selection among multiple ordered facts;
+  the presentation test sampled only a subset of statuses, and the two new
+  ClickHouse migration factories were verified indirectly through the registry
+  rather than through their exact outputs and missing-definition behavior. The
+  remaining reconciliation and import tests also verified outcomes without
+  fully asserting event ordering, failure propagation, zero-output behavior,
+  and evidence loading. PeerDB mirror-edit tests covered the successful path
+  without distinguishing near-miss mappings or the HTTP, authentication, and
+  mirror-state failures. The ClickHouse acknowledgement and adaptive polling
+  branches were covered only indirectly. The polling test initially read a
+  query option from the hook's production `UseTRPCQueryResult` return type
+  instead of from the mocked `useQuery` call arguments.
+- **Fix / mitigation:** Formatted migration `0056`, modeled its sequence as a
+  bigint identity, placed explicitly named foreign keys in each newly created
+  table, documented the intentionally bounded 32-bit fields, registered the
+  analytics/cache scripts and their externally supplied `dbt` binary with
+  Knip, and added `idempotently` to the spelling dictionary. No CI exclusion,
+  warning-and-continue behavior, retry, or timeout was added. Replaced the five
+  invalid mobile `primary` references with the existing semantic `accent`
+  token. Added focused unit coverage for event-store SQL mapping and
+  idempotency, retry-stable sync identity, independent metric-only and
+  relational-only outputs, legitimate no-output skips, exact dbt artifact
+  outcomes, cache/analytics event recording, lazy metric publication, and
+  scoped API status mapping. Mutation thresholds and file selection were not
+  relaxed. Added focused state tests for global facts, latest-sequence
+  selection, cancellation, and omitted manifests; table-driven coverage for
+  every processing display status; and colocated tests for the exact `0051`
+  and `0052` migration results and failure behavior. Added exact event-order,
+  evidence-loading, cancellation, failure, metric-only, relational-only, and
+  no-output assertions for reconciliation and import processing. Added PeerDB
+  tests for exact pause/edit/resume requests, near-miss mappings, Basic
+  authentication, HTTP and logical failures, missing clients, and invalid
+  mirror state, plus direct ClickHouse acknowledgement and adaptive web polling
+  tests. Corrected the polling test to inspect the typed mock call arguments;
+  no production type or type assertion was changed.
+- **Validation:** SQLFluff and Squawk report zero findings; Knip, CSpell, lint,
+  and TypeScript pass. The complete unit/mobile tier passes 13,036 tests in 747
+  files, and the real-Postgres migration plus processing integration suites pass
+  all 29 tests. Focused Stryker runs now score 100% for cache processing,
+  analytics processing, dbt artifact parsing, and metric publication; the
+  larger full-file targets score 96.67% for the event store, 96.55% for the
+  processing repository, and 93.97% for sync processing, all above the strict
+  75% breaking threshold. The exact two newly failing hosted mutation commands
+  now score 87.58% for processing state and 100% for the combined presentation
+  and ClickHouse migration shard. The four changed ranges from the subsequent
+  retry now score 80.37% for reconciliation, 92.68% for import processing,
+  85.22% for ClickHouse CDC, and 100% for the ClickHouse sink/web polling shard.
+  The focused polling test and `packages/web` typecheck both pass after the
+  assertion correction.
+- **Remaining risk / follow-up:** Keep both production scripts in Knip's
+  explicit entrypoint list, and run both SQLFluff and Squawk locally for every
+  newly generated migration before pushing.
 
 ## 2026-07-23 — Dependabot Reintroduced Unsupported Python 3.14 dbt Runtime
 

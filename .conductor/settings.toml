@@ -1,9 +1,13 @@
 "$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+spotlight_testing = true
 
 file_include_globs = """
 .env*
 .codegraph/codegraph.db
 """
+
+[prompts]
+create_pr = "Monitor the CI run. You should fix any jobs that fail, push and keep checking. As part of your monitoring, look for CR comments, and address them using the skill. You should not stop until all CR comments are resolved and all of CI is green. You should also resolve any conflicts with the parent branch."
 
 [scripts]
 archive = "pnpm tsx scripts/conductor-archive.ts"

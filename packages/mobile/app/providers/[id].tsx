@@ -21,12 +21,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { DataReadinessBanner } from "../../components/DataReadinessBanner";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAuth } from "../../lib/auth-context";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals";
@@ -639,16 +641,14 @@ const syncStyles = StyleSheet.create({
 function RecordsBrowser({
   providerId,
   stats,
-  statsLoading,
 }: {
   providerId: string;
   stats: ProviderStats | undefined;
-  statsLoading: boolean;
 }) {
-  const availableTypes = DATA_TYPE_LABELS.filter((dt) => {
-    if (!stats) return false;
-    return stats[dt.key] > 0;
-  });
+  const availability = trpc.providerDetail.availableDataTypes.useQuery({ providerId });
+  const availableTypes = DATA_TYPE_LABELS.filter((dataType) =>
+    availability.data?.includes(dataType.key),
+  );
 
   const [activeTab, setActiveTab] = useState<DataType>("activities");
   const [lastProviderId, setLastProviderId] = useState(providerId);
@@ -663,13 +663,22 @@ function RecordsBrowser({
     setActiveTab(availableTypes[0]?.key ?? "activities");
   }
 
-  if (statsLoading) {
+  if (availability.isLoading) {
     return (
       <View>
         <Text style={styles.sectionTitle}>Records</Text>
         <View style={recordStyles.emptyContainer}>
           <ActivityIndicator color={colors.accent} size="small" />
         </View>
+      </View>
+    );
+  }
+
+  if (availability.isError) {
+    return (
+      <View>
+        <Text style={styles.sectionTitle}>Records</Text>
+        <QueryStatePanel variant="error" message={getQueryErrorMessage(availability.error)} />
       </View>
     );
   }
@@ -703,7 +712,7 @@ function RecordsBrowser({
           >
             <Text style={[tabStyles.tabText, activeTab === dt.key && tabStyles.activeTabText]}>
               {dt.label}
-              {stats ? ` (${stats[dt.key].toLocaleString()})` : ""}
+              {stats && stats[dt.key] > 0 ? ` (${stats[dt.key].toLocaleString()})` : ""}
             </Text>
           </TouchableOpacity>
         ))}
@@ -748,7 +757,7 @@ export default function ProviderDetailScreen() {
   const trpcUtils = trpc.useUtils();
 
   const stats = trpc.sync.providerStats.useQuery();
-  const dataHealth = trpc.sync.dataHealth.useQuery();
+  const processingStatus = useProcessingStatus({ providerId });
   const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
   const providerStats = (stats.data ?? []).find(
     (s: { providerId: string }) => s.providerId === providerId,
@@ -804,11 +813,12 @@ export default function ProviderDetailScreen() {
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
       Promise.all([
+        trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId }),
         trpcUtils.providerDetail.records.invalidate({ providerId }),
         trpcUtils.providerDetail.logs.invalidate({ providerId }),
         trpcUtils.sync.providers.invalidate(),
         trpcUtils.sync.providerStats.invalidate(),
-        trpcUtils.sync.dataHealth.invalidate(),
+        trpcUtils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
 
@@ -870,10 +880,11 @@ export default function ProviderDetailScreen() {
         </View>
       </View>
 
-      <DataReadinessBanner
-        data={dataHealth.data}
-        error={dataHealth.error}
-        loading={dataHealth.isLoading}
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
+        contextLabel={`${formatProviderName(providerId)} data status`}
       />
 
       {/* Actions */}
@@ -901,11 +912,7 @@ export default function ProviderDetailScreen() {
       <SyncHistory providerId={providerId} />
 
       {/* Records browser */}
-      <RecordsBrowser
-        providerId={providerId}
-        stats={providerStats}
-        statsLoading={stats.isLoading}
-      />
+      <RecordsBrowser providerId={providerId} stats={providerStats} />
 
       {/* Disconnect */}
       <ProviderDataDeleteControl

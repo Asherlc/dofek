@@ -1,4 +1,5 @@
 import {
+  formatClimbingAttemptResult,
   formatDateLong,
   formatDurationRange,
   formatDurationSeconds,
@@ -38,9 +39,14 @@ import { styles } from "./styles";
 import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
 
 const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
+const CLIMBING_ACTIVITY_TYPES = new Set(["climbing", "rock_climbing"]);
 
 function isStrengthActivityType(activityType: string): boolean {
   return STRENGTH_ACTIVITY_TYPES.has(activityType);
+}
+
+function isClimbingActivityType(activityType: string): boolean {
+  return CLIMBING_ACTIVITY_TYPES.has(activityType);
 }
 
 function activityIcon(type: string): string {
@@ -348,6 +354,109 @@ const exerciseStyles = StyleSheet.create({
   },
 });
 
+interface ClimbingEntry {
+  id: string;
+  climbType: "boulder" | "route";
+  grade: string;
+  sent: boolean;
+  attemptCount: number;
+  ascentType: "Flash" | "Onsight" | "Redpoint" | "Repeat" | null;
+  routeName: string | null;
+  locationName: string | null;
+  sourceName: string;
+}
+
+function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
+  return (
+    <View style={climbingStyles.container}>
+      <ChartTitleWithTooltip
+        title="Climbs"
+        description="The climbs recorded during this session, including grades and send status."
+        textStyle={chartStyles.title}
+      />
+      {entries.map((entry) => (
+        <View key={entry.id} style={climbingStyles.entryRow}>
+          <View style={climbingStyles.gradeBadge}>
+            <Text style={climbingStyles.gradeText}>{entry.grade}</Text>
+          </View>
+          <View style={climbingStyles.entryDetails}>
+            <Text style={climbingStyles.routeName}>
+              {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
+            </Text>
+            {entry.locationName && (
+              <Text style={climbingStyles.locationName}>{entry.locationName}</Text>
+            )}
+          </View>
+          <View style={climbingStyles.resultDetails}>
+            {entry.ascentType && <Text style={climbingStyles.sent}>{entry.ascentType}</Text>}
+            <Text style={entry.sent ? climbingStyles.sent : climbingStyles.attempted}>
+              {formatClimbingAttemptResult(entry.sent, entry.attemptCount)}
+            </Text>
+            <Text style={climbingStyles.sourceName}>{entry.sourceName}</Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const climbingStyles = StyleSheet.create({
+  container: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+  },
+  entryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 4,
+  },
+  gradeBadge: {
+    minWidth: 48,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceSecondary,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    alignItems: "center",
+  },
+  gradeText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  entryDetails: {
+    flex: 1,
+  },
+  routeName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  locationName: {
+    color: colors.textTertiary,
+    fontSize: 11,
+  },
+  resultDetails: {
+    alignItems: "flex-end",
+  },
+  sent: {
+    color: colors.positive,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  attempted: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  sourceName: {
+    color: colors.textTertiary,
+    fontSize: 10,
+  },
+});
+
 // ── Main Screen ──
 
 export default function ActivityDetailScreen() {
@@ -437,6 +546,12 @@ export default function ActivityDetailScreen() {
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id: id ?? "" },
     { enabled: !!id && isStrengthActivity },
+  );
+  const isClimbingActivity =
+    detail.data != null && isClimbingActivityType(detail.data.activityType);
+  const climbingEntries = trpc.climbing.activityEntries.useQuery(
+    { id: id ?? "" },
+    { enabled: !!id && isClimbingActivity },
   );
 
   const [hoveredPosition, setHoveredPosition] = useState<{ lat: number; lng: number } | null>(null);
@@ -628,6 +743,15 @@ export default function ActivityDetailScreen() {
       {/* Strength Exercises */}
       {(strengthExercises.data?.length ?? 0) > 0 && (
         <ExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
+      )}
+
+      {isClimbingActivity && climbingEntries.error && (
+        <View style={climbingStyles.container}>
+          <Text style={styles.errorText}>{climbingEntries.error.message}</Text>
+        </View>
+      )}
+      {(climbingEntries.data?.length ?? 0) > 0 && (
+        <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
       )}
 
       {/* Time-series charts (load progressively) */}

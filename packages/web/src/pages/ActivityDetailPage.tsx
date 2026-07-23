@@ -22,7 +22,7 @@ import {
   formatActivityTypeLabel,
   isCyclingActivity,
 } from "@dofek/training/training";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
@@ -42,6 +42,8 @@ import {
 } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { ClimbingEntryBreakdown } from "./activity-detail/components/ClimbingEntryBreakdown.tsx";
+import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 
@@ -82,8 +84,13 @@ function buildAxisPointerEvents(
 }
 
 const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
+const CLIMBING_ACTIVITY_TYPES = new Set(["climbing", "rock_climbing"]);
 function isStrengthActivityType(activityType: string): boolean {
   return STRENGTH_ACTIVITY_TYPES.has(activityType);
+}
+
+function isClimbingActivityType(activityType: string): boolean {
+  return CLIMBING_ACTIVITY_TYPES.has(activityType);
 }
 
 export function ActivityDetailPage() {
@@ -111,6 +118,12 @@ export function ActivityDetailPage() {
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id },
     { enabled: isStrengthActivity },
+  );
+  const isClimbingActivity =
+    detail.data != null && isClimbingActivityType(detail.data.activityType);
+  const climbingEntries = trpc.climbing.activityEntries.useQuery(
+    { id },
+    { enabled: isClimbingActivity },
   );
 
   // Ref-based hover callback avoids re-rendering the entire page on every mouse move.
@@ -209,6 +222,19 @@ export function ActivityDetailPage() {
         </Section>
       )}
 
+      {isClimbingActivity && (climbingEntries.error || (climbingEntries.data?.length ?? 0) > 0) && (
+        <Section
+          title="Climbs"
+          description="The climbs recorded during this session, including grades and send status."
+        >
+          {climbingEntries.error ? (
+            <p className="text-sm text-red-400">{climbingEntries.error.message}</p>
+          ) : (
+            <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
+          )}
+        </Section>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {hasAltitude && (
           <Section
@@ -251,56 +277,6 @@ export function ActivityDetailPage() {
         )}
       </div>
     </PageLayout>
-  );
-}
-
-function DeleteActivityButton({ activityId }: { activityId: string }) {
-  const [showConfirm, setShowConfirm] = useState(false);
-  const navigate = useNavigate();
-  const trpcUtils = trpc.useUtils();
-  const deleteMutation = trpc.activity.delete.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        trpcUtils.activity.list.invalidate(),
-        trpcUtils.calendar.weekList.invalidate(),
-        trpcUtils.calendar.activityOverview.invalidate(),
-      ]);
-      navigate({ to: "/dashboard" });
-    },
-  });
-
-  if (showConfirm) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted">Delete this activity? This cannot be undone.</span>
-        <button
-          type="button"
-          onClick={() => deleteMutation.mutate({ id: activityId })}
-          disabled={deleteMutation.isPending}
-          className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors cursor-pointer"
-        >
-          {deleteMutation.isPending ? "Deleting..." : "Confirm Delete"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowConfirm(false)}
-          disabled={deleteMutation.isPending}
-          className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
-        >
-          Cancel
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setShowConfirm(true)}
-      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors cursor-pointer"
-    >
-      Delete Activity
-    </button>
   );
 }
 

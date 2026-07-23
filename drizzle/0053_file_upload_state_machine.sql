@@ -47,11 +47,11 @@ CREATE TABLE fitness.file_upload (
 );
 --> statement-breakpoint
 
-CREATE INDEX CONCURRENTLY file_upload_owner_updated_idx
+CREATE INDEX file_upload_owner_updated_idx
 ON fitness.file_upload (user_id, updated_at DESC);
 --> statement-breakpoint
 
-CREATE INDEX CONCURRENTLY file_upload_reconcile_idx
+CREATE INDEX file_upload_reconcile_idx
 ON fitness.file_upload (state, expires_at, updated_at);
 --> statement-breakpoint
 
@@ -70,5 +70,5 @@ CREATE TABLE fitness.file_upload_outbox (
 );
 --> statement-breakpoint
 
-CREATE INDEX CONCURRENTLY file_upload_outbox_dispatch_idx
+CREATE INDEX file_upload_outbox_dispatch_idx
 ON fitness.file_upload_outbox (status, created_at);

@@ -7,6 +7,9 @@ let mockRecoveryData: Record<string, unknown> | undefined;
 let mockRecoveryLoading = false;
 let mockRecoveryFetching = false;
 let sparkLinePropsCalls: Record<string, unknown>[];
+const mockRecoveryInvalidate = vi.fn();
+const mockProcessingStatusInvalidate = vi.fn();
+let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -19,14 +22,17 @@ vi.mock("../../lib/trpc", () => ({
         }),
       },
     },
-    sync: {
-      dataHealth: {
+    processing: {
+      status: {
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
       },
     },
     useUtils: () => ({
       mobileDashboard: {
-        recovery: { invalidate: vi.fn() },
+        recovery: { invalidate: mockRecoveryInvalidate },
+      },
+      processing: {
+        status: { invalidate: mockProcessingStatusInvalidate },
       },
     }),
   },
@@ -53,7 +59,10 @@ vi.mock("../../lib/units", async () => {
 });
 
 vi.mock("../../lib/useRefresh", () => ({
-  useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
+  useRefresh: (input: { invalidate?: (() => Promise<void> | void) | null }) => {
+    mockRefreshInvalidate = input.invalidate;
+    return { refreshing: false, onRefresh: vi.fn() };
+  },
 }));
 
 vi.mock("../../theme", () => ({
@@ -85,6 +94,22 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryLoading = false;
     mockRecoveryFetching = false;
     sparkLinePropsCalls = [];
+    mockRecoveryInvalidate.mockReset();
+    mockProcessingStatusInvalidate.mockReset();
+    mockRecoveryInvalidate.mockResolvedValue(undefined);
+    mockProcessingStatusInvalidate.mockResolvedValue(undefined);
+    mockRefreshInvalidate = undefined;
+  });
+
+  it("refreshes recovery data and processing status together", async () => {
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(mockRefreshInvalidate).toBeTypeOf("function");
+    await mockRefreshInvalidate?.();
+
+    expect(mockRecoveryInvalidate).toHaveBeenCalledOnce();
+    expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
   it("keeps day selector visible while recovery data is loading", async () => {

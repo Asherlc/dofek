@@ -110,15 +110,15 @@ describe("cache module environment selection", () => {
     const module = await import("dofek/lib/cache");
     const store = new module.RedisCacheStore(async () => client);
 
-    await expect(store.get("user-1:sync.dataHealth:undefined")).resolves.toBeUndefined();
+    await expect(store.get("user-1:processing.status:undefined")).resolves.toBeUndefined();
 
     expect(sentryMocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { cacheStore: "redis", cacheOperation: "get" },
     });
-    expect(client.del).toHaveBeenCalledWith("query-cache:data:user-1:sync.dataHealth:undefined");
+    expect(client.del).toHaveBeenCalledWith("query-cache:data:user-1:processing.status:undefined");
     expect(client.srem).toHaveBeenCalledWith(
       "query-cache:keys",
-      "query-cache:data:user-1:sync.dataHealth:undefined",
+      "query-cache:data:user-1:processing.status:undefined",
     );
   });
 
@@ -138,7 +138,7 @@ describe("cache module environment selection", () => {
     const module = await import("dofek/lib/cache");
     const store = new module.RedisCacheStore(async () => client);
 
-    await expect(store.get("user-1:sync.dataHealth:undefined")).resolves.toBeUndefined();
+    await expect(store.get("user-1:processing.status:undefined")).resolves.toBeUndefined();
 
     expect(sentryMocks.captureException).toHaveBeenCalledWith(evictionError, {
       tags: { cacheStore: "redis", cacheOperation: "evictInvalidPayload" },

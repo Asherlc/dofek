@@ -73,7 +73,6 @@ vi.mock("../lib/trpc", () => ({
           return mockActiveSyncs;
         },
       },
-      dataHealth: { invalidate: mockDataHealthInvalidate },
     },
     recovery: { readinessScore: { invalidate: mockReadinessInvalidate } },
     calendar: { activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate } },
@@ -81,7 +80,7 @@ vi.mock("../lib/trpc", () => ({
     bodyAnalytics: { weightOverview: { invalidate: mockWeightOverviewInvalidate } },
     useUtils: () => ({
       invalidate: mockInvalidate,
-      sync: { dataHealth: { invalidate: mockDataHealthInvalidate } },
+      processing: { status: { invalidate: mockDataHealthInvalidate } },
       recovery: { readinessScore: { invalidate: mockReadinessInvalidate } },
       calendar: { activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate } },
       activity: { list: { invalidate: mockActivityInvalidate } },
@@ -320,7 +319,7 @@ describe("useAutoSync", () => {
       recovery: { readinessScore: { invalidate: mockReadinessInvalidate } },
       calendar: { activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate } },
       activity: { list: { invalidate: mockActivityInvalidate } },
-      sync: { dataHealth: { invalidate: mockDataHealthInvalidate } },
+      processing: { status: { invalidate: mockDataHealthInvalidate } },
       bodyAnalytics: { weightOverview: { invalidate: mockWeightOverviewInvalidate } },
     };
 

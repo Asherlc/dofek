@@ -37,6 +37,13 @@ export function formatDurationSeconds(seconds: number): string {
   return formatDurationMinutes(Math.round(seconds / 60));
 }
 
+export function formatClimbingAttemptResult(sent: boolean, attemptCount: number): string {
+  if (sent) {
+    return `Sent in ${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}`;
+  }
+  return `Attempted ${attemptCount} ${attemptCount === 1 ? "time" : "times"}`;
+}
+
 /** Parse a timestamp string into a Date, returning null if invalid.
  *  Handles both ISO 8601 and postgres ::text format (space-separated, e.g. "2024-03-20 14:30:00+00")
  *  which Hermes and Safari cannot parse natively. */

@@ -83,7 +83,8 @@ export async function connect(peripheralId: string): Promise<boolean> {
  *
  * Sends the TOGGLE_IMU_MODE (0x6A) BLE command to the strap.
  * IMU samples (accelerometer + gyroscope) are buffered internally.
- * Call `getBufferedSamples()` to retrieve them.
+ * Use `peekBufferedSamples()` and call `confirmSamplesDrain()` only after a
+ * successful upload.
  *
  * @returns true on success.
  */

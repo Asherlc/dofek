@@ -14,5 +14,5 @@ ALTER TABLE fitness.mcp_oauth_refresh_token
 VALIDATE CONSTRAINT mcp_oauth_refresh_token_parent_fk;
 --> statement-breakpoint
 
-CREATE INDEX CONCURRENTLY mcp_oauth_refresh_token_parent_idx
+CREATE INDEX mcp_oauth_refresh_token_parent_idx
 ON fitness.mcp_oauth_refresh_token (parent_refresh_token_id);

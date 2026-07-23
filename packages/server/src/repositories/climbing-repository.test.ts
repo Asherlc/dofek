@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  ClimbingActivityEntry,
   ClimbingGradeProgression,
   ClimbingRepository,
   ClimbingSessionSummary,
@@ -83,6 +84,36 @@ describe("ClimbingSessionSummary", () => {
       hardestBoulderGradeSortValue: 4,
       hardestRouteGrade: "5.10c",
       hardestRouteGradeSortValue: 5103,
+    });
+  });
+});
+
+describe("ClimbingActivityEntry", () => {
+  it("serializes to API shape", () => {
+    const row = new ClimbingActivityEntry({
+      id: "entry-1",
+      climbType: "boulder",
+      gradeSystem: "v_scale",
+      grade: "V4",
+      sent: true,
+      attemptCount: 7,
+      ascentType: "Redpoint",
+      routeName: "Blue Arete",
+      locationName: "Pacific Pipe",
+      sourceName: "Kaya",
+    });
+
+    expect(row.toDetail()).toEqual({
+      id: "entry-1",
+      climbType: "boulder",
+      gradeSystem: "v_scale",
+      grade: "V4",
+      sent: true,
+      attemptCount: 7,
+      ascentType: "Redpoint",
+      routeName: "Blue Arete",
+      locationName: "Pacific Pipe",
+      sourceName: "Kaya",
     });
   });
 });
@@ -228,13 +259,14 @@ describe("ClimbingRepository", () => {
       ]);
     });
 
-    it("queries row counts and sent counts without using raw Kaya attempt counts", async () => {
+    it("queries canonical attempt totals and sent counts", async () => {
       const { repo, execute } = makeRepository([]);
 
       await repo.getVolumeByGrade(30);
 
       const text = queryText(execute.mock.calls[0]?.[0]);
-      expect(text).toContain("COUNT(ce.id)::int AS attempts");
+      expect(text).toContain("SUM(ce.attempt_count) AS attempts");
+      expect(text).not.toContain("SUM(ce.attempt_count)::int AS attempts");
       expect(text).toContain("COUNT(*) FILTER (WHERE ce.sent)::int AS sends");
       expect(text).toContain("GROUP BY ce.climb_type, ce.grade_system, ce.grade, grade_sort_value");
       expect(text).toContain("ORDER BY grade_sort_value");
@@ -317,8 +349,60 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
       expect(text).toContain("a.activity_type IN ('climbing', 'rock_climbing')");
       expect(text).toContain("IS NOT NULL");
-      expect(text).toContain("COUNT(entry_id)::int AS attempts");
+      expect(text).toContain("SUM(attempt_count) AS attempts");
+      expect(text).not.toContain("SUM(attempt_count)::int AS attempts");
       expect(text).toContain("COUNT(*) FILTER (WHERE sent)::int AS sends");
+    });
+  });
+
+  describe("getActivityEntries", () => {
+    it("returns normalized entries for an activity member", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "entry-1",
+          climb_type: "boulder",
+          grade_system: "v_scale",
+          grade: "v4",
+          sent: true,
+          attempt_count: 7,
+          ascent_type: "Redpoint",
+          route_name: "Blue Arete",
+          location_name: "Pacific Pipe",
+          source_name: "Kaya",
+        },
+      ]);
+
+      const result = await repo.getActivityEntries("activity-1");
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBeInstanceOf(ClimbingActivityEntry);
+      expect(result[0]?.toDetail()).toEqual({
+        id: "entry-1",
+        climbType: "boulder",
+        gradeSystem: "v_scale",
+        grade: "V4",
+        sent: true,
+        attemptCount: 7,
+        ascentType: "Redpoint",
+        routeName: "Blue Arete",
+        locationName: "Pacific Pipe",
+        sourceName: "Kaya",
+      });
+    });
+
+    it("queries entries through deduped activity members", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getActivityEntries("activity-1");
+
+      const text = queryText(execute.mock.calls[0]?.[0]);
+      expect(text).toContain("fitness.v_activity");
+      expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
+      expect(text).toContain("ce.attempt_count");
+      expect(text).toContain("ce.raw->>'ascentType'");
+      expect(text).toContain("ANY(a.member_activity_ids)");
+      expect(text).toContain("a.user_id = ");
+      expect(text).toContain("ORDER BY");
     });
   });
 });

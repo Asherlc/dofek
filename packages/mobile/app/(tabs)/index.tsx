@@ -22,12 +22,13 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
-import { DataReadinessBanner } from "../../components/DataReadinessBanner";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProviderGuide } from "../../components/ProviderGuide";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { SkeletonCircle } from "../../components/Skeleton";
 import { trpc } from "../../lib/trpc";
 import { useAutoSync } from "../../lib/useAutoSync";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useProviderGuide } from "../../lib/useProviderGuide";
 import { useRefresh } from "../../lib/useRefresh";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
@@ -47,7 +48,9 @@ export default function TodayScreen() {
     { endDate },
     { placeholderData: (previousData) => previousData },
   );
-  const dataHealthQuery = trpc.sync.dataHealth.useQuery({ datasets: ["dailyMetrics"] });
+  const processingStatusQuery = useProcessingStatus({
+    datasets: ["activity", "sleep", "recovery", "training", "body"],
+  });
   const dashboardData = dashboardQuery.data;
   const anomalyQuery = trpc.anomalyDetection.check.useQuery(
     { endDate },
@@ -87,7 +90,7 @@ export default function TodayScreen() {
       await Promise.all([
         dashboardQuery.refetch(),
         anomalyQuery.refetch(),
-        dataHealthQuery.refetch(),
+        processingStatusQuery.refetch(),
       ]);
     },
     invalidate: null,
@@ -125,10 +128,10 @@ export default function TodayScreen() {
         <ProviderGuide onDismiss={providerGuide.dismiss} providers={providerGuide.providers} />
       )}
 
-      <DataReadinessBanner
-        data={dataHealthQuery.data}
-        error={dataHealthQuery.error}
-        loading={dataHealthQuery.isLoading}
+      <ProcessingStatusWidget
+        data={processingStatusQuery.data}
+        error={processingStatusQuery.error}
+        loading={processingStatusQuery.isLoading}
       />
 
       {hasBackgroundError ? (

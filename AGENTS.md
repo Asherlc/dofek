@@ -11,8 +11,9 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - Docker for deployment
 
 ## General
-- **Apply minimum fix**: Only perform the minimum fix required to resolve the issue at hand. Do not add extra error handling, validation, or infrastructure unless explicitly requested. The user will ask if they want more far-reaching changes.
+- **Apply the minimum sound fix and assess best practice**: Prefer the smallest complete change that resolves the issue, but do not optimize for line count at the expense of correctness, safety, operability, or maintainability. Before recommending an approach, check applicable authoritative guidance and established best practices, then present the user with a balanced recommendation and its material scope/trade-offs. Do not add unrelated error handling, validation, infrastructure, or speculative future-proofing unless explicitly requested. Use the review dimensions in [Google's engineering practices](https://google.github.io/eng-practices/review/reviewer/looking-for.html) as a baseline for balancing design, functionality, complexity, tests, and documentation.
 - **Consistency over duplicate tools**: Do not add or keep multiple dependencies that solve the same problem in the same area of the codebase. Choose one canonical library/tool and migrate remaining call sites to it rather than carrying parallel options.
+- **Research off-the-shelf solutions before DIY**: Before building a custom tool, library, or infrastructure component, research established alternatives. Prefer an off-the-shelf solution when it fits the current requirement, is widely adopted, actively maintained, and has acceptable security, licensing, and operational trade-offs. Evaluate those qualities with current evidence such as release activity, maintainer responsiveness, adoption, and security posture; [OpenSSF Scorecard](https://scorecard.dev/) is one useful input for open-source security-maintenance signals.
 - **No branch switching without approval**: Never switch branches (`git checkout`, `git switch`, creating a new local branch from another branch, or rebasing onto another branch) unless the user explicitly approves it first.
 - **YAGNI first**: Follow "You Aren't Gonna Need It" — do not add abstractions, options, flags, or future-proofing for hypothetical needs unless there is a current, concrete requirement.
 - **Ask before deviating from YAGNI**: If a non-YAGNI change appears important, stop and ask the user before implementing it.
@@ -240,14 +241,15 @@ Durable, non-obvious notes for working in the Cursor Cloud VM. The startup updat
 - `ubuntu` is in the `docker` group, so `docker`/`docker compose` work without `sudo` once the daemon is up. On a brand-new session the socket may be `root:docker`; if you hit a permission error, `sudo chmod 666 /var/run/docker.sock`.
 
 ### Secrets / Infisical
-- The Infisical CLI is NOT installed. `scripts/with-env.sh` calls `infisical export` and prints `infisical: command not found`, then continues (the script has no `set -e`) using `.env` + `.env.local`. This is expected in the VM — local dev only needs `DATABASE_URL`, `CLICKHOUSE_URL`, `REDIS_URL`, which `pnpm compose:up` writes into `.env.local`.
+- The Infisical CLI is NOT installed. [`scripts/with-env.sh`](scripts/with-env.sh) deliberately fails before running its command when Infisical export is unavailable. For VM commands that only need the local `DATABASE_URL`, `CLICKHOUSE_URL`, and `REDIS_URL` written by `pnpm compose:up`, source `.env.local` explicitly and run the underlying command directly.
 - Provider OAuth/credentials and other secret-gated features are unavailable without Infisical. Use the dev-login bypass below instead of real auth.
 
 ### Bring up the full local stack (web + API, no PeerDB needed)
+
 Run from the repo root, in order:
 1. `pnpm compose:up` — starts Postgres/TimescaleDB + ClickHouse + Redis on random host ports and writes `.env.local`.
 2. `pnpm setup-db` — applies Postgres + ClickHouse migrations. The ClickHouse migrations pre-create the `analytics.*` serving tables that the API boot waits for, so PeerDB/Temporal and the Redpanda metric-stream stack are NOT required for dev.
-3. `./scripts/with-env.sh pnpm seed` — seeds demo data and creates the `dev-session`. Note `pnpm seed` does not wrap `with-env.sh` itself, so it must be run through `with-env.sh` (or with `DATABASE_URL` exported) to pick up `.env.local`.
+3. `set -a; . ./.env.local; set +a; pnpm seed` — exports the local service URLs, seeds demo data, and creates the `dev-session` without requiring unavailable provider secrets.
 4. `pnpm analytics:build` (optional) — dbt build via `uv`; populates ClickHouse activity/sleep read models from seeded Postgres data. The API boots without it (tables exist empty), but activity-stream analytics need it.
 5. API: `cd packages/server && pnpm dev` (Express + tRPC on `:3000`). Web: `cd packages/web && pnpm dev` (Vite on `:5173`, proxies `/api`, `/auth`, `/callback` to `:3000`).
 

@@ -8,15 +8,16 @@ import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { FileImportProviderCard } from "../components/FileImportProviderCard.tsx";
 import { getFileImportConfig } from "../components/file-import-configs.ts";
 import { OperationProgressBar } from "../components/OperationProgressBar.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { toFilterOptions } from "../lib/provider-detail-filter-options.ts";
 import { captureException } from "../lib/telemetry.ts";
@@ -61,7 +62,7 @@ export function ProviderDetailPage() {
 
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
-  const dataHealth = trpc.sync.dataHealth.useQuery();
+  const processingStatus = useProcessingStatus({ providerId });
   const trpcUtils = trpc.useUtils();
 
   const provider = (providers.data ?? []).find((p) => p.id === providerId);
@@ -141,8 +142,10 @@ export function ProviderDetailPage() {
             }
           },
           onComplete: () => {
+            trpcUtils.processing.status.invalidate();
             trpcUtils.sync.providers.invalidate();
             trpcUtils.sync.providerStats.invalidate();
+            trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId });
             trpcUtils.providerDetail.logs.invalidate();
             trpcUtils.providerDetail.records.invalidate();
           },
@@ -275,10 +278,11 @@ export function ProviderDetailPage() {
         </div>
       </div>
 
-      <DataReadinessBanner
-        data={dataHealth.data}
-        error={dataHealth.error}
-        loading={dataHealth.isLoading}
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
+        contextLabel={`${formatProviderName(providerId)} data status`}
       />
 
       {importConfig && (
@@ -440,7 +444,6 @@ export function ProviderDetailPage() {
         key={`records-browser-${providerId}`}
         providerId={providerId}
         stats={providerStats}
-        statsLoading={stats.isLoading}
       />
 
       <ProviderDataDeleteControl
@@ -641,16 +644,14 @@ function getStatCount(stats: ProviderStats, key: DataType): number {
 function RecordsBrowser({
   providerId,
   stats,
-  statsLoading,
 }: {
   providerId: string;
   stats: ProviderStats | undefined;
-  statsLoading: boolean;
 }) {
-  const availableTypes = DATA_TYPE_LABELS.filter((dt) => {
-    if (!stats) return false;
-    return getStatCount(stats, dt.key) > 0;
-  });
+  const availability = trpc.providerDetail.availableDataTypes.useQuery({ providerId });
+  const availableTypes = DATA_TYPE_LABELS.filter((dataType) =>
+    availability.data?.includes(dataType.key),
+  );
 
   const [selectedTab, setSelectedTab] = useState<DataType>("activities");
   const activeTab = useMemo(() => {
@@ -660,11 +661,20 @@ function RecordsBrowser({
     return availableTypes[0]?.key ?? "activities";
   }, [availableTypes, selectedTab]);
 
-  if (statsLoading) {
+  if (availability.isLoading) {
     return (
       <section>
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
         <div className="text-xs text-subtle">Loading records...</div>
+      </section>
+    );
+  }
+
+  if (availability.isError) {
+    return (
+      <section>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
+        <QueryStatePanel error={availability.error} height={80} />
       </section>
     );
   }
@@ -696,7 +706,7 @@ function RecordsBrowser({
             }`}
           >
             {dt.label}
-            {stats && (
+            {stats && getStatCount(stats, dt.key) > 0 && (
               <span className="ml-1 text-dim">
                 ({getStatCount(stats, dt.key).toLocaleString()})
               </span>

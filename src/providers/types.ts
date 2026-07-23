@@ -1,5 +1,6 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import type { ProcessingDatasetKey } from "../processing/dataset-contracts.ts";
 import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import type { SyncOptions, SyncRun } from "./sync-run.ts";
 
@@ -105,6 +106,9 @@ interface BaseProvider {
 
   /** Human-readable name */
   readonly name: string;
+
+  /** Optional explicit processing-status scope for custom providers and tests. */
+  readonly processingDatasetKeys?: readonly ProcessingDatasetKey[];
 
   /**
    * Validate that the provider is configured (API keys present, etc.)

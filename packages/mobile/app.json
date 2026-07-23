@@ -126,6 +126,8 @@
           }
         }
       ],
+      "expo-sharing",
+      "expo-web-browser",
       "@bacons/apple-targets",
       "./plugins/with-podfile-post-install"
     ]

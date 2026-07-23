@@ -7,6 +7,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
+import type { ClimbingActivityEntryRow } from "../../../server/src/repositories/climbing-repository.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
@@ -96,6 +97,15 @@ const initialMockStreamPoints = mockStreamPoints.map((point) => ({ ...point }));
 
 const mockStrengthExercisesUseQuery = vi.fn(
   (_input?: unknown, _options?: { enabled?: boolean }) => ({ data: [], isLoading: false }),
+);
+const mockClimbingEntriesUseQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: { enabled?: boolean },
+  ): { data: ClimbingActivityEntryRow[]; isLoading: boolean } => ({
+    data: [],
+    isLoading: false,
+  }),
 );
 
 interface MockHrZone {
@@ -190,6 +200,9 @@ vi.mock("../lib/trpc.ts", () => ({
       },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
+    climbing: {
+      activityEntries: { useQuery: mockClimbingEntriesUseQuery },
+    },
     useUtils: () => ({
       activity: {
         byId: { invalidate: mockActivityByIdInvalidate },
@@ -226,6 +239,8 @@ afterEach(() => {
   mockHrZonesUseQuery.mockImplementation(
     (_input?: unknown, _options?: unknown): MockHrZonesResult => defaultMockHrZonesResult(),
   );
+  mockClimbingEntriesUseQuery.mockReset();
+  mockClimbingEntriesUseQuery.mockReturnValue({ data: [], isLoading: false });
   mockStreamPoints.splice(
     0,
     mockStreamPoints.length,
@@ -236,6 +251,7 @@ afterEach(() => {
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   capturedOptions.length = 0;
   mockStrengthExercisesUseQuery.mockClear();
+  mockClimbingEntriesUseQuery.mockClear();
   mockHrZonesUseQuery.mockClear();
   mockPowerZonesUseQuery.mockClear();
   mockRecomputeMutate.mockClear();
@@ -739,6 +755,60 @@ describe("ActivityDetailPage", () => {
 
       const enabled = getQueryEnabledFlag(mockStrengthExercisesUseQuery.mock.calls[0]?.[1]);
       expect(enabled).toBe(true);
+
+      Object.assign(mockActivity, originalData);
+    });
+  });
+
+  describe("climbing entries", () => {
+    it("shows the climbs attached to a merged rock-climbing activity", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, {
+        activityType: "climbing",
+        name: "Morning Rock Climb",
+      });
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: [
+          {
+            id: "climb-v4",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V4",
+            sent: true,
+            attemptCount: 7,
+            ascentType: "Redpoint",
+            routeName: "Blue Circuit",
+            locationName: "Touchstone Pacific Pipe",
+            sourceName: "Kaya",
+          },
+          {
+            id: "climb-project",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V5",
+            sent: false,
+            attemptCount: 1,
+            ascentType: null,
+            routeName: "Project",
+            locationName: "Touchstone Pacific Pipe",
+            sourceName: "Kaya",
+          },
+        ],
+        isLoading: false,
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(getQueryEnabledFlag(mockClimbingEntriesUseQuery.mock.calls[0]?.[1])).toBe(true);
+      expect(screen.getByText("Climbs")).toBeDefined();
+      expect(screen.getByText("V4")).toBeDefined();
+      expect(screen.getByText("Blue Circuit")).toBeDefined();
+      expect(screen.getByText("Redpoint")).toBeDefined();
+      expect(screen.getByText("Sent in 7 attempts")).toBeDefined();
+      expect(screen.getByText("Project")).toBeDefined();
+      expect(screen.getByText("Attempted 1 time")).toBeDefined();
+      expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(2);
 
       Object.assign(mockActivity, originalData);
     });

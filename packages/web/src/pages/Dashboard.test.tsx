@@ -117,8 +117,8 @@ vi.mock("../lib/trpc.ts", () => ({
     insights: {
       compute: { useQuery: mockInsightsQuery },
     },
-    sync: {
-      dataHealth: { useQuery: mockDataHealthQuery },
+    processing: {
+      status: { useQuery: mockDataHealthQuery },
     },
   },
 }));
@@ -200,8 +200,13 @@ describe("Dashboard", () => {
   it("shows data readiness when dashboard summaries are stale", () => {
     mockDataHealthQuery.mockReturnValue({
       data: {
-        overallStatus: "stale",
+        overallStatus: "delayed",
         generatedAt: "2026-06-30T08:00:00.000Z",
+        scope: {
+          providerId: null,
+          datasets: ["activity", "sleep", "recovery", "training", "body"],
+        },
+        operations: [],
         datasets: [
           {
             key: "dailyMetrics",
@@ -212,6 +217,7 @@ describe("Dashboard", () => {
             cdcLagSeconds: 7200,
             readModelLagSeconds: 7200,
             status: "stale",
+            progressPercentage: null,
             message: "Daily metrics data is synced, but dashboard summaries are still catching up.",
           },
         ],
@@ -222,13 +228,14 @@ describe("Dashboard", () => {
 
     render(<Dashboard />);
 
-    expect(mockDataHealthQuery).toHaveBeenCalledWith({ datasets: ["dailyMetrics"] });
-    expect(screen.getByText("Dashboard summaries are catching up")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Daily metrics data is synced, but dashboard summaries are still catching up.",
-      ),
-    ).toBeTruthy();
+    expect(mockDataHealthQuery).toHaveBeenCalledWith(
+      {
+        datasets: ["activity", "sleep", "recovery", "training", "body"],
+      },
+      expect.any(Object),
+    );
+    expect(screen.getByText("Processing is taking longer than expected")).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
   it("does not enable insights during the initial core dashboard load", () => {

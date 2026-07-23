@@ -13,6 +13,10 @@ const mockImportSharedFile = vi.fn();
 const mockGetDocumentAsync = vi.fn();
 
 vi.mock("react-native", () => ({
+  AppState: {
+    currentState: "active",
+    addEventListener: () => ({ remove: vi.fn() }),
+  },
   View: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) => {
     const {
       style,
@@ -279,11 +283,13 @@ vi.mock("../../lib/useRefresh", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    processing: {
+      status: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
+    },
     sync: {
       providers: { useQuery: (...args: unknown[]) => mockProvidersQuery(...args) },
       providerStats: { useQuery: (...args: unknown[]) => mockStatsQuery(...args) },
       logs: { useQuery: (...args: unknown[]) => mockLogsQuery(...args) },
-      dataHealth: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
       triggerSync: { useMutation: () => ({ mutateAsync: mockSyncMutateAsync }) },
       activeSyncs: { useQuery: (...args: unknown[]) => mockActiveSyncsQuery(...args) },
       activeImports: { useQuery: (...args: unknown[]) => mockActiveImportsQuery(...args) },
@@ -312,11 +318,13 @@ vi.mock("../../lib/trpc", () => ({
           healthKitWriteBackEntries: { query: vi.fn().mockResolvedValue([]) },
         },
       },
+      processing: {
+        status: { invalidate: mockInvalidateDataHealth },
+      },
       sync: {
         providers: { invalidate: mockInvalidateProviders },
         providerStats: { invalidate: mockInvalidateProviderStats },
         logs: { invalidate: mockInvalidateLogs },
-        dataHealth: { invalidate: mockInvalidateDataHealth },
         activeSyncs: { invalidate: mockInvalidateActiveSyncs },
         activeImports: { invalidate: mockInvalidateActiveImports },
         syncStatus: { fetch: mockSyncStatusFetch },
@@ -969,6 +977,8 @@ describe("ProvidersScreen", () => {
       data: {
         overallStatus: "blocked",
         generatedAt: "2026-06-30T08:00:00.000Z",
+        scope: { providerId: null, datasets: ["providers"] },
+        operations: [],
         datasets: [
           {
             key: "sleep",
@@ -989,10 +999,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    expect(screen.getByText("Some data is temporarily unavailable")).toBeTruthy();
-    expect(
-      screen.getByText("Sleep data is still being prepared. Please check back soon."),
-    ).toBeTruthy();
+    expect(screen.getByText("Processing needs attention")).toBeTruthy();
   });
 
   it("shows an explicit error when providers fail to load", async () => {

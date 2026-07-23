@@ -14,7 +14,7 @@ describe("createAppQueryClient", () => {
 
     await expect(
       queryClient.fetchQuery({
-        queryKey: [["sync", "dataHealth"], { type: "query" }],
+        queryKey: [["processing", "status"], { type: "query" }],
         retry: false,
         queryFn: async () => {
           throw queryError;
@@ -24,7 +24,7 @@ describe("createAppQueryClient", () => {
 
     expect(mockCaptureException).toHaveBeenCalledWith(queryError, {
       source: "react-query",
-      queryHash: '[["sync","dataHealth"],{"type":"query"}]',
+      queryHash: '[["processing","status"],{"type":"query"}]',
       failureCount: 1,
     });
   });

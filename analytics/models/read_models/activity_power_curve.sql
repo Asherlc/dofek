@@ -8,28 +8,93 @@
     }
 ) }}
 
-WITH activity_bounds AS (
+WITH current_activity AS (
     SELECT
         activity_id,
         user_id,
         activity_type,
         started_at,
-        ended_at
+        ended_at,
+        is_deleted,
+        refreshed_at
     FROM {{ ref('activity_summary_rows') }} FINAL
-    WHERE is_deleted = 0
-        AND ended_at IS NOT NULL
-        AND activity_type IN ('cycling', 'road_cycling', 'mountain_biking', 'gravel_cycling', 'indoor_cycling', 'virtual_cycling', 'e_bike_cycling', 'cyclocross', 'track_cycling', 'bmx', 'hand_cycling', 'running', 'swimming', 'walking', 'hiking')
 ),
 
 {% if is_incremental() %}
-existing_activities AS (
-    SELECT DISTINCT
+existing_activity_state AS (
+    SELECT
+        activity_id,
+        user_id,
+        max(refreshed_at) AS refreshed_at
+    FROM {{ this }} FINAL
+    GROUP BY
         activity_id,
         user_id
-    FROM {{ this }} FINAL
-    WHERE is_deleted = 0
 ),
 
+source_dirty_activity_keys AS (
+    SELECT
+        current_activity.activity_id,
+        current_activity.user_id
+    FROM current_activity
+    LEFT JOIN existing_activity_state
+        ON existing_activity_state.activity_id = current_activity.activity_id
+        AND existing_activity_state.user_id = current_activity.user_id
+    WHERE existing_activity_state.activity_id IS NULL
+        OR current_activity.refreshed_at > existing_activity_state.refreshed_at
+),
+
+stale_activity_keys AS (
+    SELECT
+        existing_activity_state.activity_id,
+        existing_activity_state.user_id
+    FROM existing_activity_state
+    LEFT JOIN current_activity
+        ON current_activity.activity_id = existing_activity_state.activity_id
+        AND current_activity.user_id = existing_activity_state.user_id
+    WHERE current_activity.activity_id IS NULL
+),
+{% endif %}
+
+activity_keys AS (
+    {% if is_incremental() %}
+    SELECT
+        activity_id,
+        user_id
+    FROM source_dirty_activity_keys
+    UNION DISTINCT
+    SELECT
+        activity_id,
+        user_id
+    FROM stale_activity_keys
+    {% else %}
+    SELECT
+        activity_id,
+        user_id
+    FROM current_activity
+    WHERE is_deleted = 0
+        AND ended_at IS NOT NULL
+        AND activity_type IN ('cycling', 'road_cycling', 'mountain_biking', 'gravel_cycling', 'indoor_cycling', 'virtual_cycling', 'e_bike_cycling', 'cyclocross', 'track_cycling', 'bmx', 'hand_cycling', 'running', 'swimming', 'walking', 'hiking')
+    {% endif %}
+),
+
+activity_bounds AS (
+    SELECT
+        current_activity.activity_id,
+        current_activity.user_id,
+        current_activity.activity_type,
+        current_activity.started_at,
+        current_activity.ended_at
+    FROM current_activity
+    INNER JOIN activity_keys
+        ON activity_keys.activity_id = current_activity.activity_id
+        AND activity_keys.user_id = current_activity.user_id
+    WHERE current_activity.is_deleted = 0
+        AND current_activity.ended_at IS NOT NULL
+        AND current_activity.activity_type IN ('cycling', 'road_cycling', 'mountain_biking', 'gravel_cycling', 'indoor_cycling', 'virtual_cycling', 'e_bike_cycling', 'cyclocross', 'track_cycling', 'bmx', 'hand_cycling', 'running', 'swimming', 'walking', 'hiking')
+),
+
+{% if is_incremental() %}
 existing_duration_rows AS (
     SELECT
         activity_id,
@@ -37,22 +102,14 @@ existing_duration_rows AS (
         duration_seconds
     FROM {{ this }} FINAL
     WHERE is_deleted = 0
+        AND (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM activity_keys
+        )
 ),
 {% endif %}
-
-activity_keys AS (
-    SELECT
-        activity_id,
-        user_id
-    FROM activity_bounds
-    {% if is_incremental() %}
-    UNION DISTINCT
-    SELECT
-        activity_id,
-        user_id
-    FROM existing_activities
-    {% endif %}
-),
 
 power_samples AS (
     SELECT
@@ -77,6 +134,12 @@ power_samples AS (
         AND sensor.channel = 'power'
         AND sensor.scalar > 0
         AND sensor.is_deleted = 0
+    WHERE (sensor.user_id, sensor.activity_id) IN (
+        SELECT
+            user_id,
+            activity_id
+        FROM activity_bounds
+    )
 ),
 
 power_segments AS (

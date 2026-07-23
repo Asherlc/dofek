@@ -95,6 +95,7 @@ describe("drizzleSchema", () => {
       "grade_system",
       "grade",
       "sent",
+      "attempt_count",
       "route_name",
       "location_name",
       "source_name",
@@ -138,6 +139,11 @@ describe("drizzleSchema", () => {
       sent: {
         columnType: "PgBoolean",
         hasDefault: false,
+        notNull: true,
+      },
+      attempt_count: {
+        columnType: "PgInteger",
+        hasDefault: true,
         notNull: true,
       },
       route_name: {

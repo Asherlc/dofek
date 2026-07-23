@@ -34,6 +34,7 @@ export interface Activity {
 
 interface ActivityListProps {
   activities: Activity[];
+  additionalColumns?: Array<ActivityTableColumn<Activity>>;
   loading?: boolean;
   error?: string;
   totalCount?: number;
@@ -61,6 +62,7 @@ function formatActivityDuration(startedAt: string, endedAt: string | null): stri
 
 export function ActivityList({
   activities,
+  additionalColumns = [],
   loading,
   error,
   totalCount,
@@ -244,7 +246,8 @@ export function ActivityList({
       renderCell: (activity) => activity.source_providers?.join(", "),
     },
   ];
-  const columns = selectMode ? [selectionColumn, ...baseColumns] : baseColumns;
+  const activityColumns = [...baseColumns, ...additionalColumns];
+  const columns = selectMode ? [selectionColumn, ...activityColumns] : activityColumns;
   const footer =
     totalPages != null && totalPages > 1 && onPageChange ? (
       <div className="flex items-center justify-between pt-3 border-t border-border/50 mt-2">

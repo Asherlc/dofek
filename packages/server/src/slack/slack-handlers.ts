@@ -18,6 +18,8 @@ import {
 
 type SayFunction = SayFn;
 const DEDUPE_TTL_MS = 10 * 60 * 1000;
+const UNMATCHED_SLACK_ACCOUNT_MESSAGE_PREFIX =
+  "Could not match your Slack account to a Dofek user.";
 
 interface ParsedMessageArgs {
   say: SayFunction;
@@ -45,6 +47,64 @@ interface ParsedMessageArgs {
   msgTs: string;
   msgChannel: string;
   msgThreadTs?: string;
+  msgTeamId?: string;
+}
+
+interface SlackExceptionContext {
+  operation: string;
+  eventType: "action" | "message";
+  teamId?: string;
+  channelId?: string;
+  threadTimestamp?: string;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function buildSlackExceptionContext(context: SlackExceptionContext): Record<string, string> {
+  const sentryContext: Record<string, string> = {
+    eventType: context.eventType,
+    operation: context.operation,
+  };
+  if (context.teamId) sentryContext.teamId = context.teamId;
+  if (context.channelId) sentryContext.channelId = context.channelId;
+  if (context.threadTimestamp) sentryContext.threadTimestamp = context.threadTimestamp;
+  return sentryContext;
+}
+
+function captureSlackException(error: unknown, context: SlackExceptionContext): void {
+  Sentry.captureException(error, {
+    contexts: {
+      slack: buildSlackExceptionContext(context),
+    },
+    tags: {
+      slack_event_type: context.eventType,
+      slack_operation: context.operation,
+    },
+  });
+}
+
+function isUserSafeSlackMessage(errorMessage: string): boolean {
+  return errorMessage.startsWith(UNMATCHED_SLACK_ACCOUNT_MESSAGE_PREFIX);
+}
+
+function extractSlackTeamId(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  if ("team_id" in body && typeof body.team_id === "string" && body.team_id.length > 0) {
+    return body.team_id;
+  }
+  if (
+    "team" in body &&
+    body.team &&
+    typeof body.team === "object" &&
+    "id" in body.team &&
+    typeof body.team.id === "string" &&
+    body.team.id.length > 0
+  ) {
+    return body.team.id;
+  }
+  return undefined;
 }
 
 function findSingleConfirmedDate(rows: Array<{ date: string }>): string | null {
@@ -204,6 +264,7 @@ async function handleParsedMessage(
     msgTs,
     msgChannel,
     msgThreadTs,
+    msgTeamId,
   } = args;
   try {
     const { userId, timezone: userTimezone } = await repository.lookupOrCreateUserId(msgUser, {
@@ -282,10 +343,17 @@ async function handleParsedMessage(
           }
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = getErrorMessage(error);
         logger.error(`[slack] Refinement failed: ${errorMessage}`);
+        captureSlackException(error, {
+          channelId: msgChannel,
+          eventType: "message",
+          operation: "nutrition_refinement",
+          teamId: msgTeamId,
+          threadTimestamp: msgThreadTs ?? msgTs,
+        });
         await say({
-          text: `Sorry, I couldn't refine that.\n\`${errorMessage}\``,
+          text: "Sorry, I couldn't update those food entries. The edit was not saved. Please try again, or contact support if it keeps happening.",
           thread_ts: msgThreadTs,
         });
         return;
@@ -325,10 +393,18 @@ async function handleParsedMessage(
         await say({ ...confirmation, thread_ts: msgTs });
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       logger.error(`[slack] AI analysis failed: ${errorMessage}`);
+      captureSlackException(error, {
+        channelId: msgChannel,
+        eventType: "message",
+        operation: "nutrition_analysis",
+        teamId: msgTeamId,
+        threadTimestamp: msgTs,
+      });
 
-      const errorText = `Sorry, I couldn't parse that. Try describing what you ate more specifically.\n\`${errorMessage}\``;
+      const errorText =
+        "Sorry, I couldn't parse that. Nothing was saved. Try describing what you ate with amounts, or contact support if it keeps happening.";
       if (thinkingMsg.ts) {
         await updateMessage({
           channel: msgChannel,
@@ -341,17 +417,29 @@ async function handleParsedMessage(
       }
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = getErrorMessage(error);
     logger.error(`[slack] Message handler failed: ${errorMessage}`);
+    if (isUserSafeSlackMessage(errorMessage)) {
+      await say({
+        text: errorMessage,
+        thread_ts: msgThreadTs ?? msgTs,
+      });
+      return;
+    }
+    captureSlackException(error, {
+      channelId: msgChannel,
+      eventType: "message",
+      operation: "message_processing",
+      teamId: msgTeamId,
+      threadTimestamp: msgThreadTs ?? msgTs,
+    });
     try {
       await say({
-        text: `Sorry, something went wrong.\n\`${errorMessage}\``,
+        text: "Sorry, I couldn't process that message. Nothing was saved. Please try again in a minute, or contact support if it keeps happening.",
         thread_ts: msgThreadTs ?? msgTs,
       });
     } catch (sayError) {
-      logger.error(
-        `[slack] Failed to send error reply: ${sayError instanceof Error ? sayError.message : String(sayError)}`,
-      );
+      logger.error(`[slack] Failed to send error reply: ${getErrorMessage(sayError)}`);
     }
   }
 }
@@ -424,6 +512,7 @@ export function registerHandlers(
       msgTs,
       msgChannel,
       msgThreadTs,
+      msgTeamId: extractSlackTeamId(body),
     });
   });
 
@@ -471,6 +560,7 @@ export function registerHandlers(
       msgTs: event.ts,
       msgChannel: event.channel,
       msgThreadTs: event.thread_ts,
+      msgTeamId: extractSlackTeamId(body),
     });
   });
 
@@ -510,8 +600,10 @@ export function registerHandlers(
       return;
     }
 
+    let confirmedEntriesSaved = false;
     try {
       const confirmation = await repository.confirm(entryIds);
+      confirmedEntriesSaved = true;
       const confirmedCount = confirmation.confirmedCount;
       logger.info(`[slack] confirmFoodEntries updated ${confirmedCount} rows`);
 
@@ -545,8 +637,7 @@ export function registerHandlers(
             confirmedDate,
           );
         } catch (progressError) {
-          const progressErrorMessage =
-            progressError instanceof Error ? progressError.message : String(progressError);
+          const progressErrorMessage = getErrorMessage(progressError);
           logger.error(
             `[slack] Failed to load daily calorie progress after confirm: ${progressErrorMessage}`,
           );
@@ -570,14 +661,23 @@ export function registerHandlers(
 
       logger.info(`[slack] Confirmed ${confirmedCount} food entries (${rows.length} total)`);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       logger.error(`[slack] Failed to confirm food entries: ${errorMessage}`);
+      captureSlackException(error, {
+        channelId,
+        eventType: "action",
+        operation: "food_confirmation",
+        teamId: body.team?.id,
+        threadTimestamp: messageTs,
+      });
 
       if (body.channel?.id && body.message?.ts) {
         await client.chat.update({
           channel: body.channel.id,
           ts: body.message.ts,
-          text: `Failed to save: ${errorMessage}`,
+          text: confirmedEntriesSaved
+            ? "Saved those food entries, but I couldn't finish the follow-up update. Please refresh Dofek, or contact support if it looks wrong."
+            : "Failed to save those food entries. Nothing was saved. Please try confirming the latest parsed message again, or contact support if it keeps happening.",
           blocks: [],
         });
       }
@@ -632,7 +732,7 @@ export function registerHandlers(
         },
       });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       logger.error(`[slack] Failed to publish Home Tab: ${errorMessage}`);
     }
   });

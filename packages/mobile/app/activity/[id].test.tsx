@@ -130,15 +130,19 @@ vi.mock("../../theme", () => ({
   },
 }));
 
-vi.mock("@dofek/format/format", () => ({
-  formatDateLong: (value: string) => (value.startsWith("2026-03-05") ? "March 5, 2026" : value),
-  formatDateTime: (value: string) =>
-    value.startsWith("2026-03-05") ? "March 5, 2026, 2:30 PM" : value,
-  formatDurationRange: () => "1:00:00",
-  formatDurationSeconds: (value: number) => `${value}s`,
-  formatNumber: (value: number) => String(value),
-  formatTimeOnly: (value: string) => value,
-}));
+vi.mock("@dofek/format/format", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@dofek/format/format")>();
+  return {
+    ...actual,
+    formatDateLong: (value: string) => (value.startsWith("2026-03-05") ? "March 5, 2026" : value),
+    formatDateTime: (value: string) =>
+      value.startsWith("2026-03-05") ? "March 5, 2026, 2:30 PM" : value,
+    formatDurationRange: () => "1:00:00",
+    formatDurationSeconds: (value: number) => `${value}s`,
+    formatNumber: (value: number) => String(value),
+    formatTimeOnly: (value: string) => value,
+  };
+});
 
 vi.mock("@dofek/format/units", () => ({}));
 
@@ -202,6 +206,7 @@ const mockStreamQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
 const mockPowerZonesQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
+const mockClimbingEntriesQuery = vi.fn();
 const mockRecomputeMutate = vi.fn();
 const mockRecomputeShouldFail = vi.fn(() => false);
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -238,6 +243,9 @@ vi.mock("../../lib/trpc", () => ({
         }),
       },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+    },
+    climbing: {
+      activityEntries: { useQuery: (...args: unknown[]) => mockClimbingEntriesQuery(...args) },
     },
     useUtils: () => ({
       activity: {
@@ -315,6 +323,7 @@ beforeEach(() => {
   mockHrZonesQuery.mockClear();
   mockPowerZonesQuery.mockClear();
   mockStrengthExercisesQuery.mockClear();
+  mockClimbingEntriesQuery.mockClear();
   mockRecomputeMutate.mockClear();
   mockRecomputeShouldFail.mockReset();
   mockRecomputeShouldFail.mockReturnValue(false);
@@ -333,6 +342,7 @@ beforeEach(() => {
   mockHrZonesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockPowerZonesQuery.mockReturnValue({ data: null, isLoading: false });
   mockStrengthExercisesQuery.mockReturnValue({ data: [], isLoading: false });
+  mockClimbingEntriesQuery.mockReturnValue({ data: [], isLoading: false });
 });
 
 describe("ActivityDetailScreen", () => {
@@ -540,6 +550,60 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Heart Rate")).toBeTruthy();
     const enabled = getQueryEnabledFlag(mockPowerZonesQuery.mock.calls[0]?.[1]);
     expect(enabled).toBe(false);
+  });
+
+  it("shows the climbs attached to a merged rock-climbing activity", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        activityType: "rock_climbing",
+        name: "Morning Rock Climb",
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockClimbingEntriesQuery.mockReturnValue({
+      data: [
+        {
+          id: "climb-v4",
+          climbType: "boulder",
+          gradeSystem: "v_scale",
+          grade: "V4",
+          sent: true,
+          attemptCount: 7,
+          ascentType: "Redpoint",
+          routeName: "Blue Circuit",
+          locationName: "Touchstone Pacific Pipe",
+          sourceName: "Kaya",
+        },
+        {
+          id: "climb-project",
+          climbType: "boulder",
+          gradeSystem: "v_scale",
+          grade: "V5",
+          sent: false,
+          attemptCount: 1,
+          ascentType: null,
+          routeName: "Project",
+          locationName: "Touchstone Pacific Pipe",
+          sourceName: "Kaya",
+        },
+      ],
+      isLoading: false,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(getQueryEnabledFlag(mockClimbingEntriesQuery.mock.calls[0]?.[1])).toBe(true);
+    expect(screen.getByText("Climbs")).toBeTruthy();
+    expect(screen.getByText("V4")).toBeTruthy();
+    expect(screen.getByText("Blue Circuit")).toBeTruthy();
+    expect(screen.getByText("Redpoint")).toBeTruthy();
+    expect(screen.getByText("Sent in 7 attempts")).toBeTruthy();
+    expect(screen.getByText("Project")).toBeTruthy();
+    expect(screen.getByText("Attempted 1 time")).toBeTruthy();
+    expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(2);
   });
 
   it("shows Apple Health upstream app names when subsource is present", async () => {

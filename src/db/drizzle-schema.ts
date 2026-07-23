@@ -5,6 +5,7 @@ import * as coreSchema from "./schema/core.ts";
 import * as enumSchema from "./schema/enums.ts";
 import * as eventSchema from "./schema/events.ts";
 import * as nutritionSchema from "./schema/nutrition.ts";
+import * as processingSchema from "./schema/processing.ts";
 import * as referenceSchema from "./schema/reference.ts";
 
 export const drizzleSchema = {
@@ -16,4 +17,5 @@ export const drizzleSchema = {
   ...clinicalSchema,
   ...accountSchema,
   ...eventSchema,
+  ...processingSchema,
 };

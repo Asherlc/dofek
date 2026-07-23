@@ -14,8 +14,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { OperationProgressBar } from "../../components/OperationProgressBar";
+import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
@@ -28,6 +28,7 @@ import {
 } from "../../lib/share-import";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
+import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { deleteDietarySamples, writeDietarySamples } from "../../modules/health-kit";
 import { colors } from "../../theme";
@@ -76,7 +77,7 @@ export default function ProvidersScreen() {
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
   const logs = trpc.sync.logs.useQuery({ limit: 50 });
-  const dataHealth = trpc.sync.dataHealth.useQuery();
+  const processingStatus = useProcessingStatus({});
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
@@ -561,7 +562,7 @@ export default function ProvidersScreen() {
         trpcUtils.sync.providers.invalidate(),
         trpcUtils.sync.providerStats.invalidate(),
         trpcUtils.sync.logs.invalidate({ limit: 50 }),
-        trpcUtils.sync.dataHealth.invalidate(),
+        trpcUtils.processing.status.invalidate(),
         trpcUtils.sync.activeSyncs.invalidate(),
         trpcUtils.sync.activeImports.invalidate(),
       ]).then(() => undefined),
@@ -674,10 +675,10 @@ export default function ProvidersScreen() {
       </View>
 
       {/* Data Sources */}
-      <DataReadinessBanner
-        data={dataHealth.data}
-        error={dataHealth.error}
-        loading={dataHealth.isLoading}
+      <ProcessingStatusWidget
+        data={processingStatus.data}
+        error={processingStatus.error}
+        loading={processingStatus.isLoading}
       />
       <Text style={styles.sectionTitle}>Data Sources</Text>
       <FileImportProviderCard
