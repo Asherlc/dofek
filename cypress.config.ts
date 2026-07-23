@@ -41,6 +41,7 @@ export default defineConfig({
           await sql`DELETE FROM fitness.session WHERE user_id = ${userId}`;
           await sql`DELETE FROM fitness.food_entry WHERE user_id = ${userId}`;
           await sql`DELETE FROM fitness.daily_metrics WHERE user_id = ${userId}`;
+          await sql`DELETE FROM fitness.activity WHERE user_id = ${userId}`;
           await sql`DELETE FROM fitness.user_settings WHERE user_id = ${userId}`;
           await sql`DELETE FROM fitness.provider WHERE user_id = ${userId}`;
           await sql`DELETE FROM fitness.user_profile WHERE id = ${userId}`;

@@ -106,10 +106,10 @@ rtk docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
 The failure branch captures container state and complete service logs before
 teardown. The success path also removes the exact isolated project.
 
-The current E2E topology has no Redpanda service and omits the server's
-metric-stream producer variables. Treat it as browser-only until
-[#1806](https://github.com/Asherlc/dofek/issues/1806) is fixed; a healthy server
-does not prove mobile activity saves can succeed.
+The E2E topology includes a health-checked Redpanda service and explicit
+metric-stream producer variables. Server startup connects the producer before
+opening the HTTP listener, and `activity-recording.cy.ts` verifies a recorded
+activity with sensor samples can be saved through the authenticated API.
 
 ## Report Format
 

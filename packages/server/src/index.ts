@@ -24,7 +24,10 @@ import {
 } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import express from "express";
-import type { MetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
+import {
+  getDefaultMetricStreamEventPublisher,
+  type MetricStreamEventPublisher,
+} from "../../../src/metric-stream/redpanda-producer.ts";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
@@ -346,11 +349,12 @@ export async function main() {
   if (!clickHouseUrl) {
     throw new Error("CLICKHOUSE_URL environment variable is required");
   }
+  const metricStreamPublisher = await getDefaultMetricStreamEventPublisher();
   const db = createDatabaseFromEnv();
   const clickHouseClient = createClickHouseClientFromEnv();
   await bootstrapClickHouseFromEnv(clickHouseClient);
   const sensorStore = new ClickHouseActivitySensorStore(clickHouseClient);
-  const app = createApp(db, sensorStore);
+  const app = createApp(db, sensorStore, { metricStreamPublisher });
 
   app.listen(PORT, () => {
     logger.info(`[server] API running at http://localhost:${PORT}`);
