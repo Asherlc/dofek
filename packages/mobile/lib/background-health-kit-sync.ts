@@ -6,10 +6,20 @@ import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";
 const DEBOUNCE_MS = 5000;
+const HEALTHKIT_DATABASE_INACCESSIBLE_CODE = "HEALTHKIT_DATABASE_INACCESSIBLE";
 
 let subscription: EventSubscription | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let syncing = false;
+
+function isHealthKitDatabaseInaccessible(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === HEALTHKIT_DATABASE_INACCESSIBLE_CODE
+  );
+}
 
 function startHealthKitSync(trpcClient: SyncTrpcClient, onSyncComplete?: () => void) {
   if (syncing) {
@@ -30,11 +40,10 @@ function startHealthKitSync(trpcClient: SyncTrpcClient, onSyncComplete?: () => v
     })
     .catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
-      // "Protected health data is inaccessible" fires when the device is
-      // locked — HealthKit encrypts data at rest. This is a known transient
-      // condition (the next foreground event will succeed), not an actionable
-      // error, so log it but don't send to Sentry.
-      if (message.includes("Protected health data is inaccessible")) {
+      // HealthKit encrypts data at rest while the device is locked. This is a
+      // known transient condition (the next foreground event will succeed),
+      // not an actionable error, so log it but don't send it to Sentry.
+      if (isHealthKitDatabaseInaccessible(error)) {
         logger.info(TAG, "Device locked, skipping sync");
         return;
       }
