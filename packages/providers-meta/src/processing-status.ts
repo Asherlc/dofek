@@ -67,8 +67,7 @@ export function processingStatusMessage(input: {
   }
 }
 
-export function processingPollInterval(status: ProcessingDisplayStatus): number | false {
+export function processingPollInterval(status: ProcessingDisplayStatus): number {
   if (status === "active" || status === "partial" || status === "waiting") return 3_000;
-  if (status === "delayed" || status === "ready") return 15_000;
-  return false;
+  return 15_000;
 }
