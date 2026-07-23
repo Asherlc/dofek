@@ -53,7 +53,7 @@ describe("ProcessingStatusWidget", () => {
   });
 
   it("stays quiet when ready unless always visible", () => {
-    const ready = { ...snapshot, overallStatus: "ready" as const };
+    const ready: ProcessingStatusSnapshot = { ...snapshot, overallStatus: "ready" };
     expect(render(<ProcessingStatusWidget data={ready} />).container.innerHTML).toBe("");
     render(<ProcessingStatusWidget data={ready} alwaysVisible />);
     expect(screen.getByText("Data is ready")).toBeTruthy();
@@ -62,6 +62,7 @@ describe("ProcessingStatusWidget", () => {
   it("shows progress and an accessible expanded timeline", () => {
     render(<ProcessingStatusWidget data={snapshot} contextLabel="Kaya" />);
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("60");
+    expect(screen.getByText("Updating your data").closest("section")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
     expect(screen.getByText("Receiving data")).toBeTruthy();
     expect(screen.getByText(/Completed/)).toBeTruthy();
@@ -70,6 +71,16 @@ describe("ProcessingStatusWidget", () => {
   it("surfaces the server error message", () => {
     render(<ProcessingStatusWidget error={new Error("Reconnect Kaya and try again.")} />);
     expect(screen.getByText("Reconnect Kaya and try again.")).toBeTruthy();
+    expect(screen.getByText("Processing status is unavailable").closest("section")).not.toBeNull();
+  });
+
+  it("renders an accessible loading state when no snapshot is available", () => {
+    render(<ProcessingStatusWidget loading alwaysVisible />);
+
+    expect(screen.getByText("Loading processing status…")).toBeTruthy();
+    expect(
+      screen.getByText("Loading processing status…").closest("section")?.getAttribute("aria-busy"),
+    ).toBe("true");
   });
 
   it("shows the most recent failure message", () => {

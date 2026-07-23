@@ -78,13 +78,26 @@ export function ProcessingStatusWidget({
   alwaysVisible = false,
 }: ProcessingStatusWidgetProps) {
   const [expanded, setExpanded] = useState(false);
-  if (loading && !data) return null;
+  if (loading && !data) {
+    return (
+      <section
+        className="w-full rounded-lg border border-l-4 border-l-blue-500 bg-white px-3 py-2.5 text-slate-950 shadow-sm"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <p className="text-sm font-semibold">Loading processing status…</p>
+      </section>
+    );
+  }
   if (error) {
     return (
-      <output className="block w-full rounded-lg border border-l-4 border-l-red-500 bg-white px-3 py-2.5 text-slate-950 shadow-sm">
+      <section
+        className="w-full rounded-lg border border-l-4 border-l-red-500 bg-white px-3 py-2.5 text-slate-950 shadow-sm"
+        aria-live="polite"
+      >
         <h2 className="text-sm font-semibold">Processing status is unavailable</h2>
         <p className="mt-0.5 text-xs text-slate-600">{error.message}</p>
-      </output>
+      </section>
     );
   }
   if (!data || (data.overallStatus === "ready" && !alwaysVisible)) return null;
@@ -99,11 +112,9 @@ export function ProcessingStatusWidget({
   const progress = progressValues.length > 0 ? Math.min(...progressValues) : null;
 
   return (
-    <output
-      className={`block w-full rounded-lg border border-l-4 bg-white px-3 py-2.5 text-slate-950 shadow-sm ${borderClassByStatus[data.overallStatus]}`}
-      aria-live={
-        data.overallStatus === "active" || data.overallStatus === "partial" ? "polite" : undefined
-      }
+    <section
+      className={`w-full rounded-lg border border-l-4 bg-white px-3 py-2.5 text-slate-950 shadow-sm ${borderClassByStatus[data.overallStatus]}`}
+      aria-live="polite"
     >
       {contextLabel ? (
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -153,6 +164,6 @@ export function ProcessingStatusWidget({
           )}
         </ol>
       ) : null}
-    </output>
+    </section>
   );
 }
