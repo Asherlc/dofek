@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -1367,6 +1370,67 @@ describe("processSyncJob", () => {
         authFailureReason: "refresh_token_revoked",
       }),
     );
+  });
+
+  it("records metrics without reporting returned provider outages to Sentry", async () => {
+    const outage = new ProviderServiceUnavailableError({
+      message: "zwift API service unavailable (503)",
+      providerId: "zwift",
+      statusCode: 503,
+      responseBody: "Service Unavailable",
+    });
+    const provider = createMockProvider({
+      id: "zwift",
+      name: "Zwift",
+      sync: vi.fn().mockResolvedValue({
+        provider: "zwift",
+        recordsSynced: 0,
+        errors: [{ message: `activity: ${outage.message}`, cause: outage }],
+        duration: 50,
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+    });
+  });
+
+  it("records metrics without reporting thrown provider outages to Sentry", async () => {
+    const outage = new ProviderServiceUnavailableError({
+      message: "zwift API service unavailable (503)",
+      providerId: "zwift",
+      statusCode: 503,
+      responseBody: "Service Unavailable",
+    });
+    const provider = createMockProvider({
+      id: "zwift",
+      name: "Zwift",
+      sync: vi.fn().mockRejectedValue(outage),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+    });
   });
 
   it("calls ensureProvider for each synced provider", async () => {

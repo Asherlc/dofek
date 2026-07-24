@@ -15918,3 +15918,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   temporarily for safe staged deployment compatibility. Drop them and their
   compatibility-view projections after the application change has been
   deployed everywhere.
+
+## 2026-07-24 — Zwift Activity Sync Received a Transient 503
+
+- **Status:** Recovered without intervention; alert-noise fix validated locally
+  and deployment pending. Direct Sentry event inspection is pending a
+  read-scoped token.
+- **Symptoms:** [Sentry issue 7631516387](https://east-bay-software.sentry.io/issues/7631516387/)
+  alerted at `2026-07-24T19:31:06.309Z`. The production worker reported one
+  Zwift activity-sync failure at `19:30:02.116Z`.
+- **User impact:** The affected scheduled sync did not refresh Zwift activity
+  data. The next scheduled Zwift sync started at `20:00:00.591Z` without a
+  matching error, so the delay was limited to one sync interval.
+- **Evidence:** The exact failing application step was the Zwift activity-list
+  request. The first fatal log line was
+  `Zwift sync error: activity: zwift API service unavailable (503)`, followed by
+  the upstream HTML `503 - Service Unavailable` response. The provider HTTP
+  wrapper represents 502, 503, and 504 responses as
+  `ProviderServiceUnavailableError`; before the fix, the sync worker reported
+  returned provider errors to Sentry with the `provider=zwift` tag. RFC 9110
+  defines 503 as a server temporarily unable to handle the request and permits
+  a `Retry-After` response header
+  ([HTTP Semantics, section 15.6.4](https://www.rfc-editor.org/rfc/rfc9110.html#name-503-service-unavailable)).
+- **Root cause:** Zwift's API relay temporarily returned HTTP 503 for the
+  activity request. Production Dofek, Postgres, ClickHouse, Redis, and the
+  worker remained healthy.
+- **Fix / mitigation:** Typed `ProviderServiceUnavailableError` responses no
+  longer create Sentry events. They continue to emit provider-scoped sync
+  operation and error metrics, write failed sync and processing status, and log
+  the outage for operational diagnosis. The next scheduled sync remains the
+  recovery path; no retry behavior changed.
+- **Validation:** Regression tests for both returned and thrown provider-outage
+  errors failed before the fix because each called Sentry, then passed after the
+  reporting change. Both paths still increment `syncOperationsTotal` with
+  `status=error` and `syncErrorsTotal` for the affected provider. All 51 focused
+  sync-job tests pass.
+- **Remaining risk / follow-up:** Deploy the fix and confirm future provider
+  502/503/504 outages appear in metrics and sync history without opening Sentry
+  issues. Add `SENTRY_READ_AUTH_TOKEN` to Infisical as documented in
+  [`docs/sentry.md`](sentry.md) so unexpected alerts can be confirmed directly
+  from their event payload and stack trace.
