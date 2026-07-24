@@ -189,6 +189,7 @@ export default function ProvidersScreen() {
     async (jobId: string, providerIds: string[]) => {
       if (pollingJobIds.current.has(jobId)) return;
       pollingJobIds.current.add(jobId);
+      const activeProviderIds = new Set(providerIds);
 
       const cleanup = () => {
         pollingJobIds.current.delete(jobId);
@@ -208,6 +209,7 @@ export default function ProvidersScreen() {
       };
 
       const poll = async (): Promise<void> => {
+        if (!isMounted.current) return;
         let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
         try {
           status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
@@ -218,18 +220,32 @@ export default function ProvidersScreen() {
             error instanceof Error ? error.message : "Sync status is temporarily unavailable.";
           setSyncProgress((previous) => {
             const next = { ...previous };
-            for (const providerId of providerIds) {
+            for (const providerId of activeProviderIds) {
               next[providerId] = { ...next[providerId], message };
             }
             return next;
           });
           await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (!isMounted.current) return;
           return poll();
         }
 
+        if (!isMounted.current) return;
         if (!status) {
           cleanup();
           return;
+        }
+
+        for (const providerId of providerIds) {
+          const providerStatus = status.providers[providerId];
+          if (
+            providerStatus &&
+            (providerStatus.status === "running" || providerStatus.status === "pending")
+          ) {
+            activeProviderIds.add(providerId);
+          } else {
+            activeProviderIds.delete(providerId);
+          }
         }
 
         // Update per-provider syncing state and progress (only for this job's providers)
@@ -277,6 +293,7 @@ export default function ProvidersScreen() {
         }
 
         await new Promise((r) => setTimeout(r, 1000));
+        if (!isMounted.current) return;
         return poll();
       };
 
