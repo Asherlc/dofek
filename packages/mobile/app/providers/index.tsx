@@ -213,8 +213,18 @@ export default function ProvidersScreen() {
           status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
         } catch (error: unknown) {
           captureException(error, { context: "sync-status-poll" });
-          cleanup();
-          return;
+          if (!isMounted.current) return;
+          const message =
+            error instanceof Error ? error.message : "Sync status is temporarily unavailable.";
+          setSyncProgress((previous) => {
+            const next = { ...previous };
+            for (const providerId of providerIds) {
+              next[providerId] = { ...next[providerId], message };
+            }
+            return next;
+          });
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          return poll();
         }
 
         if (!status) {
@@ -289,6 +299,18 @@ export default function ProvidersScreen() {
         for (const [pid, providerStatus] of Object.entries(activeJob.providers)) {
           if (providerStatus.status === "running" || providerStatus.status === "pending") {
             next.add(pid);
+          }
+        }
+        return next;
+      });
+      setSyncProgress((previous) => {
+        const next = { ...previous };
+        for (const [providerId, providerStatus] of Object.entries(activeJob.providers)) {
+          if (providerStatus.status === "running" || providerStatus.status === "pending") {
+            next[providerId] = {
+              percentage: activeJob.percentage,
+              message: providerStatus.message,
+            };
           }
         }
         return next;
@@ -688,6 +710,14 @@ export default function ProvidersScreen() {
         loading={processingStatus.isLoading}
       />
       <Text style={styles.sectionTitle}>Data Sources</Text>
+      {activeSyncs.error ? (
+        <QueryStatePanel
+          variant="error"
+          title="Could not load sync progress"
+          message={getQueryErrorMessage(activeSyncs.error, "Unable to load sync progress.")}
+          minHeight={96}
+        />
+      ) : null}
       <FileImportProviderCard
         provider={{
           ...appleHealthProvider,

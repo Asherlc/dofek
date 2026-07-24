@@ -404,7 +404,11 @@ function setupDefaultMocks() {
   mockStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
-  mockActiveSyncsQuery.mockReturnValue({ data: [] });
+  mockActiveSyncsQuery.mockReturnValue({
+    data: [],
+    isLoading: false,
+    error: null,
+  });
   mockActiveImportsQuery.mockReturnValue({ data: [], error: null });
 }
 
@@ -1086,6 +1090,73 @@ describe("ProvidersScreen", () => {
     await renderProvidersScreen();
 
     expect(screen.getByText("Logs failed")).toBeTruthy();
+  });
+
+  it("shows the active sync server error message", async () => {
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: new Error("Active syncs are temporarily unavailable. Please try again."),
+    });
+
+    await renderProvidersScreen();
+
+    expect(
+      screen.getByText("Active syncs are temporarily unavailable. Please try again."),
+    ).toBeTruthy();
+  });
+
+  it("keeps provider progress visible while sync status retries", async () => {
+    vi.useFakeTimers();
+    try {
+      mockActiveSyncsQuery.mockReturnValue({
+        data: [
+          {
+            jobId: "wahoo:active-job",
+            status: "running",
+            percentage: 40,
+            providers: {
+              wahoo: { status: "running", message: "Downloading activities..." },
+            },
+          },
+        ],
+        isLoading: false,
+        error: null,
+      });
+      mockSyncStatusFetch
+        .mockRejectedValueOnce(
+          new Error("Sync status is temporarily unavailable. Please try again."),
+        )
+        .mockResolvedValueOnce({
+          status: "running",
+          percentage: 60,
+          providers: {
+            wahoo: { status: "running", message: "Fetching activities..." },
+          },
+        })
+        .mockImplementationOnce(() => new Promise(() => undefined));
+
+      const rendered = await renderProvidersScreen();
+      await act(async () => Promise.resolve());
+
+      const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+      expect(
+        wahooCard.getByText("Sync status is temporarily unavailable. Please try again."),
+      ).toBeTruthy();
+      expect(
+        screen.getByTestId("provider-card-wahoo-progress-fill").getAttribute("data-style"),
+      ).toContain('"width":"40%"');
+
+      await act(() => vi.advanceTimersByTimeAsync(1000));
+
+      expect(wahooCard.getByText("Fetching activities...")).toBeTruthy();
+      expect(
+        screen.getByTestId("provider-card-wahoo-progress-fill").getAttribute("data-style"),
+      ).toContain('"width":"60%"');
+      rendered.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("passes sinceDays: 7 when Sync button is clicked", async () => {
