@@ -46,7 +46,8 @@ contains only the fields already required by signup completion:
 
 `TokenSet.expiresAt` is serialized as JSON and restored as a `Date` at the runtime boundary.
 Malformed or schema-invalid Redis values are deleted and treated as missing. Parse failures are
-reported to Sentry without recording the serialized value, entry, or credentials.
+reported to Sentry as sanitized constant errors without recording the original parser error,
+serialized value, entry, or credentials.
 
 ## Request Flow
 
