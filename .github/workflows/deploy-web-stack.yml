@@ -336,11 +336,24 @@ jobs:
           docker system df || true
 
       - name: Pull deploy images
+        id: pull_images
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+
+          sentry_release="$(
+            docker image inspect "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+              --format '{{range .Config.Env}}{{println .}}{{end}}' \
+              | sed -n 's/^SENTRY_RELEASE=//p' \
+              | head -n 1
+          )"
+          if [ -z "$sentry_release" ]; then
+            echo "::error::Image ghcr.io/asherlc/dofek:${IMAGE_TAG} does not declare SENTRY_RELEASE"
+            exit 1
+          fi
+          echo "sentry_release=$sentry_release" >> "$GITHUB_OUTPUT"
 
           server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
@@ -876,6 +889,18 @@ jobs:
               sleep 10
             done
           done
+
+      - name: Record Sentry production release
+        if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
+        uses: getsentry/action-release@ff07929a6537bac57790c3451cf4d364aca38528 # v3.7.0
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: east-bay-software
+        with:
+          environment: production
+          projects: dofek-web dofek-server
+          release: ${{ steps.pull_images.outputs.sentry_release }}
+          set_commits: skip
 
       - name: Report quiesced ClickHouse consumers
         if: failure() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.deploy_stack_full.conclusion == 'skipped'
