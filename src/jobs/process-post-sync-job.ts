@@ -48,16 +48,18 @@ export async function processPostSyncJob(
 
   await updatePostSyncProgress(job, 0, "Starting post-sync refit...");
   logger.info(`[post-sync] Running post-sync refit for user ${job.data.userId}`);
-  let completedWithErrors = false;
 
   try {
     await updatePostSyncProgress(job, 20, "Refreshing body measurements...");
     await refreshBodyMeasurements();
     logger.info("[post-sync] Body measurement read model refreshed.");
-  } catch (err) {
-    logger.error(`[post-sync] Failed to refresh body measurement read model: ${err}`);
-    Sentry.captureException(err, { tags: { postSyncStep: "refreshBodyMeasurements" } });
-    throw err;
+  } catch (error) {
+    logger.error(`[post-sync] Failed to refresh body measurement read model: ${error}`);
+    Sentry.captureException(error, {
+      tags: { postSyncStep: "refreshBodyMeasurements" },
+    });
+    await updatePostSyncProgress(job, 20, "Body measurement refresh failed; retry required.");
+    throw error;
   }
 
   try {
@@ -67,10 +69,15 @@ export async function processPostSyncJob(
     const sensorStore = getSensorStore();
     await refitAllParams(db, job.data.userId, sensorStore);
     logger.info("[post-sync] Personalized parameters updated.");
-  } catch (err) {
-    completedWithErrors = true;
-    logger.error(`[post-sync] Failed to refit parameters: ${err}`);
-    Sentry.captureException(err, { tags: { postSyncStep: "refitParams" } });
+  } catch (error) {
+    logger.error(`[post-sync] Failed to refit parameters: ${error}`);
+    Sentry.captureException(error, { tags: { postSyncStep: "refitParams" } });
+    await updatePostSyncProgress(
+      job,
+      45,
+      "Personalized parameter refit failed; retry required.",
+    );
+    throw error;
   }
 
   // Invalidate user-specific cache after personalized parameters are refitted.
@@ -78,16 +85,15 @@ export async function processPostSyncJob(
     await updatePostSyncProgress(job, 75, "Invalidating user cache...");
     await queryCache.invalidateByPrefix(`${job.data.userId}:`);
     logger.info(`[post-sync] Cache invalidated for user ${job.data.userId}`);
-  } catch (err) {
-    completedWithErrors = true;
-    logger.error(`[post-sync] Failed to invalidate cache for user ${job.data.userId}: ${err}`);
-    Sentry.captureException(err, { tags: { postSyncStep: "invalidateUserCache" } });
+  } catch (error) {
+    logger.error(`[post-sync] Failed to invalidate cache for user ${job.data.userId}: ${error}`);
+    Sentry.captureException(error, {
+      tags: { postSyncStep: "invalidateUserCache" },
+    });
+    await updatePostSyncProgress(job, 75, "User cache invalidation failed; retry required.");
+    throw error;
   }
 
   logger.info(`[post-sync] Post-sync refit complete for user ${job.data.userId}`);
-  await updatePostSyncProgress(
-    job,
-    100,
-    completedWithErrors ? "Post-sync refit completed with errors." : "Post-sync refit complete.",
-  );
+  await updatePostSyncProgress(job, 100, "Post-sync refit complete.");
 }
