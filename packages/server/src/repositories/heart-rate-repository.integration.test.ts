@@ -149,6 +149,14 @@ describe("HeartRateRepository (integration)", () => {
     expect(byProvider.apple_health.samples).toEqual([
       { time: "2026-04-12T10:00:00.000Z", heartRate: 70 },
     ]);
+    expect(byProvider.apple_health).toEqual(
+      expect.objectContaining({
+        sampleCount: 1,
+        minHeartRate: 70,
+        avgHeartRate: 70,
+        maxHeartRate: 70,
+      }),
+    );
 
     // whoop_ble: 10:00, 10:01, and the version-deduped 11:00 (99, not 50);
     // deleted / other-day / zero / other-channel rows excluded
@@ -157,5 +165,13 @@ describe("HeartRateRepository (integration)", () => {
       { time: "2026-04-12T10:01:00.000Z", heartRate: 74 },
       { time: "2026-04-12T11:00:00.000Z", heartRate: 99 },
     ]);
+    expect(byProvider.whoop_ble).toEqual(
+      expect.objectContaining({
+        sampleCount: 3,
+        minHeartRate: 72,
+        avgHeartRate: 82,
+        maxHeartRate: 99,
+      }),
+    );
   });
 });

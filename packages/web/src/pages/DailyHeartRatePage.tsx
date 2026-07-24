@@ -2,6 +2,7 @@ import { formatDateYmd, formatTimeOnly } from "@dofek/format/format";
 import { useMemo, useState } from "react";
 import type { HeartRateSourceSeries } from "../../../server/src/routers/heart-rate.ts";
 import { DofekChart } from "../components/DofekChart.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import {
   dofekAxis,
   dofekGrid,
@@ -17,9 +18,11 @@ export function DailyHeartRatePage() {
   const [date, setDate] = useState(() => formatDateYmd());
 
   const query = trpc.heartRate.dailyBySource.useQuery({ date });
-  const sources = query.data ?? [];
-
-  const option = useMemo(() => buildChartOption(sources), [sources]);
+  const sources = query.data;
+  const option = useMemo(
+    () => (sources !== undefined && sources.length > 0 ? buildChartOption(sources) : undefined),
+    [sources],
+  );
 
   return (
     <div className="space-y-6">
@@ -37,17 +40,21 @@ export function DailyHeartRatePage() {
       </div>
 
       <div className="card p-4">
-        <DofekChart
-          option={option}
-          loading={query.isLoading}
-          empty={sources.length === 0}
-          height={400}
-          emptyMessage="No heart rate data for this day"
-          timeRangeMode="data"
-        />
+        {!option && query.isLoading ? (
+          <QueryStatePanel variant="loading" height={400} />
+        ) : !option && query.error ? (
+          <QueryStatePanel error={query.error} height={400} />
+        ) : !option ? (
+          <QueryStatePanel variant="empty" message="No heart rate data for this day" height={400} />
+        ) : (
+          <DofekChart option={option} height={400} timeRangeMode="data" />
+        )}
       </div>
 
-      {sources.length > 0 && <SourceSummaryTable sources={sources} />}
+      {option && query.error ? <QueryStatePanel error={query.error} height={72} /> : null}
+      {sources !== undefined && sources.length > 0 ? (
+        <SourceSummaryTable sources={sources} />
+      ) : null}
     </div>
   );
 }
@@ -102,32 +109,23 @@ function SourceSummaryTable({ sources }: { sources: HeartRateSourceSeries[] }) {
           </tr>
         </thead>
         <tbody>
-          {sources.map((source, index) => {
-            const heartRates = source.samples.map((sample) => sample.heartRate);
-            const min = Math.min(...heartRates);
-            const avg = Math.round(
-              heartRates.reduce((sum, value) => sum + value, 0) / heartRates.length,
-            );
-            const max = Math.max(...heartRates);
-
-            return (
-              <tr key={source.providerId} className="border-b border-border last:border-0">
-                <td className="px-4 py-2.5 font-medium">
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="inline-block w-2.5 h-2.5 rounded-full"
-                      style={{ backgroundColor: seriesColor(index) }}
-                    />
-                    {source.providerLabel}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5 tabular-nums">{source.samples.length}</td>
-                <td className="px-4 py-2.5 tabular-nums">{min} bpm</td>
-                <td className="px-4 py-2.5 tabular-nums">{avg} bpm</td>
-                <td className="px-4 py-2.5 tabular-nums">{max} bpm</td>
-              </tr>
-            );
-          })}
+          {sources.map((source, index) => (
+            <tr key={source.providerId} className="border-b border-border last:border-0">
+              <td className="px-4 py-2.5 font-medium">
+                <span className="flex items-center gap-2">
+                  <span
+                    className="inline-block w-2.5 h-2.5 rounded-full"
+                    style={{ backgroundColor: seriesColor(index) }}
+                  />
+                  {source.providerLabel}
+                </span>
+              </td>
+              <td className="px-4 py-2.5 tabular-nums">{source.sampleCount}</td>
+              <td className="px-4 py-2.5 tabular-nums">{source.minHeartRate} bpm</td>
+              <td className="px-4 py-2.5 tabular-nums">{source.avgHeartRate} bpm</td>
+              <td className="px-4 py-2.5 tabular-nums">{source.maxHeartRate} bpm</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
