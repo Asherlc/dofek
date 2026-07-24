@@ -12,6 +12,7 @@ const {
   mockGetSessionIdFromRequest,
   mockValidateSession,
   mockPersistProviderConnection,
+  mockIssuePendingEmailSignup,
 } = vi.hoisted(() => ({
   mockRevokeToken: vi.fn(),
   mockLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -21,6 +22,7 @@ const {
   mockGetSessionIdFromRequest: vi.fn(),
   mockValidateSession: vi.fn(),
   mockPersistProviderConnection: vi.fn(),
+  mockIssuePendingEmailSignup: vi.fn(),
 }));
 
 vi.mock("dofek/auth/oauth", () => ({
@@ -85,10 +87,15 @@ vi.mock("./shared.ts", () => ({
   oauthSuccessHtml: vi.fn(() => "<html>success</html>"),
   persistProviderConnection: (...args: unknown[]) => mockPersistProviderConnection(...args),
   sanitizeReturnTo: vi.fn(),
-  completeSignupHtml: vi.fn(),
-  storePendingEmailSignup: vi.fn(),
+  completeSignupHtml: vi.fn(
+    (providerName: string, token: string) => `<html>${providerName}:${token}</html>`,
+  ),
+  getPendingEmailSignupStoreRef: vi.fn(() => ({
+    issue: mockIssuePendingEmailSignup,
+  })),
 }));
 
+import { MissingEmailForSignupError } from "../../auth/account-linking.ts";
 import { handleOAuth2Callback } from "./data-provider-callback.ts";
 
 /** Type-safe partial mock helper — avoids banned `as` assertions. */
@@ -357,5 +364,46 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       expect.stringContaining("does not match authenticated OAuth state"),
       expect.anything(),
     );
+  });
+
+  it("awaits pending signup issuance and renders the issued token when email is missing", async () => {
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "wahoo",
+      codeVerifier: undefined,
+      intent: "login",
+      linkUserId: undefined,
+      userId: undefined,
+      returnTo: "/dashboard",
+    });
+    const mockGetUserIdentity = vi.fn().mockResolvedValue({
+      providerAccountId: "wahoo-account-without-email",
+      email: null,
+      name: "Wahoo User",
+    });
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authSetup: () => ({
+          oauthConfig: { clientId: "test-id", redirectUri: "https://dofek.example/callback" },
+          exchangeCode: mockExchangeCode,
+          getUserIdentity: mockGetUserIdentity,
+        }),
+      },
+    ]);
+    mockResolveOrCreateUser.mockRejectedValue(new MissingEmailForSignupError());
+    mockIssuePendingEmailSignup.mockResolvedValue("issued-pending-token");
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockIssuePendingEmailSignup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "wahoo",
+        providerName: "Wahoo",
+        returnTo: "/dashboard",
+      }),
+    );
+    expect(res.send).toHaveBeenCalledWith("<html>Wahoo:issued-pending-token</html>");
   });
 });
