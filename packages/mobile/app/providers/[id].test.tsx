@@ -156,11 +156,16 @@ vi.mock("react-native", () => ({
 }));
 
 const mockBack = vi.fn();
+const mockDismissTo = vi.fn();
 const mockPush = vi.fn();
 const mockUseLocalSearchParams = vi.fn().mockReturnValue({ id: "wahoo" });
 
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ back: mockBack, push: mockPush, replace: vi.fn() }),
+  useRouter: () => ({
+    back: mockBack,
+    dismissTo: mockDismissTo,
+    push: mockPush,
+  }),
   useLocalSearchParams: (...args: unknown[]) => mockUseLocalSearchParams(...args),
 }));
 
@@ -219,6 +224,7 @@ const mockLogsQuery = vi.fn();
 const mockSyncMutateAsync = vi.fn();
 const mockDisconnectMutateAsync = vi.fn();
 const mockDeleteAllDataMutateAsync = vi.fn();
+const mockDeletionStatusQuery = vi.fn().mockReturnValue({ data: undefined, error: null });
 const mockInvalidateProviders = vi.fn();
 const mockInvalidateProviderStats = vi.fn();
 const mockInvalidateDataHealth = vi.fn();
@@ -265,7 +271,7 @@ vi.mock("../../lib/trpc", () => ({
       deleteAllData: {
         useMutation: () => ({ mutateAsync: mockDeleteAllDataMutateAsync, isPending: false }),
       },
-      deletionStatus: { useQuery: () => ({ data: undefined, error: null }) },
+      deletionStatus: { useQuery: (...args: unknown[]) => mockDeletionStatusQuery(...args) },
     },
     settings: {
       get: { useQuery: (...args: unknown[]) => mockSettingsGetQuery(...args) },
@@ -393,11 +399,13 @@ describe("ProviderDetailScreen", () => {
         ),
     );
     mockBack.mockReset();
+    mockDismissTo.mockReset();
     mockPush.mockReset();
     mockUseLocalSearchParams.mockReturnValue({ id: "wahoo" });
     mockSyncMutateAsync.mockReset();
     mockDataHealthQuery.mockReset();
     mockDisconnectMutateAsync.mockReset();
+    mockDeletionStatusQuery.mockClear();
     mockInvalidateProviders.mockReset();
     mockInvalidateProviderStats.mockReset();
     mockInvalidateDataHealth.mockReset();
@@ -417,6 +425,55 @@ describe("ProviderDetailScreen", () => {
     mockAlertFn.mockReset();
     mockUseRefresh.mockClear();
     setupDefaultMocks();
+  });
+
+  describe("Unknown provider", () => {
+    it("renders a not-found state without loading provider details", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "does-not-exist" });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Provider not found")).toBeTruthy();
+      expect(
+        screen.getByText("This provider is unavailable. Return to Data Sources to choose another."),
+      ).toBeTruthy();
+      expect(screen.queryByText("Does Not Exist")).toBeNull();
+      expect(screen.queryByText("Sync History")).toBeNull();
+      expect(screen.queryByText("Records")).toBeNull();
+      expect(mockProviderStatsQuery).not.toHaveBeenCalled();
+      expect(mockDataHealthQuery).not.toHaveBeenCalled();
+      expect(mockAvailableDataTypesQuery).not.toHaveBeenCalled();
+      expect(mockRecordsQuery).not.toHaveBeenCalled();
+      expect(mockLogsQuery).not.toHaveBeenCalled();
+      expect(mockDeletionStatusQuery).not.toHaveBeenCalled();
+      expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+      expect(mockDisconnectMutateAsync).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Back to Data Sources" }));
+
+      expect(mockDismissTo).toHaveBeenCalledWith("/providers");
+    });
+
+    it("shows the provider inventory error without loading provider details", async () => {
+      mockProvidersQuery.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        error: new Error("Provider inventory is temporarily unavailable"),
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Could not load provider")).toBeTruthy();
+      expect(screen.getByText("Provider inventory is temporarily unavailable")).toBeTruthy();
+      expect(mockProviderStatsQuery).not.toHaveBeenCalled();
+      expect(mockDataHealthQuery).not.toHaveBeenCalled();
+      expect(mockAvailableDataTypesQuery).not.toHaveBeenCalled();
+      expect(mockRecordsQuery).not.toHaveBeenCalled();
+      expect(mockLogsQuery).not.toHaveBeenCalled();
+      expect(mockDeletionStatusQuery).not.toHaveBeenCalled();
+    });
   });
 
   describe("Actions", () => {
