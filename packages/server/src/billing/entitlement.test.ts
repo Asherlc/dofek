@@ -102,4 +102,15 @@ describe("resolveAccessWindow", () => {
       }),
     ).toThrow(RangeError);
   });
+
+  it("rejects invalid signup timestamps for limited access", () => {
+    expect(() =>
+      resolveAccessWindow({
+        userCreatedAt: "not-a-timestamp",
+        timezone: "UTC",
+        paidGrantReason: null,
+        stripeSubscriptionStatus: null,
+      }),
+    ).toThrow("Invalid user creation timestamp: not-a-timestamp");
+  });
 });
