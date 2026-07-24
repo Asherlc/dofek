@@ -43,14 +43,20 @@ describe("PersonalizationPanel", () => {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
       readinessWeights: { hrv: 0.4, restingHr: 0.2, sleep: 0.3, respiratoryRate: 0.1 },
       sleepTarget: { minutes: 480 },
-      stressThresholds: { hrvThresholds: [40, 50, 60] },
+      stressThresholds: {
+        hrvThresholds: [-2, -1.25, -0.5],
+        rhrThresholds: [2, 1.25, 0.5],
+      },
       trainingImpulseConstants: { genderFactor: 1.0, exponent: 1.9 },
     },
     defaults: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
       readinessWeights: { hrv: 0.3, restingHr: 0.2, sleep: 0.3, respiratoryRate: 0.2 },
       sleepTarget: { minutes: 480 },
-      stressThresholds: { hrvThresholds: [35, 45, 55] },
+      stressThresholds: {
+        hrvThresholds: [-2, -1.5, -1],
+        rhrThresholds: [2, 1.5, 1],
+      },
       trainingImpulseConstants: { genderFactor: 1.0, exponent: 1.9 },
     },
   };
@@ -96,6 +102,51 @@ describe("PersonalizationPanel", () => {
     // Use getAllByText because it appears both in Value and in Default value footer
     expect(screen.getAllByText(/Fitness: 42d, Fatigue: 7d/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Learned").length).toBeGreaterThan(0);
+  });
+
+  it("renders personalized stress thresholds as deviations from baseline", () => {
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
+      data: mockData,
+      isLoading: false,
+    });
+
+    render(<PersonalizationPanel />);
+
+    expect(
+      screen.getByText(
+        "How far each threshold is from your usual baseline (in standard deviations)",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Heart Rate Variability: -2, -1.25, -0.5 · Resting Heart Rate: 2, 1.25, 0.5",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/\bms\b/)).toBeNull();
+  });
+
+  it("renders default stress thresholds without rounding away precision", () => {
+    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
+      data: {
+        ...mockData,
+        isPersonalized: false,
+        effective: {
+          ...mockData.effective,
+          stressThresholds: mockData.defaults.stressThresholds,
+        },
+        parameters: {
+          ...mockData.parameters,
+          stressThresholds: null,
+        },
+      },
+      isLoading: false,
+    });
+
+    render(<PersonalizationPanel />);
+
+    expect(
+      screen.getByText("Heart Rate Variability: -2, -1.5, -1 · Resting Heart Rate: 2, 1.5, 1"),
+    ).toBeTruthy();
   });
 
   it("shows refit button and handles click", () => {

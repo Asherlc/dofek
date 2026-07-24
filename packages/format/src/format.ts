@@ -278,6 +278,10 @@ export type FormattedMeasurementFormatter = (value: NullableNumber) => Formatted
 const numberFormatters = new Map<string, Intl.NumberFormat>();
 const unitFormatters = new Map<string, Intl.NumberFormat>();
 const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+const standardDeviationFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+  useGrouping: false,
+});
 const dateOnlyPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 const SUPPORTED_INTL_UNITS = new Set(["gram", "percent", "millisecond"]);
 
@@ -482,6 +486,12 @@ export function formatHRV(value: NullableNumber): string {
 /** Format heart rate variability display values with value and unit separated for UI styling. */
 export const formatHRVMeasurement: FormattedMeasurementFormatter = (value) =>
   formatMetricMeasurement(value, 0, "ms");
+
+/** Format a z-score as standard deviations from baseline, preserving its meaningful precision. */
+export function formatStandardDeviation(value: NullableNumber): string {
+  if (value == null || !Number.isFinite(value)) return "--";
+  return standardDeviationFormatter.format(value);
+}
 
 /** Format intensity display values with 0 decimals. */
 export function formatIntensity(value: NullableNumber): string {

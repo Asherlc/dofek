@@ -1,9 +1,8 @@
 import {
   formatDateMedium,
   formatDurationMinutes,
-  formatHRV,
   formatIntensity,
-  formatNumber,
+  formatStandardDeviation,
 } from "@dofek/format/format";
 import { trpc } from "../lib/trpc.ts";
 
@@ -22,7 +21,7 @@ const PARAM_LABELS: Record<string, { label: string; description: string }> = {
   },
   stressThresholds: {
     label: "Stress Sensitivity",
-    description: "How your heart rate variability and resting heart rate map to stress levels",
+    description: "How far each threshold is from your usual baseline (in standard deviations)",
   },
   trainingImpulseConstants: {
     label: "Heart Rate Effort Model",
@@ -136,7 +135,7 @@ export function PersonalizationPanel() {
             hrvThresholds: [number, number, number];
             rhrThresholds: [number, number, number];
           }) =>
-            `Heart Rate Variability: ${v.hrvThresholds.map(formatHRV).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map((t) => formatNumber(t)).join(", ")}`
+            `Heart Rate Variability: ${v.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map(formatStandardDeviation).join(", ")}`
           }
           renderQuality={
             data.parameters.stressThresholds
