@@ -13,6 +13,7 @@ const accessWindowRowSchema = z.object({
 export async function getAccessWindowForUser(
   db: Pick<Database, "execute">,
   userId: string,
+  timezone: string,
 ): Promise<AccessWindow> {
   const rows = await executeWithSchema(
     db,
@@ -30,6 +31,7 @@ export async function getAccessWindowForUser(
   if (!row) throw new Error("Authenticated user profile not found");
   return resolveAccessWindow({
     userCreatedAt: row.created_at,
+    timezone,
     paidGrantReason: row.paid_grant_reason,
     stripeSubscriptionStatus: row.stripe_subscription_status,
   });

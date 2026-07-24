@@ -39,6 +39,7 @@ export const billingRouter = router({
 
     const access = resolveAccessWindow({
       userCreatedAt: row.created_at,
+      timezone: ctx.timezone,
       paidGrantReason: row.paid_grant_reason,
       stripeSubscriptionStatus: row.stripe_subscription_status,
     });

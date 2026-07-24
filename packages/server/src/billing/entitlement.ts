@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { type SQL, sql } from "drizzle-orm";
 
 const ACCESS_GRANTING_STRIPE_STATUSES = new Set(["active", "trialing"]);
@@ -14,12 +15,21 @@ export type AccessWindow =
 
 export interface ResolveAccessWindowInput {
   userCreatedAt: string;
+  timezone: string;
   paidGrantReason: string | null;
   stripeSubscriptionStatus: string | null;
 }
 
 function toDateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+function addCalendarDays(date: string, days: number): string {
+  const [yearText, monthText, dayText] = date.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  return toDateOnly(new Date(Date.UTC(year, month - 1, day + days)));
 }
 
 /**
@@ -45,18 +55,16 @@ export function resolveAccessWindow(input: ResolveAccessWindowInput): AccessWind
     return { kind: "full", paid: true, reason: "stripe_subscription" };
   }
 
-  const start = new Date(input.userCreatedAt);
-  const startUtcMidnight = new Date(
-    Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
-  );
-  const endExclusive = new Date(startUtcMidnight);
-  endExclusive.setUTCDate(endExclusive.getUTCDate() + 7);
+  const startDate = formatDateYmdInTimeZone(input.userCreatedAt, input.timezone);
+  if (startDate === "--") {
+    throw new RangeError(`Invalid user creation timestamp: ${input.userCreatedAt}`);
+  }
 
   return {
     kind: "limited",
     paid: false,
     reason: "free_signup_week",
-    startDate: toDateOnly(startUtcMidnight),
-    endDateExclusive: toDateOnly(endExclusive),
+    startDate,
+    endDateExclusive: addCalendarDays(startDate, 7),
   };
 }

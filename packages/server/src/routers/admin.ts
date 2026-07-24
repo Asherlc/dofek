@@ -331,6 +331,7 @@ export const adminRouter = router({
     const billing = billingRows[0] ?? null;
     const access = resolveAccessWindow({
       userCreatedAt: profile.created_at,
+      timezone: ctx.timezone,
       paidGrantReason: billing?.paid_grant_reason ?? null,
       stripeSubscriptionStatus: billing?.stripe_subscription_status ?? null,
     });

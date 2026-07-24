@@ -68,12 +68,13 @@ const createCaller = createTestCallerFactory(adminRouter);
 function makeCaller(
   execute: ReturnType<typeof vi.fn>,
   sensorQuery = vi.fn().mockResolvedValue([]),
+  timezone = "UTC",
 ) {
   return createCaller({
     db: { execute },
     sensorStore: { query: sensorQuery },
     userId: "admin-1",
-    timezone: "UTC",
+    timezone,
   });
 }
 
@@ -250,8 +251,8 @@ describe("adminRouter", () => {
           email: "test@test.com",
           birth_date: null,
           is_admin: false,
-          created_at: "2026-04-10T18:30:00.000Z",
-          updated_at: "2026-04-10T18:30:00.000Z",
+          created_at: "2026-07-21T01:30:00.000Z",
+          updated_at: "2026-07-21T01:30:00.000Z",
         },
       ]);
       execute.mockResolvedValueOnce([]);
@@ -259,7 +260,7 @@ describe("adminRouter", () => {
       execute.mockResolvedValueOnce([]);
       execute.mockResolvedValueOnce([]);
       execute.mockResolvedValueOnce([]);
-      const caller = makeCaller(execute);
+      const caller = makeCaller(execute, vi.fn().mockResolvedValue([]), "America/Los_Angeles");
 
       const result = await caller.userDetail({
         userId: "00000000-0000-0000-0000-000000000001",
@@ -271,8 +272,8 @@ describe("adminRouter", () => {
         kind: "limited",
         paid: false,
         reason: "free_signup_week",
-        startDate: "2026-04-10",
-        endDateExclusive: "2026-04-17",
+        startDate: "2026-07-20",
+        endDateExclusive: "2026-07-27",
       });
       expect(result.stripeLinks).toEqual({
         customer: null,
