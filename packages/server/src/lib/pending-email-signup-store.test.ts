@@ -207,6 +207,52 @@ describe("RedisPendingEmailSignupStore", () => {
     await expect(store.issue(sampleEntry)).rejects.toThrow("Failed to store pending email signup");
   });
 
+  it("sanitizes Redis command failures when issuing an entry", async () => {
+    const accessTokenFragment = "secret-access-fragment";
+    const refreshTokenFragment = "secret-refresh-fragment";
+    const redisError = new Error(
+      `SET failed for ${accessTokenFragment} and ${refreshTokenFragment}`,
+    );
+    const client = {
+      sendCommand: vi.fn().mockRejectedValue(redisError),
+    };
+    const store = new RedisPendingEmailSignupStore(async () => client);
+    const entry: PendingEmailSignupEntry = {
+      ...sampleEntry,
+      tokens: {
+        ...sampleEntry.tokens,
+        accessToken: accessTokenFragment,
+        refreshToken: refreshTokenFragment,
+      },
+    };
+
+    const rejection = await store.issue(entry).catch((error: unknown) => error);
+
+    expect(rejection).toEqual(new Error("Failed to store pending email signup"));
+    expect(rejection).not.toBe(redisError);
+    expect(rejection).not.toHaveProperty("cause");
+    const reportingArguments = [
+      [rejection],
+      [
+        `[auth] OAuth callback failed: ${
+          rejection instanceof Error ? rejection.message : String(rejection)
+        }`,
+        { err: rejection },
+      ],
+    ];
+    const reportingArgumentsText = reportingArguments
+      .flatMap((args) =>
+        args.map((argument) =>
+          argument instanceof Error
+            ? `${argument.name}: ${argument.message}`
+            : JSON.stringify(argument),
+        ),
+      )
+      .join("\n");
+    expect(reportingArgumentsText).not.toContain(accessTokenFragment);
+    expect(reportingArgumentsText).not.toContain(refreshTokenFragment);
+  });
+
   it("allows only one simultaneous claim", async () => {
     const client = new FakeRedisCommandClient();
     const store = new RedisPendingEmailSignupStore(async () => client);

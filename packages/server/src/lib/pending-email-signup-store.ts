@@ -9,6 +9,7 @@ const ENTRY_TTL_MS = 10 * 60 * 1000;
 const CLAIM_TTL_MS = 60 * 1000;
 const ENTRY_PREFIX = "pending-email-signup:";
 const CLAIM_PREFIX = "pending-email-signup-claim:";
+const ISSUE_FAILURE_MESSAGE = "Failed to store pending email signup";
 
 const tokenSetSchema: z.ZodType<TokenSet> = z.object({
   accessToken: z.string(),
@@ -202,15 +203,15 @@ export class RedisPendingEmailSignupStore implements PendingEmailSignupStore {
   async issue(entry: PendingEmailSignupEntry): Promise<string> {
     const token = randomBytes(16).toString("hex");
     const client = await this.#getRedisClient();
-    const result = await client.sendCommand([
-      "SET",
-      entryKey(token),
-      JSON.stringify(entry),
-      "PX",
-      `${ENTRY_TTL_MS}`,
-    ]);
+    const command = ["SET", entryKey(token), JSON.stringify(entry), "PX", `${ENTRY_TTL_MS}`];
+    let result: unknown;
+    try {
+      result = await client.sendCommand(command);
+    } catch {
+      throw new Error(ISSUE_FAILURE_MESSAGE);
+    }
     if (result !== "OK") {
-      throw new Error("Failed to store pending email signup");
+      throw new Error(ISSUE_FAILURE_MESSAGE);
     }
     return token;
   }

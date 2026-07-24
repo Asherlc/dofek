@@ -21,7 +21,8 @@
 - A valid completion must claim the token before database, credential, session, or mobile-exchange writes.
 - Invalid email and transient completion failures must leave the pending entry retryable.
 - Successful completion must delete the pending entry and claim exactly once.
-- Never log or report serialized entries, access tokens, or refresh tokens.
+- Never log or report serialized entries, access tokens, or refresh tokens, including through
+  Redis command errors raised while issuing an entry.
 - Do not add a dependency, environment variable, migration, or deployment change.
 - All shell commands use the repository-required `rtk` prefix.
 
@@ -260,9 +261,11 @@ await client.sendCommand([
 ```
 
 Require `SET` to return `"OK"` during `issue`; otherwise throw
-`Failed to store pending email signup`. Treat a claim `SET` result other than `"OK"` as a busy
-claim and return `null`. After acquiring a claim, call `get`; if the entry is missing or invalid,
-release the claim and return `null`.
+`Failed to store pending email signup`. Catch a rejected issuance `SET` command and replace its
+error with that same constant message without retaining the original error, because Redis errors
+may include the serialized entry and provider credentials. Treat a claim `SET` result other than
+`"OK"` as a busy claim and return `null`. After acquiring a claim, call `get`; if the entry is
+missing or invalid, release the claim and return `null`.
 
 Parse only string `GET` results. On malformed JSON or a failed Zod parse, delete the entry and
 report a sanitized constant error so a parser message cannot include credential fragments:
