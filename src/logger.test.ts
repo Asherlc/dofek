@@ -1,7 +1,17 @@
 import { Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import * as winston from "winston";
+import Transport from "winston-transport";
 import { jobContext, logger } from "./logger.ts";
+
+class CaptureInfoTransport extends Transport {
+  readonly entries: Array<{ level: string; message: string }> = [];
+
+  log(info: { level: string; message: string }, callback: () => void) {
+    this.entries.push({ level: info.level, message: info.message });
+    callback();
+  }
+}
 
 describe("logger", () => {
   it("has Console and BullJobTransport transports", () => {
@@ -51,6 +61,86 @@ describe("logger", () => {
     expect(output[0]).toContain("capture test");
   });
 
+  it("interpolates one and multiple substitution arguments for console output", () => {
+    const output: string[] = [];
+    const capture = new winston.transports.Stream({
+      stream: new Writable({
+        write(chunk: Buffer, _encoding: string, callback: () => void) {
+          output.push(chunk.toString());
+          callback();
+        },
+      }),
+      format: logger.transports[0]?.format,
+    });
+
+    logger.add(capture);
+    logger.info("Imported FIT file %s", "activity.fit");
+    logger.error("Failed to mark export %s as failed: %s", "export-42", "database unavailable");
+    logger.remove(capture);
+
+    expect(output).toEqual([
+      expect.stringContaining("Imported FIT file activity.fit"),
+      expect.stringContaining("Failed to mark export export-42 as failed: database unavailable"),
+    ]);
+    expect(output.join("\n")).not.toContain("%s");
+  });
+
+  it("provides interpolated messages in the info shape consumed by OTel", async () => {
+    const capture = new CaptureInfoTransport();
+    logger.add(capture);
+
+    try {
+      logger.warn("Advisory unlock failed for %s: %s", "migration-7", "connection closed");
+      await vi.waitFor(() => expect(capture.entries).toHaveLength(1));
+    } finally {
+      logger.remove(capture);
+    }
+
+    expect(capture.entries).toEqual([
+      {
+        level: "warn",
+        message: "Advisory unlock failed for migration-7: connection closed",
+      },
+    ]);
+  });
+
+  it("preserves Error messages and stacks during interpolation", async () => {
+    const capture = new CaptureInfoTransport();
+    const redisError = new Error("Redis connection closed");
+    logger.add(capture);
+
+    try {
+      logger.warn("Advisory unlock failed: %s", redisError);
+      await vi.waitFor(() => expect(capture.entries).toHaveLength(1));
+    } finally {
+      logger.remove(capture);
+    }
+
+    expect(capture.entries[0]?.message).toContain("Error: Redis connection closed");
+    expect(capture.entries[0]?.message).toContain(redisError.stack);
+  });
+
+  it("keeps sanitized FIT values interpolated across transports", async () => {
+    const capture = new CaptureInfoTransport();
+    logger.add(capture);
+
+    try {
+      logger.error(
+        "Failed to import FIT file %s: %s",
+        "[redacted]_activity.fit",
+        "Native decoder rejected token=[REDACTED]",
+      );
+      await vi.waitFor(() => expect(capture.entries).toHaveLength(1));
+    } finally {
+      logger.remove(capture);
+    }
+
+    expect(capture.entries[0]?.message).toBe(
+      "Failed to import FIT file [redacted]_activity.fit: Native decoder rejected token=[REDACTED]",
+    );
+    expect(capture.entries[0]?.message).not.toContain("%s");
+  });
+
   it("forwards logs to job.log() when inside jobContext", async () => {
     const mockJob = { log: vi.fn().mockResolvedValue(1) };
 
@@ -67,12 +157,13 @@ describe("logger", () => {
     const mockJob = { log: vi.fn().mockResolvedValue(1) };
 
     await jobContext.run(mockJob, async () => {
-      logger.warn("warning here");
+      logger.warn("Failed to update export %s: %s", "export-42", "Redis unavailable");
       await new Promise((r) => setTimeout(r, 50));
     });
 
-    expect(mockJob.log).toHaveBeenCalledWith(expect.stringContaining("[warn]"));
-    expect(mockJob.log).toHaveBeenCalledWith(expect.stringContaining("warning here"));
+    expect(mockJob.log).toHaveBeenCalledWith(
+      "[warn] Failed to update export export-42: Redis unavailable",
+    );
   });
 
   it("does not throw when job.log() rejects", async () => {
