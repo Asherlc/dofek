@@ -161,11 +161,9 @@ async function parseGarminDumpInChildProcess(filePath: string): Promise<void> {
     "finally { clearInterval(keepAlive); }";
 
   await new Promise<void>((resolve, reject) => {
-    const childProcess = spawn(
-      process.execPath,
-      ["--import", "tsx", "--input-type=module", "--eval", source],
-      { stdio: ["ignore", "ignore", "pipe"] },
-    );
+    const childProcess = spawn(process.execPath, ["--input-type=module", "--eval", source], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
     let standardError = "";
     let timedOut = false;
     childProcess.stderr.setEncoding("utf8");
