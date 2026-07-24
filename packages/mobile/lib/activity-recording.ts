@@ -194,7 +194,7 @@ export function createActivityRecorder(
     },
 
     async save(name: string | null, notes: string | null): Promise<string> {
-      if (state !== "saving" || !activityType || !startTime || stoppedAt === null) {
+      if (state !== "saving" || !activityType || startTime === null || stoppedAt === null) {
         throw new Error(`Cannot save in state: ${state}`);
       }
 

@@ -213,6 +213,24 @@ describe("createActivityRecorder", () => {
     expect(recorder.getSnapshot().samples).toHaveLength(0);
   });
 
+  it("saves a recording that starts at the Unix epoch", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+
+    await recorder.start("running");
+    vi.setSystemTime(1000);
+    recorder.stop();
+
+    await recorder.save(null, null);
+
+    expect(trpc.activityRecording.save.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: "1970-01-01T00:00:00.000Z",
+        endedAt: "1970-01-01T00:00:01.000Z",
+      }),
+    );
+  });
+
   it("transitions to error on save failure", async () => {
     vi.mocked(trpc.activityRecording.save.mutate).mockRejectedValue(new Error("Network error"));
 
