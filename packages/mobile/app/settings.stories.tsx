@@ -82,14 +82,20 @@ function createSeededProviders() {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
       readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
       sleepTarget: { minutes: 480 },
-      stressThresholds: { hrvThresholds: [30.0, 50.0, 70.0] },
+      stressThresholds: {
+        hrvThresholds: [-2.0, -1.5, -1.0],
+        rhrThresholds: [2.0, 1.5, 1.0],
+      },
       trainingImpulseConstants: { genderFactor: 1.92, exponent: 1.67 },
     },
     defaults: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
       readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
       sleepTarget: { minutes: 480 },
-      stressThresholds: { hrvThresholds: [30.0, 50.0, 70.0] },
+      stressThresholds: {
+        hrvThresholds: [-2.0, -1.5, -1.0],
+        rhrThresholds: [2.0, 1.5, 1.0],
+      },
       trainingImpulseConstants: { genderFactor: 1.92, exponent: 1.67 },
     },
     parameters: {

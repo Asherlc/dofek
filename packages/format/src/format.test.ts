@@ -32,6 +32,7 @@ import {
   formatSleepDebtInline,
   formatSpO2,
   formatSpO2Measurement,
+  formatStandardDeviation,
   formatTableCellValue,
   formatTime,
   formatTimeOnly,
@@ -649,6 +650,12 @@ describe("domain metric formatters", () => {
     });
   });
 
+  it("formats standard deviations with up to 2 decimals and no unit", () => {
+    expect(formatStandardDeviation(-2)).toBe("-2");
+    expect(formatStandardDeviation(-1.5)).toBe("-1.5");
+    expect(formatStandardDeviation(-1.25)).toBe("-1.25");
+  });
+
   it("formats intensity with 0 decimals", () => {
     expect(formatIntensity(82.4)).toBe("82%");
     expect(formatIntensity(82.5)).toBe("83%");
@@ -668,6 +675,7 @@ describe("domain metric formatters", () => {
       parts: [{ type: "nan", value: "--" }],
     });
     expect(formatHRV(Number.POSITIVE_INFINITY)).toBe("--");
+    expect(formatStandardDeviation(null)).toBe("--");
     expect(formatIntensity(Number.NEGATIVE_INFINITY)).toBe("--");
   });
 });

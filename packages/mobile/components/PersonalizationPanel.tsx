@@ -1,8 +1,8 @@
 import {
   formatDateMedium,
   formatDurationMinutes,
-  formatHRV,
   formatIntensity,
+  formatStandardDeviation,
 } from "@dofek/format/format";
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { trpc } from "../lib/trpc";
@@ -23,7 +23,7 @@ const PARAM_LABELS: Record<string, { label: string; description: string }> = {
   },
   stressThresholds: {
     label: "Stress Sensitivity",
-    description: "How heart rate variability and resting heart rate map to stress levels",
+    description: "Thresholds measured in standard deviations from your baseline",
   },
   trainingImpulseConstants: {
     label: "Heart Rate Effort Model",
@@ -131,8 +131,8 @@ export function PersonalizationPanel() {
       <ParamCard
         paramKey="stressThresholds"
         personalized={data.parameters.stressThresholds}
-        value={`Heart Rate Variability thresholds: ${data.effective.stressThresholds.hrvThresholds.map(formatHRV).join(", ")}`}
-        defaultValue={`Heart Rate Variability thresholds: ${data.defaults.stressThresholds.hrvThresholds.map(formatHRV).join(", ")}`}
+        value={`Heart Rate Variability: ${data.effective.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate: ${data.effective.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
+        defaultValue={`Heart Rate Variability: ${data.defaults.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate: ${data.defaults.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
         quality={
           data.parameters.stressThresholds
             ? `${data.parameters.stressThresholds.sampleCount} days`
