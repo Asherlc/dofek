@@ -15790,6 +15790,77 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   either mobile release gate so event-specific branches cannot bypass the
   prerequisite again.
 
+## 2026-07-24 — WHOOP Calories Won Activity Deduplication
+
+- **Status:** Diagnosed; no production data or behavior changed.
+- **Symptoms:** Activity `2c9154a3-a394-4586-bb76-44495c46c61e` displayed
+  713 kcal even though the expected activity value was absent.
+- **User impact:** The activity calendar showed 713 kcal for the affected
+  cycling workout.
+- **Evidence:** The production `fitness.v_activity` row groups one WHOOP member
+  with two Apple Health members. The WHOOP member stores `raw.calories = 713`;
+  the Apple Health workout exported by WHOOP stores
+  `totalEnergyBurned = 713`, while the Apple Watch member stores
+  `totalEnergyBurned = 452.233`. Production provider priorities are WHOOP 30
+  and Apple Health 90. The canonical view merges each raw key in ascending
+  priority order, so the WHOOP value wins. Dofek's WHOOP parser converts the
+  workout kilojoule value to kcal and rounds it; WHOOP documents kilojoules as
+  part of a scored workout's measurements
+  ([WHOOP workout data model](https://developer.whoop.com/docs/developing/user-data/workout/)).
+- **Root cause:** WHOOP supplied an energy value for the workout, Dofek
+  converted it from kilojoules to 713 kcal during ingestion, and activity
+  deduplication selected WHOOP's raw value because WHOOP has higher source
+  priority than Apple Health.
+- **Fix / mitigation:** None requested. The investigation was read-only.
+- **Validation:** A direct production query confirmed the three grouped source
+  rows, their energy values, and their provider priorities. Repository tracing
+  confirmed that the calendar reads `fitness.v_activity.raw.calories` and that
+  the WHOOP ingestion path writes the converted provider value there.
+- **Remaining risk / follow-up:** Decide whether activity calories should remain
+  provider-supplied, be omitted for this class of workout, or use a
+  calorie-specific source-selection policy before changing ingestion or
+  deduplication behavior.
+
+## 2026-07-24 — Activity Chart Fragmented Continuous Heart Rate and Speed
+
+- **Status:** Fixed and validated locally; deployment pending.
+- **Symptoms:** Activity `2c9154a3-a394-4586-bb76-44495c46c61e` displayed
+  fragmented heart-rate and speed lines in the web performance chart.
+- **User impact:** The affected cycling chart visually implied repeated sensor
+  gaps even though the underlying samples were continuous.
+- **Evidence:** The production activity stream read model contained 5,603
+  timestamps, including 2,355 heart-rate values and 4,738 speed values. The
+  maximum interval between consecutive raw values was 4.87 seconds for heart
+  rate and 8 seconds for speed, with no gaps over 10 seconds. The current
+  500-point query returned only 191 heart-rate values and 426 speed values,
+  separated into 139 and 70 line fragments respectively. The query samples one
+  complete timestamp per shared bucket in
+  [`ClickHouseActivitySensorStore.getStream()`](../packages/server/src/repositories/clickhouse-activity-sensor-store.ts),
+  while the web chart maps each channel over that shared nullable point array in
+  [`MetricsChart`](../packages/web/src/pages/ActivityDetailPage.tsx).
+- **Root cause:** Downsampling chooses one timestamp for all sensor channels.
+  Because heart rate and speed are recorded at different timestamps, the chosen
+  row frequently contains one channel and a null for the other. The web chart
+  treats those nulls as line breaks, converting continuous raw streams into
+  fragmented rendered series.
+- **Fix / mitigation:** Stream downsampling now preserves the first observed
+  value for each sensor channel within every existing output bucket instead of
+  selecting one whole timestamp for all channels. Latitude and longitude are
+  selected together from the first complete coordinate pair. The endpoint
+  contract and 500-point cap are unchanged. A read-only production simulation
+  of this behavior returned 498 heart-rate values and 498 speed values, each as
+  one continuous segment, without interpolation.
+- **Validation:** Production web and analytics-worker logs contained no matching
+  error. Both services and ClickHouse were healthy. Direct read-only ClickHouse
+  queries confirmed the raw sample intervals, reproduced the current query's
+  fragmentation, and validated the bucket-selection behavior. The executable
+  ClickHouse regression suite passes with staggered heart-rate, speed, and
+  location timestamps; the focused unit suite, server typecheck, full repository
+  lint, and `git diff --check` also pass.
+- **Remaining risk / follow-up:** Deploy the server change, invalidate or allow
+  the existing activity-stream cache to expire, and verify the affected chart
+  on both web and mobile because they share the endpoint.
+
 ## 2026-07-24 — Provider-Estimated Calorie Burn Was Displayed as Workout Data
 
 - **Status:** Fixed and validated locally; deployment pending.
