@@ -1,9 +1,24 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, relative, resolve } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const repositoryRoot = resolve(".");
+
+interface CircularFixture {
+  directory: string;
+  entryPaths: string[];
+  rootDirectory: string;
+  rootDirectoryCreated: boolean;
+}
 
 interface DependencyCruiserResult {
   status: number | null;
@@ -11,16 +26,31 @@ interface DependencyCruiserResult {
   stdout: string;
 }
 
-function writeCircularFixture(firstPath: string, secondPath: string): string[] {
-  mkdirSync(dirname(firstPath), { recursive: true });
+function writeCircularFixture(rootDirectory: string): CircularFixture {
+  const rootDirectoryCreated = !existsSync(rootDirectory);
+  mkdirSync(rootDirectory, { recursive: true });
+  const directory = mkdtempSync(join(rootDirectory, "dependency-cruiser-regression-"));
+  const firstPath = join(directory, "first.js");
+  const secondPath = join(directory, "second.js");
   writeFileSync(firstPath, `import "./${basename(secondPath)}";\n`);
   writeFileSync(secondPath, `import "./${basename(firstPath)}";\n`);
-  return [firstPath, secondPath];
+  return {
+    directory,
+    entryPaths: [firstPath, secondPath],
+    rootDirectory,
+    rootDirectoryCreated,
+  };
 }
 
-function removeFixture(paths: string[]): void {
-  for (const path of paths) {
-    rmSync(path, { force: true });
+function removeFixture(fixture: CircularFixture): void {
+  rmSync(fixture.directory, { force: true, recursive: true });
+
+  if (
+    fixture.rootDirectoryCreated &&
+    existsSync(fixture.rootDirectory) &&
+    readdirSync(fixture.rootDirectory).length === 0
+  ) {
+    rmdirSync(fixture.rootDirectory);
   }
 }
 
@@ -56,46 +86,41 @@ function commandOutput(result: DependencyCruiserResult): string {
 
 describe("dependency-cruiser command", () => {
   it("ignores generated web and Storybook bundles", async () => {
-    const fixturePaths = [
-      ...writeCircularFixture(
-        resolve("packages/web/dist/dependency-cruiser-regression-first.js"),
-        resolve("packages/web/dist/dependency-cruiser-regression-second.js"),
-      ),
-      ...writeCircularFixture(
-        resolve("packages/web/storybook-static/dependency-cruiser-regression-first.js"),
-        resolve("packages/web/storybook-static/dependency-cruiser-regression-second.js"),
-      ),
+    const fixtures = [
+      writeCircularFixture(resolve("packages/web/dist")),
+      writeCircularFixture(resolve("packages/web/storybook-static")),
     ];
 
     try {
       const result = await runDependencyCruiser(
-        fixturePaths.map((fixturePath) => relative(repositoryRoot, fixturePath)),
+        fixtures.flatMap((fixture) =>
+          fixture.entryPaths.map((fixturePath) => relative(repositoryRoot, fixturePath)),
+        ),
       );
 
       expect(result.status, commandOutput(result)).toBe(0);
       expect(commandOutput(result)).toContain("no dependency violations found");
     } finally {
-      removeFixture(fixturePaths);
+      for (const fixture of fixtures) {
+        removeFixture(fixture);
+      }
     }
   });
 
   it("continues to analyze web source files", async () => {
-    const fixturePaths = writeCircularFixture(
-      resolve("packages/web/src/dependency-cruiser-regression-first.js"),
-      resolve("packages/web/src/dependency-cruiser-regression-second.js"),
-    );
+    const fixture = writeCircularFixture(resolve("packages/web/src"));
 
     try {
       const result = await runDependencyCruiser(
-        fixturePaths.map((fixturePath) => relative(repositoryRoot, fixturePath)),
+        fixture.entryPaths.map((fixturePath) => relative(repositoryRoot, fixturePath)),
       );
       const output = commandOutput(result);
 
       expect(result.status).not.toBe(0);
       expect(output).toContain("no-circular");
-      expect(output).toContain("packages/web/src/dependency-cruiser-regression-first.js");
+      expect(output).toContain(relative(repositoryRoot, fixture.entryPaths[0]));
     } finally {
-      removeFixture(fixturePaths);
+      removeFixture(fixture);
     }
   });
 });
