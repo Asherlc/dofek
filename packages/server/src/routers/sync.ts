@@ -21,7 +21,7 @@ import { operationStatusOutputSchema, readOperationProgress } from "../lib/opera
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 import { logger } from "../logger.ts";
-import { type ProviderStatRow, SyncRepository } from "../repositories/sync-repository.ts";
+import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
   adminProcedure,
   CacheTTL,
@@ -254,11 +254,11 @@ const syncRouterProcedures = {
         repo.getLastSyncTimes(),
         repo.getLatestErrors(),
         ctx.sensorStore
-          ? repo.getProviderStats().catch((error): ProviderStatRow[] => {
+          ? repo.getProviderStats().catch((error: unknown) => {
               logProvidersQueryFailure("provider stats lookup", error);
-              return [];
+              throw error;
             })
-          : Promise.resolve([] satisfies ProviderStatRow[]),
+          : Promise.resolve([]),
       ]);
 
       const tokenSet = new Set(allTokens.map((r) => r.providerId));
