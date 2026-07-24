@@ -6,6 +6,7 @@ import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
 import * as Sentry from "@sentry/node";
+import { TRPCError } from "@trpc/server";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
@@ -34,6 +35,7 @@ import { validateSession } from "./auth/session.ts";
 import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { checkReadiness } from "./lib/readiness.ts";
+import { requestTimezoneSchema } from "./lib/request-timezone.ts";
 import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { logger } from "./logger.ts";
 import { createMcpOAuthRouter, type McpAuthRateLimitOptions } from "./mcp/oauth-route.ts";
@@ -263,7 +265,13 @@ function setupRoutes(
       createContext: async ({ req }): Promise<Context> => {
         const sessionId = getSessionIdFromRequest(req);
         const session = sessionId ? await validateSession(db, sessionId) : null;
-        const timezone = getSingleHeaderValue(req.headers["x-timezone"]) ?? "UTC";
+        const timezoneResult = requestTimezoneSchema.safeParse(
+          getSingleHeaderValue(req.headers["x-timezone"]),
+        );
+        if (!timezoneResult.success) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid x-timezone header" });
+        }
+        const timezone = timezoneResult.data;
         const appVersion = getSingleHeaderValue(req.headers["x-app-version"]);
         const assetsVersion = getSingleHeaderValue(req.headers["x-assets-version"]);
         const accessWindow = session

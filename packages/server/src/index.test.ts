@@ -442,4 +442,27 @@ describe("main", () => {
 
     expect(getAccessWindowForUser).toHaveBeenCalledWith(fakeDb, "user-1", "UTC");
   });
+
+  it("rejects an invalid request timezone before access-window resolution", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    vi.mocked(getSessionIdFromRequest).mockReturnValue("session-id");
+    vi.mocked(validateSession).mockResolvedValue({
+      sessionId: "session-id",
+      userId: "user-1",
+      expiresAt: new Date("2026-07-28T00:00:00.000Z"),
+    });
+    createApp(fakeDb, makeMockSensorStore());
+    const middlewareOptions = mockCreateExpressMiddleware.mock.calls.at(-1)?.[0];
+
+    await expect(
+      middlewareOptions?.createContext({
+        req: { headers: { "x-timezone": "Not/A_Timezone" } },
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Invalid x-timezone header",
+    });
+    expect(getAccessWindowForUser).not.toHaveBeenCalled();
+  });
 });

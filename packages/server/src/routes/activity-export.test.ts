@@ -230,6 +230,22 @@ describe("createActivityExportRouter", () => {
     );
   });
 
+  it("returns 400 for an invalid timezone before access-window resolution", async () => {
+    authenticate();
+
+    const response = await request(
+      createTestApp(),
+      "get",
+      `/api/activity/${activityId}/export?format=csv`,
+      { "x-timezone": "Not/A_Timezone" },
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Invalid x-timezone header" });
+    expect(getAccessWindowForUser).not.toHaveBeenCalled();
+    expect(exportActivityFile).not.toHaveBeenCalled();
+  });
+
   it("returns 400 when export preconditions fail", async () => {
     authenticate();
     vi.mocked(exportActivityFile).mockRejectedValue(
