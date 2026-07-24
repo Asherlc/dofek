@@ -14,7 +14,7 @@ import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepAnalyticsChartProps {
   nightly: SleepNightlyRow[];
-  sleepDebt: number;
+  sleepDebt: number | null;
   loading?: boolean;
 }
 
@@ -140,13 +140,14 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
 }
 
 export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyticsChartProps) {
-  const option = nightly.length > 0 ? buildSleepAnalyticsOption(nightly, sleepDebt) : {};
+  const hasSleepSummary = nightly.length > 0 && sleepDebt != null;
+  const option = hasSleepSummary ? buildSleepAnalyticsOption(nightly, sleepDebt) : {};
 
   return (
     <DofekChart
       option={option}
       loading={loading}
-      empty={nightly.length === 0}
+      empty={!hasSleepSummary}
       height={350}
       emptyMessage="No sleep data"
     />

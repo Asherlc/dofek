@@ -380,7 +380,9 @@ describe("recoveryRouter", () => {
       const caller = makeCaller([]);
       const result = await caller.sleepAnalytics({ days: 90 });
       expect(result.nightly).toEqual([]);
-      expect(result.sleepDebt).toBe(0);
+      expect(result.sleepDebt).toBeNull();
+      expect(result.averageSleepMinutes).toBeNull();
+      expect(result.averageEfficiencyPercent).toBeNull();
     });
   });
 
