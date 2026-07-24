@@ -38,7 +38,7 @@ describe("daily_sleep read-model lifecycle", () => {
     }
   });
 
-  it("reselects and then tombstones an older night when its source sessions are deleted", async () => {
+  it("selects a fallback and then tombstones an older night as source sessions are deleted", async () => {
     const activeClient = requireClient(client);
     await seedDailySleepFixture(activeClient, targetSchema);
     await materializeDailySleep(activeClient, targetSchema, false);
