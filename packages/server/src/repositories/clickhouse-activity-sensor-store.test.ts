@@ -73,9 +73,11 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain(
       "any(tuple(heart_rate, power, speed, cadence, altitude, lat, lng)) AS point_values",
     );
-    expect(queryText).toContain("selected_point_times AS");
+    expect(queryText).toContain("downsampled_points AS");
+    expect(queryText).toContain("argMinIf(heart_rate, sample_recorded_at, heart_rate IS NOT NULL)");
+    expect(queryText).toContain("sample_lat IS NOT NULL AND sample_lng IS NOT NULL");
     expect(queryText).toContain("toUInt64({maxPoints:UInt32})");
-    expect(queryText).toContain("ORDER BY selected_points.recorded_at");
+    expect(queryText).toContain("ORDER BY recorded_at");
     expect(queryText).not.toContain("any(heart_rate) AS heart_rate");
     expect(queryText).not.toContain("analytics.activity_sensor_sample");
     expect(queryText).not.toContain("analytics.activity_location_sample");

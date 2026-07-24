@@ -10,6 +10,7 @@ const userId = "11111111-1111-1111-1111-111111111111";
 const activityId = "22222222-2222-2222-2222-222222222222";
 const liveStreamActivityId = "44444444-4444-4444-4444-444444444444";
 const liveZoneActivityId = "55555555-5555-5555-5555-555555555555";
+const staggeredStreamActivityId = "66666666-6666-6666-6666-666666666666";
 const window = {
   activityId,
   userId,
@@ -26,6 +27,11 @@ const liveZoneWindow = {
   ...window,
   activityId: liveZoneActivityId,
   memberActivityIds: [liveZoneActivityId],
+};
+const staggeredStreamWindow = {
+  ...window,
+  activityId: staggeredStreamActivityId,
+  memberActivityIds: [staggeredStreamActivityId],
 };
 
 describe("ClickHouseActivitySensorStore read-model lifecycle rows", () => {
@@ -71,6 +77,70 @@ describe("ClickHouseActivitySensorStore read-model lifecycle rows", () => {
         lng: null,
       },
     ]);
+  });
+
+  it("preserves staggered sensor channels when downsampling stream points", async () => {
+    await executeClickHouseTestCommand(
+      testContext,
+      `
+        INSERT INTO analytics.activity_stream_points (
+          user_id, activity_id, points, refresh_version, is_deleted, refreshed_at
+        )
+        SELECT
+          toUUID('${userId}'),
+          toUUID('${staggeredStreamActivityId}'),
+          groupArray(tuple(
+            addMilliseconds(
+              toDateTime64('2026-07-01 12:15:00', 6, 'UTC'),
+              sample_index * 100
+            ),
+            if(
+              sample_index % 2 = 0,
+              CAST(100 + sample_index AS Nullable(Float64)),
+              CAST(NULL AS Nullable(Float64))
+            ),
+            CAST(NULL AS Nullable(Float64)),
+            if(
+              sample_index % 2 = 1,
+              CAST(sample_index AS Nullable(Float64)),
+              CAST(NULL AS Nullable(Float64))
+            ),
+            CAST(NULL AS Nullable(Float64)),
+            CAST(NULL AS Nullable(Float64)),
+            if(
+              sample_index % 10 = 5,
+              CAST(37 + sample_index / 100 AS Nullable(Float64)),
+              CAST(NULL AS Nullable(Float64))
+            ),
+            if(
+              sample_index % 10 = 5,
+              CAST(-122 - sample_index / 100 AS Nullable(Float64)),
+              CAST(NULL AS Nullable(Float64))
+            )
+          )),
+          1,
+          0,
+          toDateTime64('2026-07-01 12:15:10', 9, 'UTC')
+        FROM (
+          SELECT number AS sample_index
+          FROM numbers(100)
+          ORDER BY sample_index
+        )
+      `,
+    );
+
+    const points = await sensorStore.getStream(staggeredStreamWindow, 10);
+
+    expect(points).toHaveLength(10);
+    expect(
+      points.slice(0, -1).every((point) => point.heart_rate != null && point.speed != null),
+    ).toBe(true);
+    expect(points[0]).toMatchObject({
+      heart_rate: 100,
+      speed: 1,
+      lat: 37.05,
+      lng: -122.05,
+    });
   });
 
   it("does not serve stale stream points when the latest row is a tombstone", async () => {
