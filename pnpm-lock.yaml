@@ -185,6 +185,9 @@ importers:
         specifier: workspace:*
         version: link:packages/zwift-client
     devDependencies:
+      '@actions/expressions':
+        specifier: 0.3.60
+        version: 0.3.60
       '@biomejs/biome':
         specifier: 2.4.6
         version: 2.4.6
@@ -284,6 +287,9 @@ importers:
       vitest:
         specifier: 3.2.6
         version: 3.2.6(@types/node@22.19.15)(jiti@2.7.0)(jsdom@29.0.0)(lightningcss@1.32.0)(msw@2.12.11(@types/node@22.19.15)(typescript@6.0.3))(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
 
   packages/auth:
     dependencies:
@@ -947,6 +953,10 @@ importers:
         version: 3.2.6(@types/node@26.1.1)(jiti@2.7.0)(jsdom@29.0.0)(lightningcss@1.32.0)(msw@2.12.11(@types/node@26.1.1)(typescript@6.0.3))(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
 packages:
+
+  '@actions/expressions@0.3.60':
+    resolution: {integrity: sha512-9Go4zz77GbM6iUkullgo0tN7AHgUNRLkw66C6k3mHEc/QScweRNffjSluS0jcip+ULGkDYzBnyMvY9RjnFjEMA==}
+    engines: {node: '>= 20'}
 
   '@adobe/css-tools@4.4.4':
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
@@ -14723,6 +14733,8 @@ packages:
       '@types/emscripten': '>=1.39.6'
 
 snapshots:
+
+  '@actions/expressions@0.3.60': {}
 
   '@adobe/css-tools@4.4.4': {}
 
