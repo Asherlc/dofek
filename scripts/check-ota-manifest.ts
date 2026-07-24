@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-const manifestUrl = "https://ota.dofek.asherlc.com/manifest";
+const defaultCommandOptions = {
+  channel: "production",
+  platform: "ios",
+  runtimeVersion: "1.0",
+  url: "https://ota.dofek.asherlc.com/manifest",
+} satisfies OtaManifestRequestOptions;
 
 const assetSchema = z.object({
   contentType: z.string(),
@@ -18,9 +23,27 @@ const manifestSchema = z.object({
   runtimeVersion: z.string().min(1),
 });
 
+const commandOptionsSchema = z.object({
+  channel: z.string().min(1),
+  platform: z.enum(["android", "ios"]),
+  runtimeVersion: z.string().min(1),
+  url: z.url(),
+});
+
+type OtaManifest = z.infer<typeof manifestSchema>;
+type OtaPlatform = z.infer<typeof commandOptionsSchema.shape.platform>;
+
+interface OtaManifestRequestOptions {
+  channel: string;
+  platform: OtaPlatform;
+  runtimeVersion: string;
+  url: string;
+}
+
 interface OtaManifestCheckOptions {
   fetchImplementation: typeof fetch;
   timeoutMilliseconds: number;
+  requestOptions?: OtaManifestRequestOptions;
 }
 
 function extractBoundary(contentType: string): string | null {
@@ -51,19 +74,66 @@ function extractManifestPart(body: string, boundary: string): string | null {
   return null;
 }
 
+function readOptionValue(arguments_: string[], index: number, optionName: string): string {
+  const value = arguments_[index + 1];
+  if (!value) {
+    throw new Error(`${optionName} requires a value`);
+  }
+  return value;
+}
+
+function parseCommandOptions(arguments_: string[]): OtaManifestRequestOptions {
+  const options: {
+    channel: string;
+    platform: string;
+    runtimeVersion: string;
+    url: string;
+  } = { ...defaultCommandOptions };
+
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (!argument) {
+      continue;
+    }
+    switch (argument) {
+      case "--channel":
+        options.channel = readOptionValue(arguments_, index, argument);
+        index += 1;
+        break;
+      case "--platform":
+        options.platform = readOptionValue(arguments_, index, argument);
+        index += 1;
+        break;
+      case "--runtime-version":
+        options.runtimeVersion = readOptionValue(arguments_, index, argument);
+        index += 1;
+        break;
+      case "--url":
+        options.url = readOptionValue(arguments_, index, argument);
+        index += 1;
+        break;
+      default:
+        throw new Error(`Unknown option: ${argument}`);
+    }
+  }
+
+  return commandOptionsSchema.parse(options);
+}
+
 export async function checkOtaManifest({
   fetchImplementation,
   timeoutMilliseconds,
-}: OtaManifestCheckOptions): Promise<void> {
+  requestOptions = defaultCommandOptions,
+}: OtaManifestCheckOptions): Promise<OtaManifest | null> {
   let response: Response;
   try {
-    response = await fetchImplementation(manifestUrl, {
+    response = await fetchImplementation(requestOptions.url, {
       headers: {
         accept: "application/expo+json, application/json, multipart/mixed",
-        "expo-channel-name": "production",
-        "expo-platform": "ios",
+        "expo-channel-name": requestOptions.channel,
+        "expo-platform": requestOptions.platform,
         "expo-protocol-version": "1",
-        "expo-runtime-version": "1.0",
+        "expo-runtime-version": requestOptions.runtimeVersion,
       },
       signal: AbortSignal.timeout(timeoutMilliseconds),
     });
@@ -73,11 +143,12 @@ export async function checkOtaManifest({
         cause: error,
       });
     }
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to reach ${requestOptions.url}: ${message}`, { cause: error });
   }
 
   if (response.status === 204) {
-    return;
+    return null;
   }
   if (response.status !== 200) {
     throw new Error(`OTA manifest request returned HTTP ${response.status}`);
@@ -101,7 +172,7 @@ export async function checkOtaManifest({
     throw new Error("OTA manifest response is missing a valid manifest part");
   }
 
-  manifestSchema.parse(JSON.parse(manifestPart));
+  return manifestSchema.parse(JSON.parse(manifestPart));
 }
 
 const isDirectExecution =
@@ -109,6 +180,21 @@ const isDirectExecution =
   import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
 
 if (isDirectExecution) {
-  await checkOtaManifest({ fetchImplementation: fetch, timeoutMilliseconds: 5_000 });
-  console.log("OTA server returned a valid production manifest response");
+  const requestOptions = parseCommandOptions(process.argv.slice(2));
+  const manifest = await checkOtaManifest({
+    fetchImplementation: fetch,
+    requestOptions,
+    timeoutMilliseconds: 5_000,
+  });
+  if (!manifest) {
+    console.log(
+      `No update deployed for platform=${requestOptions.platform} runtimeVersion=${requestOptions.runtimeVersion}`,
+    );
+  } else {
+    console.log(`id:              ${manifest.id}`);
+    console.log(`createdAt:       ${manifest.createdAt}`);
+    console.log(`runtimeVersion:  ${manifest.runtimeVersion}`);
+    console.log(`launchAsset:     ${manifest.launchAsset.key}`);
+    console.log(`assets:          ${manifest.assets.length}`);
+  }
 }
