@@ -193,7 +193,7 @@ describe("processPostSyncJob", () => {
 
     await expect(
       processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements),
-    ).rejects.toThrow(refreshError);
+    ).rejects.toBe(refreshError);
 
     expect(mockCaptureException).toHaveBeenCalledWith(refreshError, {
       tags: { postSyncStep: "refreshBodyMeasurements" },
