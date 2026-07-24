@@ -7,6 +7,37 @@
  * - `mockCallArg()` — extracts a typed argument from `vi.fn().mock.calls`
  */
 import { vi } from "vitest";
+import * as winston from "winston";
+import Transport from "winston-transport";
+import { logger } from "./logger.ts";
+
+// cspell:ignore Logform
+export class CaptureInfoTransport extends Transport {
+  readonly entries: Array<{ level: string; message: string }> = [];
+
+  log(info: winston.Logform.TransformableInfo, callback: () => void) {
+    this.entries.push({ level: info.level, message: String(info.message) });
+    callback();
+  }
+}
+
+export function consoleTransportFormat(): winston.Logform.Format {
+  const consoleTransport = logger.transports.find(
+    (transport) => transport instanceof winston.transports.Console,
+  );
+  if (!consoleTransport?.format) {
+    throw new Error("Logger Console transport format is not configured");
+  }
+  return consoleTransport.format;
+}
+
+export function createCaptureLogger(transport: Transport): winston.Logger {
+  return winston.createLogger({
+    level: logger.level,
+    format: logger.format,
+    transports: [transport],
+  });
+}
 
 /**
  * A fetch function created by `vi.fn()` with proper type parameters.
