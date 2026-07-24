@@ -224,8 +224,7 @@ export async function getProviderRateLimitStatus(
 
 async function getSharedRedisReader(): Promise<RedisReader> {
   const connection = getSharedRedisConnection();
-  // biome-ignore lint/suspicious/noExplicitAny: bullmq 5.79.2 narrowed IRedisClient; runtime is ioredis Redis
-  const redisClient: any = await connection.client;
+  const redisClient = await connection.client;
   return {
     get: async (key) => redisClient.get(key),
     scan: async (cursor, matchKeyword, pattern, countKeyword, count) =>

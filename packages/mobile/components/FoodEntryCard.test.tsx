@@ -1,30 +1,10 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FoodEntryCard } from "./FoodEntryCard";
 
-// biome-ignore lint/suspicious/noConsole: React Native web emits onLongPress warnings in jsdom.
-const originalConsoleError = console.error.bind(console);
-let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
-
 describe("FoodEntryCard", () => {
-  beforeEach(() => {
-    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((message, ...rest) => {
-      const isLongPressWarning =
-        typeof message === "string" &&
-        message.includes("Unknown event handler property") &&
-        rest.some((item) => item === "onLongPress");
-      if (isLongPressWarning) return;
-
-      originalConsoleError(message, ...rest);
-    });
-  });
-
-  afterEach(() => {
-    consoleErrorSpy.mockRestore();
-  });
-
   it("expands to show detailed nutrients when tapped", () => {
     render(
       <FoodEntryCard

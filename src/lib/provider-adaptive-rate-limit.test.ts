@@ -670,9 +670,17 @@ describe("providerAdaptiveRateLimitStore", () => {
     vi.stubEnv("VITEST", "");
     vi.stubEnv("NODE_ENV", "production");
 
+    const transaction = {
+      set: vi.fn(),
+      exec: vi.fn().mockResolvedValue([["OK"]]),
+    };
+    transaction.set.mockReturnValue(transaction);
     const mockClient = {
       set: vi.fn().mockResolvedValue("OK"),
       get: vi.fn().mockResolvedValue(null),
+      watch: vi.fn().mockResolvedValue("OK"),
+      unwatch: vi.fn().mockResolvedValue("OK"),
+      multi: vi.fn().mockReturnValue(transaction),
     };
     vi.doMock("../jobs/queues.ts", () => ({
       getRedisConnection: vi.fn().mockReturnValue({}),
@@ -689,6 +697,42 @@ describe("providerAdaptiveRateLimitStore", () => {
     await expect(
       mod.providerAdaptiveRateLimitStore.getLearnedCooldownSeconds("garmin"),
     ).resolves.toBeNull();
+    expect(mockClient.get).toHaveBeenCalled();
+    await mod.providerAdaptiveRateLimitStore.recordSuccess("garmin", "provider", null);
+    expect(mockClient.set).toHaveBeenCalledWith(
+      "provider-adaptive-rate:garmin:provider",
+      expect.any(String),
+      "PX",
+      ADAPTIVE_RATE_WINDOW_MS * 4,
+    );
+
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    mockClient.get
+      .mockReset()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          ...createInitialAdaptiveState("garmin", "provider", null, 1_000),
+          lastRequestMs: 1_000,
+          throttleMs: 100,
+        }),
+      )
+      .mockResolvedValue(null);
+    const admission = mod.providerAdaptiveRateLimitStore.awaitAdmission("garmin", "provider", null);
+    await vi.advanceTimersByTimeAsync(100);
+    await admission;
+    expect(mockClient.watch).toHaveBeenCalledWith("provider-adaptive-rate:garmin:provider");
+    expect(mockClient.unwatch).toHaveBeenCalledOnce();
+    expect(mockClient.multi).toHaveBeenCalledOnce();
+    expect(transaction.set).toHaveBeenCalledWith(
+      "provider-adaptive-rate:garmin:provider",
+      expect.any(String),
+      "PX",
+      ADAPTIVE_RATE_WINDOW_MS * 4,
+    );
+    expect(transaction.exec).toHaveBeenCalledOnce();
+    vi.useRealTimers();
 
     vi.unstubAllEnvs();
     vi.resetModules();

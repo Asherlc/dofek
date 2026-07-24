@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { captureException } from "../lib/telemetry";
+import { captureException, logger } from "../lib/telemetry";
 import {
   addNotificationListener,
   type BleNotification,
@@ -50,8 +50,8 @@ export default function BleProbeScreen() {
     const subscription = addNotificationListener((notification: BleNotification) => {
       setNotificationCount((count) => count + 1);
       // Stream to Metro console for terminal-side analysis
-      // biome-ignore lint/suspicious/noConsole: intentional debug logging for BLE RE
-      console.log(
+      logger.info(
+        "ble-probe",
         `[BLE] #${notification.index} [${notification.suffix}] ${notification.bytes}B: ${notification.hex}`,
       );
       // Only show first 20 and then every 50th in the UI to avoid flooding
@@ -306,8 +306,7 @@ export default function BleProbeScreen() {
   useEffect(() => {
     const autoCommand = ""; // disabled
     if (autoCommand) {
-      // biome-ignore lint/suspicious/noConsole: intentional debug logging
-      console.log(`[BLE-AUTO] executing: ${autoCommand}`);
+      logger.info("ble-probe", `[BLE-AUTO] executing: ${autoCommand}`);
       executeCommand(autoCommand);
     }
   }, [executeCommand]);

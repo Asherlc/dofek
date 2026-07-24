@@ -45,7 +45,12 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Outputs: `docs/schema.dbml`, `docs/schema.puml`.
 - `fix-ts-expect-errors.ts`: Automated removal of `@ts-expect-error` comments across the codebase.
   - Handles standalone lines, inline comments, and specific test patterns like `MockFetchFn`.
-- `no-suppressions.sh`: Checks for lint or type suppressions (e.g., `eslint-disable`, `biome-ignore`).
+- `no-suppressions.ts`: Scans every tracked TypeScript file and rejects lint,
+  type-check, coverage, or mutation-test suppression comments. Generated TanStack
+  route trees and the suppression-removal utility are the only exclusions.
+  File discovery uses Git's tracked-file index via
+  [`git ls-files`](https://git-scm.com/docs/git-ls-files).
+  - Usage: `pnpm lint:suppressions`
 - `exact-versions.sh`: Ensures all dependencies in `package.json` use exact versions (no `^` or `~`).
 - `workflow-download-policy.ts`: Rejects GitHub workflow and action source downloads unless they use a full commit SHA; versioned release artifacts must instead be protected by a reviewed checksum. This follows GitHub's guidance that only full commit SHAs are immutable unless immutable releases are enabled: https://docs.github.com/en/actions/how-tos/create-and-publish-actions/using-immutable-releases-and-tags-to-manage-your-actions-releases
 - `migration-policy.ts`: Checks changed deploy migration SQL for inline backfills, refreshes, and other long-running data work that must live in resumable jobs instead.

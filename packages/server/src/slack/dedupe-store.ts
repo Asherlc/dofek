@@ -62,8 +62,7 @@ async function getSharedRedisDedupeClient(): Promise<RedisDedupeClient> {
       skipVersionCheck: true,
     });
   }
-  // biome-ignore lint/suspicious/noExplicitAny: bullmq 5.79.2 narrowed IRedisClient; runtime is ioredis Redis
-  const redisClient: any = await sharedRedisConnection.client;
+  const redisClient = await sharedRedisConnection.client;
   return {
     set: async (key, value, mode, millisecondsToExpire, condition) =>
       redisClient.set(key, value, mode, millisecondsToExpire, condition),
