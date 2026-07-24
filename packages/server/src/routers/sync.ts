@@ -373,8 +373,16 @@ const syncRouterProcedures = {
       if (!job) {
         job = await legacySyncQueue.getJob(rawId);
       }
-    } catch {
-      return null; // Redis unavailable
+    } catch (error: unknown) {
+      captureException(error, {
+        tags: { procedure: "sync.syncStatus" },
+        extra: { jobId: input.jobId },
+      });
+      throw new TRPCError({
+        code: "BAD_GATEWAY",
+        message: "Sync status is temporarily unavailable. Please try again.",
+        cause: error,
+      });
     }
     if (!job) return null;
 
@@ -429,8 +437,15 @@ const syncRouterProcedures = {
         legacySyncQueue.getJobs(states),
       ]);
       jobs = jobArrays.flat();
-    } catch {
-      return []; // Redis unavailable
+    } catch (error: unknown) {
+      captureException(error, {
+        tags: { procedure: "sync.activeSyncs" },
+      });
+      throw new TRPCError({
+        code: "BAD_GATEWAY",
+        message: "Active syncs are temporarily unavailable. Please try again.",
+        cause: error,
+      });
     }
 
     const progressSchema = z.object({
