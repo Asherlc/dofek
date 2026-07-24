@@ -142,8 +142,34 @@ describe("menstrualCycleRouter", () => {
 
       await expect(
         caller.logPeriod({ startDate: "2026-03-02", endDate: "2026-03-01" }),
-      ).rejects.toThrow("Period end date cannot be before start date.");
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringContaining("Period end date cannot be before start date."),
+      });
       expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("allows a period to start and end on the same date", async () => {
+      const insertedRow = {
+        id: "same-day-id",
+        start_date: "2026-03-01",
+        end_date: "2026-03-01",
+        duration_days: 1,
+        notes: null,
+      };
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([insertedRow]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.logPeriod({
+        startDate: "2026-03-01",
+        endDate: "2026-03-01",
+      });
+
+      expect(result?.durationDays).toBe(1);
+      expect(result?.durationLabel).toBe("1 day");
     });
 
     it("logs a new period start", async () => {
