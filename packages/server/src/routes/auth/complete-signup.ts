@@ -49,7 +49,9 @@ class PendingEmailSignupClaimRenewal {
     return this.#failure;
   }
 
-  throwIfFailed(): void {
+  async throwIfFailed(): Promise<void> {
+    const inFlight = this.#inFlight;
+    await inFlight;
     if (this.#failure) throw this.#failure;
   }
 
@@ -120,7 +122,7 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
       emailVerified: false,
       name: claimedPending.identity.name,
     });
-    pendingClaimRenewal.throwIfFailed();
+    await pendingClaimRenewal.throwIfFailed();
     const { getAllProviders } = await import("dofek/providers/registry");
     await pendingClaimRenewal.throwIfFailed();
     const provider = getAllProviders().find(
@@ -145,9 +147,9 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
       tokens: claimedPending.tokens,
       userId,
     });
-    pendingClaimRenewal.throwIfFailed();
+    await pendingClaimRenewal.throwIfFailed();
     const sessionInfo = await createSession(db, userId);
-    pendingClaimRenewal.throwIfFailed();
+    await pendingClaimRenewal.throwIfFailed();
 
     if (claimedPending.mobileScheme && isValidMobileScheme(claimedPending.mobileScheme)) {
       const exchangeCode = await getMobileAuthExchangeStoreRef().issue({
@@ -155,7 +157,7 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
         sessionId: sessionInfo.sessionId,
         isNewUser,
       });
-      pendingClaimRenewal.throwIfFailed();
+      await pendingClaimRenewal.throwIfFailed();
       const renewal = pendingClaimRenewal;
       pendingClaimRenewal = null;
       const renewalFailure = await renewal.stop();

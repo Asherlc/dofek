@@ -2700,9 +2700,14 @@ describe("createAuthRouter", () => {
         await completionStarted.promise;
         await vi.advanceTimersByTimeAsync(20_000);
         deferredUser.resolve({ userId: "renewal-failure-user", isNewUser: true });
-        queueMicrotask(() => {
-          renewalAttempt.reject(new Error("sensitive Redis command failure"));
-        });
+        const rejectRenewalAfterMicrotasks = (remaining: number): void => {
+          if (remaining === 0) {
+            renewalAttempt.reject(new Error("sensitive Redis command failure"));
+            return;
+          }
+          queueMicrotask(() => rejectRenewalAfterMicrotasks(remaining - 1));
+        };
+        rejectRenewalAfterMicrotasks(8);
 
         const completionRes = await completionPromise;
         const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
