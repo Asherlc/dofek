@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { Client } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -24,6 +25,7 @@ import { readBaselineMigration, runDrizzleMigrations } from "./postgres-migrator
 
 interface TestMigration {
   hash: string;
+  sql?: string[];
   tag: string;
   when: number;
 }
@@ -95,7 +97,7 @@ function setMigrationHistory(migrations: TestMigration[]): void {
       bps: false,
       folderMillis: migration.when,
       hash: migration.hash,
-      sql: [],
+      sql: migration.sql ?? [],
     })),
   );
 }
@@ -197,6 +199,29 @@ describe("postgres migrator", () => {
     expect(mocks.drizzle).toHaveBeenCalledWith(client);
     expect(mocks.migrate).toHaveBeenCalledWith("drizzle-database", {
       migrationsFolder: "/migrations",
+    });
+  });
+
+  it("reports the migration file and statement while preserving the database error", async () => {
+    const failedStatement = "SELECT INVALID MIGRATION";
+    const databaseError = new Error('syntax error at or near "INVALID"');
+    setMigrationHistory([
+      {
+        hash: "invalid-hash",
+        sql: [failedStatement],
+        tag: "0001_invalid",
+        when: 100,
+      },
+    ]);
+    mocks.migrate.mockRejectedValue(new DrizzleQueryError(failedStatement, [], databaseError));
+    const { client } = makeClient([]);
+
+    await expect(runDrizzleMigrations(client, "/migrations")).rejects.toMatchObject({
+      cause: databaseError,
+      message:
+        `Migration 0001_invalid.sql failed\n` +
+        `Database error: ${databaseError.message}\n` +
+        `Failed statement:\n${failedStatement}`,
     });
   });
 

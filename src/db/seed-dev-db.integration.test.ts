@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import postgres from "postgres";
@@ -73,26 +72,6 @@ async function setupBareDatabase(): Promise<BareDatabaseContext> {
     }
   }
 
-  const sql = postgres(connectionString, { max: 1 });
-  const drizzleDir = resolve(import.meta.dirname, "../../drizzle");
-  const migrationFiles = readdirSync(drizzleDir)
-    .filter((fileName) => fileName.endsWith(".sql"))
-    .sort();
-
-  for (const fileName of migrationFiles) {
-    const content = readFileSync(resolve(drizzleDir, fileName), "utf-8");
-    const statements = content
-      .split("--> statement-breakpoint")
-      .map((statement) => statement.trim())
-      .filter(Boolean);
-
-    for (const statement of statements) {
-      await sql.unsafe(statement);
-    }
-  }
-
-  await sql.end();
-
   return {
     connectionString,
     cleanup: async () => {
@@ -163,6 +142,40 @@ describe("seed-dev-db", () => {
       await sql.end();
     }
   }, 420_000);
+
+  it("stops before seeding when a tracked migration fails", async () => {
+    const failingDatabaseName = "seed_migration_failure";
+    const admin = postgres(ctx.connectionString, { max: 1 });
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${failingDatabaseName} WITH (FORCE)`);
+    await admin.unsafe(`CREATE DATABASE ${failingDatabaseName}`);
+    await admin.end();
+
+    const failingDatabaseUrl = new URL(ctx.connectionString);
+    failingDatabaseUrl.pathname = `/${failingDatabaseName}`;
+    const failingConnectionString = failingDatabaseUrl.toString();
+    const sql = postgres(failingConnectionString, { max: 1 });
+    await sql`CREATE SCHEMA fitness`;
+    await sql.end();
+
+    const seedFailure = runSeed(failingConnectionString);
+    await expect(seedFailure).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("0000_baseline.sql"),
+    });
+    await expect(seedFailure).rejects.toMatchObject({
+      stderr: expect.stringContaining("CREATE SCHEMA fitness"),
+    });
+    await expect(seedFailure).rejects.toMatchObject({
+      stderr: expect.stringContaining('schema "fitness" already exists'),
+    });
+
+    const verificationSql = postgres(failingConnectionString, { max: 1 });
+    const [row] = await verificationSql<
+      { userProfileTable: string | null }[]
+    >`SELECT to_regclass('fitness.user_profile')::text AS "userProfileTable"`;
+    await verificationSql.end();
+    expect(row?.userProfileTable).toBeNull();
+  }, 120_000);
 });
 
 async function runSeed(connectionString: string): Promise<void> {

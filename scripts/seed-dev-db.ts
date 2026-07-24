@@ -20,8 +20,7 @@
  *   - Web and mobile dashboard, recovery, strain, nutrition, body, and provider screens
  */
 
-import { readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { runMigrations } from "../src/db/migrate.ts";
 import { createTaggedQueryClient } from "../src/db/tagged-query-client.ts";
 import { seedBodyHealth } from "./seed/body-health.ts";
 import { clearSeedData, seedCore } from "./seed/core.ts";
@@ -38,7 +37,6 @@ if (!databaseUrl) {
 }
 
 const sql = createTaggedQueryClient(databaseUrl);
-const drizzleDir = resolve(import.meta.dirname, "../drizzle");
 
 interface CountRow {
   count: number;
@@ -49,26 +47,7 @@ interface CountRow {
 // ---------------------------------------------------------------------------
 
 async function applyMigrations() {
-  const migrationFiles = readdirSync(drizzleDir)
-    .filter((fileName) => fileName.endsWith(".sql"))
-    .sort();
-
-  let applied = 0;
-  for (const fileName of migrationFiles) {
-    const content = readFileSync(resolve(drizzleDir, fileName), "utf-8");
-    const statements = content
-      .split("--> statement-breakpoint")
-      .map((statement) => statement.trim())
-      .filter(Boolean);
-    for (const statement of statements) {
-      try {
-        await sql.unsafe(statement);
-      } catch {
-        // Ignore duplicate object errors on re-runs
-      }
-    }
-    applied++;
-  }
+  const applied = await runMigrations(databaseUrl);
   console.log(`Migrations: ${applied} files applied`);
 }
 
