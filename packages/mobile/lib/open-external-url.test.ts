@@ -1,8 +1,9 @@
 import { Linking } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { logger } from "./telemetry";
+import { captureException, logger } from "./telemetry";
 
 vi.mock("./telemetry", () => ({
+  captureException: vi.fn(),
   logger: {
     warn: vi.fn(),
   },
@@ -25,9 +26,8 @@ describe("openExternalUrl", () => {
   });
 
   it("logs a warning and returns false when Linking fails", async () => {
-    vi.mocked(Linking.openURL).mockRejectedValue(
-      new Error("Unable to open URL: https://www.fatsecret.com/"),
-    );
+    const openError = new Error("Unable to open URL: https://www.fatsecret.com/");
+    vi.mocked(Linking.openURL).mockRejectedValue(openError);
 
     const { openExternalUrl } = await import("./open-external-url");
     const opened = await openExternalUrl("https://www.fatsecret.com/", "food");
@@ -36,6 +36,10 @@ describe("openExternalUrl", () => {
     expect(logger.warn).toHaveBeenCalledWith("food", "Unable to open external URL", {
       url: "https://www.fatsecret.com/",
       message: "Unable to open URL: https://www.fatsecret.com/",
+    });
+    expect(captureException).toHaveBeenCalledWith(openError, {
+      source: "open-external-url",
+      caller: "food",
     });
   });
 });

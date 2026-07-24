@@ -4,6 +4,9 @@ import {
   NON_ADDITIVE_QUANTITY_TYPES,
   syncHealthKitToServer,
 } from "./health-kit-sync";
+import { captureException } from "./telemetry";
+
+vi.mock("./telemetry", () => ({ captureException: vi.fn() }));
 
 describe("syncHealthKitToServer", () => {
   function createMockClient() {
@@ -302,7 +305,8 @@ describe("syncHealthKitToServer", () => {
   it("records route query errors as non-fatal without aborting sync", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();
-    healthKit.queryWorkoutRoutes.mockRejectedValue(new Error("Route permission denied"));
+    const routeQueryError = new Error("Route permission denied");
+    healthKit.queryWorkoutRoutes.mockRejectedValue(routeQueryError);
 
     const result = await syncHealthKitToServer({
       trpcClient: client,
@@ -315,6 +319,10 @@ describe("syncHealthKitToServer", () => {
     expect(result.errors.some((error) => error.includes("Route query"))).toBe(true);
     // Route push should not have been attempted
     expect(client.healthKitSync.pushWorkoutRoutes.mutate).not.toHaveBeenCalled();
+    expect(captureException).toHaveBeenCalledWith(routeQueryError, {
+      source: "health-kit-workout-route-query",
+      workoutUuid: "workout-1",
+    });
   });
 
   it("records route push errors as non-fatal", async () => {
@@ -323,7 +331,8 @@ describe("syncHealthKitToServer", () => {
     healthKit.queryWorkoutRoutes.mockResolvedValue([
       { date: "2026-03-21T07:00:00Z", lat: 40.7128, lng: -74.006 },
     ]);
-    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValue(new Error("Server error"));
+    const routePushError = new Error("Server error");
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValue(routePushError);
 
     const result = await syncHealthKitToServer({
       trpcClient: client,
@@ -333,6 +342,10 @@ describe("syncHealthKitToServer", () => {
 
     expect(result.inserted).toBeGreaterThan(0);
     expect(result.errors.some((error) => error.includes("Push workout routes"))).toBe(true);
+    expect(captureException).toHaveBeenCalledWith(routePushError, {
+      source: "health-kit-workout-route-push",
+      routeCount: 1,
+    });
   });
 
   it("does not query routes when there are no workouts", async () => {

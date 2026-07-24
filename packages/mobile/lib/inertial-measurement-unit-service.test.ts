@@ -84,9 +84,13 @@ describe("InertialMeasurementUnitService", () => {
     });
 
     it("does not throw when CoreMotion fails", async () => {
-      vi.mocked(deps.coreMotion.startRecording).mockRejectedValue(new Error("CoreMotion error"));
+      const recordingError = new Error("CoreMotion error");
+      vi.mocked(deps.coreMotion.startRecording).mockRejectedValue(recordingError);
 
       await expect(service.ensureRecording()).resolves.toBeUndefined();
+      expect(captureException).toHaveBeenCalledWith(recordingError, {
+        source: "activity-recording-core-motion-start",
+      });
     });
 
     it("does not throw when Watch sync fails", async () => {
@@ -157,9 +161,13 @@ describe("InertialMeasurementUnitService", () => {
     });
 
     it("does not throw when CoreMotion query fails", async () => {
-      vi.mocked(deps.coreMotion.queryRecordedData).mockRejectedValue(new Error("Query failed"));
+      const queryError = new Error("Query failed");
+      vi.mocked(deps.coreMotion.queryRecordedData).mockRejectedValue(queryError);
 
       await expect(service.syncForTimeRange(startedAt, endedAt)).resolves.toBeUndefined();
+      expect(captureException).toHaveBeenCalledWith(queryError, {
+        source: "activity-save-core-motion-sync",
+      });
     });
 
     it("does not throw when upload fails", async () => {

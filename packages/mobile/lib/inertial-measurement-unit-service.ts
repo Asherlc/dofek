@@ -94,7 +94,10 @@ export function createInertialMeasurementUnitService(
       if (coreMotion.isAccelerometerRecordingAvailable()) {
         try {
           await coreMotion.startRecording(TWELVE_HOURS_SECONDS);
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, {
+            source: "activity-recording-core-motion-start",
+          });
           // Best-effort — don't block activity recording
         }
       }
@@ -103,7 +106,8 @@ export function createInertialMeasurementUnitService(
       if (watch.isAvailable()) {
         try {
           await watch.requestSync();
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, { source: "activity-recording-watch-sync" });
           // Best-effort — Watch may not be reachable
         }
       }
@@ -115,7 +119,8 @@ export function createInertialMeasurementUnitService(
           if (connected) {
             await whoopBle.startStreaming();
           }
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, { source: "activity-recording-whoop-connect" });
           // Best-effort — WHOOP may not be nearby or BLE unavailable
         }
       }
@@ -129,7 +134,8 @@ export function createInertialMeasurementUnitService(
           if (phoneSamples.length > 0) {
             await uploadBatched(deviceId, "iphone", phoneSamples);
           }
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, { source: "activity-save-core-motion-sync" });
           // Best-effort — don't fail activity save
         }
       }
@@ -142,7 +148,8 @@ export function createInertialMeasurementUnitService(
             await uploadBatched("Apple Watch", "apple_watch", watchSamples);
             watch.acknowledgeSamples();
           }
-        } catch {
+        } catch (error: unknown) {
+          captureException(error, { source: "activity-save-watch-sync" });
           // Best-effort — don't fail activity save
         }
       }

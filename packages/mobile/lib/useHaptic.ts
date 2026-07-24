@@ -9,6 +9,19 @@ import { useCallback, useRef } from "react";
 
 const THROTTLE_MS = 150;
 
+type OptionalHapticResult = { status: "performed" } | { status: "unavailable"; cause: unknown };
+
+async function performOptionalHaptic(
+  operation: () => Promise<void>,
+): Promise<OptionalHapticResult> {
+  try {
+    await operation();
+    return { status: "performed" };
+  } catch (cause: unknown) {
+    return { status: "unavailable", cause };
+  }
+}
+
 /**
  * Haptic feedback hook with built-in throttling.
  *
@@ -22,10 +35,7 @@ export function useHaptic() {
     const now = Date.now();
     if (now - lastFired.current < THROTTLE_MS) return;
     lastFired.current = now;
-    fn().catch((_error: unknown) => {
-      // Haptics unavailable — intentionally ignored (simulator, low power mode).
-      // This is non-critical UI feedback; logging would just create noise.
-    });
+    void performOptionalHaptic(fn);
   }, []);
 
   const selection = useCallback(() => {
