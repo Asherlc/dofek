@@ -245,6 +245,32 @@ describe("DataSourcesPanel", () => {
     ).toBeTruthy();
   });
 
+  it("keeps cached providers visible when a background refresh fails", () => {
+    const refreshError = new Error(
+      "Analytics data is temporarily unavailable. Please retry in a minute.",
+    );
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: true,
+          authType: "custom:garmin",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: refreshError,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
+    expect(screen.getByText(refreshError.message)).toBeTruthy();
+  });
+
   it("shows sync-all skipped and failed provider outcomes only on matching cards", async () => {
     mockSyncMutateAsync.mockResolvedValue({
       jobId: "garmin:job-garmin",

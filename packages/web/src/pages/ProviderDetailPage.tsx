@@ -226,10 +226,18 @@ export function ProviderDetailPage() {
     setShowDisconnectConfirm(false);
   }, [providerId, disconnectMutation, trpcUtils]);
 
-  if (providers.isLoading) {
+  if (providers.isLoading && providers.data === undefined) {
     return (
       <PageLayout>
         <div className="h-32 rounded-lg bg-skeleton animate-pulse" />
+      </PageLayout>
+    );
+  }
+
+  if (providers.error && providers.data === undefined) {
+    return (
+      <PageLayout>
+        <QueryStatePanel error={providers.error} />
       </PageLayout>
     );
   }
@@ -244,6 +252,13 @@ export function ProviderDetailPage() {
         <span>/</span>
         <span className="text-foreground">{provider?.name ?? formatProviderName(providerId)}</span>
       </div>
+
+      {providers.error ? (
+        <section className="space-y-2">
+          <p className="text-sm font-medium text-foreground">Could not refresh provider details.</p>
+          <QueryStatePanel error={providers.error} height={96} />
+        </section>
+      ) : null}
 
       {/* Provider header */}
       <div className="flex items-center justify-between">

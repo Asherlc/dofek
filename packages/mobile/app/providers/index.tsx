@@ -541,15 +541,19 @@ export default function ProvidersScreen() {
     [serverUrl, sessionToken, trpcUtils],
   );
 
-  const providerList: Provider[] = (providers.error ? [] : (providers.data ?? [])).map((p) => ({
-    id: p.id,
-    label: p.name,
-    enabled: p.authorized && !p.importOnly && !p.pushOnly,
-    authStatus: p.needsReauth ? "expired" : p.authorized ? "connected" : "not_connected",
-    authType: p.authType,
-    lastSyncAt: p.lastSyncedAt,
-    importOnly: p.importOnly,
-    pushOnly: p.pushOnly,
+  const providerList: Provider[] = (providers.data ?? []).map((provider) => ({
+    id: provider.id,
+    label: provider.name,
+    enabled: provider.authorized && !provider.importOnly && !provider.pushOnly,
+    authStatus: provider.needsReauth
+      ? "expired"
+      : provider.authorized
+        ? "connected"
+        : "not_connected",
+    authType: provider.authType,
+    lastSyncAt: provider.lastSyncedAt,
+    importOnly: provider.importOnly,
+    pushOnly: provider.pushOnly,
   }));
   const statsMap: Record<string, ProviderStats> = {};
   for (const s of stats.error ? [] : (stats.data ?? [])) {

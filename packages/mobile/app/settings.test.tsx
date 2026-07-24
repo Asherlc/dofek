@@ -103,6 +103,15 @@ const mockProvidersData = [
   { id: "strava", name: "Strava", authorized: true, importOnly: false },
   { id: "polar", name: "Polar", authorized: false, importOnly: false },
 ];
+const mockProvidersQuery: {
+  data: typeof mockProvidersData | undefined;
+  error: Error | null;
+  isLoading: boolean;
+} = {
+  data: mockProvidersData,
+  error: null,
+  isLoading: false,
+};
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -114,7 +123,7 @@ vi.mock("../lib/trpc", () => ({
     }),
     sync: {
       providers: {
-        useQuery: () => ({ data: mockProvidersData, isLoading: false }),
+        useQuery: () => mockProvidersQuery,
       },
     },
     auth: {
@@ -212,6 +221,9 @@ vi.mock("../lib/trpc", () => ({
 }));
 
 beforeEach(() => {
+  mockProvidersQuery.data = mockProvidersData;
+  mockProvidersQuery.error = null;
+  mockProvidersQuery.isLoading = false;
   mockSessionToken = "test-token";
   mockBillingStatus = {
     ...defaultBillingStatus,
@@ -240,6 +252,36 @@ describe("SettingsScreen data sources", () => {
     expect(screen.getByTestId("provider-logo-wahoo")).toBeTruthy();
     expect(screen.getByTestId("provider-logo-strava")).toBeTruthy();
     expect(screen.queryByTestId("provider-logo-polar")).toBeNull();
+  });
+
+  it("shows the provider inventory error instead of a zero count on initial failure", async () => {
+    mockProvidersQuery.data = undefined;
+    mockProvidersQuery.error = new Error(
+      "Analytics data is temporarily unavailable. Please retry in a minute.",
+    );
+
+    const { default: SettingsScreen } = await import("./settings");
+    render(<SettingsScreen />);
+
+    expect(
+      screen.getByText("Analytics data is temporarily unavailable. Please retry in a minute."),
+    ).toBeTruthy();
+    expect(screen.queryByText("0 connected")).toBeNull();
+  });
+
+  it("shows retained provider inventory with a refresh warning after a background failure", async () => {
+    mockProvidersQuery.error = new Error(
+      "Analytics data is temporarily unavailable. Please retry in a minute.",
+    );
+
+    const { default: SettingsScreen } = await import("./settings");
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("2 connected")).toBeTruthy();
+    expect(screen.getByText("Could not refresh data sources")).toBeTruthy();
+    expect(
+      screen.getByText("Analytics data is temporarily unavailable. Please retry in a minute."),
+    ).toBeTruthy();
   });
 
   it("exposes the Data Sources card as a named accessibility action", async () => {
