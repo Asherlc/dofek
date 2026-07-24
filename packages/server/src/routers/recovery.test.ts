@@ -1389,10 +1389,19 @@ describe("recoveryRouter.readinessScore", () => {
 // ── strainTarget ────────────────────────────────────────────────
 
 describe("recoveryRouter.strainTarget", () => {
-  // Sets up a strainTarget caller. PG mocks: readinessRows, then optional sleepRows.
-  // CH mock: loads from analytics.daily_strain.
+  const defaultReadinessRows = [
+    {
+      date: "2026-03-22",
+      hrv_score: 62,
+      resting_hr_score: 62,
+      sleep_score: 62,
+      respiratory_rate_score: 62,
+    },
+  ];
+
+  // Sets up a strainTarget caller with recovery and strain read-model rows.
   function setup({
-    readinessRows = [],
+    readinessRows = defaultReadinessRows,
     sleepRows,
     loads = [],
   }: {
@@ -1402,10 +1411,7 @@ describe("recoveryRouter.strainTarget", () => {
   }) {
     const executeMock = vi.fn();
     executeMock.mockResolvedValueOnce(readinessRows);
-    const sensorRows =
-      readinessRows.length > 0
-        ? [[], loads, (sleepRows ?? []).map((row) => sleepNightRow(row))]
-        : [[], loads];
+    const sensorRows = [readinessRows, loads, (sleepRows ?? []).map((row) => sleepNightRow(row))];
     return createCaller({
       db: { execute: executeMock },
       userId: "user-1",
@@ -1413,16 +1419,11 @@ describe("recoveryRouter.strainTarget", () => {
     });
   }
 
-  it("returns default values when no metric rows exist", async () => {
-    const caller = setup({});
+  it("omits the strain target when no recovery summary exists", async () => {
+    const caller = setup({ readinessRows: [] });
     const result = await caller.strainTarget({});
 
-    expect(result.zone).toBe("Maintain");
-    expect(result.targetStrain).toBeGreaterThanOrEqual(10);
-    expect(result.targetStrain).toBeLessThanOrEqual(14);
-    expect(result.currentStrain).toBe(0);
-    expect(result.progressPercent).toBe(0);
-    expect(result.explanation).toBeTruthy();
+    expect(result).toBeUndefined();
   });
 
   it("reads daily loads from the compact activity load read model", async () => {
@@ -1613,7 +1614,7 @@ describe("recoveryRouter.strainTarget", () => {
     expect(result.acuteLoad).toBeCloseTo(930 / 7, 1);
     expect(result.chronicLoad).toBeCloseTo(930 / 28, 1);
     expect(result.workloadRatio).toBe(4);
-    expect(result.readinessScore).toBe(50);
+    expect(result.readinessScore).toBe(62);
   });
 
   it("computes progressPercent as ratio of current to target", async () => {

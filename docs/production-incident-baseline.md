@@ -15790,6 +15790,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   either mobile release gate so event-specific branches cannot bypass the
   prerequisite again.
 
+## 2026-07-24 — GitHub Actions Release Downloads Returned 504
+
+- **Status:** External service recovered sufficiently for the targeted rerun;
+  GitHub's broader incident remained under investigation.
+- **Symptoms:** Pull request 1897 failed `Test / Dotenv Lint` and
+  `Test / Periphery` before either repository check executed, then held its
+  final CI gate without an assigned runner.
+- **User impact:** The pull request was temporarily blocked from merging;
+  production was unaffected.
+- **Evidence:** The first fatal lines were HTTP 504 responses while downloading
+  the pinned dotenv-linter v4.0.0 tarball and Periphery 2.21.2 zip from GitHub
+  Releases. GitHub concurrently reported degraded Actions availability in its
+  official
+  [service incident](https://stspg.io/j5c80shxqm53).
+- **Root cause:** GitHub's Actions and release-asset delivery were degraded;
+  the repository checkout and all jobs that reached repository commands
+  completed successfully.
+- **Fix / mitigation:** No repository behavior changed. After the initial run
+  completed, only the failed jobs and their dependent gates were rerun.
+- **Validation:** CI run
+  [30108021933](https://github.com/Asherlc/dofek/actions/runs/30108021933)
+  completed successfully on attempt 2, and pull request 1897 reported 90
+  successful checks with no failures or pending jobs.
+- **Remaining risk / follow-up:** GitHub may continue to queue runners or return
+  release-download errors until the external incident is resolved. Preserve
+  the pinned installer versions and immutable download sources; do not add
+  repository retries or timeouts for this outage.
 ## 2026-07-24 — WHOOP Calories Won Activity Deduplication
 
 - **Status:** Diagnosed; no production data or behavior changed.
