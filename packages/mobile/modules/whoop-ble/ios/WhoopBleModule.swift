@@ -173,8 +173,10 @@ public class WhoopBleModule: Module {
                     "lastWriteError": self.connectionManager.lastWriteError ?? "none",
                     "realtimeBufferCount": self.sampleBuffer.realtimeSampleCount,
                     "watchdogRetryCount": Int(self.watchdog.retryCount),
-                    "droppedFrames": Int(self.frameParser.droppedFrameCount),
-                    "droppedCmdFrames": Int(self.cmdFrameParser.droppedFrameCount),
+                    "malformedFrames": Int(self.frameParser.malformedFrameCount),
+                    "malformedCmdFrames": Int(self.cmdFrameParser.malformedFrameCount),
+                    "coalescedFrames": Int(self.frameParser.coalescedFrameCount),
+                    "coalescedCmdFrames": Int(self.cmdFrameParser.coalescedFrameCount),
                 ]
             }
         }
