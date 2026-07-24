@@ -2,6 +2,7 @@
 module.exports = {
   type: "watch",
   name: "DofekWatch",
+  displayName: "Dofek",
   bundleIdentifier: "com.dofek.app.watchkitapp",
   icon: "../../assets/icon.png",
   deploymentTarget: "10.0",
