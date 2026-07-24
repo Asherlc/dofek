@@ -23,6 +23,7 @@ const periodHistoryRowSchema = z.object({
   id: z.string(),
   start_date: dateStringSchema,
   end_date: dateStringSchema.nullable(),
+  duration_days: z.coerce.number().int().nullable(),
   notes: z.string().nullable(),
 });
 
@@ -30,6 +31,7 @@ const periodMutationRowSchema = z.object({
   id: z.string(),
   start_date: dateStringSchema,
   end_date: dateStringSchema.nullable(),
+  duration_days: z.coerce.number().int().nullable(),
   notes: z.string().nullable(),
 });
 
@@ -47,7 +49,14 @@ export interface MenstrualPeriod {
   id: string;
   startDate: string;
   endDate: string | null;
+  durationDays: number | null;
+  durationLabel: string | null;
   notes: string | null;
+}
+
+function formatPeriodDuration(durationDays: number | null): string | null {
+  if (durationDays === null) return null;
+  return `${durationDays} ${durationDays === 1 ? "day" : "days"}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +122,10 @@ export class MenstrualCycleRepository {
     endDate: string | null,
     notes: string | null,
   ): Promise<MenstrualPeriod | null> {
+    if (endDate !== null && endDate < startDate) {
+      throw new Error("Period end date cannot be before start date.");
+    }
+
     const rows = await executeWithSchema(
       this.#db,
       periodMutationRowSchema,
@@ -121,7 +134,9 @@ export class MenstrualCycleRepository {
           ON CONFLICT (user_id, start_date) DO UPDATE SET
             end_date = EXCLUDED.end_date,
             notes = EXCLUDED.notes
-          RETURNING id, start_date, end_date, notes`,
+          RETURNING id, start_date, end_date,
+                    end_date - start_date + 1 AS duration_days,
+                    notes`,
     );
 
     const row = rows[0];
@@ -131,6 +146,8 @@ export class MenstrualCycleRepository {
       id: row.id,
       startDate: row.start_date,
       endDate: row.end_date,
+      durationDays: row.duration_days,
+      durationLabel: formatPeriodDuration(row.duration_days),
       notes: row.notes,
     };
   }
@@ -140,7 +157,9 @@ export class MenstrualCycleRepository {
     const rows = await executeWithSchema(
       this.#db,
       periodHistoryRowSchema,
-      sql`SELECT id, start_date, end_date, notes
+      sql`SELECT id, start_date, end_date,
+                 end_date - start_date + 1 AS duration_days,
+                 notes
           FROM fitness.menstrual_period
           WHERE user_id = ${this.#userId}
             AND start_date >= CURRENT_DATE - (${months}::int || ' months')::interval
@@ -151,6 +170,8 @@ export class MenstrualCycleRepository {
       id: row.id,
       startDate: row.start_date,
       endDate: row.end_date,
+      durationDays: row.duration_days,
+      durationLabel: formatPeriodDuration(row.duration_days),
       notes: row.notes,
     }));
   }

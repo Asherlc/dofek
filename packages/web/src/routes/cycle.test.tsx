@@ -1,0 +1,188 @@
+/** @vitest-environment jsdom */
+
+import { fireEvent, render, screen } from "@testing-library/react";
+import type { ComponentType, ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+interface Period {
+  id: string;
+  startDate: string;
+  endDate: string | null;
+  durationDays: number | null;
+  durationLabel: string | null;
+  notes: string | null;
+}
+
+interface PhaseData {
+  phase: "menstrual";
+  dayOfCycle: number;
+  cycleLength: number;
+}
+
+interface TestState {
+  capturedComponent: ComponentType | null;
+  phaseQuery: {
+    data: PhaseData | undefined;
+    isLoading: boolean;
+    error: Error | null;
+  };
+  historyQuery: {
+    data: Period[] | undefined;
+    isLoading: boolean;
+    error: Error | null;
+  };
+  mutationError: Error | null;
+  mutationInput: { startDate: string } | null;
+  captureException: ReturnType<typeof vi.fn>;
+  invalidateCurrentPhase: ReturnType<typeof vi.fn>;
+  invalidateHistory: ReturnType<typeof vi.fn>;
+}
+
+const state = vi.hoisted<TestState>(() => ({
+  capturedComponent: null,
+  phaseQuery: {
+    data: undefined,
+    isLoading: false,
+    error: null,
+  },
+  historyQuery: {
+    data: [],
+    isLoading: false,
+    error: null,
+  },
+  mutationError: null,
+  mutationInput: null,
+  captureException: vi.fn(),
+  invalidateCurrentPhase: vi.fn(),
+  invalidateHistory: vi.fn(),
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  createFileRoute: () => (options: { component: ComponentType }) => {
+    state.capturedComponent = options.component;
+    return {};
+  },
+}));
+
+vi.mock("../components/PageLayout.tsx", () => ({
+  PageLayout: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+}));
+
+vi.mock("../lib/telemetry.ts", () => ({
+  captureException: state.captureException,
+}));
+
+vi.mock("../lib/trpc.ts", () => ({
+  trpc: {
+    menstrualCycle: {
+      currentPhase: {
+        useQuery: () => state.phaseQuery,
+      },
+      history: {
+        useQuery: () => state.historyQuery,
+      },
+      logPeriod: {
+        useMutation: (options: { onError?: (error: Error) => void }) => ({
+          mutate: (input: { startDate: string }) => {
+            state.mutationInput = input;
+            if (state.mutationError) options.onError?.(state.mutationError);
+          },
+          isPending: false,
+          error: state.mutationError,
+        }),
+      },
+    },
+    useUtils: () => ({
+      menstrualCycle: {
+        currentPhase: { invalidate: state.invalidateCurrentPhase },
+        history: { invalidate: state.invalidateHistory },
+      },
+    }),
+  },
+}));
+
+import "./cycle.tsx";
+
+function renderCyclePage() {
+  if (!state.capturedComponent) throw new Error("Cycle route component was not captured");
+  const CyclePage = state.capturedComponent;
+  return render(<CyclePage />);
+}
+
+describe("CyclePage", () => {
+  beforeEach(() => {
+    state.phaseQuery.data = undefined;
+    state.phaseQuery.isLoading = false;
+    state.phaseQuery.error = null;
+    state.historyQuery.data = [];
+    state.historyQuery.isLoading = false;
+    state.historyQuery.error = null;
+    state.mutationError = null;
+    state.mutationInput = null;
+    vi.clearAllMocks();
+  });
+
+  it("renders separate loading and empty states", () => {
+    state.phaseQuery.isLoading = true;
+
+    renderCyclePage();
+
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(screen.getByText("No periods logged yet.")).toBeTruthy();
+  });
+
+  it("shows the current-phase server error instead of an empty state", () => {
+    state.phaseQuery.error = new Error("Current cycle data is unavailable.");
+
+    renderCyclePage();
+
+    expect(screen.getByText("Current cycle data is unavailable.")).toBeTruthy();
+    expect(screen.queryByText(/No active cycle detected/)).toBeNull();
+  });
+
+  it("shows the history server error instead of hiding the section", () => {
+    state.historyQuery.data = undefined;
+    state.historyQuery.error = new Error("Period history could not be loaded.");
+
+    renderCyclePage();
+
+    expect(screen.getByText("Period History")).toBeTruthy();
+    expect(screen.getByText("Period history could not be loaded.")).toBeTruthy();
+  });
+
+  it("renders the server-provided duration label", () => {
+    state.historyQuery.data = [
+      {
+        id: "period-1",
+        startDate: "2026-07-01",
+        endDate: "2026-07-05",
+        durationDays: 5,
+        durationLabel: "5 days",
+        notes: null,
+      },
+    ];
+
+    renderCyclePage();
+
+    expect(screen.getByText("5 days")).toBeTruthy();
+    expect(screen.queryByText("4 days")).toBeNull();
+  });
+
+  it("preserves the selected date, offers retry, and reports a failed write", () => {
+    const mutationError = new Error("Period could not be saved. Please retry.");
+    state.mutationError = mutationError;
+
+    renderCyclePage();
+
+    const dateInput = screen.getByLabelText("Period start date");
+    fireEvent.change(dateInput, { target: { value: "2026-07-03" } });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(dateInput).toHaveValue("2026-07-03");
+    expect(screen.getByText(mutationError.message)).toBeTruthy();
+    expect(state.mutationInput).toEqual({ startDate: "2026-07-03" });
+    expect(state.captureException).toHaveBeenCalledWith(mutationError, {
+      context: "cycle-log-period",
+    });
+  });
+});
