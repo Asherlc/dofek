@@ -27,7 +27,6 @@ const PROVIDER_NAME = "Amazfit / Zepp";
 
 const dailyMetricsDataSchema = z.object({
   steps: z.number().int().optional(),
-  calories: z.number().optional(),
   distanceKm: z.number().optional(),
   standHours: z.number().int().optional(),
   spo2Avg: z.number().optional(),
@@ -97,8 +96,6 @@ const watchSummarySchema = z.object({
     .max(14 * 60),
   steps: z.number().int().nonnegative().optional(),
   stepsTarget: z.number().int().nonnegative().optional(),
-  calories: z.number().nonnegative().optional(),
-  caloriesTarget: z.number().nonnegative().optional(),
   distance: z.number().nonnegative().optional(),
   heartRate: z.array(z.number()).optional(),
   restingHeartRate: z.number().positive().optional(),
@@ -167,7 +164,6 @@ function watchSummaryMetricRows(summary: WatchSummary, userId: string): MetricSt
   const currentMetrics: Array<[string, number | undefined]> = [
     ["zepp_resting_heart_rate", summary.restingHeartRate],
     ["zepp_daily_steps_target", summary.stepsTarget],
-    ["zepp_daily_calories_target", summary.caloriesTarget],
     ["zepp_daily_distance", summary.distance],
     [SPO2, summary.bloodOxygenCurrent === undefined ? undefined : summary.bloodOxygenCurrent / 100],
     [SKIN_TEMPERATURE, summary.bodyTemperatureCurrent],
@@ -262,7 +258,6 @@ export function createIngestZosHealthRouter(deps: {
         normalizedDailyMetrics[summary.date] = {
           ...existing,
           steps: summary.steps ?? existing.steps,
-          calories: summary.calories ?? existing.calories,
           standHours: summary.standHours ?? existing.standHours,
           exerciseMinutes: summary.fatBurning ?? existing.exerciseMinutes,
         };
@@ -276,13 +271,12 @@ export function createIngestZosHealthRouter(deps: {
           }
           await deps.db.execute(
             sql`INSERT INTO fitness.daily_metrics
-                (date, provider_id, user_id, steps, active_energy_kcal, distance_km, stand_hours, spo2_avg, skin_temp_c, stress_high_minutes, exercise_minutes, source_name)
-                VALUES (${dateStr}, ${PROVIDER_ID}, ${userId}, ${metrics.steps ?? null}, ${metrics.calories ?? null}, ${metrics.distanceKm ?? null}, ${metrics.standHours ?? null}, ${metrics.spo2Avg ?? null}, ${metrics.skinTempC ?? null}, ${metrics.stressHighMinutes ?? null}, ${metrics.exerciseMinutes ?? null}, 'zepp-companion')
+                (date, provider_id, user_id, steps, distance_km, stand_hours, spo2_avg, skin_temp_c, stress_high_minutes, exercise_minutes, source_name)
+                VALUES (${dateStr}, ${PROVIDER_ID}, ${userId}, ${metrics.steps ?? null}, ${metrics.distanceKm ?? null}, ${metrics.standHours ?? null}, ${metrics.spo2Avg ?? null}, ${metrics.skinTempC ?? null}, ${metrics.stressHighMinutes ?? null}, ${metrics.exerciseMinutes ?? null}, 'zepp-companion')
                 ON CONFLICT (user_id, date, provider_id, source_name)
                 WHERE source_name = 'zepp-companion'
                 DO UPDATE SET
                   steps = COALESCE(EXCLUDED.steps, daily_metrics.steps),
-                  active_energy_kcal = COALESCE(EXCLUDED.active_energy_kcal, daily_metrics.active_energy_kcal),
                   distance_km = COALESCE(EXCLUDED.distance_km, daily_metrics.distance_km),
                   stand_hours = COALESCE(EXCLUDED.stand_hours, daily_metrics.stand_hours),
                   spo2_avg = COALESCE(EXCLUDED.spo2_avg, daily_metrics.spo2_avg),

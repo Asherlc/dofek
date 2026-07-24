@@ -284,11 +284,9 @@ export class InMemoryAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
   }
 }
 
-/* Stryker disable all */
 async function getSharedRedisClient(): Promise<RedisClient> {
   const connection = getSharedRedisConnection();
-  // biome-ignore lint/suspicious/noExplicitAny: bullmq 5.79.2 narrowed IRedisClient; runtime is ioredis Redis
-  const redisClient: any = await connection.client;
+  const redisClient = await connection.client;
   return {
     set: async (key, value, mode, millisecondsToExpire) =>
       redisClient.set(key, value, mode, millisecondsToExpire),
@@ -308,7 +306,6 @@ async function getSharedRedisClient(): Promise<RedisClient> {
     },
   };
 }
-/* Stryker enable all */
 
 export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
   readonly #getRedisClient: () => Promise<RedisClient>;

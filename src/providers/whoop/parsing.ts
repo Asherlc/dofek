@@ -274,7 +274,6 @@ export interface ParsedWorkout {
   endedAt: Date;
   durationSeconds: number;
   distanceMeters?: number;
-  calories?: number;
   avgHeartRate?: number;
   maxHeartRate?: number;
   totalElevationGain?: number;
@@ -348,7 +347,6 @@ export function parseWorkout(
     endedAt,
     durationSeconds: Math.round((endedAt.getTime() - startedAt.getTime()) / 1000),
     distanceMeters: undefined, // BFF v0 doesn't include distance at top level
-    calories: record.kilojoules ? Math.round(record.kilojoules / 4.184) : undefined,
     avgHeartRate: record.average_heart_rate,
     maxHeartRate: record.max_heart_rate,
     totalElevationGain: undefined,

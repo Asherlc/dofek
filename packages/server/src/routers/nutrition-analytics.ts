@@ -13,16 +13,6 @@ export interface MicronutrientAdequacyRow {
   daysTracked: number;
 }
 
-export interface CaloricBalanceRow {
-  date: string;
-  caloriesIn: number;
-  activeEnergy: number;
-  basalEnergy: number;
-  totalExpenditure: number;
-  balance: number;
-  rollingAvgBalance: number | null;
-}
-
 export interface AdaptiveTdeeResult {
   estimatedTdee: number | null;
   confidence: number;
@@ -61,22 +51,6 @@ export const nutritionAnalyticsRouter = router({
         ctx.sensorStore,
       );
       const models = await repo.getMicronutrientAdequacy(range.days);
-      return models.map((model) => model.toDetail());
-    },
-  ),
-
-  caloricBalance: selectedChartRangeQuery(
-    "nutritionAnalytics.caloricBalance",
-    CacheTTL.MEDIUM,
-    async ({ ctx, range }): Promise<CaloricBalanceRow[]> => {
-      const repo = new NutritionAnalyticsRepository(
-        ctx.db,
-        ctx.userId,
-        ctx.timezone,
-        ctx.accessWindow,
-        ctx.sensorStore,
-      );
-      const models = await repo.getCaloricBalance(range.days);
       return models.map((model) => model.toDetail());
     },
   ),

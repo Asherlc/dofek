@@ -5,14 +5,13 @@ import type {
   SleepSample,
   WorkoutSample,
 } from "../modules/health-kit";
+import { captureException } from "./telemetry";
 
 // Additive types use HKStatisticsCollectionQuery for proper source deduplication.
 // Without this, overlapping samples from iPhone + Apple Watch get summed, roughly
 // doubling the real values (e.g., 3k steps shown when the user walked 1.5k).
 export const ADDITIVE_QUANTITY_TYPES = [
   "HKQuantityTypeIdentifierStepCount",
-  "HKQuantityTypeIdentifierActiveEnergyBurned",
-  "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierDistanceWalkingRunning",
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
@@ -55,7 +54,6 @@ function syncWindowStart(syncRangeDays: number | null): string {
 function normalizeWorkout(workout: WorkoutSample): WorkoutSample {
   return {
     ...workout,
-    totalEnergyBurned: workout.totalEnergyBurned ?? null,
     totalDistance: workout.totalDistance ?? null,
   };
 }
@@ -231,6 +229,10 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
               });
             }
           } catch (error) {
+            captureException(error, {
+              source: "health-kit-workout-route-query",
+              workoutUuid: workout.uuid,
+            });
             const message = error instanceof Error ? error.message : String(error);
             errors.push(`Route query for workout ${workout.uuid}: ${message}`);
           }
@@ -246,6 +248,10 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
         const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });
         totalInserted += routeResult.inserted;
       } catch (error) {
+        captureException(error, {
+          source: "health-kit-workout-route-push",
+          routeCount: routes.length,
+        });
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Push workout routes: ${message}`);
       }

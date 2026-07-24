@@ -211,7 +211,6 @@ describe("Decathlon Provider", () => {
       expect(parsed.startedAt).toEqual(new Date("2026-03-01T07:00:00Z"));
       expect(parsed.endedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
       expect(parsed.raw.distanceKm).toBe(10.5);
-      expect(parsed.raw.calories).toBe(650);
       expect(parsed.raw.avgHeartRate).toBe(155);
     });
   });

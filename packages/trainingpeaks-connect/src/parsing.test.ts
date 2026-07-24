@@ -83,10 +83,9 @@ describe("parseTrainingPeaksWorkout", () => {
     expect(parsed.cadenceAverage).toBe(88);
   });
 
-  it("includes elevation and calories", () => {
+  it("includes elevation", () => {
     const parsed = parseTrainingPeaksWorkout(baseWorkout);
     expect(parsed.elevationGain).toBe(450);
-    expect(parsed.calories).toBe(850);
   });
 
   it("includes subjective metrics", () => {

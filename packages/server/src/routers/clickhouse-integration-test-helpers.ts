@@ -148,8 +148,6 @@ const rawTableSyncs: RawTableSync[] = [
       "spo2_avg",
       "respiratory_rate_avg",
       "steps",
-      "active_energy_kcal",
-      "basal_energy_kcal",
       "distance_km",
       "flights_climbed",
       "exercise_minutes",

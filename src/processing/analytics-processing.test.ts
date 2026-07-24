@@ -156,16 +156,16 @@ describe("buildProcessingAnalyticsEvents", () => {
   });
 
   it("rejects a pending dataset without a contract", () => {
+    const pendingDatasetWithoutContract = {
+      operationId,
+      datasetKey: "providers",
+    } as const;
+    Reflect.set(pendingDatasetWithoutContract, "datasetKey", "missing");
+
     expect(() =>
       buildProcessingAnalyticsEvents({
         runId: "dbt-run-1",
-        pendingDatasets: [
-          {
-            operationId,
-            // @ts-expect-error Deliberately exercise the runtime defensive branch.
-            datasetKey: "missing",
-          },
-        ],
+        pendingDatasets: [pendingDatasetWithoutContract],
         modelResults: [],
       }),
     ).toThrow("Missing processing dataset contract for missing");

@@ -762,39 +762,6 @@ describe("upsertDailyMetricsBatch", () => {
     expect(capture.values[0]?.[0]).toMatchObject({ steps: 2050, date: "2024-03-01" });
   });
 
-  it("sums active energy across records on the same day", async () => {
-    const { db, capture } = createMockDb();
-    const records = [
-      makeRecord({
-        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-        value: 200,
-        startDate: new Date("2024-03-01T10:00:00Z"),
-      }),
-      makeRecord({
-        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-        value: 150,
-        startDate: new Date("2024-03-01T15:00:00Z"),
-      }),
-    ];
-
-    await upsertDailyMetricsBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ activeEnergyKcal: 350 });
-  });
-
-  it("sums basal energy", async () => {
-    const { db, capture } = createMockDb();
-    const records = [
-      makeRecord({
-        type: "HKQuantityTypeIdentifierBasalEnergyBurned",
-        value: 1500,
-        startDate: new Date("2024-03-01T00:00:00Z"),
-      }),
-    ];
-
-    await upsertDailyMetricsBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ basalEnergyKcal: 1500 });
-  });
-
   it("ignores provider resting HR as a daily metric", async () => {
     const { db, capture } = createMockDb();
     const records = [
@@ -1536,7 +1503,6 @@ describe("upsertWorkoutBatch", () => {
     await upsertWorkoutBatch(db, "p1", [
       makeWorkout({
         distanceMeters: 5200,
-        calories: 320,
         avgHeartRate: 148,
         maxHeartRate: 182,
         durationSeconds: 1830,
@@ -1545,7 +1511,6 @@ describe("upsertWorkoutBatch", () => {
 
     expect(findActivityUpsertValues(() => true)?.raw).toMatchObject({
       distanceMeters: 5200,
-      calories: 320,
       avgHeartRate: 148,
       maxHeartRate: 182,
       durationSeconds: 1830,
@@ -1560,7 +1525,6 @@ describe("upsertWorkoutBatch", () => {
     const raw = findActivityUpsertValues(() => true)?.raw;
     expect(raw).toMatchObject({ durationSeconds: 1800 });
     expect(raw).not.toHaveProperty("distanceMeters");
-    expect(raw).not.toHaveProperty("calories");
     expect(raw).not.toHaveProperty("avgHeartRate");
     expect(raw).not.toHaveProperty("maxHeartRate");
   });

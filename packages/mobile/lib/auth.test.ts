@@ -312,6 +312,18 @@ describe("startNativeAppleSignIn", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("models user cancellation as a null result without reporting a defect", async () => {
+    const cancellationError = Object.assign(new Error("User canceled"), {
+      code: "ERR_REQUEST_CANCELED",
+    });
+    mockSignInAsync.mockRejectedValueOnce(cancellationError);
+
+    await expect(startNativeAppleSignIn("https://srv")).resolves.toBeNull();
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalledWith(cancellationError, expect.anything());
+  });
+
   it("throws when server returns an error", async () => {
     mockSignInAsync.mockResolvedValueOnce({
       user: "apple-user-123",

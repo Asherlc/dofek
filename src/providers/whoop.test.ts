@@ -817,7 +817,6 @@ describe("WHOOP Provider — parsing", () => {
       expect(result?.activityType).toBe("running");
       expect(result?.avgHeartRate).toBe(155);
       expect(result?.maxHeartRate).toBe(185);
-      expect(result?.calories).toBe(598); // 2500.5 kJ / 4.184
       expect(result?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
       expect(result?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
       expect(result?.durationSeconds).toBe(3600);
@@ -2143,14 +2142,13 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
     expect(activityInsert?.activityType).toBe("running"); // sport_id 0 = running
     expect(activityInsert?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(activityInsert?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
-    // Verify raw data contains strain, HR, calories, duration
+    // Verify normalized raw data contains strain, HR, and duration
     expect(activityInsert?.raw).toBeDefined();
     expect(isRecord(activityInsert?.raw)).toBe(true);
     if (isRecord(activityInsert?.raw)) {
       expect(activityInsert.raw.strain).toBe(10);
       expect(activityInsert.raw.avgHeartRate).toBe(150);
       expect(activityInsert.raw.maxHeartRate).toBe(180);
-      expect(activityInsert.raw.calories).toBe(478); // 2000 kJ / 4.184
       expect(activityInsert.raw.durationSeconds).toBe(3600);
     }
 

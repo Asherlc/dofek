@@ -94,8 +94,6 @@ export interface ParsedDailyMetrics {
   date: string;
   steps: number;
   distanceKm: number;
-  activeEnergyKcal: number;
-  basalEnergyKcal: number;
   restingHr: number | undefined;
   spo2Avg: number | undefined;
   respiratoryRateAvg: number | undefined;
@@ -268,8 +266,6 @@ export function parseConnectDailySummary(summary: ConnectDailySummary): ParsedDa
     date: summary.calendarDate,
     steps: summary.totalSteps,
     distanceKm: summary.totalDistanceMeters / 1000,
-    activeEnergyKcal: summary.activeKilocalories,
-    basalEnergyKcal: summary.bmrKilocalories,
     restingHr: summary.restingHeartRate,
     spo2Avg: summary.averageSpo2,
     respiratoryRateAvg: undefined, // not in daily summary, use respiration endpoint

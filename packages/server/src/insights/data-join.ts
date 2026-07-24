@@ -22,7 +22,6 @@ export interface JoinedDay {
   hrv: number | null;
   spo2_avg: number | null;
   steps: number | null;
-  active_energy_kcal: number | null;
   skin_temp_c: number | null;
   // sleep (night before → this date)
   sleep_duration_min: number | null;
@@ -146,7 +145,6 @@ export function joinByDate(
       hrv: m.hrv,
       spo2_avg: m.spo2_avg,
       steps: m.steps,
-      active_energy_kcal: m.active_energy_kcal,
       skin_temp_c: m.skin_temp_c,
       sleep_duration_min: sleepRow?.duration_minutes ?? null,
       deep_min: sleepRow?.deep_minutes ?? null,

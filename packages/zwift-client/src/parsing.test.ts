@@ -84,7 +84,6 @@ describe("parseZwiftActivity", () => {
     expect(result.raw.avgSpeed).toBe(7.8);
     expect(result.raw.maxSpeed).toBe(12.5);
     expect(result.raw.elevationGain).toBe(500);
-    expect(result.raw.calories).toBe(900);
   });
 
   it("uses id_str when available", () => {

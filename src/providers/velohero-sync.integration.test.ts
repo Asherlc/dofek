@@ -279,6 +279,5 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     if ("maxPower" in raw) expect(raw.maxPower).toBe(480);
     if ("avgHeartRate" in raw) expect(raw.avgHeartRate).toBe(148);
     if ("ascent" in raw) expect(raw.ascent).toBe(750);
-    if ("calories" in raw) expect(raw.calories).toBe(1100);
   });
 });

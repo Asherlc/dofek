@@ -1080,6 +1080,22 @@ describe("ProvidersScreen", () => {
     expect(screen.getByText("Providers failed")).toBeTruthy();
   });
 
+  it("keeps cached providers visible when a background refresh fails", async () => {
+    const refreshError = new Error(
+      "Analytics data is temporarily unavailable. Please retry in a minute.",
+    );
+    mockProvidersQuery.mockReturnValue({
+      data: [connectedProvider],
+      isLoading: false,
+      error: refreshError,
+    });
+
+    await renderProvidersScreen();
+
+    expect(screen.getByTestId("provider-card-wahoo")).toBeTruthy();
+    expect(screen.getByText(refreshError.message)).toBeTruthy();
+  });
+
   it("shows an explicit error when sync history fails to load", async () => {
     mockLogsQuery.mockReturnValue({
       data: undefined,

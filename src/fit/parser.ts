@@ -9,7 +9,6 @@ export interface ParsedFitSession {
   totalElapsedTime: number;
   totalTimerTime: number;
   totalDistance: number;
-  totalCalories: number;
   totalAscent?: number;
   totalDescent?: number;
   avgHeartRate?: number;
@@ -48,7 +47,6 @@ export interface ParsedFitRecord {
   temperature?: number;
   distance?: number;
   grade?: number;
-  calories?: number;
   verticalSpeed?: number;
   gpsAccuracy?: number;
   accumulatedPower?: number;
@@ -104,7 +102,6 @@ export function parseFitRecord(raw: Record<string, unknown>): ParsedFitRecord {
     temperature: num(raw.temperature),
     distance: num(raw.distance),
     grade: num(raw.grade),
-    calories: intOrUndef(raw.calories),
     verticalSpeed: num(raw.vertical_speed),
     gpsAccuracy: intOrUndef(raw.gps_accuracy),
     accumulatedPower: intOrUndef(raw.accumulated_power),
@@ -136,7 +133,6 @@ export function parseFitSession(raw: Record<string, unknown>): ParsedFitSession 
     totalElapsedTime: num(raw.total_elapsed_time) ?? 0,
     totalTimerTime: num(raw.total_timer_time) ?? 0,
     totalDistance: num(raw.total_distance) ?? 0,
-    totalCalories: intOrUndef(raw.total_calories) ?? 0,
     totalAscent: intOrUndef(raw.total_ascent),
     totalDescent: intOrUndef(raw.total_descent),
     avgHeartRate: intOrUndef(raw.avg_heart_rate),

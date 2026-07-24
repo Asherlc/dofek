@@ -79,7 +79,6 @@ describe("parseMapMyFitnessWorkout", () => {
     expect(parsed.raw.avgPower).toBe(200);
     expect(parsed.raw.maxPower).toBe(400);
     expect(parsed.raw.avgCadence).toBe(170);
-    expect(parsed.raw.calories).toBe(500);
   });
 
   it("handles missing aggregates", () => {
@@ -95,7 +94,6 @@ describe("parseMapMyFitnessWorkout", () => {
     const parsed = parseMapMyFitnessWorkout(workout);
     expect(parsed.externalId).toBe("w-min");
     expect(parsed.activityType).toBe("walking");
-    expect(parsed.raw.calories).toBeUndefined();
     expect(parsed.raw.distanceMeters).toBeUndefined();
   });
 

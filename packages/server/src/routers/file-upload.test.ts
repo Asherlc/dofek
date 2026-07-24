@@ -289,6 +289,42 @@ describe("fileUploadRouter", () => {
     );
   });
 
+  it("reuses the persisted Apple Health import window when initiation is retried", async () => {
+    const persistedSince = new Date("2026-07-12T00:00:00Z");
+    const existing = upload({
+      importType: "apple-health",
+      originalFilename: "export.xml",
+      contentType: "application/xml",
+      since: persistedSince,
+    });
+    const { caller, repository } = setup(existing);
+    repository.find.mockResolvedValueOnce(null).mockResolvedValueOnce(existing);
+    const dateNow = vi.spyOn(Date, "now");
+    const input = {
+      uploadId: existing.id,
+      importType: "apple-health",
+      filename: existing.originalFilename,
+      contentType: existing.contentType,
+      sizeBytes: existing.expectedSizeBytes,
+      sha256: existing.expectedSha256,
+    } satisfies Parameters<typeof caller.initiate>[0];
+
+    try {
+      dateNow.mockReturnValue(new Date("2026-07-19T00:00:00Z").getTime());
+      await caller.initiate(input);
+      dateNow.mockReturnValue(new Date("2026-07-19T00:01:00Z").getTime());
+      await caller.initiate(input);
+
+      expect(repository.create).toHaveBeenNthCalledWith(
+        2,
+        {},
+        expect.objectContaining({ since: persistedSince }),
+      );
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
   it("uses epoch for full Apple Health imports and defaults Strong weight units", async () => {
     const apple = upload({
       importType: "apple-health",

@@ -27,7 +27,6 @@ interface RedisClient {
   set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => Promise<unknown>;
   get: (key: string) => Promise<string | null>;
   watch?: (key: string) => Promise<unknown>;
-  unwatch?: () => Promise<unknown>;
   multi?: () => RedisMulti;
 }
 
@@ -252,17 +251,14 @@ export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimit
   }
 }
 
-/* Stryker disable all */
 async function getSharedRedisClient(): Promise<RedisClient> {
   const connection = getSharedRedisConnection();
-  // biome-ignore lint/suspicious/noExplicitAny: bullmq 5.79.2 narrowed IRedisClient; runtime is ioredis Redis
-  const redisClient: any = await connection.client;
+  const redisClient = await connection.client;
   return {
     set: async (key, value, mode, millisecondsToExpire) =>
       redisClient.set(key, value, mode, millisecondsToExpire),
     get: async (key) => redisClient.get(key),
     watch: async (key) => redisClient.watch(key),
-    unwatch: async () => redisClient.unwatch(),
     multi: () => {
       const transaction = redisClient.multi();
       const chain: RedisMulti = {
@@ -276,7 +272,6 @@ async function getSharedRedisClient(): Promise<RedisClient> {
     },
   };
 }
-/* Stryker enable all */
 
 export class RedisProviderRateLimitCooldownStore implements ProviderRateLimitCooldownStore {
   readonly #getRedisClient: () => Promise<RedisClient>;

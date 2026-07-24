@@ -33,7 +33,6 @@ const metricsComparisonRowSchema = z.object({
   avg_resting_hr: z.coerce.number().nullable(),
   avg_hrv: z.coerce.number().nullable(),
   avg_steps: z.coerce.number().nullable(),
-  avg_active_energy: z.coerce.number().nullable(),
 });
 
 const sleepComparisonRowSchema = z.object({
@@ -278,7 +277,7 @@ export class LifeEventsRepository {
 				WHERE drhr.date BETWEEN ${startDate}::date AND ${metricsEndDate}
 			),
 			before_period AS (
-				SELECT 'before' as period, dm.hrv, dm.steps, dm.active_energy_kcal, drhr.resting_hr
+				SELECT 'before' as period, dm.hrv, dm.steps, drhr.resting_hr
 				FROM before_dates dates
 				LEFT JOIN fitness.v_daily_metrics dm
 				  ON dm.user_id = ${this.#userId}
@@ -287,7 +286,7 @@ export class LifeEventsRepository {
 				  ON drhr.date = dates.date
 			),
 			after_period AS (
-				SELECT 'after' as period, dm.hrv, dm.steps, dm.active_energy_kcal, drhr.resting_hr
+				SELECT 'after' as period, dm.hrv, dm.steps, drhr.resting_hr
 				FROM after_dates dates
 				LEFT JOIN fitness.v_daily_metrics dm
 				  ON dm.user_id = ${this.#userId}
@@ -305,8 +304,7 @@ export class LifeEventsRepository {
 				COUNT(*) as days,
 				AVG(resting_hr)::numeric(10,1) as avg_resting_hr,
 				AVG(hrv)::numeric(10,1) as avg_hrv,
-				AVG(steps)::numeric(10,0) as avg_steps,
-				AVG(active_energy_kcal)::numeric(10,0) as avg_active_energy
+				AVG(steps)::numeric(10,0) as avg_steps
 			FROM combined
 			GROUP BY period
 			ORDER BY period

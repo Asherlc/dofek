@@ -598,34 +598,6 @@ describe("parseMapMyFitnessWorkout — edge cases", () => {
     expect(result.endedAt).toEqual(result.startedAt);
   });
 
-  it("converts metabolic_energy_total joules to kcal", () => {
-    const workout = {
-      _links: { self: [{ id: "w-3" }] },
-      name: "Swim",
-      start_datetime: "2026-03-01T06:00:00+00:00",
-      start_locale_timezone: "UTC",
-      aggregates: {
-        metabolic_energy_total: 2092000, // ~500 kcal
-      },
-      activity_type: "Swimming",
-    };
-    const result = parseMapMyFitnessWorkout(workout);
-    expect(result.raw.calories).toBe(Math.round(2092000 / 4184));
-  });
-
-  it("returns undefined calories when metabolic_energy_total is missing", () => {
-    const workout = {
-      _links: { self: [{ id: "w-4" }] },
-      name: "Yoga Flow",
-      start_datetime: "2026-03-01T07:00:00+00:00",
-      start_locale_timezone: "UTC",
-      aggregates: {},
-      activity_type: "Yoga",
-    };
-    const result = parseMapMyFitnessWorkout(workout);
-    expect(result.raw.calories).toBeUndefined();
-  });
-
   it("uses activity_type even when empty string (no fallback to name)", () => {
     const workout = {
       _links: { self: [{ id: "w-5" }] },

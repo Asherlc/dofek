@@ -24,7 +24,6 @@ import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { useBodyDays } from "../lib/bodyDaysContext.ts";
 import { buildBodyHealthMetrics } from "../lib/bodyHealthMetrics.ts";
 import { chartColors } from "../lib/chartTheme.ts";
-import { enrichWeightPrediction } from "../lib/enrichWeightPrediction.ts";
 import { minimumSelectedRangeQueryInput, selectedRangeQueryInput } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -42,7 +41,6 @@ const dailyMetricRowSchema = z.object({
   spo2_avg: z.number().nullable(),
   skin_temp_c: z.number().nullable(),
   steps: z.number().nullable(),
-  active_energy_kcal: z.number().nullable(),
 });
 
 function isBodyInsight(metric: string): boolean {
@@ -145,13 +143,7 @@ export function BodyPage() {
       .sort((a, b) => Math.abs(b.effectSize) - Math.abs(a.effectSize));
   }, [insightsQuery.data]);
 
-  const weightPredictionDisplay = useMemo(() => {
-    if (!weightOverview.data?.prediction) return null;
-    return enrichWeightPrediction(
-      weightOverview.data.prediction,
-      weightOverview.data.smoothedWeight,
-    );
-  }, [weightOverview.data]);
+  const weightPredictionDisplay = weightOverview.data?.prediction ?? null;
 
   const predictionSectionError =
     weightOverview.isSuccess && weightOverview.data.prediction == null

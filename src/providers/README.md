@@ -40,6 +40,6 @@ metadata. Do not use the older `account.huami.com` or `account.zepp.com` token
 exchange hosts for credential login; Zepp rejects that stale request shape with
 HTTP `400`.
 
-The first sync slice reads `/v1/data/band_data.json` and stores decoded daily steps, distance, active calories, sleep sessions, and minute-level heart rate samples.
+The first sync slice reads `/v1/data/band_data.json` and stores decoded daily steps, distance, sleep sessions, and minute-level heart rate samples.
 
 **Note:** Zepp accounts signed in via Xiaomi or Google SSO cannot authenticate with email/password login.

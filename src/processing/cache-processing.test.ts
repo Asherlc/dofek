@@ -120,17 +120,13 @@ describe("buildProcessingCacheEvents", () => {
   });
 
   it("rejects a target without a dataset contract", () => {
+    const targetWithoutContract = { ...target };
+    Reflect.set(targetWithoutContract, "datasetKey", "missing");
+
     expect(() =>
       buildProcessingCacheEvents({
         runId: "cache-run-1",
-        targets: [
-          {
-            operationId,
-            // @ts-expect-error Deliberately exercise the runtime defensive branch.
-            datasetKey: "missing",
-            userId: "user-1",
-          },
-        ],
+        targets: [targetWithoutContract],
         outcomes: [],
       }),
     ).toThrow("Missing processing dataset contract for missing");

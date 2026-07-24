@@ -21,8 +21,6 @@ final class HealthKitTypesTests: XCTestCase {
             .height,
             .stepCount,
             .distanceWalkingRunning,
-            .activeEnergyBurned,
-            .basalEnergyBurned,
             .flightsClimbed,
             .appleExerciseTime,
             .appleStandTime,
@@ -108,8 +106,8 @@ final class HealthKitTypesTests: XCTestCase {
     }
 
     func testReadTypesTotalCount() {
-        // 51 quantity types + 5 category types + 1 workout type + 1 workout route = 58
-        var expectedCount = 58
+        // 49 quantity types + 5 category types + 1 workout type + 1 workout route = 56
+        var expectedCount = 56
         #if os(iOS)
         expectedCount += 7 // allergy, condition, immunization, lab, medication, procedure, vital
         if #available(iOS 16.4, *) { expectedCount += 1 } // clinicalNote
@@ -176,7 +174,6 @@ final class HealthKitTypesTests: XCTestCase {
             .restingHeartRate,
             .bodyMass,
             .stepCount,
-            .activeEnergyBurned,
             .vo2Max,
         ]
 

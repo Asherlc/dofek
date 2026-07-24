@@ -1,6 +1,5 @@
 import {
   type FormattedMeasurement,
-  formatCaloriesMeasurement,
   formatHRVMeasurement,
   formatSpO2Measurement,
 } from "@dofek/format/format";
@@ -36,7 +35,6 @@ const trendRowSchema = z.object({
   avg_resting_hr: z.number().nullable(),
   avg_spo2: z.number().nullable(),
   avg_steps: z.number().nullable(),
-  avg_active_energy: z.number().nullable(),
   avg_skin_temp: z.number().nullable(),
   stddev_hrv: z.number().nullable(),
   stddev_resting_hr: z.number().nullable(),
@@ -46,7 +44,6 @@ const trendRowSchema = z.object({
   latest_resting_hr: z.number().nullable(),
   latest_spo2: z.number().nullable(),
   latest_steps: z.number().nullable(),
-  latest_active_energy: z.number().nullable(),
   latest_skin_temp: z.number().nullable(),
   latest_date: z.string().nullable(),
 });
@@ -58,7 +55,6 @@ const dailyMetricRowSchema = z.object({
   spo2_avg: z.number().nullable(),
   skin_temp_c: z.number().nullable(),
   steps: z.number().nullable(),
-  active_energy_kcal: z.number().nullable(),
 });
 
 const restingHeartRateChartRowSchema = z
@@ -146,13 +142,6 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
       value: trendData.latest_steps,
       avg: trendData.avg_steps,
       stddev: null,
-    },
-    {
-      label: "Active Energy",
-      value: trendData.latest_active_energy,
-      avg: trendData.avg_active_energy,
-      stddev: null,
-      formatValue: formatCaloriesMeasurement,
     },
     trendData.latest_skin_temp != null && {
       label: "Skin Temp",

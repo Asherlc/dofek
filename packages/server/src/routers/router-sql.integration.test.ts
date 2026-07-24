@@ -176,7 +176,6 @@ describe("Router SQL validity", () => {
   describe("nutritionAnalytics", () => {
     it("micronutrientAdequacy", () =>
       expectValidSql("nutritionAnalytics.micronutrientAdequacy", { days: 30 }));
-    it("caloricBalance", () => expectValidSql("nutritionAnalytics.caloricBalance", { days: 30 }));
     it("adaptiveTdee", () => expectValidSql("nutritionAnalytics.adaptiveTdee", { days: 90 }));
     it("macroRatios", () => expectValidSql("nutritionAnalytics.macroRatios", { days: 30 }));
   });

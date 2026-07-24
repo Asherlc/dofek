@@ -26,14 +26,6 @@ function makeSensors(overrides?: Partial<SensorConstructors>): SensorConstructor
         return 10000;
       }
     },
-    Calorie: class {
-      getCurrent() {
-        return 420;
-      }
-      getTarget() {
-        return 2000;
-      }
-    },
     Distance: class {
       getCurrent() {
         return 6500;
@@ -124,7 +116,6 @@ describe("collectHealthData", () => {
     expect(result.date).toBe(formatLocalDate(new Date(result.collectedAt)));
     expect(result.timezoneOffsetMinutes).toBe(new Date(result.collectedAt).getTimezoneOffset());
     expect(result.steps).toBe(8432);
-    expect(result.calories).toBe(420);
     expect(result.distance).toBe(6500);
     expect(result.restingHeartRate).toBe(62);
     expect(result.heartRateSummary?.maxHr).toBe(145);
@@ -334,7 +325,6 @@ describe("collectHealthData", () => {
       makeSensors({
         HeartRate: ThrowingSensor,
         Step: ThrowingSensor,
-        Calorie: ThrowingSensor,
         Distance: ThrowingSensor,
         Sleep: ThrowingSensor,
         BloodOxygen: ThrowingSensor,
@@ -349,7 +339,6 @@ describe("collectHealthData", () => {
 
     expect(result.heartRate).toBeUndefined();
     expect(result.steps).toBeUndefined();
-    expect(result.calories).toBeUndefined();
     expect(result.sleep).toBeUndefined();
     expect(result.activities).toBeUndefined();
   });

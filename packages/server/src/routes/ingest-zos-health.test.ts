@@ -1,6 +1,7 @@
 import type { IncomingHttpHeaders } from "node:http";
 import { ServerResponse } from "node:http";
 import { Duplex, Readable } from "node:stream";
+import { PgDialect } from "drizzle-orm/pg-core";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -244,7 +245,6 @@ describe("createIngestZosHealthRouter", () => {
           date: "2024-07-03",
           timezoneOffsetMinutes: -120,
           steps: 4321,
-          calories: 345,
           standHours: 8,
           fatBurning: 22,
           heartRate: [0, 61, 62],
@@ -253,7 +253,6 @@ describe("createIngestZosHealthRouter", () => {
           spo2Recent: [{ spo2: 98, time: 1_720_001_100 }],
           restingHeartRate: 55,
           stepsTarget: 10_000,
-          caloriesTarget: 600,
           distance: 6543,
           bloodOxygenCurrent: 97,
           bodyTemperatureCurrent: 35.4,
@@ -455,7 +454,6 @@ describe("createIngestZosHealthRouter", () => {
         dailyMetrics: {
           "2026-06-28": {
             steps: 12_345,
-            calories: 450.5,
             distanceKm: 8.7,
             standHours: 11,
             spo2Avg: 97.2,
@@ -501,6 +499,19 @@ describe("createIngestZosHealthRouter", () => {
     expect(response.body).toEqual({ status: "ok" });
     expect(routeMocks.validateCompanionToken).toHaveBeenCalledWith(db, "token-123");
     expect(execute).toHaveBeenCalledTimes(3);
+    const dailyMetricsQuery = new PgDialect().sqlToQuery(execute.mock.calls[1]?.[0]);
+    expect(dailyMetricsQuery.params).toEqual([
+      "2026-06-28",
+      "amazfit-zepp",
+      userId,
+      12_345,
+      8.7,
+      11,
+      97.2,
+      35.9,
+      21,
+      44,
+    ]);
     expect(routeMocks.executeWithSchema).toHaveBeenCalledOnce();
     expect(insertedValues).toHaveLength(2);
     expect(insertedValues[0]).toMatchObject({

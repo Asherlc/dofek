@@ -135,18 +135,6 @@ describe("processPostSyncJob", () => {
     });
   });
 
-  it("reports partial completion progress when user refit work has errors", async () => {
-    const job = makeUserRefitJob("user-1");
-    mockRefitAllParams.mockRejectedValueOnce(new Error("refit failed"));
-
-    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
-
-    expect(job.updateProgress).toHaveBeenCalledWith({
-      percentage: 100,
-      message: "Post-sync refit completed with errors.",
-    });
-  });
-
   it("continues post-sync work when progress updates fail", async () => {
     const progressError = new Error("redis down");
     const job = makeUserRefitJob("user-1");
@@ -175,51 +163,44 @@ describe("processPostSyncJob", () => {
     );
   });
 
-  it("continues when refitAllParams fails", async () => {
-    mockRefitAllParams.mockRejectedValueOnce(new Error("refit failed"));
-
-    // Should not throw
-    await processPostSyncJob(
-      makeUserRefitJob("user-5"),
-      fakeDb,
-      getFakeSensorStore,
-      refreshBodyMeasurements,
-    );
-
-    expect(mockCaptureException).toHaveBeenCalled();
-  });
-
-  it("reports errors to Sentry when refitAllParams fails", async () => {
+  it("reports and rejects when personalized parameter refitting fails", async () => {
     const refitError = new Error("refit failed");
+    const job = makeUserRefitJob("user-10");
     mockRefitAllParams.mockRejectedValueOnce(refitError);
 
-    await processPostSyncJob(
-      makeUserRefitJob("user-10"),
-      fakeDb,
-      getFakeSensorStore,
-      refreshBodyMeasurements,
-    );
+    await expect(
+      processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements),
+    ).rejects.toBe(refitError);
 
     expect(mockCaptureException).toHaveBeenCalledWith(refitError, {
       tags: { postSyncStep: "refitParams" },
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 45,
+      message: "Personalized parameter refit failed; retry required.",
+    });
+    expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+    expect(job.updateProgress).not.toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Post-sync refit complete.",
     });
   });
 
   it("reports errors to Sentry and aborts when body measurement refresh fails", async () => {
     const refreshError = new Error("refresh failed");
+    const job = makeUserRefitJob("user-11");
     refreshBodyMeasurements.mockRejectedValueOnce(refreshError);
 
     await expect(
-      processPostSyncJob(
-        makeUserRefitJob("user-11"),
-        fakeDb,
-        getFakeSensorStore,
-        refreshBodyMeasurements,
-      ),
-    ).rejects.toThrow(refreshError);
+      processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements),
+    ).rejects.toBe(refreshError);
 
     expect(mockCaptureException).toHaveBeenCalledWith(refreshError, {
       tags: { postSyncStep: "refreshBodyMeasurements" },
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 20,
+      message: "Body measurement refresh failed; retry required.",
     });
     expect(mockRefitAllParams).not.toHaveBeenCalled();
     expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
@@ -239,19 +220,25 @@ describe("processPostSyncJob", () => {
     );
   });
 
-  it("reports errors to Sentry when user cache invalidation fails", async () => {
+  it("reports and rejects when user cache invalidation fails", async () => {
     const cacheError = new Error("cache failed");
     const job = makeUserRefitJob("user-13");
     mockInvalidateByPrefix.mockRejectedValueOnce(cacheError);
 
-    await processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
+    await expect(
+      processPostSyncJob(job, fakeDb, getFakeSensorStore, refreshBodyMeasurements),
+    ).rejects.toBe(cacheError);
 
     expect(mockCaptureException).toHaveBeenCalledWith(cacheError, {
       tags: { postSyncStep: "invalidateUserCache" },
     });
     expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 75,
+      message: "User cache invalidation failed; retry required.",
+    });
+    expect(job.updateProgress).not.toHaveBeenCalledWith({
       percentage: 100,
-      message: "Post-sync refit completed with errors.",
+      message: "Post-sync refit complete.",
     });
   });
 });

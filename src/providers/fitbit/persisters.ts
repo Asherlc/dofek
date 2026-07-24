@@ -121,7 +121,6 @@ export async function persistDailyMetrics(
       date: parsed.date,
       providerId: PROVIDER_ID,
       steps: parsed.steps,
-      activeEnergyKcal: parsed.activeEnergyKcal,
       exerciseMinutes: parsed.exerciseMinutes,
       distanceKm: parsed.distanceKm,
       flightsClimbed: parsed.flightsClimbed,
@@ -135,7 +134,6 @@ export async function persistDailyMetrics(
       ],
       set: {
         steps: parsed.steps,
-        activeEnergyKcal: parsed.activeEnergyKcal,
         exerciseMinutes: parsed.exerciseMinutes,
         distanceKm: parsed.distanceKm,
         flightsClimbed: parsed.flightsClimbed,

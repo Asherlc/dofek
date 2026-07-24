@@ -15790,6 +15790,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   either mobile release gate so event-specific branches cannot bypass the
   prerequisite again.
 
+## 2026-07-24 — GitHub Actions Release Downloads Returned 504
+
+- **Status:** External service recovered sufficiently for the targeted rerun;
+  GitHub's broader incident remained under investigation.
+- **Symptoms:** Pull request 1897 failed `Test / Dotenv Lint` and
+  `Test / Periphery` before either repository check executed, then held its
+  final CI gate without an assigned runner.
+- **User impact:** The pull request was temporarily blocked from merging;
+  production was unaffected.
+- **Evidence:** The first fatal lines were HTTP 504 responses while downloading
+  the pinned dotenv-linter v4.0.0 tarball and Periphery 2.21.2 zip from GitHub
+  Releases. GitHub concurrently reported degraded Actions availability in its
+  official
+  [service incident](https://stspg.io/j5c80shxqm53).
+- **Root cause:** GitHub's Actions and release-asset delivery were degraded;
+  the repository checkout and all jobs that reached repository commands
+  completed successfully.
+- **Fix / mitigation:** No repository behavior changed. After the initial run
+  completed, only the failed jobs and their dependent gates were rerun.
+- **Validation:** CI run
+  [30108021933](https://github.com/Asherlc/dofek/actions/runs/30108021933)
+  completed successfully on attempt 2, and pull request 1897 reported 90
+  successful checks with no failures or pending jobs.
+- **Remaining risk / follow-up:** GitHub may continue to queue runners or return
+  release-download errors until the external incident is resolved. Preserve
+  the pinned installer versions and immutable download sources; do not add
+  repository retries or timeouts for this outage.
 ## 2026-07-24 — WHOOP Calories Won Activity Deduplication
 
 - **Status:** Diagnosed; no production data or behavior changed.
@@ -15860,3 +15887,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Deploy the server change, invalidate or allow
   the existing activity-stream cache to expire, and verify the affected chart
   on both web and mobile because they share the endpoint.
+
+## 2026-07-24 — Provider-Estimated Calorie Burn Was Displayed as Workout Data
+
+- **Status:** Fixed and validated locally; deployment pending.
+- **Symptoms:** [Activity `e386377d-3e33-4241-843b-b92d6b143dfc`](https://dofek.asherlc.com/activity/e386377d-3e33-4241-843b-b92d6b143dfc)
+  displayed 69 kcal as though calorie burn were an observed workout metric.
+- **User impact:** Users could see and analyze provider/device calorie
+  expenditure estimates as factual activity and daily health data.
+- **Evidence:** The canonical activity selected WHOOP's 69 kcal estimate.
+  Overlapping source records also contained a 69 kcal Apple Health/WHOOP value
+  and a 120 kcal Strong value, confirming the metric came from provider
+  estimates rather than a direct observation.
+- **Root cause:** Provider parsers normalized calorie expenditure into activity
+  and daily metric fields, and downstream APIs, analytics, web, and mobile
+  treated those fields as displayable measurements.
+- **Fix / mitigation:** Provider-estimated workout calories, active energy,
+  basal energy, and expenditure-based caloric balance were removed from
+  ingestion, read models, APIs, analytics/ML features, and both clients. Logged
+  nutrition intake and server-side estimates inferred from observed body-weight
+  change remain supported.
+- **Validation:** The changed unit/mobile tier passed 6,215 tests. An additional
+  434 database integration tests passed across the directly changed and
+  dependency-selected suites, including all 38 WHOOP sync tests. Full lint,
+  SQL/dbt policy checks, TypeScript, the expenditure terminology audit, and
+  `git diff --check` pass.
+- **Remaining risk / follow-up:** Nullable legacy Postgres
+  `active_energy_kcal`, `basal_energy_kcal`,
+  `resting_metabolic_rate_kcal`, and `resting_metabolic_rate_raw` columns remain
+  temporarily for safe staged deployment compatibility. Drop them and their
+  compatibility-view projections after the application change has been
+  deployed everywhere.

@@ -10,7 +10,6 @@ import {
   Accelerometer,
   BloodOxygen,
   BodyTemperature,
-  Calorie,
   checkSensor,
   Distance,
   FatBurning,
@@ -68,6 +67,9 @@ function nullable<T>(): T | null {
 }
 function emptyArray<T>(): T[] {
   return [];
+}
+function initialActiveFile(): ActiveFileSlot {
+  return "A";
 }
 
 BasePage.use(pagePlugin);
@@ -159,8 +161,7 @@ Page(
       failedTransfer: nullable<FailedTransfer>(),
       sampleCount: 0,
       observedHzX100: 0,
-      // biome-ignore lint/plugin/no-as-type-assertion: widens literal "A" to "A" | "B" for state field inference
-      activeFile: "A" as ActiveFileSlot,
+      activeFile: initialActiveFile(),
       hasCredentials: false,
       dofekEmail: "",
       pairingVerificationUrl: "",
@@ -708,7 +709,6 @@ Page(
         const watchSummary = collectHealthData({
           HeartRate,
           Step,
-          Calorie,
           Distance,
           Sleep,
           BloodOxygen,

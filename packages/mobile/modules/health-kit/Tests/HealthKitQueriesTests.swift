@@ -195,18 +195,6 @@ final class HealthKitQueriesTests: XCTestCase {
         XCTAssertEqual(unit, .meter())
     }
 
-    func testPreferredUnitActiveEnergyBurned() {
-        let type = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
-        let unit = HealthKitQueries.preferredUnit(for: type)
-        XCTAssertEqual(unit, .kilocalorie())
-    }
-
-    func testPreferredUnitBasalEnergyBurned() {
-        let type = HKQuantityType.quantityType(forIdentifier: .basalEnergyBurned)!
-        let unit = HealthKitQueries.preferredUnit(for: type)
-        XCTAssertEqual(unit, .kilocalorie())
-    }
-
     func testPreferredUnitDietaryEnergyConsumed() {
         let type = HKQuantityType.quantityType(forIdentifier: .dietaryEnergyConsumed)!
         let unit = HealthKitQueries.preferredUnit(for: type)

@@ -83,7 +83,11 @@ export function initTelemetry() {
 }
 
 export function captureException(error: unknown, context: Record<string, unknown> = {}) {
-  Sentry.captureException(error, { extra: context });
+  const source = typeof context.source === "string" ? context.source : undefined;
+  Sentry.captureException(error, {
+    ...(source ? { tags: { source } } : {}),
+    extra: context,
+  });
   const errorMessage =
     error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
   const attributes =

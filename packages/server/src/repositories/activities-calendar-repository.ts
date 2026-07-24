@@ -1,7 +1,6 @@
 import type { ProviderAbsentSource } from "@dofek/providers/providers";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
@@ -36,7 +35,6 @@ export interface CalendarActivityEntry {
   endedAt: string | null;
   durationMin: number;
   location: ActivityLocation | null;
-  calories: number | null;
   tss: number | null;
   stats: ActivityStat[];
   isProviderAbsent?: boolean;
@@ -84,11 +82,6 @@ const activityRowSchema = z.object({
   source_external_ids: z.array(z.record(z.string(), z.string().nullable())).optional().default([]),
 });
 
-const caloriesRowSchema = z.object({
-  id: z.string(),
-  calories: z.coerce.number().nullable(),
-});
-
 const baselineRowSchema = z.object({
   max_hr: z.coerce.number().nullable(),
   resting_hr: z.coerce.number().nullable(),
@@ -109,7 +102,6 @@ const activityTypeRowSchema = z.object({
 const providerAbsentActivityRowSchema = activityRowSchema.extend({
   provider_id: z.string(),
   provider_absent_at: timestampStringSchema,
-  calories: z.coerce.number().nullable().optional(),
 });
 
 const activitySummaryMetricsRowSchema = z.object({
@@ -134,7 +126,7 @@ export interface WeekListInput {
   includeProviderAbsent?: boolean;
 }
 
-/** Per-activity calendar data (location for outdoor, calories + TSS otherwise). */
+/** Per-activity calendar data with route summaries and transparent training stress. */
 export class ActivitiesCalendarRepository extends BaseRepository {
   readonly #sensorStore: ActivitySensorStore;
 
@@ -216,17 +208,13 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       this.timezone,
       this.accessWindow,
     ).filterToVisibleActivities(activityRowsMatchingType);
-    const activityIds = filteredActivityRows.map((row) => row.id);
     const locationActivityIds = filteredActivityRows
       .filter((row) => row.centroid_lat != null && row.centroid_lng != null)
       .map((row) => row.id);
-    const [caloriesRows, routePreviewByActivityId] = await Promise.all([
-      this.#fetchCaloriesByActivityId(activityIds),
-      getActivityRoutePreviews(this.#sensorStore, this.userId, locationActivityIds),
-    ]);
-
-    const caloriesByActivityId = new Map(
-      caloriesRows.map((row) => [row.id, row.calories] as const),
+    const routePreviewByActivityId = await getActivityRoutePreviews(
+      this.#sensorStore,
+      this.userId,
+      locationActivityIds,
     );
 
     const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
@@ -234,7 +222,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of filteredActivityRows) {
-      const calories = caloriesByActivityId.get(row.id) ?? null;
       const tss = computeActivityTss({
         durationMin: row.duration_min,
         avgPower: row.avg_power,
@@ -273,9 +260,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                 elevationGainM: row.elevation_gain_m,
               }
             : null,
-        calories,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
-        stats: formatActivityStats(tss, calories),
+        stats: formatActivityStats(tss),
       };
 
       const bucket = dayMap.get(row.local_date) ?? [];
@@ -315,11 +301,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           NULL AS centroid_lng,
           toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date,
           activity.provider_id AS provider_id,
-          toString(activity.provider_absent_at) AS provider_absent_at,
-          coalesce(
-            toFloat64OrNull(JSONExtractRaw(activity.raw, 'calories')),
-            toFloat64OrNull(nullIf(JSONExtractString(activity.raw, 'calories'), ''))
-          ) AS calories
+          toString(activity.provider_absent_at) AS provider_absent_at
         FROM postgres_fitness.activity AS activity FINAL
         WHERE activity.user_id = {userId:UUID}
           AND activity._peerdb_is_deleted = 0
@@ -403,9 +385,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                 elevationGainM: row.elevation_gain_m,
               }
             : null,
-        calories: row.calories ?? null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
-        stats: formatActivityStats(tss, row.calories ?? null),
+        stats: formatActivityStats(tss),
         isProviderAbsent: true,
         providerId: row.provider_id,
         providerAbsentAt: row.provider_absent_at,
@@ -510,24 +491,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       { userId: this.userId, activityIds },
     );
   }
-
-  async #fetchCaloriesByActivityId(activityIds: string[]) {
-    if (activityIds.length === 0) return [];
-    const activityIdFilter = sql.join(
-      activityIds.map((activityId) => sql`${activityId}::uuid`),
-      sql`, `,
-    );
-    return this.query(
-      caloriesRowSchema,
-      sql`SELECT
-            a.id::text AS id,
-            NULLIF(a.raw->>'calories', '')::numeric AS calories
-          FROM fitness.v_activity a
-          WHERE a.user_id = ${this.userId}::uuid
-            AND a.id IN (${activityIdFilter})
-            AND a.raw ? 'calories'`,
-    );
-  }
 }
 
 export function mergeDayGroups(
@@ -623,14 +586,13 @@ function computeActivityTss(input: TssInput): number | null {
   return null;
 }
 
-function formatActivityStats(tss: number | null, calories: number | null): ActivityStat[] {
+function formatActivityStats(tss: number | null): ActivityStat[] {
   const roundedTss = tss != null ? Math.round(tss * 10) / 10 : null;
   return [
     {
       label: "Training Stress Score",
       value: roundedTss != null ? formatStatNumber(roundedTss) : "—",
     },
-    { label: "Calories", value: calories != null ? `${Math.round(calories)} kcal` : "—" },
   ];
 }
 

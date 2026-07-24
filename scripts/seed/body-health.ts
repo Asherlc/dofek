@@ -25,7 +25,7 @@ async function seedDexaScans(sql: Sql, today: Date): Promise<void> {
         body_fat_pct, android_gynoid_ratio, visceral_fat_mass_kg,
         visceral_fat_volume_cm3, total_bone_mineral_density,
         bone_density_t_percentile, bone_density_z_percentile,
-        resting_metabolic_rate_kcal, height_inches, weight_pounds
+        height_inches, weight_pounds
       ) VALUES (
         'bodyspec', ${USER_ID}, ${`seed-dexa-${scanIndex + 1}`}, ${timestampAt(date, 9, 30)},
         'Hologic Horizon Review', ${round((totalMassKg * bodyFatPct) / 100, 2)},
@@ -33,7 +33,7 @@ async function seedDexaScans(sql: Sql, today: Date): Promise<void> {
         ${scanIndex === 0 ? 0.98 : 0.91}, ${scanIndex === 0 ? 0.62 : 0.48},
         ${scanIndex === 0 ? 620 : 480}, ${scanIndex === 0 ? 1.18 : 1.21},
         ${scanIndex === 0 ? 68 : 73}, ${scanIndex === 0 ? 71 : 76},
-        ${scanIndex === 0 ? 1_810 : 1_840}, 70.5, ${round(totalMassKg * 2.20462, 1)}
+        70.5, ${round(totalMassKg * 2.20462, 1)}
       ) RETURNING id
     `;
     await seedDexaRegions(sql, scanId, scanIndex);

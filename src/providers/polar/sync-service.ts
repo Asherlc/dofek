@@ -174,7 +174,6 @@ export class PolarSyncService {
                   raw: {
                     durationSeconds: parsedExercise.durationSeconds,
                     distanceMeters: parsedExercise.distanceMeters,
-                    calories: parsedExercise.calories,
                     avgHeartRate: parsedExercise.avgHeartRate,
                     maxHeartRate: parsedExercise.maxHeartRate,
                   },
@@ -187,7 +186,6 @@ export class PolarSyncService {
                   raw: {
                     durationSeconds: parsedExercise.durationSeconds,
                     distanceMeters: parsedExercise.distanceMeters,
-                    calories: parsedExercise.calories,
                     avgHeartRate: parsedExercise.avgHeartRate,
                     maxHeartRate: parsedExercise.maxHeartRate,
                   },
@@ -382,7 +380,6 @@ export class PolarSyncService {
                   date: parsedDailyMetrics.date,
                   providerId: this.#providerId,
                   steps: parsedDailyMetrics.steps,
-                  activeEnergyKcal: parsedDailyMetrics.activeEnergyKcal,
                   hrv: parsedDailyMetrics.hrv,
                   respiratoryRateAvg: parsedDailyMetrics.respiratoryRateAvg,
                 })
@@ -395,7 +392,6 @@ export class PolarSyncService {
                   ],
                   set: {
                     steps: parsedDailyMetrics.steps,
-                    activeEnergyKcal: parsedDailyMetrics.activeEnergyKcal,
                     hrv: parsedDailyMetrics.hrv,
                     respiratoryRateAvg: parsedDailyMetrics.respiratoryRateAvg,
                   },

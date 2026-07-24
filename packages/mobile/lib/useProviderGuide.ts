@@ -16,7 +16,10 @@ export function useProviderGuide() {
   const dismissed = status.data?.dismissed === true;
   const isLoading = providers.isLoading || status.isLoading;
 
-  const showProviderGuide = !isLoading && shouldShowProviderGuide(connectedCount, dismissed);
+  const showProviderGuide =
+    providers.data !== undefined &&
+    !isLoading &&
+    shouldShowProviderGuide(connectedCount, dismissed);
 
   function dismiss() {
     dismissMutation.mutate(undefined, {

@@ -29,7 +29,7 @@ import type { StrainTargetResult, WorkloadRatioResult } from "../routers/recover
 
 export interface MobileTrainingTabResult {
   workloadRatio: WorkloadRatioResult;
-  strainTarget: StrainTargetResult;
+  strainTarget?: StrainTargetResult;
   activities: ActivityStatsRow[];
   weeklyVolume: WeeklyVolumeRow[];
   verticalAscent: VerticalAscentRow[];
@@ -123,17 +123,16 @@ function computeStrainTargetFromLoads(
   readinessMetrics: z.infer<typeof strainTargetReadinessRowSchema> | undefined,
   endDate: string,
   weights: ReturnType<typeof getEffectiveParams>["readinessWeights"],
-): StrainTargetResult {
-  let readinessScore = 50;
-  if (readinessMetrics) {
-    const components: ReadinessComponents = {
-      hrvScore: Math.round(readinessMetrics.hrv_score ?? 62),
-      restingHrScore: Math.round(readinessMetrics.resting_hr_score ?? 62),
-      sleepScore: Math.round(readinessMetrics.sleep_score ?? 62),
-      respiratoryRateScore: Math.round(readinessMetrics.respiratory_rate_score ?? 62),
-    };
-    readinessScore = new ReadinessScore(components, weights).score;
-  }
+): StrainTargetResult | undefined {
+  if (!readinessMetrics) return undefined;
+
+  const components: ReadinessComponents = {
+    hrvScore: Math.round(readinessMetrics.hrv_score ?? 62),
+    restingHrScore: Math.round(readinessMetrics.resting_hr_score ?? 62),
+    sleepScore: Math.round(readinessMetrics.sleep_score ?? 62),
+    respiratoryRateScore: Math.round(readinessMetrics.respiratory_rate_score ?? 62),
+  };
+  const readinessScore = new ReadinessScore(components, weights).score;
 
   const acuteWindow = 7;
   const chronicWindow = 28;
@@ -308,20 +307,22 @@ export const mobileTrainingTabOutputSchema = z.object({
     displayedStrain: z.number(),
     displayedDate: z.string().nullable(),
   }),
-  strainTarget: z.object({
-    targetStrain: z.number(),
-    currentStrain: z.number(),
-    currentStrainSource: z.enum(["activity", "none"]).optional(),
-    currentPhysiologyLoad: z.number().nullable().optional(),
-    progressPercent: z.number(),
-    zone: z.enum(["Push", "Maintain", "Recovery"]),
-    explanation: z.string(),
-    dailyLoad: z.number().optional(),
-    acuteLoad: z.number().optional(),
-    chronicLoad: z.number().optional(),
-    workloadRatio: z.number().nullable().optional(),
-    readinessScore: z.number().optional(),
-  }),
+  strainTarget: z
+    .object({
+      targetStrain: z.number(),
+      currentStrain: z.number(),
+      currentStrainSource: z.enum(["activity", "none"]).optional(),
+      currentPhysiologyLoad: z.number().nullable().optional(),
+      progressPercent: z.number(),
+      zone: z.enum(["Push", "Maintain", "Recovery"]),
+      explanation: z.string(),
+      dailyLoad: z.number().optional(),
+      acuteLoad: z.number().optional(),
+      chronicLoad: z.number().optional(),
+      workloadRatio: z.number().nullable().optional(),
+      readinessScore: z.number().optional(),
+    })
+    .optional(),
   activities: z.array(
     z.object({
       id: z.string(),

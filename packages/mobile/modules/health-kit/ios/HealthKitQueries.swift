@@ -52,9 +52,7 @@ enum HealthKitQueries {
             return .secondUnit(with: .milli)
         case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue:
             return .meter()
-        case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue,
-             HKQuantityTypeIdentifier.basalEnergyBurned.rawValue,
-             HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue:
+        case HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue:
             return .kilocalorie()
         case HKQuantityTypeIdentifier.stepCount.rawValue,
              HKQuantityTypeIdentifier.flightsClimbed.rawValue:

@@ -531,7 +531,6 @@ describe("parseWorkout — edge cases", () => {
     expect(parsed?.activityType).toBe("running");
     expect(parsed?.durationSeconds).toBe(3600);
     expect(parsed?.distanceMeters).toBeUndefined();
-    expect(parsed?.calories).toBeUndefined();
     expect(parsed?.avgHeartRate).toBeUndefined();
     expect(parsed?.maxHeartRate).toBeUndefined();
     expect(parsed?.totalElevationGain).toBeUndefined();
@@ -554,24 +553,6 @@ describe("parseWorkout — edge cases", () => {
     expect(parsed?.activityType).toBe("other");
   });
 
-  it("converts kilojoules to calories", () => {
-    const record: WhoopWorkoutRecord = {
-      activity_id: "uuid-402",
-      during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
-      timezone_offset: "-05:00",
-      sport_id: 44, // yoga
-      score: 3,
-      average_heart_rate: 100,
-      max_heart_rate: 120,
-      kilojoules: 418.4,
-    };
-
-    const parsed = parseWorkout(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.calories).toBe(100); // 418.4 / 4.184 = ~100
-    expect(parsed?.activityType).toBe("yoga");
-  });
-
   it("handles score with zero kilojoule", () => {
     const record: WhoopWorkoutRecord = {
       activity_id: "uuid-403",
@@ -586,7 +567,6 @@ describe("parseWorkout — edge cases", () => {
 
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
-    expect(parsed?.calories).toBeUndefined(); // 0 is falsy
     expect(parsed?.activityType).toBe("meditation");
   });
 

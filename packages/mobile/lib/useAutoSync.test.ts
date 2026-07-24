@@ -13,7 +13,6 @@ const mockDashboardInvalidate = vi.fn();
 const mockDataHealthInvalidate = vi.fn();
 const mockFoodByDateInvalidate = vi.fn();
 const mockNutritionAnalyticsAdaptiveTdeeInvalidate = vi.fn();
-const mockNutritionAnalyticsCaloricBalanceInvalidate = vi.fn();
 const mockNutritionAnalyticsMacroRatiosInvalidate = vi.fn();
 const mockNutritionAnalyticsMicronutrientAdequacyInvalidate = vi.fn();
 const mockRecoveryInvalidate = vi.fn();
@@ -50,7 +49,6 @@ const mockTrpcUtils = {
   },
   nutritionAnalytics: {
     adaptiveTdee: { invalidate: mockNutritionAnalyticsAdaptiveTdeeInvalidate },
-    caloricBalance: { invalidate: mockNutritionAnalyticsCaloricBalanceInvalidate },
     macroRatios: { invalidate: mockNutritionAnalyticsMacroRatiosInvalidate },
     micronutrientAdequacy: {
       invalidate: mockNutritionAnalyticsMicronutrientAdequacyInvalidate,
@@ -168,7 +166,6 @@ describe("useAutoSync", () => {
     mockDataHealthInvalidate.mockResolvedValue(undefined);
     mockFoodByDateInvalidate.mockResolvedValue(undefined);
     mockNutritionAnalyticsAdaptiveTdeeInvalidate.mockResolvedValue(undefined);
-    mockNutritionAnalyticsCaloricBalanceInvalidate.mockResolvedValue(undefined);
     mockNutritionAnalyticsMacroRatiosInvalidate.mockResolvedValue(undefined);
     mockNutritionAnalyticsMicronutrientAdequacyInvalidate.mockResolvedValue(undefined);
     mockRecoveryInvalidate.mockResolvedValue(undefined);
@@ -235,7 +232,6 @@ describe("useAutoSync", () => {
     expect(mockActivityListInvalidate).toHaveBeenCalledOnce();
     expect(mockFoodByDateInvalidate).toHaveBeenCalledOnce();
     expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalledOnce();
-    expect(mockNutritionAnalyticsCaloricBalanceInvalidate).toHaveBeenCalledOnce();
     expect(mockNutritionAnalyticsMacroRatiosInvalidate).toHaveBeenCalledOnce();
     expect(mockNutritionAnalyticsMicronutrientAdequacyInvalidate).toHaveBeenCalledOnce();
     expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
@@ -409,7 +405,6 @@ describe("useAutoSync", () => {
       expect(mockActivityListInvalidate).toHaveBeenCalled();
       expect(mockFoodByDateInvalidate).toHaveBeenCalled();
       expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalled();
-      expect(mockNutritionAnalyticsCaloricBalanceInvalidate).toHaveBeenCalled();
       expect(mockNutritionAnalyticsMacroRatiosInvalidate).toHaveBeenCalled();
       expect(mockNutritionAnalyticsMicronutrientAdequacyInvalidate).toHaveBeenCalled();
       expect(mockDataHealthInvalidate).toHaveBeenCalled();

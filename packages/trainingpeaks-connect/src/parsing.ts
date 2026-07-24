@@ -21,7 +21,6 @@ export interface ParsedWorkout {
   normalizedPower?: number;
   cadenceAverage?: number;
   elevationGain?: number;
-  calories?: number;
   trainingStressScore?: number;
   intensityFactor?: number;
   feeling?: number;
@@ -75,7 +74,6 @@ export function parseTrainingPeaksWorkout(raw: TrainingPeaksWorkout): ParsedWork
     normalizedPower: raw.normalizedPowerActual,
     cadenceAverage: raw.cadenceAverage,
     elevationGain: raw.elevationGain,
-    calories: raw.calories,
     trainingStressScore: raw.tssActual ?? raw.tssPlanned,
     intensityFactor: raw.if ?? raw.ifPlanned,
     feeling: raw.feeling,

@@ -109,7 +109,8 @@ async function syncAndRecord(trpcClient: WatchSyncTrpcClient): Promise<void> {
   // Ask the Watch to restart recording and send any new data
   try {
     await requestWatchRecording();
-  } catch {
+  } catch (error: unknown) {
+    captureException(error, { source: `${TAG}:request-recording` });
     // Best-effort — Watch may not be reachable
   }
 }

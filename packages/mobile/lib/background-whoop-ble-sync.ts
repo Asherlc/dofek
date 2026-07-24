@@ -153,7 +153,7 @@ export async function initBackgroundWhoopBleSync(
     syncOnForeground(trpcClient, whoopDeps, realtimeClient, shouldRunForegroundPeriodicDrain)
       .catch((error: unknown) => {
         logger.error(LOG_CATEGORY, `foreground sync error: ${error}`);
-        Sentry.captureException(error, { tags: { source: "whoop-ble-foreground-sync" } });
+        captureException(error, { source: "whoop-ble-foreground-sync" });
       })
       .finally(() => {
         syncing = false;
@@ -170,7 +170,7 @@ export async function initBackgroundWhoopBleSync(
     logger.info(LOG_CATEGORY, "initial sync complete");
   } catch (error: unknown) {
     logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
-    Sentry.captureException(error, { tags: { source: "whoop-ble-init-sync" } });
+    captureException(error, { source: "whoop-ble-init-sync" });
   }
 
   // Periodically drain the buffer while the app is active so samples
@@ -210,7 +210,7 @@ function startPeriodicDrainTimer(
     drainBuffer(trpcClient, whoopDeps, realtimeClient, shouldRunForegroundPeriodicDrain)
       .catch((error: unknown) => {
         logger.error(LOG_CATEGORY, `periodic drain error: ${error}`);
-        Sentry.captureException(error, { tags: { source: "whoop-ble-periodic-drain" } });
+        captureException(error, { source: "whoop-ble-periodic-drain" });
       })
       .finally(() => {
         syncing = false;
@@ -236,7 +236,7 @@ export async function syncWhoopBle(
     logger.info(LOG_CATEGORY, "background refresh — sync complete");
   } catch (error: unknown) {
     logger.error(LOG_CATEGORY, `background refresh sync error: ${error}`);
-    Sentry.captureException(error, { tags: { source: "whoop-ble-background-refresh" } });
+    captureException(error, { source: "whoop-ble-background-refresh" });
   }
 }
 
@@ -285,6 +285,7 @@ async function syncOnForeground(
       await whoopDeps.startImuStreaming();
       logger.info(LOG_CATEGORY, "TOGGLE_IMU_MODE sent");
     } catch (error: unknown) {
+      captureException(error, { source: "whoop-ble-start-streaming" });
       // Best-effort — passive data may still flow without the command
       logger.warn(LOG_CATEGORY, `startImuStreaming failed (passive data may still work): ${error}`);
     }
@@ -307,8 +308,8 @@ async function syncOnForeground(
       const stats = bleModule.getDataPathStats();
       logger.info(LOG_CATEGORY, `data path stats: ${JSON.stringify(stats)}`);
     }
-  } catch {
-    // Diagnostic-only, ignore errors
+  } catch (error: unknown) {
+    captureException(error, { source: "whoop-ble-data-path-stats-connect" });
   }
 
   await drainBuffer(trpcClient, whoopDeps, realtimeClient, shouldContinueUploading);
@@ -474,7 +475,8 @@ export function teardownBackgroundWhoopBleSync(): void {
       currentDeps.stopImuStreaming().catch((error: unknown) => {
         captureException(error, { source: "whoop-ble-teardown" });
       });
-    } catch {
+    } catch (error: unknown) {
+      captureException(error, { source: "whoop-ble-teardown-sync" });
       // Best-effort cleanup
     }
     currentDeps.disconnect();

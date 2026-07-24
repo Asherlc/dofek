@@ -16,7 +16,6 @@ const activityRowSchema = z.object({
   provider_id: z.string(),
   source_providers: z.array(z.string()).nullable(),
   distance_meters: z.number().nullable().optional(),
-  calories: z.number().nullable().optional(),
   location: z
     .object({
       centroidLat: z.number(),

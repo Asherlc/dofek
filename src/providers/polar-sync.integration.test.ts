@@ -265,7 +265,6 @@ describe("PolarProvider.sync() (integration)", () => {
     const daily = dailyRows[0];
     if (!daily) throw new Error("expected daily metrics");
     expect(daily.steps).toBe(11200);
-    expect(daily.activeEnergyKcal).toBe(850);
     expect(daily.hrv).toBeCloseTo(48.5);
     expect(daily.respiratoryRateAvg).toBeCloseTo(14.8);
   });

@@ -599,15 +599,13 @@ describe("syncRouter", () => {
       expect(whoopBle?.lastSyncedAt).toBeNull();
     });
 
-    it("logs and continues when provider stats lookup fails", async () => {
+    it("marks push provider unauthorized after a successful zero-data stats query", async () => {
       mockGetAllProviders.mockReturnValue([]);
 
       const caller = createCaller({
         db: createProvidersDbMock(),
         sensorStore: {
-          query: createSensorStoreQuery({
-            providerStats: new Error("ClickHouse provider stats unavailable"),
-          }),
+          query: createSensorStoreQuery({ providerStats: [] }),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -615,18 +613,36 @@ describe("syncRouter", () => {
 
       const result = await caller.providers();
 
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        "[sync.providers] provider stats lookup failed: ClickHouse provider stats unavailable",
-      );
-      expect(mockCaptureException).toHaveBeenCalledWith(
-        expect.objectContaining({ message: "ClickHouse provider stats unavailable" }),
-      );
       expect(
         result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized,
       ).toBe(false);
     });
 
-    it("logs non-Error provider stats failures with String(error)", async () => {
+    it("rejects instead of marking push providers disconnected when provider stats lookup fails", async () => {
+      mockGetAllProviders.mockReturnValue([]);
+      const providerStatsError = Object.assign(new Error("connect ECONNREFUSED clickhouse:8123"), {
+        code: "ECONNREFUSED",
+      });
+
+      const caller = createCaller({
+        db: createProvidersDbMock(),
+        sensorStore: {
+          query: createSensorStoreQuery({
+            providerStats: providerStatsError,
+          }),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.providers()).rejects.toThrow("connect ECONNREFUSED clickhouse:8123");
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        "[sync.providers] provider stats lookup failed: connect ECONNREFUSED clickhouse:8123",
+      );
+      expect(mockCaptureException).toHaveBeenCalledWith(providerStatsError);
+    });
+
+    it("logs and rethrows non-Error provider stats failures with String(error)", async () => {
       mockGetAllProviders.mockReturnValue([]);
 
       const caller = createCaller({
@@ -643,7 +659,7 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.providers();
+      await expect(caller.providers()).rejects.toThrow("string stats failure");
 
       expect(mockLoggerWarn).toHaveBeenCalledWith(
         "[sync.providers] provider stats lookup failed: string stats failure",
@@ -661,8 +677,12 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.providers();
+      const result = await caller.providers();
+
       expect(getProviderStats).not.toHaveBeenCalled();
+      expect(
+        result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized,
+      ).toBe(false);
       getProviderStats.mockRestore();
     });
 

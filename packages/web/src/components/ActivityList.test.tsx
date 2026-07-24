@@ -56,7 +56,6 @@ describe("ActivityList", () => {
       provider_id: "strava",
       source_providers: ["strava"],
       distance_meters: 5000,
-      calories: 450,
       location: {
         centroidLat: 37.7749,
         centroidLng: -122.4194,
@@ -72,7 +71,6 @@ describe("ActivityList", () => {
     expect(screen.getByText("Morning Run")).toBeDefined();
     expect(screen.getByText("Running")).toBeDefined();
     expect(screen.getByText("5.0 km")).toBeDefined();
-    expect(screen.getByText("450 kcal")).toBeDefined();
   });
 
   it("appends activity-specific columns", () => {
@@ -153,7 +151,6 @@ describe("ActivityList", () => {
         provider_id: "strava",
         source_providers: ["strava"],
         distance_meters: null,
-        calories: 400,
       },
     ];
 
@@ -236,7 +233,7 @@ describe("ActivityList", () => {
     expect(skeleton).toBeDefined();
   });
 
-  it("handles activities without distance or calories", () => {
+  it("handles activities without distance", () => {
     const activityWithoutStats: Activity[] = [
       {
         id: "2",
@@ -247,13 +244,12 @@ describe("ActivityList", () => {
         provider_id: "apple",
         source_providers: ["apple"],
         distance_meters: null,
-        calories: undefined,
       },
     ];
     renderWithUnits(<ActivityList activities={activityWithoutStats} />);
     // Should show the dash/placeholder
     const cells = screen.getAllByText("—");
-    expect(cells.length).toBeGreaterThanOrEqual(2);
+    expect(cells.length).toBeGreaterThanOrEqual(1);
   });
 
   it("uses placeholders when timestamps are invalid", () => {
@@ -267,13 +263,12 @@ describe("ActivityList", () => {
         provider_id: "strava",
         source_providers: ["strava"],
         distance_meters: null,
-        calories: null,
       },
     ];
 
     render(<ActivityList activities={invalidTimestampActivity} />);
     expect(screen.queryByText("Invalid Date")).toBeNull();
     expect(screen.queryByText("NaNm")).toBeNull();
-    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(1);
   });
 });

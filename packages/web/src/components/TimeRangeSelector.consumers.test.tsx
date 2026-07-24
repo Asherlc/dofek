@@ -47,7 +47,6 @@ vi.mock("./BehaviorImpactChart.tsx", async () => {
   return actual;
 });
 vi.mock("./BodyRecompositionChart.tsx", () => ({ BodyRecompositionChart: () => <div /> }));
-vi.mock("./CaloricBalanceChart.tsx", () => ({ CaloricBalanceChart: () => <div /> }));
 vi.mock("./ChartDescriptionTooltip.tsx", () => ({ ChartDescriptionTooltip: () => null }));
 vi.mock("./CorrelationCard.tsx", () => ({
   CorrelationCard: () => <div />,
@@ -159,7 +158,6 @@ vi.mock("../lib/trpc.ts", () => {
       },
       nutritionAnalytics: {
         adaptiveTdee: recordQuery("nutritionAnalytics.adaptiveTdee"),
-        caloricBalance: recordQuery("nutritionAnalytics.caloricBalance"),
         macroRatios: recordQuery("nutritionAnalytics.macroRatios"),
         micronutrientAdequacy: recordQuery("nutritionAnalytics.micronutrientAdequacy"),
       },
@@ -292,7 +290,6 @@ describe("TimeRangeSelector consumers", () => {
 
     expectCallsContaining([
       { name: "nutritionAnalytics.micronutrientAdequacy", input: { days: 7 } },
-      { name: "nutritionAnalytics.caloricBalance", input: { days: 7 } },
       { name: "nutritionAnalytics.macroRatios", input: { days: 7 } },
       { name: "nutritionAnalytics.adaptiveTdee", input: { days: 90 } },
     ]);
@@ -303,7 +300,6 @@ describe("TimeRangeSelector consumers", () => {
 
     expectCallsContaining([
       { name: "nutritionAnalytics.micronutrientAdequacy", input: { days: null } },
-      { name: "nutritionAnalytics.caloricBalance", input: { days: null } },
       { name: "nutritionAnalytics.macroRatios", input: { days: null } },
       { name: "nutritionAnalytics.adaptiveTdee", input: { days: null } },
     ]);

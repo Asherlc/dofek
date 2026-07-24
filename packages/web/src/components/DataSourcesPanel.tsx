@@ -12,6 +12,7 @@ import {
   getFileImportConfig,
 } from "./file-import-configs.ts";
 import { ProcessingStatusWidget } from "./ProcessingStatusWidget.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 import { SyncProviderCard } from "./SyncProviderCard.tsx";
 
 const oauthBroadcastMessage = z.object({
@@ -385,6 +386,8 @@ export function DataSourcesPanel() {
         error={processingStatus.error}
         loading={processingStatus.isLoading}
       />
+
+      {providers.error ? <QueryStatePanel error={providers.error} height={72} /> : null}
 
       {providers.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

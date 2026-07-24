@@ -835,7 +835,6 @@ describe("Oura Provider", () => {
 
       expect(result.date).toBe("2026-03-01");
       expect(result.steps).toBe(9500);
-      expect(result.activeEnergyKcal).toBe(450);
       expect(result.hrv).toBe(48);
       expect(result.restingHr).toBe(45);
       expect(result.exerciseMinutes).toBe(75);
@@ -924,7 +923,6 @@ describe("Oura Provider", () => {
       );
 
       expect(result.steps).toBeUndefined();
-      expect(result.activeEnergyKcal).toBeUndefined();
       expect(result.exerciseMinutes).toBeUndefined();
       expect(result.hrv).toBe(48);
       expect(result.restingHr).toBe(45);
@@ -2250,7 +2248,6 @@ describe("OuraProvider.sync()", () => {
       (v) => v.date === "2026-03-01" && v.providerId === "oura" && v.steps === 9500,
     );
     expect(val.steps).toBe(9500);
-    expect(val.activeEnergyKcal).toBe(450);
     // HRV comes from sleep data (actual measurements), not readiness contributor scores.
     // Resting HR and VO2 Max are derived by server-side views, not stored from providers.
     expect(val.hrv).toBe(48);

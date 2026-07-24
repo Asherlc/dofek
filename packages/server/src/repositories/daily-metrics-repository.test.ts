@@ -21,8 +21,6 @@ function makeDailyMetricsRow(overrides: Record<string, unknown> = {}): Record<st
     respiratory_rate_avg: 14.2,
     skin_temp_c: 33.1,
     steps: 8500,
-    active_energy_kcal: 420,
-    basal_energy_kcal: 1600,
     distance_km: 6.2,
     flights_climbed: 8,
     exercise_minutes: 45,
@@ -52,7 +50,6 @@ function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, 
     avg_resting_hr: "56.2",
     avg_spo2: "97.1",
     avg_steps: "8200",
-    avg_active_energy: "410",
     avg_skin_temp: "33.0",
     stddev_hrv: "7.5",
     stddev_resting_hr: "3.1",
@@ -62,11 +59,9 @@ function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, 
     latest_resting_hr: "55",
     latest_spo2: "98",
     latest_steps: "9200",
-    latest_active_energy: "450",
     latest_skin_temp: "33.2",
     latest_date: "2025-03-15",
     latest_steps_date: "2025-03-15",
-    latest_active_energy_date: "2025-03-15",
     ...overrides,
   };
 }
@@ -77,7 +72,6 @@ function makeAllNullTrendsRow(): Record<string, unknown> {
     avg_resting_hr: null,
     avg_spo2: null,
     avg_steps: null,
-    avg_active_energy: null,
     avg_skin_temp: null,
     stddev_hrv: null,
     stddev_resting_hr: null,
@@ -87,11 +81,9 @@ function makeAllNullTrendsRow(): Record<string, unknown> {
     latest_resting_hr: null,
     latest_spo2: null,
     latest_steps: null,
-    latest_active_energy: null,
     latest_skin_temp: null,
     latest_date: null,
     latest_steps_date: null,
-    latest_active_energy_date: null,
   };
 }
 
@@ -148,7 +140,6 @@ describe("DailyMetricsRepository", () => {
       const rowNoSteps = makeDailyMetricsRow({
         date: "2025-03-15",
         steps: null,
-        active_energy_kcal: null,
       });
       const { repo, execute } = makeRepository([rowNoSteps]);
       const result = await repo.list(30, "2025-03-15");
@@ -296,7 +287,6 @@ describe("DailyMetricsRepository", () => {
       const row = makeTrendsRow({
         avg_steps: "8200",
         latest_steps: null,
-        latest_active_energy: null,
         latest_date: "2025-03-15",
       });
       const { repo, execute } = makeRepository([row]);
@@ -304,17 +294,14 @@ describe("DailyMetricsRepository", () => {
       const result = await repo.getTrends(30, "2025-03-15");
 
       expect(result?.latest_steps).toBeNull();
-      expect(result?.latest_active_energy).toBeNull();
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
     it("does not check latest missing metrics when the trends row has no latest date", async () => {
       const rowWithoutLatestDate = makeTrendsRow({
         latest_steps: null,
-        latest_active_energy: null,
         latest_date: null,
         latest_steps_date: null,
-        latest_active_energy_date: null,
       });
       const { repo, execute } = makeRepository([rowWithoutLatestDate]);
 
@@ -333,7 +320,6 @@ describe("DailyMetricsRepository", () => {
       const sqlArg = execute.mock.calls[0]?.[0];
       const sqlText = JSON.stringify(sqlArg);
       expect(sqlText).toContain("CASE WHEN latest.steps_date");
-      expect(sqlText).toContain("CASE WHEN latest.active_energy_kcal_date");
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
@@ -362,7 +348,6 @@ describe("DailyMetricsRepository", () => {
         avg_hrv: null,
         avg_spo2: null,
         avg_steps: null,
-        avg_active_energy: null,
         avg_skin_temp: null,
         stddev_hrv: null,
         stddev_spo2: null,
@@ -370,7 +355,6 @@ describe("DailyMetricsRepository", () => {
         latest_hrv: null,
         latest_spo2: null,
         latest_steps: null,
-        latest_active_energy: null,
         latest_skin_temp: null,
         latest_date: null,
       });

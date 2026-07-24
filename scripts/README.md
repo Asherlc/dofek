@@ -45,7 +45,12 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Outputs: `docs/schema.dbml`, `docs/schema.puml`.
 - `fix-ts-expect-errors.ts`: Automated removal of `@ts-expect-error` comments across the codebase.
   - Handles standalone lines, inline comments, and specific test patterns like `MockFetchFn`.
-- `no-suppressions.sh`: Checks for lint or type suppressions (e.g., `eslint-disable`, `biome-ignore`).
+- `no-suppressions.ts`: Scans every tracked TypeScript file and rejects lint,
+  type-check, coverage, or mutation-test suppression comments. Generated TanStack
+  route trees and the suppression-removal utility are the only exclusions.
+  File discovery uses Git's tracked-file index via
+  [`git ls-files`](https://git-scm.com/docs/git-ls-files).
+  - Usage: `pnpm lint:suppressions`
 - `exact-versions.ts`: Reads every workspace manifest declared by
   [`pnpm-workspace.yaml`](../pnpm-workspace.yaml), rejects `^` and `~` declarations
   in all dependency sections, and accepts pnpm's documented

@@ -3,6 +3,7 @@ import { CANONICAL_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { ConnectionOptions, JobsOptions } from "bullmq";
 import { FlowProducer, Queue, QueueEvents, RedisConnection } from "bullmq";
 import { z } from "zod";
+import type {} from "../bullmq-redis-client.ts";
 import type { ProviderDataDeletionRequest } from "../db/provider-data-deletion.ts";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
@@ -547,6 +548,7 @@ export async function enqueueDebouncedPostSyncMaintenance(
     GLOBAL_POST_SYNC_JOB_NAME,
     { type: "global-maintenance" },
     {
+      ...SYNC_JOB_RETRY_OPTIONS,
       delay: POST_SYNC_DEBOUNCE_MS,
       deduplication: {
         id: GLOBAL_POST_SYNC_DEDUPLICATION_ID,
@@ -567,6 +569,7 @@ export async function enqueueDebouncedUserRefit(
     USER_REFIT_POST_SYNC_JOB_NAME,
     { type: "user-refit", userId },
     {
+      ...SYNC_JOB_RETRY_OPTIONS,
       delay: POST_SYNC_DEBOUNCE_MS,
       deduplication: {
         id: `post-sync:user-refit:${userId}`,

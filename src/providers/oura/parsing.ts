@@ -30,7 +30,6 @@ export interface ParsedOuraSleep {
 export interface ParsedOuraDailyMetrics {
   date: string;
   steps?: number;
-  activeEnergyKcal?: number;
   hrv?: number;
   restingHr?: number;
   exerciseMinutes?: number;
@@ -91,7 +90,6 @@ export function parseOuraDailyMetrics(
   return {
     date: day,
     steps: activity?.steps,
-    activeEnergyKcal: activity?.active_calories,
     // HRV and resting HR come from the actual sleep measurements, not from
     // readiness contributor scores. contributors.hrv_balance is a 0-100 score
     // indicating how HRV contributes to readiness — not the HRV value itself.

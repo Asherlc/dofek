@@ -12,7 +12,7 @@ import type {
   OAuthTokenRevocationRequest,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { Database } from "dofek/db";
-import type { Response } from "express";
+import { response as expressResponse, type Response } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DofekOAuthServerProvider,
@@ -77,10 +77,6 @@ interface ResponseMocks {
   type: ReturnType<typeof vi.fn<(type: string) => void>>;
 }
 
-interface RuntimeResponse extends ResponseMocks {
-  locals: Record<string, unknown>;
-}
-
 function makeResponse(locals: Record<string, unknown> = {}): {
   response: Response;
   mocks: ResponseMocks;
@@ -88,11 +84,11 @@ function makeResponse(locals: Record<string, unknown> = {}): {
   const redirect = vi.fn<(location: string) => void>();
   const send = vi.fn<(body: string) => void>();
   const type = vi.fn<(type: string) => void>();
-  const runtime: RuntimeResponse = { locals, redirect, send, type };
-  type.mockReturnValue(runtime);
+  const response: Response = Object.create(expressResponse);
+  Object.assign(response, { locals, redirect, send, type });
+  type.mockReturnValue(response);
   return {
-    // biome-ignore lint/plugin/no-as-type-assertion: Express Response cannot be constructed without a live HTTP request
-    response: runtime as Response,
+    response,
     mocks: { redirect, send, type },
   };
 }
