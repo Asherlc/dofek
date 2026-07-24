@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecordingTrpcClient } from "./activity-recording.ts";
 import {
   type ActivityRecorder,
@@ -14,6 +14,10 @@ const mockCaptureException = vi.fn();
 vi.mock("./telemetry", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function makeMockLocationAdapter(): LocationAdapter & {
   emitSample(sample: GpsSample): void;
@@ -168,6 +172,19 @@ describe("createActivityRecorder", () => {
     expect(snap.samples).toHaveLength(1); // samples preserved
   });
 
+  it("freezes active elapsed time when recording stops", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2024-06-15T08:00:00.000Z");
+
+    await recorder.start("running");
+    vi.setSystemTime("2024-06-15T08:01:00.000Z");
+    recorder.stop();
+
+    vi.setSystemTime("2024-06-15T08:06:00.000Z");
+
+    expect(recorder.getSnapshot().elapsedMs).toBe(60 * 1000);
+  });
+
   it("saves the activity via tRPC", async () => {
     await recorder.start("running");
     location.emitSample(makeSample());
@@ -315,6 +332,41 @@ describe("createActivityRecorder with IMU service", () => {
     expect(imuService.syncForTimeRange).toHaveBeenCalledWith(
       expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    );
+  });
+
+  it("keeps the saved end and sensor window on the wall-clock timeline after a pause", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2024-06-15T08:00:00.000Z");
+
+    await recorder.start("running");
+    vi.setSystemTime("2024-06-15T08:01:00.000Z");
+    location.emitSample(makeSample({ recordedAt: "2024-06-15T08:01:00.000Z" }));
+
+    recorder.pause();
+    vi.setSystemTime("2024-06-15T08:03:00.000Z");
+    await recorder.resume();
+
+    vi.setSystemTime("2024-06-15T08:04:00.000Z");
+    location.emitSample(makeSample({ recordedAt: "2024-06-15T08:04:00.000Z" }));
+    recorder.stop();
+
+    expect(recorder.getSnapshot().elapsedMs).toBe(2 * 60 * 1000);
+
+    await recorder.save("Paused run", null);
+
+    expect(trpcClient.activityRecording.save.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: "2024-06-15T08:00:00.000Z",
+        endedAt: "2024-06-15T08:04:00.000Z",
+        samples: expect.arrayContaining([
+          expect.objectContaining({ recordedAt: "2024-06-15T08:04:00.000Z" }),
+        ]),
+      }),
+    );
+    expect(imuService.syncForTimeRange).toHaveBeenCalledWith(
+      "2024-06-15T08:00:00.000Z",
+      "2024-06-15T08:04:00.000Z",
     );
   });
 

@@ -84,6 +84,7 @@ export function createActivityRecorder(
   let activityType: string | null = null;
   let samples: GpsSample[] = [];
   let startTime: number | null = null;
+  let stoppedAt: number | null = null;
   let pauseStart: number | null = null;
   let totalPausedMs = 0;
   let error: string | null = null;
@@ -95,7 +96,7 @@ export function createActivityRecorder(
 
   function getElapsedMs(): number {
     if (startTime === null) return 0;
-    const now = Date.now();
+    const now = stoppedAt ?? Date.now();
     const paused = pauseStart !== null ? now - pauseStart : 0;
     return now - startTime - totalPausedMs - paused;
   }
@@ -132,6 +133,7 @@ export function createActivityRecorder(
       activityType = type;
       samples = [];
       startTime = Date.now();
+      stoppedAt = null;
       totalPausedMs = 0;
       pauseStart = null;
       error = null;
@@ -179,8 +181,9 @@ export function createActivityRecorder(
 
     stop() {
       if (state !== "recording" && state !== "paused") return;
+      stoppedAt = Date.now();
       if (pauseStart !== null) {
-        totalPausedMs += Date.now() - pauseStart;
+        totalPausedMs += stoppedAt - pauseStart;
         pauseStart = null;
       }
       locationAdapter.stopUpdates();
@@ -191,12 +194,12 @@ export function createActivityRecorder(
     },
 
     async save(name: string | null, notes: string | null): Promise<string> {
-      if (state !== "saving" || !activityType || !startTime) {
+      if (state !== "saving" || !activityType || !startTime || stoppedAt === null) {
         throw new Error(`Cannot save in state: ${state}`);
       }
 
       const startedAt = new Date(startTime).toISOString();
-      const endedAt = new Date(startTime + getElapsedMs()).toISOString();
+      const endedAt = new Date(stoppedAt).toISOString();
 
       try {
         const result = await trpcClient.activityRecording.save.mutate({
@@ -228,6 +231,7 @@ export function createActivityRecorder(
         activityType = null;
         samples = [];
         startTime = null;
+        stoppedAt = null;
         totalPausedMs = 0;
         error = null;
         notify();
@@ -247,6 +251,7 @@ export function createActivityRecorder(
       activityType = null;
       samples = [];
       startTime = null;
+      stoppedAt = null;
       totalPausedMs = 0;
       pauseStart = null;
       error = null;
