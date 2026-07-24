@@ -60,7 +60,7 @@ describe("SleepScreen", () => {
     mockSleepData = {
       nightly: [],
       sleepDebt: null,
-      averageDurationMinutes: null,
+      averageSleepMinutes: null,
       averageEfficiencyPercent: null,
     };
 
@@ -90,7 +90,7 @@ describe("SleepScreen", () => {
         },
       ],
       sleepDebt: 30,
-      averageDurationMinutes: 455,
+      averageSleepMinutes: 455,
       averageEfficiencyPercent: 91.2,
     };
 

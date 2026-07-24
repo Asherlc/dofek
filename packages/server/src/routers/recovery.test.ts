@@ -623,7 +623,7 @@ describe("recoveryRouter.sleepAnalytics", () => {
 
     expect(result.nightly).toEqual([]);
     expect(result.sleepDebt).toBeNull();
-    expect(result.averageDurationMinutes).toBeNull();
+    expect(result.averageSleepMinutes).toBeNull();
     expect(result.averageEfficiencyPercent).toBeNull();
   });
 
@@ -664,7 +664,7 @@ describe("recoveryRouter.sleepAnalytics", () => {
     // efficiency rounds to 1 decimal: 93.456 -> 93.5
     expect(night?.efficiency).toBeCloseTo(93.5, 1);
     expect(night?.rollingAvgDuration).toBeCloseTo(437, 1);
-    expect(result.averageDurationMinutes).toBeCloseTo(437, 1);
+    expect(result.averageSleepMinutes).toBeCloseTo(437, 1);
     expect(result.averageEfficiencyPercent).toBe(93.5);
   });
 
@@ -710,7 +710,7 @@ describe("recoveryRouter.sleepAnalytics", () => {
     });
     const result = await caller.sleepAnalytics({});
 
-    expect(result.averageDurationMinutes).toBe(405);
+    expect(result.averageSleepMinutes).toBe(405);
     expect(result.averageEfficiencyPercent).toBe(85);
   });
 

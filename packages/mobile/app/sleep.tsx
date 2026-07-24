@@ -36,7 +36,7 @@ export default function SleepScreen() {
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
   const sleepDebt = sleepResult?.sleepDebt;
-  const averageDurationMinutes = sleepResult?.averageDurationMinutes;
+  const averageSleepMinutes = sleepResult?.averageSleepMinutes;
   const averageEfficiencyPercent = sleepResult?.averageEfficiencyPercent;
   const mostRecentNight = nightly[nightly.length - 1];
   const lastNight = (() => {
@@ -135,11 +135,11 @@ export default function SleepScreen() {
           )}
 
           {/* Trends */}
-          {averageDurationMinutes != null && averageEfficiencyPercent != null && (
+          {averageSleepMinutes != null && averageEfficiencyPercent != null && (
             <View style={styles.metricsGrid}>
               <MetricCard
                 title="Average Duration"
-                value={formatDurationMinutes(averageDurationMinutes)}
+                value={formatDurationMinutes(averageSleepMinutes)}
                 trend={durationTrend}
                 color={colors.blue}
                 subtitle={`Last ${days} nights`}

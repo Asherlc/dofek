@@ -381,7 +381,7 @@ describe("recoveryRouter", () => {
       const result = await caller.sleepAnalytics({ days: 90 });
       expect(result.nightly).toEqual([]);
       expect(result.sleepDebt).toBeNull();
-      expect(result.averageDurationMinutes).toBeNull();
+      expect(result.averageSleepMinutes).toBeNull();
       expect(result.averageEfficiencyPercent).toBeNull();
     });
   });
