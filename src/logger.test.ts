@@ -4,6 +4,7 @@ import * as winston from "winston";
 import Transport from "winston-transport";
 import { jobContext, logger } from "./logger.ts";
 
+// cspell:ignore Logform
 class CaptureInfoTransport extends Transport {
   readonly entries: Array<{ level: string; message: string }> = [];
 
