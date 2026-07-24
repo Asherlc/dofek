@@ -207,22 +207,50 @@ describe("postgres migrator", () => {
     const databaseError = new Error('syntax error at or near "INVALID"');
     setMigrationHistory([
       {
-        hash: "invalid-hash",
-        sql: [failedStatement],
-        tag: "0001_invalid",
+        hash: "unrelated-hash",
+        sql: ["SELECT UNRELATED"],
+        tag: "0001_unrelated",
         when: 100,
       },
+      {
+        hash: "invalid-hash",
+        sql: ["SELECT BEFORE FAILURE", `  ${failedStatement}\n`],
+        tag: "0002_invalid",
+        when: 200,
+      },
     ]);
-    mocks.migrate.mockRejectedValue(new DrizzleQueryError(failedStatement, [], databaseError));
+    mocks.migrate.mockRejectedValue(
+      new DrizzleQueryError(`\n${failedStatement}  `, [], databaseError),
+    );
     const { client } = makeClient([]);
 
     await expect(runDrizzleMigrations(client, "/migrations")).rejects.toMatchObject({
       cause: databaseError,
       message:
-        `Migration 0001_invalid.sql failed\n` +
+        `Migration 0002_invalid.sql failed\n` +
         `Database error: ${databaseError.message}\n` +
         `Failed statement:\n${failedStatement}`,
     });
+  });
+
+  it("preserves a Drizzle query error when its statement is not in migration history", async () => {
+    const queryError = new DrizzleQueryError(
+      "SELECT UNTRACKED",
+      [],
+      new Error("untracked statement failed"),
+    );
+    mocks.migrate.mockRejectedValue(queryError);
+    const { client } = makeClient([]);
+
+    await expect(runDrizzleMigrations(client, "/migrations")).rejects.toBe(queryError);
+  });
+
+  it("preserves non-query migration errors", async () => {
+    const migrationError = new Error("migration metadata failed");
+    mocks.migrate.mockRejectedValue(migrationError);
+    const { client } = makeClient([]);
+
+    await expect(runDrizzleMigrations(client, "/migrations")).rejects.toBe(migrationError);
   });
 
   it("reconciles an applied archived migration without adding it to Drizzle execution", async () => {
