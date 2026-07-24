@@ -6,6 +6,7 @@ import {
   MultiSourceHeartRateChart,
   sourceColor,
 } from "../components/charts/MultiSourceHeartRateChart";
+import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout-options";
@@ -39,7 +40,8 @@ export default function DailyHeartRateScreen() {
   const [date, setDate] = useState(() => formatDateYmd());
 
   const query = trpc.heartRate.dailyBySource.useQuery({ date });
-  const sources = query.data ?? [];
+  const sources = query.data;
+  const hasSources = sources !== undefined && sources.length > 0;
 
   const goBack = () => {
     const previous = parseLocalDate(date);
@@ -90,19 +92,37 @@ export default function DailyHeartRateScreen() {
 
         {/* Chart */}
         <View style={styles.chartContainer}>
-          {sources.length > 0 ? (
+          {hasSources ? (
             <MultiSourceHeartRateChart sources={sources} height={220} />
+          ) : query.isLoading ? (
+            <QueryStatePanel variant="loading" minHeight={220} />
+          ) : query.error ? (
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(query.error)}
+              minHeight={220}
+            />
           ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>
-                {query.isLoading ? "Loading..." : "No heart rate data for this day"}
-              </Text>
-            </View>
+            <QueryStatePanel
+              variant="empty"
+              message="No heart rate data for this day"
+              minHeight={220}
+            />
           )}
         </View>
 
+        {hasSources && query.error ? (
+          <View style={styles.queryError}>
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(query.error)}
+              minHeight={72}
+            />
+          </View>
+        ) : null}
+
         {/* Legend */}
-        {sources.length > 1 && (
+        {hasSources && sources.length > 1 && (
           <View style={styles.legend}>
             {sources.map((source, index) => (
               <View key={source.providerId} style={styles.legendItem}>
@@ -114,38 +134,31 @@ export default function DailyHeartRateScreen() {
         )}
 
         {/* Source Summary */}
-        {sources.map((source, index) => {
-          const heartRates = source.samples.map((sample) => sample.heartRate);
-          const min = Math.min(...heartRates);
-          const avg = Math.round(
-            heartRates.reduce((sum, value) => sum + value, 0) / heartRates.length,
-          );
-          const max = Math.max(...heartRates);
-
-          return (
-            <View key={source.providerId} style={styles.sourceCard}>
-              <View style={styles.sourceHeader}>
-                <View style={[styles.sourceDot, { backgroundColor: sourceColor(index) }]} />
-                <Text style={styles.sourceName}>{source.providerLabel}</Text>
-                <Text style={styles.sampleCount}>{source.samples.length} samples</Text>
-              </View>
-              <View style={styles.statsRow}>
-                <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>Min</Text>
-                  <Text style={styles.statValue}>{min}</Text>
+        {hasSources
+          ? sources.map((source, index) => (
+              <View key={source.providerId} style={styles.sourceCard}>
+                <View style={styles.sourceHeader}>
+                  <View style={[styles.sourceDot, { backgroundColor: sourceColor(index) }]} />
+                  <Text style={styles.sourceName}>{source.providerLabel}</Text>
+                  <Text style={styles.sampleCount}>{source.sampleCount} samples</Text>
                 </View>
-                <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>Avg</Text>
-                  <Text style={styles.statValue}>{avg}</Text>
-                </View>
-                <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>Max</Text>
-                  <Text style={styles.statValue}>{max}</Text>
+                <View style={styles.statsRow}>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>Min</Text>
+                    <Text style={styles.statValue}>{source.minHeartRate}</Text>
+                  </View>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>Avg</Text>
+                    <Text style={styles.statValue}>{source.avgHeartRate}</Text>
+                  </View>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>Max</Text>
+                    <Text style={styles.statValue}>{source.maxHeartRate}</Text>
+                  </View>
                 </View>
               </View>
-            </View>
-          );
-        })}
+            ))
+          : null}
       </ScrollView>
     </>
   );
@@ -180,12 +193,7 @@ const styles = StyleSheet.create({
     padding: 12,
     height: 244,
   },
-  emptyState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyText: { fontSize: 14, color: colors.textSecondary },
+  queryError: { marginHorizontal: 16, marginTop: 12 },
   legend: {
     flexDirection: "row",
     flexWrap: "wrap",
