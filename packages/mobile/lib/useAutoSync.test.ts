@@ -25,6 +25,40 @@ let mockActiveSyncs: {
   error: Error | null;
 };
 
+const mockTrpcUtils = {
+  invalidate: mockInvalidate,
+  processing: {
+    status: { invalidate: mockDataHealthInvalidate },
+  },
+  sync: {
+    syncStatus: { fetch: mockSyncStatusFetch },
+  },
+  mobileDashboard: {
+    dashboard: { invalidate: mockDashboardInvalidate },
+    recovery: { invalidate: mockRecoveryInvalidate },
+    training: { invalidate: mockTrainingInvalidate },
+  },
+  calendar: {
+    weekList: { invalidate: mockCalendarWeekListInvalidate },
+    activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
+  },
+  activity: {
+    list: { invalidate: mockActivityListInvalidate },
+  },
+  food: {
+    byDate: { invalidate: mockFoodByDateInvalidate },
+  },
+  nutritionAnalytics: {
+    adaptiveTdee: { invalidate: mockNutritionAnalyticsAdaptiveTdeeInvalidate },
+    caloricBalance: { invalidate: mockNutritionAnalyticsCaloricBalanceInvalidate },
+    macroRatios: { invalidate: mockNutritionAnalyticsMacroRatiosInvalidate },
+    micronutrientAdequacy: {
+      invalidate: mockNutritionAnalyticsMicronutrientAdequacyInvalidate,
+    },
+  },
+  client: {},
+};
+
 vi.mock("./trpc", () => ({
   trpc: {
     sync: {
@@ -35,39 +69,7 @@ vi.mock("./trpc", () => ({
         useQuery: () => mockActiveSyncs,
       },
     },
-    useUtils: () => ({
-      invalidate: mockInvalidate,
-      processing: {
-        status: { invalidate: mockDataHealthInvalidate },
-      },
-      sync: {
-        syncStatus: { fetch: mockSyncStatusFetch },
-      },
-      mobileDashboard: {
-        dashboard: { invalidate: mockDashboardInvalidate },
-        recovery: { invalidate: mockRecoveryInvalidate },
-        training: { invalidate: mockTrainingInvalidate },
-      },
-      calendar: {
-        weekList: { invalidate: mockCalendarWeekListInvalidate },
-        activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
-      },
-      activity: {
-        list: { invalidate: mockActivityListInvalidate },
-      },
-      food: {
-        byDate: { invalidate: mockFoodByDateInvalidate },
-      },
-      nutritionAnalytics: {
-        adaptiveTdee: { invalidate: mockNutritionAnalyticsAdaptiveTdeeInvalidate },
-        caloricBalance: { invalidate: mockNutritionAnalyticsCaloricBalanceInvalidate },
-        macroRatios: { invalidate: mockNutritionAnalyticsMacroRatiosInvalidate },
-        micronutrientAdequacy: {
-          invalidate: mockNutritionAnalyticsMicronutrientAdequacyInvalidate,
-        },
-      },
-      client: {},
-    }),
+    useUtils: () => mockTrpcUtils,
   },
 }));
 
@@ -238,6 +240,29 @@ describe("useAutoSync", () => {
     expect(mockNutritionAnalyticsMicronutrientAdequacyInvalidate).toHaveBeenCalledOnce();
     expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
+  });
+
+  it("continues status polling when the mutation result rerenders while pending", async () => {
+    let resolveTriggerSync: ((result: { jobId: string }) => void) | undefined;
+    mockMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveTriggerSync = resolve;
+        }),
+    );
+
+    const rendered = renderHook(() => useAutoSync("2026-03-21"));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(mockMutateAsync).toHaveBeenCalledOnce();
+
+    rendered.rerender();
+    await act(async () => {
+      resolveTriggerSync?.({ jobId: "test-job" });
+      await vi.runAllTimersAsync();
+    });
+
+    expect(mockSyncStatusFetch).toHaveBeenCalledOnce();
+    expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
   });
 
   it("polls multiple times before completing", async () => {

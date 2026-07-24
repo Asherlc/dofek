@@ -45,7 +45,7 @@ async function invalidateSyncedHealthData(trpcUtils: TrpcUtils): Promise<void> {
  */
 export function useAutoSync(latestDate: string | null | undefined) {
   const triggered = useRef(false);
-  const triggerSync = trpc.sync.triggerSync.useMutation();
+  const { mutateAsync: triggerProviderSync } = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, {
     enabled: isDataStale(latestDate),
@@ -65,8 +65,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
       triggered.current = true;
 
       // Trigger API provider sync and poll until complete
-      triggerSync
-        .mutateAsync({ sinceDays: 1 })
+      triggerProviderSync({ sinceDays: 1 })
         .then(async ({ jobId }: { jobId?: string }) => {
           if (!jobId) return;
           const pollUntilDone = async (): Promise<void> => {
@@ -145,7 +144,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
     activeSyncs.isLoading,
     activeSyncs.error,
     activeSyncs.data,
-    triggerSync,
+    triggerProviderSync,
     trpcUtils,
   ]);
 }
