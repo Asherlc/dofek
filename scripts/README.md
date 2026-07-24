@@ -70,6 +70,10 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   overrides for local and preview checks.
   - Usage: `pnpm check:mobile-update`
   - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
+- `e2e-web.ts`: Starts the isolated web E2E stack, runs Cypress, and always
+  tears the stack down. Setup or Cypress failures remain the command's exit
+  status after cleanup.
+  - Usage: `pnpm e2e:web`
 
 ## Reverse Engineering (WHOOP)
 
