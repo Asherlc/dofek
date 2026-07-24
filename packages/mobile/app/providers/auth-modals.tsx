@@ -153,7 +153,7 @@ export function GarminAuthModal({
               disabled={loading}
               accessibilityRole="button"
               accessibilityLabel="Close Garmin connection"
-              accessibilityState={{ busy: loading, disabled: loading }}
+              accessibilityState={{ disabled: loading }}
             >
               <Text style={styles.modalClose}>{"\u00D7"}</Text>
             </TouchableOpacity>
@@ -290,7 +290,7 @@ export function WhoopAuthModal({
               disabled={!canClose}
               accessibilityRole="button"
               accessibilityLabel="Close WHOOP connection"
-              accessibilityState={{ busy: loading, disabled: !canClose }}
+              accessibilityState={{ disabled: !canClose }}
             >
               <Text style={styles.modalClose}>{"\u00D7"}</Text>
             </TouchableOpacity>

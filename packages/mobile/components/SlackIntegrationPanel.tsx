@@ -1,4 +1,5 @@
 import * as WebBrowser from "expo-web-browser";
+import { useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { createProviderHandoffCode } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
@@ -10,9 +11,11 @@ import { colors } from "../theme";
 export function SlackIntegrationPanel() {
   const { data, isLoading, refetch } = trpc.settings.slackStatus.useQuery();
   const { sessionToken } = useAuth();
+  const [isConnecting, setIsConnecting] = useState(false);
 
   async function handleConnect() {
-    if (!sessionToken) return;
+    if (!sessionToken || isConnecting) return;
+    setIsConnecting(true);
     try {
       const handoffCode = await createProviderHandoffCode(SERVER_URL, "slack", sessionToken);
       const url = new URL(`${SERVER_URL}/auth/provider/slack`);
@@ -27,6 +30,8 @@ export function SlackIntegrationPanel() {
         "Unable to connect Slack",
         error instanceof Error ? error.message : "Slack connection failed",
       );
+    } finally {
+      setIsConnecting(false);
     }
   }
 
@@ -72,8 +77,10 @@ export function SlackIntegrationPanel() {
           style={styles.connectButton}
           onPress={handleConnect}
           activeOpacity={0.7}
+          disabled={isConnecting}
           accessibilityRole="button"
           accessibilityLabel="Add to Slack"
+          accessibilityState={{ busy: isConnecting, disabled: isConnecting }}
         >
           <Text style={styles.connectButtonText}>Add to Slack</Text>
         </TouchableOpacity>

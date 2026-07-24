@@ -126,6 +126,7 @@ export default function ProvidersScreen() {
   });
 
   const handleHealthKitConnect = useCallback(async () => {
+    if (healthKitSyncing) return;
     setHealthKitSyncing(true);
     setHealthKitProgress("Requesting permissions...");
     try {
@@ -145,7 +146,7 @@ export default function ProvidersScreen() {
     } finally {
       setHealthKitSyncing(false);
     }
-  }, [appleHealth]);
+  }, [appleHealth, healthKitSyncing]);
 
   const handleHealthKitSync = useCallback(
     async (fullSync = false) => {
@@ -708,8 +709,10 @@ export default function ProvidersScreen() {
         <TouchableOpacity
           style={styles.permissionBanner}
           onPress={handleHealthKitConnect}
+          disabled={healthKitSyncing}
           accessibilityRole="button"
           accessibilityLabel="Review Apple Health permissions"
+          accessibilityState={{ busy: healthKitSyncing, disabled: healthKitSyncing }}
         >
           <Text style={styles.permissionBannerText}>
             Apple Health permissions need updating — tap to review

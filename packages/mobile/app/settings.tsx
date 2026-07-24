@@ -556,9 +556,9 @@ export default function SettingsScreen() {
             }}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel="BLE Probe"
+            accessibilityLabel="Bluetooth Low Energy probe"
           >
-            <Text style={styles.devToolLabel}>BLE Probe</Text>
+            <Text style={styles.devToolLabel}>Bluetooth Low Energy probe</Text>
             <Text style={styles.devToolChevron}>›</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -569,9 +569,9 @@ export default function SettingsScreen() {
             }}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel="IMU Visualization"
+            accessibilityLabel="Inertial measurement unit visualization"
           >
-            <Text style={styles.devToolLabel}>IMU Visualization</Text>
+            <Text style={styles.devToolLabel}>Inertial measurement unit visualization</Text>
             <Text style={styles.devToolChevron}>›</Text>
           </TouchableOpacity>
           <TouchableOpacity

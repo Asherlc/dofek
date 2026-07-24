@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { writeRawMock } = vi.hoisted(() => ({ writeRawMock: vi.fn() }));
 
 vi.mock("../modules/ble-probe", () => ({
   addNotificationListener: () => ({ remove: vi.fn() }),
@@ -13,15 +15,54 @@ vi.mock("../modules/ble-probe", () => ({
   isConnected: vi.fn(() => false),
   scan: vi.fn(),
   subscribe: vi.fn(),
-  writeRaw: vi.fn(),
+  writeRaw: writeRawMock,
 }));
 
 describe("BleProbeScreen", () => {
+  beforeEach(() => {
+    writeRawMock.mockReset();
+    writeRawMock.mockResolvedValue(undefined);
+  });
+
   it("distinguishes the general and IMU status actions", async () => {
     const { default: BleProbeScreen } = await import("./ble-probe");
     render(<BleProbeScreen />);
 
-    expect(screen.getByRole("button", { name: "BLE status" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "IMU status" })).toBeTruthy();
+    const bluetoothStatus = screen.getByRole("button", {
+      name: "Bluetooth Low Energy (BLE) connection and data status",
+    });
+    const whoopStatus = screen.getByRole("button", { name: "WHOOP data status" });
+
+    expect(bluetoothStatus.getAttribute("aria-label")).toBe(
+      "Bluetooth Low Energy (BLE) connection and data status",
+    );
+    expect(whoopStatus.getAttribute("aria-label")).toBe("WHOOP data status");
+  });
+
+  it("prevents repeated Hello and IMU commands while the write is in progress", async () => {
+    writeRawMock.mockImplementationOnce(() => new Promise(() => undefined));
+    const { default: BleProbeScreen } = await import("./ble-probe");
+    render(<BleProbeScreen />);
+
+    const helloButton = screen.getByRole("button", {
+      name: "Send hello and toggle inertial measurement unit (IMU) mode",
+    });
+    fireEvent.click(helloButton);
+
+    await waitFor(() => {
+      expect(helloButton.getAttribute("aria-busy")).toBe("true");
+      expect(helloButton).toHaveProperty("disabled", true);
+    });
+    fireEvent.click(helloButton);
+    expect(writeRawMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Send when the command is blank", async () => {
+    const { default: BleProbeScreen } = await import("./ble-probe");
+    render(<BleProbeScreen />);
+
+    const sendButton = screen.getByRole("button", { name: "Send command" });
+    expect(sendButton).toHaveProperty("disabled", true);
+    expect(sendButton.getAttribute("aria-disabled")).toBe("true");
   });
 });

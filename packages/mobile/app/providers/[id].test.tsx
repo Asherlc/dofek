@@ -950,7 +950,7 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      fireEvent.click(screen.getByText("Morning Ride"));
+      fireEvent.click(screen.getByRole("button", { name: "Open record Morning Ride" }));
 
       expect(
         screen.getByRole("button", { name: "Show empty fields" }).getAttribute("aria-expanded"),
@@ -1057,6 +1057,17 @@ describe("ProviderDetailScreen", () => {
       expect(screen.getByText("Chest / Torso")).toBeTruthy();
       expect(screen.getByText("Waist / Waistband")).toBeTruthy();
       expect(screen.getByText("Lower Leg / Calf")).toBeTruthy();
+    });
+
+    it("includes placement details in wear location accessible names", async () => {
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(
+        screen.getByRole("button", {
+          name: "Wrist, Standard wrist band, ~1 inch above the wrist bone",
+        }),
+      ).toBeTruthy();
     });
 
     it("does not render wear location picker for non-whoop providers", async () => {

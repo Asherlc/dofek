@@ -22,10 +22,22 @@ vi.mock("react-native", () => ({
     React.createElement("span", stripStyle(props), ...(children != null ? [children] : [])),
   ScrollView: ({ children, ...props }: Record<string, unknown>) =>
     React.createElement("div", stripStyle(props), ...(children != null ? [children] : [])),
-  Pressable: ({ children, onPress, ...props }: Record<string, unknown>) =>
+  Pressable: ({
+    accessibilityLabel,
+    accessibilityRole,
+    children,
+    onPress,
+    ...props
+  }: Record<string, unknown>) =>
     React.createElement(
       "button",
-      { ...stripStyle(props), type: "button", onClick: onPress },
+      {
+        ...stripStyle(props),
+        type: "button",
+        onClick: onPress,
+        "aria-label": accessibilityLabel,
+        role: accessibilityRole,
+      },
       ...(children != null ? [children] : []),
     ),
   ActivityIndicator: () => React.createElement("div", { "data-testid": "loading" }),
@@ -409,6 +421,24 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Morning Ride")).toBeTruthy();
+  });
+
+  it("uses layman-readable accessible names for activity export formats", async () => {
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    fireEvent.click(screen.getByRole("button", { name: "Export Activity" }));
+
+    expect(screen.getByRole("button", { name: "Export as GPS track (GPX)" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Export as Training Center data (TCX)" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Export as comma-separated values (CSV)" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Export as fitness activity file (FIT)" }),
+    ).toBeTruthy();
   });
 
   it("renders heart rate and power chart labels for cycling with stream data", async () => {

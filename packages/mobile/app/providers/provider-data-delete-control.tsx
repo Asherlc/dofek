@@ -148,10 +148,7 @@ export function ProviderDataDeleteControl({
                     activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityLabel="Cancel provider data deletion"
-                    accessibilityState={{
-                      busy: deleteAllDataMutation.isPending,
-                      disabled: deleteAllDataMutation.isPending,
-                    }}
+                    accessibilityState={{ disabled: deleteAllDataMutation.isPending }}
                   >
                     <Text style={styles.cancelText}>Cancel</Text>
                   </TouchableOpacity>

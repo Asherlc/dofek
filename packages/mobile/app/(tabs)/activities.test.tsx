@@ -314,6 +314,45 @@ describe("ActivitiesScreen", () => {
     expect(routerPush).toHaveBeenCalledWith("/activity/activity-1");
   });
 
+  it("includes visible activity context in each accessible action name", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    const activityButton = screen.getByText("Trainer Ride").closest("button");
+    expect(activityButton?.getAttribute("aria-label")).toContain("Open Trainer Ride");
+    expect(activityButton?.getAttribute("aria-label")).toContain("1h");
+    expect(activityButton?.getAttribute("aria-label")).toContain("Indoor Cycling");
+  });
+
+  it("does not repeat the activity type when an activity has no custom name", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [activity({ name: null })],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    const openButton = screen.getByRole("button", { name: /^Open Indoor Cycling/ });
+    expect(openButton.getAttribute("aria-label")?.match(/Indoor Cycling/g)).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    const selectButton = screen.getByRole("button", { name: /^Select Indoor Cycling/ });
+    expect(selectButton.getAttribute("aria-label")?.match(/Indoor Cycling/g)).toHaveLength(1);
+  });
+
   it("toggles selected activities instead of navigating in select mode", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity()] }],

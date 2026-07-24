@@ -251,6 +251,17 @@ describe("SettingsScreen data sources", () => {
     expect(dataSourcesButton.getAttribute("aria-label")).toBe("Data Sources");
   });
 
+  it("uses layman-readable names for Bluetooth and motion developer tools", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByRole("button", { name: "Bluetooth Low Energy probe" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Inertial measurement unit visualization" }),
+    ).toBeTruthy();
+  });
+
   it("navigates to providers screen when tapped", async () => {
     const { default: SettingsScreen } = await import("./settings");
 
