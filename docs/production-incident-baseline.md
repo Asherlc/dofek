@@ -15918,3 +15918,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   temporarily for safe staged deployment compatibility. Drop them and their
   compatibility-view projections after the application change has been
   deployed everywhere.
+
+## 2026-07-24 — OTA Manifest Endpoint Transiently Timed Out
+
+- **Status:** Recovered without a behavior change; root cause unresolved.
+- **Symptoms:** The production OTA manifest validation request exceeded its
+  five-second timeout, and a follow-up `curl` request received zero bytes before
+  its 20-second deadline.
+- **User impact:** Operator validation of the deployed iOS update was briefly
+  blocked. No mobile update or application impact was confirmed.
+- **Evidence:** The first fatal line was
+  `Failed to reach https://ota.dofek.asherlc.com/manifest: The operation was aborted due to timeout`.
+  During the timeout, the `dofek_ota` and `dofek_traefik` Swarm services both
+  reported 1/1 replicas. The OTA service emitted repeated SDK checksum warnings
+  while the request was pending. A later production request returned HTTP 200
+  in 0.476 seconds through the public endpoint and in 0.392 seconds through the
+  server's Traefik loopback.
+- **Root cause:** Unknown. The evidence confirms a transient response delay but
+  does not identify a failing service or causal application error.
+- **Fix / mitigation:** None. The endpoint recovered without a deployment,
+  restart, retry policy, or timeout change.
+- **Validation:** `pnpm check:mobile-update` subsequently completed in under
+  five seconds and parsed the production manifest ID, creation time, runtime
+  version, launch asset, and 42 assets.
+- **Remaining risk / follow-up:** A similar transient delay may recur. Preserve
+  the strict timeout and capture correlated reverse-proxy and OTA request
+  telemetry before changing behavior.
