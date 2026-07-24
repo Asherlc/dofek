@@ -71,7 +71,8 @@ const commandEnvironment = {
   ...process.env,
   ...infisicalEnvironment,
   ...localEnvironment,
-  SENTRY_ENVIRONMENT: localEnvironment.SENTRY_ENVIRONMENT ?? "development",
+  SENTRY_ENVIRONMENT:
+    localEnvironment.SENTRY_ENVIRONMENT ?? process.env.SENTRY_ENVIRONMENT ?? "development",
 };
 const axiomApiToken = commandEnvironment.AXIOM_API_TOKEN;
 if (axiomApiToken) {

@@ -38,12 +38,18 @@ function createFixture(infisicalScript: string): {
   return { fixtureRoot, scriptPath };
 }
 
-function runWithEnv(scriptPath: string, fixtureRoot: string, command: string[] = []) {
+function runWithEnv(
+  scriptPath: string,
+  fixtureRoot: string,
+  command: string[] = [],
+  environmentOverrides: NodeJS.ProcessEnv = {},
+) {
   return spawnSync("pnpm", ["tsx", scriptPath, "--", ...command], {
     encoding: "utf8",
     env: {
       ...process.env,
       PATH: `${join(fixtureRoot, "bin")}:${process.env.PATH ?? ""}`,
+      ...environmentOverrides,
     },
   });
 }
@@ -138,5 +144,51 @@ printf '%s\n%s' "$WITH_ENV_TEST_VALUE" "$SENTRY_ENVIRONMENT" > "$1"
 
     expect(result.status).toBe(0);
     expect(readFileSync(capturedValuePath, "utf8")).toBe("workspace-local\ndevelopment");
+  });
+
+  it("defaults local Sentry events to development instead of the Infisical environment", () => {
+    const { fixtureRoot, scriptPath } = createFixture(`#!/bin/sh
+cat <<'EXPORT_OUTPUT'
+${JSON.stringify([{ key: "SENTRY_ENVIRONMENT", value: "production" }])}
+EXPORT_OUTPUT
+`);
+    const capturedValuePath = join(fixtureRoot, "captured-value");
+    const wrappedCommand = join(fixtureRoot, "bin", "wrapped-command");
+    writeExecutable(
+      wrappedCommand,
+      `#!/bin/sh
+printf '%s' "$SENTRY_ENVIRONMENT" > "$1"
+`,
+    );
+
+    const result = runWithEnv(scriptPath, fixtureRoot, [wrappedCommand, capturedValuePath], {
+      SENTRY_ENVIRONMENT: undefined,
+    });
+
+    expect(result.status).toBe(0);
+    expect(readFileSync(capturedValuePath, "utf8")).toBe("development");
+  });
+
+  it("preserves an explicit caller Sentry environment", () => {
+    const { fixtureRoot, scriptPath } = createFixture(`#!/bin/sh
+cat <<'EXPORT_OUTPUT'
+${JSON.stringify([{ key: "SENTRY_ENVIRONMENT", value: "production" }])}
+EXPORT_OUTPUT
+`);
+    const capturedValuePath = join(fixtureRoot, "captured-value");
+    const wrappedCommand = join(fixtureRoot, "bin", "wrapped-command");
+    writeExecutable(
+      wrappedCommand,
+      `#!/bin/sh
+printf '%s' "$SENTRY_ENVIRONMENT" > "$1"
+`,
+    );
+
+    const result = runWithEnv(scriptPath, fixtureRoot, [wrappedCommand, capturedValuePath], {
+      SENTRY_ENVIRONMENT: "staging",
+    });
+
+    expect(result.status).toBe(0);
+    expect(readFileSync(capturedValuePath, "utf8")).toBe("staging");
   });
 });
