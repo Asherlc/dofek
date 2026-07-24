@@ -3,7 +3,7 @@
 > **Read the [README.md](./README.md) first** for script purposes and usage.
 
 ## High-Level Mandates
-- **Use `with-env.sh` for dev**: Always wrap dev commands (like `pnpm dev` or `pnpm seed`) in `./scripts/with-env.sh` to ensure secrets from Infisical are available.
+- **Use `with-env.ts` for dev**: Always wrap dev commands (like `pnpm dev` or `pnpm seed`) in `pnpm tsx scripts/with-env.ts --` to ensure secrets from Infisical are available.
 - **Idempotent Seeding**: `seed-dev-db.ts` is safe to run multiple times. It deletes its own seeded data (by provider ID) before re-inserting.
 - **Reverse Engineering Docs**: When exploring new APIs or protocols, update the corresponding docs in `docs/` and add probe results to the exploration scripts.
 
@@ -12,7 +12,7 @@
 ### Seeding the DB
 To get a fully functional dev environment with charts and data:
 ```bash
-rtk ./scripts/with-env.sh pnpm seed
+rtk pnpm tsx scripts/with-env.ts -- pnpm seed
 ```
 The seed command applies migrations and verifies representative row counts before reporting success.
 

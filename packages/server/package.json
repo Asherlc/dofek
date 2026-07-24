@@ -8,7 +8,7 @@
     "./types": "./src/types.ts"
   },
   "scripts": {
-    "dev": "../../scripts/with-env.sh tsx src/index.ts",
+    "dev": "tsx ../../scripts/with-env.ts -- tsx src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
