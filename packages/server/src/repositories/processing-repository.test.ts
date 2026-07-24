@@ -129,13 +129,14 @@ describe("ProcessingRepository", () => {
   it("rejects a requested dataset without a registered contract", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([]);
     const repository = new ProcessingRepository(database, userId);
+    const scope = { datasets: ["activity"] } satisfies Parameters<
+      ProcessingRepository["status"]
+    >[0];
+    Reflect.set(scope.datasets, 0, "missing");
 
-    await expect(
-      repository.status({
-        // @ts-expect-error Deliberately exercise the runtime defensive branch.
-        datasets: ["missing"],
-      }),
-    ).rejects.toThrow("Missing processing dataset contract for missing");
+    await expect(repository.status(scope)).rejects.toThrow(
+      "Missing processing dataset contract for missing",
+    );
   });
 
   it("maps the latest ingest event into the processing-state operation status", async () => {

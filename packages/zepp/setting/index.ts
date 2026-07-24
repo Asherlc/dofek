@@ -9,10 +9,13 @@ function readJson(raw: string | null, fallback: Record<string, unknown>): Record
       return Object.fromEntries(Object.entries(parsed));
     }
     return fallback;
-  } catch {
-    // biome-ignore lint/suspicious/noConsole: settings page runs in companion app WebView
-    console.error("Failed to parse settings JSON:", raw);
-    return fallback;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ...fallback,
+      state: "error",
+      reason: `Stored settings data is invalid: ${message}`,
+    };
   }
 }
 

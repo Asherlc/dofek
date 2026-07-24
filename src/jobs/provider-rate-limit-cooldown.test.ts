@@ -670,12 +670,18 @@ describe("ProviderRateLimitCooldownStore", () => {
   it("uses the Redis cooldown store outside test environments", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("VITEST", "");
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
 
+    const transaction = {
+      set: vi.fn(),
+      exec: vi.fn().mockResolvedValue([["OK"]]),
+    };
+    transaction.set.mockReturnValue(transaction);
     const mockClient = {
       get: vi.fn<(key: string) => Promise<string | null>>().mockResolvedValue(null),
-      set: vi
-        .fn<(key: string, value: string, mode: "PX", ms: number) => Promise<string | null>>()
-        .mockResolvedValue("OK"),
+      set: vi.fn().mockResolvedValue("OK"),
+      watch: vi.fn().mockResolvedValue("OK"),
+      multi: vi.fn().mockReturnValue(transaction),
     };
     vi.doMock("./queues.ts", () => ({
       getRedisConnection: vi.fn().mockReturnValue({}),
@@ -695,6 +701,25 @@ describe("ProviderRateLimitCooldownStore", () => {
     await expect(
       module.providerRateLimitCooldownStore.getActive("garmin", "user-1"),
     ).resolves.toBeNull();
+    expect(mockClient.get).toHaveBeenCalledWith("provider-rate-limit:garmin:provider");
+    await expect(
+      module.providerRateLimitCooldownStore.record(
+        rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+        "user-1",
+      ),
+    ).resolves.toMatchObject({
+      providerId: "garmin",
+      expiresAt: new Date("2026-06-02T12:10:00.000Z"),
+    });
+    expect(mockClient.watch).toHaveBeenCalledWith("provider-rate-limit:garmin:provider");
+    expect(mockClient.multi).toHaveBeenCalledOnce();
+    expect(transaction.set).toHaveBeenCalledWith(
+      "provider-rate-limit:garmin:provider",
+      expect.any(String),
+      "PX",
+      600_000,
+    );
+    expect(transaction.exec).toHaveBeenCalledOnce();
 
     vi.unstubAllEnvs();
     vi.resetModules();

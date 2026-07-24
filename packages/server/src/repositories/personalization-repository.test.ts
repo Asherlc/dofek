@@ -1,5 +1,6 @@
 import { DEFAULT_PARAMS } from "dofek/personalization/params";
 import { describe, expect, it, vi } from "vitest";
+import { makeMockSensorStore } from "../lib/test-helpers.ts";
 import { PersonalizationRepository } from "./personalization-repository.ts";
 
 // Mock the personalization modules
@@ -20,25 +21,9 @@ const mockedLoadParams = vi.mocked(loadPersonalizedParams);
 const mockedRefitAll = vi.mocked(refitAllParams);
 
 describe("PersonalizationRepository", () => {
-  // biome-ignore lint/suspicious/noExplicitAny: test mock helper
-  function makeSensorStore(): any {
-    return {
-      query: vi.fn().mockResolvedValue([]),
-      getActivitySummaries: vi.fn().mockResolvedValue([]),
-      getStream: vi.fn().mockResolvedValue([]),
-      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
-      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
-      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
-      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
-      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-      getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
-      getPaceCurveRows: vi.fn().mockResolvedValue([]),
-    };
-  }
-
   function makeRepository() {
     const execute = vi.fn().mockResolvedValue([]);
-    const sensorStore = makeSensorStore();
+    const sensorStore = makeMockSensorStore();
     const repo = new PersonalizationRepository({ execute }, "user-1", sensorStore);
     return { repo, execute, sensorStore };
   }

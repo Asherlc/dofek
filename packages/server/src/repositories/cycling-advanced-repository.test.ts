@@ -1,5 +1,7 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeMockSensorStore } from "../lib/test-helpers.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
   ActivityVariabilityModel,
   PedalDynamicsModel,
@@ -210,29 +212,18 @@ describe("PedalDynamicsModel", () => {
 // ---------------------------------------------------------------------------
 
 describe("CyclingAdvancedRepository", () => {
-  // biome-ignore lint/suspicious/noExplicitAny: test mock helper
-  function makeSensorStore(rows: unknown[], rawActivityCount = rows.length): any {
+  function makeSensorStore(rows: unknown[], rawActivityCount = rows.length): ActivitySensorStore {
     // Mirror ClickHouseActivitySensorStore.query: parse rows through the
     // supplied Zod schema so coerce/transform validators actually run.
-    const query = vi
-      .fn()
-      .mockImplementation(async (schema: { parse: (row: unknown) => unknown }, queryText = "") => {
-        if (queryText.includes("raw_activity_count")) {
-          return [schema.parse({ raw_activity_count: rawActivityCount })];
-        }
-        return rows.map((row) => schema.parse(row));
-      });
+    const query: ActivitySensorStore["query"] = async (schema, queryText = "") => {
+      if (queryText.includes("raw_activity_count")) {
+        return [schema.parse({ raw_activity_count: rawActivityCount })];
+      }
+      return rows.map((row) => schema.parse(row));
+    };
     return {
-      query,
-      getActivitySummaries: vi.fn().mockResolvedValue([]),
-      getStream: vi.fn().mockResolvedValue([]),
-      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
-      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
-      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
-      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
-      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-      getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
-      getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      ...makeMockSensorStore(),
+      query: vi.fn(query),
     };
   }
 
