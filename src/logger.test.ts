@@ -1,36 +1,12 @@
 import { Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import * as winston from "winston";
-import Transport from "winston-transport";
 import { jobContext, logger } from "./logger.ts";
-
-// cspell:ignore Logform
-class CaptureInfoTransport extends Transport {
-  readonly entries: Array<{ level: string; message: string }> = [];
-
-  log(info: winston.Logform.TransformableInfo, callback: () => void) {
-    this.entries.push({ level: info.level, message: String(info.message) });
-    callback();
-  }
-}
-
-function consoleTransportFormat(): winston.Logform.Format {
-  const consoleTransport = logger.transports.find(
-    (transport) => transport instanceof winston.transports.Console,
-  );
-  if (!consoleTransport?.format) {
-    throw new Error("Logger Console transport format is not configured");
-  }
-  return consoleTransport.format;
-}
-
-function createCaptureLogger(transport: Transport): winston.Logger {
-  return winston.createLogger({
-    level: logger.level,
-    format: logger.format,
-    transports: [transport],
-  });
-}
+import {
+  CaptureInfoTransport,
+  consoleTransportFormat,
+  createCaptureLogger,
+} from "./test-helpers.ts";
 
 describe("logger", () => {
   it("has Console and BullJobTransport transports", () => {
@@ -168,11 +144,10 @@ describe("logger", () => {
 
     await jobContext.run(mockJob, async () => {
       logger.info("test message");
-      // Winston transports are async — give the transport time to fire
-      await new Promise((r) => setTimeout(r, 50));
+      await vi.waitFor(() =>
+        expect(mockJob.log).toHaveBeenCalledWith(expect.stringContaining("test message")),
+      );
     });
-
-    expect(mockJob.log).toHaveBeenCalledWith(expect.stringContaining("test message"));
   });
 
   it("formats BullJobTransport output with level prefix", async () => {
@@ -180,12 +155,12 @@ describe("logger", () => {
 
     await jobContext.run(mockJob, async () => {
       logger.warn("Failed to update export %s: %s", "export-42", "Redis unavailable");
-      await new Promise((r) => setTimeout(r, 50));
+      await vi.waitFor(() =>
+        expect(mockJob.log).toHaveBeenCalledWith(
+          "[warn] Failed to update export export-42: Redis unavailable",
+        ),
+      );
     });
-
-    expect(mockJob.log).toHaveBeenCalledWith(
-      "[warn] Failed to update export export-42: Redis unavailable",
-    );
   });
 
   it("does not throw when job.log() rejects", async () => {
@@ -194,10 +169,8 @@ describe("logger", () => {
     await jobContext.run(mockJob, async () => {
       // Should not throw even when job.log rejects
       expect(() => logger.info("will fail to log")).not.toThrow();
-      await new Promise((r) => setTimeout(r, 50));
+      await vi.waitFor(() => expect(mockJob.log).toHaveBeenCalled());
     });
-
-    expect(mockJob.log).toHaveBeenCalled();
   });
 
   it("does not call job.log() when outside jobContext", () => {
