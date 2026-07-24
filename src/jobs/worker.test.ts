@@ -32,9 +32,8 @@ const hoisted = vi.hoisted(() => {
     listen: mockReadinessListen,
     close: mockReadinessClose,
   };
-  const scheduledSyncState: { error: Error | null; importSequence: number } = {
+  const scheduledSyncState: { error: Error | null } = {
     error: null,
-    importSequence: 0,
   };
 
   class MockUnrecoverableError extends Error {}
@@ -1353,13 +1352,12 @@ describe("worker module", () => {
     const previousSyncInterval = process.env.SYNC_INTERVAL_MINUTES;
     const workerRunCount = mockRun.mock.calls.length;
     const readinessListenCount = mockReadinessListen.mock.calls.length;
-    hoisted.scheduledSyncState.importSequence++;
-    const workerModulePath = `./worker.ts?invalid-sync-interval=${hoisted.scheduledSyncState.importSequence}`;
     process.env.SYNC_INTERVAL_MINUTES = "not-a-number";
     mockReconcileGarminProgress.mockResolvedValue(undefined);
+    vi.resetModules();
 
     try {
-      await expect(import(workerModulePath)).rejects.toThrow(
+      await expect(import("./worker.ts")).rejects.toThrow(
         'SYNC_INTERVAL_MINUTES must be a finite positive number, received "not-a-number"',
       );
     } finally {
@@ -1379,11 +1377,10 @@ describe("worker module", () => {
     const workerRunCount = mockRun.mock.calls.length;
     const readinessListenCount = mockReadinessListen.mock.calls.length;
     hoisted.scheduledSyncState.error = registrationError;
-    hoisted.scheduledSyncState.importSequence++;
     mockReconcileGarminProgress.mockResolvedValue(undefined);
-    const workerModulePath = `./worker.ts?scheduled-sync-registration-failure=${hoisted.scheduledSyncState.importSequence}`;
+    vi.resetModules();
 
-    await expect(import(workerModulePath)).rejects.toBe(registrationError);
+    await expect(import("./worker.ts")).rejects.toBe(registrationError);
 
     const Sentry = await import("@sentry/node");
     const { logger } = await import("../logger.ts");
