@@ -7,10 +7,28 @@ import { jobContext, logger } from "./logger.ts";
 class CaptureInfoTransport extends Transport {
   readonly entries: Array<{ level: string; message: string }> = [];
 
-  log(info: { level: string; message: string }, callback: () => void) {
-    this.entries.push({ level: info.level, message: info.message });
+  log(info: winston.Logform.TransformableInfo, callback: () => void) {
+    this.entries.push({ level: info.level, message: String(info.message) });
     callback();
   }
+}
+
+function consoleTransportFormat(): winston.Logform.Format {
+  const consoleTransport = logger.transports.find(
+    (transport) => transport instanceof winston.transports.Console,
+  );
+  if (!consoleTransport?.format) {
+    throw new Error("Logger Console transport format is not configured");
+  }
+  return consoleTransport.format;
+}
+
+function createCaptureLogger(transport: Transport): winston.Logger {
+  return winston.createLogger({
+    level: logger.level,
+    format: logger.format,
+    transports: [transport],
+  });
 }
 
 describe("logger", () => {
@@ -48,13 +66,12 @@ describe("logger", () => {
           callback();
         },
       }),
-      // Use the same format as the console transport in logger.ts
-      format: logger.transports[0]?.format,
+      format: consoleTransportFormat(),
     });
+    const captureLogger = createCaptureLogger(capture);
 
-    logger.add(capture);
-    logger.info("capture test");
-    logger.remove(capture);
+    captureLogger.info("capture test");
+    captureLogger.close();
 
     expect(output.length).toBeGreaterThan(0);
     expect(output[0]).toContain("info");
@@ -70,13 +87,17 @@ describe("logger", () => {
           callback();
         },
       }),
-      format: logger.transports[0]?.format,
+      format: consoleTransportFormat(),
     });
+    const captureLogger = createCaptureLogger(capture);
 
-    logger.add(capture);
-    logger.info("Imported FIT file %s", "activity.fit");
-    logger.error("Failed to mark export %s as failed: %s", "export-42", "database unavailable");
-    logger.remove(capture);
+    captureLogger.info("Imported FIT file %s", "activity.fit");
+    captureLogger.error(
+      "Failed to mark export %s as failed: %s",
+      "export-42",
+      "database unavailable",
+    );
+    captureLogger.close();
 
     expect(output).toEqual([
       expect.stringContaining("Imported FIT file activity.fit"),
@@ -87,13 +108,13 @@ describe("logger", () => {
 
   it("provides interpolated messages in the info shape consumed by OTel", async () => {
     const capture = new CaptureInfoTransport();
-    logger.add(capture);
+    const captureLogger = createCaptureLogger(capture);
 
     try {
-      logger.warn("Advisory unlock failed for %s: %s", "migration-7", "connection closed");
+      captureLogger.warn("Advisory unlock failed for %s: %s", "migration-7", "connection closed");
       await vi.waitFor(() => expect(capture.entries).toHaveLength(1));
     } finally {
-      logger.remove(capture);
+      captureLogger.close();
     }
 
     expect(capture.entries).toEqual([
@@ -107,13 +128,13 @@ describe("logger", () => {
   it("preserves Error messages and stacks during interpolation", async () => {
     const capture = new CaptureInfoTransport();
     const redisError = new Error("Redis connection closed");
-    logger.add(capture);
+    const captureLogger = createCaptureLogger(capture);
 
     try {
-      logger.warn("Advisory unlock failed: %s", redisError);
+      captureLogger.warn("Advisory unlock failed: %s", redisError);
       await vi.waitFor(() => expect(capture.entries).toHaveLength(1));
     } finally {
-      logger.remove(capture);
+      captureLogger.close();
     }
 
     expect(capture.entries[0]?.message).toContain("Error: Redis connection closed");
@@ -122,17 +143,17 @@ describe("logger", () => {
 
   it("keeps sanitized FIT values interpolated across transports", async () => {
     const capture = new CaptureInfoTransport();
-    logger.add(capture);
+    const captureLogger = createCaptureLogger(capture);
 
     try {
-      logger.error(
+      captureLogger.error(
         "Failed to import FIT file %s: %s",
         "[redacted]_activity.fit",
         "Native decoder rejected token=[REDACTED]",
       );
       await vi.waitFor(() => expect(capture.entries).toHaveLength(1));
     } finally {
-      logger.remove(capture);
+      captureLogger.close();
     }
 
     expect(capture.entries[0]?.message).toBe(
