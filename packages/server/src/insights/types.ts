@@ -20,7 +20,6 @@ export interface DailyRow {
   hrv: number | null;
   spo2_avg: number | null;
   steps: number | null;
-  active_energy_kcal: number | null;
   skin_temp_c: number | null;
 }
 

@@ -133,7 +133,6 @@ export function parseSuuntoWorkout(workout: SuuntoWorkout): ParsedSuuntoWorkout 
       totalDescent: workout.totalDescent,
       avgSpeed: workout.avgSpeed,
       maxSpeed: workout.maxSpeed,
-      calories: workout.energyConsumption,
       steps: workout.stepCount,
       avgHeartRate: workout.hrdata?.workoutAvgHR,
       maxHeartRate: workout.hrdata?.workoutMaxHR,

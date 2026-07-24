@@ -1382,8 +1382,6 @@ describe("GarminProvider.sync()", () => {
       date: "2026-03-01",
       steps: 10000,
       distanceKm: 8.5,
-      activeEnergyKcal: 500,
-      basalEnergyKcal: 1800,
       restingHr: 55,
       spo2Avg: 97,
       respiratoryRateAvg: 15,
@@ -1415,8 +1413,6 @@ describe("GarminProvider.sync()", () => {
     if (!dailyCall) throw new Error("expected daily metrics insert");
     expect(dailyCall[0].providerId).toBe("garmin");
     expect(dailyCall[0].distanceKm).toBe(8.5);
-    expect(dailyCall[0].activeEnergyKcal).toBe(500);
-    expect(dailyCall[0].basalEnergyKcal).toBe(1800);
     expect(Object.hasOwn(dailyCall[0], "restingHr")).toBe(false);
     expect(dailyCall[0].spo2Avg).toBe(97);
     expect(dailyCall[0].respiratoryRateAvg).toBe(15);
@@ -1436,8 +1432,6 @@ describe("GarminProvider.sync()", () => {
     );
     expect(conflictCall).toBeDefined();
     expect(conflictCall?.[0].set.distanceKm).toBe(8.5);
-    expect(conflictCall?.[0].set.activeEnergyKcal).toBe(500);
-    expect(conflictCall?.[0].set.basalEnergyKcal).toBe(1800);
     expect(Object.hasOwn(conflictCall?.[0].set ?? {}, "restingHr")).toBe(false);
     expect(conflictCall?.[0].set.spo2Avg).toBe(97);
     expect(conflictCall?.[0].set.respiratoryRateAvg).toBe(15);
@@ -1465,8 +1459,6 @@ describe("GarminProvider.sync()", () => {
       date: "2026-03-01",
       steps: 5000,
       distanceKm: 4,
-      activeEnergyKcal: 300,
-      basalEnergyKcal: 1700,
     });
     mocks.client.getHrvSummary.mockRejectedValue(
       new GarminApiError("No content available (204)", 204),
@@ -1557,8 +1549,6 @@ describe("GarminProvider.sync()", () => {
       date: "today",
       steps: 10000,
       distanceKm: 8,
-      activeEnergyKcal: 500,
-      basalEnergyKcal: 1800,
     });
     mocks.client.getHrvSummary.mockRejectedValue(
       new GarminApiError("No content available (204)", 204),

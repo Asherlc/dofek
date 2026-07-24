@@ -29,13 +29,6 @@ export function getCorrelationPairs(): CorrelationPair[] {
       yFn: (_d, all, i) => all[i + 1]?.hrv ?? null,
     },
     {
-      id: "active-kcal-sleep",
-      xName: "active calories",
-      yName: "sleep duration that night",
-      xFn: (d) => d.active_energy_kcal,
-      yFn: (_d, all, i) => all[i + 1]?.sleep_duration_min ?? null,
-    },
-    {
       id: "deep-sleep-hrv",
       xName: "deep sleep",
       yName: "next-day HRV",

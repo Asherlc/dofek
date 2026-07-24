@@ -33,7 +33,7 @@ final class MainThreadEventEmitterTests: XCTestCase {
 
         DispatchQueue.global(qos: .userInitiated).async {
             MainThreadEventEmitter.emit(
-                ["typeIdentifier": "HKQuantityTypeIdentifierActiveEnergyBurned"],
+                ["typeIdentifier": "HKQuantityTypeIdentifierHeartRate"],
                 completion: {
                     XCTAssertTrue(Thread.isMainThread)
                     XCTAssertTrue(emitted)
@@ -41,7 +41,7 @@ final class MainThreadEventEmitterTests: XCTestCase {
                 },
                 send: { payload in
                     XCTAssertTrue(Thread.isMainThread)
-                    XCTAssertEqual(payload["typeIdentifier"] as? String, "HKQuantityTypeIdentifierActiveEnergyBurned")
+                    XCTAssertEqual(payload["typeIdentifier"] as? String, "HKQuantityTypeIdentifierHeartRate")
                     emitted = true
                 }
             )

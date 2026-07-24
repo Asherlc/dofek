@@ -126,7 +126,6 @@ const SAMPLE_EXPORT = `<?xml version="1.0" encoding="UTF-8"?>
  <Workout workoutActivityType="HKWorkoutActivityTypeRunning"
   duration="30.5" durationUnit="min"
   totalDistance="5200" totalDistanceUnit="m"
-  totalEnergyBurned="320" totalEnergyBurnedUnit="kcal"
   sourceName="Apple Watch"
   creationDate="2024-03-01 18:30:00 -0500"
   startDate="2024-03-01 18:00:00 -0500"

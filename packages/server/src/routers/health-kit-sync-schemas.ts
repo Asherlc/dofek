@@ -55,7 +55,6 @@ export const workoutSampleSchema = z.object({
   startDate: z.string(),
   endDate: z.string(),
   duration: z.number(),
-  totalEnergyBurned: z.number().nullish(),
   totalDistance: z.number().nullish(),
   sourceName: z.string(),
   sourceBundle: z.string(),
@@ -118,14 +117,6 @@ export const additiveDailyMetricTypes: Record<
   }
 > = {
   HKQuantityTypeIdentifierStepCount: { column: "steps", accumulatorKey: "steps" },
-  HKQuantityTypeIdentifierActiveEnergyBurned: {
-    column: "active_energy_kcal",
-    accumulatorKey: "activeEnergyKcal",
-  },
-  HKQuantityTypeIdentifierBasalEnergyBurned: {
-    column: "basal_energy_kcal",
-    accumulatorKey: "basalEnergyKcal",
-  },
   HKQuantityTypeIdentifierDistanceWalkingRunning: {
     column: "distance_km",
     accumulatorKey: "distanceKm",
@@ -276,8 +267,6 @@ export const ROUTE_CHANNELS: Array<{
 /** Aggregated daily metric values for a single date */
 export interface DailyMetricAccumulator {
   steps: number | null;
-  activeEnergyKcal: number | null;
-  basalEnergyKcal: number | null;
   distanceKm: number | null;
   flightsClimbed: number | null;
   exerciseMinutes: number | null;
@@ -291,8 +280,6 @@ export interface DailyMetricAccumulator {
 
 export type AdditiveDailyMetricAccumulatorKey =
   | "steps"
-  | "activeEnergyKcal"
-  | "basalEnergyKcal"
   | "distanceKm"
   | "flightsClimbed"
   | "exerciseMinutes";
@@ -300,8 +287,6 @@ export type AdditiveDailyMetricAccumulatorKey =
 export function createEmptyAccumulator(): DailyMetricAccumulator {
   return {
     steps: null,
-    activeEnergyKcal: null,
-    basalEnergyKcal: null,
     distanceKm: null,
     flightsClimbed: null,
     exerciseMinutes: null,
@@ -317,8 +302,6 @@ export function createEmptyAccumulator(): DailyMetricAccumulator {
 /** Column name to accumulator key mapping */
 export const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
   steps: "steps",
-  active_energy_kcal: "activeEnergyKcal",
-  basal_energy_kcal: "basalEnergyKcal",
   distance_km: "distanceKm",
   flights_climbed: "flightsClimbed",
   exercise_minutes: "exerciseMinutes",
@@ -329,6 +312,12 @@ export const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator
   walking_asymmetry_pct: "walkingAsymmetryPct",
   walking_steadiness: "walkingSteadiness",
 };
+
+/** Provider-estimated calorie expenditure that is deliberately ignored at ingestion. */
+export const ignoredCalorieExpenditureTypes = new Set([
+  "HKQuantityTypeIdentifierActiveEnergyBurned",
+  "HKQuantityTypeIdentifierBasalEnergyBurned",
+]);
 
 export function getDailyMetricAccumulatorKey(column: string): keyof DailyMetricAccumulator {
   const key = columnToAccumulatorKey[column];

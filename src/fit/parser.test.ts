@@ -131,7 +131,6 @@ describe("FIT Parser", () => {
       expect(session.totalElapsedTime).toBe(0);
       expect(session.totalTimerTime).toBe(0);
       expect(session.totalDistance).toBe(0);
-      expect(session.totalCalories).toBe(0);
     });
 
     it("returns undefined for optional numeric fields when missing", () => {

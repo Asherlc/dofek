@@ -8,7 +8,6 @@ export const dailyRowSchema = z.object({
   hrv: z.number().nullable(),
   spo2_avg: z.number().nullable(),
   steps: z.number().nullable(),
-  active_energy_kcal: z.number().nullable(),
   skin_temp_c: z.number().nullable(),
 });
 

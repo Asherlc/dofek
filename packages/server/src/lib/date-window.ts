@@ -94,11 +94,6 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
     routerFile: "nutrition-analytics.ts",
     input: "days",
   },
-  "nutritionAnalytics.caloricBalance": {
-    defaultDays: 30,
-    routerFile: "nutrition-analytics.ts",
-    input: "days",
-  },
   "nutritionAnalytics.macroRatios": {
     defaultDays: 30,
     routerFile: "nutrition-analytics.ts",

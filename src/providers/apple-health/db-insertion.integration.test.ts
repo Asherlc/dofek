@@ -49,7 +49,6 @@ describe("db-insertion deduplication (integration)", () => {
           durationSeconds: 1800,
           startDate: sharedStart,
           endDate: sharedEnd,
-          calories: 300,
         },
         {
           activityType: "running",
@@ -57,7 +56,6 @@ describe("db-insertion deduplication (integration)", () => {
           durationSeconds: 1800,
           startDate: sharedStart,
           endDate: sharedEnd,
-          calories: 310,
         },
       ];
 

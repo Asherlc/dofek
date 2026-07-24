@@ -429,8 +429,6 @@ const dailyMetricsOutputSchema = z.object({
   respiratory_rate_avg: z.number().nullable(),
   skin_temp_c: z.number().nullable(),
   steps: z.number().nullable(),
-  active_energy_kcal: z.number().nullable(),
-  basal_energy_kcal: z.number().nullable(),
   distance_km: z.number().nullable(),
   flights_climbed: z.number().nullable(),
   exercise_minutes: z.number().nullable(),

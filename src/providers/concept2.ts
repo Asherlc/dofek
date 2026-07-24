@@ -140,7 +140,6 @@ export function parseConcept2Result(result: Concept2Result): ParsedConcept2Resul
       strokeCount: result.stroke_count,
       avgHeartRate: result.heart_rate?.average,
       maxHeartRate: result.heart_rate?.max,
-      calories: result.calories_total,
       dragFactor: result.drag_factor,
       workoutType: result.workout_type,
       weightClass: result.weight_class,

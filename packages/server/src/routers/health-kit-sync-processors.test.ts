@@ -143,7 +143,6 @@ describe("processWorkouts", () => {
           startDate: "2026-06-20T21:49:00.000Z",
           endDate: "2026-06-20T22:17:59.000Z",
           duration: 1738,
-          totalEnergyBurned: 130,
           totalDistance: null,
           sourceName: "WHOOP",
           sourceBundle: "com.whoop.app",

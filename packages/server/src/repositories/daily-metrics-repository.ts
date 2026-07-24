@@ -24,8 +24,6 @@ const dailyMetricsViewRowSchema = z.object({
   respiratory_rate_avg: z.number().nullable(),
   skin_temp_c: z.number().nullable(),
   steps: z.number().nullable(),
-  active_energy_kcal: z.number().nullable(),
-  basal_energy_kcal: z.number().nullable(),
   distance_km: z.number().nullable(),
   flights_climbed: z.number().nullable(),
   exercise_minutes: z.number().nullable(),
@@ -59,7 +57,6 @@ const trendsRowSchema = z.object({
   avg_resting_hr: z.coerce.number().nullable(),
   avg_spo2: z.coerce.number().nullable(),
   avg_steps: z.coerce.number().nullable(),
-  avg_active_energy: z.coerce.number().nullable(),
   avg_skin_temp: z.coerce.number().nullable(),
   stddev_hrv: z.coerce.number().nullable(),
   stddev_resting_hr: z.coerce.number().nullable(),
@@ -69,11 +66,9 @@ const trendsRowSchema = z.object({
   latest_resting_hr: z.coerce.number().nullable(),
   latest_spo2: z.coerce.number().nullable(),
   latest_steps: z.coerce.number().nullable(),
-  latest_active_energy: z.coerce.number().nullable(),
   latest_skin_temp: z.coerce.number().nullable(),
   latest_date: dateStringSchema.nullable(),
   latest_steps_date: dateStringSchema.nullable(),
-  latest_active_energy_date: dateStringSchema.nullable(),
 });
 
 export type TrendsRow = z.infer<typeof trendsRowSchema>;
@@ -88,7 +83,21 @@ export class DailyMetricsRepository extends BaseRepository {
   async list(days: RangeDays, endDate: string): Promise<DailyMetricsViewRow[]> {
     return this.query(
       dailyMetricsViewRowSchema,
-      sql`SELECT * FROM fitness.v_daily_metrics
+      sql`SELECT
+            date,
+            user_id,
+            hrv,
+            spo2_avg,
+            respiratory_rate_avg,
+            skin_temp_c,
+            steps,
+            distance_km,
+            flights_climbed,
+            exercise_minutes,
+            stand_hours,
+            walking_speed,
+            source_providers
+          FROM fitness.v_daily_metrics
           WHERE user_id = ${this.userId}
             ${dateWindowStartPredicate(sql`date`, endDate, days)}
             AND date <= ${dateWindowEnd(endDate)}
@@ -211,7 +220,6 @@ export class DailyMetricsRepository extends BaseRepository {
               drhr.resting_hr,
               dm.spo2_avg,
               dm.steps,
-              dm.active_energy_kcal,
               dm.skin_temp_c
             FROM base_dates
             LEFT JOIN fitness.v_daily_metrics dm
@@ -230,7 +238,6 @@ export class DailyMetricsRepository extends BaseRepository {
               AVG(resting_hr) AS avg_resting_hr,
               AVG(spo2_avg) AS avg_spo2,
               AVG(steps) AS avg_steps,
-              AVG(active_energy_kcal) AS avg_active_energy,
               AVG(skin_temp_c) AS avg_skin_temp,
               STDDEV(hrv) AS stddev_hrv,
               STDDEV(resting_hr) AS stddev_resting_hr,
@@ -254,10 +261,8 @@ export class DailyMetricsRepository extends BaseRepository {
               (SELECT resting_hr FROM representative_resting_heart_rate) AS resting_hr,
               (ARRAY_AGG(spo2_avg ORDER BY date DESC) FILTER (WHERE spo2_avg IS NOT NULL))[1] AS spo2_avg,
               (ARRAY_AGG(steps ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps,
-              (ARRAY_AGG(active_energy_kcal ORDER BY date DESC) FILTER (WHERE active_energy_kcal IS NOT NULL))[1] AS active_energy_kcal,
               (ARRAY_AGG(skin_temp_c ORDER BY date DESC) FILTER (WHERE skin_temp_c IS NOT NULL))[1] AS skin_temp_c,
               (ARRAY_AGG(date ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps_date,
-              (ARRAY_AGG(date ORDER BY date DESC) FILTER (WHERE active_energy_kcal IS NOT NULL))[1] AS active_energy_kcal_date,
               MAX(date) AS date
             FROM current
           )
@@ -267,11 +272,9 @@ export class DailyMetricsRepository extends BaseRepository {
             latest.resting_hr AS latest_resting_hr,
             latest.spo2_avg AS latest_spo2,
             CASE WHEN latest.steps_date = ${dateWindowEnd(endDate)} THEN latest.steps ELSE NULL END AS latest_steps,
-            CASE WHEN latest.active_energy_kcal_date = ${dateWindowEnd(endDate)} THEN latest.active_energy_kcal ELSE NULL END AS latest_active_energy,
             latest.skin_temp_c AS latest_skin_temp,
             latest.date AS latest_date,
-            CASE WHEN latest.steps_date = ${dateWindowEnd(endDate)} THEN latest.steps_date ELSE NULL END AS latest_steps_date,
-            CASE WHEN latest.active_energy_kcal_date = ${dateWindowEnd(endDate)} THEN latest.active_energy_kcal_date ELSE NULL END AS latest_active_energy_date
+            CASE WHEN latest.steps_date = ${dateWindowEnd(endDate)} THEN latest.steps_date ELSE NULL END AS latest_steps_date
           FROM stats LEFT JOIN latest ON true`,
     );
     return rows[0] ?? null;

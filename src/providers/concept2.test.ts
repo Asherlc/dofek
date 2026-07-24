@@ -218,7 +218,6 @@ describe("parseConcept2Result", () => {
     expect(parsed.raw.strokeCount).toBe(480);
     expect(parsed.raw.avgHeartRate).toBe(155);
     expect(parsed.raw.maxHeartRate).toBe(175);
-    expect(parsed.raw.calories).toBe(300);
     expect(parsed.raw.dragFactor).toBe(130);
     expect(parsed.raw.workoutType).toBe("FixedDistSplits");
   });
@@ -251,7 +250,6 @@ describe("parseConcept2Result", () => {
     expect(parsed.raw.strokeCount).toBe(520);
     expect(parsed.raw.avgHeartRate).toBe(155);
     expect(parsed.raw.maxHeartRate).toBe(175);
-    expect(parsed.raw.calories).toBe(300);
     expect(parsed.raw.dragFactor).toBe(125);
     expect(parsed.raw.workoutType).toBe("FixedDistanceFixedTime");
     expect(parsed.raw.weightClass).toBe("H");

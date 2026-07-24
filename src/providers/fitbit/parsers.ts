@@ -16,7 +16,6 @@ export interface ParsedFitbitActivity {
   name: string;
   startedAt: Date;
   endedAt: Date;
-  calories: number;
   distanceKm?: number;
   steps?: number;
   averageHeartRate?: number;
@@ -41,7 +40,6 @@ export interface ParsedFitbitDailyMetrics {
   date: string;
   steps: number;
   restingHr?: number;
-  activeEnergyKcal: number;
   exerciseMinutes: number;
   distanceKm?: number;
   flightsClimbed?: number;
@@ -96,7 +94,6 @@ export function parseFitbitActivity(rawActivity: FitbitActivity): ParsedFitbitAc
     name: rawActivity.activityName,
     startedAt,
     endedAt,
-    calories: rawActivity.calories,
     distanceKm: rawActivity.distance,
     steps: rawActivity.steps,
     averageHeartRate: rawActivity.averageHeartRate,
@@ -132,7 +129,6 @@ export function parseFitbitDailySummary(
     date,
     steps: daily.summary.steps,
     restingHr: daily.summary.restingHeartRate,
-    activeEnergyKcal: daily.summary.activityCalories,
     exerciseMinutes: daily.summary.fairlyActiveMinutes + daily.summary.veryActiveMinutes,
     distanceKm: totalDistance?.distance,
     flightsClimbed: daily.summary.floors,

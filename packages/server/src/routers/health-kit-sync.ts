@@ -22,6 +22,7 @@ import {
   type Database,
   type HealthKitSample,
   healthKitSampleSchema,
+  ignoredCalorieExpenditureTypes,
   metricStreamTypes,
   PROVIDER_ID,
   pointInTimeDailyMetricTypes,
@@ -48,7 +49,9 @@ function categorize(
   | "additiveDailyMetric"
   | "pointInTimeDailyMetric"
   | "metricStream"
+  | "ignored"
   | "healthEvent" {
+  if (ignoredCalorieExpenditureTypes.has(type)) return "ignored";
   if (type in bodyMeasurementTypes) return "bodyMeasurement";
   if (type in additiveDailyMetricTypes) return "additiveDailyMetric";
   if (type in pointInTimeDailyMetricTypes) return "pointInTimeDailyMetric";
@@ -72,6 +75,8 @@ export const healthKitSyncRouter = router({
       for (const sample of input.samples) {
         const category = categorize(sample.type);
         switch (category) {
+          case "ignored":
+            break;
           case "bodyMeasurement":
             bodyMeasurements.push(sample);
             break;

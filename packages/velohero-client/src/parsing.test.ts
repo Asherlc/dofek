@@ -89,7 +89,6 @@ describe("parseVeloHeroWorkout", () => {
     expect(result.raw.maxPower).toBe(350);
     expect(result.raw.avgCadence).toBe(90);
     expect(result.raw.maxCadence).toBe(110);
-    expect(result.raw.calories).toBe(900);
     expect(result.raw.ascent).toBe(500);
     expect(result.raw.descent).toBe(480);
   });
@@ -121,7 +120,6 @@ describe("parseVeloHeroWorkout", () => {
         max_power: undefined,
         avg_cadence: undefined,
         max_cadence: undefined,
-        calories: undefined,
         ascent: undefined,
         descent: undefined,
       }),
@@ -133,7 +131,6 @@ describe("parseVeloHeroWorkout", () => {
     expect(result.raw.maxPower).toBeUndefined();
     expect(result.raw.avgCadence).toBeUndefined();
     expect(result.raw.maxCadence).toBeUndefined();
-    expect(result.raw.calories).toBeUndefined();
     expect(result.raw.ascent).toBeUndefined();
     expect(result.raw.descent).toBeUndefined();
   });

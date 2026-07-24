@@ -56,7 +56,6 @@ const calendarActivityEntrySchema = z.object({
   endedAt: timestampStringSchema.nullable(),
   durationMin: z.number(),
   location: activityLocationSchema.nullable(),
-  calories: z.number().nullable(),
   tss: z.number().nullable(),
   stats: z.array(activityStatSchema),
   isProviderAbsent: z.boolean().optional(),

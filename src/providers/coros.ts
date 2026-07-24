@@ -134,7 +134,6 @@ export function parseCorosWorkout(workout: CorosWorkout): ParsedCorosWorkout {
       maxHeartRate: workout.maxHeartRate,
       avgSpeed: workout.avgSpeed,
       maxSpeed: workout.maxSpeed,
-      calories: workout.totalCalories,
       avgCadence: workout.avgCadence,
       avgPower: workout.avgPower,
       maxPower: workout.maxPower,
@@ -459,7 +458,6 @@ export class CorosProvider implements WebhookProvider {
                 raw.steps !== undefined ||
                 raw.hrv !== undefined ||
                 raw.spo2Avg !== undefined ||
-                raw.calories !== undefined ||
                 raw.distance !== undefined;
 
               if (hasDailyMetrics) {
@@ -471,7 +469,6 @@ export class CorosProvider implements WebhookProvider {
                     steps: raw.steps,
                     hrv: raw.hrv,
                     spo2Avg: raw.spo2Avg,
-                    activeEnergyKcal: raw.calories,
                     distanceKm: raw.distance !== undefined ? raw.distance / 1000 : undefined,
                   })
                   .onConflictDoUpdate({
@@ -485,7 +482,6 @@ export class CorosProvider implements WebhookProvider {
                       steps: raw.steps,
                       hrv: raw.hrv,
                       spo2Avg: raw.spo2Avg,
-                      activeEnergyKcal: raw.calories,
                       distanceKm: raw.distance !== undefined ? raw.distance / 1000 : undefined,
                     },
                   });

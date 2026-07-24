@@ -10,7 +10,6 @@ import {
   Accelerometer,
   BloodOxygen,
   BodyTemperature,
-  Calorie,
   checkSensor,
   Distance,
   FatBurning,
@@ -708,7 +707,6 @@ Page(
         const watchSummary = collectHealthData({
           HeartRate,
           Step,
-          Calorie,
           Distance,
           Sleep,
           BloodOxygen,

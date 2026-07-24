@@ -45,7 +45,6 @@ export function parsePolarExercise(exercise: PolarExercise): ParsedPolarActivity
     endedAt,
     durationSeconds,
     distanceMeters: exercise.distance,
-    calories: exercise.calories,
     avgHeartRate: exercise.heart_rate?.average,
     maxHeartRate: exercise.heart_rate?.maximum,
   };
@@ -134,7 +133,6 @@ export function parsePolarDailyActivity(
   return {
     date: dailyActivity.start_time.slice(0, 10),
     steps: dailyActivity.steps,
-    activeEnergyKcal: dailyActivity.active_calories,
     restingHr: nightlyRecharge?.heart_rate_avg,
     hrv: nightlyRecharge?.heart_rate_variability_avg,
     respiratoryRateAvg: nightlyRecharge?.breathing_rate_avg,

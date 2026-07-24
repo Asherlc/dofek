@@ -444,8 +444,6 @@ async function runDailySummaryStep(
       providerId,
       steps: parsed.steps,
       distanceKm: parsed.distanceKm,
-      activeEnergyKcal: parsed.activeEnergyKcal,
-      basalEnergyKcal: parsed.basalEnergyKcal,
       spo2Avg: parsed.spo2Avg,
       respiratoryRateAvg: parsed.respiratoryRateAvg,
       flightsClimbed: parsed.flightsClimbed,
@@ -461,8 +459,6 @@ async function runDailySummaryStep(
       set: {
         steps: parsed.steps,
         distanceKm: parsed.distanceKm,
-        activeEnergyKcal: parsed.activeEnergyKcal,
-        basalEnergyKcal: parsed.basalEnergyKcal,
         spo2Avg: parsed.spo2Avg,
         respiratoryRateAvg: parsed.respiratoryRateAvg,
         flightsClimbed: parsed.flightsClimbed,

@@ -28,12 +28,8 @@ function makeDatabase(rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = [
     } satisfies Pick<Database, "execute">;
   }
 
-  const caloriesRows = rowsOrRowSets;
   const execute = vi.fn().mockImplementation(async (query) => {
     const compiled = dialect.sqlToQuery(query);
-    if (compiled.sql.includes("calories")) {
-      return caloriesRows;
-    }
     if (compiled.sql.includes("fitness.v_activity")) {
       const stringParams = compiled.params.filter(
         (param): param is string => typeof param === "string",
@@ -127,7 +123,6 @@ function makeCalendarEntry(
     endedAt: overrides.endedAt ?? overrides.startedAt,
     durationMin: overrides.durationMin ?? 60,
     location: overrides.location ?? null,
-    calories: overrides.calories ?? null,
     tss: overrides.tss ?? null,
     stats: overrides.stats ?? [],
     ...overrides,
@@ -136,7 +131,7 @@ function makeCalendarEntry(
 
 describe("ActivitiesCalendarRepository", () => {
   it("groups activities by normalized local date and returns display-ready indoor stats", async () => {
-    const database = makeDatabase([{ id: "activity-1", calories: 421.6 }]);
+    const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [makeActivityRow({ avg_power: 251 })],
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
@@ -155,10 +150,7 @@ describe("ActivitiesCalendarRepository", () => {
             durationMin: 60,
             tss: 100.8,
             location: null,
-            stats: [
-              { label: "Training Stress Score", value: "100.8" },
-              { label: "Calories", value: "422 kcal" },
-            ],
+            stats: [{ label: "Training Stress Score", value: "100.8" }],
           }),
         ],
       },
@@ -316,7 +308,7 @@ describe("ActivitiesCalendarRepository", () => {
       expect.stringContaining("activity.activity_type = {activityType:String}"),
       expect.objectContaining({ activityType: "running" }),
     );
-    const sqlObject = database.execute.mock.calls[1]?.[0];
+    const sqlObject = database.execute.mock.calls[0]?.[0];
     const compiledQuery = dialect.sqlToQuery(sqlObject);
     expect(compiledQuery.params).toContain("run");
     expect(compiledQuery.params).not.toContain("ride");
@@ -582,32 +574,6 @@ describe("ActivitiesCalendarRepository", () => {
     );
   });
 
-  it("builds the calories activity id filter without a Postgres row expression", async () => {
-    const database = makeDatabase([]);
-    const sensorStore = makeSensorStore([
-      [makeActivityRow({ id: "activity-1" }), makeActivityRow({ id: "activity-2" })],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
-      [],
-    ]);
-    const repository = new ActivitiesCalendarRepository(
-      database,
-      "00000000-0000-0000-0000-000000000001",
-      "UTC",
-      sensorStore,
-    );
-
-    await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
-
-    const sqlObject = database.execute.mock.calls[1]?.[0];
-    const compiledQuery = dialect.sqlToQuery(sqlObject);
-    expect(compiledQuery.sql).toContain("a.id IN (");
-    expect(compiledQuery.sql).not.toContain("AND a.id::text IN (");
-    expect(compiledQuery.sql).not.toContain("ANY(($");
-    expect(compiledQuery.params).toEqual(
-      expect.arrayContaining(["00000000-0000-0000-0000-000000000001", "activity-1", "activity-2"]),
-    );
-  });
-
   it("returns days in descending date order", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
@@ -637,7 +603,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(database.execute).not.toHaveBeenCalled();
   });
 
-  it("returns null and dash stats when activities have no usable stress or calorie data", async () => {
+  it("returns null and dash stats when activities have no usable stress data", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [makeActivityRow({ avg_power: null, avg_hr: null })],
@@ -651,10 +617,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]).toEqual(
       expect.objectContaining({
         tss: null,
-        stats: [
-          { label: "Training Stress Score", value: "—" },
-          { label: "Calories", value: "—" },
-        ],
+        stats: [{ label: "Training Stress Score", value: "—" }],
       }),
     );
   });
@@ -673,10 +636,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]).toEqual(
       expect.objectContaining({
         tss: null,
-        stats: [
-          { label: "Training Stress Score", value: "—" },
-          { label: "Calories", value: "—" },
-        ],
+        stats: [{ label: "Training Stress Score", value: "—" }],
       }),
     );
   });
@@ -730,10 +690,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]).toEqual(
       expect.objectContaining({
         tss: 45.1,
-        stats: [
-          { label: "Training Stress Score", value: "45.1" },
-          { label: "Calories", value: "—" },
-        ],
+        stats: [{ label: "Training Stress Score", value: "45.1" }],
       }),
     );
   });
@@ -842,7 +799,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: 300,
         },
       ],
       [],
@@ -867,7 +823,6 @@ describe("ActivitiesCalendarRepository", () => {
             isProviderAbsent: true,
             providerId: "strava",
             providerAbsentAt: "2026-03-05T14:30:00.000Z",
-            calories: 300,
           }),
         ],
       },
@@ -906,7 +861,7 @@ describe("ActivitiesCalendarRepository", () => {
   });
 
   it("returns only active days when includeProviderAbsent is requested but no hidden activities match", async () => {
-    const database = makeDatabase([{ id: "activity-1", calories: 421.6 }]);
+    const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [makeActivityRow({ id: "activity-1" })],
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
@@ -931,7 +886,7 @@ describe("ActivitiesCalendarRepository", () => {
   });
 
   it("merges active and hidden activities by date while preferring active entries for duplicate ids", async () => {
-    const database = makeDatabase([{ id: "shared-id", calories: 300 }]);
+    const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [
         makeActivityRow({
@@ -964,7 +919,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: 100,
         },
         {
           id: "hidden-only",
@@ -983,7 +937,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-17",
           provider_id: "garmin",
           provider_absent_at: "2026-03-04T14:30:00.000Z",
-          calories: null,
         },
       ],
       [],
@@ -1045,7 +998,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
       ],
       [
@@ -1144,7 +1096,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: 300,
         },
       ],
       [
@@ -1178,12 +1129,8 @@ describe("ActivitiesCalendarRepository", () => {
       endedAt: "2026-03-18T08:00:00.000Z",
       durationMin: 60,
       location: null,
-      calories: 300,
       tss: 100,
-      stats: [
-        { label: "Training Stress Score", value: "100" },
-        { label: "Calories", value: "300 kcal" },
-      ],
+      stats: [{ label: "Training Stress Score", value: "100" }],
       isProviderAbsent: true,
       providerId: "strava",
       providerAbsentAt: "2026-03-05T14:30:00.000Z",
@@ -1213,7 +1160,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
       ],
       [
@@ -1271,7 +1217,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
       ],
       [
@@ -1333,7 +1278,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
       ],
       [
@@ -1391,7 +1335,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-17",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
         {
           id: "hidden-newer",
@@ -1410,7 +1353,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "garmin",
           provider_absent_at: "2026-03-04T14:30:00.000Z",
-          calories: null,
         },
       ],
       [],
@@ -1429,7 +1371,6 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]?.tss).toBeNull();
     expect(result[0]?.activities[0]?.stats).toEqual([
       { label: "Training Stress Score", value: "—" },
-      { label: "Calories", value: "—" },
     ]);
   });
 
@@ -1456,7 +1397,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
       ],
       [],
@@ -1502,7 +1442,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
       ],
       [],
@@ -1554,7 +1493,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
       ],
       [
@@ -1606,7 +1544,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
         {
           id: "hidden-late",
@@ -1625,7 +1562,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "garmin",
           provider_absent_at: "2026-03-04T14:30:00.000Z",
-          calories: null,
         },
       ],
       [],
@@ -1647,7 +1583,7 @@ describe("ActivitiesCalendarRepository", () => {
   });
 
   it("sorts merged active and hidden activities on the same day by startedAt descending", async () => {
-    const database = makeDatabase([{ id: "active-early", calories: 200 }]);
+    const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [
         makeActivityRow({
@@ -1677,7 +1613,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
       ],
       [],
@@ -1726,7 +1661,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
       ],
       [],
@@ -1778,7 +1712,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
       ],
       [],
@@ -1835,7 +1768,6 @@ describe("ActivitiesCalendarRepository", () => {
           local_date: "2026-03-18",
           provider_id: "strava",
           provider_absent_at: "2026-03-05T14:30:00.000Z",
-          calories: null,
         },
       ],
       [
@@ -1865,10 +1797,7 @@ describe("ActivitiesCalendarRepository", () => {
       expect.objectContaining({
         id: "hidden-hr",
         tss: 45.1,
-        stats: [
-          { label: "Training Stress Score", value: "45.1" },
-          { label: "Calories", value: "—" },
-        ],
+        stats: [{ label: "Training Stress Score", value: "45.1" }],
       }),
     );
   });

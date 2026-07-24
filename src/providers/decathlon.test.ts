@@ -432,7 +432,6 @@ describe("parseDecathlonActivity", () => {
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
     expect(parsed.endedAt).toEqual(new Date(new Date("2026-03-01T08:00:00Z").getTime() + 3600000));
     expect(parsed.raw.distanceKm).toBe(10);
-    expect(parsed.raw.calories).toBe(500);
     expect(parsed.raw.avgHeartRate).toBe(150);
     expect(parsed.raw.maxHeartRate).toBe(175);
     expect(parsed.raw.dataSummaries).toEqual(act.dataSummaries);
@@ -450,7 +449,6 @@ describe("parseDecathlonActivity", () => {
 
     const parsed = parseDecathlonActivity(act);
     expect(parsed.raw.distanceKm).toBeUndefined();
-    expect(parsed.raw.calories).toBeUndefined();
   });
 });
 

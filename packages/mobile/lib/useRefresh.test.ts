@@ -10,7 +10,6 @@ const mockDashboardInvalidate = vi.fn(() => Promise.resolve());
 const mockDataHealthInvalidate = vi.fn(() => Promise.resolve());
 const mockFoodByDateInvalidate = vi.fn(() => Promise.resolve());
 const mockNutritionAnalyticsAdaptiveTdeeInvalidate = vi.fn(() => Promise.resolve());
-const mockNutritionAnalyticsCaloricBalanceInvalidate = vi.fn(() => Promise.resolve());
 const mockNutritionAnalyticsMacroRatiosInvalidate = vi.fn(() => Promise.resolve());
 const mockNutritionAnalyticsMicronutrientAdequacyInvalidate = vi.fn(() => Promise.resolve());
 const mockRecoveryInvalidate = vi.fn(() => Promise.resolve());
@@ -34,7 +33,6 @@ vi.mock("./trpc", () => ({
       processing: { status: { invalidate: mockDataHealthInvalidate } },
       nutritionAnalytics: {
         adaptiveTdee: { invalidate: mockNutritionAnalyticsAdaptiveTdeeInvalidate },
-        caloricBalance: { invalidate: mockNutritionAnalyticsCaloricBalanceInvalidate },
         macroRatios: { invalidate: mockNutritionAnalyticsMacroRatiosInvalidate },
         micronutrientAdequacy: {
           invalidate: mockNutritionAnalyticsMicronutrientAdequacyInvalidate,

@@ -142,7 +142,6 @@ describe("parseCorosWorkout", () => {
     expect(parsed.raw.distance).toBe(10000);
     expect(parsed.raw.avgHeartRate).toBe(155);
     expect(parsed.raw.maxHeartRate).toBe(180);
-    expect(parsed.raw.calories).toBe(600);
     expect(parsed.raw.avgPower).toBe(250);
     expect(parsed.raw.totalAscent).toBe(100);
     expect(parsed.raw.mode).toBe(8);

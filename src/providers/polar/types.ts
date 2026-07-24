@@ -68,7 +68,6 @@ export interface ParsedPolarActivity {
   endedAt: Date;
   durationSeconds: number;
   distanceMeters?: number;
-  calories: number;
   avgHeartRate?: number;
   maxHeartRate?: number;
 }
@@ -93,7 +92,6 @@ export interface ParsedPolarSleepStage {
 export interface ParsedPolarDailyMetrics {
   date: string;
   steps: number;
-  activeEnergyKcal: number;
   restingHr?: number;
   hrv?: number;
   respiratoryRateAvg?: number;

@@ -5,7 +5,6 @@ export const SPORT_DATA_TYPES = [
   "avg_pace",
   "distance",
   "duration",
-  "calories",
   "cadence",
   "avg_cadence",
   "altitude",

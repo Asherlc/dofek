@@ -442,7 +442,7 @@ The server registry currently has 30 providers in `packages/server/src/routers/s
 | Komoot | OAuth 2.0 | Tours | `KOMOOT_CLIENT_ID`, `KOMOOT_CLIENT_SECRET` |
 | MapMyFitness | OAuth 2.0 | Workouts | `MAPMYFITNESS_CLIENT_ID`, `MAPMYFITNESS_CLIENT_SECRET` |
 | Ultrahuman | RE'd | Sleep, activity, daily metrics | `ULTRAHUMAN_EMAIL`, `ULTRAHUMAN_PASSWORD` |
-| Amazfit/Zepp | RE'd | Steps, distance, active calories, sleep, minute-level heart rate | None (credentials entered in UI modal; optional `ZEPP_API_BASE_URL`) |
+| Amazfit/Zepp | RE'd | Steps, distance, sleep, minute-level heart rate | None (credentials entered in UI modal; optional `ZEPP_API_BASE_URL`) |
 | VeloHero | RE'd (SSO) | Workouts with HR/power/cadence | `VELOHERO_SSO_KEY` |
 | Xert | OAuth 2.0 | Activities | `XERT_CLIENT_ID`, `XERT_CLIENT_SECRET` |
 | Cycling Analytics | OAuth 2.0 | Rides | `CYCLING_ANALYTICS_CLIENT_ID`, `CYCLING_ANALYTICS_CLIENT_SECRET` |

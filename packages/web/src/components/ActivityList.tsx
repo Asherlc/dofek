@@ -1,5 +1,4 @@
 import {
-  formatCalories,
   formatDateMedium,
   formatDurationMinutes,
   formatNumber,
@@ -22,7 +21,6 @@ export interface Activity {
   provider_id: string;
   source_providers: string[] | null;
   distance_meters?: number | null;
-  calories?: number | null;
   location?: {
     centroidLat: number;
     centroidLng: number;
@@ -222,14 +220,6 @@ export function ActivityList({
         activity.distance_meters
           ? `${formatNumber(units.convertDistance(activity.distance_meters / 1000))} ${units.distanceLabel}`
           : "—",
-    },
-    {
-      key: "calories",
-      label: "Calories",
-      headerClassName: "pb-2 pr-4 whitespace-nowrap",
-      cellClassName: "py-2 pr-4 tabular-nums whitespace-nowrap text-foreground",
-      renderCell: (activity) =>
-        activity.calories != null ? formatCalories(activity.calories) : "—",
     },
     {
       key: "provider",

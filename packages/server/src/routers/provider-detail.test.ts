@@ -169,7 +169,6 @@ const expectedListColumns = {
     "hrv",
     "respiratory_rate_avg",
     "steps",
-    "active_energy_kcal",
     "distance_km",
     "source_name",
     "created_at",

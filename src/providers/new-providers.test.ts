@@ -102,7 +102,6 @@ describe("MapMyFitness Provider", () => {
       expect(result.activityType).toBe("running");
       expect(result.name).toBe("Morning Run");
       expect(result.raw.distanceMeters).toBe(5000);
-      expect(result.raw.calories).toBe(400);
     });
   });
 });

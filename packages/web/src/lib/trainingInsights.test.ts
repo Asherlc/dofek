@@ -21,13 +21,11 @@ describe("isTrainingInsight", () => {
   it.each([
     "30+ min exercise",
     "10,000+ steps",
-    "500+ active kcal",
     "cardio day",
     "strength training day",
     "yoga/flexibility day",
     "12+ exercise days per month",
     "daily steps",
-    "active calories",
     "exercise duration",
     "monthly exercise volume",
   ])("matches training action %s", (action) => {

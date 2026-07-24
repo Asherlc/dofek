@@ -38,8 +38,6 @@ export interface HealthDataPayload {
   timezoneOffsetMinutes: number;
   steps?: number;
   stepsTarget?: number;
-  calories?: number;
-  caloriesTarget?: number;
   distance?: number;
   heartRate?: number[];
   restingHeartRate?: number;
@@ -82,7 +80,6 @@ export interface SensorConstructors {
     getLast(): number;
   };
   Step: new () => { getCurrent(): number; getTarget(): number };
-  Calorie: new () => { getCurrent(): number; getTarget(): number };
   Distance: new () => { getCurrent(): number };
   Sleep: new () => {
     updateInfo(): void;
@@ -157,14 +154,6 @@ export function collectHealthData(sensors: SensorConstructors): HealthDataPayloa
     payload.stepsTarget = step.getTarget();
   } catch {
     // Step sensor unavailable
-  }
-
-  try {
-    const calorie = new sensors.Calorie();
-    payload.calories = calorie.getCurrent();
-    payload.caloriesTarget = calorie.getTarget();
-  } catch {
-    // Calorie sensor unavailable
   }
 
   try {

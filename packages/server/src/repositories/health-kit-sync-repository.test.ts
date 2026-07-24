@@ -196,7 +196,6 @@ describe("categorize", () => {
 
   it("categorizes additive daily metric types", () => {
     expect(categorize("HKQuantityTypeIdentifierStepCount")).toBe("additiveDailyMetric");
-    expect(categorize("HKQuantityTypeIdentifierActiveEnergyBurned")).toBe("additiveDailyMetric");
   });
 
   it("categorizes point-in-time daily metric types", () => {
@@ -204,7 +203,9 @@ describe("categorize", () => {
     expect(categorize("HKQuantityTypeIdentifierWalkingStepLength")).toBe("pointInTimeDailyMetric");
   });
 
-  it("ignores provider resting HR and VO2 Max summaries", () => {
+  it("ignores provider-derived summaries", () => {
+    expect(categorize("HKQuantityTypeIdentifierActiveEnergyBurned")).toBe("ignored");
+    expect(categorize("HKQuantityTypeIdentifierBasalEnergyBurned")).toBe("ignored");
     expect(categorize("HKQuantityTypeIdentifierRestingHeartRate")).toBe("ignored");
     expect(categorize("HKQuantityTypeIdentifierVO2Max")).toBe("ignored");
   });
@@ -338,25 +339,6 @@ describe("aggregateDailyMetricSamples", () => {
     expect(accumulator?.steps).toBe(3500);
   });
 
-  it("accumulates active energy burned across multiple samples", () => {
-    const samples = [
-      makeSample({
-        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-        value: 200,
-        uuid: "1",
-      }),
-      makeSample({
-        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-        value: 350,
-        uuid: "2",
-      }),
-    ];
-    const result = aggregateDailyMetricSamples(samples);
-    const accumulator = result.get("2024-01-15\0iPhone");
-    // With +=: 200 + 350 = 550 (not just 350)
-    expect(accumulator?.activeEnergyKcal).toBe(550);
-  });
-
   it("accumulates distance with transform (meters to km)", () => {
     const samples = [
       makeSample({
@@ -388,26 +370,7 @@ describe("aggregateDailyMetricSamples", () => {
     // An accumulator is created for the date/source, but the unknown type doesn't modify any field
     const accumulator = result.get("2024-01-15\0iPhone");
     expect(accumulator?.steps).toBeNull();
-    expect(accumulator?.activeEnergyKcal).toBeNull();
     expect(Object.hasOwn(accumulator ?? {}, "restingHr")).toBe(false);
-  });
-
-  it("accumulates basal energy burned", () => {
-    const samples = [
-      makeSample({
-        type: "HKQuantityTypeIdentifierBasalEnergyBurned",
-        value: 800,
-        uuid: "1",
-      }),
-      makeSample({
-        type: "HKQuantityTypeIdentifierBasalEnergyBurned",
-        value: 600,
-        uuid: "2",
-      }),
-    ];
-    const result = aggregateDailyMetricSamples(samples);
-    const accumulator = result.get("2024-01-15\0iPhone");
-    expect(accumulator?.basalEnergyKcal).toBe(1400);
   });
 
   it("accumulates flights climbed", () => {
@@ -539,8 +502,6 @@ describe("aggregateDailyMetricSamples", () => {
     const result = aggregateDailyMetricSamples(samples);
     const accumulator = result.get("2024-01-15\0iPhone");
     expect(accumulator?.steps).toBe(100);
-    expect(accumulator?.activeEnergyKcal).toBeNull();
-    expect(accumulator?.basalEnergyKcal).toBeNull();
     expect(accumulator?.distanceKm).toBeNull();
     expect(accumulator?.flightsClimbed).toBeNull();
     expect(accumulator?.exerciseMinutes).toBeNull();
@@ -1542,7 +1503,6 @@ describe("HealthKitSyncRepository", () => {
           startDate: "2024-01-15T10:00:00Z",
           endDate: "2024-01-15T11:00:00Z",
           duration: 3600,
-          totalEnergyBurned: 500,
           totalDistance: 10000,
           sourceName: "Apple Watch",
           sourceBundle: "com.apple.Health",
@@ -1657,7 +1617,6 @@ describe("categorize (mutation-killing: priority order)", () => {
   });
 
   it("returns additiveDailyMetric for all additive types", () => {
-    expect(categorize("HKQuantityTypeIdentifierBasalEnergyBurned")).toBe("additiveDailyMetric");
     expect(categorize("HKQuantityTypeIdentifierDistanceWalkingRunning")).toBe(
       "additiveDailyMetric",
     );

@@ -5,7 +5,6 @@ import { parseSleepAnalysis } from "./sleep.ts";
 import {
   enrichWorkoutFromStats,
   type HealthWorkout,
-  parseActivitySummary,
   parseWorkout,
   parseWorkoutStatistics,
   type WorkoutStatistics,
@@ -199,8 +198,6 @@ const workoutAttrs: Record<string, string> = {
   durationUnit: "min",
   totalDistance: "5200",
   totalDistanceUnit: "m",
-  totalEnergyBurned: "320.5",
-  totalEnergyBurnedUnit: "kcal",
   sourceName: "Apple Watch",
   sourceVersion: "11.0",
   creationDate: "2024-03-01 18:30:00 -0500",
@@ -331,7 +328,6 @@ describe("Apple Health Provider -- parsing", () => {
       expect(result.activityType).toBe("running");
       expect(result.durationSeconds).toBeCloseTo(1830); // 30.5 min
       expect(result.distanceMeters).toBe(5200);
-      expect(result.calories).toBe(321); // rounded
       expect(result.sourceName).toBe("Apple Watch");
       expect(result.startDate).toBeInstanceOf(Date);
       expect(result.endDate).toBeInstanceOf(Date);
@@ -401,14 +397,12 @@ describe("Apple Health Provider -- parsing", () => {
         durationUnit: "min",
         totalDistance: "30",
         totalDistanceUnit: "km",
-        totalEnergyBurned: "500.5",
         startDate: "2024-03-01 08:00:00 -0500",
         endDate: "2024-03-01 09:00:00 -0500",
       });
       expect(workout.activityType).toBe("cycling");
       expect(workout.durationSeconds).toBe(3600);
       expect(workout.distanceMeters).toBe(30000);
-      expect(workout.calories).toBe(501);
       expect(workout.sourceName).toBe("Apple Watch");
     });
 
@@ -425,39 +419,6 @@ describe("Apple Health Provider -- parsing", () => {
       const result = parseWorkout(minimal);
       expect(result.activityType).toBe("running");
       expect(result.distanceMeters).toBeUndefined();
-      expect(result.calories).toBeUndefined();
-    });
-  });
-
-  describe("parseActivitySummary", () => {
-    it("parses daily activity ring data", () => {
-      const attrs: Record<string, string> = {
-        dateComponents: "2024-03-01",
-        activeEnergyBurned: "523.4",
-        activeEnergyBurnedGoal: "600",
-        activeEnergyBurnedUnit: "kcal",
-        appleExerciseTime: "45",
-        appleExerciseTimeGoal: "30",
-        appleStandHours: "12",
-        appleStandHoursGoal: "12",
-      };
-      const result = parseActivitySummary(attrs);
-      expect(result).not.toBeNull();
-      expect(result?.date).toBe("2024-03-01");
-      expect(result?.activeEnergyBurned).toBeCloseTo(523.4);
-      expect(result?.appleExerciseMinutes).toBe(45);
-      expect(result?.appleStandHours).toBe(12);
-    });
-
-    it("returns null without dateComponents", () => {
-      const result = parseActivitySummary({});
-      expect(result).toBeNull();
-    });
-
-    it("handles missing optional fields", () => {
-      const result = parseActivitySummary({ dateComponents: "2024-03-01" });
-      expect(result?.activeEnergyBurned).toBeUndefined();
-      expect(result?.appleExerciseMinutes).toBeUndefined();
     });
   });
 
@@ -500,45 +461,6 @@ describe("Apple Health Provider -- parsing", () => {
       expect(workout.maxHeartRate).toBe(182);
     });
 
-    it("enriches workout calories from ActiveEnergyBurned", () => {
-      const minimal: Record<string, string> = {
-        workoutActivityType: "HKWorkoutActivityTypeRunning",
-        duration: "30",
-        durationUnit: "min",
-        sourceName: "Apple Watch",
-        creationDate: "2024-03-01 18:00:00 -0500",
-        startDate: "2024-03-01 18:00:00 -0500",
-        endDate: "2024-03-01 18:30:00 -0500",
-      };
-      const workout = parseWorkout(minimal);
-      expect(workout.calories).toBeUndefined();
-
-      enrichWorkoutFromStats(workout, [
-        {
-          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-          sum: 312.7,
-          unit: "kcal",
-        },
-      ]);
-
-      expect(workout.calories).toBe(313);
-    });
-
-    it("does not overwrite existing calories from workout attributes", () => {
-      const workout = parseWorkout(workoutAttrs);
-      const originalCalories = workout.calories;
-
-      enrichWorkoutFromStats(workout, [
-        {
-          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-          sum: 999,
-          unit: "kcal",
-        },
-      ]);
-
-      expect(workout.calories).toBe(originalCalories);
-    });
-
     it("enriches workout with heart rate stats using typed statistics", () => {
       const workout = parseWorkout({
         workoutActivityType: "HKWorkoutActivityTypeCycling",
@@ -553,20 +475,6 @@ describe("Apple Health Provider -- parsing", () => {
       enrichWorkoutFromStats(workout, stats);
       expect(workout.avgHeartRate).toBe(150);
       expect(workout.maxHeartRate).toBe(186);
-    });
-
-    it("enriches workout with active energy when calories not set", () => {
-      const workout = parseWorkout({
-        startDate: "2024-03-01 08:00:00 -0500",
-        endDate: "2024-03-01 09:00:00 -0500",
-      });
-
-      const stats: WorkoutStatistics[] = [
-        { type: "HKQuantityTypeIdentifierActiveEnergyBurned", sum: 450.6 },
-      ];
-
-      enrichWorkoutFromStats(workout, stats);
-      expect(workout.calories).toBe(451);
     });
   });
 
@@ -1077,7 +985,6 @@ describe("enrichWorkoutFromStats -- edge cases", () => {
 
     expect(workout.avgHeartRate).toBeUndefined();
     expect(workout.maxHeartRate).toBeUndefined();
-    expect(workout.calories).toBeUndefined();
   });
 
   it("handles empty stats array", () => {
@@ -1093,22 +1000,6 @@ describe("enrichWorkoutFromStats -- edge cases", () => {
 
     expect(workout.avgHeartRate).toBeUndefined();
     expect(workout.maxHeartRate).toBeUndefined();
-    expect(workout.calories).toBeUndefined();
-  });
-});
-
-describe("parseActivitySummary -- additional edge cases", () => {
-  it("handles zero values", () => {
-    const result = parseActivitySummary({
-      dateComponents: "2024-03-01",
-      activeEnergyBurned: "0",
-      appleExerciseTime: "0",
-      appleStandHours: "0",
-    });
-    expect(result).not.toBeNull();
-    expect(result?.activeEnergyBurned).toBe(0);
-    expect(result?.appleExerciseMinutes).toBe(0);
-    expect(result?.appleStandHours).toBe(0);
   });
 });
 

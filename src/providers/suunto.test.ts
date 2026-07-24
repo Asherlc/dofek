@@ -96,7 +96,6 @@ describe("parseSuuntoWorkout", () => {
     expect(parsed.raw.totalDistance).toBe(30000);
     expect(parsed.raw.avgHeartRate).toBe(145);
     expect(parsed.raw.maxHeartRate).toBe(175);
-    expect(parsed.raw.calories).toBe(700);
     expect(parsed.raw.steps).toBe(0);
   });
 
@@ -652,7 +651,6 @@ describe("parseSuuntoWorkout — precise raw object assertions", () => {
       totalDescent: 90,
       avgSpeed: 2.78,
       maxSpeed: 3.5,
-      calories: 500,
       steps: 5000,
       avgHeartRate: undefined,
       maxHeartRate: undefined,

@@ -14,7 +14,6 @@ describe("collectLiveWorkoutSnapshot", () => {
       avg_pace: "5'30\"",
       distance: "1000",
       duration: "0:05:12",
-      calories: "75",
       cadence: "172",
       avg_cadence: "168",
       altitude: "125.4",
@@ -50,7 +49,6 @@ describe("collectLiveWorkoutSnapshot", () => {
         avg_pace: 330,
         distance: 1000,
         duration: 312,
-        calories: 75,
         cadence: 172,
         avg_cadence: 168,
         altitude: 125.4,
@@ -70,7 +68,6 @@ describe("collectLiveWorkoutSnapshot", () => {
       pace: "12'34\"",
       avg_pace: "invalid",
       distance: "not-a-number",
-      calories: null,
       cadence: { value: 170 },
     };
     const snapshot = await collectLiveWorkoutSnapshot(

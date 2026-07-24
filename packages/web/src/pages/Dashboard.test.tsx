@@ -332,7 +332,6 @@ describe("Dashboard", () => {
         avg_resting_hr: 56.2,
         avg_spo2: null,
         avg_steps: null,
-        avg_active_energy: null,
         avg_skin_temp: null,
         stddev_hrv: 7.5,
         stddev_resting_hr: 3.1,
@@ -342,7 +341,6 @@ describe("Dashboard", () => {
         latest_resting_hr: 55,
         latest_spo2: null,
         latest_steps: null,
-        latest_active_energy: null,
         latest_skin_temp: null,
         latest_date: "2026-05-27",
       },
@@ -428,7 +426,6 @@ describe("buildSkinTempSeries", () => {
       skin_temp_c: 34.5,
       hrv: null,
       steps: null,
-      active_energy_kcal: null,
     },
     {
       date: "2026-03-19",
@@ -436,7 +433,6 @@ describe("buildSkinTempSeries", () => {
       skin_temp_c: null,
       hrv: null,
       steps: null,
-      active_energy_kcal: null,
     },
     {
       date: "2026-03-20",
@@ -444,7 +440,6 @@ describe("buildSkinTempSeries", () => {
       skin_temp_c: 35.0,
       hrv: null,
       steps: null,
-      active_energy_kcal: null,
     },
   ];
 
@@ -521,7 +516,6 @@ describe("buildHealthMetrics", () => {
         avg_resting_hr: 56.2,
         avg_spo2: null,
         avg_steps: null,
-        avg_active_energy: null,
         avg_skin_temp: null,
         stddev_hrv: 7.5,
         stddev_resting_hr: 3.1,
@@ -531,7 +525,6 @@ describe("buildHealthMetrics", () => {
         latest_resting_hr: 55,
         latest_spo2: null,
         latest_steps: null,
-        latest_active_energy: null,
         latest_skin_temp: null,
         latest_date: "2025-03-15",
       },

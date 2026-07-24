@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   AdaptiveTdeeEstimate,
-  CaloricBalanceDay,
   estimateTdee,
   MacroRatioDay,
   MicronutrientAdequacy,
@@ -48,56 +47,6 @@ describe("MicronutrientAdequacy", () => {
     expect(model.avgIntake).toBe(6.5);
     expect(model.percentRda).toBe(81.3);
     expect(model.daysTracked).toBe(15);
-  });
-});
-
-describe("CaloricBalanceDay", () => {
-  it("serializes to API shape", () => {
-    const model = new CaloricBalanceDay({
-      date: "2024-03-15",
-      caloriesIn: 2200,
-      activeEnergy: 500,
-      basalEnergy: 1800,
-      totalExpenditure: 2300,
-      balance: -100,
-      rollingAvgBalance: -50,
-    });
-    expect(model.toDetail()).toEqual({
-      date: "2024-03-15",
-      caloriesIn: 2200,
-      activeEnergy: 500,
-      basalEnergy: 1800,
-      totalExpenditure: 2300,
-      balance: -100,
-      rollingAvgBalance: -50,
-    });
-  });
-
-  it("handles null rolling average", () => {
-    const model = new CaloricBalanceDay({
-      date: "2024-03-15",
-      caloriesIn: 2200,
-      activeEnergy: 500,
-      basalEnergy: 1800,
-      totalExpenditure: 2300,
-      balance: -100,
-      rollingAvgBalance: null,
-    });
-    expect(model.toDetail().rollingAvgBalance).toBeNull();
-  });
-
-  it("exposes date and balance getters", () => {
-    const model = new CaloricBalanceDay({
-      date: "2024-03-15",
-      caloriesIn: 2200,
-      activeEnergy: 500,
-      basalEnergy: 1800,
-      totalExpenditure: 2300,
-      balance: -100,
-      rollingAvgBalance: null,
-    });
-    expect(model.date).toBe("2024-03-15");
-    expect(model.balance).toBe(-100);
   });
 });
 
@@ -342,49 +291,6 @@ describe("NutritionAnalyticsRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.getMicronutrientAdequacy(30);
       expect(execute).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe("getCaloricBalance", () => {
-    it("returns empty array when no data", async () => {
-      const { repo } = makeRepository([]);
-      const result = await repo.getCaloricBalance(30);
-      expect(result).toEqual([]);
-    });
-
-    it("returns CaloricBalanceDay instances", async () => {
-      const { repo } = makeRepository([
-        {
-          date: "2024-03-15",
-          calories_in: 2200,
-          active_energy: 500,
-          basal_energy: 1800,
-          total_expenditure: 2300,
-          balance: -100,
-          rolling_avg_balance: -50,
-        },
-      ]);
-      const result = await repo.getCaloricBalance(30);
-      expect(result).toHaveLength(1);
-      expect(result[0]).toBeInstanceOf(CaloricBalanceDay);
-      expect(result[0]?.toDetail().caloriesIn).toBe(2200);
-      expect(result[0]?.toDetail().balance).toBe(-100);
-    });
-
-    it("handles null rolling average", async () => {
-      const { repo } = makeRepository([
-        {
-          date: "2024-03-15",
-          calories_in: 2200,
-          active_energy: 500,
-          basal_energy: 1800,
-          total_expenditure: 2300,
-          balance: -100,
-          rolling_avg_balance: null,
-        },
-      ]);
-      const result = await repo.getCaloricBalance(30);
-      expect(result[0]?.toDetail().rollingAvgBalance).toBeNull();
     });
   });
 

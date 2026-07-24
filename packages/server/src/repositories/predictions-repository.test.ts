@@ -129,7 +129,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: 97,
         steps: 8000,
-        active_energy_kcal: 500,
         skin_temp_c: 36.5,
       },
     ];
@@ -207,7 +206,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -216,7 +214,6 @@ describe("buildDailyContext", () => {
         hrv: 42,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -236,7 +233,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -254,7 +250,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -271,7 +266,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: 97,
         steps: 8000,
-        active_energy_kcal: 500,
         skin_temp_c: 36.5,
       },
     ];
@@ -314,7 +308,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -330,7 +323,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -346,7 +338,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -364,7 +355,6 @@ describe("buildDailyContext", () => {
         hrv: 42,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -373,7 +363,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -390,7 +379,6 @@ describe("buildDailyContext", () => {
         hrv: null,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -417,7 +405,6 @@ describe("buildDailyContext", () => {
         hrv: 52,
         spo2_avg: 98,
         steps: 12000,
-        active_energy_kcal: 600,
         skin_temp_c: 36.8,
       },
     ];
@@ -470,7 +457,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: 97,
         steps: 8000,
-        active_energy_kcal: 500,
         skin_temp_c: 36.5,
       },
     ];
@@ -544,7 +530,6 @@ describe("buildDailyContext", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -553,7 +538,6 @@ describe("buildDailyContext", () => {
         hrv: 42,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -822,7 +806,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -841,7 +824,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -850,7 +832,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 42,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -859,7 +840,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 40,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -884,7 +864,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 45,
         spo2_avg: 97,
         steps: 8000,
-        active_energy_kcal: 500,
         skin_temp_c: 36.5,
       },
     ];
@@ -913,7 +892,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 40,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -922,7 +900,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -931,7 +908,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 42,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -979,7 +955,6 @@ describe("buildDailyContext mutation-killing", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -1230,7 +1205,6 @@ describe("buildDailyContext sleep wake date edge cases", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -1248,7 +1222,6 @@ describe("buildDailyContext sleep wake date edge cases", () => {
         hrv: 50,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
       {
@@ -1257,7 +1230,6 @@ describe("buildDailyContext sleep wake date edge cases", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -1296,7 +1268,6 @@ describe("buildDailyContext sleep wake date edge cases", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];
@@ -1313,7 +1284,6 @@ describe("buildDailyContext sleep wake date edge cases", () => {
         hrv: 45,
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
       },
     ];

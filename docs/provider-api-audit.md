@@ -120,7 +120,7 @@ Last updated: 2026-06-23
 ### Zepp (Amazfit/Huami)
 - **Official API:** Exists ([zepp-health/rest-api](https://github.com/zepp-health/rest-api/wiki)) with OAuth 2.0, but registration at dev.huami.com is effectively closed (months of silence, partner prioritization).
 - **Internal API:** Implemented through `packages/zepp-client` and `src/providers/amazfit-zepp.ts`. The current credential flow uses Zepp US2 encrypted registration (`api-user-us2.zepp.com/v2/registrations/tokens`) followed by token exchange at `api-mifit-us2.zepp.com/v2/client/login`; older `account.huami.com` / `account.zepp.com` token exchange hosts are stale.
-- **Data:** First sync slice stores daily steps, distance, active calories, sleep sessions, and minute-level heart rate samples from `band_data.json`.
+- **Data:** First sync slice stores daily steps, distance, sleep sessions, and minute-level heart rate samples from `band_data.json`.
 - **Auth limitation:** Must use direct Zepp email+password account (not Xiaomi/Google SSO).
 - **Community projects:** [Mi-Fit-and-Zepp-workout-exporter](https://github.com/rolandsz/Mi-Fit-and-Zepp-workout-exporter), [huami-token](https://github.com/argrento/huami-token), [amazfit_pyclient](https://github.com/MyrikLD/amazfit_pyclient).
 - **Verdict:** IMPLEMENTED RE PROVIDER — keep monitoring because the auth and data APIs are private and have changed before.

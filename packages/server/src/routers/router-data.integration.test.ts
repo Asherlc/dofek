@@ -1203,20 +1203,6 @@ describe("Router data coverage", () => {
         }
       }
     });
-
-    it("caloricBalance returns daily calorie balance with rolling avg", async () => {
-      const result = await query<
-        {
-          date: string;
-          caloriesIn: number;
-          balance: number;
-          rollingAvgBalance: number | null;
-        }[]
-      >("nutritionAnalytics.caloricBalance", { days: 30 });
-
-      // May be empty if derived daily nutrition and daily_metrics don't overlap on dates
-      expect(Array.isArray(result)).toBe(true);
-    });
   });
 
   // ── Body Analytics ──

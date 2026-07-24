@@ -197,28 +197,6 @@ describe("nutritionAnalyticsRouter", () => {
     });
   });
 
-  describe("caloricBalance", () => {
-    it("returns caloric balance rows", async () => {
-      const rows = [
-        {
-          date: "2024-01-15",
-          calories_in: 2200,
-          active_energy: 500,
-          basal_energy: 1800,
-          total_expenditure: 2300,
-          balance: -100,
-          rolling_avg_balance: -50,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.caloricBalance({ days: 30 });
-
-      expect(result).toHaveLength(1);
-      expect(result[0]?.caloriesIn).toBe(2200);
-      expect(result[0]?.balance).toBe(-100);
-    });
-  });
-
   describe("adaptiveTdee", () => {
     it("returns null TDEE when insufficient data", async () => {
       const rows = [{ date: "2024-01-15", calories_in: 2200, weight_kg: 75 }];
@@ -285,25 +263,6 @@ describe("nutritionAnalyticsRouter", () => {
       const result = await caller.macroRatios({ days: 30 });
 
       expect(result[0]?.proteinPerKg).toBeNull();
-    });
-  });
-
-  describe("access window gating", () => {
-    it("caloricBalance passes accessWindow to repository (limited window returns empty)", async () => {
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        userId: "user-1",
-        timezone: "UTC",
-        accessWindow: {
-          kind: "limited",
-          paid: false,
-          reason: "free_signup_week",
-          startDate: "2026-04-10",
-          endDateExclusive: "2026-04-17",
-        },
-      });
-      const result = await caller.caloricBalance({ days: 30 });
-      expect(result).toEqual([]);
     });
   });
 });

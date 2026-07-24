@@ -5,7 +5,6 @@ import {
   type BodySpecCompositionResponse,
   type BodySpecPercentilesResponse,
   BodySpecProvider,
-  type BodySpecRmrResponse,
   type BodySpecScanInfoResponse,
   type BodySpecVisceralFatResponse,
   catchNotFound,
@@ -13,7 +12,6 @@ import {
   parseComposition,
   parsePercentiles,
   parseRegions,
-  parseRmr,
   parseScanInfo,
   parseVisceralFat,
 } from "./bodyspec.ts";
@@ -189,17 +187,6 @@ const VISCERAL_FAT_RESPONSE: BodySpecVisceralFatResponse = {
   vat_volume_cm3: 480.2,
 };
 
-const RMR_RESPONSE: BodySpecRmrResponse = {
-  result_id: "result-1",
-  section_name: "rmr",
-  estimates: [
-    { formula: "ten Haaf (2014)", kcal_per_day: 1720 },
-    { formula: "Cunningham (1980)", kcal_per_day: 1680 },
-    { formula: "De Lorenzo (1999)", kcal_per_day: 1750 },
-    { formula: "Mifflin-St. Jeor (1990)", kcal_per_day: 1695 },
-  ],
-};
-
 const PERCENTILES_RESPONSE: BodySpecPercentilesResponse = {
   result_id: "result-1",
   section_name: "percentiles",
@@ -318,32 +305,6 @@ describe("parseVisceralFat", () => {
     const result = parseVisceralFat(VISCERAL_FAT_RESPONSE);
     expect(result.visceralFatMassKg).toBe(0.45);
     expect(result.visceralFatVolumeCm3).toBe(480.2);
-  });
-});
-
-describe("parseRmr", () => {
-  it("extracts primary RMR estimate and all raw estimates", () => {
-    const result = parseRmr(RMR_RESPONSE);
-    expect(result.restingMetabolicRateKcal).toBe(1720);
-    expect(result.restingMetabolicRateRaw).toEqual(RMR_RESPONSE.estimates);
-  });
-
-  it("uses first estimate when ten Haaf is not present", () => {
-    const response: BodySpecRmrResponse = {
-      ...RMR_RESPONSE,
-      estimates: [{ formula: "Custom (2024)", kcal_per_day: 1800 }],
-    };
-    const result = parseRmr(response);
-    expect(result.restingMetabolicRateKcal).toBe(1800);
-  });
-
-  it("returns null when no estimates available", () => {
-    const response: BodySpecRmrResponse = {
-      ...RMR_RESPONSE,
-      estimates: [],
-    };
-    const result = parseRmr(response);
-    expect(result.restingMetabolicRateKcal).toBeNull();
   });
 });
 
@@ -591,9 +552,6 @@ describe("BodySpecProvider", () => {
         if (url.includes("/visceral-fat")) {
           return Promise.resolve(jsonResponse(VISCERAL_FAT_RESPONSE));
         }
-        if (url.includes("/rmr")) {
-          return Promise.resolve(jsonResponse(RMR_RESPONSE));
-        }
         if (url.includes("/percentiles")) {
           return Promise.resolve(jsonResponse(PERCENTILES_RESPONSE));
         }
@@ -672,7 +630,6 @@ describe("BodySpecProvider", () => {
           if (url.includes("/visceral-fat")) {
             return Promise.resolve(jsonResponse(VISCERAL_FAT_RESPONSE));
           }
-          if (url.includes("/rmr")) return Promise.resolve(jsonResponse(RMR_RESPONSE));
           if (url.includes("/percentiles")) {
             return Promise.resolve(jsonResponse(PERCENTILES_RESPONSE));
           }
@@ -730,7 +687,6 @@ describe("BodySpecProvider", () => {
           if (url.includes("/visceral-fat")) {
             return Promise.resolve(jsonResponse(VISCERAL_FAT_RESPONSE));
           }
-          if (url.includes("/rmr")) return Promise.resolve(jsonResponse(RMR_RESPONSE));
           if (url.includes("/percentiles")) {
             return Promise.resolve(jsonResponse(PERCENTILES_RESPONSE));
           }

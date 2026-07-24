@@ -356,9 +356,9 @@ export const dexaScan = fitness.table(
     totalBoneMineralDensity: real("total_bone_mineral_density"), // g/cm2
     boneDensityTPercentile: real("bone_density_t_percentile"), // vs peak (30yo), 1-99
     boneDensityZPercentile: real("bone_density_z_percentile"), // vs age/sex matched, 1-99
-    // Resting metabolic rate
-    restingMetabolicRateKcal: real("resting_metabolic_rate_kcal"), // primary estimate
-    restingMetabolicRateRaw: jsonb("resting_metabolic_rate_raw"), // all formula estimates (proprietary)
+    // Legacy provider-estimated fields retained temporarily for deployment compatibility.
+    restingMetabolicRateKcal: real("resting_metabolic_rate_kcal"),
+    restingMetabolicRateRaw: jsonb("resting_metabolic_rate_raw"),
     // Percentiles (proprietary reference populations)
     percentiles: jsonb("percentiles"),
     // Patient intake

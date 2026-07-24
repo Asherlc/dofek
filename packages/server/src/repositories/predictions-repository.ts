@@ -83,7 +83,6 @@ const dailyRowSchema = z.object({
   hrv: coerceNum,
   spo2_avg: coerceNum,
   steps: coerceNum,
-  active_energy_kcal: coerceNum,
   skin_temp_c: coerceNum,
 });
 
@@ -381,7 +380,6 @@ export class PredictionsRepository {
             dm.hrv,
             dm.spo2_avg,
             dm.steps,
-            dm.active_energy_kcal,
             dm.skin_temp_c
           FROM metric_dates dates
           LEFT JOIN fitness.v_daily_metrics dm

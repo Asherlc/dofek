@@ -377,7 +377,7 @@ describe("Amazfit/Zepp provider", () => {
       date_time: "2026-02-06",
       summary: encodeBase64(
         JSON.stringify({
-          stp: { ttl: 8123, dis: 6400, cal: 410 },
+          stp: { ttl: 8123, dis: 6400 },
           slp: {
             st: 1707199200,
             ed: 1707224400,
@@ -397,7 +397,6 @@ describe("Amazfit/Zepp provider", () => {
     expect(parsed.dailyMetrics).toEqual({
       date: "2026-02-06",
       steps: 8123,
-      activeEnergyKcal: 410,
       distanceKm: 6.4,
     });
     expect(parsed.sleep).toEqual({
@@ -418,7 +417,7 @@ describe("Amazfit/Zepp provider", () => {
       date_time: "2026-02-06",
       summary: encodeBase64(
         JSON.stringify({
-          stp: { ttl: "8123.4", dis: "6400", cal: "410" },
+          stp: { ttl: "8123.4", dis: "6400" },
           slp: { st: "1320", ed: "1800", dp: "85.4", lt: "280.2", dt: "45.3", wk: "20.2" },
         }),
       ),
@@ -427,7 +426,6 @@ describe("Amazfit/Zepp provider", () => {
     expect(parsed.dailyMetrics).toEqual({
       date: "2026-02-06",
       steps: 8123,
-      activeEnergyKcal: 410,
       distanceKm: 6.4,
     });
     expect(parsed.sleep).toEqual({
@@ -439,6 +437,28 @@ describe("Amazfit/Zepp provider", () => {
       lightMinutes: 280,
       remMinutes: 45,
       awakeMinutes: 20,
+    });
+  });
+
+  it("retains daily metrics when only steps or only distance is present", () => {
+    const stepsOnly = parseZeppBandDay({
+      date_time: "2026-02-06",
+      summary: encodeBase64(JSON.stringify({ stp: { ttl: 8123 } })),
+    });
+    const distanceOnly = parseZeppBandDay({
+      date_time: "2026-02-07",
+      summary: encodeBase64(JSON.stringify({ stp: { dis: 6400 } })),
+    });
+
+    expect(stepsOnly.dailyMetrics).toEqual({
+      date: "2026-02-06",
+      steps: 8123,
+      distanceKm: undefined,
+    });
+    expect(distanceOnly.dailyMetrics).toEqual({
+      date: "2026-02-07",
+      steps: undefined,
+      distanceKm: 6.4,
     });
   });
 
@@ -460,22 +480,6 @@ describe("Amazfit/Zepp provider", () => {
       remMinutes: undefined,
       awakeMinutes: undefined,
     });
-  });
-
-  it("parses partial daily metrics without inventing missing fields", () => {
-    const parsed = parseZeppBandDay({
-      date_time: "2026-02-06",
-      summary: encodeBase64(JSON.stringify({ stp: { cal: 75 } })),
-    });
-
-    expect(parsed.dailyMetrics).toEqual({
-      date: "2026-02-06",
-      steps: undefined,
-      activeEnergyKcal: 75,
-      distanceKm: undefined,
-    });
-    expect(parsed.sleep).toBeUndefined();
-    expect(parsed.heartRateSamples).toEqual([]);
   });
 
   it("omits daily metrics and sleep when summary values are incomplete", () => {
@@ -662,7 +666,6 @@ describe("Amazfit/Zepp provider", () => {
         userId: TEST_USER_ID,
         sourceName: "Zepp",
         steps: 8123,
-        activeEnergyKcal: 410,
         distanceKm: 6.4,
       }),
     );
@@ -680,7 +683,6 @@ describe("Amazfit/Zepp provider", () => {
         set: expect.objectContaining({
           sourceName: "Zepp",
           steps: 8123,
-          activeEnergyKcal: 410,
           distanceKm: 6.4,
         }),
       }),

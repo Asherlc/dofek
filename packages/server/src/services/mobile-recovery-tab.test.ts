@@ -30,8 +30,6 @@ function metricRow(
     respiratory_rate_avg: null,
     skin_temp_c: null,
     steps: null,
-    active_energy_kcal: null,
-    basal_energy_kcal: null,
     distance_km: null,
     flights_climbed: null,
     exercise_minutes: null,
