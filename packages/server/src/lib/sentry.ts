@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { initProductionSentry } from "dofek/lib/sentry";
 import type express from "express";
 
 let initialized = false;
@@ -19,15 +20,7 @@ export function initSentry() {
   }
   initialized = true;
 
-  const dsn = process.env.SENTRY_DSN;
-  if (!dsn) {
-    return;
-  }
-
-  Sentry.init({
-    dsn,
-    skipOpenTelemetrySetup: true,
-  });
+  initProductionSentry(process.env.SENTRY_DSN);
 }
 
 /**

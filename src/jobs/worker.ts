@@ -9,6 +9,7 @@ import {
 } from "../db/provider-data-deletion.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
+import { initProductionSentry } from "../lib/sentry.ts";
 import { jobContext, logger } from "../logger.ts";
 import { startFileUploadOutboxDispatcher } from "./file-upload-outbox.ts";
 import { startFileUploadReconciler } from "./file-upload-reconciliation.ts";
@@ -58,9 +59,7 @@ import { setupScheduledSync } from "./scheduled-sync.ts";
 import { createWorkerReadinessServer } from "./worker-readiness.ts";
 
 const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
-if (sentryDsn) {
-  Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
-}
+initProductionSentry(sentryDsn);
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const WORKER_READINESS_HOST = "127.0.0.1";
