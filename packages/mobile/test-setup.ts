@@ -201,6 +201,7 @@ vi.mock("react-native", () => {
     );
   Image.displayName = "Image";
   const FlatList = createMockComponent("FlatList");
+  const Modal = createMockComponent("Modal");
   const ActivityIndicator = ({ color, style, ...props }: Record<string, unknown>) =>
     React.createElement("activityindicator", {
       ...props,
@@ -339,6 +340,7 @@ vi.mock("react-native", () => {
     TextInput,
     Image,
     FlatList,
+    Modal,
     ActivityIndicator,
     RefreshControl,
     Switch,

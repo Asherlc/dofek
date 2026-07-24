@@ -87,7 +87,7 @@ export default function HeartRateVisualizationScreen() {
         setSampleCount((previous) => previous + newSamples.length);
         setHeartRateHistory((previous) => [...previous, ...newHeartRates].slice(-MAX_SAMPLES));
       } catch (pollError) {
-        captureException(pollError, { context: "heart-rate-visualization-poll" });
+        captureException(pollError, { source: "heart-rate-visualization-poll" });
       }
     }, POLL_INTERVAL_MS);
   }, [stopPolling]);
@@ -97,7 +97,10 @@ export default function HeartRateVisualizationScreen() {
     if (isAlreadyConnected()) {
       try {
         await startRealtimeHr();
-      } catch {
+      } catch (startError: unknown) {
+        captureException(startError, {
+          source: "heart-rate-visualization-start-realtime",
+        });
         // Best-effort — passive HR data may still flow
       }
       setStatus("streaming");
@@ -121,6 +124,9 @@ export default function HeartRateVisualizationScreen() {
       setStatus("streaming");
       startPolling();
     } catch (connectionError) {
+      captureException(connectionError, {
+        source: "heart-rate-visualization-connect",
+      });
       setError(
         connectionError instanceof Error ? connectionError.message : String(connectionError),
       );

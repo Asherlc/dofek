@@ -661,8 +661,8 @@ describe("background-whoop-ble-sync", () => {
     expect(whoopDeps.connect).toHaveBeenCalled();
   });
 
-  it("calls Sentry.captureException when foreground sync rejects", async () => {
-    const { captureException: sentryCaptureException } = await import("@sentry/react-native");
+  it("calls the canonical telemetry helper when foreground sync rejects", async () => {
+    const { captureException } = await import("./telemetry");
 
     // Let init succeed normally first
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
@@ -675,22 +675,22 @@ describe("background-whoop-ble-sync", () => {
     appStateCallback?.("active");
 
     await vi.waitFor(() => {
-      expect(sentryCaptureException).toHaveBeenCalledWith(syncError, {
-        tags: { source: "whoop-ble-foreground-sync" },
+      expect(captureException).toHaveBeenCalledWith(syncError, {
+        source: "whoop-ble-foreground-sync",
       });
     });
   });
 
-  it("calls Sentry.captureException when init sync rejects", async () => {
-    const { captureException: sentryCaptureException } = await import("@sentry/react-native");
+  it("calls the canonical telemetry helper when init sync rejects", async () => {
+    const { captureException } = await import("./telemetry");
     const initError = new Error("init BLE failure");
     vi.mocked(whoopDeps.connect).mockRejectedValue(initError);
 
     // Init should not throw
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
-    expect(sentryCaptureException).toHaveBeenCalledWith(initError, {
-      tags: { source: "whoop-ble-init-sync" },
+    expect(captureException).toHaveBeenCalledWith(initError, {
+      source: "whoop-ble-init-sync",
     });
   });
 });
@@ -771,15 +771,15 @@ describe("syncWhoopBle", () => {
     expect(whoopDeps.connect).not.toHaveBeenCalled();
   });
 
-  it("reports errors to Sentry", async () => {
-    const { captureException: sentryCaptureException } = await import("@sentry/react-native");
+  it("reports errors through the canonical telemetry helper", async () => {
+    const { captureException } = await import("./telemetry");
     const bleError = new Error("BLE error");
     vi.mocked(whoopDeps.connect).mockRejectedValue(bleError);
 
     await syncWhoopBle(trpcClient, whoopDeps);
 
-    expect(sentryCaptureException).toHaveBeenCalledWith(bleError, {
-      tags: { source: "whoop-ble-background-refresh" },
+    expect(captureException).toHaveBeenCalledWith(bleError, {
+      source: "whoop-ble-background-refresh",
     });
   });
 

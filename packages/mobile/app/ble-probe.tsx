@@ -123,6 +123,7 @@ export default function BleProbeScreen() {
                 break;
               }
             } catch (error) {
+              captureException(error, { source: "ble-probe-whoop-discovery" });
               addLog(`whoop-ble module error: ${error}`, "error");
             }
             // Fall back to ble-probe module's own scan
@@ -150,14 +151,20 @@ export default function BleProbeScreen() {
                 await subscribe("0003");
                 addLog("  0003 subscribed");
               } catch (error: unknown) {
-                captureException(error, { context: "ble-probe-subscribe" });
+                captureException(error, {
+                  source: "ble-probe-subscribe",
+                  characteristic: "0003",
+                });
                 addLog("  0003 failed");
               }
               try {
                 await subscribe("0005");
                 addLog("  0005 subscribed");
               } catch (error: unknown) {
-                captureException(error, { context: "ble-probe-subscribe" });
+                captureException(error, {
+                  source: "ble-probe-subscribe",
+                  characteristic: "0005",
+                });
                 addLog("  0005 failed");
               }
               addLog("Ready!");
@@ -263,7 +270,7 @@ export default function BleProbeScreen() {
               addLog(`whoop-ble isNotifying: ${stats.isNotifying}`);
               addLog(`whoop-ble buffered: ${whoopBle.getBufferedSampleCount()}`);
             } catch (error: unknown) {
-              captureException(error, { context: "ble-probe-whoop" });
+              captureException(error, { source: "ble-probe-whoop-status" });
               addLog("whoop-ble module not available", "error");
             }
             break;
@@ -295,6 +302,7 @@ export default function BleProbeScreen() {
             addLog(`Unknown command: ${cmd}. Type 'help'.`, "error");
         }
       } catch (error) {
+        captureException(error, { source: "ble-probe-command" });
         addLog(`Error: ${error instanceof Error ? error.message : String(error)}`, "error");
       }
     },
@@ -328,7 +336,7 @@ export default function BleProbeScreen() {
       await writeRaw("0002", "aa010c000001e74123026a01010000001cc9f7a9", false);
       addLog("TOGGLE_IMU_MODE sent — watching for response...", "info");
     } catch (error: unknown) {
-      captureException(error, { context: "ble-probe-hello-imu" });
+      captureException(error, { source: "ble-probe-hello-imu" });
       addLog(`Error: ${error}`, "error");
     } finally {
       helloAndImuBusyRef.current = false;

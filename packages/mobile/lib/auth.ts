@@ -24,6 +24,33 @@ const ErrorResponseSchema = z.object({ error: z.string().min(1) });
 const invalidSessionResponseMessage =
   "The server returned an invalid session response. Please try again.";
 
+function isNativeAppleSignInCancellation(
+  error: unknown,
+): error is { code: "ERR_REQUEST_CANCELED" } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ERR_REQUEST_CANCELED"
+  );
+}
+
+async function requestNativeAppleCredential() {
+  try {
+    return await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+    });
+  } catch (error: unknown) {
+    if (isNativeAppleSignInCancellation(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 // In-memory cache avoids SecureStore reads while iOS has the device locked in background.
 // Reads still fall back to SecureStore on cold start in the foreground.
 let cachedSessionToken: string | null | undefined;
@@ -70,7 +97,10 @@ export async function fetchCurrentUser(serverUrl: string, token: string): Promis
   });
   if (res.status === 401 || res.status === 403) return null;
   if (!res.ok) {
-    const data: unknown = await res.json().catch(() => null);
+    const data: unknown = await res.json().catch((error: unknown) => {
+      captureException(error, { source: "auth-bootstrap-error-json" });
+      return null;
+    });
     const parsed = ErrorResponseSchema.safeParse(data);
     throw new Error(
       parsed.success ? parsed.data.error : `Auth bootstrap failed: ${res.status} ${res.statusText}`,
@@ -112,7 +142,13 @@ async function submitPasswordAuth(
     body: JSON.stringify(body),
   });
 
-  const data: unknown = await response.json().catch(() => null);
+  const data: unknown = await response.json().catch((error: unknown) => {
+    captureException(error, {
+      source: "password-auth-response-json",
+      path,
+    });
+    return null;
+  });
   const parsed = z
     .object({
       session: z.string(),
@@ -170,7 +206,10 @@ export async function requestPasswordReset(
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ email }),
   });
-  const data: unknown = await response.json().catch(() => null);
+  const data: unknown = await response.json().catch((error: unknown) => {
+    captureException(error, { source: "password-reset-response-json" });
+    return null;
+  });
   const parsed = PasswordResetResponseSchema.safeParse(data);
   if (!response.ok) {
     throw new Error(
@@ -270,14 +309,9 @@ export async function isNativeAppleSignInAvailable(): Promise<boolean> {
 
 /** Sign in using the native iOS Apple Sign In sheet. Returns auth result or null if cancelled. */
 export async function startNativeAppleSignIn(serverUrl: string): Promise<AuthResult | null> {
-  const credential = await AppleAuthentication.signInAsync({
-    requestedScopes: [
-      AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-      AppleAuthentication.AppleAuthenticationScope.EMAIL,
-    ],
-  });
+  const credential = await requestNativeAppleCredential();
 
-  if (!credential.authorizationCode) {
+  if (!credential?.authorizationCode) {
     return null;
   }
 

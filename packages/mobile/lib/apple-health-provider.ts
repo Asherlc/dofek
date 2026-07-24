@@ -272,13 +272,15 @@ export function useAppleHealthProviderModel(
     } catch (error) {
       captureException(error, { source: "apple-health-authorization-refresh" });
       authorizationErrorHandlerRef.current?.(error);
-      throw error;
+      const unknownState = AppleHealthAuthorizationState.unknown();
+      setAuthorizationState(unknownState);
+      return unknownState;
     }
   }, [authorizationService, enabled]);
 
   useEffect(() => {
     if (!enabled) return;
-    void refreshAuthorizationState().catch(() => undefined);
+    void refreshAuthorizationState();
   }, [enabled, refreshAuthorizationState]);
 
   const model = useMemo(

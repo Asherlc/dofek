@@ -27,15 +27,6 @@ import { colors } from "../theme";
 
 type AuthMode = "login" | "register" | "reset";
 
-function hasCancelCode(
-  err: unknown,
-): err is { code: "ERR_REQUEST_CANCELED" | "ERR_CANCELED"; message?: string } {
-  if (!err || typeof err !== "object" || !("code" in err)) {
-    return false;
-  }
-  return err.code === "ERR_REQUEST_CANCELED" || err.code === "ERR_CANCELED";
-}
-
 export default function LoginScreen() {
   const { serverUrl, onLoginSuccess } = useAuth();
   const router = useRouter();
@@ -66,6 +57,7 @@ export default function LoginScreen() {
     fetchConfiguredProviders(serverUrl)
       .then(setProviders)
       .catch((err: unknown) => {
+        captureException(err, { source: "login-screen-configured-providers" });
         setError(err instanceof Error ? err.message : "Failed to load providers");
       })
       .finally(() => setLoading(false));
@@ -93,14 +85,6 @@ export default function LoginScreen() {
         }
       }
     } catch (err: unknown) {
-      const isCancel =
-        (err instanceof Error &&
-          (err.message.includes("ERR_CANCELED") || err.message.includes("ERR_REQUEST_CANCELED"))) ||
-        hasCancelCode(err);
-
-      if (isCancel) {
-        return;
-      }
       captureException(err, { source: "login-screen-handle-login" });
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

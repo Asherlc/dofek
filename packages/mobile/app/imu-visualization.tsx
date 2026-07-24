@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { WristModel } from "../components/WristModel";
+import { captureException } from "../lib/telemetry";
 import type { OrientationEvent } from "../modules/whoop-ble";
 import {
   addConnectionStateListener,
@@ -80,7 +81,10 @@ export default function ImuVisualizationScreen() {
       // Best-effort: ensure IMU mode is on (background sync should have done this)
       try {
         await startImuStreaming();
-      } catch {
+      } catch (startError: unknown) {
+        captureException(startError, {
+          source: "imu-visualization-start-streaming",
+        });
         // Ignore — background sync likely already started it
       }
       setStatus("streaming");
@@ -102,6 +106,7 @@ export default function ImuVisualizationScreen() {
       await startImuStreaming();
       setStatus("streaming");
     } catch (connectionError) {
+      captureException(connectionError, { source: "imu-visualization-connect" });
       setError(
         connectionError instanceof Error ? connectionError.message : String(connectionError),
       );
