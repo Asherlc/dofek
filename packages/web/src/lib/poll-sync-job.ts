@@ -10,20 +10,24 @@ export interface SyncJobStatus {
   message?: string;
 }
 
+type SyncProviderState = {
+  status: "syncing" | "done" | "error";
+  message?: string;
+  percentage?: number;
+};
+
 export interface PollSyncJobOptions {
   jobId: string;
   providerIds: string[];
   fetchStatus: (jobId: string) => Promise<SyncJobStatus | null>;
-  updateState: (
-    id: string,
-    state: { status: "syncing" | "done" | "error"; message?: string; percentage?: number },
-  ) => void;
+  updateState: (id: string, state: SyncProviderState) => void;
   onComplete: () => void;
   pollIntervalMs?: number;
 }
 
 export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
   const { jobId, providerIds, fetchStatus, updateState, onComplete, pollIntervalMs = 1000 } = opts;
+  const lastKnownProviderStates = new Map<string, SyncProviderState>();
 
   const resetSyncing = () => {
     for (const pid of providerIds) {
@@ -39,7 +43,8 @@ export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
       const message =
         error instanceof Error ? error.message : "Sync status is temporarily unavailable.";
       for (const providerId of providerIds) {
-        updateState(providerId, { status: "syncing", message });
+        const lastKnownState = lastKnownProviderStates.get(providerId) ?? { status: "syncing" };
+        updateState(providerId, { ...lastKnownState, message });
       }
       if (pollIntervalMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
@@ -54,16 +59,20 @@ export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
 
     for (const [pid, providerStatus] of Object.entries(job.providers)) {
       if (providerStatus.status === "done" || providerStatus.status === "error") {
-        updateState(pid, {
+        const providerState: SyncProviderState = {
           status: providerStatus.status === "done" ? "done" : "error",
           message: providerStatus.message ?? undefined,
-        });
+        };
+        lastKnownProviderStates.set(pid, providerState);
+        updateState(pid, providerState);
       } else if (providerStatus.status === "running") {
-        updateState(pid, {
+        const providerState: SyncProviderState = {
           status: "syncing",
           message: providerStatus.message ?? "Syncing...",
           percentage: job.percentage,
-        });
+        };
+        lastKnownProviderStates.set(pid, providerState);
+        updateState(pid, providerState);
       }
     }
 

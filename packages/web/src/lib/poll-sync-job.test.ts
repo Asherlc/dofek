@@ -55,6 +55,51 @@ describe("pollSyncJob", () => {
     expect(onComplete).toHaveBeenCalledOnce();
   });
 
+  it("preserves last-known provider states and percentage across transient errors", async () => {
+    const updateState = vi.fn();
+    const unavailableMessage = "Sync status is temporarily unavailable. Please try again.";
+    const fetchStatus = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "running",
+        percentage: 42,
+        providers: {
+          wahoo: { status: "done", message: "5 synced" },
+          whoop: { status: "running", message: "Fetching activities..." },
+        },
+      })
+      .mockRejectedValueOnce(new Error(unavailableMessage))
+      .mockResolvedValueOnce({
+        status: "completed",
+        providers: {
+          wahoo: { status: "done", message: "5 synced" },
+          whoop: { status: "done", message: "7 synced" },
+        },
+      });
+    const onComplete = vi.fn();
+
+    await pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo", "whoop"],
+      fetchStatus,
+      updateState,
+      onComplete,
+      pollIntervalMs: 0,
+    });
+
+    expect(updateState).toHaveBeenNthCalledWith(3, "wahoo", {
+      status: "done",
+      message: unavailableMessage,
+    });
+    expect(updateState).toHaveBeenNthCalledWith(4, "whoop", {
+      status: "syncing",
+      message: unavailableMessage,
+      percentage: 42,
+    });
+    expect(fetchStatus).toHaveBeenCalledTimes(3);
+    expect(onComplete).toHaveBeenCalledOnce();
+  });
+
   it("updates provider states from job and calls onComplete when done", async () => {
     const updateState = vi.fn();
     const doneJob: SyncJobStatus = {
