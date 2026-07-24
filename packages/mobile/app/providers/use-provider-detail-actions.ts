@@ -48,6 +48,7 @@ export interface ProviderDetailActionsResult {
   provider: ProviderRecord | undefined;
   displayProvider: DisplayProvider | undefined;
   isLoading: boolean;
+  inventoryError: unknown;
   isConnected: boolean;
   primaryActionLabel: "Sync" | "Connect" | "Reconnect";
   isSyncing: boolean;
@@ -314,6 +315,7 @@ export function useProviderDetailActions(
     provider,
     displayProvider,
     isLoading: providers.isLoading,
+    inventoryError: providers.error,
     isConnected,
     primaryActionLabel: needsReauth ? "Reconnect" : isConnected ? "Sync" : "Connect",
     isSyncing,

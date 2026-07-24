@@ -35,7 +35,10 @@ import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-mod
 import { ProviderDataDeleteControl } from "./provider-data-delete-control";
 import { ProviderDetailActionsCard } from "./provider-detail-actions-card";
 import { ProviderDetailExtras } from "./provider-detail-extras";
-import { useProviderDetailActions } from "./use-provider-detail-actions";
+import {
+  type ProviderDetailActionsResult,
+  useProviderDetailActions,
+} from "./use-provider-detail-actions";
 
 type DataType = (typeof DATA_TYPE_LABELS)[number]["key"];
 
@@ -785,6 +788,75 @@ const tabStyles = StyleSheet.create({
 
 export default function ProviderDetailScreen() {
   const { id: providerId } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const providerActions = useProviderDetailActions(providerId);
+
+  if (providerActions.isLoading || !providerId) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator color={colors.accent} size="large" />
+      </View>
+    );
+  }
+
+  if (providerActions.inventoryError) {
+    return (
+      <ProviderRouteError
+        title="Could not load provider"
+        message={getQueryErrorMessage(
+          providerActions.inventoryError,
+          "The provider list is temporarily unavailable.",
+        )}
+        onBack={() => router.dismissTo("/providers")}
+      />
+    );
+  }
+
+  if (!providerActions.displayProvider) {
+    return (
+      <ProviderRouteError
+        title="Provider not found"
+        message="This provider is unavailable. Return to Data Sources to choose another."
+        onBack={() => router.dismissTo("/providers")}
+      />
+    );
+  }
+
+  return <ProviderDetailContent providerId={providerId} providerActions={providerActions} />;
+}
+
+function ProviderRouteError({
+  title,
+  message,
+  onBack,
+}: {
+  title: string;
+  message: string;
+  onBack: () => void;
+}) {
+  return (
+    <View style={styles.routeErrorContainer}>
+      <QueryStatePanel variant="error" title={title} message={message} />
+      <TouchableOpacity
+        style={styles.backToProvidersButton}
+        onPress={onBack}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Back to Data Sources"
+      >
+        <Text style={styles.backToProvidersButtonText}>Back to Data Sources</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function ProviderDetailContent({
+  providerId,
+  providerActions,
+}: {
+  providerId: string;
+  providerActions: ProviderDetailActionsResult;
+}) {
   const { serverUrl } = useAuth();
   const router = useRouter();
   const trpcUtils = trpc.useUtils();
@@ -798,7 +870,6 @@ export default function ProviderDetailScreen() {
   const {
     provider,
     displayProvider,
-    isLoading,
     isConnected,
     primaryActionLabel,
     isSyncing,
@@ -810,7 +881,7 @@ export default function ProviderDetailScreen() {
     handlePrimaryAction,
     handleFullSync,
     modals,
-  } = useProviderDetailActions(providerId);
+  } = providerActions;
 
   const handleDisconnect = useCallback(() => {
     if (!providerId) return;
@@ -854,14 +925,6 @@ export default function ProviderDetailScreen() {
         trpcUtils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
-
-  if (isLoading || !providerId) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator color={colors.accent} size="large" />
-      </View>
-    );
-  }
 
   return (
     <ScrollView
@@ -1009,6 +1072,25 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     justifyContent: "center",
     alignItems: "center",
+  },
+  routeErrorContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    justifyContent: "center",
+    padding: 16,
+    gap: 16,
+  },
+  backToProvidersButton: {
+    alignSelf: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  backToProvidersButtonText: {
+    color: colors.background,
+    fontSize: 14,
+    fontWeight: "600",
   },
   headerCard: {
     backgroundColor: colors.surface,
