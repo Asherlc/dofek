@@ -15921,7 +15921,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-24 — Sync Polling Cancellation Mutation Gate Failed
 
-- **Status:** Fixed and validated locally; CI rerun pending.
+- **Status:** Fixed and verified in CI.
 - **Symptoms:** The `Test / Stryker (0)` GitHub Actions shard failed with a
   56.60% mutation score against a 75% breaking threshold, which caused the
   aggregate `Test / Mutation Testing` check to fail.
@@ -15938,9 +15938,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   positive and zero retry delays, abort-listener lifecycle, and the listener
   registration race. No mutation threshold, ignore, or production behavior was
   changed.
-- **Validation:** The exact local CI Stryker command now reports a 96.77%
-  mutation score: 88 mutants killed, two timeout-detected, three equivalent
-  survivors, and zero uncovered mutants. The focused suite passes 28 tests.
-- **Remaining risk / follow-up:** Confirm the GitHub Actions rerun passes on the
-  pushed commit. Include cancellation boundary cases in future polling test
-  plans so mutation coverage is established before CI.
+- **Validation:** The exact local CI Stryker command reports a 96.77% mutation
+  score: 88 mutants killed, two timeout-detected, three equivalent survivors,
+  and zero uncovered mutants. The focused suite passes 28 tests. The
+  [GitHub Actions rerun](https://github.com/Asherlc/dofek/actions/runs/30117481482)
+  passed all three Stryker shards, the aggregate mutation gate, and every other
+  required check.
+- **Remaining risk / follow-up:** No incident-specific risk remains. Include
+  cancellation boundary cases in future polling test plans so mutation coverage
+  is established before CI.
