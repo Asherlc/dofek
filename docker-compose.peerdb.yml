@@ -31,9 +31,7 @@ services:
       peerdb-catalog:
         condition: service_healthy
     healthcheck:
-      # tctl honors TEMPORAL_CLI_ADDRESS; use the service hostname rather than
-      # 127.0.0.1 since Temporal does not bind loopback inside the container.
-      test: ["CMD", "tctl", "--address", "peerdb-temporal:7233", "workflow", "list"]
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "peerdb-temporal:7233"]
       interval: 10s
       timeout: 10s
       retries: 12

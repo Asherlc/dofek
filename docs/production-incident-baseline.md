@@ -15644,13 +15644,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `temporal operator search-attribute`, made registration explicitly
   idempotent by checking the namespace first, removed unconditional error
   suppression, and verified `MirrorName` after creation. PeerDB's flow API
-  remains gated on successful completion of the initializer.
+  remains gated on successful completion of the initializer. The Temporal
+  service healthcheck also uses `temporal operator cluster health` instead of
+  the deprecated `tctl` binary, as implemented in the
+  [local Compose definition](../docker-compose.peerdb.yml#L33-L36).
 - **Validation:** Before the fix, the live regression reproduced
   `tctl: not found` and failed because `MirrorName` was absent. After the fix,
   the same regression created and found `MirrorName` with its canonical `Text`
   type; a second run passed without recreating it. Docker Compose configuration
   validation passed, and `peerdb-temporal-init` exited 0 before
-  `peerdb-flow-api` became healthy.
+  `peerdb-flow-api` became healthy. With `tctl` removed from a live
+  `temporalio/auto-setup:1.29` container, the replacement healthcheck returned
+  `SERVING` and the service remained healthy across subsequent probes.
 - **Remaining risk / follow-up:** The local process was tagged as production
   because it ran with production environment configuration. Keep host and
   deployment context visible in Sentry triage so local operational failures are
