@@ -61,6 +61,29 @@ function formatRouteCoordinate(value: number): string {
   return Object.is(rounded, -0) ? "0" : String(rounded);
 }
 
+function formatActivityAccessibilityLabel(
+  action: "Open" | "Select" | "Deselect",
+  activity: {
+    activityType: string;
+    durationMin: number;
+    name: string | null;
+    startedAt: string;
+  },
+): string {
+  const activityTypeLabel = formatActivityTypeLabel(activity.activityType);
+  const labelParts = [
+    activity.name ?? activityTypeLabel,
+    formatTime(activity.startedAt),
+    formatDurationMinutes(activity.durationMin),
+  ];
+
+  if (activity.name !== null) {
+    labelParts.push(activityTypeLabel);
+  }
+
+  return `${action} ${labelParts.join(", ")}`;
+}
+
 export default function ActivitiesScreen() {
   const router = useRouter();
   const units = useUnitConverter();
@@ -249,19 +272,14 @@ export default function ActivitiesScreen() {
                     selectedActivityIds.has(activity.id) ? styles.cardSelected : null,
                   ]}
                   accessibilityRole="button"
-                  accessibilityLabel={
+                  accessibilityLabel={formatActivityAccessibilityLabel(
                     selectMode
-                      ? `${selectedActivityIds.has(activity.id) ? "Deselect" : "Select"} ${
-                          activity.name ?? formatActivityTypeLabel(activity.activityType)
-                        }, ${formatTime(activity.startedAt)}, ${formatDurationMinutes(
-                          activity.durationMin,
-                        )}, ${formatActivityTypeLabel(activity.activityType)}`
-                      : `Open ${
-                          activity.name ?? formatActivityTypeLabel(activity.activityType)
-                        }, ${formatTime(activity.startedAt)}, ${formatDurationMinutes(
-                          activity.durationMin,
-                        )}, ${formatActivityTypeLabel(activity.activityType)}`
-                  }
+                      ? selectedActivityIds.has(activity.id)
+                        ? "Deselect"
+                        : "Select"
+                      : "Open",
+                    activity,
+                  )}
                   accessibilityState={{
                     selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,
                   }}
