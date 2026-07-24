@@ -39,6 +39,19 @@ export function DataSourcesPanel() {
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
   const activeImports = trpc.sync.activeImports.useQuery(undefined, { staleTime: 0 });
   const resumedJobIds = useRef(new Set<string>());
+  const pollAbortControllers = useRef(new Set<AbortController>());
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      for (const controller of pollAbortControllers.current) {
+        controller.abort();
+      }
+      pollAbortControllers.current.clear();
+    };
+  }, []);
 
   // Auth modal state
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
@@ -54,16 +67,28 @@ export function DataSourcesPanel() {
   );
 
   const doPollSyncJob = useCallback(
-    (jobId: string, providerIds: string[]) =>
-      pollSyncJob({
-        jobId,
-        providerIds,
-        fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
-        updateState,
-        onComplete: () => {
-          trpcUtils.invalidate();
-        },
-      }),
+    async (jobId: string, providerIds: string[]) => {
+      const controller = new AbortController();
+      if (isMounted.current) {
+        pollAbortControllers.current.add(controller);
+      } else {
+        controller.abort();
+      }
+      try {
+        await pollSyncJob({
+          jobId,
+          providerIds,
+          fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
+          updateState,
+          onComplete: () => {
+            trpcUtils.invalidate();
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        pollAbortControllers.current.delete(controller);
+      }
+    },
     [trpcUtils, updateState],
   );
 

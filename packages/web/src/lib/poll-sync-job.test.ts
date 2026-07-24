@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { pollSyncJob, type SyncJobStatus } from "../lib/poll-sync-job.ts";
 
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("../lib/telemetry.ts", () => ({
+  captureException: mockCaptureException,
+}));
+
 describe("pollSyncJob", () => {
   it("resets syncing providers when job is null (server restart)", async () => {
     const states: Record<string, string> = { wahoo: "syncing", whoop: "syncing" };
@@ -53,6 +59,48 @@ describe("pollSyncJob", () => {
     });
     expect(fetchStatus).toHaveBeenCalledTimes(2);
     expect(onComplete).toHaveBeenCalledOnce();
+  });
+
+  it("reports transient failures and stops retrying after cancellation", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const pollingError = new Error("Sync status is temporarily unavailable. Please try again.");
+    const updateState = vi.fn();
+    const fetchStatus = vi
+      .fn()
+      .mockRejectedValueOnce(pollingError)
+      .mockResolvedValueOnce({
+        status: "completed",
+        providers: { wahoo: { status: "done", message: "5 synced" } },
+      });
+    const onComplete = vi.fn();
+
+    const polling = pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo"],
+      fetchStatus,
+      updateState,
+      onComplete,
+      pollIntervalMs: 1000,
+      signal: controller.signal,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(pollingError, {
+      context: "poll-sync-job",
+      jobId: "sync-123",
+      providerIds: ["wahoo"],
+    });
+    expect(updateState).toHaveBeenCalledOnce();
+
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(1000);
+    await polling;
+
+    expect(fetchStatus).toHaveBeenCalledOnce();
+    expect(updateState).toHaveBeenCalledOnce();
+    expect(onComplete).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it("preserves last-known provider states and percentage across transient errors", async () => {

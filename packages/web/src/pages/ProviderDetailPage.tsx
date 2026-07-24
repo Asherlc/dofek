@@ -86,6 +86,19 @@ export function ProviderDetailPage() {
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncPercentage, setSyncPercentage] = useState<number | undefined>(undefined);
+  const pollAbortControllers = useRef(new Set<AbortController>());
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      for (const controller of pollAbortControllers.current) {
+        controller.abort();
+      }
+      pollAbortControllers.current.clear();
+    };
+  }, []);
 
   // Date range sync
   const [sinceDays, setSinceDays] = useState("30");
@@ -124,32 +137,43 @@ export function ProviderDetailPage() {
             ? providerResult.jobId
             : result.jobId;
         if (!jobId) return;
-        await pollSyncJob({
-          jobId,
-          providerIds: [providerId],
-          fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
-          updateState: (_id, state) => {
-            setSyncPercentage(state.percentage);
-            if (state.message) setSyncMessage(state.message);
-            if (state.status === "done") {
-              setSyncStatus("done");
-              setSyncPercentage(undefined);
-              setSyncMessage("Sync complete");
-            } else if (state.status === "error") {
-              setSyncStatus("error");
-              setSyncPercentage(undefined);
-              setSyncMessage(state.message ?? "Sync failed");
-            }
-          },
-          onComplete: () => {
-            trpcUtils.processing.status.invalidate();
-            trpcUtils.sync.providers.invalidate();
-            trpcUtils.sync.providerStats.invalidate();
-            trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId });
-            trpcUtils.providerDetail.logs.invalidate();
-            trpcUtils.providerDetail.records.invalidate();
-          },
-        });
+        const controller = new AbortController();
+        if (isMounted.current) {
+          pollAbortControllers.current.add(controller);
+        } else {
+          controller.abort();
+        }
+        try {
+          await pollSyncJob({
+            jobId,
+            providerIds: [providerId],
+            fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
+            updateState: (_id, state) => {
+              setSyncPercentage(state.percentage);
+              if (state.message) setSyncMessage(state.message);
+              if (state.status === "done") {
+                setSyncStatus("done");
+                setSyncPercentage(undefined);
+                setSyncMessage("Sync complete");
+              } else if (state.status === "error") {
+                setSyncStatus("error");
+                setSyncPercentage(undefined);
+                setSyncMessage(state.message ?? "Sync failed");
+              }
+            },
+            onComplete: () => {
+              trpcUtils.processing.status.invalidate();
+              trpcUtils.sync.providers.invalidate();
+              trpcUtils.sync.providerStats.invalidate();
+              trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId });
+              trpcUtils.providerDetail.logs.invalidate();
+              trpcUtils.providerDetail.records.invalidate();
+            },
+            signal: controller.signal,
+          });
+        } finally {
+          pollAbortControllers.current.delete(controller);
+        }
       } catch (err: unknown) {
         captureException(err, { context: "sync-provider" });
         setSyncStatus("error");

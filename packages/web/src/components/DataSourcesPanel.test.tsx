@@ -351,6 +351,36 @@ describe("DataSourcesPanel", () => {
     expect(mockPollSyncJob).toHaveBeenCalledTimes(2);
   });
 
+  it("cancels active sync polling when the panel unmounts", async () => {
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "wahoo:job-active",
+          status: "running",
+          providers: { wahoo: { status: "running", message: "Syncing activities" } },
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    let pollingSignal: AbortSignal | undefined;
+    mockPollSyncJob.mockImplementationOnce((options: { signal?: AbortSignal }) => {
+      pollingSignal = options.signal;
+      return new Promise<void>((resolve) => {
+        options.signal?.addEventListener("abort", () => resolve(), { once: true });
+      });
+    });
+
+    const { unmount } = render(<DataSourcesPanel />);
+    await waitFor(() => {
+      expect(mockPollSyncJob).toHaveBeenCalledOnce();
+    });
+
+    expect(pollingSignal?.aborted).toBe(false);
+    unmount();
+    expect(pollingSignal?.aborted).toBe(true);
+  });
+
   it("shows Kaya as a file import source with export upload routes", () => {
     mockProvidersQuery.mockReturnValue({
       data: [
