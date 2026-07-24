@@ -1356,6 +1356,30 @@ describe("syncRouter", () => {
       });
     });
 
+    it("reports Redis failures when reading job state", async () => {
+      const redisError = new Error("Redis connection refused");
+      mockGetJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn().mockRejectedValueOnce(redisError),
+        progress: {},
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.syncStatus({ jobId: "some-job" })).rejects.toMatchObject({
+        code: "BAD_GATEWAY",
+        message: "Sync status is temporarily unavailable. Please try again.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(redisError, {
+        tags: { procedure: "sync.syncStatus" },
+        extra: { jobId: "some-job" },
+      });
+    });
+
     it("returns null when job belongs to different user", async () => {
       mockGetJob.mockResolvedValueOnce({
         data: { userId: "other-user" },
@@ -1683,6 +1707,33 @@ describe("syncRouter", () => {
       });
       expect(mockCaptureException).toHaveBeenCalledWith(redisError, {
         tags: { procedure: "sync.activeSyncs" },
+      });
+    });
+
+    it("reports Redis failures when reading an active job state", async () => {
+      const redisError = new Error("Redis connection refused");
+      mockGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-1",
+          data: { userId: "user-1", providerId: "wahoo" },
+          getState: vi.fn().mockRejectedValueOnce(redisError),
+          progress: {},
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.activeSyncs()).rejects.toMatchObject({
+        code: "BAD_GATEWAY",
+        message: "Active syncs are temporarily unavailable. Please try again.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(redisError, {
+        tags: { procedure: "sync.activeSyncs" },
+        extra: { jobId: "wahoo:job-1" },
       });
     });
 

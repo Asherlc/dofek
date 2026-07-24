@@ -390,7 +390,20 @@ const syncRouterProcedures = {
     const jobData = syncJobDataSchema.safeParse(job.data);
     if (!jobData.success || jobData.data.userId !== ctx.userId) return null;
 
-    const operationProgress = await readOperationProgress(job);
+    let operationProgress: Awaited<ReturnType<typeof readOperationProgress>>;
+    try {
+      operationProgress = await readOperationProgress(job);
+    } catch (error: unknown) {
+      captureException(error, {
+        tags: { procedure: "sync.syncStatus" },
+        extra: { jobId: input.jobId },
+      });
+      throw new TRPCError({
+        code: "BAD_GATEWAY",
+        message: "Sync status is temporarily unavailable. Please try again.",
+        cause: error,
+      });
+    }
 
     const progressSchema = z.object({
       providers: z
@@ -474,14 +487,28 @@ const syncRouterProcedures = {
     for (const job of jobs) {
       const jobData = syncJobDataSchema.safeParse(job.data);
       if (!jobData.success || jobData.data.userId !== ctx.userId) continue;
-      const operationProgress = await readOperationProgress(job);
+      const jobId = toJobId(job.id, jobData.data.providerId ?? "unknown");
+      let operationProgress: Awaited<ReturnType<typeof readOperationProgress>>;
+      try {
+        operationProgress = await readOperationProgress(job);
+      } catch (error: unknown) {
+        captureException(error, {
+          tags: { procedure: "sync.activeSyncs" },
+          extra: { jobId },
+        });
+        throw new TRPCError({
+          code: "BAD_GATEWAY",
+          message: "Active syncs are temporarily unavailable. Please try again.",
+          cause: error,
+        });
+      }
       if (operationProgress.status !== "queued" && operationProgress.status !== "running") {
         continue;
       }
       const parsed = progressSchema.safeParse(job.progress);
       const progress = parsed.success ? parsed.data : undefined;
       results.push({
-        jobId: toJobId(job.id, jobData.data.providerId ?? "unknown"),
+        jobId,
         status: operationProgress.status,
         percentage: operationProgress.percentage,
         providers: progress?.providers ?? {},
