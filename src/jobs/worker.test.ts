@@ -32,6 +32,9 @@ const hoisted = vi.hoisted(() => {
     listen: mockReadinessListen,
     close: mockReadinessClose,
   };
+  const scheduledSyncState: { error: Error | null } = {
+    error: null,
+  };
 
   class MockUnrecoverableError extends Error {}
 
@@ -63,6 +66,7 @@ const hoisted = vi.hoisted(() => {
     mockReadinessListen,
     mockReadinessClose,
     mockReadinessServer,
+    scheduledSyncState,
     mockObserveFitJob,
     reconcileGarminProgressError,
     mockReconcileGarminProgress,
@@ -174,7 +178,10 @@ vi.mock("./file-upload-reconciliation.ts", () => ({
 }));
 
 vi.mock("./scheduled-sync.ts", () => ({
-  setupScheduledSync: vi.fn(() => Promise.resolve()),
+  setupScheduledSync: () =>
+    hoisted.scheduledSyncState.error
+      ? Promise.reject(hoisted.scheduledSyncState.error)
+      : Promise.resolve(),
 }));
 
 vi.mock("./worker-readiness.ts", () => ({
@@ -1339,5 +1346,52 @@ describe("worker module", () => {
       ...Array.from({ length: EXPECTED_WORKER_COUNT }, () => "worker"),
       "Garmin progress",
     ]);
+  });
+
+  it("fails startup before registering sync when the interval is invalid", async () => {
+    const previousSyncInterval = process.env.SYNC_INTERVAL_MINUTES;
+    const workerRunCount = mockRun.mock.calls.length;
+    const readinessListenCount = mockReadinessListen.mock.calls.length;
+    process.env.SYNC_INTERVAL_MINUTES = "not-a-number";
+    mockReconcileGarminProgress.mockResolvedValue(undefined);
+    vi.resetModules();
+
+    try {
+      await expect(import("./worker.ts")).rejects.toThrow(
+        'SYNC_INTERVAL_MINUTES must be a finite positive number, received "not-a-number"',
+      );
+    } finally {
+      if (previousSyncInterval === undefined) {
+        delete process.env.SYNC_INTERVAL_MINUTES;
+      } else {
+        process.env.SYNC_INTERVAL_MINUTES = previousSyncInterval;
+      }
+    }
+
+    expect(mockRun).toHaveBeenCalledTimes(workerRunCount);
+    expect(mockReadinessListen).toHaveBeenCalledTimes(readinessListenCount);
+  });
+
+  it("fails startup before running workers or exposing readiness when scheduler registration fails", async () => {
+    const registrationError = new Error("scheduler Redis command failed");
+    const workerRunCount = mockRun.mock.calls.length;
+    const readinessListenCount = mockReadinessListen.mock.calls.length;
+    hoisted.scheduledSyncState.error = registrationError;
+    mockReconcileGarminProgress.mockResolvedValue(undefined);
+    vi.resetModules();
+
+    await expect(import("./worker.ts")).rejects.toBe(registrationError);
+
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    expect(Sentry.captureException).toHaveBeenCalledWith(registrationError, {
+      tags: { workerStartupStep: "scheduledSyncRegistration" },
+    });
+    expect(logger.error).toHaveBeenCalledWith("[worker] Failed to set up scheduled sync", {
+      error: registrationError,
+      errorStack: registrationError.stack,
+    });
+    expect(mockRun).toHaveBeenCalledTimes(workerRunCount);
+    expect(mockReadinessListen).toHaveBeenCalledTimes(readinessListenCount);
   });
 });
