@@ -92,7 +92,11 @@ export default defineConfig({
               singleFork: true,
             },
           },
-          include: ["src/**/*.integration.test.ts", "packages/*/src/**/*.integration.test.ts"],
+          include: [
+            "src/**/*.integration.test.ts",
+            "packages/*/src/**/*.integration.test.ts",
+            "scripts/**/*.integration.test.ts",
+          ],
           exclude: ["**/packages/mobile/**"],
           env: {
             ...sharedTestEnv,

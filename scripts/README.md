@@ -51,7 +51,11 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   File discovery uses Git's tracked-file index via
   [`git ls-files`](https://git-scm.com/docs/git-ls-files).
   - Usage: `pnpm lint:suppressions`
-- `exact-versions.sh`: Ensures all dependencies in `package.json` use exact versions (no `^` or `~`).
+- `exact-versions.ts`: Reads every workspace manifest declared by
+  [`pnpm-workspace.yaml`](../pnpm-workspace.yaml), rejects `^` and `~` declarations
+  in all dependency sections, and accepts pnpm's documented
+  [`workspace:` protocol](https://pnpm.io/workspaces#workspace-protocol-workspace).
+  The root `pnpm lint` command and required CI lint job run this check.
 - `workflow-download-policy.ts`: Rejects GitHub workflow and action source downloads unless they use a full commit SHA; versioned release artifacts must instead be protected by a reviewed checksum. This follows GitHub's guidance that only full commit SHAs are immutable unless immutable releases are enabled: https://docs.github.com/en/actions/how-tos/create-and-publish-actions/using-immutable-releases-and-tags-to-manage-your-actions-releases
 - `migration-policy.ts`: Checks changed deploy migration SQL for inline backfills, refreshes, and other long-running data work that must live in resumable jobs instead.
 - `generate-icons.mjs`: Script to generate app icons for web and mobile.
