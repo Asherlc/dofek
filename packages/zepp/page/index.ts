@@ -69,11 +69,13 @@ function nullable<T>(): T | null {
 function emptyArray<T>(): T[] {
   return [];
 }
+function initialActiveFile(): ActiveFileSlot {
+  return "A";
+}
 
 BasePage.use(pagePlugin);
 
 const logger = Logger.getLogger("imu-page");
-const INITIAL_ACTIVE_FILE: ActiveFileSlot = "A";
 const { width: DEVICE_WIDTH } = getDeviceInfo();
 const BG_PERMISSION = "device:os.bg_service";
 const IS_COMPACT_SQUARE_DISPLAY = DEVICE_WIDTH <= 320;
@@ -160,7 +162,7 @@ Page(
       failedTransfer: nullable<FailedTransfer>(),
       sampleCount: 0,
       observedHzX100: 0,
-      activeFile: INITIAL_ACTIVE_FILE,
+      activeFile: initialActiveFile(),
       hasCredentials: false,
       dofekEmail: "",
       pairingVerificationUrl: "",
