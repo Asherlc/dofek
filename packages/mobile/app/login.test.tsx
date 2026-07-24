@@ -1,6 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockCaptureException } = vi.hoisted(() => ({
+  mockCaptureException: vi.fn(),
+}));
+
 // Mock auth module before importing LoginScreen
 const mockOnLoginSuccess = vi.fn();
 const mockFetchConfiguredProviders = vi.fn();
@@ -46,6 +50,10 @@ vi.mock("expo-apple-authentication", () => ({
 
 vi.mock("../components/ProviderLogo", () => ({
   ProviderLogo: () => null,
+}));
+
+vi.mock("../lib/telemetry", () => ({
+  captureException: mockCaptureException,
 }));
 
 const { default: LoginScreen } = await import("./login");
@@ -134,11 +142,15 @@ describe("LoginScreen", () => {
   });
 
   it("shows error message on fetch failure", async () => {
-    mockFetchConfiguredProviders.mockRejectedValue(new Error("Network error"));
+    const providerDiscoveryError = new Error("Network error");
+    mockFetchConfiguredProviders.mockRejectedValue(providerDiscoveryError);
     render(<LoginScreen />);
 
     await waitFor(() => {
       expect(screen.getByText("Network error")).toBeTruthy();
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(providerDiscoveryError, {
+      source: "login-screen-configured-providers",
     });
   });
 
@@ -344,9 +356,7 @@ describe("LoginScreen", () => {
       data: [],
       nativeApple: true,
     });
-    const cancelError = new Error("User canceled");
-    Object.assign(cancelError, { code: "ERR_REQUEST_CANCELED" });
-    mockStartNativeAppleSignIn.mockRejectedValue(cancelError);
+    mockStartNativeAppleSignIn.mockResolvedValue(null);
 
     render(<LoginScreen />);
 
@@ -358,6 +368,10 @@ describe("LoginScreen", () => {
     });
     expect(mockStartOAuthLogin).not.toHaveBeenCalled();
     expect(screen.queryByText("User canceled")).toBeNull();
+    expect(mockCaptureException).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ source: "login-screen-handle-login" }),
+    );
   });
 
   it("requests a password reset from sign-in mode", async () => {

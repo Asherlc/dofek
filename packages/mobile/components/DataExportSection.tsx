@@ -72,7 +72,8 @@ async function getResponseErrorMessage(response: Response, fallback: string): Pr
     if (typeof parsed.data.error === "string") return parsed.data.error;
     if (parsed.data.error?.message) return parsed.data.error.message;
     return parsed.data.message ?? fallback;
-  } catch {
+  } catch (error: unknown) {
+    captureException(error, { source: "data-export-response-error-json" });
     return fallback;
   }
 }

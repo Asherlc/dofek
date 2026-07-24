@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 import { styles } from "./styles.ts";
@@ -36,6 +37,10 @@ export function CredentialAuthModal({
       await signInMutation.mutateAsync({ providerId, username, password });
       onSuccess();
     } catch (err: unknown) {
+      captureException(err, {
+        source: "provider-credential-auth-sign-in",
+        providerId,
+      });
       setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
       setLoading(false);
@@ -131,6 +136,10 @@ export function GarminAuthModal({
       await signInMutation.mutateAsync({ username, password });
       onSuccess();
     } catch (error_: unknown) {
+      captureException(error_, {
+        source: "provider-garmin-auth-sign-in",
+        providerId: "garmin",
+      });
       setError(error_ instanceof Error ? error_.message : "Sign in failed");
     } finally {
       setLoading(false);
@@ -248,6 +257,10 @@ export function WhoopAuthModal({
         onSuccess();
       }
     } catch (error_: unknown) {
+      captureException(error_, {
+        source: "provider-whoop-auth-sign-in",
+        providerId: "whoop",
+      });
       setError(error_ instanceof Error ? error_.message : "Sign in failed");
     } finally {
       setLoading(false);
@@ -265,6 +278,10 @@ export function WhoopAuthModal({
         onSuccess();
       }
     } catch (error_: unknown) {
+      captureException(error_, {
+        source: "provider-whoop-auth-verify",
+        providerId: "whoop",
+      });
       setError(error_ instanceof Error ? error_.message : "Verification failed");
     } finally {
       setLoading(false);

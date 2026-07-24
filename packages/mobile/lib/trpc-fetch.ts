@@ -25,7 +25,10 @@ function getTrpcPath(input: Parameters<typeof fetch>[0]): string {
     const url = new URL(rawUrl, "https://dofek.local");
     const pathIndex = url.pathname.indexOf(pathPrefix);
     return pathIndex >= 0 ? url.pathname.slice(pathIndex + pathPrefix.length) : url.pathname;
-  } catch {
+  } catch (error: unknown) {
+    captureException(error, {
+      source: "trpc-request-url-parse",
+    });
     return rawUrl;
   }
 }
@@ -39,7 +42,8 @@ function buildStatusLabel(response: Response): string {
 async function readBodyPreview(response: Response): Promise<string> {
   try {
     return (await response.clone().text()).slice(0, BODY_PREVIEW_LIMIT);
-  } catch {
+  } catch (error: unknown) {
+    captureException(error, { source: "trpc-response-body-preview" });
     return "body preview unavailable";
   }
 }
