@@ -23,9 +23,15 @@ describe("pollSyncJob", () => {
     expect(updateState).toHaveBeenCalledWith("whoop", expect.objectContaining({ status: "error" }));
   });
 
-  it("resets syncing providers when fetch throws", async () => {
+  it("preserves syncing state, shows the server error, and retries", async () => {
     const updateState = vi.fn();
-    const fetchStatus = vi.fn().mockRejectedValue(new Error("Network error"));
+    const fetchStatus = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Sync status is temporarily unavailable. Please try again."))
+      .mockResolvedValueOnce({
+        status: "completed",
+        providers: { wahoo: { status: "done", message: "5 synced" } },
+      });
     const onComplete = vi.fn();
 
     await pollSyncJob({
@@ -34,9 +40,19 @@ describe("pollSyncJob", () => {
       fetchStatus,
       updateState,
       onComplete,
+      pollIntervalMs: 0,
     });
 
-    expect(updateState).toHaveBeenCalledWith("wahoo", expect.objectContaining({ status: "error" }));
+    expect(updateState).toHaveBeenNthCalledWith(1, "wahoo", {
+      status: "syncing",
+      message: "Sync status is temporarily unavailable. Please try again.",
+    });
+    expect(updateState).toHaveBeenNthCalledWith(2, "wahoo", {
+      status: "done",
+      message: "5 synced",
+    });
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    expect(onComplete).toHaveBeenCalledOnce();
   });
 
   it("updates provider states from job and calls onComplete when done", async () => {

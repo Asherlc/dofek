@@ -35,9 +35,16 @@ export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
     let job: SyncJobStatus | null;
     try {
       job = await fetchStatus(jobId);
-    } catch {
-      resetSyncing();
-      return;
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Sync status is temporarily unavailable.";
+      for (const providerId of providerIds) {
+        updateState(providerId, { status: "syncing", message });
+      }
+      if (pollIntervalMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      }
+      return poll();
     }
 
     if (!job) {
