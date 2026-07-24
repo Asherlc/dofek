@@ -69,16 +69,24 @@ const db = createDatabaseFromEnv();
 const connection = getRedisConnection();
 let importUploadStorage: ReturnType<typeof createImportUploadStorageFromEnv> | null = null;
 
-const syncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES
-  ? Number(process.env.SYNC_INTERVAL_MINUTES)
-  : 30;
+const rawSyncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES;
+const syncIntervalMinutes =
+  rawSyncIntervalMinutes === undefined ? 30 : Number(rawSyncIntervalMinutes);
 try {
+  if (!Number.isFinite(syncIntervalMinutes) || syncIntervalMinutes <= 0) {
+    throw new Error(
+      `SYNC_INTERVAL_MINUTES must be a finite positive number, received ${JSON.stringify(rawSyncIntervalMinutes)}`,
+    );
+  }
   await setupScheduledSync(syncIntervalMinutes);
 } catch (error: unknown) {
   Sentry.captureException(error, {
     tags: { workerStartupStep: "scheduledSyncRegistration" },
   });
-  logger.error(`[worker] Failed to set up scheduled sync: ${String(error)}`);
+  logger.error("[worker] Failed to set up scheduled sync", {
+    error,
+    errorStack: error instanceof Error ? error.stack : undefined,
+  });
   throw error;
 }
 
