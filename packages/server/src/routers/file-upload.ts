@@ -286,15 +286,20 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
         if (partCount > MAX_PART_COUNT) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Upload has too many parts" });
         }
-        const since =
-          input.importType === "apple-health" && input.fullSync !== true
-            ? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-            : new Date(0);
         const existingUpload = await dependencies.repository.find(
           ctx.db,
           input.uploadId,
           ctx.userId,
         );
+        const isIncrementalAppleHealth =
+          input.importType === "apple-health" && input.fullSync !== true;
+        const existingIncrementalSince =
+          existingUpload?.importType === "apple-health" && existingUpload.since.getTime() !== 0
+            ? existingUpload.since
+            : null;
+        const since = isIncrementalAppleHealth
+          ? (existingIncrementalSince ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+          : new Date(0);
         if (
           !existingUpload &&
           !(await dependencies.repository.rateAllowed(ctx.db, ctx.userId, "initiate"))
