@@ -767,18 +767,25 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(sql).toContain("{% if is_incremental() %}");
-    expect(sql).toContain("existing_dates AS");
+    expect(sql).toContain("target_state AS");
+    expect(sql).toContain("changed_users AS");
+    expect(sql).toContain("source('postgres_fitness', 'sleep_session')");
     expect(normalizedSql).toContain(
-      "toDate(sleep.started_at - INTERVAL 6 HOUR) >= existing_dates.latest_materialized_date - INTERVAL 7 DAY",
+      "_peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)",
     );
+    expect(sql).toContain("dirty_dates AS");
+    expect(sql).toContain("current_rows.is_deleted = 0");
     expect(sql).toContain("analytics.v_sleep");
     expect(sql).toContain("sleep.source_name AS source_name");
     expect(sql).toContain("sleep.source_providers AS source_providers");
-    expect(sql).toContain("ranked_sleep.source_name AS source_name");
-    expect(sql).toContain("ranked_sleep.source_providers AS source_providers");
-    expect(normalizedSql).toContain("PARTITION BY user_id, date");
-    expect(normalizedSql).toContain("ORDER BY duration_minutes DESC NULLS LAST, started_at DESC");
-    expect(sql).toContain("WHERE ranked_sleep.row_number = 1");
+    expect(sql).toContain("selected_sleep.source_name AS source_name");
+    expect(sql).toContain("selected_sleep.source_providers AS source_providers");
+    expect(normalizedSql).toContain("PARTITION BY live_sleep.user_id, live_sleep.date");
+    expect(normalizedSql).toContain(
+      "ORDER BY live_sleep.duration_minutes DESC NULLS LAST, live_sleep.started_at DESC",
+    );
+    expect(sql).toContain("if(selected_sleep.user_id IS NULL, 1, 0) AS is_deleted");
+    expect(sql).toContain("rows_to_write.is_deleted AS is_deleted");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
     expect(sql).not.toContain("ref('deduped_sensor')");
   });

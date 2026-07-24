@@ -35,6 +35,7 @@ describe("fetchDailySleepPerformanceNights", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.duration_minutes).toBe(480);
     expect(String(query.mock.calls[0]?.[1])).toContain("analytics.daily_sleep AS sleep FINAL");
+    expect(String(query.mock.calls[0]?.[1])).toContain("AND sleep.is_deleted = 0");
     expect(String(query.mock.calls[0]?.[1])).not.toContain("accessStartDate");
     expect(query.mock.calls[0]?.[2]).toMatchObject({
       userId: "user-1",
@@ -97,6 +98,7 @@ describe("fetchSleepNights", () => {
 
     const queryText = String(query.mock.calls[0]?.[1]);
     expect(queryText).toContain("analytics.daily_sleep AS sleep FINAL");
+    expect(queryText).toContain("AND sleep.is_deleted = 0");
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).toContain("source_name");
     expect(queryText).toContain("source_providers");
@@ -227,6 +229,7 @@ describe("fetchSleepNights", () => {
 
     const queryText = String(query.mock.calls[0]?.[1]);
     expect(queryText).toContain("analytics.daily_sleep AS sleep FINAL");
+    expect(queryText).toContain("AND sleep.is_deleted = 0");
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).toContain("source_name");
     expect(queryText).toContain("source_providers");

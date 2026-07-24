@@ -25,6 +25,7 @@ function makeSensorStore({
           },
         ];
       } else if (queryText.includes("analytics.daily_sleep")) {
+        expect(queryText).toContain("AND sleep.is_deleted = 0");
         rows = [
           {
             date: "2026-06-29",

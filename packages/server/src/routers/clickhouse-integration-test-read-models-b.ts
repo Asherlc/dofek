@@ -43,6 +43,7 @@ SELECT
   ranked_sleep.awake_minutes AS awake_minutes,
   ranked_sleep.efficiency_pct AS efficiency_pct,
   refresh_clock.refresh_version AS refresh_version,
+  toUInt8(0) AS is_deleted,
   refresh_clock.refreshed_at AS refreshed_at
 FROM ranked_sleep
 CROSS JOIN refresh_clock

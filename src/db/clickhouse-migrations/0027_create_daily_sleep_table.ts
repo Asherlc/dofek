@@ -13,6 +13,7 @@ const dailySleepTableSql = `CREATE TABLE IF NOT EXISTS analytics.daily_sleep (
   awake_minutes Nullable(Int32),
   efficiency_pct Nullable(Float64),
   refresh_version UInt64,
+  is_deleted UInt8 DEFAULT 0,
   refreshed_at DateTime64(9, 'UTC')
 )
 ENGINE = ReplacingMergeTree(refresh_version)
