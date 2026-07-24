@@ -372,7 +372,7 @@ describe("ProviderDetailPage import-only providers", () => {
     render(<ProviderDetailPage />);
 
     expect(screen.getByText("Wahoo data status")).toBeTruthy();
-    expect(screen.getByText("Processing needs attention")).toBeTruthy();
+    expect(screen.getByText("Your data update didn’t finish")).toBeTruthy();
   });
 
   it("shows single-provider cooldown outcome without polling a fake job", async () => {

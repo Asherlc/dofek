@@ -503,7 +503,7 @@ describe("ProviderDetailScreen", () => {
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("Wahoo data status")).toBeTruthy();
-      expect(screen.getByText("Processing needs attention")).toBeTruthy();
+      expect(screen.getByText("Your data update didn’t finish")).toBeTruthy();
     });
 
     it("triggers generic provider sync with sinceDays=7 when Sync is clicked", async () => {
