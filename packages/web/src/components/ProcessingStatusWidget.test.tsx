@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type ProcessingStatusSnapshot,
@@ -61,13 +61,12 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.getByText("Data is ready")).toBeTruthy();
   });
 
-  it("shows progress and an accessible expanded timeline", () => {
+  it("shows progress without exposing internal processing stages", () => {
     render(<ProcessingStatusWidget data={snapshot} contextLabel="Kaya" />);
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("60");
     expect(screen.getByText("Updating your data").closest("section")).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
-    expect(screen.getByText("Receiving data")).toBeTruthy();
-    expect(screen.getByText(/Completed/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show processing details" })).toBeNull();
+    expect(screen.queryByText("Receiving data")).toBeNull();
   });
 
   it("surfaces the server error message", () => {
@@ -217,31 +216,5 @@ describe("ProcessingStatusWidget", () => {
     );
 
     expect(screen.queryByRole("progressbar")).toBeNull();
-  });
-
-  it("renders same-millisecond timeline events with unique keys", () => {
-    const operation = snapshot.operations.at(0);
-    const timelineEvent = operation?.timeline.at(0);
-    if (!operation || !timelineEvent) {
-      throw new Error("Expected the processing snapshot fixture to include a timeline event");
-    }
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    render(
-      <ProcessingStatusWidget
-        data={{
-          ...snapshot,
-          operations: [
-            {
-              ...operation,
-              timeline: [timelineEvent, { ...timelineEvent, sequence: timelineEvent.sequence + 1 }],
-            },
-          ],
-        }}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
-
-    expect(consoleError.mock.calls.flat().join(" ")).not.toContain("same key");
   });
 });

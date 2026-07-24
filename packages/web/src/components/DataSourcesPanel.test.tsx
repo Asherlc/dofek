@@ -237,7 +237,7 @@ describe("DataSourcesPanel", () => {
       { datasets: ["providers"] },
       expect.any(Object),
     );
-    const readiness = screen.getByText("Processing needs attention");
+    const readiness = screen.getByText("Your data update didn’t finish");
     const provider = screen.getByText("Garmin");
 
     expect(

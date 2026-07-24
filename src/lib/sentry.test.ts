@@ -1,0 +1,85 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  init: vi.fn(),
+}));
+
+vi.mock("@sentry/node", () => ({
+  init: mocks.init,
+}));
+
+const originalDeployEnvironment = process.env.DEPLOY_ENVIRONMENT;
+
+async function loadInitProductionSentry() {
+  return (await import("./sentry.ts")).initProductionSentry;
+}
+
+describe("initProductionSentry", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+    delete process.env.DEPLOY_ENVIRONMENT;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    if (originalDeployEnvironment === undefined) {
+      delete process.env.DEPLOY_ENVIRONMENT;
+    } else {
+      process.env.DEPLOY_ENVIRONMENT = originalDeployEnvironment;
+    }
+  });
+
+  it("does not initialize without a DSN", async () => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
+    const initProductionSentry = await loadInitProductionSentry();
+
+    initProductionSentry(undefined);
+
+    expect(mocks.init).not.toHaveBeenCalled();
+  });
+
+  it("does not initialize without a deployment environment", async () => {
+    const initProductionSentry = await loadInitProductionSentry();
+
+    initProductionSentry("https://key@sentry.example/456");
+
+    expect(mocks.init).not.toHaveBeenCalled();
+  });
+
+  it("does not initialize outside production", async () => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", "local");
+    const initProductionSentry = await loadInitProductionSentry();
+
+    initProductionSentry("https://key@sentry.example/456");
+
+    expect(mocks.init).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "prod",
+    "production",
+  ])("initializes the %s deployment with the production Sentry environment", async (deploymentEnvironment) => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", deploymentEnvironment);
+    const initProductionSentry = await loadInitProductionSentry();
+
+    initProductionSentry("https://key@sentry.example/456");
+
+    expect(mocks.init).toHaveBeenCalledWith({
+      dsn: "https://key@sentry.example/456",
+      environment: "production",
+      skipOpenTelemetrySetup: true,
+    });
+  });
+
+  it("initializes Sentry only once", async () => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
+    const initProductionSentry = await loadInitProductionSentry();
+
+    initProductionSentry("https://key@sentry.example/456");
+    initProductionSentry("https://key@sentry.example/456");
+
+    expect(mocks.init).toHaveBeenCalledOnce();
+  });
+});

@@ -4,21 +4,12 @@ import {
   processingCurrentFailure,
   processingHeading,
   processingPollInterval,
-  processingStageLabel,
   processingStatusMessage,
 } from "./processing-status.ts";
 
 describe("processing status presentation", () => {
-  it("uses plain-language stage labels", () => {
-    expect(processingStageLabel("ingest")).toBe("Receiving data");
-    expect(processingStageLabel("canonical_commit")).toBe("Saving data");
-    expect(processingStageLabel("cdc")).toBe("Preparing data");
-    expect(processingStageLabel("analytics")).toBe("Updating insights");
-    expect(processingStageLabel("cache_refresh")).toBe("Refreshing screens");
-  });
-
   it("gives failures and delays actionable copy", () => {
-    expect(processingHeading("failed")).toBe("Processing needs attention");
+    expect(processingHeading("failed")).toBe("Your data update didn’t finish");
     expect(processingStatusMessage({ status: "failed", errorMessage: "Reconnect WHOOP." })).toBe(
       "Reconnect WHOOP.",
     );
@@ -28,7 +19,7 @@ describe("processing status presentation", () => {
   });
 
   it.each([
-    ["blocked", "Processing needs attention"],
+    ["blocked", "Your data update didn’t finish"],
     ["delayed", "Processing is taking longer than expected"],
     ["active", "Updating your data"],
     ["partial", "Some data is ready"],

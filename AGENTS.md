@@ -241,7 +241,7 @@ Durable, non-obvious notes for working in the Cursor Cloud VM. The startup updat
 - `ubuntu` is in the `docker` group, so `docker`/`docker compose` work without `sudo` once the daemon is up. On a brand-new session the socket may be `root:docker`; if you hit a permission error, `sudo chmod 666 /var/run/docker.sock`.
 
 ### Secrets / Infisical
-- The Infisical CLI is NOT installed. [`scripts/with-env.sh`](scripts/with-env.sh) deliberately fails before running its command when Infisical export is unavailable. For VM commands that only need the local `DATABASE_URL`, `CLICKHOUSE_URL`, and `REDIS_URL` written by `pnpm compose:up`, source `.env.local` explicitly and run the underlying command directly.
+- The Infisical CLI is NOT installed. [`scripts/with-env.ts`](scripts/with-env.ts) deliberately fails before running its command when Infisical export is unavailable. For VM commands that only need the local `DATABASE_URL`, `CLICKHOUSE_URL`, and `REDIS_URL` written by `pnpm compose:up`, source `.env.local` explicitly and run the underlying command directly.
 - Provider OAuth/credentials and other secret-gated features are unavailable without Infisical. Use the dev-login bypass below instead of real auth.
 
 ### Bring up the full local stack (web + API, no PeerDB needed)

@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
-  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -24,27 +23,33 @@ function createFixture(infisicalScript: string): {
   fixtureRoot: string;
   scriptPath: string;
 } {
-  const fixtureRoot = mkdtempSync(join(tmpdir(), "with-env-test-"));
+  mkdirSync(resolve(".context"), { recursive: true });
+  const fixtureRoot = mkdtempSync(resolve(".context", "with-env-test-"));
   const scriptsDirectory = join(fixtureRoot, "scripts");
   const binDirectory = join(fixtureRoot, "bin");
   mkdirSync(scriptsDirectory);
   mkdirSync(binDirectory);
   fixtureRoots.push(fixtureRoot);
 
-  const scriptPath = join(scriptsDirectory, "with-env.sh");
-  copyFileSync(resolve("scripts/with-env.sh"), scriptPath);
-  chmodSync(scriptPath, 0o755);
+  const scriptPath = join(scriptsDirectory, "with-env.ts");
+  writeFileSync(scriptPath, readFileSync(resolve("scripts/with-env.ts"), "utf8"));
   writeExecutable(join(binDirectory, "infisical"), infisicalScript);
 
   return { fixtureRoot, scriptPath };
 }
 
-function runWithEnv(scriptPath: string, fixtureRoot: string, command: string[] = []) {
-  return spawnSync("bash", [scriptPath, ...command], {
+function runWithEnv(
+  scriptPath: string,
+  fixtureRoot: string,
+  command: string[] = [],
+  environmentOverrides: NodeJS.ProcessEnv = {},
+) {
+  return spawnSync("pnpm", ["tsx", scriptPath, "--", ...command], {
     encoding: "utf8",
     env: {
       ...process.env,
       PATH: `${join(fixtureRoot, "bin")}:${process.env.PATH ?? ""}`,
+      ...environmentOverrides,
     },
   });
 }
@@ -85,17 +90,16 @@ exit 0
     const result = runWithEnv(scriptPath, fixtureRoot);
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("Usage: with-env.sh <command>");
+    expect(result.stderr).toContain("Usage: with-env.ts <command>");
   });
 
-  it("exports shell-quoted Infisical values before running the command", () => {
+  it("exports Infisical values without evaluating their contents", () => {
     const injectionMarker = join(tmpdir(), `with-env-injection-${process.pid}`);
     rmSync(injectionMarker, { force: true });
     const secretValue = `value with spaces;$(touch "${injectionMarker}")'quoted`;
-    const shellQuotedSecret = `'${secretValue.replaceAll("'", `'"'"'`)}'`;
     const { fixtureRoot, scriptPath } = createFixture(`#!/bin/sh
 cat <<'EXPORT_OUTPUT'
-export WITH_ENV_TEST_SECRET=${shellQuotedSecret}
+${JSON.stringify([{ key: "WITH_ENV_TEST_SECRET", value: secretValue }])}
 EXPORT_OUTPUT
 `);
     const capturedValuePath = join(fixtureRoot, "captured-value");
@@ -112,5 +116,97 @@ printf '%s' "$WITH_ENV_TEST_SECRET" > "$1"
     expect(result.status).toBe(0);
     expect(readFileSync(capturedValuePath, "utf8")).toBe(secretValue);
     expect(existsSync(injectionMarker)).toBe(false);
+  });
+
+  it("applies workspace-local overrides after Infisical secrets", () => {
+    const { fixtureRoot, scriptPath } = createFixture(`#!/bin/sh
+cat <<'EXPORT_OUTPUT'
+${JSON.stringify([
+  { key: "WITH_ENV_TEST_VALUE", value: "infisical" },
+  { key: "SENTRY_ENVIRONMENT", value: "production" },
+])}
+EXPORT_OUTPUT
+`);
+    writeFileSync(
+      join(fixtureRoot, ".env.local"),
+      "WITH_ENV_TEST_VALUE=workspace-local\nSENTRY_ENVIRONMENT=development\n",
+    );
+    const capturedValuePath = join(fixtureRoot, "captured-value");
+    const wrappedCommand = join(fixtureRoot, "bin", "wrapped-command");
+    writeExecutable(
+      wrappedCommand,
+      `#!/bin/sh
+printf '%s\n%s' "$WITH_ENV_TEST_VALUE" "$SENTRY_ENVIRONMENT" > "$1"
+`,
+    );
+
+    const result = runWithEnv(scriptPath, fixtureRoot, [wrappedCommand, capturedValuePath]);
+
+    expect(result.status).toBe(0);
+    expect(readFileSync(capturedValuePath, "utf8")).toBe("workspace-local\ndevelopment");
+  });
+
+  it("defaults local Sentry events to development instead of the Infisical environment", () => {
+    const { fixtureRoot, scriptPath } = createFixture(`#!/bin/sh
+cat <<'EXPORT_OUTPUT'
+${JSON.stringify([{ key: "SENTRY_ENVIRONMENT", value: "production" }])}
+EXPORT_OUTPUT
+`);
+    const capturedValuePath = join(fixtureRoot, "captured-value");
+    const wrappedCommand = join(fixtureRoot, "bin", "wrapped-command");
+    writeExecutable(
+      wrappedCommand,
+      `#!/bin/sh
+printf '%s' "$SENTRY_ENVIRONMENT" > "$1"
+`,
+    );
+
+    const result = runWithEnv(scriptPath, fixtureRoot, [wrappedCommand, capturedValuePath], {
+      SENTRY_ENVIRONMENT: undefined,
+    });
+
+    expect(result.status).toBe(0);
+    expect(readFileSync(capturedValuePath, "utf8")).toBe("development");
+  });
+
+  it("preserves an explicit caller Sentry environment", () => {
+    const { fixtureRoot, scriptPath } = createFixture(`#!/bin/sh
+cat <<'EXPORT_OUTPUT'
+${JSON.stringify([{ key: "SENTRY_ENVIRONMENT", value: "production" }])}
+EXPORT_OUTPUT
+`);
+    const capturedValuePath = join(fixtureRoot, "captured-value");
+    const wrappedCommand = join(fixtureRoot, "bin", "wrapped-command");
+    writeExecutable(
+      wrappedCommand,
+      `#!/bin/sh
+printf '%s' "$SENTRY_ENVIRONMENT" > "$1"
+`,
+    );
+
+    const result = runWithEnv(scriptPath, fixtureRoot, [wrappedCommand, capturedValuePath], {
+      SENTRY_ENVIRONMENT: "staging",
+    });
+
+    expect(result.status).toBe(0);
+    expect(readFileSync(capturedValuePath, "utf8")).toBe("staging");
+  });
+
+  it("propagates a wrapped command termination as a shell-compatible exit status", () => {
+    const { fixtureRoot, scriptPath } = createFixture(`#!/bin/sh
+printf '[]'
+`);
+    const wrappedCommand = join(fixtureRoot, "bin", "wrapped-command");
+    writeExecutable(
+      wrappedCommand,
+      `#!/bin/sh
+kill -TERM $$
+`,
+    );
+
+    const result = runWithEnv(scriptPath, fixtureRoot, [wrappedCommand]);
+
+    expect(result.status).toBe(143);
+    expect(result.signal).toBeNull();
   });
 });

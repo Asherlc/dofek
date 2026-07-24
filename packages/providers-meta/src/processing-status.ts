@@ -8,25 +8,18 @@ export type ProcessingDisplayStatus =
   | "failed"
   | "cancelled";
 
-const stageLabels = {
-  ingest: "Receiving data",
-  canonical_commit: "Saving data",
-  cdc: "Preparing data",
-  analytics: "Updating insights",
-  cache_refresh: "Refreshing screens",
-} as const;
-
-export type ProcessingDisplayStage = keyof typeof stageLabels;
-
-export function processingStageLabel(stage: ProcessingDisplayStage): string {
-  return stageLabels[stage];
-}
+export type ProcessingDisplayStage =
+  | "ingest"
+  | "canonical_commit"
+  | "cdc"
+  | "analytics"
+  | "cache_refresh";
 
 export function processingHeading(status: ProcessingDisplayStatus): string {
   switch (status) {
     case "failed":
     case "blocked":
-      return "Processing needs attention";
+      return "Your data update didn’t finish";
     case "delayed":
       return "Processing is taking longer than expected";
     case "active":

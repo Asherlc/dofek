@@ -1061,7 +1061,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    expect(screen.getByText("Processing needs attention")).toBeTruthy();
+    expect(screen.getByText("Your data update didn’t finish")).toBeTruthy();
   });
 
   it("shows an explicit error when providers fail to load", async () => {

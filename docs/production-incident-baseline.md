@@ -15618,3 +15618,137 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Keep dbt tooling on Python 3.13 until the
   complete pinned dbt stack installs and starts successfully on Alpine with
   Python 3.14.
+
+## 2026-07-23 — Local PeerDB Authentication Failure Was Tagged as Production
+
+- **Status:** Fixed and validated locally; production was unaffected.
+- **Symptoms:** [Sentry issue DOFEK-SERVER-50](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-50)
+  reported `Password authentication failed for user "peerdb"` at
+  `2026-07-23T23:06:37.629Z` with the `production` environment tag.
+- **User impact:** None. The sole event came from
+  `Ashers-MacBook-Pro.local` in the `majuro` Conductor workspace, and Sentry
+  reported zero affected users.
+- **Evidence:** The local PeerDB proxy recorded the matching login attempt at
+  `23:06:37.611Z` from the Docker host gateway. An authentication probe using
+  the workspace `.env.local` `POSTGRES_PASSWORD` succeeded, while the same
+  probe using the credential exported by the former `scripts/with-env.sh`
+  failed with the exact Sentry error. Axiom contained no matching authentication
+  failure in `dofek-logs` from `23:00Z` through `23:15Z`; the five production
+  error logs in that window were unrelated BullMQ stalled-job events.
+- **Root cause:** `pnpm compose:up` writes the local Compose credential to
+  `.env.local` and starts PeerDB with it, but `pnpm clickhouse-cdc` ran through
+  the former `scripts/with-env.sh`, which loaded `.env.local` and then
+  overwrote its values with the Infisical production export.
+  `buildRuntimeConfig()` uses that overwritten `POSTGRES_PASSWORD` to
+  authenticate to the local PeerDB proxy. The CDC script also initializes Sentry
+  without an explicit local environment, so the handled local failure was
+  reported under `production`.
+- **Fix / mitigation:** Replaced the shell wrapper with `scripts/with-env.ts`,
+  which parses Infisical's supported JSON export without shell evaluation and
+  applies `.env.local` after Infisical so workspace-local credentials have
+  highest precedence. Locally wrapped commands now set
+  `SENTRY_ENVIRONMENT=development` unless `.env.local` explicitly selects a
+  different environment. Updated every command and documentation reference to
+  the TypeScript wrapper.
+- **Validation:** The new regression test first failed with Infisical's
+  credential and `production` environment winning, then passed after the fix
+  with the workspace-local credential and `development` environment winning.
+  The complete focused wrapper suite passes all four tests. A real
+  `pnpm compose:up` generated this workspace's `.env.local`, after which the
+  actual wrapper verified that `POSTGRES_PASSWORD` matched the password in
+  `DATABASE_URL` and that Sentry selected `development`.
+- **Remaining risk / follow-up:** The exact second-workspace PeerDB probe could
+  not run concurrently because the existing `majuro` workspace already owns
+  fixed host port `9900`; the isolated executable regression test covers the
+  same credential-precedence mechanism without disturbing that workspace.
+
+## 2026-07-23 — Local PeerDB Temporal Initializer Silently Skipped MirrorName
+
+- **Status:** Fixed and validated locally; production was not affected.
+- **Symptoms:** Running ClickHouse CDC setup from a Conductor workspace raised
+  [Sentry issue DOFEK-SERVER-51](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-51):
+  PeerDB could not start a workflow because Temporal's `default` namespace had
+  no `MirrorName` search-attribute mapping.
+- **User impact:** No users were affected. Sentry recorded one handled event
+  from a local macOS host, despite the process carrying an `environment:
+  production` tag.
+- **Evidence:** The exact failing application step was the PeerDB
+  `CREATE MIRROR` statement submitted by `setupClickHouseCdc()`. The first
+  fatal initializer line was `/bin/sh: tctl: not found` from
+  `majuro-peerdb-temporal-init-1`. That container nevertheless exited with
+  status 0. A clean isolated Compose reproduction produced the same line, and
+  `temporal operator search-attribute list` confirmed that `MirrorName` was
+  absent. Temporal 1.31 admin-tools releases include the newer Temporal CLI
+  ([Temporal v1.31.1 release](https://github.com/temporalio/temporal/releases/tag/v1.31.1)).
+- **Root cause:** `peerdb-temporal-init` invoked the unavailable legacy `tctl`
+  executable and appended `|| true`, masking the command failure and allowing
+  PeerDB services to start without their required search attribute.
+- **Fix / mitigation:** Replaced `tctl` with
+  `temporal operator search-attribute`, made registration explicitly
+  idempotent by checking the namespace first, removed unconditional error
+  suppression, and verified `MirrorName` after creation. PeerDB's flow API
+  remains gated on successful completion of the initializer. The Temporal
+  service healthcheck also uses `temporal operator cluster health` instead of
+  the deprecated `tctl` binary, as implemented in the
+  [local Compose definition](../docker-compose.peerdb.yml#L33-L36).
+- **Validation:** Before the fix, the live regression reproduced
+  `tctl: not found` and failed because `MirrorName` was absent. After the fix,
+  the same regression created and found `MirrorName` with its canonical `Text`
+  type; a second run passed without recreating it. Docker Compose configuration
+  validation passed, and `peerdb-temporal-init` exited 0 before
+  `peerdb-flow-api` became healthy. With `tctl` removed from a live
+  `temporalio/auto-setup:1.29` container, the replacement healthcheck returned
+  `SERVING` and the service remained healthy across subsequent probes.
+- **Remaining risk / follow-up:** The local process was tagged as production
+  because it ran with production environment configuration. Keep host and
+  deployment context visible in Sentry triage so local operational failures are
+  not mistaken for production outages.
+
+## 2026-07-23 — Local Conductor Errors Were Tagged as Production in Sentry
+
+- **Status:** Production unaffected; recurrence fix validated locally and
+  deployment pending.
+- **Symptoms:** Sentry sent an alert for
+  [DOFEK-SERVER-53](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-53),
+  reporting that `analytics.daily_body_measurement` did not exist. Three nearby
+  new issues reported local PeerDB authentication, Temporal search-attribute,
+  and missing-workflow failures.
+- **User impact:** No production user impact. Sentry reported four occurrences
+  for the linked issue and zero affected users.
+- **Evidence:** All four infrastructure-related Sentry issues identified
+  `Ashers-MacBook-Pro.local`, macOS, and source paths under the `majuro`
+  Conductor workspace while carrying the `production` environment tag. The
+  linked issue occurred from `2026-07-23T23:43:28.999Z` through
+  `23:43:36.120Z`. Axiom contained neither its trace ID nor a matching
+  `daily_body_measurement` error in production logs
+  ([trace query](https://app.axiom.co/asherlc-9e63/query?initForm=%7B%0A%20%20%22apl%22%3A%20%22%5B%27dofek-logs%27%5D%20%7C%20where%20trace_id%20%3D%3D%20%275ef34b6f38cb42509c51f018d09f1b8a%27%20%7C%20project%20_time%2C%20%5B%27resource.host.name%27%5D%2C%20%5B%27service.name%27%5D%2C%20severity%2C%20body%2C%20%5B%27attributes.exception.message%27%5D%2C%20trace_id%20%7C%20take%2020%22%2C%0A%20%20%22queryOptions%22%3A%20%7B%0A%20%20%20%20%22quickRange%22%3A%20%221h%22%0A%20%20%7D%0A%7D),
+  [message query](https://app.axiom.co/asherlc-9e63/query?initForm=%7B%0A%20%20%22apl%22%3A%20%22%5B%27dofek-logs%27%5D%20%7C%20where%20body%20has_cs%20%27daily_body_measurement%27%20or%20%5B%27attributes.exception.message%27%5D%20has_cs%20%27daily_body_measurement%27%20%7C%20project%20_time%2C%20%5B%27resource.host.name%27%5D%2C%20%5B%27service.name%27%5D%2C%20severity%2C%20body%2C%20%5B%27attributes.exception.message%27%5D%2C%20trace_id%20%7C%20take%2020%22%2C%0A%20%20%22queryOptions%22%3A%20%7B%0A%20%20%20%20%22quickRange%22%3A%20%221h%22%0A%20%20%7D%0A%7D)).
+  A read-only production ClickHouse check returned 2,527 rows from
+  `analytics.daily_body_measurement FINAL`, latest at
+  `2026-07-23 13:33:35 UTC`; both that table and
+  `analytics.v_body_measurement` existed. The public health endpoint returned
+  HTTP 200 in 95 ms.
+- **Root cause:** A local `majuro` process used the production Sentry DSN and
+  environment classification. Its local ClickHouse schema had not built the
+  `daily_body_measurement` dbt model required by the body-query path introduced
+  in [pull request 1527](https://github.com/Asherlc/dofek/pull/1527). Sentry
+  initialization supplies the DSN but no explicit deployment environment or
+  local-workspace tag, so these local failures were grouped with production.
+- **Fix / mitigation:** No production mitigation was required. Sentry
+  initialization is now centralized and requires the existing
+  `DEPLOY_ENVIRONMENT` to be explicitly `prod` or `production`; the production
+  stack passes that value to `web` and `worker`. Missing or local environment
+  values leave Sentry uninitialized even when a process inherits the production
+  DSN. Production events explicitly use Sentry's `production` environment.
+- **Validation:** The new local-with-DSN and repeated-initialization regression
+  tests failed before their fixes because `Sentry.init` was called for local
+  execution and more than once in production, then passed afterward. Missing
+  deployment environment coverage also confirms Sentry remains disabled. The
+  shared initializer, server delegation, and complete worker suites pass all 64
+  focused tests. Root and server TypeScript checks, the complete Docker-free
+  unit tier, full lint, Docker Compose configuration validation, and
+  `git diff --check` pass.
+- **Remaining risk / follow-up:** Deploy the recurrence fix, then intentionally
+  trigger or capture a harmless local exception and verify no Sentry event is
+  created. Local body analytics still requires the dbt analytics selection to
+  be built before use.

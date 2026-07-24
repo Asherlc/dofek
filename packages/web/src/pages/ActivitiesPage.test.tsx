@@ -235,7 +235,7 @@ describe("ActivitiesPage", () => {
     render(<ActivitiesPage />);
 
     expect(processingStatusInput).toEqual({ datasets: ["activity"] });
-    expect(screen.getByText("Processing needs attention")).toBeDefined();
+    expect(screen.getByText("Your data update didn’t finish")).toBeDefined();
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
