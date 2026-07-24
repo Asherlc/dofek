@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { constants } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
@@ -90,6 +91,6 @@ if (commandResult.error) {
   process.exit(1);
 }
 if (commandResult.signal) {
-  process.kill(process.pid, commandResult.signal);
+  process.exit(128 + constants.signals[commandResult.signal]);
 }
 process.exit(commandResult.status ?? 1);

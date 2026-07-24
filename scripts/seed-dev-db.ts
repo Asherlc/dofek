@@ -24,11 +24,12 @@ import { runMigrations } from "../src/db/migrate.ts";
 import { createTaggedQueryClient } from "../src/db/tagged-query-client.ts";
 import { seedBodyHealth } from "./seed/body-health.ts";
 import { clearSeedData, seedCore } from "./seed/core.ts";
-import { SeedRandom, USER_ID } from "./seed/helpers.ts";
+import { SeedRandom } from "./seed/helpers.ts";
 import { seedNutrition } from "./seed/nutrition.ts";
 import { seedRecovery } from "./seed/recovery.ts";
 import { seedReviewSurfaces } from "./seed/review-surfaces.ts";
 import { seedTraining } from "./seed/training.ts";
+import { verifySeed } from "./seed/verification.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -37,10 +38,6 @@ if (!databaseUrl) {
 }
 
 const sql = createTaggedQueryClient(databaseUrl);
-
-interface CountRow {
-  count: number;
-}
 
 // ---------------------------------------------------------------------------
 // Step 1: Apply all migrations
@@ -66,78 +63,6 @@ async function seedData() {
   await seedReviewSurfaces(sql, random);
 }
 
-async function verifySeed() {
-  const minimums = [
-    [
-      "providers",
-      5,
-      `SELECT COUNT(*)::int AS count FROM fitness.provider WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "daily metrics",
-      170,
-      `SELECT COUNT(*)::int AS count FROM fitness.daily_metrics WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "sleep sessions",
-      100,
-      `SELECT COUNT(*)::int AS count FROM fitness.sleep_session WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "activities",
-      90,
-      `SELECT COUNT(*)::int AS count FROM fitness.activity WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "nutrition days",
-      85,
-      `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "food entries",
-      20,
-      `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "lab results",
-      8,
-      `SELECT COUNT(*)::int AS count FROM fitness.lab_result WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "journal entries",
-      30,
-      `SELECT COUNT(*)::int AS count FROM fitness.journal_entry WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "breathwork sessions",
-      10,
-      `SELECT COUNT(*)::int AS count FROM fitness.breathwork_session WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "cycle periods",
-      4,
-      `SELECT COUNT(*)::int AS count FROM fitness.menstrual_period WHERE user_id = '${USER_ID}'`,
-    ],
-  ] as const;
-
-  console.log("\nVerification:");
-  for (const [label, minimum, query] of minimums) {
-    const count = await readCount(query);
-    if (count < minimum) {
-      throw new Error(
-        `Seed verification failed for ${label}: expected at least ${minimum}, got ${count}`,
-      );
-    }
-    console.log(`  ${label}: ${count}`);
-  }
-}
-
-async function readCount(query: string): Promise<number> {
-  const [row] = await sql.unsafe<CountRow[]>(query);
-  if (!row) throw new Error(`Count query returned no rows: ${query}`);
-  return row.count;
-}
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -158,7 +83,7 @@ async function main() {
     await applyMigrations();
   }
   await seedData();
-  await verifySeed();
+  await verifySeed(sql);
   console.log(`\nDone. Start the server with:`);
   console.log(`  DATABASE_URL="${databaseUrl}" cd packages/server && pnpm dev`);
   console.log(`\nBrowser cookie for auth: session=dev-session`);
