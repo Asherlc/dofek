@@ -45,7 +45,10 @@ describe("useHaptic", () => {
   });
 
   it("models unavailable optional haptics without reporting an operational defect", async () => {
-    mockSelection.mockRejectedValue(new Error("Haptics unavailable"));
+    const unavailableError = Object.assign(new Error("Haptics unavailable"), {
+      code: "ERR_UNAVAILABLE",
+    });
+    mockSelection.mockRejectedValue(unavailableError);
     const { useHaptic } = await import("./useHaptic");
     const { result } = renderHook(() => useHaptic());
 
@@ -55,5 +58,20 @@ describe("useHaptic", () => {
       expect(mockSelection).toHaveBeenCalled();
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("reports unexpected haptic failures", async () => {
+    const hapticError = new Error("Native bridge failed");
+    mockSelection.mockRejectedValue(hapticError);
+    const { useHaptic } = await import("./useHaptic");
+    const { result } = renderHook(() => useHaptic());
+
+    result.current.selection();
+
+    await vi.waitFor(() => {
+      expect(mockCaptureException).toHaveBeenCalledWith(hapticError, {
+        source: "optional-haptic-feedback",
+      });
+    });
   });
 });

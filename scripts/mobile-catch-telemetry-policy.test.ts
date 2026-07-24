@@ -44,6 +44,32 @@ describe("findHandledMobileErrorViolations", () => {
         });
       `,
     ],
+    [
+      "hides a throw in an unreachable branch",
+      `
+        try {
+          await sync();
+        } catch (error) {
+          if (false) {
+            throw error;
+          }
+          console.error(error);
+        }
+      `,
+    ],
+    [
+      "hides captureException in an unreachable nested function",
+      `
+        try {
+          await sync();
+        } catch (error) {
+          function reportLater() {
+            captureException(error);
+          }
+          console.error(error);
+        }
+      `,
+    ],
   ])("rejects a handler that %s", (_description, sourceText) => {
     expect(findHandledMobileErrorViolations("fixture.ts", sourceText)).toHaveLength(1);
   });
@@ -84,21 +110,15 @@ describe("findHandledMobileErrorViolations", () => {
       `,
     ],
     [
-      "returns the explicit optional-haptic unavailable result",
+      "rethrows errors outside an explicit expected-error classifier",
       `
-        type OptionalHapticResult =
-          | { status: "performed" }
-          | { status: "unavailable"; cause: unknown };
-
-        async function performOptionalHaptic(
-          operation: () => Promise<void>,
-        ): Promise<OptionalHapticResult> {
-          try {
-            await operation();
-            return { status: "performed" };
-          } catch (cause: unknown) {
-            return { status: "unavailable", cause };
+        try {
+          return await readHealthData();
+        } catch (error) {
+          if (!isAuthorizationNotDetermined(error)) {
+            throw error;
           }
+          return [];
         }
       `,
     ],
@@ -114,6 +134,23 @@ describe("findHandledMobileErrorViolations", () => {
         } catch (error) {
           // Optional haptic is unavailable.
           return { status: "ignored", cause: error };
+        }
+      }
+    `;
+
+    expect(findHandledMobileErrorViolations("fixture.ts", sourceText)).toHaveLength(1);
+  });
+
+  it("does not accept a same-named optional haptic result alias as an exemption", () => {
+    const sourceText = `
+      type OptionalHapticResult = { status: "ignored"; cause: unknown };
+
+      async function performOptionalHaptic(): Promise<OptionalHapticResult> {
+        try {
+          await vibrate();
+          return { status: "ignored", cause: null };
+        } catch (cause) {
+          return { status: "unavailable", cause };
         }
       }
     `;

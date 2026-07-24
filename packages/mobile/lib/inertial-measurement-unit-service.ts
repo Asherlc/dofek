@@ -114,14 +114,22 @@ export function createInertialMeasurementUnitService(
 
       // Connect to WHOOP strap and start IMU streaming (best-effort)
       if (whoopBle?.isAvailable()) {
+        let connected = false;
         try {
-          const connected = await whoopBle.findAndConnect();
-          if (connected) {
-            await whoopBle.startStreaming();
-          }
+          connected = await whoopBle.findAndConnect();
         } catch (error: unknown) {
           captureException(error, { source: "activity-recording-whoop-connect" });
           // Best-effort — WHOOP may not be nearby or BLE unavailable
+        }
+        if (connected) {
+          try {
+            await whoopBle.startStreaming();
+          } catch (error: unknown) {
+            captureException(error, {
+              source: "activity-recording-whoop-start-streaming",
+            });
+            // Best-effort — WHOOP streaming may be unavailable
+          }
         }
       }
     },

@@ -111,17 +111,24 @@ describe("ios telemetry", () => {
     expect(mocks.mockCaptureMessage).not.toHaveBeenCalled();
   });
 
-  it("delegates captureException to Sentry with extra context", async () => {
+  it("delegates captureException to Sentry with a searchable source tag and extra context", async () => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
 
     const mod = await import("./telemetry");
     mod.initTelemetry();
 
     const error = new Error("test error");
-    mod.captureException(error, { "error.source": "react-native.global" });
+    mod.captureException(error, {
+      source: "react-native-global",
+      operation: "global-handler",
+    });
 
     expect(mocks.mockCaptureException).toHaveBeenCalledWith(error, {
-      extra: { "error.source": "react-native.global" },
+      tags: { source: "react-native-global" },
+      extra: {
+        source: "react-native-global",
+        operation: "global-handler",
+      },
     });
   });
 

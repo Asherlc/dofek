@@ -50,6 +50,7 @@ describe("InertialMeasurementUnitService", () => {
   let service: InertialMeasurementUnitService;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     deps = makeMockDeps();
     service = createInertialMeasurementUnitService(deps);
   });
@@ -240,9 +241,25 @@ describe("InertialMeasurementUnitService", () => {
     it("does not throw when WHOOP connection fails", async () => {
       const whoopBle = deps.whoopBle;
       if (!whoopBle) throw new Error("whoopBle not initialized");
-      vi.mocked(whoopBle.findAndConnect).mockRejectedValue(new Error("BLE error"));
+      const connectionError = new Error("BLE error");
+      vi.mocked(whoopBle.findAndConnect).mockRejectedValue(connectionError);
 
       await expect(service.ensureRecording()).resolves.toBeUndefined();
+      expect(captureException).toHaveBeenCalledWith(connectionError, {
+        source: "activity-recording-whoop-connect",
+      });
+    });
+
+    it("reports WHOOP streaming-start failures with a distinct source", async () => {
+      const whoopBle = deps.whoopBle;
+      if (!whoopBle) throw new Error("whoopBle not initialized");
+      const streamingError = new Error("Streaming failed");
+      vi.mocked(whoopBle.startStreaming).mockRejectedValue(streamingError);
+
+      await expect(service.ensureRecording()).resolves.toBeUndefined();
+      expect(captureException).toHaveBeenCalledWith(streamingError, {
+        source: "activity-recording-whoop-start-streaming",
+      });
     });
 
     it("does not start streaming when connection fails", async () => {

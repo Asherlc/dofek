@@ -136,7 +136,10 @@ export function GarminAuthModal({
       await signInMutation.mutateAsync({ username, password });
       onSuccess();
     } catch (error_: unknown) {
-      captureException(error_, { source: "provider-garmin-auth-sign-in" });
+      captureException(error_, {
+        source: "provider-garmin-auth-sign-in",
+        providerId: "garmin",
+      });
       setError(error_ instanceof Error ? error_.message : "Sign in failed");
     } finally {
       setLoading(false);
@@ -254,7 +257,10 @@ export function WhoopAuthModal({
         onSuccess();
       }
     } catch (error_: unknown) {
-      captureException(error_, { source: "provider-whoop-auth-sign-in" });
+      captureException(error_, {
+        source: "provider-whoop-auth-sign-in",
+        providerId: "whoop",
+      });
       setError(error_ instanceof Error ? error_.message : "Sign in failed");
     } finally {
       setLoading(false);
@@ -272,7 +278,10 @@ export function WhoopAuthModal({
         onSuccess();
       }
     } catch (error_: unknown) {
-      captureException(error_, { source: "provider-whoop-auth-verify" });
+      captureException(error_, {
+        source: "provider-whoop-auth-verify",
+        providerId: "whoop",
+      });
       setError(error_ instanceof Error ? error_.message : "Verification failed");
     } finally {
       setLoading(false);

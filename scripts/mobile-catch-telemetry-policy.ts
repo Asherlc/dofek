@@ -10,101 +10,96 @@ export interface HandledMobileErrorViolation {
   line: number;
 }
 
-function containsCanonicalCaptureOrThrow(node: ts.Node): boolean {
-  let handled = false;
-
-  function visit(currentNode: ts.Node): void {
-    if (handled) {
-      return;
-    }
-    if (ts.isThrowStatement(currentNode)) {
-      handled = true;
-      return;
-    }
-    if (
-      ts.isCallExpression(currentNode) &&
-      ts.isIdentifier(currentNode.expression) &&
-      currentNode.expression.text === "captureException"
-    ) {
-      handled = true;
-      return;
-    }
-    ts.forEachChild(currentNode, visit);
-  }
-
-  visit(node);
-  return handled;
-}
-
-function hasOptionalHapticResultReturnType(
-  catchClause: ts.CatchClause,
-  sourceFile: ts.SourceFile,
-): boolean {
-  let currentNode: ts.Node | undefined = catchClause.parent;
-  while (currentNode && !ts.isFunctionLike(currentNode)) {
-    currentNode = currentNode.parent;
-  }
-  if (!currentNode || !currentNode.type) {
-    return false;
-  }
+function isCanonicalCaptureCall(node: ts.Node): boolean {
   return (
-    currentNode.type.getText(sourceFile).replace(/\s+/g, "") === "Promise<OptionalHapticResult>"
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "captureException"
   );
 }
 
-function isExplicitOptionalHapticUnavailableResult(
-  catchClause: ts.CatchClause,
-  sourceFile: ts.SourceFile,
+function statementAlwaysHandles(
+  statement: ts.Statement,
+  caughtIdentifier: string | undefined,
 ): boolean {
-  const catchVariable = catchClause.variableDeclaration?.name;
+  if (ts.isThrowStatement(statement)) {
+    return true;
+  }
+  if (ts.isExpressionStatement(statement)) {
+    return isCanonicalCaptureCall(statement.expression);
+  }
+  if (ts.isBlock(statement)) {
+    return statementsContainReachableHandler(statement.statements, caughtIdentifier);
+  }
+  if (ts.isIfStatement(statement) && statement.elseStatement) {
+    return (
+      statementAlwaysHandles(statement.thenStatement, caughtIdentifier) &&
+      statementAlwaysHandles(statement.elseStatement, caughtIdentifier)
+    );
+  }
+  return false;
+}
+
+function isExpectedErrorGuard(
+  statement: ts.Statement,
+  caughtIdentifier: string | undefined,
+): boolean {
   if (
-    !catchVariable ||
-    !ts.isIdentifier(catchVariable) ||
-    catchClause.block.statements.length !== 1
+    !caughtIdentifier ||
+    !ts.isIfStatement(statement) ||
+    statement.elseStatement ||
+    !statementAlwaysHandles(statement.thenStatement, caughtIdentifier) ||
+    !ts.isPrefixUnaryExpression(statement.expression) ||
+    statement.expression.operator !== ts.SyntaxKind.ExclamationToken ||
+    !ts.isCallExpression(statement.expression.operand) ||
+    !ts.isIdentifier(statement.expression.operand.expression) ||
+    !statement.expression.operand.expression.text.startsWith("is")
   ) {
     return false;
   }
-  if (!hasOptionalHapticResultReturnType(catchClause, sourceFile)) {
-    return false;
-  }
+  return statement.expression.operand.arguments.some(
+    (argument) => ts.isIdentifier(argument) && argument.text === caughtIdentifier,
+  );
+}
 
-  const statement = catchClause.block.statements[0];
-  if (!statement || !ts.isReturnStatement(statement) || !statement.expression) {
-    return false;
-  }
-  if (!ts.isObjectLiteralExpression(statement.expression)) {
-    return false;
-  }
-
-  let unavailableStatus = false;
-  let originalCause = false;
-  for (const property of statement.expression.properties) {
+function statementsContainReachableHandler(
+  statements: ts.NodeArray<ts.Statement>,
+  caughtIdentifier: string | undefined,
+): boolean {
+  for (const statement of statements) {
     if (
-      ts.isPropertyAssignment(property) &&
-      property.name.getText(sourceFile) === "status" &&
-      ts.isStringLiteral(property.initializer) &&
-      property.initializer.text === "unavailable"
+      statementAlwaysHandles(statement, caughtIdentifier) ||
+      isExpectedErrorGuard(statement, caughtIdentifier)
     ) {
-      unavailableStatus = true;
+      return true;
     }
-    if (
-      ts.isShorthandPropertyAssignment(property) &&
-      property.name.text === catchVariable.text &&
-      property.name.text === "cause"
-    ) {
-      originalCause = true;
-    }
-    if (
-      ts.isPropertyAssignment(property) &&
-      property.name.getText(sourceFile) === "cause" &&
-      ts.isIdentifier(property.initializer) &&
-      property.initializer.text === catchVariable.text
-    ) {
-      originalCause = true;
+    if (ts.isReturnStatement(statement)) {
+      return false;
     }
   }
+  return false;
+}
 
-  return unavailableStatus && originalCause;
+function containsCanonicalCaptureOrThrow(node: ts.Node, caughtIdentifier?: string): boolean {
+  if (isCanonicalCaptureCall(node)) {
+    return true;
+  }
+  if (ts.isIdentifier(node) && node.text === "captureException") {
+    return true;
+  }
+  if (ts.isBlock(node)) {
+    return statementsContainReachableHandler(node.statements, caughtIdentifier);
+  }
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+    const handlerParameter = node.parameters[0]?.name;
+    const handlerIdentifier = ts.isIdentifier(handlerParameter)
+      ? handlerParameter.text
+      : caughtIdentifier;
+    return ts.isBlock(node.body)
+      ? statementsContainReachableHandler(node.body.statements, handlerIdentifier)
+      : isCanonicalCaptureCall(node.body);
+  }
+  return false;
 }
 
 function makeViolation(
@@ -137,10 +132,13 @@ export function findHandledMobileErrorViolations(
   const violations: HandledMobileErrorViolation[] = [];
 
   function visit(node: ts.Node): void {
+    const catchVariable = ts.isCatchClause(node) ? node.variableDeclaration?.name : undefined;
     if (
       ts.isCatchClause(node) &&
-      !containsCanonicalCaptureOrThrow(node.block) &&
-      !isExplicitOptionalHapticUnavailableResult(node, sourceFile)
+      !containsCanonicalCaptureOrThrow(
+        node.block,
+        catchVariable && ts.isIdentifier(catchVariable) ? catchVariable.text : undefined,
+      )
     ) {
       violations.push(makeViolation(filePath, "catch-clause", node, sourceFile));
     }
