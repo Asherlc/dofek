@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LinkedAccountsPanel } from "./LinkedAccountsPanel.tsx";
 
@@ -49,11 +49,20 @@ const linkedGoogleAccount = {
   unlinkReason: "Cannot unlink your only login method",
 };
 
+async function renderPanel() {
+  await act(async () => {
+    render(<LinkedAccountsPanel />);
+  });
+}
+
 describe("LinkedAccountsPanel", () => {
   beforeEach(() => {
     mocks.captureException.mockReset();
     mocks.fetchConfiguredProviders.mockReset();
-    mocks.fetchConfiguredProviders.mockReturnValue(new Promise(() => {}));
+    mocks.fetchConfiguredProviders.mockResolvedValue({
+      identity: ["google"],
+      data: [],
+    });
     mocks.linkedAccountsQuery.mockReset();
     mocks.linkedAccountsQuery.mockReturnValue({
       data: [linkedGoogleAccount],
@@ -69,7 +78,7 @@ describe("LinkedAccountsPanel", () => {
     });
   });
 
-  it("renders the linked-account server error instead of an empty state", () => {
+  it("renders the linked-account server error instead of an empty state", async () => {
     mocks.linkedAccountsQuery.mockReturnValue({
       data: undefined,
       error: new Error("Unable to read linked identities"),
@@ -77,13 +86,13 @@ describe("LinkedAccountsPanel", () => {
       refetch: vi.fn(),
     });
 
-    render(<LinkedAccountsPanel />);
+    await renderPanel();
 
     expect(screen.getByText("Unable to read linked identities")).toBeDefined();
     expect(screen.queryByText("No linked accounts")).toBeNull();
   });
 
-  it("retains cached linked accounts during a background failure", () => {
+  it("retains cached linked accounts during a background failure", async () => {
     mocks.linkedAccountsQuery.mockReturnValue({
       data: [linkedGoogleAccount],
       error: new Error("Linked identities refresh failed"),
@@ -91,7 +100,7 @@ describe("LinkedAccountsPanel", () => {
       refetch: vi.fn(),
     });
 
-    render(<LinkedAccountsPanel />);
+    await renderPanel();
 
     expect(screen.getByText("linked@example.com")).toBeDefined();
     expect(screen.getByText("Linked identities refresh failed")).toBeDefined();
@@ -101,7 +110,7 @@ describe("LinkedAccountsPanel", () => {
     const providerError = new Error("Failed to fetch providers: 500 Internal Server Error");
     mocks.fetchConfiguredProviders.mockRejectedValue(providerError);
 
-    render(<LinkedAccountsPanel />);
+    await renderPanel();
 
     expect(await screen.findByText(providerError.message)).toBeDefined();
     expect(screen.getByRole("button", { name: "Retry loading login methods" })).toBeDefined();
@@ -116,7 +125,7 @@ describe("LinkedAccountsPanel", () => {
       .mockRejectedValueOnce(new Error("Provider lookup failed"))
       .mockResolvedValueOnce({ identity: ["google", "apple"], data: [] });
 
-    render(<LinkedAccountsPanel />);
+    await renderPanel();
 
     fireEvent.click(await screen.findByRole("button", { name: "Retry loading login methods" }));
 
