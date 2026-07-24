@@ -153,8 +153,8 @@ return 0
 
 const COMPLETE_CLAIM_SCRIPT = `
 if redis.call("get", KEYS[1]) == ARGV[1] then
-  redis.call("del", KEYS[1])
-  return redis.call("del", KEYS[2])
+  redis.call("del", KEYS[2])
+  return redis.call("del", KEYS[1])
 end
 return 0
 `;

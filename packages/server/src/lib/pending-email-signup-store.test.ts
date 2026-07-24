@@ -32,8 +32,8 @@ return 0
 
 const COMPLETE_CLAIM_SCRIPT = `
 if redis.call("get", KEYS[1]) == ARGV[1] then
-  redis.call("del", KEYS[1])
-  return redis.call("del", KEYS[2])
+  redis.call("del", KEYS[2])
+  return redis.call("del", KEYS[1])
 end
 return 0
 `;
@@ -135,13 +135,12 @@ class FakeRedisCommandClient {
       entry.expiresAt = Date.now() + ttl;
       return 1;
     }
-    this.#delete([claimKey]);
     if (keyCount === 2) {
       const entryKey = keys[1];
       if (!entryKey) throw new Error("Missing entry key");
-      return this.#delete([entryKey]);
+      this.#delete([entryKey]);
     }
-    return 1;
+    return this.#delete([claimKey]);
   }
 }
 
@@ -182,6 +181,26 @@ describe("RedisPendingEmailSignupStore", () => {
     await completionStore.complete(claim);
     await expect(callbackStore.get(token)).resolves.toBeNull();
     await expect(callbackStore.claim(token)).resolves.toBeNull();
+  });
+
+  it("completes an owned claim after the pending entry expires", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeRedisCommandClient();
+      const store = new RedisPendingEmailSignupStore(async () => client);
+      const token = await store.issue(sampleEntry);
+
+      vi.advanceTimersByTime(599_999);
+      const claim = await store.claim(token);
+      if (!claim) throw new Error("Expected completion claim");
+      vi.advanceTimersByTime(2);
+      await expect(store.get(token)).resolves.toBeNull();
+
+      await expect(store.complete(claim)).resolves.toBeUndefined();
+      await expect(store.claim(token)).resolves.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("stores entries with a ten-minute TTL", async () => {
