@@ -71,6 +71,7 @@ describe("AppHeader", () => {
 
     expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Nutrition").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Reports").length).toBeGreaterThan(0);
     expect(screen.getByText("Ada Lovelace")).toBeTruthy();
   });
 

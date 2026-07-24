@@ -1,6 +1,4 @@
-import { randomBytes } from "node:crypto";
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
-import type { TokenSet } from "dofek/auth/oauth";
 import { queryCache } from "dofek/lib/cache";
 import { escapeAttribute, escapeText } from "entities";
 import rateLimit from "express-rate-limit";
@@ -21,6 +19,10 @@ import {
   type OAuth1SecretStore,
   type OAuthStateStore,
 } from "../../lib/oauth-state-store.ts";
+import {
+  getPendingEmailSignupStore,
+  type PendingEmailSignupStore,
+} from "../../lib/pending-email-signup-store.ts";
 import { logger } from "../../logger.ts";
 
 function escapeHtml(str: string): string {
@@ -59,6 +61,7 @@ export function oauthSuccessHtml(
 let oauthStateStore: OAuthStateStore;
 let oauth1SecretStore: OAuth1SecretStore;
 let mobileAuthExchangeStore: MobileAuthExchangeStore;
+let pendingEmailSignupStore: PendingEmailSignupStore;
 
 /**
  * Server-side state store for identity provider OAuth flows.
@@ -68,22 +71,6 @@ let mobileAuthExchangeStore: MobileAuthExchangeStore;
  */
 let identityFlowStore: IdentityFlowStore;
 
-export interface PendingEmailSignupEntry {
-  providerId: string;
-  providerName: string;
-  apiBaseUrl?: string;
-  identity: {
-    providerAccountId: string;
-    email: null;
-    name: string | null;
-  };
-  tokens: TokenSet;
-  mobileScheme?: string;
-  returnTo?: string;
-}
-
-const pendingEmailSignupMap = new Map<string, PendingEmailSignupEntry>();
-
 // Module-level db reference, set during router creation
 let db: import("dofek/db").Database;
 
@@ -92,6 +79,7 @@ export function initAuthStores(database: import("dofek/db").Database): void {
   identityFlowStore = getIdentityFlowStore();
   oauthStateStore = getOAuthStateStore();
   oauth1SecretStore = getOAuth1SecretStore();
+  pendingEmailSignupStore = getPendingEmailSignupStore();
   mobileAuthExchangeStore =
     process.env.NODE_ENV === "test"
       ? new InMemoryMobileAuthExchangeStore()
@@ -118,23 +106,12 @@ export function getMobileAuthExchangeStoreRef(): MobileAuthExchangeStore {
   return mobileAuthExchangeStore;
 }
 
+export function getPendingEmailSignupStoreRef(): PendingEmailSignupStore {
+  return pendingEmailSignupStore;
+}
+
 export async function storeIdentityFlow(state: string, entry: IdentityFlowEntry): Promise<void> {
   await identityFlowStore.save(state, entry);
-}
-
-export function storePendingEmailSignup(entry: PendingEmailSignupEntry): string {
-  const token = randomBytes(16).toString("hex");
-  pendingEmailSignupMap.set(token, entry);
-  setTimeout(() => pendingEmailSignupMap.delete(token), 10 * 60 * 1000);
-  return token;
-}
-
-export function getPendingEmailSignup(token: string): PendingEmailSignupEntry | undefined {
-  return pendingEmailSignupMap.get(token);
-}
-
-export function deletePendingEmailSignup(token: string): void {
-  pendingEmailSignupMap.delete(token);
 }
 
 export function sanitizeReturnTo(returnTo: string | undefined): string | undefined {
@@ -181,7 +158,7 @@ export async function persistProviderConnection(params: {
   provider: import("dofek/providers/types").Provider;
   providerName: string;
   apiBaseUrl?: string;
-  tokens: TokenSet;
+  tokens: import("dofek/auth/oauth").TokenSet;
   userId: string;
 }): Promise<void> {
   const { ensureProvider, saveTokens } = await import("dofek/db/tokens");

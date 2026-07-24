@@ -65,10 +65,7 @@ export default defineConfig({
     __COMMIT_HASH__: JSON.stringify(commitHash),
   },
   plugins: [
-    tanstackRouter({
-      routesDirectory: "./routes",
-      generatedRouteTree: "./routeTree.gen.ts",
-    }),
+    tanstackRouter(),
     react(),
     tailwindcss(),
     sentryVitePlugin({

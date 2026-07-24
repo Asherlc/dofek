@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WeeklyReportRouteImport } from './routes/weekly-report'
 import { Route as TrainingRouteImport } from './routes/training'
 import { Route as TrackingRouteImport } from './routes/tracking'
 import { Route as TermsRouteImport } from './routes/terms'
@@ -53,6 +54,11 @@ import { Route as BodyHeartRateRouteImport } from './routes/body/heart-rate'
 import { Route as ActivityIdRouteImport } from './routes/activity.$id'
 import { Route as AdminUsersUserIdRouteImport } from './routes/admin/users/$userId'
 
+const WeeklyReportRoute = WeeklyReportRouteImport.update({
+  id: '/weekly-report',
+  path: '/weekly-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TrainingRoute = TrainingRouteImport.update({
   id: '/training',
   path: '/training',
@@ -299,6 +305,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
+  '/weekly-report': typeof WeeklyReportRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
@@ -339,6 +346,7 @@ export interface FileRoutesByTo {
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
+  '/weekly-report': typeof WeeklyReportRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
@@ -385,6 +393,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
+  '/weekly-report': typeof WeeklyReportRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
@@ -432,6 +441,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/tracking'
     | '/training'
+    | '/weekly-report'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/nutrition/analytics'
@@ -472,6 +482,7 @@ export interface FileRouteTypes {
     | '/support'
     | '/terms'
     | '/tracking'
+    | '/weekly-report'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/nutrition/analytics'
@@ -517,6 +528,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/tracking'
     | '/training'
+    | '/weekly-report'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/nutrition/analytics'
@@ -563,11 +575,19 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   TrackingRoute: typeof TrackingRoute
   TrainingRoute: typeof TrainingRouteWithChildren
+  WeeklyReportRoute: typeof WeeklyReportRoute
   ActivityIdRoute: typeof ActivityIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/weekly-report': {
+      id: '/weekly-report'
+      path: '/weekly-report'
+      fullPath: '/weekly-report'
+      preLoaderRoute: typeof WeeklyReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/training': {
       id: '/training'
       path: '/training'
@@ -978,6 +998,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   TrackingRoute: TrackingRoute,
   TrainingRoute: TrainingRouteWithChildren,
+  WeeklyReportRoute: WeeklyReportRoute,
   ActivityIdRoute: ActivityIdRoute,
 }
 export const routeTree = rootRouteImport

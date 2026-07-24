@@ -162,8 +162,8 @@ export class HealthReportRepository {
 
   /** Generate a new shareable health report. */
   async generate(
-    reportType: string,
-    reportData: Record<string, unknown>,
+    reportType: "weekly" | "monthly",
+    reportData: object,
     expiresInDays: number | null,
   ): Promise<SharedReport | null> {
     const token = generateShareToken();

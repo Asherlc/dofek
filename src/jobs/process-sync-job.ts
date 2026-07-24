@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import * as Sentry from "@sentry/node";
 import type { Database, SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
@@ -168,6 +171,26 @@ function firstAuthFailureReason(errors: SyncError[]): ProviderAuthFailureReason 
   return errors
     .map((syncError) => authFailureReasonFromError(syncError.cause))
     .find((authFailureReason) => authFailureReason !== undefined);
+}
+
+function isProviderServiceUnavailableError(error: unknown): boolean {
+  const visitedErrors = new Set<Error>();
+  let currentError = error;
+
+  while (currentError instanceof Error && !visitedErrors.has(currentError)) {
+    if (currentError instanceof ProviderServiceUnavailableError) {
+      return true;
+    }
+
+    visitedErrors.add(currentError);
+    currentError = "cause" in currentError ? currentError.cause : undefined;
+  }
+
+  return false;
+}
+
+function shouldReportProviderError(error: unknown): boolean {
+  return !isProviderServiceUnavailableError(error) && !authFailureReasonFromError(error);
 }
 
 async function scheduleRateLimitRetry(
@@ -398,8 +421,9 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       if (hasErrors) {
         for (const err of result.errors) {
           logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
-          if (!authFailureReasonFromError(err.cause)) {
-            Sentry.captureException(err.cause ?? new Error(err.message), {
+          const reportableError = err.cause ?? new Error(err.message);
+          if (shouldReportProviderError(reportableError)) {
+            Sentry.captureException(reportableError, {
               tags: { provider: provider.id },
               ...(err.context ? { extra: err.context } : {}),
             });
@@ -490,7 +514,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       completedCount++;
       const message = err instanceof Error ? err.message : String(err);
       const authFailureReason = authFailureReasonFromError(err);
-      if (!authFailureReason) {
+      if (shouldReportProviderError(err)) {
         Sentry.captureException(err, { tags: { provider: provider.id } });
       }
       providerStatus[provider.id] = { status: "error", message };
