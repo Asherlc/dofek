@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
@@ -18,6 +19,7 @@ interface ImmutableMigration {
 }
 
 interface MigrationHistoryEntry extends BaselineMigration, ImmutableMigration {
+  statements: string[];
   tag: string;
 }
 
@@ -90,9 +92,32 @@ function readMigrationHistory(migrationsFolder: string): MigrationHistoryEntry[]
       file: `${entry.tag}.sql`,
       folderMillis: migration.folderMillis,
       hash: migration.hash,
+      statements: migration.sql,
       tag: entry.tag,
     };
   });
+}
+
+function addMigrationContext(error: unknown, migrationsFolder: string): never {
+  if (!(error instanceof DrizzleQueryError)) {
+    throw error;
+  }
+
+  const failedStatement = error.query.trim();
+  const failedMigration = readMigrationHistory(migrationsFolder).find((migration) =>
+    migration.statements.some((statement) => statement.trim() === failedStatement),
+  );
+  if (!failedMigration) {
+    throw error;
+  }
+
+  const databaseError = error.cause ?? error;
+  throw new Error(
+    `Migration ${failedMigration.file} failed\n` +
+      `Database error: ${databaseError.message}\n` +
+      `Failed statement:\n${failedStatement}`,
+    { cause: databaseError },
+  );
 }
 
 function readArchivedMigrationHistory(migrationsFolder: string): ImmutableMigration[] {
@@ -233,5 +258,9 @@ export async function runDrizzleMigrations(
   migrationsFolder: string,
 ): Promise<void> {
   await reconcileLegacyMigrationHistory(client, migrationsFolder);
-  await migrate(drizzle(client), { migrationsFolder });
+  try {
+    await migrate(drizzle(client), { migrationsFolder });
+  } catch (error) {
+    addMigrationContext(error, migrationsFolder);
+  }
 }
