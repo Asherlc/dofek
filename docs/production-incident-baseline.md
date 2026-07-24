@@ -15945,6 +15945,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the strict timeout and capture correlated reverse-proxy and OTA request
   telemetry before changing behavior.
 
+## 2026-07-24 — Local E2E Setup Exhausted Docker Disk
+
+- **Status:** Resolved; no production impact.
+- **Symptoms:** `pnpm e2e:web` failed while initializing its disposable
+  PostgreSQL database, before Cypress could start.
+- **User impact:** Local E2E validation was blocked. Production and CI were not
+  affected.
+- **Evidence:** The first fatal database line was
+  `initdb: error: could not create directory "/home/postgres/pgdata/data/pg_wal": No space left on device`.
+  `docker system df` reported 10.17 GB of build cache, 9.166 GB reclaimable,
+  plus 22.66 GB of unused local volumes that were left untouched.
+- **Root cause:** Rebuildable Docker build cache exhausted the Docker Desktop
+  virtual disk while several isolated issue workspaces were validating in
+  parallel.
+- **Fix / mitigation:** Removed only the failed issue-1788 E2E resources and
+  ran `docker builder prune -af`, reclaiming 10.17 GB. No other workspace's
+  running containers or named volumes were removed.
+- **Validation:** A clean `pnpm e2e:web` retry completed all eight Cypress
+  specs and 26 tests successfully, returned exit code 0, and removed its E2E
+  containers and network during teardown.
+- **Remaining risk / follow-up:** Parallel issue workspaces can refill the
+  Docker virtual disk. Follow the scoped cleanup sequence in
+  [`docs/testing.md`](testing.md#docker-disk-recovery) before considering
+  broader image cleanup, and never prune named volumes without explicit
+  approval.
+
 ## 2026-07-24 — Zwift Activity Sync Received a Transient 503
 
 - **Status:** Recovered without intervention; alert-noise fix validated locally
