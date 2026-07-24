@@ -45,7 +45,7 @@ export function createActivityExportRouter({ db, sensorStore }: ActivityExportRo
     }
 
     const timezone = req.get("x-timezone") ?? "UTC";
-    const accessWindow = await getAccessWindowForUser(db, session.userId);
+    const accessWindow = await getAccessWindowForUser(db, session.userId, timezone);
 
     try {
       const exported = await exportActivityFile(

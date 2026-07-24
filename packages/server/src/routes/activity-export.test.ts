@@ -26,6 +26,7 @@ vi.mock("../lib/activity-export-service.ts", () => ({
 
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
+import { getAccessWindowForUser } from "../billing/access-window-repository.ts";
 import { exportActivityFile } from "../lib/activity-export-service.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { createActivityExportRouter } from "./activity-export.ts";
@@ -109,6 +110,7 @@ describe("createActivityExportRouter", () => {
   beforeEach(() => {
     vi.mocked(getSessionIdFromRequest).mockReset();
     vi.mocked(validateSession).mockReset();
+    vi.mocked(getAccessWindowForUser).mockClear();
     vi.mocked(exportActivityFile).mockReset();
   });
 
@@ -212,6 +214,11 @@ describe("createActivityExportRouter", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(getAccessWindowForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      userId,
+      "America/Los_Angeles",
+    );
     expect(exportActivityFile).toHaveBeenCalledWith(
       expect.anything(),
       userId,

@@ -116,11 +116,11 @@ vi.mock("../router.ts", () => ({ appRouter: {} }));
 vi.mock("../auth/admin.ts", () => ({
   isAdmin: vi.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
 }));
-vi.mock("../auth/cookies.ts", () => ({ getSessionIdFromRequest: vi.fn() }));
-vi.mock("../auth/session.ts", () => ({
+vi.mock("./auth/cookies.ts", () => ({ getSessionIdFromRequest: vi.fn() }));
+vi.mock("./auth/session.ts", () => ({
   validateSession: vi.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
 }));
-vi.mock("../billing/access-window-repository.ts", () => ({ getAccessWindowForUser: vi.fn() }));
+vi.mock("./billing/access-window-repository.ts", () => ({ getAccessWindowForUser: vi.fn() }));
 vi.mock("../lib/metrics.ts", () => ({
   httpRequestDuration: { observe: vi.fn() },
   registry: { registerMetric: vi.fn(), contentType: "text/plain", metrics: vi.fn(async () => "") },
@@ -146,6 +146,9 @@ vi.mock("../routes/stripe-webhook.ts", () => ({
 vi.mock("../routes/webhooks.ts", () => ({ createWebhookRouter: vi.fn(() => express.Router()) }));
 vi.mock("../slack/bot.ts", () => ({ startSlackBot: vi.fn() }));
 
+import { getSessionIdFromRequest } from "./auth/cookies.ts";
+import { validateSession } from "./auth/session.ts";
+import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
 import { makeMockSensorStore } from "./routers/test-helpers.ts";
 
 const { createApp, main } = await import("./index.ts");
@@ -402,5 +405,41 @@ describe("main", () => {
       listen.mockRestore();
       vi.unstubAllEnvs();
     }
+  });
+
+  it("passes the request timezone to access-window resolution", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    vi.mocked(getSessionIdFromRequest).mockReturnValue("session-id");
+    vi.mocked(validateSession).mockResolvedValue({
+      sessionId: "session-id",
+      userId: "user-1",
+      expiresAt: new Date("2026-07-28T00:00:00.000Z"),
+    });
+    createApp(fakeDb, makeMockSensorStore());
+    const middlewareOptions = mockCreateExpressMiddleware.mock.calls.at(-1)?.[0];
+
+    await middlewareOptions?.createContext({
+      req: { headers: { "x-timezone": "America/Los_Angeles" } },
+    });
+
+    expect(getAccessWindowForUser).toHaveBeenCalledWith(fakeDb, "user-1", "America/Los_Angeles");
+  });
+
+  it("uses UTC for access-window resolution when the timezone header is absent", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    vi.mocked(getSessionIdFromRequest).mockReturnValue("session-id");
+    vi.mocked(validateSession).mockResolvedValue({
+      sessionId: "session-id",
+      userId: "user-1",
+      expiresAt: new Date("2026-07-28T00:00:00.000Z"),
+    });
+    createApp(fakeDb, makeMockSensorStore());
+    const middlewareOptions = mockCreateExpressMiddleware.mock.calls.at(-1)?.[0];
+
+    await middlewareOptions?.createContext({ req: { headers: {} } });
+
+    expect(getAccessWindowForUser).toHaveBeenCalledWith(fakeDb, "user-1", "UTC");
   });
 });

@@ -60,7 +60,7 @@ describe("billingRouter", () => {
     stripeMocks.executeWithSchema.mockResolvedValue([
       {
         id: "user-1",
-        created_at: "2026-04-10T18:30:00.000Z",
+        created_at: "2026-07-21T01:30:00.000Z",
         paid_grant_reason: null,
         stripe_subscription_status: null,
         stripe_customer_id: null,
@@ -69,7 +69,7 @@ describe("billingRouter", () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
       userId: "user-1",
-      timezone: "UTC",
+      timezone: "America/Los_Angeles",
     });
 
     await expect(caller.status()).resolves.toEqual({
@@ -78,8 +78,8 @@ describe("billingRouter", () => {
         kind: "limited",
         paid: false,
         reason: "free_signup_week",
-        startDate: "2026-04-10",
-        endDateExclusive: "2026-04-17",
+        startDate: "2026-07-20",
+        endDateExclusive: "2026-07-27",
       },
       stripeSubscriptionStatus: null,
       canManageBilling: false,

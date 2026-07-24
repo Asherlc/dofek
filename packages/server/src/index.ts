@@ -266,7 +266,9 @@ function setupRoutes(
         const timezone = getSingleHeaderValue(req.headers["x-timezone"]) ?? "UTC";
         const appVersion = getSingleHeaderValue(req.headers["x-app-version"]);
         const assetsVersion = getSingleHeaderValue(req.headers["x-assets-version"]);
-        const accessWindow = session ? await getAccessWindowForUser(db, session.userId) : undefined;
+        const accessWindow = session
+          ? await getAccessWindowForUser(db, session.userId, timezone)
+          : undefined;
         return {
           db,
           sensorStore,
