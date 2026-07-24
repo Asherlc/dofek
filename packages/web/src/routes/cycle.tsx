@@ -3,6 +3,8 @@ import { PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export const Route = createFileRoute("/cycle")({
@@ -10,47 +12,47 @@ export const Route = createFileRoute("/cycle")({
 });
 
 function CyclePage() {
-  const { data: phaseData, isLoading: phaseLoading } = trpc.menstrualCycle.currentPhase.useQuery();
-  const { data: history, isLoading: historyLoading } = trpc.menstrualCycle.history.useQuery({
+  const currentPhase = trpc.menstrualCycle.currentPhase.useQuery();
+  const periodHistory = trpc.menstrualCycle.history.useQuery({
     months: 6,
   });
 
   const [startDate, setStartDate] = useState(formatDateYmd());
   const utils = trpc.useUtils();
   const logMutation = trpc.menstrualCycle.logPeriod.useMutation({
-    onSuccess: () => {
-      utils.menstrualCycle.currentPhase.invalidate();
-      utils.menstrualCycle.history.invalidate();
+    onSuccess: async () => {
+      await Promise.all([
+        utils.menstrualCycle.currentPhase.invalidate(),
+        utils.menstrualCycle.history.invalidate(),
+      ]);
+    },
+    onError: (error) => {
+      captureException(error, { context: "cycle-log-period" });
     },
   });
 
-  const isLoading = phaseLoading || historyLoading;
-
   return (
     <PageLayout title="Cycle Tracking" subtitle="Menstrual cycle phases and history">
-      {isLoading ? (
-        <div className="card p-6 animate-pulse h-48" />
-      ) : (
-        <div className="space-y-6">
-          {/* Current Phase */}
-          <div className="card p-6">
-            <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-              Current Phase
-            </h3>
-            {phaseData?.phase ? (
+      <div className="space-y-6">
+        <div className="card p-6">
+          <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
+            Current Phase
+          </h3>
+          {currentPhase.data !== undefined ? (
+            currentPhase.data.phase ? (
               <div className="flex items-center gap-4">
                 <div
                   className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-lg"
-                  style={{ backgroundColor: PHASE_DISPLAY[phaseData.phase].color }}
+                  style={{ backgroundColor: PHASE_DISPLAY[currentPhase.data.phase].color }}
                 >
-                  {phaseData.dayOfCycle}
+                  {currentPhase.data.dayOfCycle}
                 </div>
                 <div>
                   <div className="text-lg font-semibold">
-                    {PHASE_DISPLAY[phaseData.phase].label}
+                    {PHASE_DISPLAY[currentPhase.data.phase].label}
                   </div>
                   <div className="text-xs text-dim">
-                    Day {phaseData.dayOfCycle} of {phaseData.cycleLength}-day cycle
+                    Day {currentPhase.data.dayOfCycle} of {currentPhase.data.cycleLength}-day cycle
                   </div>
                 </div>
               </div>
@@ -58,40 +60,59 @@ function CyclePage() {
               <p className="text-sm text-dim">
                 No active cycle detected. Log a period start to begin tracking.
               </p>
-            )}
-          </div>
+            )
+          ) : currentPhase.isLoading ? (
+            <QueryStatePanel variant="loading" height={96} />
+          ) : currentPhase.error ? (
+            <QueryStatePanel error={currentPhase.error} height={96} />
+          ) : (
+            <QueryStatePanel
+              variant="empty"
+              message="No active cycle detected. Log a period start to begin tracking."
+              height={96}
+            />
+          )}
+          {currentPhase.data !== undefined && currentPhase.error ? (
+            <QueryStatePanel error={currentPhase.error} height={72} />
+          ) : null}
+        </div>
 
-          {/* Log Period */}
-          <div className="card p-6">
-            <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-              Log Period Start
-            </h3>
-            <div className="flex items-center gap-3">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="bg-surface border border-border rounded px-3 py-2 text-sm text-foreground"
-              />
-              <button
-                type="button"
-                onClick={() => logMutation.mutate({ startDate })}
-                disabled={logMutation.isPending}
-                className="px-4 py-2 bg-accent text-white rounded text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
-              >
-                {logMutation.isPending ? "Saving..." : "Log Period"}
-              </button>
+        <div className="card p-6">
+          <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
+            Log Period Start
+          </h3>
+          <div className="flex items-center gap-3">
+            <input
+              type="date"
+              aria-label="Period start date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              className="bg-surface border border-border rounded px-3 py-2 text-sm text-foreground"
+            />
+            <button
+              type="button"
+              onClick={() => logMutation.mutate({ startDate })}
+              disabled={logMutation.isPending}
+              className="px-4 py-2 bg-accent text-white rounded text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+            >
+              {logMutation.isPending ? "Saving..." : logMutation.error ? "Retry" : "Log Period"}
+            </button>
+          </div>
+          {logMutation.error ? (
+            <div className="mt-3">
+              <QueryStatePanel error={logMutation.error} height={72} />
             </div>
-          </div>
+          ) : null}
+        </div>
 
-          {/* History */}
-          {history && history.length > 0 && (
-            <div className="card p-6">
-              <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-                Period History
-              </h3>
+        <div className="card p-6">
+          <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
+            Period History
+          </h3>
+          {periodHistory.data !== undefined ? (
+            periodHistory.data.length > 0 ? (
               <div className="space-y-2">
-                {[...history].reverse().map((period) => (
+                {[...periodHistory.data].reverse().map((period) => (
                   <div
                     key={period.id}
                     className="flex items-center justify-between py-2 border-b border-border last:border-0"
@@ -102,23 +123,27 @@ function CyclePage() {
                         <span className="text-sm text-dim ml-1">to {period.endDate}</span>
                       )}
                     </div>
-                    {period.endDate && (
-                      <span className="text-xs text-muted">
-                        {Math.round(
-                          (new Date(period.endDate).getTime() -
-                            new Date(period.startDate).getTime()) /
-                            86400000,
-                        )}{" "}
-                        days
-                      </span>
+                    {period.durationLabel && (
+                      <span className="text-xs text-muted">{period.durationLabel}</span>
                     )}
                   </div>
                 ))}
               </div>
-            </div>
+            ) : (
+              <QueryStatePanel variant="empty" message="No periods logged yet." height={96} />
+            )
+          ) : periodHistory.isLoading ? (
+            <QueryStatePanel variant="loading" height={96} />
+          ) : periodHistory.error ? (
+            <QueryStatePanel error={periodHistory.error} height={96} />
+          ) : (
+            <QueryStatePanel variant="empty" message="No periods logged yet." height={96} />
           )}
+          {periodHistory.data !== undefined && periodHistory.error ? (
+            <QueryStatePanel error={periodHistory.error} height={72} />
+          ) : null}
         </div>
-      )}
+      </div>
     </PageLayout>
   );
 }

@@ -111,6 +111,7 @@ describe("MenstrualCycleRepository", () => {
           id: "period-1",
           start_date: "2025-01-15",
           end_date: "2025-01-19",
+          duration_days: 5,
           notes: "Light flow",
         },
       ]);
@@ -121,6 +122,8 @@ describe("MenstrualCycleRepository", () => {
         id: "period-1",
         startDate: "2025-01-15",
         endDate: "2025-01-19",
+        durationDays: 5,
+        durationLabel: "5 days",
         notes: "Light flow",
       });
     });
@@ -139,6 +142,7 @@ describe("MenstrualCycleRepository", () => {
           id: "period-2",
           start_date: "2025-01-15",
           end_date: null,
+          duration_days: null,
           notes: null,
         },
       ]);
@@ -149,13 +153,21 @@ describe("MenstrualCycleRepository", () => {
         id: "period-2",
         startDate: "2025-01-15",
         endDate: null,
+        durationDays: null,
+        durationLabel: null,
         notes: null,
       });
     });
 
     it("calls execute once", async () => {
       const { repo, execute } = makeRepository([
-        { id: "period-1", start_date: "2025-01-15", end_date: null, notes: null },
+        {
+          id: "period-1",
+          start_date: "2025-01-15",
+          end_date: null,
+          duration_days: null,
+          notes: null,
+        },
       ]);
 
       await repo.logPeriod("2025-01-15", null, null);
@@ -179,12 +191,14 @@ describe("MenstrualCycleRepository", () => {
           id: "period-1",
           start_date: "2025-01-01",
           end_date: "2025-01-05",
+          duration_days: 5,
           notes: "Normal flow",
         },
         {
           id: "period-2",
           start_date: "2025-01-29",
           end_date: null,
+          duration_days: null,
           notes: null,
         },
       ]);
@@ -196,15 +210,42 @@ describe("MenstrualCycleRepository", () => {
           id: "period-1",
           startDate: "2025-01-01",
           endDate: "2025-01-05",
+          durationDays: 5,
+          durationLabel: "5 days",
           notes: "Normal flow",
         },
         {
           id: "period-2",
           startDate: "2025-01-29",
           endDate: null,
+          durationDays: null,
+          durationLabel: null,
           notes: null,
         },
       ]);
+    });
+
+    it("uses singular display text for a one-day period", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "period-1",
+          start_date: "2025-01-15",
+          end_date: "2025-01-15",
+          duration_days: 1,
+          notes: null,
+        },
+      ]);
+
+      const result = await repo.getHistory(6);
+
+      expect(result[0]).toEqual({
+        id: "period-1",
+        startDate: "2025-01-15",
+        endDate: "2025-01-15",
+        durationDays: 1,
+        durationLabel: "1 day",
+        notes: null,
+      });
     });
 
     it("handles Date objects from postgres driver", async () => {
@@ -213,6 +254,7 @@ describe("MenstrualCycleRepository", () => {
           id: "period-1",
           start_date: new Date("2025-01-01"),
           end_date: new Date("2025-01-05"),
+          duration_days: 5,
           notes: "Normal",
         },
       ]);

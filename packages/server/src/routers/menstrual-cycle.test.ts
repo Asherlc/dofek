@@ -81,12 +81,14 @@ describe("menstrualCycleRouter", () => {
           id: "p1",
           start_date: "2026-01-15",
           end_date: "2026-01-20",
+          duration_days: 6,
           notes: null,
         },
         {
           id: "p2",
           start_date: "2026-02-12",
           end_date: "2026-02-17",
+          duration_days: 6,
           notes: null,
         },
       ];
@@ -99,6 +101,8 @@ describe("menstrualCycleRouter", () => {
 
       expect(result).toHaveLength(2);
       expect(result[0]?.startDate).toBe("2026-01-15");
+      expect(result[0]?.durationDays).toBe(6);
+      expect(result[0]?.durationLabel).toBe("6 days");
       expect(result[1]?.startDate).toBe("2026-02-12");
     });
 
@@ -134,6 +138,7 @@ describe("menstrualCycleRouter", () => {
         id: "new-id",
         start_date: "2026-03-01",
         end_date: null,
+        duration_days: null,
         notes: null,
       };
 
@@ -145,6 +150,8 @@ describe("menstrualCycleRouter", () => {
 
       expect(result?.id).toBe("new-id");
       expect(result?.startDate).toBe("2026-03-01");
+      expect(result?.durationDays).toBeNull();
+      expect(result?.durationLabel).toBeNull();
     });
   });
 });

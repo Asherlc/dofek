@@ -313,6 +313,16 @@ describe("SettingsScreen data sources", () => {
 
     expect(mockRouterPush).toHaveBeenCalledWith("/providers");
   });
+
+  it("navigates to cycle tracking from the health tracking section", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cycle Tracking" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/cycle");
+  });
 });
 
 describe("SettingsScreen password", () => {
