@@ -109,7 +109,9 @@ RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,required=false \
 
 # ── Server image (Express API + sync runner) ────────────────────────────
 FROM base AS server
+ARG COMMIT_HASH
 ENV NODE_ENV=production
+ENV SENTRY_RELEASE=${COMMIT_HASH}
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates libbz2 libstdc++

@@ -9,6 +9,7 @@ vi.mock("@sentry/node", () => ({
 }));
 
 const originalDeployEnvironment = process.env.DEPLOY_ENVIRONMENT;
+const originalSentryRelease = process.env.SENTRY_RELEASE;
 
 async function loadInitProductionSentry() {
   return (await import("./sentry.ts")).initProductionSentry;
@@ -20,6 +21,7 @@ describe("initProductionSentry", () => {
     vi.unstubAllEnvs();
     vi.resetModules();
     delete process.env.DEPLOY_ENVIRONMENT;
+    delete process.env.SENTRY_RELEASE;
   });
 
   afterEach(() => {
@@ -28,6 +30,11 @@ describe("initProductionSentry", () => {
       delete process.env.DEPLOY_ENVIRONMENT;
     } else {
       process.env.DEPLOY_ENVIRONMENT = originalDeployEnvironment;
+    }
+    if (originalSentryRelease === undefined) {
+      delete process.env.SENTRY_RELEASE;
+    } else {
+      process.env.SENTRY_RELEASE = originalSentryRelease;
     }
   });
 
@@ -62,6 +69,7 @@ describe("initProductionSentry", () => {
     "production",
   ])("initializes the %s deployment with the production Sentry environment", async (deploymentEnvironment) => {
     vi.stubEnv("DEPLOY_ENVIRONMENT", deploymentEnvironment);
+    vi.stubEnv("SENTRY_RELEASE", "0123456789abcdef");
     const initProductionSentry = await loadInitProductionSentry();
 
     initProductionSentry("https://key@sentry.example/456");
@@ -69,6 +77,7 @@ describe("initProductionSentry", () => {
     expect(mocks.init).toHaveBeenCalledWith({
       dsn: "https://key@sentry.example/456",
       environment: "production",
+      release: "0123456789abcdef",
       skipOpenTelemetrySetup: true,
     });
   });

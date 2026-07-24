@@ -15,6 +15,7 @@ export function initProductionSentry(dsn: string | undefined): void {
   Sentry.init({
     dsn,
     environment: SENTRY_ENVIRONMENT,
+    release: process.env.SENTRY_RELEASE,
     skipOpenTelemetrySetup: true,
   });
   initialized = true;
