@@ -19,7 +19,11 @@ const mockNutritionAnalyticsMicronutrientAdequacyInvalidate = vi.fn();
 const mockRecoveryInvalidate = vi.fn();
 const mockTrainingInvalidate = vi.fn();
 const mockSyncStatusFetch = vi.fn();
-let mockActiveSyncs: { data: unknown[] | undefined; isLoading: boolean };
+let mockActiveSyncs: {
+  data: unknown[] | undefined;
+  isLoading: boolean;
+  error: Error | null;
+};
 
 vi.mock("./trpc", () => ({
   trpc: {
@@ -148,7 +152,7 @@ describe("useAutoSync", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-22T10:00:00"));
-    mockActiveSyncs = { data: [], isLoading: false };
+    mockActiveSyncs = { data: [], isLoading: false, error: null };
     mockMutateAsync.mockResolvedValue({ jobId: "test-job" });
     mockSyncStatusFetch.mockResolvedValue({ status: "completed" });
     mockIsAvailable.mockReturnValue(false);
@@ -204,6 +208,17 @@ describe("useAutoSync", () => {
     expect(mockMutateAsync).not.toHaveBeenCalled();
   });
 
+  it("does not trigger when active sync lookup fails", async () => {
+    mockActiveSyncs.error = new Error(
+      "Active syncs are temporarily unavailable. Please try again.",
+    );
+
+    renderHook(() => useAutoSync("2026-03-21"));
+    await act(() => vi.runAllTimersAsync());
+
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
+
   it("triggers sync and invalidates affected query families when job completes", async () => {
     renderHook(() => useAutoSync("2026-03-21"));
     await act(() => vi.runAllTimersAsync());
@@ -236,6 +251,38 @@ describe("useAutoSync", () => {
 
     expect(mockSyncStatusFetch).toHaveBeenCalledTimes(3);
     expect(mockDashboardInvalidate).toHaveBeenCalled();
+  });
+
+  it("retries sync status after a transient server error", async () => {
+    const statusError = new Error("Sync status is temporarily unavailable. Please try again.");
+    mockSyncStatusFetch
+      .mockRejectedValueOnce(statusError)
+      .mockResolvedValueOnce({ status: "completed" });
+
+    renderHook(() => useAutoSync("2026-03-21"));
+    await act(() => vi.runAllTimersAsync());
+
+    expect(mockSyncStatusFetch).toHaveBeenCalledTimes(2);
+    expect(mockCaptureException).toHaveBeenCalledWith(statusError, {
+      source: "auto-sync-status",
+    });
+    expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
+  });
+
+  it("stops retrying sync status when unmounted during the retry delay", async () => {
+    const statusError = new Error("Sync status is temporarily unavailable. Please try again.");
+    mockSyncStatusFetch
+      .mockRejectedValueOnce(statusError)
+      .mockResolvedValueOnce({ status: "completed" });
+
+    const rendered = renderHook(() => useAutoSync("2026-03-21"));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(mockSyncStatusFetch).toHaveBeenCalledTimes(1);
+
+    rendered.unmount();
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+
+    expect(mockSyncStatusFetch).toHaveBeenCalledTimes(1);
   });
 
   it("invalidates affected query families on error status", async () => {

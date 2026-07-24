@@ -1,5 +1,5 @@
 import * as WebBrowser from "expo-web-browser";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
@@ -78,6 +78,7 @@ export function useProviderDetailActions(
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
   const [garminAuthOpen, setGarminAuthOpen] = useState(false);
 
+  const isMounted = useRef(false);
   const pollingRef = useRef(false);
   const trpcClient = trpcUtils.client;
   const appleHealth = useAppleHealthProviderModel({
@@ -98,6 +99,14 @@ export function useProviderDetailActions(
   const isConnected = Boolean(displayProvider?.authorized);
   const needsReauth = Boolean(provider?.needsReauth);
 
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      pollingRef.current = false;
+    };
+  }, []);
+
   const invalidateProviderData = useCallback(() => {
     trpcUtils.sync.providers.invalidate();
     trpcUtils.sync.providerStats.invalidate();
@@ -115,17 +124,22 @@ export function useProviderDetailActions(
       pollingRef.current = true;
 
       const poll = async (): Promise<void> => {
+        if (!isMounted.current) return;
         let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
         try {
           status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
         } catch (error: unknown) {
           captureException(error, { context: "provider-sync-poll" });
-          pollingRef.current = false;
-          setIsSyncing(false);
-          setSyncMessage("Sync failed");
-          return;
+          if (!isMounted.current) return;
+          setSyncMessage(
+            error instanceof Error ? error.message : "Sync status is temporarily unavailable.",
+          );
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (!isMounted.current) return;
+          return poll();
         }
 
+        if (!isMounted.current) return;
         if (!status) {
           pollingRef.current = false;
           setIsSyncing(false);

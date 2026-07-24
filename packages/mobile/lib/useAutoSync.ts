@@ -55,11 +55,13 @@ export function useAutoSync(latestDate: string | null | undefined) {
     if (triggered.current) return;
     if (!isDataStale(latestDate)) return;
     if (activeSyncs.isLoading) return;
+    if (activeSyncs.error) return;
     if ((activeSyncs.data?.length ?? 0) > 0) return;
     if (!latestDate) return;
 
+    let cancelled = false;
     const idleHandle = runAfterUiIdle(() => {
-      if (triggered.current) return;
+      if (cancelled || triggered.current) return;
       triggered.current = true;
 
       // Trigger API provider sync and poll until complete
@@ -68,7 +70,18 @@ export function useAutoSync(latestDate: string | null | undefined) {
         .then(async ({ jobId }: { jobId?: string }) => {
           if (!jobId) return;
           const pollUntilDone = async (): Promise<void> => {
-            const status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
+            if (cancelled) return;
+            let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
+            try {
+              status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
+            } catch (error: unknown) {
+              captureException(error, { source: "auto-sync-status" });
+              if (cancelled) return;
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+              if (cancelled) return;
+              return pollUntilDone();
+            }
+            if (cancelled) return;
             if (!status || status.status === "completed" || status.status === "failed") {
               await invalidateSyncedHealthData(trpcUtils);
               return;
@@ -124,7 +137,15 @@ export function useAutoSync(latestDate: string | null | undefined) {
     });
 
     return () => {
+      cancelled = true;
       idleHandle.cancel();
     };
-  }, [latestDate, activeSyncs.isLoading, activeSyncs.data, triggerSync, trpcUtils]);
+  }, [
+    latestDate,
+    activeSyncs.isLoading,
+    activeSyncs.error,
+    activeSyncs.data,
+    triggerSync,
+    trpcUtils,
+  ]);
 }
