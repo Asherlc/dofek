@@ -2537,7 +2537,7 @@ describe("createAuthRouter", () => {
       expect(createSession).toHaveBeenCalledTimes(1);
     });
 
-    it("allows only one concurrent completion for the same pending signup", async () => {
+    it("renews a delayed completion so it remains exclusive past the original lease", async () => {
       const mockExchangeCode = vi.fn(() =>
         Promise.resolve({
           accessToken: "concurrent-access-token",
@@ -2554,9 +2554,13 @@ describe("createAuthRouter", () => {
         }),
       );
       const deferredUser = Promise.withResolvers<{ userId: string; isNewUser: boolean }>();
+      const firstCompletionStarted = Promise.withResolvers<void>();
       vi.mocked(resolveOrCreateUser)
         .mockRejectedValueOnce(new MissingEmailForSignupError("Strava"))
-        .mockImplementationOnce(() => deferredUser.promise);
+        .mockImplementationOnce(() => {
+          firstCompletionStarted.resolve();
+          return deferredUser.promise;
+        });
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "strava",
@@ -2589,30 +2593,150 @@ describe("createAuthRouter", () => {
       const token = tokenMatch?.[1];
       if (!token) throw new Error("Expected pending signup token in form");
 
-      const firstCompletePromise = request(app, "post", "/auth/complete-signup", {
-        formBody: { token, email: "concurrent@example.com" },
-      });
-      await vi.waitFor(() => expect(resolveOrCreateUser).toHaveBeenCalledTimes(2));
+      vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+      let firstCompletePromise: ReturnType<typeof request> | undefined;
+      try {
+        firstCompletePromise = request(app, "post", "/auth/complete-signup", {
+          formBody: { token, email: "concurrent@example.com" },
+        });
+        await firstCompletionStarted.promise;
+        await vi.advanceTimersByTimeAsync(60_001);
 
-      const secondCompleteRes = await request(app, "post", "/auth/complete-signup", {
-        formBody: { token, email: "concurrent@example.com" },
-      });
-      const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+        const secondCompleteRes = await request(app, "post", "/auth/complete-signup", {
+          formBody: { token, email: "concurrent@example.com" },
+        });
+        const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
 
-      expect(secondCompleteRes.status).toBe(409);
-      expect(secondCompleteRes.body).toContain("Signup is already being completed");
-      expect(resolveOrCreateUser).toHaveBeenCalledTimes(2);
-      expect(ensureProvider).not.toHaveBeenCalled();
-      expect(saveTokens).not.toHaveBeenCalled();
-      expect(createSession).not.toHaveBeenCalled();
+        expect(secondCompleteRes.status).toBe(409);
+        expect(secondCompleteRes.body).toContain("Signup is already being completed");
+        expect(resolveOrCreateUser).toHaveBeenCalledTimes(2);
+        expect(ensureProvider).not.toHaveBeenCalled();
+        expect(saveTokens).not.toHaveBeenCalled();
+        expect(createSession).not.toHaveBeenCalled();
 
-      deferredUser.resolve({ userId: "concurrent-user", isNewUser: true });
-      const firstCompleteRes = await firstCompletePromise;
+        deferredUser.resolve({ userId: "concurrent-user", isNewUser: true });
+        const firstCompleteRes = await firstCompletePromise;
 
-      expect(firstCompleteRes.status).toBe(302);
-      expect(ensureProvider).toHaveBeenCalledTimes(1);
-      expect(saveTokens).toHaveBeenCalledTimes(1);
-      expect(createSession).toHaveBeenCalledTimes(1);
+        expect(firstCompleteRes.status).toBe(302);
+        expect(ensureProvider).toHaveBeenCalledTimes(1);
+        expect(saveTokens).toHaveBeenCalledTimes(1);
+        expect(createSession).toHaveBeenCalledTimes(1);
+      } finally {
+        deferredUser.resolve({ userId: "concurrent-user", isNewUser: true });
+        await firstCompletePromise;
+        vi.useRealTimers();
+      }
+    });
+
+    it("fails safely and clears renewal when claim renewal fails", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "renewal-failure-access-token",
+          refreshToken: "renewal-failure-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-renewal-failure-1",
+          email: null,
+          name: "Renewal Failure Runner",
+        }),
+      );
+      const deferredUser = Promise.withResolvers<{ userId: string; isNewUser: boolean }>();
+      const completionStarted = Promise.withResolvers<void>();
+      vi.mocked(resolveOrCreateUser)
+        .mockRejectedValueOnce(new MissingEmailForSignupError("Strava"))
+        .mockImplementationOnce(() => {
+          completionStarted.resolve();
+          return deferredUser.promise;
+        });
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+            identityCapabilities: { providesEmail: false },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/login/data/strava");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-renewal-failure-code&state=${state}`,
+      );
+      const tokenMatch = callbackRes.body.match(/name="token" value="([^"]+)"/);
+      const token = tokenMatch?.[1];
+      if (!token) throw new Error("Expected pending signup token in form");
+
+      const pendingStore = getPendingEmailSignupStoreRef();
+      const renewSpy = vi
+        .spyOn(pendingStore, "renew")
+        .mockRejectedValueOnce(new Error("sensitive Redis command failure"));
+      const completeSpy = vi.spyOn(pendingStore, "complete");
+      const releaseSpy = vi.spyOn(pendingStore, "release");
+      vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+      let completionPromise: ReturnType<typeof request> | undefined;
+      try {
+        completionPromise = request(app, "post", "/auth/complete-signup", {
+          formBody: { token, email: "renewal-failure@example.com" },
+        });
+        await completionStarted.promise;
+        await vi.advanceTimersByTimeAsync(20_000);
+        deferredUser.resolve({ userId: "renewal-failure-user", isNewUser: true });
+
+        const completionRes = await completionPromise;
+        const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+
+        expect(completionRes.status).toBe(500);
+        expect(completeSpy).not.toHaveBeenCalled();
+        expect(releaseSpy).toHaveBeenCalledOnce();
+        expect(ensureProvider).not.toHaveBeenCalled();
+        expect(saveTokens).not.toHaveBeenCalled();
+        expect(createSession).not.toHaveBeenCalled();
+        await expect(pendingStore.get(token)).resolves.not.toBeNull();
+        expect(vi.getTimerCount()).toBe(0);
+        expect(Sentry.captureException).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: "PendingEmailSignupClaimRenewalError",
+            message: "Pending email signup claim renewal failed",
+          }),
+          {
+            tags: { context: "pending-email-signup-renewal" },
+          },
+        );
+        expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+          "[auth] Pending signup claim renewal failed",
+        );
+        expect(JSON.stringify(vi.mocked(Sentry.captureException).mock.calls)).not.toContain(
+          "sensitive Redis command failure",
+        );
+        expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain(
+          "sensitive Redis command failure",
+        );
+      } finally {
+        deferredUser.resolve({ userId: "renewal-failure-user", isNewUser: true });
+        await completionPromise;
+        vi.useRealTimers();
+        renewSpy.mockRestore();
+        completeSpy.mockRestore();
+        releaseSpy.mockRestore();
+      }
     });
 
     it("returns a callback error when provider login fails for a reason other than missing email", async () => {

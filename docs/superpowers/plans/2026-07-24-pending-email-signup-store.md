@@ -4,7 +4,7 @@
 
 **Goal:** Replace process-local pending email signup state with a Redis-backed, retry-safe, single-use store shared by all web replicas.
 
-**Architecture:** Add a focused store with in-memory and Redis implementations beside the existing authentication state stores. Redis entries retain their original ten-minute TTL while a unique-owner, 60-second Redis lease serializes valid completion requests; route code releases the lease on failure and atomically deletes the entry only after all signup work succeeds.
+**Architecture:** Add a focused store with in-memory and Redis implementations beside the existing authentication state stores. Redis entries retain their original ten-minute TTL while a unique-owner, 60-second Redis lease serializes valid completion requests. Active completion requests renew that lease every 20 seconds with an atomic owner comparison and `PEXPIRE`; route code stops and awaits renewal before release or atomic completion.
 
 **Tech Stack:** TypeScript, Vitest, Zod, BullMQ `RedisConnection`, Redis `SET NX PX`, Redis Lua scripts, Sentry.
 
@@ -12,6 +12,12 @@
 
 - Pending entries expire exactly 600,000 milliseconds after issuance; retries never extend that TTL.
 - Completion claims expire after 60,000 milliseconds.
+- Active completion requests renew claims every 20,000 milliseconds without overlapping renewals.
+- Renewal must atomically compare the claim owner before resetting the claim TTL to exactly 60,000
+  milliseconds with Redis `PEXPIRE`, which sets expiration in milliseconds:
+  https://redis.io/docs/latest/commands/pexpire/.
+- Stop and await renewal before every `complete` or `release`; a renewal failure must prevent a
+  success response.
 - A valid completion must claim the token before database, credential, session, or mobile-exchange writes.
 - Invalid email and transient completion failures must leave the pending entry retryable.
 - Successful completion must delete the pending entry and claim exactly once.
@@ -56,6 +62,7 @@ export interface PendingEmailSignupStore {
   issue(entry: PendingEmailSignupEntry): Promise<string>;
   get(token: string): Promise<PendingEmailSignupEntry | null>;
   claim(token: string): Promise<PendingEmailSignupClaim | null>;
+  renew(claim: PendingEmailSignupClaim): Promise<void>;
   release(claim: PendingEmailSignupClaim): Promise<void>;
   complete(claim: PendingEmailSignupClaim): Promise<void>;
 }
@@ -172,6 +179,7 @@ export interface PendingEmailSignupStore {
   issue(entry: PendingEmailSignupEntry): Promise<string>;
   get(token: string): Promise<PendingEmailSignupEntry | null>;
   claim(token: string): Promise<PendingEmailSignupClaim | null>;
+  renew(claim: PendingEmailSignupClaim): Promise<void>;
   release(claim: PendingEmailSignupClaim): Promise<void>;
   complete(claim: PendingEmailSignupClaim): Promise<void>;
 }
@@ -203,6 +211,13 @@ end
 return 0
 `;
 
+const RENEW_CLAIM_SCRIPT = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("pexpire", KEYS[1], ARGV[2])
+end
+return 0
+`;
+
 const COMPLETE_CLAIM_SCRIPT = `
 if redis.call("get", KEYS[1]) == ARGV[1] then
   redis.call("del", KEYS[1])
@@ -226,6 +241,14 @@ await client.sendCommand([
   `${CLAIM_TTL_MS}`,
 ]);
 await client.sendCommand(["EVAL", RELEASE_CLAIM_SCRIPT, "1", claimKey(token), claimId]);
+await client.sendCommand([
+  "EVAL",
+  RENEW_CLAIM_SCRIPT,
+  "1",
+  claimKey(token),
+  claimId,
+  `${CLAIM_TTL_MS}`,
+]);
 await client.sendCommand([
   "EVAL",
   COMPLETE_CLAIM_SCRIPT,
@@ -260,7 +283,9 @@ payload, entry, or credentials to Sentry.
 
 Require `complete` to return a Redis integer result of `1`. If the owner comparison fails, throw
 `Pending email signup claim is no longer owned` so the route cannot report success after its
-lease was lost. The in-memory implementation must enforce the same owner check.
+lease was lost. Require `renew` to return the same integer result of `1`; otherwise throw that
+same error. The in-memory implementation must enforce an unexpired matching owner before setting
+`expiresAt = Date.now() + claimTtlMs`.
 
 Create one module-level shared `RedisConnection`, validate that its client has a callable
 `sendCommand`, and expose:
@@ -296,6 +321,8 @@ Also test:
 - `release(claim)` allows a later claim without rewriting or extending the entry;
 - `complete(claim)` makes both `get` and `claim` return `null`;
 - a stale owner cannot release or complete a newer claim;
+- renewal crosses the original claim expiry while continuing to exclude a second claimant;
+- expired and stale owners cannot renew;
 - malformed JSON and schema-invalid JSON are deleted, reported to Sentry, and return `null`;
 - the Sentry mock was not called with either known token fixture string;
 - an `InMemoryPendingEmailSignupStore({ entryTtlMs: 1, claimTtlMs: 1 })` rejects expired entries;
@@ -457,6 +484,16 @@ top-level `try`:
 let pendingClaim: PendingEmailSignupClaim | null = null;
 ```
 
+Keep a nullable renewal controller beside the claim. Immediately after a successful claim, start
+a fixed 20,000-millisecond interval. Each tick may start `pendingStore.renew(pendingClaim)` only
+when no renewal is already in flight, and every rejection must be observed and retained as a
+sanitized renewal failure. Do not log or report the pending entry, token, claim token, claim ID, or
+the underlying Redis command error.
+
+Check the retained renewal failure after each awaited completion stage so a failed renewal stops
+later provider-credential, session, or mobile-exchange writes as soon as the current awaited stage
+settles.
+
 Read without consuming before email validation:
 
 ```typescript
@@ -482,6 +519,12 @@ if (!pendingClaim) {
 }
 const claimedPending = pendingClaim.entry;
 ```
+
+Before every `complete(pendingClaim)` or `release(pendingClaim)`, clear the interval and await any
+in-flight renewal. If renewal failed, do not complete or report success; enter the existing failure
+path and release the still-owned claim after renewal has stopped. The provider-missing branch and
+the top-level `catch` must also stop and await renewal before releasing. This prevents timer or
+promise leaks and ensures no renewal can race with completion or release.
 
 Use `claimedPending` for every subsequent identity, provider, token, mobile, and return-path
 read. For mobile, issue the exchange code before completing the claim:
@@ -534,9 +577,16 @@ Update existing tests to await asynchronous store behavior. Keep the existing te
 - a missing provider returns 500 without deleting the pending entry;
 - mobile exchange issuance occurs before successful consumption.
 
-Add a concurrency test that delays the first `resolveOrCreateUser` completion, posts the same
-valid token twice, and asserts the second response is 409 with no second credential/session
-write. Resolve the first promise and assert it finishes with 302.
+Add a fake-timer concurrency test that delays the first `resolveOrCreateUser` completion, advances
+past the original 60,000-millisecond lease, posts the same valid token twice, and asserts the
+second response is 409 with no second credential/session write. Resolve the first promise and
+assert it finishes with 302. The test must exercise the 20,000-millisecond cadence rather than
+manually calling `renew`.
+
+Add focused renewal-failure cleanup coverage: reject a scheduled renewal, finish the delayed
+database operation, and assert the request returns 500, does not call `complete`, releases the
+claim, preserves the entry, reports only the sanitized renewal error, and leaves no renewal timer
+or unhandled promise.
 
 - [ ] **Step 7: Run focused tests and verify GREEN**
 

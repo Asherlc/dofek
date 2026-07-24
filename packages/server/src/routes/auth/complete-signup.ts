@@ -4,7 +4,10 @@ import { z } from "zod";
 import { resolveOrCreateUser } from "../../auth/account-linking.ts";
 import { isValidMobileScheme, setSessionCookie } from "../../auth/cookies.ts";
 import { createSession } from "../../auth/session.ts";
-import type { PendingEmailSignupClaim } from "../../lib/pending-email-signup-store.ts";
+import type {
+  PendingEmailSignupClaim,
+  PendingEmailSignupStore,
+} from "../../lib/pending-email-signup-store.ts";
 import { logger } from "../../logger.ts";
 import {
   completeSignupHtml,
@@ -15,8 +18,61 @@ import {
   persistProviderConnection,
 } from "./shared.ts";
 
+const CLAIM_RENEWAL_INTERVAL_MS = 20 * 1000;
+
+class PendingEmailSignupClaimRenewalError extends Error {
+  constructor() {
+    super("Pending email signup claim renewal failed");
+    this.name = "PendingEmailSignupClaimRenewalError";
+  }
+}
+
+class PendingEmailSignupClaimRenewal {
+  readonly #store: PendingEmailSignupStore;
+  readonly #claim: PendingEmailSignupClaim;
+  #timer: ReturnType<typeof setInterval> | null;
+  #inFlight: Promise<void> | null = null;
+  #failure: PendingEmailSignupClaimRenewalError | null = null;
+
+  constructor(store: PendingEmailSignupStore, claim: PendingEmailSignupClaim) {
+    this.#store = store;
+    this.#claim = claim;
+    this.#timer = setInterval(() => this.#renew(), CLAIM_RENEWAL_INTERVAL_MS);
+  }
+
+  async stop(): Promise<PendingEmailSignupClaimRenewalError | null> {
+    if (this.#timer) {
+      clearInterval(this.#timer);
+      this.#timer = null;
+    }
+    await this.#inFlight;
+    return this.#failure;
+  }
+
+  throwIfFailed(): void {
+    if (this.#failure) throw this.#failure;
+  }
+
+  #renew(): void {
+    if (this.#inFlight || this.#failure) return;
+    this.#inFlight = Promise.resolve()
+      .then(() => this.#store.renew(this.#claim))
+      .catch((_error: unknown) => {
+        const renewalFailure = new PendingEmailSignupClaimRenewalError();
+        Sentry.captureException(renewalFailure, {
+          tags: { context: "pending-email-signup-renewal" },
+        });
+        this.#failure = renewalFailure;
+      })
+      .finally(() => {
+        this.#inFlight = null;
+      });
+  }
+}
+
 export async function handleCompleteSignup(req: Request, res: Response): Promise<void> {
   let pendingClaim: PendingEmailSignupClaim | null = null;
+  let pendingClaimRenewal: PendingEmailSignupClaimRenewal | null = null;
   try {
     const token = typeof req.body.token === "string" ? req.body.token : undefined;
     const rawEmail = typeof req.body.email === "string" ? req.body.email : "";
@@ -54,6 +110,7 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
         .send("Signup is already being completed — please try again");
       return;
     }
+    pendingClaimRenewal = new PendingEmailSignupClaimRenewal(pendingStore, pendingClaim);
     const claimedPending = pendingClaim.entry;
 
     const db = getDb();
@@ -63,11 +120,16 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
       emailVerified: false,
       name: claimedPending.identity.name,
     });
+    pendingClaimRenewal.throwIfFailed();
     const { getAllProviders } = await import("dofek/providers/registry");
     const provider = getAllProviders().find(
       (candidate) => candidate.id === claimedPending.providerId,
     );
     if (!provider) {
+      const renewal = pendingClaimRenewal;
+      pendingClaimRenewal = null;
+      const renewalFailure = await renewal.stop();
+      if (renewalFailure) throw renewalFailure;
       await pendingStore.release(pendingClaim);
       pendingClaim = null;
       res.status(500).type("text/plain").send("Provider no longer available");
@@ -82,7 +144,9 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
       tokens: claimedPending.tokens,
       userId,
     });
+    pendingClaimRenewal.throwIfFailed();
     const sessionInfo = await createSession(db, userId);
+    pendingClaimRenewal.throwIfFailed();
 
     if (claimedPending.mobileScheme && isValidMobileScheme(claimedPending.mobileScheme)) {
       const exchangeCode = await getMobileAuthExchangeStoreRef().issue({
@@ -90,6 +154,11 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
         sessionId: sessionInfo.sessionId,
         isNewUser,
       });
+      pendingClaimRenewal.throwIfFailed();
+      const renewal = pendingClaimRenewal;
+      pendingClaimRenewal = null;
+      const renewalFailure = await renewal.stop();
+      if (renewalFailure) throw renewalFailure;
       await pendingStore.complete(pendingClaim);
       pendingClaim = null;
       logger.info(
@@ -99,12 +168,23 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
       return;
     }
 
+    const renewal = pendingClaimRenewal;
+    pendingClaimRenewal = null;
+    const renewalFailure = await renewal.stop();
+    if (renewalFailure) throw renewalFailure;
     await pendingStore.complete(pendingClaim);
     pendingClaim = null;
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
     logger.info(`[auth] User ${userId} completed signup via ${claimedPending.providerId}`);
     res.redirect(getPostLoginRedirect(claimedPending.returnTo, isNewUser));
   } catch (err: unknown) {
+    if (pendingClaimRenewal) {
+      const renewalFailure = await pendingClaimRenewal.stop();
+      pendingClaimRenewal = null;
+      if (renewalFailure && renewalFailure !== err) {
+        logger.error("[auth] Pending signup claim renewal failed");
+      }
+    }
     if (pendingClaim) {
       try {
         await getPendingEmailSignupStoreRef().release(pendingClaim);
@@ -115,8 +195,12 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
         logger.error(`[auth] Releasing pending signup claim failed: ${releaseError}`);
       }
     }
-    Sentry.captureException(err);
-    logger.error(`[auth] Completing signup failed: ${err}`);
+    if (err instanceof PendingEmailSignupClaimRenewalError) {
+      logger.error("[auth] Pending signup claim renewal failed");
+    } else {
+      Sentry.captureException(err);
+      logger.error(`[auth] Completing signup failed: ${err}`);
+    }
     res.status(500).send("Signup failed — please try again");
   }
 }

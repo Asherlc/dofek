@@ -23,6 +23,13 @@ end
 return 0
 `;
 
+const RENEW_CLAIM_SCRIPT = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("pexpire", KEYS[1], ARGV[2])
+end
+return 0
+`;
+
 const COMPLETE_CLAIM_SCRIPT = `
 if redis.call("get", KEYS[1]) == ARGV[1] then
   redis.call("del", KEYS[1])
@@ -107,16 +114,27 @@ class FakeRedisCommandClient {
     const claimKey = keys[0];
     const claimId = arguments_[0];
     if (!script || !claimKey || !claimId) throw new Error("Invalid EVAL command");
-    if (script !== RELEASE_CLAIM_SCRIPT && script !== COMPLETE_CLAIM_SCRIPT) {
+    if (
+      script !== RELEASE_CLAIM_SCRIPT &&
+      script !== RENEW_CLAIM_SCRIPT &&
+      script !== COMPLETE_CLAIM_SCRIPT
+    ) {
       throw new Error("Unsupported EVAL script");
     }
     if (
-      (script === RELEASE_CLAIM_SCRIPT && keyCount !== 1) ||
+      ((script === RELEASE_CLAIM_SCRIPT || script === RENEW_CLAIM_SCRIPT) && keyCount !== 1) ||
       (script === COMPLETE_CLAIM_SCRIPT && keyCount !== 2)
     ) {
       throw new Error("Invalid EVAL key count");
     }
     if (this.#get(claimKey) !== claimId) return 0;
+    if (script === RENEW_CLAIM_SCRIPT) {
+      const ttl = Number(arguments_[1]);
+      const entry = this.#entries.get(claimKey);
+      if (!entry || !Number.isFinite(ttl)) throw new Error("Invalid PEXPIRE command");
+      entry.expiresAt = Date.now() + ttl;
+      return 1;
+    }
     this.#delete([claimKey]);
     if (keyCount === 2) {
       const entryKey = keys[1];
@@ -243,6 +261,57 @@ describe("RedisPendingEmailSignupStore", () => {
     }
   });
 
+  it("renews an owned claim across its original 60-second expiry", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeRedisCommandClient();
+      const store = new RedisPendingEmailSignupStore(async () => client);
+      const token = await store.issue(sampleEntry);
+      const claim = await store.claim(token);
+      if (!claim) throw new Error("Expected claim");
+
+      vi.advanceTimersByTime(40_000);
+      await store.renew(claim);
+      vi.advanceTimersByTime(20_001);
+
+      await expect(store.claim(token)).resolves.toBeNull();
+      expect(client.commands).toContainEqual([
+        "EVAL",
+        RENEW_CLAIM_SCRIPT,
+        "1",
+        expect.stringMatching(/^pending-email-signup-claim:[a-f0-9]{32}$/),
+        claim.claimId,
+        "60000",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects renewal from an expired or stale owner", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeRedisCommandClient();
+      const store = new RedisPendingEmailSignupStore(async () => client);
+      const token = await store.issue(sampleEntry);
+      const staleClaim = await store.claim(token);
+      if (!staleClaim) throw new Error("Expected stale claim");
+
+      vi.advanceTimersByTime(60_001);
+      await expect(store.renew(staleClaim)).rejects.toThrow(
+        "Pending email signup claim is no longer owned",
+      );
+
+      const currentClaim = await store.claim(token);
+      if (!currentClaim) throw new Error("Expected current claim");
+      await expect(store.renew(staleClaim)).rejects.toThrow(
+        "Pending email signup claim is no longer owned",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("deletes and reports malformed JSON without exposing credentials", async () => {
     const client = new FakeRedisCommandClient();
     const store = new RedisPendingEmailSignupStore(async () => client);
@@ -338,6 +407,47 @@ describe("InMemoryPendingEmailSignupStore", () => {
       await store.release(expiredClaim);
       const currentClaim = await store.claim(token);
       expect(currentClaim?.entry).toEqual(sampleEntry);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renews an owned claim across its original expiry", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = new InMemoryPendingEmailSignupStore({ claimTtlMs: 60_000 });
+      const token = await store.issue(sampleEntry);
+      const claim = await store.claim(token);
+      if (!claim) throw new Error("Expected claim");
+
+      vi.advanceTimersByTime(40_000);
+      await store.renew(claim);
+      vi.advanceTimersByTime(20_001);
+
+      await expect(store.claim(token)).resolves.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects renewal after expiry and from a stale owner", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = new InMemoryPendingEmailSignupStore({ claimTtlMs: 1 });
+      const token = await store.issue(sampleEntry);
+      const staleClaim = await store.claim(token);
+      if (!staleClaim) throw new Error("Expected stale claim");
+
+      vi.advanceTimersByTime(2);
+      await expect(store.renew(staleClaim)).rejects.toThrow(
+        "Pending email signup claim is no longer owned",
+      );
+
+      const currentClaim = await store.claim(token);
+      if (!currentClaim) throw new Error("Expected current claim");
+      await expect(store.renew(staleClaim)).rejects.toThrow(
+        "Pending email signup claim is no longer owned",
+      );
     } finally {
       vi.useRealTimers();
     }

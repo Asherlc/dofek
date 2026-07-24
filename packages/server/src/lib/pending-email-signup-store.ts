@@ -43,6 +43,7 @@ export interface PendingEmailSignupStore {
   issue(entry: PendingEmailSignupEntry): Promise<string>;
   get(token: string): Promise<PendingEmailSignupEntry | null>;
   claim(token: string): Promise<PendingEmailSignupClaim | null>;
+  renew(claim: PendingEmailSignupClaim): Promise<void>;
   release(claim: PendingEmailSignupClaim): Promise<void>;
   complete(claim: PendingEmailSignupClaim): Promise<void>;
 }
@@ -109,6 +110,14 @@ export class InMemoryPendingEmailSignupStore implements PendingEmailSignupStore 
     }
   }
 
+  async renew(claim: PendingEmailSignupClaim): Promise<void> {
+    const storedClaim = this.#claims.get(claim.token);
+    if (storedClaim?.claimId !== claim.claimId || storedClaim.expiresAt <= Date.now()) {
+      throw new Error("Pending email signup claim is no longer owned");
+    }
+    storedClaim.expiresAt = Date.now() + this.#claimTtlMs;
+  }
+
   async complete(claim: PendingEmailSignupClaim): Promise<void> {
     if (!this.#ownsClaim(claim)) {
       throw new Error("Pending email signup claim is no longer owned");
@@ -130,6 +139,13 @@ interface RedisCommandClient {
 const RELEASE_CLAIM_SCRIPT = `
 if redis.call("get", KEYS[1]) == ARGV[1] then
   return redis.call("del", KEYS[1])
+end
+return 0
+`;
+
+const RENEW_CLAIM_SCRIPT = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("pexpire", KEYS[1], ARGV[2])
 end
 return 0
 `;
@@ -255,6 +271,21 @@ export class RedisPendingEmailSignupStore implements PendingEmailSignupStore {
 
   async release(claim: PendingEmailSignupClaim): Promise<void> {
     await this.#release(claim.token, claim.claimId);
+  }
+
+  async renew(claim: PendingEmailSignupClaim): Promise<void> {
+    const client = await this.#getRedisClient();
+    const result = await client.sendCommand([
+      "EVAL",
+      RENEW_CLAIM_SCRIPT,
+      "1",
+      claimKey(claim.token),
+      claim.claimId,
+      `${CLAIM_TTL_MS}`,
+    ]);
+    if (result !== 1) {
+      throw new Error("Pending email signup claim is no longer owned");
+    }
   }
 
   async #release(token: string, claimId: string): Promise<void> {
