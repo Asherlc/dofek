@@ -1,10 +1,10 @@
+import { z } from "zod";
 import type { TaggedQueryClient } from "../../src/db/tagged-query-client.ts";
 import { USER_ID } from "./helpers.ts";
 
-interface CountRow {
-  [key: string]: unknown;
-  count: number;
-}
+const countRowSchema = z.object({
+  count: z.number().int().nonnegative(),
+});
 
 export async function verifySeed(sql: TaggedQueryClient): Promise<void> {
   const minimums = [
@@ -73,7 +73,7 @@ export async function verifySeed(sql: TaggedQueryClient): Promise<void> {
 }
 
 async function readCount(sql: TaggedQueryClient, query: string): Promise<number> {
-  const [row] = await sql.unsafe<CountRow>(query);
+  const [row] = await sql.unsafe(query);
   if (!row) throw new Error(`Count query returned no rows: ${query}`);
-  return row.count;
+  return countRowSchema.parse(row).count;
 }

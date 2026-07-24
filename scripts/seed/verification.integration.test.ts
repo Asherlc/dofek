@@ -4,12 +4,7 @@ import {
   type TaggedQueryClient,
 } from "../../src/db/tagged-query-client.ts";
 import { setupTestDatabase, type TestContext } from "../../src/db/test-helpers.ts";
-import { seedBodyHealth } from "./body-health.ts";
-import { seedCore } from "./core.ts";
-import { SeedRandom, USER_ID } from "./helpers.ts";
-import { seedRecovery } from "./recovery.ts";
-import { seedReviewSurfaces } from "./review-surfaces.ts";
-import { seedTraining } from "./training.ts";
+import { USER_ID } from "./helpers.ts";
 import { verifySeed } from "./verification.ts";
 
 let testContext: TestContext;
@@ -19,12 +14,7 @@ beforeAll(async () => {
   testContext = await setupTestDatabase();
   sql = createTaggedQueryClient(testContext.connectionString);
 
-  await seedCore(sql);
-  const random = new SeedRandom(42);
-  await seedRecovery(sql, random);
-  await seedTraining(sql);
-  await seedBodyHealth(sql);
-  await seedReviewSurfaces(sql, random);
+  await insertVerificationPrerequisites();
 }, 120_000);
 
 beforeEach(async () => {
@@ -39,6 +29,22 @@ afterAll(async () => {
 describe("review seed verification", () => {
   it("rejects many food rows on fewer than 85 canonical dates", async () => {
     await insertFoodEntries({ distinctDates: 84, totalEntries: 85 });
+
+    const dateCounts = await sql`
+      SELECT
+        COUNT(DISTINCT date)::int AS canonical_date_count,
+        COUNT(DISTINCT logged_at::date)::int AS logged_at_date_count,
+        COUNT(*)::int AS total_entry_count
+      FROM fitness.food_entry
+      WHERE user_id = ${USER_ID}
+    `;
+    expect(dateCounts).toEqual([
+      {
+        canonical_date_count: 84,
+        logged_at_date_count: 85,
+        total_entry_count: 85,
+      },
+    ]);
 
     await expect(verifySeed(sql)).rejects.toThrow(
       "Seed verification failed for nutrition days: expected at least 85, got 84",
@@ -99,6 +105,143 @@ async function insertFoodEntries({
 }
 
 function dateForIndex(dateIndex: number): string {
-  const date = new Date(Date.UTC(2026, 0, 1 + dateIndex));
+  const date = new Date(Date.UTC(2026, 0, 2 + dateIndex));
   return date.toISOString().slice(0, 10);
+}
+
+async function insertVerificationPrerequisites(): Promise<void> {
+  await sql`
+    INSERT INTO fitness.user_profile (id, name)
+    VALUES (${USER_ID}, 'Review verification fixture')
+    ON CONFLICT (id) DO UPDATE
+      SET name = EXCLUDED.name
+  `;
+
+  await sql`
+    INSERT INTO fitness.provider (id, name, user_id)
+    VALUES
+      ('manual_review', 'Manual review', ${USER_ID}),
+      ('verification-2', 'Verification 2', ${USER_ID}),
+      ('verification-3', 'Verification 3', ${USER_ID}),
+      ('verification-4', 'Verification 4', ${USER_ID}),
+      ('verification-5', 'Verification 5', ${USER_ID})
+    ON CONFLICT (id) DO UPDATE
+      SET name = EXCLUDED.name,
+          user_id = EXCLUDED.user_id
+  `;
+
+  await sql`
+    INSERT INTO fitness.daily_metrics (date, provider_id, user_id)
+    SELECT
+      DATE '2026-01-01' + generated_index,
+      'manual_review',
+      ${USER_ID}
+    FROM generate_series(1, 170) AS generated_index
+  `;
+
+  await sql`
+    INSERT INTO fitness.sleep_session (
+      provider_id,
+      user_id,
+      external_id,
+      started_at
+    )
+    SELECT
+      'manual_review',
+      ${USER_ID},
+      'verification-sleep-' || generated_index,
+      TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day'
+    FROM generate_series(1, 100) AS generated_index
+  `;
+
+  await sql`
+    INSERT INTO fitness.activity (
+      provider_id,
+      user_id,
+      external_id,
+      activity_type,
+      started_at
+    )
+    SELECT
+      'manual_review',
+      ${USER_ID},
+      'verification-activity-' || generated_index,
+      'walking',
+      TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day'
+    FROM generate_series(1, 90) AS generated_index
+  `;
+
+  await sql`
+    INSERT INTO fitness.lab_result (
+      provider_id,
+      user_id,
+      external_id,
+      test_name,
+      recorded_at
+    )
+    SELECT
+      'manual_review',
+      ${USER_ID},
+      'verification-lab-' || generated_index,
+      'Verification lab result',
+      TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day'
+    FROM generate_series(1, 8) AS generated_index
+  `;
+
+  await sql`
+    INSERT INTO fitness.journal_question (
+      slug,
+      display_name,
+      category,
+      data_type
+    )
+    VALUES (
+      'verification-question',
+      'Verification question',
+      'verification',
+      'boolean'
+    )
+  `;
+
+  await sql`
+    INSERT INTO fitness.journal_entry (
+      date,
+      provider_id,
+      user_id,
+      question_slug,
+      answer_text
+    )
+    SELECT
+      DATE '2026-01-01' + generated_index,
+      'manual_review',
+      ${USER_ID},
+      'verification-question',
+      'yes'
+    FROM generate_series(1, 30) AS generated_index
+  `;
+
+  await sql`
+    INSERT INTO fitness.breathwork_session (
+      user_id,
+      technique_id,
+      rounds,
+      duration_seconds,
+      started_at
+    )
+    SELECT
+      ${USER_ID},
+      'verification',
+      1,
+      60,
+      TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day'
+    FROM generate_series(1, 10) AS generated_index
+  `;
+
+  await sql`
+    INSERT INTO fitness.menstrual_period (user_id, start_date)
+    SELECT
+      ${USER_ID},
+      DATE '2026-01-01' + generated_index * 28
+    FROM generate_series(1, 4) AS generated_index
+  `;
 }
