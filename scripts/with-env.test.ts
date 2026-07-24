@@ -191,4 +191,22 @@ printf '%s' "$SENTRY_ENVIRONMENT" > "$1"
     expect(result.status).toBe(0);
     expect(readFileSync(capturedValuePath, "utf8")).toBe("staging");
   });
+
+  it("propagates a wrapped command termination as a shell-compatible exit status", () => {
+    const { fixtureRoot, scriptPath } = createFixture(`#!/bin/sh
+printf '[]'
+`);
+    const wrappedCommand = join(fixtureRoot, "bin", "wrapped-command");
+    writeExecutable(
+      wrappedCommand,
+      `#!/bin/sh
+kill -TERM $$
+`,
+    );
+
+    const result = runWithEnv(scriptPath, fixtureRoot, [wrappedCommand]);
+
+    expect(result.status).toBe(143);
+    expect(result.signal).toBeNull();
+  });
 });
