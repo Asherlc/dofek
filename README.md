@@ -153,7 +153,8 @@ pnpm compose:up
 # for ClickHouse analytics views and lower-volume postgres_fitness mirrors.
 pnpm compose -- -f docker-compose.yml -f docker-compose.peerdb.yml up -d
 # (The peerdb-temporal-init container auto-registers the MirrorName Temporal
-# search attribute that PeerDB workflows depend on. It exits after running.)
+# search attribute that PeerDB workflows depend on. PeerDB startup fails if
+# registration cannot be verified.)
 # PeerDB UI is available at http://localhost:3001 when the PeerDB stack is up.
 
 # Apply Postgres + ClickHouse migrations to a fresh DB (idempotent).
@@ -186,6 +187,10 @@ cd packages/mobile && pnpm start
 pnpm storybook:web
 pnpm storybook:mobile
 ```
+
+The PeerDB flow API uses Compose's `service_completed_successfully` dependency
+on `peerdb-temporal-init`, so a failed `MirrorName` verification blocks startup;
+see the [local PeerDB Compose definition](docker-compose.peerdb.yml#L51-L84).
 
 ### Exercise Metadata
 
