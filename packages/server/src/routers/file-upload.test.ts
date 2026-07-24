@@ -309,16 +309,20 @@ describe("fileUploadRouter", () => {
       sha256: existing.expectedSha256,
     } satisfies Parameters<typeof caller.initiate>[0];
 
-    dateNow.mockReturnValue(new Date("2026-07-19T00:00:00Z").getTime());
-    await caller.initiate(input);
-    dateNow.mockReturnValue(new Date("2026-07-19T00:01:00Z").getTime());
-    await caller.initiate(input);
+    try {
+      dateNow.mockReturnValue(new Date("2026-07-19T00:00:00Z").getTime());
+      await caller.initiate(input);
+      dateNow.mockReturnValue(new Date("2026-07-19T00:01:00Z").getTime());
+      await caller.initiate(input);
 
-    expect(repository.create).toHaveBeenNthCalledWith(
-      2,
-      {},
-      expect.objectContaining({ since: persistedSince }),
-    );
+      expect(repository.create).toHaveBeenNthCalledWith(
+        2,
+        {},
+        expect.objectContaining({ since: persistedSince }),
+      );
+    } finally {
+      dateNow.mockRestore();
+    }
   });
 
   it("uses epoch for full Apple Health imports and defaults Strong weight units", async () => {

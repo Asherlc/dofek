@@ -291,12 +291,15 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
           input.uploadId,
           ctx.userId,
         );
-        const since =
-          input.importType === "apple-health" && input.fullSync !== true
-            ? existingUpload?.importType === "apple-health" && existingUpload.since.getTime() !== 0
-              ? existingUpload.since
-              : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-            : new Date(0);
+        const isIncrementalAppleHealth =
+          input.importType === "apple-health" && input.fullSync !== true;
+        const existingIncrementalSince =
+          existingUpload?.importType === "apple-health" && existingUpload.since.getTime() !== 0
+            ? existingUpload.since
+            : null;
+        const since = isIncrementalAppleHealth
+          ? (existingIncrementalSince ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+          : new Date(0);
         if (
           !existingUpload &&
           !(await dependencies.repository.rateAllowed(ctx.db, ctx.userId, "initiate"))
