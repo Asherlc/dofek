@@ -654,6 +654,7 @@ describe("domain metric formatters", () => {
     expect(formatStandardDeviation(-2)).toBe("-2");
     expect(formatStandardDeviation(-1.5)).toBe("-1.5");
     expect(formatStandardDeviation(-1.25)).toBe("-1.25");
+    expect(formatStandardDeviation(1.91)).toBe("1.91");
   });
 
   it("formats intensity with 0 decimals", () => {
