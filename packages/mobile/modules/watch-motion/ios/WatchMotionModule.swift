@@ -1,14 +1,10 @@
 import ExpoModulesCore
+import Sentry
 import WatchConnectivity
 
-public class WatchMotionModule: Module {
+public class WatchMotionModule: Module, WatchFileReceiverObserver {
     private var session: WCSession?
-    private let pendingDirectory: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let directory = appSupport.appendingPathComponent("watch-motion-pending", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
-    }()
+    private let pendingDirectory = WatchFileInbox.shared.pendingDirectory
     private let defaults = UserDefaults.standard
     private let lastSyncKey = "com.dofek.watch-motion.lastSyncTimestamp"
 
@@ -172,29 +168,23 @@ public class WatchMotionModule: Module {
 
     // MARK: - File received from Watch
 
-    func handleReceivedFile(fileURL: URL, metadata: [String: Any]?) {
+    func watchFileReceiver(
+        didPersist fileName: String,
+        metadata: [String: Any]?
+    ) {
         let sampleCount = metadata?["sampleCount"] as? Int ?? -1
         let fileType = metadata?["type"] as? String ?? "accelerometer_samples"
-        NSLog("[WatchMotion] Received file from Watch: %@ (%d samples, type=%@)", fileURL.lastPathComponent, sampleCount, fileType)
-
-        // Move the file to our pending directory
-        let destinationPrefix = fileType == "altitude_samples" ? "watch-altitude-" : "watch-accel-"
-        let destinationName = "\(destinationPrefix)\(UUID().uuidString).json.gz"
-        let destination = pendingDirectory.appendingPathComponent(destinationName)
-
-        do {
-            try FileManager.default.moveItem(at: fileURL, to: destination)
-            NSLog("[WatchMotion] Saved to pending: %@ (total pending: %d)", destinationName, countPendingFiles())
-            sendEvent("onWatchFileReceived", [
-                "fileName": destinationName,
-                "metadata": metadata ?? [:],
-            ])
-        } catch {
-            NSLog("[WatchMotion] Move failed for %@: %@, trying copy", fileURL.lastPathComponent, error.localizedDescription)
-            // If move fails, try copy + delete
-            try? FileManager.default.copyItem(at: fileURL, to: destination)
-            try? FileManager.default.removeItem(at: fileURL)
-        }
+        NSLog(
+            "[WatchMotion] Saved Watch file to pending: %@ (%d samples, type=%@, total pending: %d)",
+            fileName,
+            sampleCount,
+            fileType,
+            countPendingFiles()
+        )
+        sendEvent("onWatchFileReceived", [
+            "fileName": fileName,
+            "metadata": metadata ?? [:],
+        ])
     }
 
     // MARK: - Pending file operations
@@ -269,7 +259,18 @@ public class WatchMotionModule: Module {
 
 private class WatchSessionDelegateHolder: NSObject, WCSessionDelegate {
     static let shared = WatchSessionDelegateHolder()
-    weak var module: WatchMotionModule?
+    private let receiver = WatchFileReceiver(
+        inbox: .shared,
+        reportError: { error in
+            NSLog("[WatchMotion] Failed to persist received Watch file: %@", error.localizedDescription)
+            SentrySDK.capture(error: error)
+        }
+    )
+    weak var module: WatchMotionModule? {
+        didSet {
+            receiver.observer = module
+        }
+    }
 
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         NSLog("[WatchMotion] WCSession activation: %@ (error: %@)",
@@ -287,10 +288,6 @@ private class WatchSessionDelegateHolder: NSObject, WCSessionDelegate {
         NSLog("[WatchMotion] didReceive file: %@, module attached: %@",
               file.fileURL.lastPathComponent,
               module != nil ? "YES" : "NO")
-        if let module = module {
-            module.handleReceivedFile(fileURL: file.fileURL, metadata: file.metadata as? [String: Any])
-        } else {
-            NSLog("[WatchMotion] ERROR: module is nil, file will be lost: %@", file.fileURL.lastPathComponent)
-        }
+        receiver.receive(fileURL: file.fileURL, metadata: file.metadata)
     }
 }
