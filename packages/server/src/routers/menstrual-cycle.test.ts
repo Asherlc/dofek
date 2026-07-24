@@ -133,6 +133,19 @@ describe("menstrualCycleRouter", () => {
   });
 
   describe("logPeriod", () => {
+    it("rejects an end date before the start date without writing", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.logPeriod({ startDate: "2026-03-02", endDate: "2026-03-01" }),
+      ).rejects.toThrow("Period end date cannot be before start date.");
+      expect(execute).not.toHaveBeenCalled();
+    });
+
     it("logs a new period start", async () => {
       const insertedRow = {
         id: "new-id",

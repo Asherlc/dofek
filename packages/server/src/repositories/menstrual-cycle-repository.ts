@@ -122,6 +122,10 @@ export class MenstrualCycleRepository {
     endDate: string | null,
     notes: string | null,
   ): Promise<MenstrualPeriod | null> {
+    if (endDate !== null && endDate < startDate) {
+      throw new Error("Period end date cannot be before start date.");
+    }
+
     const rows = await executeWithSchema(
       this.#db,
       periodMutationRowSchema,

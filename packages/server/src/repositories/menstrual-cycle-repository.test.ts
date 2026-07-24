@@ -105,6 +105,15 @@ describe("MenstrualCycleRepository", () => {
   });
 
   describe("logPeriod", () => {
+    it("rejects an end date before the start date without writing", async () => {
+      const { repo, execute } = makeRepository();
+
+      await expect(repo.logPeriod("2025-01-15", "2025-01-14", null)).rejects.toThrow(
+        "Period end date cannot be before start date.",
+      );
+      expect(execute).not.toHaveBeenCalled();
+    });
+
     it("returns the inserted period with camelCase fields", async () => {
       const { repo } = makeRepository([
         {
