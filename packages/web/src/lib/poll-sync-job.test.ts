@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { pollSyncJob, type SyncJobStatus } from "../lib/poll-sync-job.ts";
 
 const mockCaptureException = vi.hoisted(() => vi.fn());
@@ -6,6 +6,39 @@ const mockCaptureException = vi.hoisted(() => vi.fn());
 vi.mock("../lib/telemetry.ts", () => ({
   captureException: mockCaptureException,
 }));
+
+function createDeferred<T>() {
+  let resolvePromise: ((value: T) => void) | undefined;
+  let rejectPromise: ((reason: unknown) => void) | undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return {
+    promise,
+    resolve(value: T) {
+      if (!resolvePromise) throw new Error("Deferred promise resolver is unavailable");
+      resolvePromise(value);
+    },
+    reject(reason: unknown) {
+      if (!rejectPromise) throw new Error("Deferred promise rejecter is unavailable");
+      rejectPromise(reason);
+    },
+  };
+}
+
+async function flushMicrotasks() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
+});
 
 describe("pollSyncJob", () => {
   it("resets syncing providers when job is null (server restart)", async () => {
@@ -84,6 +117,10 @@ describe("pollSyncJob", () => {
       pollIntervalMs: 1000,
       signal: controller.signal,
     });
+    let pollingFinished = false;
+    void polling.then(() => {
+      pollingFinished = true;
+    });
     await vi.advanceTimersByTimeAsync(0);
 
     expect(mockCaptureException).toHaveBeenCalledWith(pollingError, {
@@ -94,13 +131,342 @@ describe("pollSyncJob", () => {
     expect(updateState).toHaveBeenCalledOnce();
 
     controller.abort();
-    await vi.advanceTimersByTimeAsync(1000);
+    await flushMicrotasks();
+
+    expect(pollingFinished).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
     await polling;
 
     expect(fetchStatus).toHaveBeenCalledOnce();
     expect(updateState).toHaveBeenCalledOnce();
     expect(onComplete).not.toHaveBeenCalled();
-    vi.useRealTimers();
+  });
+
+  it("does not fetch when cancellation already occurred", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchStatus = vi.fn();
+    const updateState = vi.fn();
+    const onComplete = vi.fn();
+
+    await pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo"],
+      fetchStatus,
+      updateState,
+      onComplete,
+      signal: controller.signal,
+    });
+
+    expect(fetchStatus).not.toHaveBeenCalled();
+    expect(updateState).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("stops without reporting when cancellation occurs during a rejected fetch", async () => {
+    const controller = new AbortController();
+    const deferredStatus = createDeferred<SyncJobStatus | null>();
+    const fetchStatus = vi.fn().mockReturnValue(deferredStatus.promise);
+    const updateState = vi.fn();
+    const onComplete = vi.fn();
+    const polling = pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo"],
+      fetchStatus,
+      updateState,
+      onComplete,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+    deferredStatus.reject(new Error("Redis connection refused"));
+    await polling;
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(updateState).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("stops without callbacks when cancellation occurs during a resolved fetch", async () => {
+    const controller = new AbortController();
+    const deferredStatus = createDeferred<SyncJobStatus | null>();
+    const fetchStatus = vi.fn().mockReturnValue(deferredStatus.promise);
+    const updateState = vi.fn();
+    const onComplete = vi.fn();
+    const polling = pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo"],
+      fetchStatus,
+      updateState,
+      onComplete,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+    deferredStatus.resolve({
+      status: "completed",
+      providers: { wahoo: { status: "done", message: "5 synced" } },
+    });
+    await polling;
+
+    expect(updateState).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("stops a null reset when a state callback cancels polling", async () => {
+    const controller = new AbortController();
+    const updateState = vi.fn(() => controller.abort());
+
+    await pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo", "whoop"],
+      fetchStatus: vi.fn().mockResolvedValue(null),
+      updateState,
+      onComplete: vi.fn(),
+      signal: controller.signal,
+    });
+
+    expect(updateState).toHaveBeenCalledOnce();
+    expect(updateState).toHaveBeenCalledWith("wahoo", {
+      status: "error",
+      message: "Lost sync status",
+    });
+  });
+
+  it("stops transient error updates when a state callback cancels polling", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const updateState = vi.fn(() => controller.abort());
+
+    const polling = pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo", "whoop"],
+      fetchStatus: vi.fn().mockRejectedValue(new Error("Redis connection refused")),
+      updateState,
+      onComplete: vi.fn(),
+      pollIntervalMs: 1000,
+      signal: controller.signal,
+    });
+    await flushMicrotasks();
+
+    expect(updateState).toHaveBeenCalledOnce();
+    expect(updateState).toHaveBeenCalledWith(
+      "wahoo",
+      expect.objectContaining({ status: "syncing" }),
+    );
+    expect(vi.getTimerCount()).toBe(0);
+    await polling;
+  });
+
+  it("does not schedule another retry when the final error update cancels polling", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const polling = pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo"],
+      fetchStatus: vi.fn().mockRejectedValue(new Error("Redis connection refused")),
+      updateState: vi.fn(() => controller.abort()),
+      onComplete: vi.fn(),
+      pollIntervalMs: 1000,
+      signal: controller.signal,
+    });
+    await flushMicrotasks();
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    await polling;
+  });
+
+  it("stops provider updates when a state callback cancels polling", async () => {
+    const controller = new AbortController();
+    const updateState = vi.fn(() => controller.abort());
+    const onComplete = vi.fn();
+
+    await pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo", "whoop"],
+      fetchStatus: vi.fn().mockResolvedValue({
+        status: "completed",
+        providers: {
+          wahoo: { status: "done", message: "5 synced" },
+          whoop: { status: "done", message: "7 synced" },
+        },
+      }),
+      updateState,
+      onComplete,
+      signal: controller.signal,
+    });
+
+    expect(updateState).toHaveBeenCalledOnce();
+    expect(updateState).toHaveBeenCalledWith("wahoo", {
+      status: "done",
+      message: "5 synced",
+    });
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("does not complete when the terminal provider callback cancels polling", async () => {
+    const controller = new AbortController();
+    const onComplete = vi.fn();
+
+    await pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo"],
+      fetchStatus: vi.fn().mockResolvedValue({
+        status: "completed",
+        providers: { wahoo: { status: "done", message: "5 synced" } },
+      }),
+      updateState: vi.fn(() => controller.abort()),
+      onComplete,
+      signal: controller.signal,
+    });
+
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("does not schedule another normal poll when the final state callback cancels polling", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const fetchStatus = vi.fn().mockResolvedValue({
+      status: "running",
+      providers: { wahoo: { status: "running" } },
+    });
+    const polling = pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo"],
+      fetchStatus,
+      updateState: vi.fn(() => controller.abort()),
+      onComplete: vi.fn(),
+      pollIntervalMs: 1000,
+      signal: controller.signal,
+    });
+    await flushMicrotasks();
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(fetchStatus).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+    await polling;
+  });
+
+  it("continues only after a positive poll interval and removes the abort listener", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const addEventListener = vi.spyOn(controller.signal, "addEventListener");
+    const removeEventListener = vi.spyOn(controller.signal, "removeEventListener");
+    const fetchStatus = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "running",
+        providers: { wahoo: { status: "running" } },
+      })
+      .mockResolvedValueOnce({
+        status: "completed",
+        providers: { wahoo: { status: "done" } },
+      });
+    const onComplete = vi.fn();
+    const polling = pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo"],
+      fetchStatus,
+      updateState: vi.fn(),
+      onComplete,
+      pollIntervalMs: 1000,
+      signal: controller.signal,
+    });
+    await flushMicrotasks();
+
+    expect(fetchStatus).toHaveBeenCalledOnce();
+    expect(addEventListener).toHaveBeenCalledWith("abort", expect.any(Function), { once: true });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetchStatus).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    await polling;
+
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    expect(removeEventListener).toHaveBeenCalledWith("abort", expect.any(Function));
+    expect(onComplete).toHaveBeenCalledOnce();
+  });
+
+  it("uses no timer when the poll interval is zero", async () => {
+    vi.useFakeTimers();
+    const fetchStatus = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "running", providers: {} })
+      .mockResolvedValueOnce({ status: "completed", providers: {} });
+
+    const polling = pollSyncJob({
+      jobId: "sync-123",
+      providerIds: [],
+      fetchStatus,
+      updateState: vi.fn(),
+      onComplete: vi.fn(),
+      pollIntervalMs: 0,
+    });
+    await flushMicrotasks();
+
+    expect(vi.getTimerCount()).toBe(0);
+    await polling;
+  });
+
+  it("continues after a positive poll interval without a cancellation signal", async () => {
+    vi.useFakeTimers();
+    const fetchStatus = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "running", providers: {} })
+      .mockResolvedValueOnce({ status: "completed", providers: {} });
+    const onComplete = vi.fn();
+    const polling = pollSyncJob({
+      jobId: "sync-123",
+      providerIds: [],
+      fetchStatus,
+      updateState: vi.fn(),
+      onComplete,
+      pollIntervalMs: 1000,
+    });
+    await flushMicrotasks();
+
+    expect(fetchStatus).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1000);
+    await polling;
+
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    expect(onComplete).toHaveBeenCalledOnce();
+  });
+
+  it("handles cancellation immediately before the abort listener is registered", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const nativeAddEventListener = controller.signal.addEventListener.bind(controller.signal);
+    vi.spyOn(controller.signal, "addEventListener").mockImplementationOnce(
+      (type, listener, options) => {
+        controller.abort();
+        nativeAddEventListener(type, listener, options);
+      },
+    );
+    const fetchStatus = vi.fn().mockResolvedValue({
+      status: "running",
+      providers: { wahoo: { status: "running" } },
+    });
+    const polling = pollSyncJob({
+      jobId: "sync-123",
+      providerIds: ["wahoo"],
+      fetchStatus,
+      updateState: vi.fn(),
+      onComplete: vi.fn(),
+      pollIntervalMs: 1000,
+      signal: controller.signal,
+    });
+    let pollingFinished = false;
+    void polling.then(() => {
+      pollingFinished = true;
+    });
+    await flushMicrotasks();
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(pollingFinished).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(fetchStatus).toHaveBeenCalledOnce();
+    await polling;
   });
 
   it("preserves last-known provider states and percentage across transient errors", async () => {
