@@ -1086,8 +1086,7 @@ describe("ProvidersScreen", () => {
       error: refreshError,
     });
 
-    const { default: ProvidersScreen } = await import("./index.tsx");
-    render(<ProvidersScreen />);
+    await renderProvidersScreen();
 
     expect(screen.getByTestId("provider-card-wahoo")).toBeTruthy();
     expect(screen.getByText(refreshError.message)).toBeTruthy();
