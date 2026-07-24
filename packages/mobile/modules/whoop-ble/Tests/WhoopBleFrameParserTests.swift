@@ -319,6 +319,88 @@ final class WhoopBleFrameParserTests: XCTestCase {
         XCTAssertEqual(samples[1].accelerometerX, 400.0 / 4096.0, accuracy: 0.0001)
     }
 
+    func testFrameParserParsesTwoConcatenatedFrames() {
+        let parser = WhoopBleFrameParser()
+        let firstFrame = buildMaverickFrame(payload: Data([0x33]))
+        let secondFrame = buildMaverickFrame(payload: Data([0x28]))
+
+        let frames = parser.feed(firstFrame + secondFrame)
+
+        XCTAssertEqual(frames.map(\.packetType), [0x33, 0x28])
+        XCTAssertEqual(parser.coalescedFrameCount, 1)
+        XCTAssertEqual(parser.malformedFrameCount, 0)
+    }
+
+    func testFrameParserParsesThreeConcatenatedFrames() {
+        let parser = WhoopBleFrameParser()
+        let firstFrame = buildMaverickFrame(payload: Data([0x33]))
+        let secondFrame = buildMaverickFrame(payload: Data([0x28]))
+        let thirdFrame = buildMaverickFrame(payload: Data([0x34]))
+
+        let frames = parser.feed(firstFrame + secondFrame + thirdFrame)
+
+        XCTAssertEqual(frames.map(\.packetType), [0x33, 0x28, 0x34])
+        XCTAssertEqual(parser.coalescedFrameCount, 2)
+        XCTAssertEqual(parser.malformedFrameCount, 0)
+    }
+
+    func testFrameParserPreservesPartialSuffixAfterConcatenatedFrames() {
+        let parser = WhoopBleFrameParser()
+        let firstFrame = buildMaverickFrame(payload: Data([0x33]))
+        let secondFrame = buildMaverickFrame(payload: Data([0x28]))
+        let fragmentedFrame = buildMaverickFrame(payload: Data([0x34]))
+        let splitIndex = fragmentedFrame.count / 2
+
+        let initialFrames = parser.feed(
+            firstFrame + secondFrame + Data(fragmentedFrame[..<splitIndex])
+        )
+        let completedFrames = parser.feed(Data(fragmentedFrame[splitIndex...]))
+
+        XCTAssertEqual(initialFrames.map(\.packetType), [0x33, 0x28])
+        XCTAssertEqual(completedFrames.map(\.packetType), [0x34])
+        XCTAssertEqual(parser.coalescedFrameCount, 1)
+        XCTAssertEqual(parser.malformedFrameCount, 0)
+    }
+
+    func testFrameParserPreservesFragmentedFrameContainingStartMarkerInPayload() {
+        let parser = WhoopBleFrameParser()
+        let payload = Data([0x33, 0xAA, 0xFF, 0xFF, 0x00, 0x01, 0x00, 0x00, 0x01])
+        let frame = buildMaverickFrame(payload: payload)
+        let splitIndex = frame.count - 2
+
+        XCTAssertTrue(parser.feed(Data(frame[..<splitIndex])).isEmpty)
+        let frames = parser.feed(Data(frame[splitIndex...]))
+
+        XCTAssertEqual(frames.map(\.packetType), [0x33])
+        XCTAssertEqual(parser.malformedFrameCount, 0)
+    }
+
+    func testFrameParserRecoversFromCorruptFrameBeforeValidFrame() {
+        let parser = WhoopBleFrameParser()
+        var corruptFrame = buildMaverickFrame(payload: Data([0x33]))
+        corruptFrame[corruptFrame.count - 1] &+= 1
+        let validFrame = buildMaverickFrame(payload: Data([0x28]))
+
+        let frames = parser.feed(corruptFrame + validFrame)
+
+        XCTAssertEqual(frames.map(\.packetType), [0x28])
+        XCTAssertEqual(parser.coalescedFrameCount, 0)
+        XCTAssertEqual(parser.malformedFrameCount, 1)
+    }
+
+    func testFrameParserRecoversFromCorruptLengthPrefixBeforeValidFrame() {
+        let parser = WhoopBleFrameParser()
+        let corruptPrefix = Data([
+            WhoopBleConstants.startOfFrame, 0x01, 0xFF, 0xFF, 0x00, 0x01, 0x00, 0x00,
+        ])
+        let validFrame = buildMaverickFrame(payload: Data([0x28]))
+
+        let frames = parser.feed(corruptPrefix + validFrame)
+
+        XCTAssertEqual(frames.map(\.packetType), [0x28])
+        XCTAssertEqual(parser.malformedFrameCount, 1)
+    }
+
     // MARK: - Realtime data extraction (0x28 packets)
 
     // swiftlint:disable identifier_name
