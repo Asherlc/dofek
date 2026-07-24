@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "typecheck": "tsr generate && tsc --noEmit"
+    "typecheck": "cd src && tsr generate && cd .. && tsc --noEmit"
   },
   "dependencies": {
     "@aws-crypto/sha256-browser": "5.2.0",
