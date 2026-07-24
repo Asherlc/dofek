@@ -432,14 +432,14 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
         ),
         selected_points AS (
           SELECT
-            recorded_at,
+            recorded_at AS sample_recorded_at,
             heart_rate,
             power,
             speed,
             cadence,
             altitude,
-            lat,
-            lng,
+            lat AS sample_lat,
+            lng AS sample_lng,
             if(
               point_count <= toUInt64({maxPoints:UInt32}),
               point_index - 1,
@@ -450,31 +450,67 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             ) AS sample_bucket
           FROM ranked_points
         ),
-        selected_point_times AS (
+        downsampled_points AS (
           SELECT
             sample_bucket,
+            min(sample_recorded_at) AS recorded_at,
             if(
-              sample_bucket = toUInt64({maxPoints:UInt32}) - 1,
-              max(recorded_at),
-              min(recorded_at)
-            ) AS recorded_at
+              countIf(heart_rate IS NOT NULL) = 0,
+              NULL,
+              argMinIf(heart_rate, sample_recorded_at, heart_rate IS NOT NULL)
+            ) AS heart_rate,
+            if(
+              countIf(power IS NOT NULL) = 0,
+              NULL,
+              argMinIf(power, sample_recorded_at, power IS NOT NULL)
+            ) AS power,
+            if(
+              countIf(speed IS NOT NULL) = 0,
+              NULL,
+              argMinIf(speed, sample_recorded_at, speed IS NOT NULL)
+            ) AS speed,
+            if(
+              countIf(cadence IS NOT NULL) = 0,
+              NULL,
+              argMinIf(cadence, sample_recorded_at, cadence IS NOT NULL)
+            ) AS cadence,
+            if(
+              countIf(altitude IS NOT NULL) = 0,
+              NULL,
+              argMinIf(altitude, sample_recorded_at, altitude IS NOT NULL)
+            ) AS altitude,
+            if(
+              countIf(sample_lat IS NOT NULL AND sample_lng IS NOT NULL) = 0,
+              NULL,
+              argMinIf(
+                sample_lat,
+                sample_recorded_at,
+                sample_lat IS NOT NULL AND sample_lng IS NOT NULL
+              )
+            ) AS lat,
+            if(
+              countIf(sample_lat IS NOT NULL AND sample_lng IS NOT NULL) = 0,
+              NULL,
+              argMinIf(
+                sample_lng,
+                sample_recorded_at,
+                sample_lat IS NOT NULL AND sample_lng IS NOT NULL
+              )
+            ) AS lng
           FROM selected_points
           GROUP BY sample_bucket
         )
         SELECT
-          toString(selected_points.recorded_at) AS recorded_at,
-          selected_points.heart_rate AS heart_rate,
-          selected_points.power AS power,
-          selected_points.speed AS speed,
-          selected_points.cadence AS cadence,
-          selected_points.altitude AS altitude,
-          selected_points.lat AS lat,
-          selected_points.lng AS lng
-        FROM selected_points
-        INNER JOIN selected_point_times
-          ON selected_point_times.sample_bucket = selected_points.sample_bucket
-          AND selected_point_times.recorded_at = selected_points.recorded_at
-        ORDER BY selected_points.recorded_at
+          toString(recorded_at) AS recorded_at,
+          heart_rate,
+          power,
+          speed,
+          cadence,
+          altitude,
+          lat,
+          lng
+        FROM downsampled_points
+        ORDER BY recorded_at
       `,
       format: "JSONEachRow",
       query_params: queryParams(window, { maxPoints }),
