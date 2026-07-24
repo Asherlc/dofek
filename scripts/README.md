@@ -67,6 +67,10 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   fails unless the OTA origin returns a conformant manifest or no-update
   response within five seconds.
   - Usage: `pnpm tsx scripts/check-ota-manifest.ts`
+- `e2e-web.ts`: Starts the isolated web E2E stack, runs Cypress, and always
+  tears the stack down. Setup or Cypress failures remain the command's exit
+  status after cleanup.
+  - Usage: `pnpm e2e:web`
 
 ## Reverse Engineering (WHOOP)
 
