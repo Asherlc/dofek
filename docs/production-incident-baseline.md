@@ -15660,3 +15660,49 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   because it ran with production environment configuration. Keep host and
   deployment context visible in Sentry triage so local operational failures are
   not mistaken for production outages.
+
+## 2026-07-23 — Local Conductor Errors Were Tagged as Production in Sentry
+
+- **Status:** Production unaffected; recurrence fix validated locally and
+  deployment pending.
+- **Symptoms:** Sentry sent an alert for
+  [DOFEK-SERVER-53](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-53),
+  reporting that `analytics.daily_body_measurement` did not exist. Three nearby
+  new issues reported local PeerDB authentication, Temporal search-attribute,
+  and missing-workflow failures.
+- **User impact:** No production user impact. Sentry reported four occurrences
+  for the linked issue and zero affected users.
+- **Evidence:** All four infrastructure-related Sentry issues identified
+  `Ashers-MacBook-Pro.local`, macOS, and source paths under the `majuro`
+  Conductor workspace while carrying the `production` environment tag. The
+  linked issue occurred from `2026-07-23T23:43:28.999Z` through
+  `23:43:36.120Z`. Axiom contained neither its trace ID nor a matching
+  `daily_body_measurement` error in production logs
+  ([trace query](https://app.axiom.co/asherlc-9e63/query?initForm=%7B%0A%20%20%22apl%22%3A%20%22%5B%27dofek-logs%27%5D%20%7C%20where%20trace_id%20%3D%3D%20%275ef34b6f38cb42509c51f018d09f1b8a%27%20%7C%20project%20_time%2C%20%5B%27resource.host.name%27%5D%2C%20%5B%27service.name%27%5D%2C%20severity%2C%20body%2C%20%5B%27attributes.exception.message%27%5D%2C%20trace_id%20%7C%20take%2020%22%2C%0A%20%20%22queryOptions%22%3A%20%7B%0A%20%20%20%20%22quickRange%22%3A%20%221h%22%0A%20%20%7D%0A%7D),
+  [message query](https://app.axiom.co/asherlc-9e63/query?initForm=%7B%0A%20%20%22apl%22%3A%20%22%5B%27dofek-logs%27%5D%20%7C%20where%20body%20has_cs%20%27daily_body_measurement%27%20or%20%5B%27attributes.exception.message%27%5D%20has_cs%20%27daily_body_measurement%27%20%7C%20project%20_time%2C%20%5B%27resource.host.name%27%5D%2C%20%5B%27service.name%27%5D%2C%20severity%2C%20body%2C%20%5B%27attributes.exception.message%27%5D%2C%20trace_id%20%7C%20take%2020%22%2C%0A%20%20%22queryOptions%22%3A%20%7B%0A%20%20%20%20%22quickRange%22%3A%20%221h%22%0A%20%20%7D%0A%7D)).
+  A read-only production ClickHouse check returned 2,527 rows from
+  `analytics.daily_body_measurement FINAL`, latest at
+  `2026-07-23 13:33:35 UTC`; both that table and
+  `analytics.v_body_measurement` existed. The public health endpoint returned
+  HTTP 200 in 95 ms.
+- **Root cause:** A local `majuro` process used the production Sentry DSN and
+  environment classification. Its local ClickHouse schema had not built the
+  `daily_body_measurement` dbt model required by the body-query path introduced
+  in [pull request 1527](https://github.com/Asherlc/dofek/pull/1527). Sentry
+  initialization supplies the DSN but no explicit deployment environment or
+  local-workspace tag, so these local failures were grouped with production.
+- **Fix / mitigation:** No production mitigation was required. Sentry
+  initialization is now centralized and requires the existing
+  `DEPLOY_ENVIRONMENT` to be explicitly `prod` or `production`; the production
+  stack passes that value to `web` and `worker`. Missing or local environment
+  values leave Sentry uninitialized even when a process inherits the production
+  DSN. Production events explicitly use Sentry's `production` environment.
+- **Validation:** The new local-with-DSN regression test failed before the fix
+  because `Sentry.init` was called, then passed after it. The shared initializer,
+  server delegation, and complete worker suites pass all 62 focused tests. Root
+  and server TypeScript checks, the complete Docker-free unit tier, full lint,
+  Docker Compose configuration validation, and `git diff --check` pass.
+- **Remaining risk / follow-up:** Deploy the recurrence fix, then intentionally
+  trigger or capture a harmless local exception and verify no Sentry event is
+  created. Local body analytics still requires the dbt analytics selection to
+  be built before use.

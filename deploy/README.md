@@ -24,7 +24,11 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - **Observability**:
   - **OpenTelemetry**: `otel-collector` gathers traces, logs, and metrics.
   - **Axiom**: Primary destination for structured logs and metrics via OTLP.
-  - **Sentry**: Receives application logs/errors.
+  - **Sentry**: Receives application errors only from `web` and `worker`
+    deployments whose explicit `DEPLOY_ENVIRONMENT` is `prod` or `production`.
+    Local processes do not initialize Sentry even if they inherit a DSN. The
+    SDK sends the explicit `production` environment value documented in
+    [Sentry's Node configuration options](https://docs.sentry.io/platforms/javascript/guides/node/configuration/options/).
   - **Netdata**: Real-time server health and performance monitoring.
 - **Secrets**: Managed via **Infisical**. CI logs in with OIDC machine identity, renders `.github/templates/infisical-dotenv.tmpl` via `infisical export --template`, and writes a temporary environment-specific `.env.<env>` file on the runner for `docker stack deploy`. The server never stores secrets on disk.
 

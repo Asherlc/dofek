@@ -42,6 +42,7 @@ services:
     command: ["web"]
     env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
+      DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
       NODE_ENV: production
       PORT: "3000"
       JOB_FILES_DIR: /app/job-files
@@ -94,6 +95,7 @@ services:
     command: ["worker"]
     env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
+      DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
       NODE_ENV: production
       JOB_FILES_DIR: /app/job-files
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health

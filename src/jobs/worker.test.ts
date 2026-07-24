@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 // This satisfies vitest's "related" mode used by Stryker in CI, which requires a
 // static import dependency between the test and the source module.
 const hoisted = vi.hoisted(() => {
+  process.env.DEPLOY_ENVIRONMENT = "prod";
   process.env.SENTRY_DSN = "https://test@sentry.io/123";
 
   function noOpExit(): never {
@@ -394,6 +395,7 @@ describe("worker module", () => {
     const Sentry = await import("@sentry/node");
     expect(Sentry.init).toHaveBeenCalledWith({
       dsn: "https://test@sentry.io/123",
+      environment: "production",
       skipOpenTelemetrySetup: true,
     });
   });
