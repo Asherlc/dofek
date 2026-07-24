@@ -265,6 +265,30 @@ describe("useAutoSync", () => {
     expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
   });
 
+  it("continues status polling when active sync data changes while the trigger is pending", async () => {
+    let resolveTriggerSync: ((result: { jobId: string }) => void) | undefined;
+    mockMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveTriggerSync = resolve;
+        }),
+    );
+
+    const rendered = renderHook(() => useAutoSync("2026-03-21"));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(mockMutateAsync).toHaveBeenCalledOnce();
+
+    mockActiveSyncs.data = [];
+    rendered.rerender();
+    await act(async () => {
+      resolveTriggerSync?.({ jobId: "test-job" });
+      await vi.runAllTimersAsync();
+    });
+
+    expect(mockSyncStatusFetch).toHaveBeenCalledOnce();
+    expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
+  });
+
   it("polls multiple times before completing", async () => {
     mockSyncStatusFetch
       .mockResolvedValueOnce({ status: "running" })

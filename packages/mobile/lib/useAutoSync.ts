@@ -44,12 +44,20 @@ async function invalidateSyncedHealthData(trpcUtils: TrpcUtils): Promise<void> {
  * 2. HealthKit sync to push local health data to the server (invalidates cache on completion)
  */
 export function useAutoSync(latestDate: string | null | undefined) {
+  const isMounted = useRef(false);
   const triggered = useRef(false);
   const { mutateAsync: triggerProviderSync } = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, {
     enabled: isDataStale(latestDate),
   });
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (triggered.current) return;
@@ -59,9 +67,8 @@ export function useAutoSync(latestDate: string | null | undefined) {
     if ((activeSyncs.data?.length ?? 0) > 0) return;
     if (!latestDate) return;
 
-    let cancelled = false;
     const idleHandle = runAfterUiIdle(() => {
-      if (cancelled || triggered.current) return;
+      if (!isMounted.current || triggered.current) return;
       triggered.current = true;
 
       // Trigger API provider sync and poll until complete
@@ -69,18 +76,18 @@ export function useAutoSync(latestDate: string | null | undefined) {
         .then(async ({ jobId }: { jobId?: string }) => {
           if (!jobId) return;
           const pollUntilDone = async (): Promise<void> => {
-            if (cancelled) return;
+            if (!isMounted.current) return;
             let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
             try {
               status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
             } catch (error: unknown) {
               captureException(error, { source: "auto-sync-status" });
-              if (cancelled) return;
+              if (!isMounted.current) return;
               await new Promise((resolve) => setTimeout(resolve, 2000));
-              if (cancelled) return;
+              if (!isMounted.current) return;
               return pollUntilDone();
             }
-            if (cancelled) return;
+            if (!isMounted.current) return;
             if (!status || status.status === "completed" || status.status === "failed") {
               await invalidateSyncedHealthData(trpcUtils);
               return;
@@ -136,7 +143,6 @@ export function useAutoSync(latestDate: string | null | undefined) {
     });
 
     return () => {
-      cancelled = true;
       idleHandle.cancel();
     };
   }, [
