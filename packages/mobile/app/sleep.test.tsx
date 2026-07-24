@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockSleepData: Record<string, unknown> | undefined;
+let mockSleepError: Error | null;
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -11,6 +12,8 @@ vi.mock("../lib/trpc", () => ({
       sleepAnalytics: {
         useQuery: () => ({
           data: mockSleepData,
+          error: mockSleepError,
+          isError: mockSleepError != null,
           isLoading: false,
           isFetching: false,
         }),
@@ -54,6 +57,17 @@ vi.mock("../components/charts/SparkLine", () => ({
 describe("SleepScreen", () => {
   beforeEach(() => {
     mockSleepData = undefined;
+    mockSleepError = null;
+  });
+
+  it("shows the server error instead of the empty state when loading fails", async () => {
+    mockSleepError = new Error("Sleep analytics are unavailable.");
+
+    const { default: SleepScreen } = await import("./sleep");
+    render(<SleepScreen />);
+
+    expect(screen.getByText("Sleep analytics are unavailable.")).toBeTruthy();
+    expect(screen.queryByText("No sleep data has been synced yet.")).toBeNull();
   });
 
   it("shows one truthful empty state without zero-valued summary measurements", async () => {
@@ -98,6 +112,8 @@ describe("SleepScreen", () => {
     render(<SleepScreen />);
 
     expect(screen.getByText("0h 30m debt")).toBeTruthy();
+    expect(screen.getByText("Compared with your sleep target")).toBeTruthy();
+    expect(screen.queryByText("vs 8 hour target per night")).toBeNull();
     expect(screen.getByText("7h 35m")).toBeTruthy();
     expect(screen.getByText("91%")).toBeTruthy();
     expect(screen.queryByText("5h 0m")).toBeNull();

@@ -81,6 +81,8 @@ export default function SleepScreen() {
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading sleep data...</Text>
         </View>
+      ) : sleepQuery.isError && !sleepQuery.data ? (
+        <QueryStatePanel variant="error" message={sleepQuery.error.message} />
       ) : nightly.length === 0 ? (
         <QueryStatePanel
           variant="empty"
@@ -130,7 +132,7 @@ export default function SleepScreen() {
               <Text style={[styles.debtValue, { color: sleepDebtColor(sleepDebt) }]}>
                 {formatSleepDebt(sleepDebt)}
               </Text>
-              <Text style={styles.debtSubtitle}>vs 8 hour target per night</Text>
+              <Text style={styles.debtSubtitle}>Compared with your sleep target</Text>
             </View>
           )}
 
