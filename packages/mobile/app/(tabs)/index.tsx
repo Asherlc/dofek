@@ -156,7 +156,13 @@ export default function TodayScreen() {
       <Text style={styles.date}>{todayString()}</Text>
 
       {/* Log food */}
-      <TouchableOpacity style={styles.quickAddButton} onPress={handleLogFood} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={styles.quickAddButton}
+        onPress={handleLogFood}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Log Food"
+      >
         <Text style={styles.quickAddPlus}>+</Text>
         <Text style={styles.quickAddLabel}>Log Food</Text>
       </TouchableOpacity>
@@ -173,6 +179,9 @@ export default function TodayScreen() {
             style={styles.ringTouchTarget}
             onPress={() => router.navigate("/(tabs)/recovery")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Open Recovery"
+            accessibilityState={{ busy: isLoading }}
           >
             {isLoading ? (
               <SkeletonCircle size={180} />
@@ -196,6 +205,9 @@ export default function TodayScreen() {
             style={styles.ringTouchTarget}
             onPress={() => router.navigate("/(tabs)/strain")}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Open Strain"
+            accessibilityState={{ busy: isLoading }}
           >
             {isLoading ? (
               <SkeletonCircle size={120} />
@@ -248,7 +260,12 @@ export default function TodayScreen() {
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
           {lastNight ? (
-            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/sleep")}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => router.push("/sleep")}
+              accessibilityRole="button"
+              accessibilityLabel="Open last night sleep details"
+            >
               <Card title="Last Night">
                 <SleepBar
                   durationMinutes={lastNight.durationMinutes}

@@ -81,7 +81,12 @@ function RecordDetailModal({
       <View style={modalStyles.container}>
         <View style={modalStyles.header}>
           <Text style={modalStyles.title}>Record Detail</Text>
-          <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={onClose}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Close record detail"
+          >
             <Text style={modalStyles.closeButton}>{"\u00d7"}</Text>
           </TouchableOpacity>
         </View>
@@ -98,6 +103,8 @@ function RecordDetailModal({
               }}
               style={modalStyles.activityLink}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Open activity"
             >
               <Text style={modalStyles.activityLinkText}>Open activity</Text>
             </TouchableOpacity>
@@ -126,6 +133,9 @@ function RecordDetailModal({
               <TouchableOpacity
                 onPress={() => setShowNullFields(!showNullFields)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${showNullFields ? "Hide" : "Show"} empty fields`}
+                accessibilityState={{ expanded: showNullFields }}
               >
                 <Text style={modalStyles.collapsibleTitle}>
                   {showNullFields ? "\u25bc" : "\u25b6"} Empty Fields ({nullFields.length})
@@ -146,7 +156,13 @@ function RecordDetailModal({
           {/* Raw provider data */}
           {raw && (
             <View style={modalStyles.collapsibleSection}>
-              <TouchableOpacity onPress={() => setShowRawData(!showRawData)} activeOpacity={0.7}>
+              <TouchableOpacity
+                onPress={() => setShowRawData(!showRawData)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${showRawData ? "Hide" : "Show"} raw provider data`}
+                accessibilityState={{ expanded: showRawData }}
+              >
                 <Text style={modalStyles.sectionTitle}>
                   {showRawData ? "\u25bc" : "\u25b6"} Raw Provider Data
                 </Text>
@@ -351,6 +367,8 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
             style={[recordStyles.row, idx < rows.length - 1 && recordStyles.rowBorder]}
             onPress={() => setSelectedRecord(row)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`Open record ${idx + 1}`}
           >
             {visibleColumns.map((col) => (
               <View key={col} style={recordStyles.cell}>
@@ -370,6 +388,9 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
           onPress={() => setPage((p) => Math.max(0, p - 1))}
           disabled={page === 0}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Previous records page"
+          accessibilityState={{ disabled: page === 0 }}
         >
           <Text style={[recordStyles.pageButton, page === 0 && recordStyles.pageButtonDisabled]}>
             Previous
@@ -380,6 +401,9 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
           onPress={() => setPage((p) => p + 1)}
           disabled={rows.length < pageSize}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Next records page"
+          accessibilityState={{ disabled: rows.length < pageSize }}
         >
           <Text
             style={[
@@ -548,6 +572,9 @@ function SyncHistory({ providerId }: { providerId: string }) {
           onPress={() => setPage((p) => Math.max(0, p - 1))}
           disabled={page === 0}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Previous sync history page"
+          accessibilityState={{ disabled: page === 0 }}
         >
           <Text style={[recordStyles.pageButton, page === 0 && recordStyles.pageButtonDisabled]}>
             Previous
@@ -558,6 +585,9 @@ function SyncHistory({ providerId }: { providerId: string }) {
           onPress={() => setPage((p) => p + 1)}
           disabled={rows.length < pageSize}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Next sync history page"
+          accessibilityState={{ disabled: rows.length < pageSize }}
         >
           <Text
             style={[
@@ -709,6 +739,9 @@ function RecordsBrowser({
             onPress={() => setActiveTab(dt.key)}
             style={[tabStyles.tab, activeTab === dt.key && tabStyles.activeTab]}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={dt.label}
+            accessibilityState={{ selected: activeTab === dt.key }}
           >
             <Text style={[tabStyles.tabText, activeTab === dt.key && tabStyles.activeTabText]}>
               {dt.label}
@@ -873,6 +906,8 @@ export default function ProviderDetailScreen() {
               style={styles.reauthorizeButton}
               onPress={handleReauthorize}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Re-authorize provider"
             >
               <Text style={styles.reauthorizeButtonText}>Re-authorize</Text>
             </TouchableOpacity>
@@ -935,6 +970,8 @@ export default function ProviderDetailScreen() {
           style={styles.disconnectButton}
           onPress={handleDisconnect}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Disconnect Provider"
         >
           <Text style={styles.disconnectButtonText}>Disconnect Provider</Text>
         </TouchableOpacity>

@@ -23,6 +23,8 @@ export function FoodResultCard({ result, onSelect, sourceLabel }: FoodResultCard
       style={styles.resultCard}
       onPress={() => onSelect(result)}
       activeOpacity={0.75}
+      accessibilityRole="button"
+      accessibilityLabel={`Select ${result.name}`}
     >
       <View style={styles.resultHeaderRow}>
         <Text style={styles.resultName} numberOfLines={2}>

@@ -367,13 +367,19 @@ export default function RecordScreen() {
         />
 
         <View style={styles.saveActions}>
-          <Pressable style={styles.saveButton} onPress={handleSave} accessibilityRole="button">
+          <Pressable
+            style={styles.saveButton}
+            onPress={handleSave}
+            accessibilityRole="button"
+            accessibilityLabel="Save activity"
+          >
             <Text style={styles.saveButtonText}>Save</Text>
           </Pressable>
           <Pressable
             style={styles.discardButton}
             onPress={handleDiscard}
             accessibilityRole="button"
+            accessibilityLabel="Discard activity"
           >
             <Text style={styles.discardButtonText}>Discard</Text>
           </Pressable>
@@ -394,6 +400,7 @@ export default function RecordScreen() {
             router.back();
           }}
           accessibilityRole="button"
+          accessibilityLabel="Go Back"
         >
           <Text style={styles.discardButtonText}>Go Back</Text>
         </Pressable>
@@ -449,15 +456,30 @@ export default function RecordScreen() {
 
       <View style={styles.controls}>
         {isPaused ? (
-          <Pressable style={styles.resumeButton} onPress={handleResume} accessibilityRole="button">
+          <Pressable
+            style={styles.resumeButton}
+            onPress={handleResume}
+            accessibilityRole="button"
+            accessibilityLabel="Resume activity"
+          >
             <Text style={styles.controlButtonText}>Resume</Text>
           </Pressable>
         ) : (
-          <Pressable style={styles.pauseButton} onPress={handlePause} accessibilityRole="button">
+          <Pressable
+            style={styles.pauseButton}
+            onPress={handlePause}
+            accessibilityRole="button"
+            accessibilityLabel="Pause activity"
+          >
             <Text style={styles.controlButtonText}>Pause</Text>
           </Pressable>
         )}
-        <Pressable style={styles.stopButton} onPress={handleStop} accessibilityRole="button">
+        <Pressable
+          style={styles.stopButton}
+          onPress={handleStop}
+          accessibilityRole="button"
+          accessibilityLabel="Stop activity"
+        >
           <Text style={styles.stopButtonText}>Stop</Text>
         </Pressable>
       </View>

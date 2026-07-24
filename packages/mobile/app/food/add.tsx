@@ -494,6 +494,9 @@ export default function AddFoodScreen() {
             style={[styles.ribbonTab, activeTab === key && styles.ribbonTabActive]}
             onPress={() => setActiveTab(key)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityState={{ selected: activeTab === key }}
           >
             <Text style={[styles.ribbonTabText, activeTab === key && styles.ribbonTabTextActive]}>
               {label}
@@ -564,6 +567,12 @@ export default function AddFoodScreen() {
                 onPress={performOpenFoodFactsSearch}
                 activeOpacity={0.7}
                 disabled={searchingOpenFoodFacts}
+                accessibilityRole="button"
+                accessibilityLabel="Search Food Database"
+                accessibilityState={{
+                  busy: searchingOpenFoodFacts,
+                  disabled: searchingOpenFoodFacts,
+                }}
               >
                 {searchingOpenFoodFacts ? (
                   <ActivityIndicator size="small" color={colors.text} />
@@ -602,6 +611,10 @@ export default function AddFoodScreen() {
                 setShowForm(true);
               }}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={
+                searchQuery.trim() ? `Add ${searchQuery.trim()} manually` : "Enter food manually"
+              }
             >
               <Text style={styles.manualEntryText}>
                 {searchQuery.trim()

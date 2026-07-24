@@ -51,6 +51,9 @@ function DaySelector({ days, onChange }: { days: number; onChange: (d: number) =
           style={[styles.selectorButton, days === opt.value && styles.selectorButtonActive]}
           onPress={() => onChange(opt.value)}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={opt.label}
+          accessibilityState={{ selected: days === opt.value }}
         >
           <Text style={[styles.selectorText, days === opt.value && styles.selectorTextActive]}>
             {opt.label}
@@ -70,6 +73,9 @@ function LagSelector({ lag, onChange }: { lag: number; onChange: (l: number) => 
           style={[styles.selectorButton, lag === opt.value && styles.selectorButtonActive]}
           onPress={() => onChange(opt.value)}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={opt.label}
+          accessibilityState={{ selected: lag === opt.value }}
         >
           <Text style={[styles.selectorText, lag === opt.value && styles.selectorTextActive]}>
             {opt.label}
@@ -127,6 +133,9 @@ function MetricPicker({
                   style={[styles.chip, selected === m.id && styles.chipActive]}
                   onPress={() => onSelect(m.id)}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={m.label}
+                  accessibilityState={{ selected: selected === m.id }}
                 >
                   <Text style={[styles.chipText, selected === m.id && styles.chipTextActive]}>
                     {m.label}

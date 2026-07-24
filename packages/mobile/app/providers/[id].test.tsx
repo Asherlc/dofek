@@ -49,10 +49,32 @@ vi.mock("react-native", () => ({
     onPress?: () => void;
     disabled?: boolean;
   } & Record<string, unknown>) => {
-    const { style: _s, activeOpacity: _ao, ...rest } = props;
+    const {
+      accessibilityLabel,
+      accessibilityRole,
+      accessibilityState,
+      style: _s,
+      activeOpacity: _ao,
+      ...rest
+    } = props;
+    const state =
+      typeof accessibilityState === "object" && accessibilityState !== null
+        ? accessibilityState
+        : {};
     return React.createElement(
       "button",
-      { type: "button", onClick: onPress, disabled, ...rest },
+      {
+        type: "button",
+        onClick: onPress,
+        disabled,
+        "aria-busy": "busy" in state ? state.busy : undefined,
+        "aria-disabled": "disabled" in state ? state.disabled : undefined,
+        "aria-expanded": "expanded" in state ? state.expanded : undefined,
+        "aria-label": accessibilityLabel,
+        "aria-selected": "selected" in state ? state.selected : undefined,
+        role: accessibilityRole ?? "presentation",
+        ...rest,
+      },
       children,
     );
   },
@@ -398,6 +420,16 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Actions", () => {
+    it("exposes provider actions by accessible role and name", async () => {
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByRole("button", { name: "Sync" }).getAttribute("aria-label")).toBe("Sync");
+      expect(screen.getByRole("button", { name: "Full sync" }).getAttribute("aria-label")).toBe(
+        "Full sync",
+      );
+    });
+
     it("renders Sync and Full sync actions for connected providers", async () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
@@ -843,6 +875,36 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Activity records", () => {
+    it("exposes record detail disclosure state", async () => {
+      mockRecordsQuery.mockReturnValue({
+        data: {
+          rows: [
+            {
+              id: "activity-123",
+              name: "Morning Ride",
+              notes: null,
+              raw: { source: "wahoo" },
+            },
+          ],
+        },
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Morning Ride"));
+
+      expect(
+        screen.getByRole("button", { name: "Show empty fields" }).getAttribute("aria-expanded"),
+      ).toBe("false");
+      expect(
+        screen
+          .getByRole("button", { name: "Hide raw provider data" })
+          .getAttribute("aria-expanded"),
+      ).toBe("true");
+    });
+
     it("shows canonical activity records while aggregate provider stats are catching up", async () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "kaya-export" });
       mockProvidersQuery.mockReturnValue({

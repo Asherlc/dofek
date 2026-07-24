@@ -48,7 +48,12 @@ export function CredentialAuthModal({
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Connect {providerName}</Text>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+            <TouchableOpacity
+              onPress={onClose}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Close ${providerName} connection`}
+            >
               <Text style={styles.modalClose}>{"\u00D7"}</Text>
             </TouchableOpacity>
           </View>
@@ -83,6 +88,12 @@ export function CredentialAuthModal({
             onPress={handleSignIn}
             activeOpacity={0.7}
             disabled={loading || !username || !password}
+            accessibilityRole="button"
+            accessibilityLabel={`Sign in to ${providerName}`}
+            accessibilityState={{
+              busy: loading,
+              disabled: loading || !username || !password,
+            }}
           >
             <Text style={styles.signInButtonText}>{loading ? "Signing in..." : "Sign In"}</Text>
           </TouchableOpacity>
@@ -136,7 +147,14 @@ export function GarminAuthModal({
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Connect Garmin</Text>
-            <TouchableOpacity onPress={handleClose} activeOpacity={0.7} disabled={loading}>
+            <TouchableOpacity
+              onPress={handleClose}
+              activeOpacity={0.7}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Close Garmin connection"
+              accessibilityState={{ busy: loading, disabled: loading }}
+            >
               <Text style={styles.modalClose}>{"\u00D7"}</Text>
             </TouchableOpacity>
           </View>
@@ -171,6 +189,12 @@ export function GarminAuthModal({
             onPress={handleSignIn}
             activeOpacity={0.7}
             disabled={loading || !username || !password}
+            accessibilityRole="button"
+            accessibilityLabel="Sign in to Garmin"
+            accessibilityState={{
+              busy: loading,
+              disabled: loading || !username || !password,
+            }}
           >
             <Text style={styles.signInButtonText}>{loading ? "Signing in..." : "Sign In"}</Text>
           </TouchableOpacity>
@@ -260,7 +284,14 @@ export function WhoopAuthModal({
             <Text style={styles.modalTitle}>
               {step === "verify" ? "Verify Code" : "Connect WHOOP"}
             </Text>
-            <TouchableOpacity onPress={handleClose} activeOpacity={0.7} disabled={!canClose}>
+            <TouchableOpacity
+              onPress={handleClose}
+              activeOpacity={0.7}
+              disabled={!canClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close WHOOP connection"
+              accessibilityState={{ busy: loading, disabled: !canClose }}
+            >
               <Text style={styles.modalClose}>{"\u00D7"}</Text>
             </TouchableOpacity>
           </View>
@@ -297,6 +328,12 @@ export function WhoopAuthModal({
                 onPress={handleSignIn}
                 activeOpacity={0.7}
                 disabled={loading || !username || !password}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in to WHOOP"
+                accessibilityState={{
+                  busy: loading,
+                  disabled: loading || !username || !password,
+                }}
               >
                 <Text style={styles.signInButtonText}>{loading ? "Signing in..." : "Sign In"}</Text>
               </TouchableOpacity>
@@ -323,6 +360,12 @@ export function WhoopAuthModal({
                 onPress={handleVerify}
                 activeOpacity={0.7}
                 disabled={loading || !code}
+                accessibilityRole="button"
+                accessibilityLabel="Verify WHOOP code"
+                accessibilityState={{
+                  busy: loading,
+                  disabled: loading || !code,
+                }}
               >
                 <Text style={styles.signInButtonText}>{loading ? "Verifying..." : "Verify"}</Text>
               </TouchableOpacity>

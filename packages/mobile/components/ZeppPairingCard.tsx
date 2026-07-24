@@ -75,6 +75,12 @@ export function ZeppPairingCardBody({
           style={[styles.button, (isPending || !normalizedPairingCode) && styles.buttonDisabled]}
           onPress={onClaimPairing}
           disabled={isPending || !normalizedPairingCode}
+          accessibilityRole="button"
+          accessibilityLabel="Connect Zepp App"
+          accessibilityState={{
+            busy: isPending,
+            disabled: isPending || !normalizedPairingCode,
+          }}
         >
           <Text style={styles.buttonText}>{isPending ? "Connecting..." : "Connect Zepp App"}</Text>
         </TouchableOpacity>

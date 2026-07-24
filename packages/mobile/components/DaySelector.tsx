@@ -36,6 +36,9 @@ export function DaySelector({
             onChange(opt.value);
           }}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={opt.label}
+          accessibilityState={{ selected: days === opt.value }}
         >
           <Text style={[styles.text, days === opt.value && styles.textActive]}>{opt.label}</Text>
         </TouchableOpacity>

@@ -199,6 +199,12 @@ export default function LoginScreen() {
                       style={styles.passwordButton}
                       onPress={handlePasswordReset}
                       disabled={loggingIn || !email.trim()}
+                      accessibilityRole="button"
+                      accessibilityLabel="Send reset link"
+                      accessibilityState={{
+                        busy: loggingIn,
+                        disabled: loggingIn || !email.trim(),
+                      }}
                     >
                       <Text style={styles.passwordButtonText}>
                         {loggingIn ? "Sending..." : "Send reset link"}
@@ -210,6 +216,9 @@ export default function LoginScreen() {
                         setError(null);
                       }}
                       disabled={loggingIn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Back to sign in"
+                      accessibilityState={{ disabled: loggingIn }}
                     >
                       <Text style={styles.backToSignInText}>Back to sign in</Text>
                     </TouchableOpacity>
@@ -221,6 +230,12 @@ export default function LoginScreen() {
                         style={[styles.modeButton, authMode === "login" && styles.modeButtonActive]}
                         onPress={() => setAuthMode("login")}
                         disabled={loggingIn}
+                        accessibilityRole="button"
+                        accessibilityLabel="Sign in"
+                        accessibilityState={{
+                          disabled: loggingIn,
+                          selected: authMode === "login",
+                        }}
                       >
                         <Text
                           style={[
@@ -238,6 +253,12 @@ export default function LoginScreen() {
                         ]}
                         onPress={() => setAuthMode("register")}
                         disabled={loggingIn}
+                        accessibilityRole="button"
+                        accessibilityLabel="Create account"
+                        accessibilityState={{
+                          disabled: loggingIn,
+                          selected: authMode === "register",
+                        }}
                       >
                         <Text
                           style={[
@@ -290,6 +311,9 @@ export default function LoginScreen() {
                           setError(null);
                         }}
                         disabled={loggingIn}
+                        accessibilityRole="button"
+                        accessibilityLabel="Forgot password?"
+                        accessibilityState={{ disabled: loggingIn }}
                       >
                         <Text style={styles.forgotPasswordText}>Forgot password?</Text>
                       </TouchableOpacity>
@@ -298,6 +322,14 @@ export default function LoginScreen() {
                       style={styles.passwordButton}
                       onPress={handlePasswordAuth}
                       disabled={loggingIn || !email.trim() || !password}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        authMode === "register" ? "Create account" : "Sign in with email"
+                      }
+                      accessibilityState={{
+                        busy: loggingIn,
+                        disabled: loggingIn || !email.trim() || !password,
+                      }}
                     >
                       <Text style={styles.passwordButtonText}>
                         {loggingIn
@@ -333,6 +365,9 @@ export default function LoginScreen() {
                 style={styles.providerButton}
                 onPress={() => handleLogin(id, isData)}
                 disabled={loggingIn}
+                accessibilityRole="button"
+                accessibilityLabel={`Sign in with ${providerLabel(id)}`}
+                accessibilityState={{ busy: loggingIn, disabled: loggingIn }}
               >
                 <View style={styles.providerButtonContent}>
                   <ProviderLogo provider={id} serverUrl={serverUrl} size={20} />

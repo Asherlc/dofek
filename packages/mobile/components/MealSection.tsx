@@ -44,6 +44,8 @@ export function MealSection({
         style={styles.addButton}
         onPress={() => onAddFood(mealKey)}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={`Add food to ${mealName}`}
       >
         <Text style={styles.addButtonText}>+ Add food</Text>
       </TouchableOpacity>

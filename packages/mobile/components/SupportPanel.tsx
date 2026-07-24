@@ -48,7 +48,13 @@ export function SupportPanel({
           Thanks — your request was submitted. Our team will reply by email.
         </Text>
         <Text style={styles.dimText}>Reference number: #{ticketNumber}</Text>
-        <TouchableOpacity style={styles.secondaryButton} onPress={handleReset} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={handleReset}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Submit another request"
+        >
           <Text style={styles.secondaryButtonText}>Submit another request</Text>
         </TouchableOpacity>
       </View>
@@ -104,6 +110,9 @@ export function SupportPanel({
         onPress={handleSend}
         activeOpacity={0.7}
         disabled={!canSubmit}
+        accessibilityRole="button"
+        accessibilityLabel="Send Message"
+        accessibilityState={{ busy: isPending, disabled: !canSubmit }}
       >
         <Text style={styles.primaryButtonText}>{isPending ? "Sending..." : "Send Message"}</Text>
       </TouchableOpacity>

@@ -242,6 +242,15 @@ describe("SettingsScreen data sources", () => {
     expect(screen.queryByTestId("provider-logo-polar")).toBeNull();
   });
 
+  it("exposes the Data Sources card as a named accessibility action", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    const dataSourcesButton = screen.getByRole("button", { name: "Data Sources" });
+    expect(dataSourcesButton.getAttribute("aria-label")).toBe("Data Sources");
+  });
+
   it("navigates to providers screen when tapped", async () => {
     const { default: SettingsScreen } = await import("./settings");
 

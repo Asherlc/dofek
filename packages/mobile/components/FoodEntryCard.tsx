@@ -45,6 +45,9 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
         activeOpacity={0.7}
         onPress={() => setExpanded((current) => !current)}
         onLongPress={handleLongPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${expanded ? "Hide" : "Show"} details for ${displayName}`}
+        accessibilityState={{ busy: deleting, disabled: deleting, expanded }}
       >
         <View style={styles.leftSection}>
           <Text style={styles.name}>{displayName}</Text>

@@ -77,6 +77,9 @@ export default function NutritionAnalyticsScreen() {
             style={[styles.dayButton, days === opt.value && styles.dayButtonActive]}
             onPress={() => setDays(opt.value)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={opt.label}
+            accessibilityState={{ selected: days === opt.value }}
           >
             <Text style={[styles.dayButtonText, days === opt.value && styles.dayButtonTextActive]}>
               {opt.label}

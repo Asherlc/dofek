@@ -322,6 +322,7 @@ function AuthGate() {
         <View style={styles.authErrorActions}>
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel="Try again"
             style={styles.authErrorButton}
             onPress={retryBootstrap}
           >
@@ -329,6 +330,7 @@ function AuthGate() {
           </Pressable>
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel="Sign out"
             style={[styles.authErrorButton, styles.authErrorSecondaryButton]}
             onPress={logout}
           >
@@ -361,7 +363,11 @@ function AuthGate() {
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.text,
               headerLeft: () => (
-                <Pressable onPress={() => navigation.goBack()}>
+                <Pressable
+                  onPress={() => navigation.goBack()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel adding food"
+                >
                   <Text style={{ color: colors.accent, fontSize: 17 }}>Cancel</Text>
                 </Pressable>
               ),
