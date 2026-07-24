@@ -95,7 +95,9 @@ describe("PersonalizationPanel", () => {
     render(<PersonalizationPanel />);
 
     expect(
-      screen.getByText("Thresholds measured in standard deviations from your baseline"),
+      screen.getByText(
+        "How far each threshold is from your usual baseline (in standard deviations)",
+      ),
     ).toBeTruthy();
     expect(
       screen.getByText(

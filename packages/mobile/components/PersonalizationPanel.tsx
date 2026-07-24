@@ -23,7 +23,7 @@ const PARAM_LABELS: Record<string, { label: string; description: string }> = {
   },
   stressThresholds: {
     label: "Stress Sensitivity",
-    description: "Thresholds measured in standard deviations from your baseline",
+    description: "How far each threshold is from your usual baseline (in standard deviations)",
   },
   trainingImpulseConstants: {
     label: "Heart Rate Effort Model",

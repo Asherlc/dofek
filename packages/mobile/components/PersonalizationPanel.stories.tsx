@@ -7,7 +7,8 @@ import { View } from "react-native";
 import { trpc } from "../lib/trpc";
 import { PersonalizationPanel } from "./PersonalizationPanel";
 
-type PersonalizationScenario = "default" | "personalized";
+type PersonalizationDataScenario = "default" | "personalized";
+type PersonalizationScenario = PersonalizationDataScenario | "loading" | "empty";
 
 const defaultStressThresholds = {
   hrvThresholds: [-2, -1.5, -1],
@@ -27,7 +28,7 @@ const defaultEffectiveParameters = {
   trainingImpulseConstants: { genderFactor: 0.64, exponent: 1.92 },
 };
 
-function personalizationStatus(scenario: PersonalizationScenario) {
+function personalizationStatus(scenario: PersonalizationDataScenario) {
   const stressThresholds =
     scenario === "personalized"
       ? {
@@ -56,10 +57,14 @@ function personalizationStatus(scenario: PersonalizationScenario) {
 
 function createMockLink(scenario: PersonalizationScenario): TRPCLink<AppRouter> {
   return () =>
-    ({ op }) =>
-      createMockObservable(
-        op.path === "personalization.status" ? personalizationStatus(scenario) : null,
+    ({ op }) => {
+      if (scenario === "loading") return createPendingMockObservable();
+      return createMockObservable(
+        op.path === "personalization.status" && scenario !== "empty"
+          ? personalizationStatus(scenario)
+          : null,
       );
+    };
 }
 
 function createMockObservable(data: unknown): OperationResultObservable<AppRouter, unknown> {
@@ -67,6 +72,18 @@ function createMockObservable(data: unknown): OperationResultObservable<AppRoute
     subscribe(observer) {
       observer.next?.({ result: { data } });
       observer.complete?.();
+      return { unsubscribe: () => {} };
+    },
+    pipe() {
+      return result;
+    },
+  };
+  return result;
+}
+
+function createPendingMockObservable(): OperationResultObservable<AppRouter, unknown> {
+  const result: OperationResultObservable<AppRouter, unknown> = {
+    subscribe() {
       return { unsubscribe: () => {} };
     },
     pipe() {
@@ -115,4 +132,12 @@ export const Default: Story = {
 
 export const Personalized: Story = {
   render: () => <PersonalizationPanelStoryFrame scenario="personalized" />,
+};
+
+export const Loading: Story = {
+  render: () => <PersonalizationPanelStoryFrame scenario="loading" />,
+};
+
+export const Empty: Story = {
+  render: () => <PersonalizationPanelStoryFrame scenario="empty" />,
 };
