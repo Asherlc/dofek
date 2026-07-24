@@ -69,7 +69,9 @@ vi.mock("react-native", () => ({
         disabled,
         "aria-busy": "busy" in state ? state.busy : undefined,
         "aria-disabled": "disabled" in state ? state.disabled : undefined,
+        "aria-expanded": "expanded" in state ? state.expanded : undefined,
         "aria-label": accessibilityLabel,
+        "aria-selected": "selected" in state ? state.selected : undefined,
         role: accessibilityRole ?? "presentation",
         ...rest,
       },
@@ -873,6 +875,36 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Activity records", () => {
+    it("exposes record detail disclosure state", async () => {
+      mockRecordsQuery.mockReturnValue({
+        data: {
+          rows: [
+            {
+              id: "activity-123",
+              name: "Morning Ride",
+              notes: null,
+              raw: { source: "wahoo" },
+            },
+          ],
+        },
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Morning Ride"));
+
+      expect(
+        screen.getByRole("button", { name: "Show empty fields" }).getAttribute("aria-expanded"),
+      ).toBe("false");
+      expect(
+        screen
+          .getByRole("button", { name: "Hide raw provider data" })
+          .getAttribute("aria-expanded"),
+      ).toBe("true");
+    });
+
     it("shows canonical activity records while aggregate provider stats are catching up", async () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "kaya-export" });
       mockProvidersQuery.mockReturnValue({

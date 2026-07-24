@@ -388,7 +388,7 @@ export default function BleProbeScreen() {
           style={styles.quickButton}
           onPress={() => executeCommand("status")}
           accessibilityRole="button"
-          accessibilityLabel="Status"
+          accessibilityLabel="BLE status"
         >
           <Text style={styles.quickButtonText}>Status</Text>
         </Pressable>
@@ -459,7 +459,7 @@ export default function BleProbeScreen() {
           style={styles.quickButton}
           onPress={() => executeCommand("status")}
           accessibilityRole="button"
-          accessibilityLabel="Status"
+          accessibilityLabel="IMU status"
         >
           <Text style={styles.quickButtonText}>Status</Text>
         </Pressable>
