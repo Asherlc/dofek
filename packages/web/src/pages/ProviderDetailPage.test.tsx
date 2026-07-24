@@ -72,8 +72,13 @@ interface MockProvider {
 
 type MockProviderStats = ProviderStats & { providerId: string };
 
-const mockProviders: { data: MockProvider[]; isLoading: boolean } = {
+const mockProviders: {
+  data: MockProvider[] | undefined;
+  error: Error | null;
+  isLoading: boolean;
+} = {
   data: [],
+  error: null,
   isLoading: false,
 };
 
@@ -182,6 +187,9 @@ vi.mock("../lib/telemetry.ts", () => ({
 beforeEach(() => {
   vi.useFakeTimers();
   mockUseParams.mockReturnValue({ id: "strong-csv" });
+  mockProviders.data = [];
+  mockProviders.error = null;
+  mockProviders.isLoading = false;
   mockDataHealth.data = null;
   mockDataHealth.isLoading = false;
   mockDataHealth.error = null;
@@ -230,6 +238,49 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.queryByText("Full Sync")).toBeNull();
     expect(screen.queryByText("Sync Range")).toBeNull();
     expect(screen.queryByText("Disconnect")).toBeNull();
+  });
+
+  it("shows the provider inventory error on initial failure", async () => {
+    mockProviders.data = undefined;
+    mockProviders.error = new Error(
+      "Analytics data is temporarily unavailable. Please retry in a minute.",
+    );
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByTestId("query-state-error")).toBeTruthy();
+    expect(
+      screen.getByText("Analytics data is temporarily unavailable. Please retry in a minute."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Strong Csv" })).toBeNull();
+  });
+
+  it("shows retained provider details with a refresh warning after a background failure", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockProviders.error = new Error(
+      "Analytics data is temporarily unavailable. Please retry in a minute.",
+    );
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByRole("heading", { name: "Wahoo" })).toBeTruthy();
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByText("Could not refresh provider details.")).toBeTruthy();
+    expect(
+      screen.getByText("Analytics data is temporarily unavailable. Please retry in a minute."),
+    ).toBeTruthy();
   });
 
   it("shows 'Import only' instead of 'Connected' for import-only providers", async () => {

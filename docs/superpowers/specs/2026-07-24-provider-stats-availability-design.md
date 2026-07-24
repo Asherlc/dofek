@@ -10,8 +10,10 @@ push-only providers are reported as disconnected.
 
 The clients compound the issue differently:
 
-- TanStack Query retains previously successful data when a background refetch
-  fails.
+- TanStack Query exposes `data` as the last successfully resolved query data,
+  distinguishes first-load failures with `isLoadingError`, and distinguishes
+  refetch failures with `isRefetchError`
+  ([TanStack Query `useQuery` reference](https://tanstack.com/query/latest/docs/framework/react/reference/useQuery)).
 - The mobile provider screen explicitly discards that retained data whenever the
   query has an error.
 - The web provider panel continues using retained data, but does not surface the
@@ -20,7 +22,8 @@ The clients compound the issue differently:
 ## Chosen Approach
 
 Fail `sync.providers` when provider statistics are unavailable and let the
-existing tRPC infrastructure sanitizer expose the failure as the retryable
+existing [tRPC infrastructure sanitizer](../../../packages/server/src/trpc.ts)
+expose the failure as the retryable
 `SERVICE_UNAVAILABLE` analytics error:
 
 > Analytics data is temporarily unavailable. Please retry in a minute.
@@ -43,7 +46,10 @@ from returning any fabricated authorization values.
 
 The existing infrastructure error middleware will sanitize recognized
 ClickHouse availability errors into `SERVICE_UNAVAILABLE` and the established
-retry message. Existing logging and Sentry reporting remain responsible for
+retry message. The sanitizer's
+[focused tests](../../../packages/server/src/routers/trpc.test.ts) verify this
+repository-specific error mapping and Sentry reporting. Existing logging and
+Sentry reporting remain responsible for
 capturing the underlying dependency failure without exposing internal details to
 clients.
 
@@ -58,9 +64,11 @@ When the provider-stat query succeeds, the existing mapping remains unchanged:
 ### Web
 
 The data sources panel will render `providers.data` whenever it exists, even if a
-background refetch also set `providers.error`. It will add an error panel using
-the server-provided message so users know the displayed inventory could not be
-refreshed.
+background refetch also set `providers.error`. TanStack Query documents `data`
+as the last successfully resolved value and separately exposes refetch errors
+([TanStack Query `useQuery` reference](https://tanstack.com/query/latest/docs/framework/react/reference/useQuery)).
+It will add an error panel using the server-provided message so users know the
+displayed inventory could not be refreshed.
 
 On an initial failure, no provider inventory is available. The same error panel
 is shown and no server providers are rendered.

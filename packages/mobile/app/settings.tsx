@@ -20,6 +20,7 @@ import { DataExportSection } from "../components/DataExportSection";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { ProviderLogo } from "../components/ProviderLogo";
+import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { useAuth } from "../lib/auth-context";
@@ -196,6 +197,13 @@ export default function SettingsScreen() {
             <View style={styles.dataSourcesInfo}>
               {providers.isLoading ? (
                 <ActivityIndicator color={colors.accent} size="small" />
+              ) : providers.error && providers.data === undefined ? (
+                <QueryStatePanel
+                  variant="error"
+                  title="Could not load data sources"
+                  message={getQueryErrorMessage(providers.error)}
+                  minHeight={96}
+                />
               ) : (
                 <>
                   <View style={styles.providerLogos}>
@@ -221,6 +229,14 @@ export default function SettingsScreen() {
             <Text style={styles.devToolChevron}>›</Text>
           </View>
         </TouchableOpacity>
+        {providers.error && providers.data !== undefined ? (
+          <QueryStatePanel
+            variant="error"
+            title="Could not refresh data sources"
+            message={getQueryErrorMessage(providers.error)}
+            minHeight={96}
+          />
+        ) : null}
       </View>
 
       {/* ── Password ── */}

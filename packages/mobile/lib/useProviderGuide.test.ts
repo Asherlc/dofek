@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 // Mock tRPC before importing the hook
 interface MockQuery {
   data: unknown;
+  error: Error | null;
   isLoading: boolean;
 }
-const mockProviders: MockQuery = { data: undefined, isLoading: true };
-const mockProviderGuideStatus: MockQuery = { data: undefined, isLoading: true };
+const mockProviders: MockQuery = { data: undefined, error: null, isLoading: true };
+const mockProviderGuideStatus: MockQuery = { data: undefined, error: null, isLoading: true };
 const mockMutate = vi.fn();
 const mockInvalidate = vi.fn();
 
@@ -52,6 +53,30 @@ describe("useProviderGuide", () => {
     mockProviderGuideStatus.isLoading = false;
 
     const result = useProviderGuide();
+    expect(result.showProviderGuide).toBe(true);
+  });
+
+  it("does not show the provider guide when the initial provider inventory request fails", () => {
+    mockProviders.data = undefined;
+    mockProviders.error = new Error("Provider inventory is temporarily unavailable");
+    mockProviders.isLoading = false;
+    mockProviderGuideStatus.data = { dismissed: false };
+    mockProviderGuideStatus.isLoading = false;
+
+    const result = useProviderGuide();
+
+    expect(result.showProviderGuide).toBe(false);
+  });
+
+  it("uses retained provider inventory when a background refresh fails", () => {
+    mockProviders.data = [{ id: "strava", authorized: false }];
+    mockProviders.error = new Error("Provider inventory refresh failed");
+    mockProviders.isLoading = false;
+    mockProviderGuideStatus.data = { dismissed: false };
+    mockProviderGuideStatus.isLoading = false;
+
+    const result = useProviderGuide();
+
     expect(result.showProviderGuide).toBe(true);
   });
 
