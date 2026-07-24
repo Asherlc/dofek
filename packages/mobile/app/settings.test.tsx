@@ -325,6 +325,17 @@ describe("SettingsScreen data sources", () => {
   });
 });
 
+describe("SettingsScreen reports", () => {
+  it("opens the health reports screen", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Health Reports" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/reports");
+  });
+});
+
 describe("SettingsScreen password", () => {
   it("renders set password controls when no password credential exists", async () => {
     mockPasswordCredentialStatusQuery.mockReturnValue({

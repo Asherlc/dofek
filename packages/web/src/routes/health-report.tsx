@@ -2,6 +2,9 @@ import { formatDateMedium } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { healthReportTabs } from "../lib/healthReportNavigation.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export const Route = createFileRoute("/health-report")({
@@ -9,19 +12,29 @@ export const Route = createFileRoute("/health-report")({
 });
 
 function HealthReportPage() {
-  const { data: reports, isLoading } = trpc.healthReport.myReports.useQuery();
+  const { data: reports, error, isLoading } = trpc.healthReport.myReports.useQuery();
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
-  const copyLink = (token: string) => {
+  const copyLink = async (token: string) => {
     const url = `${window.location.origin}/health-report?token=${token}`;
-    navigator.clipboard.writeText(url);
-    setCopiedToken(token);
-    setTimeout(() => setCopiedToken(null), 2000);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedToken(token);
+      setTimeout(() => setCopiedToken(null), 2000);
+    } catch (copyError: unknown) {
+      captureException(copyError, { source: "health-report-list-link-copy" });
+    }
   };
 
   return (
-    <PageLayout title="Health Reports" subtitle="Generate and share health report snapshots">
-      {isLoading ? (
+    <PageLayout
+      title="Health Reports"
+      subtitle="Generate and share health report snapshots"
+      tabs={healthReportTabs}
+    >
+      {error && !reports ? (
+        <QueryStatePanel error={error} height={160} />
+      ) : isLoading ? (
         <div className="card p-6 animate-pulse h-32" />
       ) : (
         <div className="space-y-6">
@@ -57,7 +70,7 @@ function HealthReportPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => copyLink(report.shareToken)}
+                      onClick={() => void copyLink(report.shareToken)}
                       className="px-3 py-1.5 bg-accent/15 text-accent rounded text-xs font-medium hover:bg-accent/25 transition-colors"
                     >
                       {copiedToken === report.shareToken ? "Copied" : "Copy Link"}

@@ -257,6 +257,26 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* ── Health Reports ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Health Reports</Text>
+        <Text style={styles.sectionDescription}>
+          Review and share weekly or monthly health snapshots
+        </Text>
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => router.push("/reports")}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Health Reports"
+        >
+          <View style={styles.dataSourcesRow}>
+            <Text style={styles.devToolLabel}>Open Health Reports</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
       {/* ── Password ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Password</Text>

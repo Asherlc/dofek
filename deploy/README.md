@@ -29,6 +29,14 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
     Local processes do not initialize Sentry even if they inherit a DSN. The
     SDK sends the explicit `production` environment value documented in
     [Sentry's Node configuration options](https://docs.sentry.io/platforms/javascript/guides/node/configuration/options/).
+    Production images also set `SENTRY_RELEASE` to the full source commit SHA,
+    matching the release used by the browser build. After the complete Swarm
+    rollout converges, the deploy workflow records that release as deployed to
+    `production` for both `dofek-web` and `dofek-server`; Sentry treats a deploy
+    as an environment-specific instance of a release, and requires the release
+    identifier to match the SDK event:
+    [Sentry Release Action](https://github.com/getsentry/action-release#usage),
+    [Create a Deploy API](https://docs.sentry.io/api/releases/create-a-deploy/).
   - **Netdata**: Real-time server health and performance monitoring.
 - **Secrets**: Managed via **Infisical**. CI logs in with OIDC machine identity, renders `.github/templates/infisical-dotenv.tmpl` via `infisical export --template`, and writes a temporary environment-specific `.env.<env>` file on the runner for `docker stack deploy`. The server never stores secrets on disk.
 
@@ -131,6 +139,13 @@ server. Required app, database, ClickHouse, PeerDB, export, and
 mobile pipeline keys are listed in the deploy steps and mobile CI sections
 below. Missing required keys must fail the workflow before rollout.
 
+The web image build and post-rollout Sentry release step also require the
+GitHub Actions `SENTRY_AUTH_TOKEN` secret already used for browser source-map
+uploads. The token must be able to manage releases for both `dofek-web` and
+`dofek-server`; Sentry documents `org:ci` as the scope intended for CI release
+and deployment workflows:
+[Sentry API permissions](https://docs.sentry.io/api/permissions/).
+
 ### Flow Diagram
 
 ```text
@@ -217,6 +232,12 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
        deployment. GitHub applies `success()` to successful prior steps, while
        `always()` runs even after failures, so critical deploy steps must not use
        `always()` as their status gate ([GitHub Actions status check functions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)).
+   13. After the final production stack converges, record the image's full
+       `SENTRY_RELEASE` commit SHA as deployed to `production` for
+       `dofek-web` and `dofek-server`. Failed, rolled-back, or quiesced
+       rollouts never reach this step. The official action requires its
+       `release` input to match the SDK release identifier:
+       [Sentry Release Action](https://github.com/getsentry/action-release#usage).
 
 When adding a new host bind mount under `/mnt/dofek-data`, update both
 `deploy/stack.yml` and the Terraform provisioner that creates the directory. If
