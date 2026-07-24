@@ -15943,16 +15943,17 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause:** Zwift's API relay temporarily returned HTTP 503 for the
   activity request. Production Dofek, Postgres, ClickHouse, Redis, and the
   worker remained healthy.
-- **Fix / mitigation:** Typed `ProviderServiceUnavailableError` responses no
-  longer create Sentry events. They continue to emit provider-scoped sync
-  operation and error metrics, write failed sync and processing status, and log
-  the outage for operational diagnosis. The next scheduled sync remains the
-  recovery path; no retry behavior changed.
-- **Validation:** Regression tests for both returned and thrown provider-outage
-  errors failed before the fix because each called Sentry, then passed after the
-  reporting change. Both paths still increment `syncOperationsTotal` with
-  `status=error` and `syncErrorsTotal` for the affected provider. All 51 focused
-  sync-job tests pass.
+- **Fix / mitigation:** Typed `ProviderServiceUnavailableError` responses,
+  including errors wrapped in a `cause` chain, no longer create Sentry events.
+  They continue to emit provider-scoped sync operation and error metrics, write
+  failed sync and processing status, and log the outage for operational
+  diagnosis. The next scheduled sync remains the recovery path; no retry
+  behavior changed.
+- **Validation:** Regression tests for returned, thrown, and cause-wrapped
+  provider-outage errors failed before their corresponding fixes because they
+  called Sentry, then passed after the reporting changes. All paths still
+  increment `syncOperationsTotal` with `status=error` and `syncErrorsTotal` for
+  the affected provider. All 52 focused sync-job tests pass.
 - **Remaining risk / follow-up:** Deploy the fix and confirm future provider
   502/503/504 outages appear in metrics and sync history without opening Sentry
   issues. Add `SENTRY_READ_AUTH_TOKEN` to Infisical as documented in

@@ -173,8 +173,29 @@ function firstAuthFailureReason(errors: SyncError[]): ProviderAuthFailureReason 
     .find((authFailureReason) => authFailureReason !== undefined);
 }
 
+function isProviderServiceUnavailableError(error: unknown): boolean {
+  const visited = new Set<unknown>();
+  let current = error;
+
+  while (current !== null && current !== undefined && !visited.has(current)) {
+    if (current instanceof ProviderServiceUnavailableError) {
+      return true;
+    }
+
+    visited.add(current);
+
+    if (typeof current !== "object" || !("cause" in current)) {
+      return false;
+    }
+
+    current = current.cause;
+  }
+
+  return false;
+}
+
 function shouldReportProviderError(error: unknown): boolean {
-  return !(error instanceof ProviderServiceUnavailableError) && !authFailureReasonFromError(error);
+  return !isProviderServiceUnavailableError(error) && !authFailureReasonFromError(error);
 }
 
 async function scheduleRateLimitRetry(

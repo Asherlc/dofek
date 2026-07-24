@@ -1433,6 +1433,29 @@ describe("processSyncJob", () => {
     });
   });
 
+  it("does not report provider outages wrapped in an error cause chain", async () => {
+    const outage = new ProviderServiceUnavailableError({
+      message: "zwift API service unavailable (503)",
+      providerId: "zwift",
+      statusCode: 503,
+      responseBody: "Service Unavailable",
+    });
+    const provider = createMockProvider({
+      id: "zwift",
+      name: "Zwift",
+      sync: vi.fn().mockRejectedValue(new Error("activity sync failed", { cause: outage })),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "zwift",
+      data_type: "sync",
+    });
+  });
+
   it("calls ensureProvider for each synced provider", async () => {
     const provider = createMockProvider({ id: "test", name: "Test Provider" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
