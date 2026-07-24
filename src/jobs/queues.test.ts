@@ -615,6 +615,8 @@ describe("queues", () => {
         "global-maintenance",
         { type: "global-maintenance" },
         {
+          attempts: 288,
+          backoff: { type: "fixed", delay: 300_000 },
           delay: POST_SYNC_DEBOUNCE_MS,
           deduplication: {
             id: "post-sync:global-maintenance",
@@ -623,6 +625,7 @@ describe("queues", () => {
             replace: true,
           },
           removeOnComplete: true,
+          removeOnFail: { age: 604_800, count: 1_000 },
         },
       );
     });
@@ -640,6 +643,8 @@ describe("queues", () => {
         "user-refit",
         { type: "user-refit", userId: "user-123" },
         {
+          attempts: 288,
+          backoff: { type: "fixed", delay: 300_000 },
           delay: POST_SYNC_DEBOUNCE_MS,
           deduplication: {
             id: "post-sync:user-refit:user-123",
@@ -648,6 +653,7 @@ describe("queues", () => {
             replace: true,
           },
           removeOnComplete: true,
+          removeOnFail: { age: 604_800, count: 1_000 },
         },
       );
     });

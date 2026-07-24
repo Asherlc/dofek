@@ -72,11 +72,7 @@ export async function processPostSyncJob(
   } catch (error) {
     logger.error(`[post-sync] Failed to refit parameters: ${error}`);
     Sentry.captureException(error, { tags: { postSyncStep: "refitParams" } });
-    await updatePostSyncProgress(
-      job,
-      45,
-      "Personalized parameter refit failed; retry required.",
-    );
+    await updatePostSyncProgress(job, 45, "Personalized parameter refit failed; retry required.");
     throw error;
   }
 
