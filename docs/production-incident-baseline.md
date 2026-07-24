@@ -15697,11 +15697,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   stack passes that value to `web` and `worker`. Missing or local environment
   values leave Sentry uninitialized even when a process inherits the production
   DSN. Production events explicitly use Sentry's `production` environment.
-- **Validation:** The new local-with-DSN regression test failed before the fix
-  because `Sentry.init` was called, then passed after it. The shared initializer,
-  server delegation, and complete worker suites pass all 62 focused tests. Root
-  and server TypeScript checks, the complete Docker-free unit tier, full lint,
-  Docker Compose configuration validation, and `git diff --check` pass.
+- **Validation:** The new local-with-DSN and repeated-initialization regression
+  tests failed before their fixes because `Sentry.init` was called for local
+  execution and more than once in production, then passed afterward. Missing
+  deployment environment coverage also confirms Sentry remains disabled. The
+  shared initializer, server delegation, and complete worker suites pass all 64
+  focused tests. Root and server TypeScript checks, the complete Docker-free
+  unit tier, full lint, Docker Compose configuration validation, and
+  `git diff --check` pass.
 - **Remaining risk / follow-up:** Deploy the recurrence fix, then intentionally
   trigger or capture a harmless local exception and verify no Sentry event is
   created. Local body analytics still requires the dbt analytics selection to

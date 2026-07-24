@@ -1,13 +1,14 @@
 import * as Sentry from "@sentry/node";
 
 const SENTRY_ENVIRONMENT = "production";
+let initialized = false;
 
 function isProductionDeployment(environment: string | undefined): boolean {
   return environment === "prod" || environment === "production";
 }
 
 export function initProductionSentry(dsn: string | undefined): void {
-  if (!dsn || !isProductionDeployment(process.env.DEPLOY_ENVIRONMENT)) {
+  if (initialized || !dsn || !isProductionDeployment(process.env.DEPLOY_ENVIRONMENT)) {
     return;
   }
 
@@ -16,4 +17,5 @@ export function initProductionSentry(dsn: string | undefined): void {
     environment: SENTRY_ENVIRONMENT,
     skipOpenTelemetrySetup: true,
   });
+  initialized = true;
 }
