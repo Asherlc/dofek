@@ -620,10 +620,9 @@ describe("syncRouter", () => {
 
     it("rejects instead of marking push providers disconnected when provider stats lookup fails", async () => {
       mockGetAllProviders.mockReturnValue([]);
-      const providerStatsError = Object.assign(
-        new Error("connect ECONNREFUSED clickhouse:8123"),
-        { code: "ECONNREFUSED" },
-      );
+      const providerStatsError = Object.assign(new Error("connect ECONNREFUSED clickhouse:8123"), {
+        code: "ECONNREFUSED",
+      });
 
       const caller = createCaller({
         db: createProvidersDbMock(),
