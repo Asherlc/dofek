@@ -676,6 +676,8 @@ describe("domain metric formatters", () => {
     });
     expect(formatHRV(Number.POSITIVE_INFINITY)).toBe("--");
     expect(formatStandardDeviation(null)).toBe("--");
+    expect(formatStandardDeviation(Number.NaN)).toBe("--");
+    expect(formatStandardDeviation(Number.POSITIVE_INFINITY)).toBe("--");
     expect(formatIntensity(Number.NEGATIVE_INFINITY)).toBe("--");
   });
 });
