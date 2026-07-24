@@ -168,6 +168,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: EXPO_PUBLIC_SENTRY_DSN
       - uses: ./.github/actions/setup-ccache
         with:
           cache-key-prefix: ccache-watchos
