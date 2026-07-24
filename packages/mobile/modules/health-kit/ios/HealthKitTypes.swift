@@ -17,8 +17,6 @@ let readTypes: Set<HKObjectType> = {
         .height,
         .stepCount,
         .distanceWalkingRunning,
-        .activeEnergyBurned,
-        .basalEnergyBurned,
         .flightsClimbed,
         .appleExerciseTime,
         .appleStandTime,

@@ -931,7 +931,6 @@ export async function syncDailyMetricsComposite(
                 providerId,
                 steps: parsed.steps,
                 hrv: parsed.hrv,
-                activeEnergyKcal: parsed.activeEnergyKcal,
                 exerciseMinutes: parsed.exerciseMinutes,
                 skinTempC: parsed.skinTempC,
                 spo2Avg: parsed.spo2Avg,
@@ -949,7 +948,6 @@ export async function syncDailyMetricsComposite(
                 set: {
                   steps: parsed.steps,
                   hrv: parsed.hrv,
-                  activeEnergyKcal: parsed.activeEnergyKcal,
                   exerciseMinutes: parsed.exerciseMinutes,
                   skinTempC: parsed.skinTempC,
                   spo2Avg: parsed.spo2Avg,

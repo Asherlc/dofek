@@ -3,11 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import {
-  currentDateRangePredicate,
-  type RangeDays,
-  rangeDaysOrNullAdd,
-} from "../lib/date-window.ts";
+import { currentDateRangePredicate, type RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import {
   type BodyClickHouseStore,
@@ -68,45 +64,6 @@ export class MicronutrientAdequacy {
       avgIntake: this.#row.avgIntake,
       percentRda: this.#row.percentRda,
       daysTracked: this.#row.daysTracked,
-    };
-  }
-}
-
-export interface CaloricBalanceRowData {
-  date: string;
-  caloriesIn: number;
-  activeEnergy: number;
-  basalEnergy: number;
-  totalExpenditure: number;
-  balance: number;
-  rollingAvgBalance: number | null;
-}
-
-/** A single day's caloric balance (intake vs expenditure). */
-export class CaloricBalanceDay {
-  readonly #row: CaloricBalanceRowData;
-
-  constructor(row: CaloricBalanceRowData) {
-    this.#row = row;
-  }
-
-  get date(): string {
-    return this.#row.date;
-  }
-
-  get balance(): number {
-    return this.#row.balance;
-  }
-
-  toDetail() {
-    return {
-      date: this.#row.date,
-      caloriesIn: this.#row.caloriesIn,
-      activeEnergy: this.#row.activeEnergy,
-      basalEnergy: this.#row.basalEnergy,
-      totalExpenditure: this.#row.totalExpenditure,
-      balance: this.#row.balance,
-      rollingAvgBalance: this.#row.rollingAvgBalance,
     };
   }
 }
@@ -200,16 +157,6 @@ export class MacroRatioDay {
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
 // ---------------------------------------------------------------------------
-
-const caloricBalanceRowSchema = z.object({
-  date: dateStringSchema,
-  calories_in: z.coerce.number(),
-  active_energy: z.coerce.number(),
-  basal_energy: z.coerce.number(),
-  total_expenditure: z.coerce.number(),
-  balance: z.coerce.number(),
-  rolling_avg_balance: z.coerce.number().nullable(),
-});
 
 const macroRatioRowSchema = z.object({
   date: dateStringSchema,
@@ -374,71 +321,6 @@ export class NutritionAnalyticsRepository extends BaseRepository {
         daysTracked,
       });
     });
-  }
-
-  /** Caloric balance: daily calories in vs estimated expenditure. */
-  async getCaloricBalance(days: RangeDays): Promise<CaloricBalanceDay[]> {
-    const queryDays = rangeDaysOrNullAdd(days, 7); // extra for rolling average warmup
-
-    const rows = await this.query(
-      caloricBalanceRowSchema,
-      sql`WITH nutrition AS (
-            SELECT date, SUM(calories) AS calories_in
-            FROM fitness.v_nutrition_daily
-            WHERE user_id = ${this.userId}
-              ${currentDateRangePredicate(sql`date`, queryDays)}
-              ${this.dateAccessPredicate(sql`date`)}
-            GROUP BY date
-          ),
-          expenditure AS (
-            SELECT
-              date,
-              active_energy_kcal,
-              basal_energy_kcal
-            FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.userId}
-              ${currentDateRangePredicate(sql`date`, queryDays)}
-              ${this.dateAccessPredicate(sql`date`)}
-          ),
-          combined AS (
-            SELECT
-              COALESCE(n.date, e.date) AS date,
-              COALESCE(n.calories_in, 0) AS calories_in,
-              COALESCE(e.active_energy_kcal, 0) AS active_energy,
-              COALESCE(e.basal_energy_kcal, 0) AS basal_energy
-            FROM nutrition n
-            FULL OUTER JOIN expenditure e ON n.date = e.date
-            WHERE COALESCE(n.date, e.date) IS NOT NULL
-          )
-          SELECT
-            date::text,
-            calories_in,
-            active_energy,
-            basal_energy,
-            (active_energy + basal_energy) AS total_expenditure,
-            (calories_in - active_energy - basal_energy) AS balance,
-            AVG(calories_in - active_energy - basal_energy) OVER (
-              ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
-            ) AS rolling_avg_balance
-          FROM combined
-          WHERE true
-            ${currentDateRangePredicate(sql`date`, days)}
-          ORDER BY date ASC`,
-    );
-
-    return rows.map(
-      (row) =>
-        new CaloricBalanceDay({
-          date: row.date,
-          caloriesIn: Math.round(Number(row.calories_in)),
-          activeEnergy: Math.round(Number(row.active_energy)),
-          basalEnergy: Math.round(Number(row.basal_energy)),
-          totalExpenditure: Math.round(Number(row.total_expenditure)),
-          balance: Math.round(Number(row.balance)),
-          rollingAvgBalance:
-            row.rolling_avg_balance != null ? Math.round(Number(row.rolling_avg_balance)) : null,
-        }),
-    );
   }
 
   /** Raw daily calorie + weight data for adaptive TDEE estimation. */

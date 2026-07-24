@@ -34,7 +34,6 @@ function makeDailyRow(date: string, overrides: Partial<DailyRow> = {}): DailyRow
     hrv: 50,
     spo2_avg: 98,
     steps: 8000,
-    active_energy_kcal: 400,
     skin_temp_c: 36.5,
     ...overrides,
   };
@@ -110,7 +109,6 @@ describe("joinByDate()", () => {
         hrv: 65,
         spo2_avg: 97,
         steps: 12000,
-        active_energy_kcal: 500,
         skin_temp_c: 36.8,
       }),
     ];
@@ -120,7 +118,6 @@ describe("joinByDate()", () => {
     expect(result[0]?.hrv).toBe(65);
     expect(result[0]?.spo2_avg).toBe(97);
     expect(result[0]?.steps).toBe(12000);
-    expect(result[0]?.active_energy_kcal).toBe(500);
     expect(result[0]?.skin_temp_c).toBe(36.8);
   });
 
@@ -445,7 +442,6 @@ describe("joinByDate()", () => {
         hrv: 50,
         spo2_avg: 98,
         steps: 8000,
-        active_energy_kcal: 400,
         skin_temp_c: 36.5,
       },
     ];
@@ -1990,7 +1986,6 @@ function makeFullJoinedDay(date: string, overrides: Partial<JoinedDay> = {}): Jo
     hrv: 50,
     spo2_avg: 98,
     steps: 8000,
-    active_energy_kcal: 400,
     skin_temp_c: 36.5,
     sleep_duration_min: 480,
     deep_min: 90,
@@ -2033,7 +2028,6 @@ describe("getConditionalTests() — systematic splitFn boundary tests", () => {
     { id: "exercise-30-sleep", field: "exercise_minutes", threshold: 30 },
     { id: "exercise-30-hrv", field: "exercise_minutes", threshold: 30 },
     { id: "steps-10k-hrv", field: "steps", threshold: 10000 },
-    { id: "active-500-sleep-eff", field: "active_energy_kcal", threshold: 500 },
     { id: "rem-90-hrv", field: "rem_min", threshold: 90 },
     { id: "cardio-sleep", field: "cardio_minutes", threshold: 20 },
     { id: "cardio-deep-sleep", field: "cardio_minutes", threshold: 20 },
@@ -2196,7 +2190,6 @@ describe("getCorrelationPairs() — systematic extract tests", () => {
   const simplePairs: Array<{ id: string; xField: keyof JoinedDay }> = [
     { id: "sleep-dur-hrv", xField: "sleep_duration_min" },
     { id: "steps-hrv", xField: "steps" },
-    { id: "active-kcal-sleep", xField: "active_energy_kcal" },
     { id: "deep-sleep-hrv", xField: "deep_min" },
     { id: "exercise-dur-sleep-eff", xField: "exercise_minutes" },
     { id: "protein-hrv", xField: "protein_g" },
@@ -2281,7 +2274,6 @@ describe("getAllMetrics() — systematic extract tests", () => {
     { key: "spo2", field: "spo2_avg", expected: 98 },
     { key: "skin_temp", field: "skin_temp_c", expected: 36.5 },
     { key: "steps", field: "steps", expected: 8000 },
-    { key: "active_kcal", field: "active_energy_kcal", expected: 400 },
     { key: "exercise", field: "exercise_minutes", expected: 45 },
     { key: "calories", field: "calories", expected: 2200 },
     { key: "protein", field: "protein_g", expected: 150 },
@@ -3093,7 +3085,6 @@ describe("getAllMetrics() — extract functions called inside test callbacks", (
     { key: "spo2", field: "spo2_avg", value: 97 },
     { key: "skin_temp", field: "skin_temp_c", value: 36.2 },
     { key: "steps", field: "steps", value: 12345 },
-    { key: "active_kcal", field: "active_energy_kcal", value: 350 },
     { key: "exercise", field: "exercise_minutes", value: 30 },
     { key: "calories", field: "calories", value: 1800 },
     { key: "protein", field: "protein_g", value: 120 },
@@ -3966,12 +3957,11 @@ describe("findCorrelationConfounders()", () => {
       days,
       indices,
     );
-    // Cardio, strength, steps, active calories should be excluded as related to exercise
+    // Cardio, strength, and steps should be excluded as related to exercise
     for (const confounder of result) {
       expect(confounder).not.toMatch(/^cardio duration also/);
       expect(confounder).not.toMatch(/^strength training duration also/);
       expect(confounder).not.toMatch(/^steps also/);
-      expect(confounder).not.toMatch(/^active calories also/);
     }
   });
 });
@@ -4217,7 +4207,6 @@ describe("computeMonthlyInsights() — conditional analysis", () => {
         hrv: day.hrv,
         spo2_avg: day.spo2_avg,
         steps: day.steps,
-        active_energy_kcal: day.active_energy_kcal,
         skin_temp_c: day.skin_temp_c,
       })),
       [],
@@ -4372,21 +4361,6 @@ describe("getCorrelationPairs() — computed xFn/yFn tests", () => {
 
   it("steps-hrv: yFn returns null at end of array", () => {
     const pair = pairs.find((pd) => pd.id === "steps-hrv");
-    const days = [makeFullJoinedDay("2025-01-01")];
-    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBeNull();
-  });
-
-  it("active-kcal-sleep: yFn returns next day sleep duration", () => {
-    const pair = pairs.find((pd) => pd.id === "active-kcal-sleep");
-    const days = [
-      makeFullJoinedDay("2025-01-01"),
-      makeFullJoinedDay("2025-01-02", { sleep_duration_min: 450 }),
-    ];
-    expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBe(450);
-  });
-
-  it("active-kcal-sleep: yFn returns null at end of array", () => {
-    const pair = pairs.find((pd) => pd.id === "active-kcal-sleep");
     const days = [makeFullJoinedDay("2025-01-01")];
     expect(pair?.yFn(days[0] ?? makeFullJoinedDay("2025-01-01"), days, 0)).toBeNull();
   });

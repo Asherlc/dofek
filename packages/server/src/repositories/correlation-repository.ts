@@ -46,7 +46,6 @@ const JOINED_DAY_EXTRACTORS: Record<string, JoinedDayExtractor> = {
   fat_g: (d) => d.fat_g,
   fiber_g: (d) => d.fiber_g,
   steps: (d) => d.steps,
-  active_energy_kcal: (d) => d.active_energy_kcal,
   exercise_minutes: (d) => d.exercise_minutes,
   cardio_minutes: (d) => d.cardio_minutes,
   strength_minutes: (d) => d.strength_minutes,
@@ -229,7 +228,7 @@ export class CorrelationRepository {
         this.#db,
         dailyRowSchema,
         sql`WITH ${restingHeartRateCte}
-            SELECT dm.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.steps, dm.active_energy_kcal, dm.skin_temp_c
+            SELECT dm.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.steps, dm.skin_temp_c
 	            FROM fitness.v_daily_metrics dm
 	            LEFT JOIN resting_heart_rate drhr
 	              ON drhr.date = dm.date

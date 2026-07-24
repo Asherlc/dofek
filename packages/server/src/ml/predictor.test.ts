@@ -46,7 +46,6 @@ function generateSyntheticDays(n: number, seed: number = 42): DailyFeatureRow[] 
       hrv: Math.round(hrv * 10) / 10,
       spo2_avg: 96 + rng() * 3,
       steps: Math.round(5000 + rng() * 10000),
-      active_energy_kcal: 200 + rng() * 500,
       skin_temp_c: 33 + rng() * 2,
       sleep_duration_min: Math.round(sleepDuration),
       deep_min: Math.round(deepMin),
@@ -91,7 +90,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
     expect(result.diagnostics.linearRSquared).toBeGreaterThan(0.01);
     expect(result.diagnostics.linearRSquared).toBeLessThanOrEqual(1);
     expect(result.diagnostics.treeRSquared).toBeGreaterThan(0.1);
-    expect(result.diagnostics.crossValidatedRSquared).toBeGreaterThan(-0.5);
+    expect(result.diagnostics.crossValidatedRSquared).toBeGreaterThan(-1);
   });
 
   it("ranks sleep features highly for HRV", () => {
@@ -144,30 +143,30 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
     if (!result) throw new Error("expected result");
 
     expect(result.diagnostics).toEqual({
-      linearRSquared: 0.3248,
-      linearAdjustedRSquared: 0.0675,
-      treeRSquared: 0.9906,
-      crossValidatedRSquared: -0.2926,
+      linearRSquared: 0.206,
+      linearAdjustedRSquared: -0.0709,
+      treeRSquared: 0.9894,
+      crossValidatedRSquared: -0.8389,
       sampleCount: 59,
-      featureCount: 16,
+      featureCount: 15,
       linearFallbackUsed: false,
     });
 
     expect(result.predictions[0]).toEqual({
       date: "2024-01-01",
-      actual: 57.7,
-      linearPrediction: 65.09,
-      treePrediction: 58.81,
+      actual: 65.1,
+      linearPrediction: 68.16,
+      treePrediction: 65.63,
     });
     expect(result.predictions[30]).toEqual({
       date: "2024-01-31",
-      actual: 72,
-      linearPrediction: 67.76,
-      treePrediction: 71.94,
+      actual: 82.2,
+      linearPrediction: 70.46,
+      treePrediction: 79.91,
     });
-    expect(result.tomorrowPrediction).toEqual({ linear: 71.21, tree: 71.8 });
-    expect(result.featureImportances[0]?.name).toBe("calories");
-    expect(result.featureImportances[0]?.treeImportance).toBeCloseTo(0.23712690166277647, 8);
+    expect(result.tomorrowPrediction).toEqual({ linear: 73.89, tree: 75.38 });
+    expect(result.featureImportances[0]?.name).toBe("sleep_duration");
+    expect(result.featureImportances[0]?.treeImportance).toBeCloseTo(0.16618574353847174, 8);
     expect(
       result.featureImportances.some(
         (feature) => feature.linearCoefficient !== 0 && feature.linearImportance > 0,
@@ -438,7 +437,6 @@ describe("trainPredictor", () => {
         hrv: null, // all null — can't build target
         spo2_avg: null,
         steps: null,
-        active_energy_kcal: null,
         skin_temp_c: null,
         sleep_duration_min: 420,
         deep_min: 80,
@@ -501,7 +499,6 @@ describe("trainPredictor", () => {
         hrv: 50,
         spo2_avg: 98,
         steps: 5000,
-        active_energy_kcal: 300,
         skin_temp_c: 34,
         sleep_duration_min: 420,
         deep_min: 80,

@@ -34,6 +34,10 @@ A column is raw if the data originates from a sensor or external system and **ca
 | `daily_metrics.resting_hr` | Derived from low-percentile sleep-window heart-rate samples. Removed in migration 0007. |
 | `daily_metrics.vo2max` | Derived from qualifying activity-level estimates using transparent public equations. Removed in migration 0007. |
 | `daily_metrics.cycling_distance_km` | Derivable from activity distance/routes/sensor streams instead of stored as a duplicate daily total. Removed in migration 0046. |
+| `daily_metrics.active_energy_kcal` | Provider/device estimate rather than an observation. Application ingestion and reads are retired; the nullable physical column remains temporarily for deployment compatibility. |
+| `daily_metrics.basal_energy_kcal` | Formula-based provider/device estimate rather than an observation. Application ingestion and reads are retired; the nullable physical column remains temporarily for deployment compatibility. |
+| `dexa_scan.resting_metabolic_rate_kcal` | Formula-based provider estimate rather than an observation. Application ingestion and reads are retired; the nullable physical column remains temporarily for deployment compatibility. |
+| `dexa_scan.resting_metabolic_rate_raw` | Dedicated storage for formula estimates rather than opaque provider provenance. Application ingestion and reads are retired; the nullable physical column remains temporarily for deployment compatibility. |
 
 The ClickHouse `analytics.activity_summary` read model computes these values from mirrored raw sensor data, including total distance (haversine over GPS points) and elevation gain/loss (altitude deltas).
 
@@ -47,8 +51,6 @@ The ClickHouse `analytics.activity_summary` read model computes these values fro
 | `spo2_avg` | Pulse oximeter reading. Raw infrared/red light sensor data is not stored. |
 | `respiratory_rate_avg` | Derived from accelerometer + PPG during sleep. Raw sensor streams unavailable. |
 | `steps` | Accelerometer-counted throughout the day. We don't store raw accelerometer data. |
-| `active_energy_kcal` | Device-computed from HR, motion, body metrics across the full 24-hour day (not just activities). We lack the continuous sensor data. |
-| `basal_energy_kcal` | Based on BMR formulas using body composition. The formula + inputs aren't stored. |
 | `distance_km` | All-day walking/running distance from step count + stride length. Includes non-activity movement we don't track. |
 | `flights_climbed` | Barometric altimeter counts. Raw pressure data not stored. |
 | `exercise_minutes` | Device-determined from sustained HR elevation. Proprietary threshold logic. |

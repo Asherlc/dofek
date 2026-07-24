@@ -138,7 +138,6 @@ const activities: Activity[] = [
     provider_id: "strava",
     source_providers: ["strava"],
     distance_meters: 5000,
-    calories: 450,
     location: {
       centroidLat: 37.7749,
       centroidLng: -122.4194,
@@ -156,7 +155,6 @@ const activities: Activity[] = [
     provider_id: "wahoo",
     source_providers: ["wahoo"],
     distance_meters: null,
-    calories: 520,
   },
 ];
 

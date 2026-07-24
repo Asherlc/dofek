@@ -26,7 +26,6 @@ export const ActivityRowSchema = z.object({
   max_hr: z.number().nullable().optional(),
   avg_power: z.number().nullable().optional(),
   distance_meters: z.number().nullable().optional(),
-  calories: z.number().nullable().optional(),
 });
 
 export type ActivityRow = z.infer<typeof ActivityRowSchema>;

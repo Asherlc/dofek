@@ -266,7 +266,6 @@ describe("Zwift Provider", () => {
       expect(result.raw.maxHeartRate).toBe(180);
       expect(result.raw.distanceMeters).toBe(35000);
       expect(result.raw.elevationGain).toBe(450);
-      expect(result.raw.calories).toBe(800);
     });
 
     it("uses id_str when available", () => {

@@ -14,7 +14,6 @@ function makeDay(overrides: Partial<JoinedDay> & { date: string }): JoinedDay {
     hrv: null,
     spo2_avg: null,
     steps: null,
-    active_energy_kcal: null,
     skin_temp_c: null,
     sleep_duration_min: null,
     deep_min: null,
@@ -205,7 +204,6 @@ describe("computeCorrelation", () => {
       fat_g: 70,
       fiber_g: 30,
       steps: 10000,
-      active_energy_kcal: 500,
       exercise_minutes: 60,
       cardio_minutes: 30,
       strength_minutes: 20,
@@ -232,7 +230,6 @@ describe("computeCorrelation", () => {
     expect(extractMetricValue(day, "fiber")).toBe(30);
     // Activity
     expect(extractMetricValue(day, "steps")).toBe(10000);
-    expect(extractMetricValue(day, "active_calories")).toBe(500);
     expect(extractMetricValue(day, "exercise_duration")).toBe(60);
     expect(extractMetricValue(day, "cardio_duration")).toBe(30);
     expect(extractMetricValue(day, "strength_duration")).toBe(20);

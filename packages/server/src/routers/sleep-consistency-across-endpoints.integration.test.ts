@@ -112,11 +112,10 @@ describe("sleep data consistency across endpoints", () => {
     for (let daysAgo = 90; daysAgo >= 0; daysAgo--) {
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, hrv, steps,
-              active_energy_kcal, basal_energy_kcal
+              date, provider_id, user_id, hrv, steps
             ) VALUES (
               CURRENT_DATE - ${daysAgo}::int,
-              'whoop', ${TEST_USER_ID}, 60, 8000, 500, 1800
+              'whoop', ${TEST_USER_ID}, 60, 8000
             ) ON CONFLICT DO NOTHING`,
       );
     }

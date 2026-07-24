@@ -47,7 +47,6 @@ describe("syncHealthKitToServer", () => {
           startDate: "2026-03-21T07:00:00Z",
           endDate: "2026-03-21T08:00:00Z",
           duration: 3600,
-          totalEnergyBurned: 500,
           totalDistance: 10000,
           sourceName: "Apple Watch",
           sourceBundle: "com.apple.health",
@@ -360,7 +359,6 @@ describe("syncHealthKitToServer", () => {
         startDate: "2026-03-21T07:00:00Z",
         endDate: "2026-03-21T08:00:00Z",
         duration: 3600,
-        totalEnergyBurned: undefined,
         totalDistance: undefined,
         sourceName: "Apple Watch",
         sourceBundle: "com.apple.health",
@@ -374,7 +372,6 @@ describe("syncHealthKitToServer", () => {
     });
 
     const workoutCall = client.healthKitSync.pushWorkouts.mutate.mock.calls[0];
-    expect(workoutCall[0].workouts[0].totalEnergyBurned).toBeNull();
     expect(workoutCall[0].workouts[0].totalDistance).toBeNull();
     expect(workoutCall[0].windowStart).toEqual(expect.any(String));
     expect(workoutCall[0].windowEnd).toEqual(expect.any(String));
@@ -390,7 +387,6 @@ describe("syncHealthKitToServer", () => {
         startDate: "2026-03-21T10:00:00Z",
         endDate: "2026-03-21T11:00:00Z",
         duration: 3600,
-        totalEnergyBurned: 350,
         totalDistance: null,
         sourceName: "Strong",
         sourceBundle: "io.strongapp.strong",
@@ -429,9 +425,8 @@ describe("syncHealthKitToServer", () => {
 });
 
 describe("quantity type constants", () => {
-  it("additive types include steps and active energy", () => {
+  it("additive types include steps", () => {
     expect(ADDITIVE_QUANTITY_TYPES).toContain("HKQuantityTypeIdentifierStepCount");
-    expect(ADDITIVE_QUANTITY_TYPES).toContain("HKQuantityTypeIdentifierActiveEnergyBurned");
   });
 
   it("non-additive types include heart rate and HRV", () => {

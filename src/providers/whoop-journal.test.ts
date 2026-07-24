@@ -33,7 +33,6 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     expect(parsed?.durationSeconds).toBe(3600);
     expect(parsed?.avgHeartRate).toBe(140);
     expect(parsed?.maxHeartRate).toBe(175);
-    expect(parsed?.calories).toBe(478); // 2000 / 4.184 ≈ 478
   });
 
   it("falls back to created_at/updated_at when start/end are missing", () => {
@@ -79,35 +78,6 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
 
     const parsed = parseWorkout(record);
     expect(parsed).toBeNull();
-  });
-
-  it("returns undefined calories when kilojoules is 0", () => {
-    const record: WhoopWorkoutRecord = {
-      activity_id: "uuid-zero-kj",
-      during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
-      timezone_offset: "-05:00",
-      sport_id: 0,
-      kilojoules: 0,
-      score: 1,
-    };
-
-    const parsed = parseWorkout(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.calories).toBeUndefined();
-  });
-
-  it("returns undefined calories when kilojoules is not present", () => {
-    const record: WhoopWorkoutRecord = {
-      activity_id: "uuid-no-kj",
-      during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
-      timezone_offset: "-05:00",
-      sport_id: 0,
-      score: 2,
-    };
-
-    const parsed = parseWorkout(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.calories).toBeUndefined();
   });
 
   it("always returns undefined for distanceMeters and totalElevationGain", () => {

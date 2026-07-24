@@ -58,16 +58,13 @@ describe("dailyMetrics data correctness", () => {
     for (let i = 30; i >= 4; i--) {
       const hrv = 50 + Math.round(Math.sin(i * 0.3) * 10);
       const steps = 8000 + Math.round(Math.sin(i) * 2000);
-      const activeEnergy = 400 + Math.round(Math.cos(i) * 100);
       const spo2 = 96 + Math.round(Math.sin(i * 0.5) * 2);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, hrv, steps,
-              active_energy_kcal, spo2_avg
+              date, provider_id, user_id, hrv, steps, spo2_avg
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'apple_health', ${TEST_USER_ID}, ${hrv}, ${steps},
-              ${activeEnergy}, ${spo2}
+              'apple_health', ${TEST_USER_ID}, ${hrv}, ${steps}, ${spo2}
             ) ON CONFLICT DO NOTHING`,
       );
     }
@@ -145,7 +142,6 @@ describe("dailyMetrics data correctness", () => {
         latest_date: string | null;
         latest_hrv: number | null;
         latest_steps: number | null;
-        latest_active_energy: number | null;
       }>("dailyMetrics.trends", { days: 30, endDate });
 
       expect(result).not.toBeNull();
@@ -159,7 +155,6 @@ describe("dailyMetrics data correctness", () => {
       // Day-to-date activity metrics must be from endDate, otherwise the Health
       // Monitor bar shows yesterday's totals as today's progress.
       expect(result.latest_steps).toBeNull();
-      expect(result.latest_active_energy).toBeNull();
     });
 
     it("returns today's values when endDate has health data", async () => {
@@ -248,13 +243,12 @@ describe("dailyMetrics data correctness", () => {
       for (let i = 7; i >= 1; i--) {
         await testCtx.db.execute(
           sql`INSERT INTO fitness.daily_metrics (
-                date, provider_id, user_id, steps, active_energy_kcal
+                date, provider_id, user_id, steps
               ) VALUES (
                 CURRENT_DATE - ${i}::int,
                 'apple_health_stale_view',
                 ${staleViewUserId},
-                ${8000 + i * 100},
-                ${400 + i * 10}
+                ${8000 + i * 100}
               )`,
         );
       }
@@ -272,13 +266,12 @@ describe("dailyMetrics data correctness", () => {
 
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, steps, active_energy_kcal
+              date, provider_id, user_id, steps
             ) VALUES (
               CURRENT_DATE,
               'apple_health_stale_view',
               ${staleViewUserId},
-              9876,
-              543
+              9876
             )`,
       );
 
@@ -288,13 +281,11 @@ describe("dailyMetrics data correctness", () => {
       const result = await queryWithCookie<{
         avg_steps: number | null;
         latest_steps: number | null;
-        latest_active_energy: number | null;
         latest_date: string | null;
       }>(staleSessionCookie, "dailyMetrics.trends", { days: 30, endDate });
 
       expect(result.latest_date).toBe(endDate);
       expect(result.latest_steps).toBe(9876);
-      expect(result.latest_active_energy).toBe(543);
       expect(result.avg_steps).not.toBeNull();
     });
   });

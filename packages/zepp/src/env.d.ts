@@ -54,11 +54,6 @@ declare module "@zos/sensor" {
     getTarget(): number;
   }
 
-  export class Calorie {
-    getCurrent(): number;
-    getTarget(): number;
-  }
-
   export class Distance {
     getCurrent(): number;
   }

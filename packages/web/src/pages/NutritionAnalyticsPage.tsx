@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { AdaptiveTdeeChart } from "../components/AdaptiveTdeeChart.tsx";
-import { CaloricBalanceChart } from "../components/CaloricBalanceChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { MicronutrientChart } from "../components/MicronutrientChart.tsx";
@@ -18,9 +17,6 @@ export function NutritionAnalyticsPage() {
   const [days, setDays] = useState<TimeRangeDays>(30);
 
   const micronutrients = trpc.nutritionAnalytics.micronutrientAdequacy.useQuery(
-    selectedRangeQueryInput(days),
-  );
-  const caloricBalance = trpc.nutritionAnalytics.caloricBalance.useQuery(
     selectedRangeQueryInput(days),
   );
   const adaptiveTdee = trpc.nutritionAnalytics.adaptiveTdee.useQuery(
@@ -42,22 +38,10 @@ export function NutritionAnalyticsPage() {
         {/* Adaptive TDEE */}
         <Section
           title="Adaptive TDEE"
-          subtitle="True daily energy expenditure estimated from calorie intake vs weight change"
+          subtitle="Estimated from logged calorie intake and observed body-weight change"
         >
           {adaptiveTdee.isError && <QueryStatePanel error={adaptiveTdee.error} height={72} />}
           <AdaptiveTdeeChart data={adaptiveTdee.data} loading={adaptiveTdee.isLoading} />
-        </Section>
-
-        {/* Caloric Balance */}
-        <Section
-          title="Caloric Balance"
-          subtitle="Daily calories in vs estimated expenditure (active + basal energy)"
-        >
-          {caloricBalance.isError && <QueryStatePanel error={caloricBalance.error} height={72} />}
-          <CaloricBalanceChart
-            data={caloricBalance.data ?? []}
-            loading={caloricBalance.isLoading}
-          />
         </Section>
 
         {macroRatios.isError && <QueryStatePanel error={macroRatios.error} height={72} />}

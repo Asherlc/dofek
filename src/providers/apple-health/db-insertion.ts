@@ -85,8 +85,6 @@ export const BODY_MEASUREMENT_TYPES = new Set([
 export const DAILY_METRIC_TYPES = new Set([
   "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
   "HKQuantityTypeIdentifierStepCount",
-  "HKQuantityTypeIdentifierActiveEnergyBurned",
-  "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierDistanceWalkingRunning",
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
@@ -104,6 +102,8 @@ export const DAILY_METRIC_TYPES = new Set([
 
 // Provider-computed summaries that are derived from raw streams server-side.
 export const IGNORED_PROVIDER_DERIVED_TYPES = new Set([
+  "HKQuantityTypeIdentifierActiveEnergyBurned",
+  "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierRestingHeartRate",
   "HKQuantityTypeIdentifierVO2Max",
 ]);
@@ -111,8 +111,6 @@ export const IGNORED_PROVIDER_DERIVED_TYPES = new Set([
 // Additive daily metrics (summed across all records in a day)
 const ADDITIVE_DAILY_TYPES = new Set([
   "HKQuantityTypeIdentifierStepCount",
-  "HKQuantityTypeIdentifierActiveEnergyBurned",
-  "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierDistanceWalkingRunning",
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
@@ -357,12 +355,6 @@ export async function upsertDailyMetricsBatch(
         case "HKQuantityTypeIdentifierStepCount":
           row.steps = Math.round(value);
           break;
-        case "HKQuantityTypeIdentifierActiveEnergyBurned":
-          row.activeEnergyKcal = value;
-          break;
-        case "HKQuantityTypeIdentifierBasalEnergyBurned":
-          row.basalEnergyKcal = value;
-          break;
         case "HKQuantityTypeIdentifierDistanceWalkingRunning":
           row.distanceKm = value / 1000;
           break;
@@ -439,8 +431,6 @@ export async function upsertDailyMetricsBatch(
               skinTempC: sql`coalesce(excluded.skin_temp_c, ${dailyMetrics.skinTempC})`,
               // Additive metrics: accumulate across batches (import.ts clears before import)
               steps: sql`coalesce(${dailyMetrics.steps}, 0) + coalesce(excluded.steps, 0)`,
-              activeEnergyKcal: sql`coalesce(${dailyMetrics.activeEnergyKcal}, 0) + coalesce(excluded.active_energy_kcal, 0)`,
-              basalEnergyKcal: sql`coalesce(${dailyMetrics.basalEnergyKcal}, 0) + coalesce(excluded.basal_energy_kcal, 0)`,
               distanceKm: sql`coalesce(${dailyMetrics.distanceKm}, 0) + coalesce(excluded.distance_km, 0)`,
               flightsClimbed: sql`coalesce(${dailyMetrics.flightsClimbed}, 0) + coalesce(excluded.flights_climbed, 0)`,
               exerciseMinutes: sql`coalesce(${dailyMetrics.exerciseMinutes}, 0) + coalesce(excluded.exercise_minutes, 0)`,
@@ -698,7 +688,6 @@ export async function upsertWorkoutBatch(
     for (const workout of batch) {
       const raw: Record<string, number> = { durationSeconds: workout.durationSeconds };
       if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
-      if (workout.calories !== undefined) raw.calories = workout.calories;
       if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
       if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;
 

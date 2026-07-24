@@ -62,12 +62,10 @@ describe("Router coverage", () => {
       const steps = 8000 + Math.round(Math.sin(i) * 2000);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, hrv, steps,
-              active_energy_kcal, basal_energy_kcal
+              date, provider_id, user_id, hrv, steps
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'test_provider', ${TEST_USER_ID}, ${hrv}, ${steps},
-              500, 1800
+              'test_provider', ${TEST_USER_ID}, ${hrv}, ${steps}
             ) ON CONFLICT DO NOTHING`,
       );
     }
@@ -1006,31 +1004,6 @@ describe("Router coverage", () => {
       for (const day of result.dailyData) {
         expect(day.date).toBeTruthy();
         expect(typeof day.caloriesIn).toBe("number");
-      }
-    });
-
-    it("caloricBalance returns daily calorie balance with rolling avg", async () => {
-      const result = await query<
-        {
-          date: string;
-          caloriesIn: number;
-          activeEnergy: number;
-          basalEnergy: number;
-          totalExpenditure: number;
-          balance: number;
-          rollingAvgBalance: number | null;
-        }[]
-      >("nutritionAnalytics.caloricBalance", { days: 30 });
-
-      expect(Array.isArray(result)).toBe(true);
-
-      for (const row of result) {
-        expect(row.date).toBeTruthy();
-        expect(typeof row.caloriesIn).toBe("number");
-        expect(typeof row.activeEnergy).toBe("number");
-        expect(typeof row.basalEnergy).toBe("number");
-        expect(typeof row.totalExpenditure).toBe("number");
-        expect(typeof row.balance).toBe("number");
       }
     });
 

@@ -20,6 +20,7 @@ import {
   additiveDailyMetricTypes,
   type DailyMetricAccumulator,
   getDailyMetricAccumulatorKey,
+  ignoredCalorieExpenditureTypes,
   pointInTimeDailyMetricTypes,
 } from "../routers/health-kit-sync-schemas.ts";
 
@@ -49,11 +50,6 @@ const INTEGER_METRIC_STREAM_COLUMNS = new Set([
 
 const MAX_SLEEP_SESSION_GAP_MS = 90 * 60 * 1000;
 
-const ignoredProviderDerivedTypes = new Set([
-  "HKQuantityTypeIdentifierRestingHeartRate",
-  "HKQuantityTypeIdentifierVO2Max",
-]);
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -75,7 +71,6 @@ export interface WorkoutSample {
   startDate: string;
   endDate: string;
   duration: number;
-  totalEnergyBurned?: number | null;
   totalDistance?: number | null;
   sourceName: string;
   sourceBundle: string;
@@ -243,7 +238,7 @@ export function categorize(
   | "metricStream"
   | "ignored"
   | "healthEvent" {
-  if (ignoredProviderDerivedTypes.has(type)) return "ignored";
+  if (ignoredCalorieExpenditureTypes.has(type)) return "ignored";
   if (type in bodyMeasurementTypes) return "bodyMeasurement";
   if (type in additiveDailyMetricTypes) return "additiveDailyMetric";
   if (type in pointInTimeDailyMetricTypes) return "pointInTimeDailyMetric";
@@ -254,8 +249,6 @@ export function categorize(
 function createEmptyAccumulator(): DailyMetricAccumulator {
   return {
     steps: null,
-    activeEnergyKcal: null,
-    basalEnergyKcal: null,
     distanceKm: null,
     flightsClimbed: null,
     exerciseMinutes: null,
@@ -420,8 +413,6 @@ export class HealthKitSyncRepository {
       // Additive fields: replace with the complete day-total from this sync.
       const additiveFields: Array<{ column: string; key: AdditiveDailyMetricAccumulatorKey }> = [
         { column: "steps", key: "steps" },
-        { column: "active_energy_kcal", key: "activeEnergyKcal" },
-        { column: "basal_energy_kcal", key: "basalEnergyKcal" },
         { column: "distance_km", key: "distanceKm" },
         { column: "flights_climbed", key: "flightsClimbed" },
         { column: "exercise_minutes", key: "exerciseMinutes" },

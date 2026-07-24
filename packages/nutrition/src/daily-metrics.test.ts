@@ -56,7 +56,8 @@ describe("DAILY_METRIC_TYPES catalog", () => {
     expect(ids).not.toContain("vo2max");
     expect(ids).toContain("spo2_avg");
     expect(ids).toContain("steps");
-    expect(ids).toContain("active_energy_kcal");
+    expect(ids).not.toContain("active_energy_kcal");
+    expect(ids).not.toContain("basal_energy_kcal");
     expect(ids).toContain("distance_km");
     expect(ids).toContain("walking_speed");
     expect(ids).toContain("skin_temp_c");
@@ -95,8 +96,8 @@ describe("getDailyMetricTypeById", () => {
 
 describe("getDailyMetricTypeByLegacyField", () => {
   it("maps camelCase field name to type", () => {
-    const result = getDailyMetricTypeByLegacyField("activeEnergyKcal");
-    expect(result?.id).toBe("active_energy_kcal");
+    const result = getDailyMetricTypeByLegacyField("walkingSpeed");
+    expect(result?.id).toBe("walking_speed");
   });
 });
 

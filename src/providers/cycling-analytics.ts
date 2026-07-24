@@ -44,7 +44,6 @@ const cyclingAnalyticsRideSchema = z.object({
   elevation_loss: z.number().optional(),
   average_speed: z.number().optional(),
   max_speed: z.number().optional(),
-  calories: z.number().optional(),
   training_stress_score: z.number().optional(),
   intensity_factor: z.number().optional(),
 });
@@ -96,7 +95,6 @@ export function parseCyclingAnalyticsRide(ride: CyclingAnalyticsRide): ParsedCyc
       elevationLoss: ride.elevation_loss,
       averageSpeed: ride.average_speed,
       maxSpeed: ride.max_speed,
-      calories: ride.calories,
       trainingStressScore: ride.training_stress_score,
       intensityFactor: ride.intensity_factor,
     },

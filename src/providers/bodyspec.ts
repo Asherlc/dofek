@@ -64,19 +64,6 @@ const visceralFatResponseSchema = z.object({
 
 export type BodySpecVisceralFatResponse = z.infer<typeof visceralFatResponseSchema>;
 
-const rmrEstimateSchema = z.object({
-  formula: z.string(),
-  kcal_per_day: z.number(),
-});
-
-const rmrResponseSchema = z.object({
-  result_id: z.string(),
-  section_name: z.literal("rmr"),
-  estimates: z.array(rmrEstimateSchema),
-});
-
-export type BodySpecRmrResponse = z.infer<typeof rmrResponseSchema>;
-
 const percentileMetricSchema = z.object({
   percentile: z.number(),
   value: z.number(),
@@ -198,15 +185,6 @@ export function parseVisceralFat(response: BodySpecVisceralFatResponse) {
   };
 }
 
-export function parseRmr(response: BodySpecRmrResponse) {
-  const tenHaaf = response.estimates.find((e) => e.formula.startsWith("ten Haaf"));
-  const primary = tenHaaf ?? response.estimates[0];
-  return {
-    restingMetabolicRateKcal: primary?.kcal_per_day ?? null,
-    restingMetabolicRateRaw: response.estimates,
-  };
-}
-
 export function parsePercentiles(response: BodySpecPercentilesResponse) {
   return {
     params: response.params,
@@ -285,10 +263,6 @@ class BodySpecClient extends ProviderHttpClient {
       `/api/v1/users/me/results/${resultId}/dexa/visceral-fat`,
       visceralFatResponseSchema,
     );
-  }
-
-  async getRmr(resultId: string): Promise<BodySpecRmrResponse> {
-    return this.get(`/api/v1/users/me/results/${resultId}/dexa/rmr`, rmrResponseSchema);
   }
 
   async getPercentiles(resultId: string): Promise<BodySpecPercentilesResponse> {
@@ -442,12 +416,11 @@ export class BodySpecProvider implements SyncProvider {
     fallbackTime: Date,
   ): Promise<number> {
     // Fetch all sections for this result. Some may not be available (404).
-    const [scanInfo, composition, boneDensity, visceralFat, rmr, percentiles] = await Promise.all([
+    const [scanInfo, composition, boneDensity, visceralFat, percentiles] = await Promise.all([
       catchNotFound(client.getScanInfo(resultId)),
       catchNotFound(client.getComposition(resultId)),
       catchNotFound(client.getBoneDensity(resultId)),
       catchNotFound(client.getVisceralFat(resultId)),
-      catchNotFound(client.getRmr(resultId)),
       catchNotFound(client.getPercentiles(resultId)),
     ]);
 
@@ -457,7 +430,6 @@ export class BodySpecProvider implements SyncProvider {
     const parsedComposition = parseComposition(composition);
     const parsedBoneDensity = boneDensity ? parseBoneDensity(boneDensity) : null;
     const parsedVisceralFat = visceralFat ? parseVisceralFat(visceralFat) : null;
-    const parsedRmr = rmr ? parseRmr(rmr) : null;
     const parsedPercentiles = percentiles ? parsePercentiles(percentiles) : null;
     const parsedScanInfo = scanInfo ? parseScanInfo(scanInfo) : null;
 
@@ -469,8 +441,6 @@ export class BodySpecProvider implements SyncProvider {
       ...parsedComposition,
       ...(parsedBoneDensity ?? {}),
       ...(parsedVisceralFat ?? {}),
-      restingMetabolicRateKcal: parsedRmr?.restingMetabolicRateKcal ?? null,
-      restingMetabolicRateRaw: parsedRmr?.restingMetabolicRateRaw ?? null,
       percentiles: parsedPercentiles ?? null,
       heightInches: parsedScanInfo?.heightInches ?? null,
       weightPounds: parsedScanInfo?.weightPounds ?? null,

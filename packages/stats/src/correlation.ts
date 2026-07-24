@@ -136,14 +136,6 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
     joinedDayKey: "steps",
   },
   {
-    id: "active_calories",
-    label: "Active Calories",
-    unit: "kcal",
-    domain: "activity",
-    description: "Calories burned through activity (excluding basal)",
-    joinedDayKey: "active_energy_kcal",
-  },
-  {
     id: "exercise_duration",
     label: "Exercise Duration",
     unit: "min",

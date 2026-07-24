@@ -73,26 +73,6 @@ describe("nutritionAnalyticsRouter selected ranges", () => {
     expect(queryText).not.toContain("CURRENT_DATE -");
   });
 
-  it("caloricBalance uses lower date bounds for finite ranges", async () => {
-    const { caller, execute } = makeCaller();
-
-    await caller.caloricBalance({ days: 30 });
-
-    const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
-    expect(queryText).toContain("AND date > CURRENT_DATE -");
-    expect(queryText).toContain("FROM combined");
-  });
-
-  it("caloricBalance omits lower date bounds when days is null", async () => {
-    const { caller, execute } = makeCaller();
-
-    await caller.caloricBalance({ days: null });
-
-    const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
-    expect(queryText).toContain("WHERE user_id =");
-    expect(queryText).not.toContain("CURRENT_DATE -");
-  });
-
   it("adaptiveTdee uses lower date bounds for finite ranges", async () => {
     const { caller, execute, sensorStore } = makeCaller();
 

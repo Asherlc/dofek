@@ -29,7 +29,6 @@ export interface WorkoutSample {
   startDate: string;
   endDate: string;
   duration: number; // seconds
-  totalEnergyBurned: number | null; // kcal
   totalDistance: number | null; // meters
   sourceName: string;
   sourceBundle: string;

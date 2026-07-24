@@ -60,15 +60,6 @@ export const Step = class Step {
   }
 };
 
-export const Calorie = class Calorie {
-  getCurrent() {
-    return 0;
-  }
-  getTarget() {
-    return 2000;
-  }
-};
-
 export const Distance = class Distance {
   getCurrent() {
     return 0;

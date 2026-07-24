@@ -155,7 +155,6 @@ describe("POST /api/ingest/zos-health", () => {
         dailyMetrics: {
           "2026-06-26": {
             steps: 10000,
-            calories: 500,
             distanceKm: 8.5,
             standHours: 12,
             spo2Avg: 97.5,
@@ -174,7 +173,6 @@ describe("POST /api/ingest/zos-health", () => {
     );
     expect(rows.length).toBe(1);
     expect(rows[0].steps).toBe(10000);
-    expect(rows[0].active_energy_kcal).toBe(500);
     expect(rows[0].distance_km).toBe(8.5);
     expect(rows[0].stand_hours).toBe(12);
     expect(rows[0].spo2_avg).toBe(97.5);
@@ -211,7 +209,6 @@ describe("POST /api/ingest/zos-health", () => {
           date: "2024-07-03",
           timezoneOffsetMinutes: 0,
           steps: 4321,
-          calories: 345,
           standHours: 8,
           fatBurning: 22,
         },
@@ -220,14 +217,13 @@ describe("POST /api/ingest/zos-health", () => {
 
     expect(response.status).toBe(200);
     const rows = await testCtx.db.execute(
-      sql`SELECT steps, active_energy_kcal, stand_hours, exercise_minutes
+      sql`SELECT steps, stand_hours, exercise_minutes
           FROM fitness.daily_metrics
           WHERE date = '2024-07-03' AND user_id = ${TEST_USER_ID}`,
     );
     expect(rows).toEqual([
       expect.objectContaining({
         steps: 4321,
-        active_energy_kcal: 345,
         stand_hours: 8,
         exercise_minutes: 22,
       }),
@@ -239,7 +235,7 @@ describe("POST /api/ingest/zos-health", () => {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
         dailyMetrics: {
-          "2024-07-04": { calories: 456, distanceKm: 7.5, standHours: 10 },
+          "2024-07-04": { distanceKm: 7.5, standHours: 10 },
         },
         watchSummary: {
           collectedAt: 1_720_087_600_000,
@@ -252,14 +248,13 @@ describe("POST /api/ingest/zos-health", () => {
 
     expect(response.status).toBe(200);
     const rows = await testCtx.db.execute(
-      sql`SELECT steps, active_energy_kcal, distance_km, stand_hours
+      sql`SELECT steps, distance_km, stand_hours
           FROM fitness.daily_metrics
           WHERE date = '2024-07-04' AND user_id = ${TEST_USER_ID}`,
     );
     expect(rows).toEqual([
       expect.objectContaining({
         steps: 5432,
-        active_energy_kcal: 456,
         distance_km: 7.5,
         stand_hours: 10,
       }),
@@ -796,7 +791,6 @@ describe("POST /api/ingest/zos-health", () => {
         dailyMetrics: {
           "2026-06-26": {
             steps: 12345,
-            calories: 678.9,
             distanceKm: 12.34,
             standHours: 7,
             spo2Avg: 96.5,
@@ -814,7 +808,6 @@ describe("POST /api/ingest/zos-health", () => {
     expect(rows.length).toBe(1);
     const row = rows[0];
     expect(row.steps).toBe(12345);
-    expect(Number(row.active_energy_kcal)).toBeCloseTo(678.9);
     expect(Number(row.distance_km)).toBeCloseTo(12.34);
     expect(row.stand_hours).toBe(7);
     expect(Number(row.spo2_avg)).toBeCloseTo(96.5);

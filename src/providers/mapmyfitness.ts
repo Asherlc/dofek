@@ -107,9 +107,6 @@ export function parseMapMyFitnessWorkout(workout: MapMyFitnessWorkout): ParsedMa
       avgCadence: workout.aggregates.cadence_avg,
       avgPower: workout.aggregates.power_avg,
       maxPower: workout.aggregates.power_max,
-      calories: workout.aggregates.metabolic_energy_total
-        ? Math.round(workout.aggregates.metabolic_energy_total / 4184)
-        : undefined,
     },
   };
 }

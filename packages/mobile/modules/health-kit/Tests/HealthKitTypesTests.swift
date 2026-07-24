@@ -21,8 +21,6 @@ final class HealthKitTypesTests: XCTestCase {
             .height,
             .stepCount,
             .distanceWalkingRunning,
-            .activeEnergyBurned,
-            .basalEnergyBurned,
             .flightsClimbed,
             .appleExerciseTime,
             .appleStandTime,
@@ -176,7 +174,6 @@ final class HealthKitTypesTests: XCTestCase {
             .restingHeartRate,
             .bodyMass,
             .stepCount,
-            .activeEnergyBurned,
             .vo2Max,
         ]
 

@@ -11,8 +11,6 @@ import type {
 // doubling the real values (e.g., 3k steps shown when the user walked 1.5k).
 export const ADDITIVE_QUANTITY_TYPES = [
   "HKQuantityTypeIdentifierStepCount",
-  "HKQuantityTypeIdentifierActiveEnergyBurned",
-  "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierDistanceWalkingRunning",
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
@@ -55,7 +53,6 @@ function syncWindowStart(syncRangeDays: number | null): string {
 function normalizeWorkout(workout: WorkoutSample): WorkoutSample {
   return {
     ...workout,
-    totalEnergyBurned: workout.totalEnergyBurned ?? null,
     totalDistance: workout.totalDistance ?? null,
   };
 }

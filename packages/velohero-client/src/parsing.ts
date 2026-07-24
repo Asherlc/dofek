@@ -49,7 +49,6 @@ export function parseVeloHeroWorkout(workout: VeloHeroWorkout): ParsedVeloHeroWo
   const maxPower = parseOptionalNumber(workout.max_power);
   const avgCadence = parseOptionalNumber(workout.avg_cadence);
   const maxCadence = parseOptionalNumber(workout.max_cadence);
-  const calories = parseOptionalNumber(workout.calories);
   const ascent = parseOptionalNumber(workout.ascent);
   const descent = parseOptionalNumber(workout.descent);
 
@@ -69,7 +68,6 @@ export function parseVeloHeroWorkout(workout: VeloHeroWorkout): ParsedVeloHeroWo
       maxPower,
       avgCadence,
       maxCadence,
-      calories,
       ascent,
       descent,
     },

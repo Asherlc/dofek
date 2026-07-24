@@ -1,6 +1,5 @@
 import {
   formatBodyCompositionPercent,
-  formatCalories,
   formatDateMedium,
   formatDateYmd,
   formatDurationMinutes,
@@ -32,7 +31,6 @@ const analysisMetricSchema = z.object({
   avg_resting_hr: z.number().optional(),
   avg_hrv: z.number().optional(),
   avg_steps: z.number().optional(),
-  avg_active_energy: z.number().optional(),
   avg_sleep_min: z.number().optional(),
   avg_deep_min: z.number().optional(),
   avg_rem_min: z.number().optional(),
@@ -404,13 +402,6 @@ function EventAnalysis({
           before={before.metrics?.avg_steps}
           after={after.metrics?.avg_steps}
           periodLabel={periodLabel}
-        />
-        <CompareCard
-          label="Active Energy"
-          before={before.metrics?.avg_active_energy}
-          after={after.metrics?.avg_active_energy}
-          periodLabel={periodLabel}
-          formatValue={formatCalories}
         />
         <CompareCard
           label="Sleep"

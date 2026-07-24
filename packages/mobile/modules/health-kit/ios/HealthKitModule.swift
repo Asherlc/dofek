@@ -245,9 +245,6 @@ public class HealthKitModule: Module {
                         "sourceName": workout.sourceRevision.source.name,
                         "sourceBundle": workout.sourceRevision.source.bundleIdentifier,
                     ]
-                    if let energy = workout.totalEnergyBurned {
-                        dict["totalEnergyBurned"] = energy.doubleValue(for: .kilocalorie())
-                    }
                     if let distance = workout.totalDistance {
                         dict["totalDistance"] = distance.doubleValue(for: .meter())
                     }

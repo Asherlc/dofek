@@ -58,7 +58,6 @@ export function parseZwiftActivity(act: ZwiftActivitySummary): ParsedZwiftActivi
       avgSpeed: act.avgSpeedInMetersPerSecond,
       maxSpeed: act.maxSpeedInMetersPerSecond,
       elevationGain: act.totalElevationInMeters,
-      calories: act.calories,
     },
   };
 }

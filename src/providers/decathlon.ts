@@ -117,7 +117,6 @@ export function parseDecathlonActivity(act: DecathlonActivity): ParsedDecathlonA
       sport: act.sport,
       duration: act.duration,
       distanceKm: summaries["5"],
-      calories: summaries["9"],
       avgHeartRate: summaries["1"],
       maxHeartRate: summaries["2"],
       dataSummaries: act.dataSummaries,

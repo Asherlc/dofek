@@ -50,7 +50,6 @@ export class InsightsRepository {
             hrv,
             spo2_avg,
             steps,
-            active_energy_kcal,
             skin_temp_c
           FROM analytics.v_daily_metrics AS daily_metrics
           WHERE daily_metrics.user_id = {userId:UUID}

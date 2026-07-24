@@ -37,7 +37,6 @@ interface XertActivity {
   heartrate_max: number; // bpm
   cadence_avg: number; // rpm
   cadence_max: number; // rpm
-  calories: number;
   elevation_gain: number; // meters
   elevation_loss: number; // meters
   xss: number; // Xert Strain Score
@@ -101,7 +100,6 @@ export function parseXertActivity(raw: XertActivity): ParsedXertActivity {
       heartrateMax: raw.heartrate_max,
       cadenceAvg: raw.cadence_avg,
       cadenceMax: raw.cadence_max,
-      calories: raw.calories,
       elevationGain: raw.elevation_gain,
       elevationLoss: raw.elevation_loss,
       xss: raw.xss,

@@ -15789,3 +15789,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   platform-level evaluation. Keep the semantic expression test when changing
   either mobile release gate so event-specific branches cannot bypass the
   prerequisite again.
+
+## 2026-07-24 — Provider-Estimated Calorie Burn Was Displayed as Workout Data
+
+- **Status:** Fixed and validated locally; deployment pending.
+- **Symptoms:** [Activity `e386377d-3e33-4241-843b-b92d6b143dfc`](https://dofek.asherlc.com/activity/e386377d-3e33-4241-843b-b92d6b143dfc)
+  displayed 69 kcal as though calorie burn were an observed workout metric.
+- **User impact:** Users could see and analyze provider/device calorie
+  expenditure estimates as factual activity and daily health data.
+- **Evidence:** The canonical activity selected WHOOP's 69 kcal estimate.
+  Overlapping source records also contained a 69 kcal Apple Health/WHOOP value
+  and a 120 kcal Strong value, confirming the metric came from provider
+  estimates rather than a direct observation.
+- **Root cause:** Provider parsers normalized calorie expenditure into activity
+  and daily metric fields, and downstream APIs, analytics, web, and mobile
+  treated those fields as displayable measurements.
+- **Fix / mitigation:** Provider-estimated workout calories, active energy,
+  basal energy, and expenditure-based caloric balance were removed from
+  ingestion, read models, APIs, analytics/ML features, and both clients. Logged
+  nutrition intake and server-side estimates inferred from observed body-weight
+  change remain supported.
+- **Validation:** The changed unit/mobile tier passed 6,215 tests. An additional
+  434 database integration tests passed across the directly changed and
+  dependency-selected suites, including all 38 WHOOP sync tests. Full lint,
+  SQL/dbt policy checks, TypeScript, the expenditure terminology audit, and
+  `git diff --check` pass.
+- **Remaining risk / follow-up:** Nullable legacy Postgres
+  `active_energy_kcal`, `basal_energy_kcal`,
+  `resting_metabolic_rate_kcal`, and `resting_metabolic_rate_raw` columns remain
+  temporarily for safe staged deployment compatibility. Drop them and their
+  compatibility-view projections after the application change has been
+  deployed everywhere.

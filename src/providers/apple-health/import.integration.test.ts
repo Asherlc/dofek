@@ -306,7 +306,7 @@ describe("streamHealthExport", () => {
 // ============================================================
 
 describe("enrichWorkoutFromStats — additional scenarios", () => {
-  it("enriches both HR and calories together", () => {
+  it("enriches heart rate statistics", () => {
     const workout: HealthWorkout = {
       activityType: "running",
       sourceName: "Watch",
@@ -322,16 +322,10 @@ describe("enrichWorkoutFromStats — additional scenarios", () => {
         maximum: 185.3,
         unit: "count/min",
       },
-      {
-        type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-        sum: 299.6,
-        unit: "kcal",
-      },
     ]);
 
     expect(workout.avgHeartRate).toBe(156);
     expect(workout.maxHeartRate).toBe(185);
-    expect(workout.calories).toBe(300);
   });
 
   it("does not set avgHeartRate without average", () => {
@@ -712,7 +706,6 @@ const IMPORT_XML = `<?xml version="1.0" encoding="UTF-8"?>
  <Workout workoutActivityType="HKWorkoutActivityTypeRunning"
   duration="30.5" durationUnit="min"
   totalDistance="5200" totalDistanceUnit="m"
-  totalEnergyBurned="320" totalEnergyBurnedUnit="kcal"
   sourceName="Apple Watch"
   creationDate="2024-03-01 18:30:00 -0500"
   startDate="2024-03-01 18:00:00 -0500"
@@ -839,7 +832,6 @@ describe("importAppleHealthFile — full DB integration", () => {
     // With per-source rows, different sources get separate rows.
     // Find values across all sources for the day.
     const iPhoneRow = dayRows.find((r) => r.sourceName === "iPhone");
-    const watchRow = dayRows.find((r) => r.sourceName === "Apple Watch");
 
     // Steps come from iPhone source in the test fixture: 1250 + 800 = 2050
     expect(iPhoneRow?.steps).toBe(2050);
@@ -847,8 +839,6 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(iPhoneRow?.flightsClimbed).toBe(3);
     // Distance from iPhone: 523.7 m → 0.5237 km
     expect(iPhoneRow?.distanceKm).toBeCloseTo(0.5237);
-    // Active energy from Apple Watch: 300 + 223.4 = 523.4
-    expect(watchRow?.activeEnergyKcal).toBeCloseTo(523.4);
   });
 
   it("derives daily nutrition from food entry nutrition rows", async () => {
@@ -893,7 +883,6 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(run?.raw).toMatchObject({
       durationSeconds: 1830,
       distanceMeters: 5200,
-      calories: 320,
       avgHeartRate: 148,
       maxHeartRate: 175,
     });

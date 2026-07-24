@@ -304,15 +304,10 @@ describe("healthKitSyncRouter", () => {
       const result = await caller.pushQuantitySamples({
         samples: [
           makeSample({ type: "HKQuantityTypeIdentifierStepCount", value: 5000, uuid: "s1" }),
-          makeSample({
-            type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-            value: 300,
-            uuid: "s2",
-          }),
         ],
       });
 
-      expect(result.inserted).toBe(2);
+      expect(result.inserted).toBe(1);
       expect(result.errors).toEqual([]);
     });
 
@@ -328,20 +323,12 @@ describe("healthKitSyncRouter", () => {
           endDate: "2024-01-15T12:00:00Z",
           uuid: "stat:steps:2024-01-15",
         }),
-        makeSample({
-          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-          value: 450,
-          startDate: "2024-01-15T12:00:00Z",
-          endDate: "2024-01-15T12:00:00Z",
-          uuid: "stat:energy:2024-01-15",
-        }),
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
       const jan15 = daily.get("2024-01-15\x00iPhone");
 
       expect(jan15?.steps).toBe(8500);
-      expect(jan15?.activeEnergyKcal).toBe(450);
     });
 
     it("does not double-count when raw samples from multiple sources are replaced by statistics", () => {
@@ -416,23 +403,6 @@ describe("healthKitSyncRouter", () => {
         [expect.objectContaining({ channel: "heart_rate", scalar: 81 })],
         { operationRevision: "1000000000000000" },
       );
-    });
-
-    it("does not round real-valued columns (active_energy_kcal, distance_km)", async () => {
-      const samples = [
-        makeSample({
-          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-          value: 385.08851139373337,
-          startDate: "2024-01-15T12:00:00Z",
-          uuid: "energy-float",
-        }),
-      ];
-
-      const daily = aggregateDailyMetricSamples(samples);
-      const jan15 = daily.get("2024-01-15\x00iPhone");
-
-      // activeEnergyKcal is a real column — should preserve the float value
-      expect(jan15?.activeEnergyKcal).toBeCloseTo(385.089, 2);
     });
 
     it("processes point-in-time daily metric samples", async () => {
@@ -864,7 +834,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 25000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -892,7 +861,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 25000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -920,7 +888,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T10:30:00Z",
             duration: 1800,
-            totalEnergyBurned: null,
             totalDistance: null,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -960,7 +927,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 25000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -1360,7 +1326,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T09:00:00Z",
             endDate: "2024-01-15T10:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 25000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -2071,18 +2036,6 @@ describe("healthKitSyncRouter", () => {
           uuid: "steps-1",
         }),
         makeSample({
-          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-          value: 300,
-          startDate: "2024-01-15T11:00:00Z",
-          uuid: "energy-1",
-        }),
-        makeSample({
-          type: "HKQuantityTypeIdentifierBasalEnergyBurned",
-          value: 1500,
-          startDate: "2024-01-15T12:00:00Z",
-          uuid: "basal-1",
-        }),
-        makeSample({
           type: "HKQuantityTypeIdentifierDistanceWalkingRunning",
           value: 5000, // meters, should be transformed to 5 km
           startDate: "2024-01-15T12:00:00Z",
@@ -2107,8 +2060,6 @@ describe("healthKitSyncRouter", () => {
 
       expect(jan15).toBeDefined();
       expect(jan15?.steps).toBe(5000);
-      expect(jan15?.activeEnergyKcal).toBe(300);
-      expect(jan15?.basalEnergyKcal).toBe(1500);
       expect(jan15?.distanceKm).toBe(5);
       expect(jan15?.flightsClimbed).toBe(12);
       expect(jan15?.exerciseMinutes).toBe(45);
@@ -2242,16 +2193,6 @@ describe("healthKitSyncRouter", () => {
             uuid: "s1",
           }),
           makeSample({
-            type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-            value: 300,
-            uuid: "s2",
-          }),
-          makeSample({
-            type: "HKQuantityTypeIdentifierBasalEnergyBurned",
-            value: 1500,
-            uuid: "s3",
-          }),
-          makeSample({
             type: "HKQuantityTypeIdentifierDistanceWalkingRunning",
             value: 5000,
             uuid: "s4",
@@ -2277,8 +2218,6 @@ describe("healthKitSyncRouter", () => {
       const serialized = JSON.stringify(dailyInsertCall?.[0]);
       // Verify all additive columns are present in the SQL
       expect(serialized).toContain("steps");
-      expect(serialized).toContain("active_energy_kcal");
-      expect(serialized).toContain("basal_energy_kcal");
       expect(serialized).toContain("distance_km");
       expect(serialized).toContain("flights_climbed");
       expect(serialized).toContain("exercise_minutes");
@@ -2370,8 +2309,6 @@ describe("healthKitSyncRouter", () => {
       const serialized = JSON.stringify(dailyInsertCall?.[0]);
       expect(serialized).toContain("walking_speed");
       expect(serialized).not.toContain("steps");
-      expect(serialized).not.toContain("active_energy_kcal");
-      expect(serialized).not.toContain("basal_energy_kcal");
       expect(serialized).not.toContain("distance_km");
       expect(serialized).not.toContain("flights_climbed");
       expect(serialized).not.toContain("exercise_minutes");
@@ -2611,7 +2548,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 25000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -2643,7 +2579,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 10000,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -2655,14 +2590,12 @@ describe("healthKitSyncRouter", () => {
         expect.objectContaining({
           raw: expect.objectContaining({
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 10000,
           }),
         }),
         expect.objectContaining({
           raw: expect.objectContaining({
             duration: 3600,
-            totalEnergyBurned: 500,
             totalDistance: 10000,
           }),
         }),
@@ -2686,7 +2619,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: 350,
             totalDistance: null,
             sourceName: "Strong",
             sourceBundle: "io.strongapp.strong",
@@ -2743,7 +2675,6 @@ describe("healthKitSyncRouter", () => {
             startDate: "2024-01-15T10:00:00Z",
             endDate: "2024-01-15T11:00:00Z",
             duration: 3600,
-            totalEnergyBurned: null,
             totalDistance: null,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
@@ -3355,7 +3286,6 @@ describe("healthKitSyncRouter", () => {
             endDate: "2026-04-03T09:00:00Z",
             duration: 3600,
             totalDistance: 5000,
-            totalEnergyBurned: 400,
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.Health",
           },

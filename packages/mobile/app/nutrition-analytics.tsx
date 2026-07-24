@@ -10,7 +10,6 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import Svg, { Line, Rect } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
@@ -89,7 +88,6 @@ export default function NutritionAnalyticsScreen() {
       </View>
 
       <AdaptiveTdeeSection days={days} />
-      <CaloricBalanceSection days={days} />
       <MacroSummarySection days={days} />
       <MicronutrientAdequacySection days={days} />
     </ScrollView>
@@ -109,7 +107,7 @@ function AdaptiveTdeeSection({ days }: { days: number }) {
     <View style={styles.card}>
       <ChartTitleWithTooltip
         title="Adaptive TDEE Estimate"
-        description="This estimate shows your likely daily energy expenditure based on calorie intake and body-weight change."
+        description="Estimated from logged calorie intake and observed body-weight change."
         textStyle={styles.cardTitle}
       />
       {data == null || data.estimatedTdee == null ? (
@@ -125,115 +123,6 @@ function AdaptiveTdeeSection({ days }: { days: number }) {
           </View>
         </>
       )}
-    </View>
-  );
-}
-
-// ── Section 2: Caloric Balance ──
-
-function CaloricBalanceSection({ days }: { days: number }) {
-  const { width: screenWidth } = useWindowDimensions();
-  const chartWidth = screenWidth - 64;
-
-  const balance = trpc.nutritionAnalytics.caloricBalance.useQuery({ days });
-
-  if (balance.isLoading) return <LoadingText />;
-
-  const data = balance.data ?? [];
-  if (data.length === 0) return null;
-
-  const avgBalance = data.reduce((sum, d) => sum + d.balance, 0) / data.length;
-  const latestRollingAvg = data[data.length - 1]?.rollingAvgBalance;
-
-  // Chart calculations
-  const maxAbs = Math.max(...data.map((d) => Math.abs(d.balance)), 1);
-  const chartHeight = 120;
-  const midY = chartHeight / 2;
-  const barWidth = Math.max(2, (chartWidth - data.length * 1) / data.length);
-
-  return (
-    <View>
-      <ChartTitleWithTooltip
-        title="Caloric Balance"
-        description="This section shows whether you are averaging a calorie surplus or deficit over the selected period."
-        textStyle={styles.sectionTitle}
-      />
-
-      {/* Summary cards */}
-      <View style={styles.summaryRow}>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Average Daily Balance</Text>
-          <Text
-            style={[
-              styles.summaryValue,
-              { color: avgBalance >= 0 ? statusColors.positive : statusColors.danger },
-            ]}
-          >
-            {avgBalance >= 0 ? "+" : ""}
-            {formatCalories(avgBalance)}
-          </Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Rolling Average</Text>
-          <Text
-            style={[
-              styles.summaryValue,
-              {
-                color:
-                  latestRollingAvg != null
-                    ? latestRollingAvg >= 0
-                      ? statusColors.positive
-                      : statusColors.danger
-                    : colors.text,
-              },
-            ]}
-          >
-            {latestRollingAvg != null
-              ? `${latestRollingAvg >= 0 ? "+" : ""}${formatCalories(latestRollingAvg)}`
-              : "--"}
-          </Text>
-        </View>
-      </View>
-
-      {/* Bar chart */}
-      <View style={styles.card}>
-        <ChartTitleWithTooltip
-          title="Daily Balance"
-          description="This chart shows day-by-day calorie surplus (above zero) or deficit (below zero)."
-          textStyle={styles.cardTitle}
-        />
-        <View style={styles.chartContainer}>
-          <Svg width={chartWidth} height={chartHeight}>
-            {/* Zero line */}
-            <Line
-              x1={0}
-              y1={midY}
-              x2={chartWidth}
-              y2={midY}
-              stroke={colors.textTertiary}
-              strokeWidth={StyleSheet.hairlineWidth}
-            />
-            {data.map((d, i) => {
-              const barH = (Math.abs(d.balance) / maxAbs) * (midY - 4);
-              const barX = i * (barWidth + 1);
-              const isPositive = d.balance >= 0;
-              const barY = isPositive ? midY - barH : midY;
-              return (
-                <Rect
-                  key={d.date}
-                  x={barX}
-                  y={barY}
-                  width={barWidth}
-                  height={Math.max(barH, 1)}
-                  rx={1}
-                  fill={isPositive ? statusColors.positive : statusColors.danger}
-                  opacity={0.8}
-                />
-              );
-            })}
-          </Svg>
-        </View>
-      </View>
     </View>
   );
 }
@@ -386,32 +275,6 @@ const styles = StyleSheet.create({
     marginTop: -8,
   },
 
-  // ── Summary row ──
-  summaryRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
-  },
-  summaryCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 12,
-    alignItems: "center",
-  },
-  summaryLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    marginBottom: 4,
-    textAlign: "center",
-  },
-  summaryValue: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: colors.text,
-  },
-
   // ── Cards ──
   card: {
     backgroundColor: colors.surface,
@@ -440,12 +303,6 @@ const styles = StyleSheet.create({
   tdeeDetails: {
     marginTop: 4,
     gap: 2,
-  },
-
-  // ── Charts ──
-  chartContainer: {
-    marginTop: 12,
-    alignItems: "center",
   },
 
   // ── Nutrient bars ──

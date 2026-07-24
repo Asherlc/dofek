@@ -29,7 +29,6 @@ function makeJoinedDay(overrides: Partial<JoinedDay> & { date: string }): Joined
     fat_g: null,
     fiber_g: null,
     steps: null,
-    active_energy_kcal: null,
     exercise_minutes: null,
     cardio_minutes: null,
     strength_minutes: null,

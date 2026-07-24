@@ -122,7 +122,6 @@ type ZeppWorkoutSummary = z.infer<typeof zeppWorkoutSummarySchema>;
 export interface ParsedZeppDailyMetrics {
   date: string;
   steps?: number;
-  activeEnergyKcal?: number;
   distanceKm?: number;
 }
 
@@ -288,16 +287,14 @@ async function resolveZeppCredentials(
 function parseDailyMetrics(date: string, summary: ZeppSummary): ParsedZeppDailyMetrics | undefined {
   const steps = summary.stp?.ttl;
   const distanceMeters = summary.stp?.dis;
-  const calories = summary.stp?.cal;
 
-  if (steps === undefined && distanceMeters === undefined && calories === undefined) {
+  if (steps === undefined && distanceMeters === undefined) {
     return undefined;
   }
 
   return {
     date,
     steps: steps === undefined ? undefined : Math.round(steps),
-    activeEnergyKcal: calories,
     distanceKm: distanceMeters === undefined ? undefined : distanceMeters / 1000,
   };
 }
@@ -561,7 +558,6 @@ export class AmazfitZeppProvider implements SyncProvider {
                     userId: scopedUserId,
                     sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                     steps: parsed.dailyMetrics.steps,
-                    activeEnergyKcal: parsed.dailyMetrics.activeEnergyKcal,
                     distanceKm: parsed.dailyMetrics.distanceKm,
                   })
                   .onConflictDoUpdate({
@@ -574,7 +570,6 @@ export class AmazfitZeppProvider implements SyncProvider {
                     set: {
                       sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                       steps: parsed.dailyMetrics.steps,
-                      activeEnergyKcal: parsed.dailyMetrics.activeEnergyKcal,
                       distanceKm: parsed.dailyMetrics.distanceKm,
                     },
                   });
