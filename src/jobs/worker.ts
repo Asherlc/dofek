@@ -69,6 +69,19 @@ const db = createDatabaseFromEnv();
 const connection = getRedisConnection();
 let importUploadStorage: ReturnType<typeof createImportUploadStorageFromEnv> | null = null;
 
+const syncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES
+  ? Number(process.env.SYNC_INTERVAL_MINUTES)
+  : 30;
+try {
+  await setupScheduledSync(syncIntervalMinutes);
+} catch (error: unknown) {
+  Sentry.captureException(error, {
+    tags: { workerStartupStep: "scheduledSyncRegistration" },
+  });
+  logger.error(`[worker] Failed to set up scheduled sync: ${String(error)}`);
+  throw error;
+}
+
 function getImportUploadStorage() {
   importUploadStorage ??= createImportUploadStorageFromEnv();
   return importUploadStorage;
@@ -457,14 +470,6 @@ readinessServer.listen(WORKER_READINESS_PORT, WORKER_READINESS_HOST);
 logger.info(
   `[worker] Readiness endpoint listening on http://${WORKER_READINESS_HOST}:${WORKER_READINESS_PORT}/readyz`,
 );
-
-// Set up periodic sync for API providers
-const syncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES
-  ? Number(process.env.SYNC_INTERVAL_MINUTES)
-  : 30;
-setupScheduledSync(syncIntervalMinutes).catch((err) => {
-  logger.error(`[worker] Failed to set up scheduled sync: ${err}`);
-});
 
 // ── Graceful shutdown ──
 

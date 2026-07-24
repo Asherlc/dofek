@@ -32,6 +32,10 @@ const hoisted = vi.hoisted(() => {
     listen: mockReadinessListen,
     close: mockReadinessClose,
   };
+  const scheduledSyncState: { error: Error | null; importSequence: number } = {
+    error: null,
+    importSequence: 0,
+  };
 
   class MockUnrecoverableError extends Error {}
 
@@ -63,6 +67,7 @@ const hoisted = vi.hoisted(() => {
     mockReadinessListen,
     mockReadinessClose,
     mockReadinessServer,
+    scheduledSyncState,
     mockObserveFitJob,
     reconcileGarminProgressError,
     mockReconcileGarminProgress,
@@ -174,7 +179,10 @@ vi.mock("./file-upload-reconciliation.ts", () => ({
 }));
 
 vi.mock("./scheduled-sync.ts", () => ({
-  setupScheduledSync: vi.fn(() => Promise.resolve()),
+  setupScheduledSync: () =>
+    hoisted.scheduledSyncState.error
+      ? Promise.reject(hoisted.scheduledSyncState.error)
+      : Promise.resolve(),
 }));
 
 vi.mock("./worker-readiness.ts", () => ({
@@ -1339,5 +1347,28 @@ describe("worker module", () => {
       ...Array.from({ length: EXPECTED_WORKER_COUNT }, () => "worker"),
       "Garmin progress",
     ]);
+  });
+
+  it("fails startup before running workers or exposing readiness when scheduler registration fails", async () => {
+    const registrationError = new Error("scheduler Redis command failed");
+    const workerRunCount = mockRun.mock.calls.length;
+    const readinessListenCount = mockReadinessListen.mock.calls.length;
+    hoisted.scheduledSyncState.error = registrationError;
+    hoisted.scheduledSyncState.importSequence++;
+    mockReconcileGarminProgress.mockResolvedValue(undefined);
+    const workerModulePath = `./worker.ts?scheduled-sync-registration-failure=${hoisted.scheduledSyncState.importSequence}`;
+
+    await expect(import(workerModulePath)).rejects.toBe(registrationError);
+
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    expect(Sentry.captureException).toHaveBeenCalledWith(registrationError, {
+      tags: { workerStartupStep: "scheduledSyncRegistration" },
+    });
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] Failed to set up scheduled sync: Error: scheduler Redis command failed",
+    );
+    expect(mockRun).toHaveBeenCalledTimes(workerRunCount);
+    expect(mockReadinessListen).toHaveBeenCalledTimes(readinessListenCount);
   });
 });
