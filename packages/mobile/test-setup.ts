@@ -296,6 +296,7 @@ vi.mock("react-native", () => {
 
   const Alert = { alert: vi.fn() };
   const Linking = { openURL: vi.fn(() => Promise.resolve()) };
+  const Share = { share: vi.fn(() => Promise.resolve({ action: "sharedAction" })) };
 
   const RefreshControl = createMockComponent("RefreshControl");
 
@@ -348,6 +349,7 @@ vi.mock("react-native", () => {
     Platform,
     Alert,
     Linking,
+    Share,
     AppState,
     LayoutAnimation,
     UIManager,

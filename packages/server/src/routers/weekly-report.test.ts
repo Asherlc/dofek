@@ -32,8 +32,9 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
+import { classifyStrainZone } from "../repositories/weekly-report-repository.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
-import { classifyStrainZone, weeklyReportRouter } from "./weekly-report.ts";
+import { weeklyReportRouter } from "./weekly-report.ts";
 
 describe("classifyStrainZone", () => {
   it("returns 'optimal' when chronicAvgLoad is 0", () => {

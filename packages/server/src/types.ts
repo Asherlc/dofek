@@ -35,6 +35,8 @@ export type {
   PolarizationTrendResult,
   PolarizationWeek,
 } from "./routers/efficiency.ts";
+// Health report router types
+export type { HealthReportGenerateInput } from "./routers/health-report.ts";
 // Healthspan router types
 export type { HealthspanMetric, HealthspanResult } from "./routers/healthspan.ts";
 // Hiking router types

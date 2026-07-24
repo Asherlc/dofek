@@ -12,6 +12,7 @@ const navItems = [
   { to: "/body", label: "Body" },
   { to: "/correlation", label: "Correlation" },
   { to: "/tracking", label: "Tracking" },
+  { to: "/health-report", label: "Reports" },
 ] as const;
 
 const adminNavItems = [...navItems, { to: "/admin", label: "Admin" }] as const;
