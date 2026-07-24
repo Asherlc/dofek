@@ -3,10 +3,15 @@ node_modules
 dist
 **/dist
 .build
+**/.build
 web/dist
 web/node_modules
 .git
 .context
+**/.context
+**/*DerivedData*
+**/Pods
+**/ios/build
 .github
 cypress
 coverage
