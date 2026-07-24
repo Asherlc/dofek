@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getMobileAuthExchangeStoreRef,
   getOAuthStateStoreRef,
+  getPendingEmailSignupStoreRef,
   oauthSuccessHtml,
 } from "./auth/shared.ts";
 
@@ -2469,15 +2470,19 @@ describe("createAuthRouter", () => {
         },
       ]);
 
-      const { app } = createTestApp();
+      const { app: callbackApp } = createTestApp();
       const returnTo = encodeURIComponent("/dashboard?tab=providers");
 
-      const startRes = await request(app, "get", `/auth/login/data/strava?return_to=${returnTo}`);
+      const startRes = await request(
+        callbackApp,
+        "get",
+        `/auth/login/data/strava?return_to=${returnTo}`,
+      );
       const location = startRes.headers.location;
       if (typeof location !== "string") throw new Error("Expected location header");
       const state = new URL(location).searchParams.get("state");
       const callbackRes = await request(
-        app,
+        callbackApp,
         "get",
         `/callback?code=strava-web-signup-code&state=${state}`,
       );
@@ -2485,7 +2490,8 @@ describe("createAuthRouter", () => {
       const token = tokenMatch?.[1];
       if (!token) throw new Error("Expected pending signup token in form");
 
-      const completeRes = await request(app, "post", "/auth/complete-signup", {
+      const { app: completionApp } = createTestApp();
+      const completeRes = await request(completionApp, "post", "/auth/complete-signup", {
         formBody: { token, email: "runner@example.com" },
       });
       const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
@@ -2521,6 +2527,92 @@ describe("createAuthRouter", () => {
       );
       expect(createSession).toHaveBeenCalled();
       expect(setSessionCookie).toHaveBeenCalled();
+
+      const reusedTokenRes = await request(completionApp, "post", "/auth/complete-signup", {
+        formBody: { token, email: "runner@example.com" },
+      });
+
+      expect(reusedTokenRes.status).toBe(400);
+      expect(reusedTokenRes.body).toContain("Signup session expired");
+      expect(createSession).toHaveBeenCalledTimes(1);
+    });
+
+    it("allows only one concurrent completion for the same pending signup", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "concurrent-access-token",
+          refreshToken: "concurrent-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-concurrent-signup-1",
+          email: null,
+          name: "Concurrent Runner",
+        }),
+      );
+      const deferredUser = Promise.withResolvers<{ userId: string; isNewUser: boolean }>();
+      vi.mocked(resolveOrCreateUser)
+        .mockRejectedValueOnce(new MissingEmailForSignupError("Strava"))
+        .mockImplementationOnce(() => deferredUser.promise);
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+            identityCapabilities: { providesEmail: false },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/login/data/strava");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-concurrent-code&state=${state}`,
+      );
+      const tokenMatch = callbackRes.body.match(/name="token" value="([^"]+)"/);
+      const token = tokenMatch?.[1];
+      if (!token) throw new Error("Expected pending signup token in form");
+
+      const firstCompletePromise = request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "concurrent@example.com" },
+      });
+      await vi.waitFor(() => expect(resolveOrCreateUser).toHaveBeenCalledTimes(2));
+
+      const secondCompleteRes = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "concurrent@example.com" },
+      });
+      const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+
+      expect(secondCompleteRes.status).toBe(409);
+      expect(secondCompleteRes.body).toContain("Signup is already being completed");
+      expect(resolveOrCreateUser).toHaveBeenCalledTimes(2);
+      expect(ensureProvider).not.toHaveBeenCalled();
+      expect(saveTokens).not.toHaveBeenCalled();
+      expect(createSession).not.toHaveBeenCalled();
+
+      deferredUser.resolve({ userId: "concurrent-user", isNewUser: true });
+      const firstCompleteRes = await firstCompletePromise;
+
+      expect(firstCompleteRes.status).toBe(302);
+      expect(ensureProvider).toHaveBeenCalledTimes(1);
+      expect(saveTokens).toHaveBeenCalledTimes(1);
+      expect(createSession).toHaveBeenCalledTimes(1);
     });
 
     it("returns a callback error when provider login fails for a reason other than missing email", async () => {
@@ -2628,6 +2720,8 @@ describe("createAuthRouter", () => {
       const tokenMatch = callbackRes.body.match(/name="token" value="([^"]+)"/);
       const token = tokenMatch?.[1];
       if (!token) throw new Error("Expected pending signup token in form");
+      const mobileIssueSpy = vi.spyOn(getMobileAuthExchangeStoreRef(), "issue");
+      const pendingCompleteSpy = vi.spyOn(getPendingEmailSignupStoreRef(), "complete");
 
       const completeRes = await request(app, "post", "/auth/complete-signup", {
         formBody: { token, email: "runner-mobile@example.com" },
@@ -2653,6 +2747,12 @@ describe("createAuthRouter", () => {
         undefined,
         "mobile-email-user",
       );
+      const [mobileIssueOrder] = mobileIssueSpy.mock.invocationCallOrder;
+      const [pendingCompleteOrder] = pendingCompleteSpy.mock.invocationCallOrder;
+      if (mobileIssueOrder === undefined || pendingCompleteOrder === undefined) {
+        throw new Error("Expected mobile issuance and pending signup completion");
+      }
+      expect(mobileIssueOrder).toBeLessThan(pendingCompleteOrder);
       expect(setSessionCookie).not.toHaveBeenCalled();
     });
 
@@ -2811,6 +2911,7 @@ describe("createAuthRouter", () => {
       expect(completeRes.status).toBe(400);
       expect(completeRes.body).toContain("Enter a valid email address.");
       expect(completeRes.body).toContain('value="not-an-email"');
+      await expect(getPendingEmailSignupStoreRef().get(token)).resolves.not.toBeNull();
     });
 
     it("fails complete-signup if the provider is no longer registered", async () => {
@@ -2875,6 +2976,7 @@ describe("createAuthRouter", () => {
       expect(completeRes.status).toBe(500);
       expect(completeRes.body).toContain("Provider no longer available");
       expect(ensureProvider).not.toHaveBeenCalled();
+      await expect(getPendingEmailSignupStoreRef().get(token)).resolves.not.toBeNull();
     });
 
     it("handles link intent: links provider and redirects to /settings", async () => {

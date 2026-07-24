@@ -16,10 +16,10 @@ import {
   getMobileAuthExchangeStoreRef,
   getOAuth1SecretStoreRef,
   getOAuthStateStoreRef,
+  getPendingEmailSignupStoreRef,
   getPostLoginRedirect,
   oauthSuccessHtml,
   persistProviderConnection,
-  storePendingEmailSignup,
 } from "./shared.ts";
 import { handleSlackCallback } from "./slack-oauth.ts";
 
@@ -291,7 +291,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
           return;
         } catch (loginErr: unknown) {
           if (loginErr instanceof MissingEmailForSignupError) {
-            const token = storePendingEmailSignup({
+            const token = await getPendingEmailSignupStoreRef().issue({
               providerId,
               providerName: provider.name,
               apiBaseUrl: setup.apiBaseUrl,

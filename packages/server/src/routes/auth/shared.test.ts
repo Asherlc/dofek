@@ -67,16 +67,14 @@ import {
   InMemoryMobileAuthExchangeStore,
   RedisMobileAuthExchangeStore,
 } from "../../lib/mobile-auth-exchange-store.ts";
+import { InMemoryPendingEmailSignupStore } from "../../lib/pending-email-signup-store.ts";
 import {
-  deletePendingEmailSignup,
   getMobileAuthExchangeStoreRef,
-  getPendingEmailSignup,
+  getPendingEmailSignupStoreRef,
   initAuthStores,
   isSafeRelativeRedirect,
-  type PendingEmailSignupEntry,
   sanitizeReturnTo,
   storeIdentityFlow,
-  storePendingEmailSignup,
 } from "./shared.ts";
 
 describe("shared auth helpers", () => {
@@ -117,51 +115,11 @@ describe("shared auth helpers", () => {
     });
   });
 
-  describe("storePendingEmailSignup / getPendingEmailSignup / deletePendingEmailSignup", () => {
-    const entry: PendingEmailSignupEntry = {
-      providerId: "strava",
-      providerName: "Strava",
-      identity: {
-        providerAccountId: "123",
-        email: null,
-        name: "Test User",
-      },
-      tokens: {
-        accessToken: "access",
-        refreshToken: "refresh",
-        expiresAt: new Date("2027-01-01"),
-        scopes: "read",
-      },
-    };
+  describe("initAuthStores pending email signup store", () => {
+    it("uses the in-memory pending signup store in tests", () => {
+      initAuthStores(createDatabaseFromEnv());
 
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it("stores and retrieves a pending signup", () => {
-      const token = storePendingEmailSignup(entry);
-      expect(token).toBeTruthy();
-      expect(getPendingEmailSignup(token)).toBe(entry);
-    });
-
-    it("deletes a pending signup", () => {
-      const token = storePendingEmailSignup(entry);
-      deletePendingEmailSignup(token);
-      expect(getPendingEmailSignup(token)).toBeUndefined();
-    });
-
-    it("returns undefined for unknown token", () => {
-      expect(getPendingEmailSignup("nonexistent")).toBeUndefined();
-    });
-
-    it("expires after 10 minutes", () => {
-      const token = storePendingEmailSignup(entry);
-      vi.advanceTimersByTime(10 * 60 * 1000 + 1);
-      expect(getPendingEmailSignup(token)).toBeUndefined();
+      expect(getPendingEmailSignupStoreRef()).toBeInstanceOf(InMemoryPendingEmailSignupStore);
     });
   });
 
