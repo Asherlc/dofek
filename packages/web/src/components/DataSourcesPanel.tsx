@@ -349,6 +349,12 @@ export function DataSourcesPanel() {
         )}
       </div>
 
+      {activeSyncs.error ? (
+        <p role="alert" className="text-sm text-red-400">
+          {activeSyncs.error.message}
+        </p>
+      ) : null}
+
       <ProcessingStatusWidget
         data={processingStatus.data}
         error={processingStatus.error}

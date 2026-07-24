@@ -11,6 +11,7 @@ type ActiveSync = { jobId: string };
 type ActiveSyncsQuery = {
   data: ActiveSync[];
   isLoading: boolean;
+  error: Error | null;
 };
 type ActiveSyncsQueryOptions = {
   enabled: boolean;
@@ -35,6 +36,7 @@ const {
   const mockActiveSyncs: ActiveSyncsQuery = {
     data: [],
     isLoading: false,
+    error: null,
   };
   const mockUseQueryOptions: ActiveSyncsQueryOptions[] = [];
   const mockTriggerSyncMutationOptions: TriggerSyncMutationOptions[] = [];
@@ -130,6 +132,7 @@ describe("useAutoSync", () => {
     sessionStorage.clear();
     mockActiveSyncs.data = [];
     mockActiveSyncs.isLoading = false;
+    mockActiveSyncs.error = null;
     mockCaptureException.mockClear();
     mockActivityInvalidate.mockClear();
     mockCalendarActivityOverviewInvalidate.mockClear();
@@ -189,6 +192,17 @@ describe("useAutoSync", () => {
     renderHook(() => useAutoSync("2026-03-21"));
 
     expect(mockUseQueryOptions.at(-1)).toEqual({ enabled: true });
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it("does not trigger when active sync lookup fails", async () => {
+    mockActiveSyncs.error = new Error(
+      "Active syncs are temporarily unavailable. Please try again.",
+    );
+    const { useAutoSync } = await import("./useAutoSync");
+
+    renderHook(() => useAutoSync("2026-03-21"));
+
     expect(mockMutate).not.toHaveBeenCalled();
   });
 

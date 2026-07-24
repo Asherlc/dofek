@@ -52,6 +52,13 @@ const mockActiveImportsQuery = vi.hoisted(() =>
     error: null,
   })),
 );
+const mockActiveSyncsQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  })),
+);
 const mockProviderStatsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
     data: [],
@@ -71,7 +78,7 @@ vi.mock("../lib/trpc.ts", () => ({
       },
       providerStats: { useQuery: mockProviderStatsQuery },
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
-      activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
+      activeSyncs: { useQuery: mockActiveSyncsQuery },
       activeImports: { useQuery: mockActiveImportsQuery },
       triggerSync: { useMutation: () => ({ mutateAsync: mockSyncMutateAsync, isPending: false }) },
       syncStatus: { fetch: vi.fn() },
@@ -200,6 +207,8 @@ describe("DataSourcesPanel", () => {
     mockInvalidate.mockReset();
     mockSyncStatusFetch.mockReset();
     mockFileImportProviderCard.mockClear();
+    mockActiveSyncsQuery.mockReset();
+    mockActiveSyncsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockActiveImportsQuery.mockReset();
     mockActiveImportsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockProviderStatsQuery.mockReset();
@@ -243,6 +252,21 @@ describe("DataSourcesPanel", () => {
     expect(
       readiness.compareDocumentPosition(provider) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("shows the active sync server error message", () => {
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: new Error("Active syncs are temporarily unavailable. Please try again."),
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(
+      screen.getByText("Active syncs are temporarily unavailable. Please try again."),
+    ).toBeTruthy();
+    expect(screen.getByText("Garmin")).toBeTruthy();
   });
 
   it("shows sync-all skipped and failed provider outcomes only on matching cards", async () => {
