@@ -600,13 +600,35 @@ export default function ActivityDetailScreen() {
   const hasHr = points.some((p) => p.heartRate != null);
   const hasAltitude = points.some((p) => p.altitude != null);
 
-  const exportOptions: Array<{ label: string; format: ActivityExportFormat; disabled?: boolean }> =
-    [
-      { label: "GPX", format: "gpx", disabled: !hasGps },
-      { label: "TCX", format: "tcx", disabled: !hasGps },
-      { label: "CSV", format: "csv" },
-      { label: "FIT", format: "fit" },
-    ];
+  const exportOptions: Array<{
+    accessibilityLabel: string;
+    label: string;
+    format: ActivityExportFormat;
+    disabled?: boolean;
+  }> = [
+    {
+      accessibilityLabel: "GPS track (GPX)",
+      label: "GPX",
+      format: "gpx",
+      disabled: !hasGps,
+    },
+    {
+      accessibilityLabel: "Training Center data (TCX)",
+      label: "TCX",
+      format: "tcx",
+      disabled: !hasGps,
+    },
+    {
+      accessibilityLabel: "comma-separated values (CSV)",
+      label: "CSV",
+      format: "csv",
+    },
+    {
+      accessibilityLabel: "fitness activity file (FIT)",
+      label: "FIT",
+      format: "fit",
+    },
+  ];
 
   const handleExport = () => {
     if (!id || !sessionToken) return;
@@ -878,13 +900,13 @@ export default function ActivityDetailScreen() {
           <Pressable style={styles.exportModalCard} onPress={() => undefined} accessible={false}>
             <Text style={styles.exportModalTitle}>Export Activity</Text>
             <Text style={styles.exportModalSubtitle}>Choose a file format</Text>
-            {exportOptions.map(({ label, format, disabled }) => (
+            {exportOptions.map(({ accessibilityLabel, label, format, disabled }) => (
               <Pressable
                 key={format}
                 disabled={disabled || exportingFormat != null}
                 onPress={() => handleExportFormatSelect(format)}
                 accessibilityRole="button"
-                accessibilityLabel={`Export as ${label}`}
+                accessibilityLabel={`Export as ${accessibilityLabel}`}
                 accessibilityState={{
                   busy: exportingFormat === format,
                   disabled: disabled || exportingFormat != null,

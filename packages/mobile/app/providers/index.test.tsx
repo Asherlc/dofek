@@ -2267,6 +2267,36 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("blocks duplicate Apple Health permission requests while connecting", async () => {
+    let finishPermissionRequest: (granted: boolean) => void = () => undefined;
+    mockHasEverAuthorized.mockReturnValue(true);
+    mockGetRequestStatus.mockResolvedValue("shouldRequest");
+    mockRequestPermissions.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        finishPermissionRequest = resolve;
+      }),
+    );
+
+    await renderProvidersScreen();
+
+    const permissionButton = await screen.findByRole("button", {
+      name: "Review Apple Health permissions",
+    });
+    fireEvent.click(permissionButton);
+
+    await waitFor(() => {
+      expect(permissionButton.getAttribute("aria-busy")).toBe("true");
+      expect(permissionButton).toHaveProperty("disabled", true);
+    });
+    fireEvent.click(permissionButton);
+    expect(mockRequestPermissions).toHaveBeenCalledTimes(1);
+
+    finishPermissionRequest(true);
+    await waitFor(() => {
+      expect(permissionButton).toHaveProperty("disabled", false);
+    });
+  });
+
   it("shows denied Apple Health permissions separately from device unavailability", async () => {
     mockHasEverAuthorized.mockReturnValue(false);
     mockGetRequestStatus.mockResolvedValue("shouldRequest");

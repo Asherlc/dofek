@@ -54,6 +54,17 @@ function formatCellValue(value: unknown): string {
   return formatTableCellValue(value);
 }
 
+function recordAccessibilityLabel(
+  row: Record<string, unknown>,
+  visibleColumns: string[],
+  fallbackIndex: number,
+): string {
+  const identifyingValue = [row.name, row.id, ...visibleColumns.map((column) => row[column])].find(
+    (value) => value !== null && value !== undefined && String(value).trim().length > 0,
+  );
+  return `Open record ${formatCellValue(identifyingValue ?? fallbackIndex)}`;
+}
+
 // ── Record Detail Modal ──
 
 function RecordDetailModal({
@@ -368,7 +379,7 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
             onPress={() => setSelectedRecord(row)}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel={`Open record ${idx + 1}`}
+            accessibilityLabel={recordAccessibilityLabel(row, visibleColumns, idx + 1)}
           >
             {visibleColumns.map((col) => (
               <View key={col} style={recordStyles.cell}>

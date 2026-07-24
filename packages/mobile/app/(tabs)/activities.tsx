@@ -253,8 +253,14 @@ export default function ActivitiesScreen() {
                     selectMode
                       ? `${selectedActivityIds.has(activity.id) ? "Deselect" : "Select"} ${
                           activity.name ?? formatActivityTypeLabel(activity.activityType)
-                        }`
-                      : `Open ${activity.name ?? formatActivityTypeLabel(activity.activityType)}`
+                        }, ${formatTime(activity.startedAt)}, ${formatDurationMinutes(
+                          activity.durationMin,
+                        )}, ${formatActivityTypeLabel(activity.activityType)}`
+                      : `Open ${
+                          activity.name ?? formatActivityTypeLabel(activity.activityType)
+                        }, ${formatTime(activity.startedAt)}, ${formatDurationMinutes(
+                          activity.durationMin,
+                        )}, ${formatActivityTypeLabel(activity.activityType)}`
                   }
                   accessibilityState={{
                     selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,

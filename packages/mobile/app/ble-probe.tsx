@@ -36,6 +36,8 @@ export default function BleProbeScreen() {
   const [commandInput, setCommandInput] = useState("");
   const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [helloAndImuBusy, setHelloAndImuBusy] = useState(false);
+  const helloAndImuBusyRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
 
   const addLog = useCallback((text: string, type: LogEntry["type"] = "info") => {
@@ -315,6 +317,26 @@ export default function BleProbeScreen() {
     setCommandInput("");
   }, [commandInput, executeCommand]);
 
+  const handleHelloAndImu = useCallback(async () => {
+    if (helloAndImuBusyRef.current) return;
+    helloAndImuBusyRef.current = true;
+    setHelloAndImuBusy(true);
+    addLog("> Sending GET_HELLO + TOGGLE_IMU_MODE...", "command");
+    try {
+      await writeRaw("0002", "aa0108000001e67123019101363e5c8d", false);
+      addLog("GET_HELLO sent", "info");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await writeRaw("0002", "aa010c000001e74123026a01010000001cc9f7a9", false);
+      addLog("TOGGLE_IMU_MODE sent — watching for response...", "info");
+    } catch (error: unknown) {
+      captureException(error, { context: "ble-probe-hello-imu" });
+      addLog(`Error: ${error}`, "error");
+    } finally {
+      helloAndImuBusyRef.current = false;
+      setHelloAndImuBusy(false);
+    }
+  }, [addLog]);
+
   const renderLogEntry = useCallback(
     ({ item }: { item: LogEntry }) => (
       <Text
@@ -388,7 +410,7 @@ export default function BleProbeScreen() {
           style={styles.quickButton}
           onPress={() => executeCommand("status")}
           accessibilityRole="button"
-          accessibilityLabel="BLE status"
+          accessibilityLabel="Bluetooth Low Energy (BLE) connection and data status"
         >
           <Text style={styles.quickButtonText}>Status</Text>
         </Pressable>
@@ -396,20 +418,11 @@ export default function BleProbeScreen() {
       <View style={styles.quickButtons}>
         <Pressable
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
-          onPress={async () => {
-            addLog("> Sending GET_HELLO + TOGGLE_IMU_MODE...", "command");
-            try {
-              await writeRaw("0002", "aa0108000001e67123019101363e5c8d", false);
-              addLog("GET_HELLO sent", "info");
-              await new Promise((resolve) => setTimeout(resolve, 500));
-              await writeRaw("0002", "aa010c000001e74123026a01010000001cc9f7a9", false);
-              addLog("TOGGLE_IMU_MODE sent — watching for response...", "info");
-            } catch (error) {
-              addLog(`Error: ${error}`, "error");
-            }
-          }}
+          onPress={handleHelloAndImu}
+          disabled={helloAndImuBusy}
           accessibilityRole="button"
-          accessibilityLabel="Hello and IMU"
+          accessibilityLabel="Send hello and toggle inertial measurement unit (IMU) mode"
+          accessibilityState={{ busy: helloAndImuBusy, disabled: helloAndImuBusy }}
         >
           <Text style={styles.quickButtonText}>Hello+IMU</Text>
         </Pressable>
@@ -417,7 +430,7 @@ export default function BleProbeScreen() {
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa010c000001e741236b6a01010000002ac0d9b7")}
           accessibilityRole="button"
-          accessibilityLabel="IMU sequence 6B"
+          accessibilityLabel="Inertial measurement unit (IMU) sequence 6B"
         >
           <Text style={styles.quickButtonText}>IMU seq=6B</Text>
         </Pressable>
@@ -425,7 +438,7 @@ export default function BleProbeScreen() {
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa0102006a01")}
           accessibilityRole="button"
-          accessibilityLabel="IMU version 3"
+          accessibilityLabel="Inertial measurement unit (IMU) version 3"
         >
           <Text style={styles.quickButtonText}>IMU v3</Text>
         </Pressable>
@@ -433,7 +446,7 @@ export default function BleProbeScreen() {
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa0101006a")}
           accessibilityRole="button"
-          accessibilityLabel="IMU version 4"
+          accessibilityLabel="Inertial measurement unit (IMU) version 4"
         >
           <Text style={styles.quickButtonText}>IMU v4</Text>
         </Pressable>
@@ -443,7 +456,7 @@ export default function BleProbeScreen() {
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa010100016a")}
           accessibilityRole="button"
-          accessibilityLabel="IMU version 5"
+          accessibilityLabel="Inertial measurement unit (IMU) version 5"
         >
           <Text style={styles.quickButtonText}>IMU v5</Text>
         </Pressable>
@@ -451,7 +464,7 @@ export default function BleProbeScreen() {
           style={[styles.quickButton, { backgroundColor: "#2a3a2a" }]}
           onPress={() => executeCommand("raw aa01020051016a0101000000")}
           accessibilityRole="button"
-          accessibilityLabel="Start and IMU"
+          accessibilityLabel="Start inertial measurement unit (IMU)"
         >
           <Text style={styles.quickButtonText}>Start+IMU</Text>
         </Pressable>
@@ -459,7 +472,7 @@ export default function BleProbeScreen() {
           style={styles.quickButton}
           onPress={() => executeCommand("status")}
           accessibilityRole="button"
-          accessibilityLabel="IMU status"
+          accessibilityLabel="WHOOP data status"
         >
           <Text style={styles.quickButtonText}>Status</Text>
         </Pressable>
@@ -488,8 +501,10 @@ export default function BleProbeScreen() {
         <Pressable
           style={styles.sendButton}
           onPress={handleSubmit}
+          disabled={commandInput.trim().length === 0}
           accessibilityRole="button"
           accessibilityLabel="Send command"
+          accessibilityState={{ disabled: commandInput.trim().length === 0 }}
         >
           <Text style={styles.sendButtonText}>Send</Text>
         </Pressable>

@@ -215,7 +215,9 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
           activeOpacity={0.7}
           disabled={exportBlocked}
           accessibilityRole="button"
-          accessibilityLabel="Start Export"
+          accessibilityLabel={
+            exportState === "processing" || hasActiveExport ? "Export in progress" : "Start Export"
+          }
           accessibilityState={{
             busy: exportState === "processing" || hasActiveExport,
             disabled: exportBlocked,

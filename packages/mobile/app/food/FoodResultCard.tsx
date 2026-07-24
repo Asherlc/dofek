@@ -11,6 +11,8 @@ interface FoodResultCardProps {
 }
 
 export function FoodResultCard({ result, onSelect, sourceLabel }: FoodResultCardProps) {
+  const resolvedSourceLabel =
+    sourceLabel ?? (result.source === "history" ? "History" : "Open Food Facts");
   const macroTags = [
     result.proteinG != null ? `Protein ${formatGrams(result.proteinG)}` : null,
     result.carbsG != null ? `Carbs ${formatGrams(result.carbsG)}` : null,
@@ -24,7 +26,9 @@ export function FoodResultCard({ result, onSelect, sourceLabel }: FoodResultCard
       onPress={() => onSelect(result)}
       activeOpacity={0.75}
       accessibilityRole="button"
-      accessibilityLabel={`Select ${result.name}`}
+      accessibilityLabel={[`Select ${result.name}`, result.servingDescription, resolvedSourceLabel]
+        .filter((label): label is string => label !== null)
+        .join(", ")}
     >
       <View style={styles.resultHeaderRow}>
         <Text style={styles.resultName} numberOfLines={2}>
@@ -51,9 +55,7 @@ export function FoodResultCard({ result, onSelect, sourceLabel }: FoodResultCard
             </View>
           ))}
         </View>
-        <Text style={styles.resultSource}>
-          {sourceLabel ?? (result.source === "history" ? "History" : "Open Food Facts")}
-        </Text>
+        <Text style={styles.resultSource}>{resolvedSourceLabel}</Text>
       </View>
     </TouchableOpacity>
   );

@@ -314,6 +314,22 @@ describe("ActivitiesScreen", () => {
     expect(routerPush).toHaveBeenCalledWith("/activity/activity-1");
   });
 
+  it("includes visible activity context in each accessible action name", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    const activityButton = screen.getByText("Trainer Ride").closest("button");
+    expect(activityButton?.getAttribute("aria-label")).toContain("Open Trainer Ride");
+    expect(activityButton?.getAttribute("aria-label")).toContain("1h");
+    expect(activityButton?.getAttribute("aria-label")).toContain("Indoor Cycling");
+  });
+
   it("toggles selected activities instead of navigating in select mode", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity()] }],

@@ -96,4 +96,31 @@ describe("SlackIntegrationPanel", () => {
       expect(mockSlackStatus.refetch).toHaveBeenCalled();
     });
   });
+
+  it("prevents duplicate Slack handoffs while connecting", async () => {
+    let finishHandoff: (response: Response) => void = () => undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockReturnValue(
+        new Promise<Response>((resolve) => {
+          finishHandoff = resolve;
+        }),
+      ),
+    );
+    mockSlackStatus.data = { configured: true, connected: false };
+    mockSlackStatus.isLoading = false;
+
+    render(<SlackIntegrationPanel />);
+    const connectButton = screen.getByRole("button", { name: "Add to Slack" });
+    fireEvent.click(connectButton);
+
+    await waitFor(() => {
+      expect(connectButton.getAttribute("aria-busy")).toBe("true");
+      expect(connectButton).toHaveProperty("disabled", true);
+    });
+    fireEvent.click(connectButton);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    finishHandoff(new Response(JSON.stringify({ code: "provider-handoff-code" }), { status: 200 }));
+  });
 });
