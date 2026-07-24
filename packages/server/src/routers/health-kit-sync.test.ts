@@ -236,6 +236,43 @@ describe("healthKitSyncRouter", () => {
       expect(result.errors).toEqual([]);
     });
 
+    it("ignores calorie expenditure samples", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+            value: 450,
+            unit: "kcal",
+            uuid: "active-energy-1",
+          }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierBasalEnergyBurned",
+            value: 1_800,
+            unit: "kcal",
+            uuid: "basal-energy-1",
+          }),
+        ],
+      });
+
+      expect(result).toEqual({ inserted: 0, errors: [] });
+      expect(execute).toHaveBeenCalledOnce();
+      expect(healthKitRecordsTotal.add).toHaveBeenCalledWith(0, {
+        endpoint: "pushQuantitySamples",
+        category: "bodyMeasurement",
+      });
+      expect(healthKitRecordsTotal.add).toHaveBeenCalledWith(0, {
+        endpoint: "pushQuantitySamples",
+        category: "healthEvent",
+      });
+    });
+
     it("applies body fat percentage transform (value * 100)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
