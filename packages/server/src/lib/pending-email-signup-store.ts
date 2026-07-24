@@ -104,17 +104,22 @@ export class InMemoryPendingEmailSignupStore implements PendingEmailSignupStore 
   }
 
   async release(claim: PendingEmailSignupClaim): Promise<void> {
-    if (this.#claims.get(claim.token)?.claimId === claim.claimId) {
+    if (this.#ownsClaim(claim)) {
       this.#claims.delete(claim.token);
     }
   }
 
   async complete(claim: PendingEmailSignupClaim): Promise<void> {
-    if (this.#claims.get(claim.token)?.claimId !== claim.claimId) {
+    if (!this.#ownsClaim(claim)) {
       throw new Error("Pending email signup claim is no longer owned");
     }
     this.#claims.delete(claim.token);
     this.#entries.delete(claim.token);
+  }
+
+  #ownsClaim(claim: PendingEmailSignupClaim): boolean {
+    const storedClaim = this.#claims.get(claim.token);
+    return storedClaim?.claimId === claim.claimId && storedClaim.expiresAt > Date.now();
   }
 }
 

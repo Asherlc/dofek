@@ -320,6 +320,29 @@ describe("InMemoryPendingEmailSignupStore", () => {
     }
   });
 
+  it("rejects completion after the claim lease expires", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = new InMemoryPendingEmailSignupStore({ claimTtlMs: 1 });
+      const token = await store.issue(sampleEntry);
+      const expiredClaim = await store.claim(token);
+      if (!expiredClaim) throw new Error("Expected expiring claim");
+
+      vi.advanceTimersByTime(2);
+
+      await expect(store.complete(expiredClaim)).rejects.toThrow(
+        "Pending email signup claim is no longer owned",
+      );
+      await expect(store.get(token)).resolves.toEqual(sampleEntry);
+
+      await store.release(expiredClaim);
+      const currentClaim = await store.claim(token);
+      expect(currentClaim?.entry).toEqual(sampleEntry);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("prevents a stale owner from releasing or completing a newer claim", async () => {
     vi.useFakeTimers();
     try {
