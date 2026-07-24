@@ -10,16 +10,56 @@
 ) }}
 
 WITH {% if is_incremental() %}
-existing_dates AS (
+target_state AS (
+    SELECT
+        coalesce(
+            max(refreshed_at),
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) AS last_refreshed_at,
+        count() = 0 AS is_empty
+    FROM {{ this }}
+),
+
+current_rows AS (
     SELECT
         user_id,
-        max(date) AS latest_materialized_date
-    FROM {{ this }}
-    GROUP BY user_id
+        date,
+        provider_id,
+        source_name,
+        source_providers,
+        started_at,
+        ended_at,
+        duration_minutes,
+        deep_minutes,
+        rem_minutes,
+        light_minutes,
+        awake_minutes,
+        efficiency_pct,
+        is_deleted
+    FROM {{ this }} FINAL
 ),
 {% endif %}
+source_sleep AS (
+    SELECT
+        user_id,
+        _peerdb_synced_at,
+        _peerdb_is_deleted
+    FROM {{ source('postgres_fitness', 'sleep_session') }} FINAL
+),
 
-sleep_source AS (
+changed_users AS (
+    SELECT DISTINCT user_id
+    FROM source_sleep
+    WHERE
+        {% if is_incremental() %}
+            (SELECT is_empty FROM target_state)
+            OR _peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)
+        {% else %}
+            _peerdb_is_deleted = 0
+        {% endif %}
+),
+
+live_sleep AS (
     SELECT
         sleep.user_id AS user_id,
         toDate(sleep.started_at - INTERVAL 6 HOUR) AS date,
@@ -35,20 +75,51 @@ sleep_source AS (
         sleep.awake_minutes AS awake_minutes,
         sleep.efficiency_pct AS efficiency_pct
     FROM analytics.v_sleep AS sleep
-    {% if is_incremental() %}
-    LEFT JOIN existing_dates
-        ON existing_dates.user_id = sleep.user_id
-    {% endif %}
-    WHERE sleep.is_nap = FALSE
-        {% if is_incremental() %}
-        AND (
-            existing_dates.user_id IS NULL
-            OR toDate(sleep.started_at - INTERVAL 6 HOUR) >= existing_dates.latest_materialized_date - INTERVAL 7 DAY
-        )
-        {% endif %}
+    INNER JOIN changed_users
+        ON changed_users.user_id = sleep.user_id
+    WHERE sleep.is_nap = false
 ),
 
+{% if is_incremental() %}
+dirty_dates AS (
+    SELECT DISTINCT
+        user_id,
+        date
+    FROM live_sleep
+    UNION DISTINCT
+    SELECT
+        current_rows.user_id AS user_id,
+        current_rows.date AS date
+    FROM current_rows
+    INNER JOIN changed_users
+        ON changed_users.user_id = current_rows.user_id
+    WHERE current_rows.is_deleted = 0
+),
+{% endif %}
+
 ranked_sleep AS (
+    SELECT
+        live_sleep.user_id AS user_id,
+        live_sleep.date AS date,
+        live_sleep.provider_id AS provider_id,
+        live_sleep.source_name AS source_name,
+        live_sleep.source_providers AS source_providers,
+        live_sleep.started_at AS started_at,
+        live_sleep.ended_at AS ended_at,
+        live_sleep.duration_minutes AS duration_minutes,
+        live_sleep.deep_minutes AS deep_minutes,
+        live_sleep.rem_minutes AS rem_minutes,
+        live_sleep.light_minutes AS light_minutes,
+        live_sleep.awake_minutes AS awake_minutes,
+        live_sleep.efficiency_pct AS efficiency_pct,
+        row_number() OVER (
+            PARTITION BY live_sleep.user_id, live_sleep.date
+            ORDER BY live_sleep.duration_minutes DESC NULLS LAST, live_sleep.started_at DESC
+        ) AS row_number
+    FROM live_sleep
+),
+
+selected_sleep AS (
     SELECT
         user_id,
         date,
@@ -62,36 +133,121 @@ ranked_sleep AS (
         rem_minutes,
         light_minutes,
         awake_minutes,
-        efficiency_pct,
-        row_number() OVER (
-            PARTITION BY user_id, date
-            ORDER BY duration_minutes DESC NULLS LAST, started_at DESC
-        ) AS row_number
-    FROM sleep_source
+        efficiency_pct
+    FROM ranked_sleep
+    WHERE row_number = 1
+),
+
+rows_to_write AS (
+    {% if is_incremental() %}
+    SELECT
+        dirty_dates.user_id AS user_id,
+        dirty_dates.date AS date,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.provider_id,
+            selected_sleep.provider_id
+        ) AS provider_id,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.source_name,
+            selected_sleep.source_name
+        ) AS source_name,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.source_providers,
+            selected_sleep.source_providers
+        ) AS source_providers,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.started_at,
+            selected_sleep.started_at
+        ) AS started_at,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.ended_at,
+            selected_sleep.ended_at
+        ) AS ended_at,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.duration_minutes,
+            selected_sleep.duration_minutes
+        ) AS duration_minutes,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.deep_minutes,
+            selected_sleep.deep_minutes
+        ) AS deep_minutes,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.rem_minutes,
+            selected_sleep.rem_minutes
+        ) AS rem_minutes,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.light_minutes,
+            selected_sleep.light_minutes
+        ) AS light_minutes,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.awake_minutes,
+            selected_sleep.awake_minutes
+        ) AS awake_minutes,
+        if(
+            selected_sleep.user_id IS NULL,
+            current_rows.efficiency_pct,
+            selected_sleep.efficiency_pct
+        ) AS efficiency_pct,
+        if(selected_sleep.user_id IS NULL, 1, 0) AS is_deleted
+    FROM dirty_dates
+    LEFT JOIN selected_sleep
+        ON selected_sleep.user_id = dirty_dates.user_id
+        AND selected_sleep.date = dirty_dates.date
+    LEFT JOIN current_rows
+        ON current_rows.user_id = dirty_dates.user_id
+        AND current_rows.date = dirty_dates.date
+    {% else %}
+    SELECT
+        selected_sleep.user_id AS user_id,
+        selected_sleep.date AS date,
+        selected_sleep.provider_id AS provider_id,
+        selected_sleep.source_name AS source_name,
+        selected_sleep.source_providers AS source_providers,
+        selected_sleep.started_at AS started_at,
+        selected_sleep.ended_at AS ended_at,
+        selected_sleep.duration_minutes AS duration_minutes,
+        selected_sleep.deep_minutes AS deep_minutes,
+        selected_sleep.rem_minutes AS rem_minutes,
+        selected_sleep.light_minutes AS light_minutes,
+        selected_sleep.awake_minutes AS awake_minutes,
+        selected_sleep.efficiency_pct AS efficiency_pct,
+        0 AS is_deleted
+    FROM selected_sleep
+    {% endif %}
 ),
 
 refresh_clock AS (
     SELECT
         toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-        now64(9) AS refreshed_at
+        now64(9, 'UTC') AS refreshed_at
 )
 
 SELECT
-    CAST(ranked_sleep.user_id, 'UUID') AS user_id,
-    CAST(ranked_sleep.date, 'Date') AS date,
-    ranked_sleep.provider_id AS provider_id,
-    ranked_sleep.source_name AS source_name,
-    ranked_sleep.source_providers AS source_providers,
-    ranked_sleep.started_at AS started_at,
-    ranked_sleep.ended_at AS ended_at,
-    ranked_sleep.duration_minutes AS duration_minutes,
-    ranked_sleep.deep_minutes AS deep_minutes,
-    ranked_sleep.rem_minutes AS rem_minutes,
-    ranked_sleep.light_minutes AS light_minutes,
-    ranked_sleep.awake_minutes AS awake_minutes,
-    ranked_sleep.efficiency_pct AS efficiency_pct,
+    CAST(rows_to_write.user_id, 'UUID') AS user_id,
+    CAST(rows_to_write.date, 'Date') AS date,
+    rows_to_write.provider_id AS provider_id,
+    rows_to_write.source_name AS source_name,
+    rows_to_write.source_providers AS source_providers,
+    rows_to_write.started_at AS started_at,
+    rows_to_write.ended_at AS ended_at,
+    rows_to_write.duration_minutes AS duration_minutes,
+    rows_to_write.deep_minutes AS deep_minutes,
+    rows_to_write.rem_minutes AS rem_minutes,
+    rows_to_write.light_minutes AS light_minutes,
+    rows_to_write.awake_minutes AS awake_minutes,
+    rows_to_write.efficiency_pct AS efficiency_pct,
     refresh_clock.refresh_version AS refresh_version,
+    rows_to_write.is_deleted AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at
-FROM ranked_sleep
+FROM rows_to_write
 CROSS JOIN refresh_clock
-WHERE ranked_sleep.row_number = 1

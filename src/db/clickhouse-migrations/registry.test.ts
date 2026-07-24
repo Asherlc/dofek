@@ -59,10 +59,11 @@ describe("clickHouseMigrations", () => {
       ]),
     });
     expect(migrations.at(-1)).toMatchObject({
-      id: "0052_processing_flow_markers",
+      id: "0053_daily_sleep_lifecycle",
       statements: expect.arrayContaining([
-        expect.stringContaining("postgres_fitness.processing_flow_marker ("),
-        expect.stringContaining("postgres_fitness.processing_flow_marker_provider_inventory ("),
+        expect.stringContaining(
+          "ADD COLUMN IF NOT EXISTS is_deleted UInt8 DEFAULT 0 AFTER refresh_version",
+        ),
       ]),
     });
   });

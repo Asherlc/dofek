@@ -115,6 +115,7 @@ export async function fetchSleepNights(
       sleep.efficiency_pct AS efficiency_pct
     FROM analytics.daily_sleep AS sleep FINAL
     WHERE sleep.user_id = {userId:UUID}
+      AND sleep.is_deleted = 0
       ${sleepLowerBoundClause}
       AND sleep.date <= toDate({endDate:String})
       ${dateAccessWindowClause(input.accessWindow)}
@@ -151,6 +152,7 @@ export async function fetchDailySleepPerformanceNights(
       sleep.efficiency_pct AS efficiency_pct
     FROM analytics.daily_sleep AS sleep FINAL
     WHERE sleep.user_id = {userId:UUID}
+      AND sleep.is_deleted = 0
       AND sleep.date >= toDate({endDate:String}) - {days:UInt32}
       AND sleep.date <= toDate({endDate:String})
       ${dateAccessWindowClause(input.accessWindow)}
@@ -192,6 +194,7 @@ export async function fetchLatestSleepNight(input: {
       sleep.efficiency_pct AS efficiency_pct
     FROM analytics.daily_sleep AS sleep FINAL
     WHERE sleep.user_id = {userId:UUID}
+      AND sleep.is_deleted = 0
       ${endDateClause}
       ${dateAccessWindowClause(input.accessWindow)}
     ORDER BY sleep.date DESC

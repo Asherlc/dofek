@@ -184,6 +184,7 @@ export async function loadDashboardOverview({
             awake_minutes
           FROM analytics.daily_sleep AS sleep FINAL
           WHERE sleep.user_id = {userId:UUID}
+            AND sleep.is_deleted = 0
             AND sleep.date > toDate({endDate:String}) - {days:UInt32}
             AND sleep.date <= toDate({endDate:String})
             ${accessWindowDateClause(accessWindow, "sleep.date")}
