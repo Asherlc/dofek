@@ -22,6 +22,7 @@ function runScenario({ downStatus = 0, runStatus = 0, upStatus = 0 }: Scenario):
   commands: string[];
   resourcesRemain: boolean;
   status: number | null;
+  teardownFailureLogged: boolean;
 } {
   const testDirectory = mkdtempSync(join(tmpdir(), "e2e-web-test-"));
   const binaryDirectory = join(testDirectory, "bin");
@@ -70,6 +71,9 @@ process.exit(99);
       commands: readFileSync(commandLogPath, "utf8").trim().split("\n"),
       resourcesRemain: existsSync(resourcePath),
       status: result.status,
+      teardownFailureLogged: result.stderr
+        .toString()
+        .includes(`Teardown failed with status ${downStatus}`),
     };
   } finally {
     rmSync(testDirectory, { force: true, recursive: true });
@@ -82,6 +86,7 @@ describe("e2e-web", () => {
       commands: ["e2e:web:up", "e2e:web:down"],
       resourcesRemain: false,
       status: 17,
+      teardownFailureLogged: true,
     });
   });
 
@@ -90,6 +95,7 @@ describe("e2e-web", () => {
       commands: ["e2e:web:up", "e2e:web:run", "e2e:web:down"],
       resourcesRemain: false,
       status: 23,
+      teardownFailureLogged: false,
     });
   });
 
@@ -98,6 +104,7 @@ describe("e2e-web", () => {
       commands: ["e2e:web:up", "e2e:web:run", "e2e:web:down"],
       resourcesRemain: false,
       status: 0,
+      teardownFailureLogged: false,
     });
   });
 
@@ -106,6 +113,7 @@ describe("e2e-web", () => {
       commands: ["e2e:web:up", "e2e:web:run", "e2e:web:down"],
       resourcesRemain: false,
       status: 31,
+      teardownFailureLogged: true,
     });
   });
 });

@@ -19,4 +19,7 @@ if (firstStatus === 0) {
 }
 
 const teardownStatus = runScript("e2e:web:down");
+if (teardownStatus !== 0) {
+  console.error(`Teardown failed with status ${teardownStatus}`);
+}
 process.exitCode = firstStatus === 0 ? teardownStatus : firstStatus;
