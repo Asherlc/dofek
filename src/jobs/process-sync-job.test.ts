@@ -1456,6 +1456,23 @@ describe("processSyncJob", () => {
     });
   });
 
+  it("reports non-outage errors with a cyclic cause chain", async () => {
+    const cycle = new Error("activity sync failed");
+    cycle.cause = cycle;
+    const provider = createMockProvider({
+      id: "zwift",
+      name: "Zwift",
+      sync: vi.fn().mockRejectedValue(cycle),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(cycle, {
+      tags: { provider: "zwift" },
+    });
+  });
+
   it("calls ensureProvider for each synced provider", async () => {
     const provider = createMockProvider({ id: "test", name: "Test Provider" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);

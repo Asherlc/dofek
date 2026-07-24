@@ -174,21 +174,16 @@ function firstAuthFailureReason(errors: SyncError[]): ProviderAuthFailureReason 
 }
 
 function isProviderServiceUnavailableError(error: unknown): boolean {
-  const visited = new Set<unknown>();
-  let current = error;
+  const visitedErrors = new Set<Error>();
+  let currentError = error;
 
-  while (current !== null && current !== undefined && !visited.has(current)) {
-    if (current instanceof ProviderServiceUnavailableError) {
+  while (currentError instanceof Error && !visitedErrors.has(currentError)) {
+    if (currentError instanceof ProviderServiceUnavailableError) {
       return true;
     }
 
-    visited.add(current);
-
-    if (typeof current !== "object" || !("cause" in current)) {
-      return false;
-    }
-
-    current = current.cause;
+    visitedErrors.add(currentError);
+    currentError = "cause" in currentError ? currentError.cause : undefined;
   }
 
   return false;

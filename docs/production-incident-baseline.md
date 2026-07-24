@@ -15953,7 +15953,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   provider-outage errors failed before their corresponding fixes because they
   called Sentry, then passed after the reporting changes. All paths still
   increment `syncOperationsTotal` with `status=error` and `syncErrorsTotal` for
-  the affected provider. All 52 focused sync-job tests pass.
+  the affected provider. A cyclic non-outage cause-chain regression confirms
+  traversal terminates and still reports unexpected errors. All 53 focused
+  sync-job tests pass.
 - **Remaining risk / follow-up:** Deploy the fix and confirm future provider
   502/503/504 outages appear in metrics and sync history without opening Sentry
   issues. Add `SENTRY_READ_AUTH_TOKEN` to Infisical as documented in
