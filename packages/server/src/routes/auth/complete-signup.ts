@@ -122,6 +122,7 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
     });
     pendingClaimRenewal.throwIfFailed();
     const { getAllProviders } = await import("dofek/providers/registry");
+    await pendingClaimRenewal.throwIfFailed();
     const provider = getAllProviders().find(
       (candidate) => candidate.id === claimedPending.providerId,
     );

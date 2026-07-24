@@ -2685,9 +2685,10 @@ describe("createAuthRouter", () => {
       if (!token) throw new Error("Expected pending signup token in form");
 
       const pendingStore = getPendingEmailSignupStoreRef();
+      const renewalAttempt = Promise.withResolvers<void>();
       const renewSpy = vi
         .spyOn(pendingStore, "renew")
-        .mockRejectedValueOnce(new Error("sensitive Redis command failure"));
+        .mockImplementationOnce(() => renewalAttempt.promise);
       const completeSpy = vi.spyOn(pendingStore, "complete");
       const releaseSpy = vi.spyOn(pendingStore, "release");
       vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
@@ -2699,6 +2700,9 @@ describe("createAuthRouter", () => {
         await completionStarted.promise;
         await vi.advanceTimersByTimeAsync(20_000);
         deferredUser.resolve({ userId: "renewal-failure-user", isNewUser: true });
+        queueMicrotask(() => {
+          renewalAttempt.reject(new Error("sensitive Redis command failure"));
+        });
 
         const completionRes = await completionPromise;
         const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
@@ -2731,6 +2735,7 @@ describe("createAuthRouter", () => {
         );
       } finally {
         deferredUser.resolve({ userId: "renewal-failure-user", isNewUser: true });
+        renewalAttempt.reject(new Error("sensitive Redis command failure"));
         await completionPromise;
         vi.useRealTimers();
         renewSpy.mockRestore();
