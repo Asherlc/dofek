@@ -13,13 +13,23 @@ vi.mock("dofek/personalization/storage", () => ({
 }));
 
 describe("loadMobileTrainingTab", () => {
+  const defaultReadinessRows = [
+    {
+      date: "2026-03-28",
+      hrv_score: 62,
+      resting_hr_score: 62,
+      sleep_score: 62,
+      respiratory_rate_score: 62,
+    },
+  ];
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   function makeQuery(
     strainRows: unknown[] = [],
-    readinessRows: unknown[] = [],
+    readinessRows: unknown[] = defaultReadinessRows,
   ): ReturnType<typeof vi.fn> {
     return vi.fn(async (_schema: unknown, sqlText: unknown) => {
       const sql = String(sqlText);
@@ -268,21 +278,24 @@ describe("loadMobileTrainingTab", () => {
     expect(result.workloadRatio.timeSeries[0]?.workloadRatio).toBeNull();
   });
 
-  it("uses default readiness score when no recovery summary exists", async () => {
+  it("omits the strain target when no recovery summary exists", async () => {
     await mockTrainingRepos();
-    const query = makeQuery([
-      {
-        date: "2026-03-28",
-        daily_load: 50,
-        acute_load: 350,
-        chronic_load: 300,
-        workload_ratio: 1.17,
-      },
-    ]);
+    const query = makeQuery(
+      [
+        {
+          date: "2026-03-28",
+          daily_load: 50,
+          acute_load: 350,
+          chronic_load: 300,
+          workload_ratio: 1.17,
+        },
+      ],
+      [],
+    );
 
     const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
 
-    expect(result.strainTarget.readinessScore).toBe(50);
+    expect(result.strainTarget).toBeUndefined();
   });
 
   it("workloadRatio is null when chronicLoad is zero", async () => {

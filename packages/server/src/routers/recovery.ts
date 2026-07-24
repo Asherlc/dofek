@@ -603,7 +603,7 @@ export const recoveryRouter = router({
    */
   strainTarget: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
-    .query(async ({ ctx, input }): Promise<StrainTargetResult> => {
+    .query(async ({ ctx, input }): Promise<StrainTargetResult | undefined> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.strainTarget");
       const recoveryAccessWindowClause =
         ctx.accessWindow?.kind === "limited"
@@ -673,21 +673,18 @@ export const recoveryRouter = router({
         { priority: "dashboard" },
       );
 
-      // Compute readiness if we have metrics
-      let readinessScore = 50; // default moderate
       const readinessMetrics = readinessRows[0];
-      if (readinessMetrics) {
-        const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
-        const components: ReadinessComponents = {
-          hrvScore: Math.round(readinessMetrics.hrv_score ?? 62),
-          restingHrScore: Math.round(readinessMetrics.resting_hr_score ?? 62),
-          sleepScore: Math.round(readinessMetrics.sleep_score ?? 62),
-          respiratoryRateScore: Math.round(readinessMetrics.respiratory_rate_score ?? 62),
-        };
-        const weights = params.readinessWeights;
-        const score = new ReadinessScore(components, weights);
-        readinessScore = score.score;
-      }
+      if (!readinessMetrics) return undefined;
+
+      const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
+      const components: ReadinessComponents = {
+        hrvScore: Math.round(readinessMetrics.hrv_score ?? 62),
+        restingHrScore: Math.round(readinessMetrics.resting_hr_score ?? 62),
+        sleepScore: Math.round(readinessMetrics.sleep_score ?? 62),
+        respiratoryRateScore: Math.round(readinessMetrics.respiratory_rate_score ?? 62),
+      };
+      const weights = params.readinessWeights;
+      const readinessScore = new ReadinessScore(components, weights).score;
 
       // Compute acute and chronic loads
       const today = input.endDate;
