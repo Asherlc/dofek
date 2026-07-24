@@ -310,7 +310,12 @@ export default function ProvidersScreen() {
       if (resumedJobIds.current.has(activeJob.jobId)) continue;
       resumedJobIds.current.add(activeJob.jobId);
 
-      const providerIds = Object.keys(activeJob.providers);
+      const activeProviderIds = Object.entries(activeJob.providers)
+        .filter(
+          ([, providerStatus]) =>
+            providerStatus.status === "running" || providerStatus.status === "pending",
+        )
+        .map(([providerId]) => providerId);
       setSyncingProviders((prev) => {
         const next = new Set(prev);
         for (const [pid, providerStatus] of Object.entries(activeJob.providers)) {
@@ -333,7 +338,7 @@ export default function ProvidersScreen() {
         return next;
       });
       setAnySyncing(true);
-      pollJob(activeJob.jobId, providerIds);
+      pollJob(activeJob.jobId, activeProviderIds);
     }
   }, [activeSyncs.data, pollJob]);
 

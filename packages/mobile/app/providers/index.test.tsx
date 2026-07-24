@@ -1159,6 +1159,67 @@ describe("ProvidersScreen", () => {
     }
   });
 
+  it("does not apply the first retry error to completed providers from a resumed job", async () => {
+    vi.useFakeTimers();
+    try {
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          connectedProvider,
+          {
+            id: "garmin",
+            name: "Garmin",
+            authType: "oauth",
+            authorized: true,
+            importOnly: false,
+            lastSyncedAt: null,
+          },
+        ],
+        isLoading: false,
+        error: null,
+      });
+      mockActiveSyncsQuery.mockReturnValue({
+        data: [
+          {
+            jobId: "mixed-cached-job",
+            status: "running",
+            percentage: 40,
+            providers: {
+              wahoo: { status: "done", message: "Wahoo complete" },
+              garmin: { status: "running", message: "Downloading Garmin activities..." },
+            },
+          },
+        ],
+        isLoading: false,
+        error: null,
+      });
+      mockSyncStatusFetch.mockRejectedValueOnce(
+        new Error("Sync status is temporarily unavailable. Please try again."),
+      );
+      mockSyncMutateAsync.mockImplementation(() => new Promise(() => undefined));
+
+      const rendered = await renderProvidersScreen();
+      await act(async () => Promise.resolve());
+
+      const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+      const garminCard = within(screen.getByTestId("provider-card-garmin"));
+      expect(
+        garminCard.getByText("Sync status is temporarily unavailable. Please try again."),
+      ).toBeTruthy();
+      expect(
+        screen.getByTestId("provider-card-garmin-progress-fill").getAttribute("data-style"),
+      ).toContain('"width":"40%"');
+
+      fireEvent.click(wahooCard.getByText("Sync"));
+
+      expect(
+        wahooCard.queryByText("Sync status is temporarily unavailable. Please try again."),
+      ).toBeNull();
+      rendered.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("stops retrying sync status when unmounted during the retry delay", async () => {
     vi.useFakeTimers();
     try {
