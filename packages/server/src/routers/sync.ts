@@ -258,7 +258,7 @@ const syncRouterProcedures = {
               logProvidersQueryFailure("provider stats lookup", error);
               throw error;
             })
-          : Promise.resolve([]),
+          : Promise.resolve(undefined),
       ]);
 
       const tokenSet = new Set(allTokens.map((r) => r.providerId));
@@ -275,7 +275,7 @@ const syncRouterProcedures = {
           )
           .map((r) => r.providerId),
       );
-      const statsByProvider = new Map(providerStats.map((row) => [row.providerId, row]));
+      const statsByProvider = new Map(providerStats?.map((row) => [row.providerId, row]));
 
       const registeredProviders = all
         .filter((p) => p.validate() === null)

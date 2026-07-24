@@ -677,8 +677,12 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.providers();
+      const result = await caller.providers();
+
       expect(getProviderStats).not.toHaveBeenCalled();
+      expect(
+        result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized,
+      ).toBe(false);
       getProviderStats.mockRestore();
     });
 
