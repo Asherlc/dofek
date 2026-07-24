@@ -12,7 +12,11 @@ enum CoreMotionIsoDateParser {
         return formatter
     }()
 
-    private static let internetDateTime = ISO8601DateFormatter()
+    private static let internetDateTime: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 
     static func parse(_ value: String) -> Date? {
         if let date = fractionalSeconds.date(from: value) {
