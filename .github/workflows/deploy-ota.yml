@@ -63,11 +63,7 @@ jobs:
   deploy:
     name: Publish OTA
     needs: [check]
-    if: |
-      always() && (
-        github.event_name != 'workflow_run' ||
-        needs.check.result == 'success'
-      )
+    if: needs.check.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Resolve commit SHA

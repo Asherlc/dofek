@@ -15752,3 +15752,40 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   trigger or capture a harmless local exception and verify no Sentry event is
   created. Local body analytics still requires the dbt analytics selection to
   be built before use.
+
+## 2026-07-23 — Mobile Deploy Jobs Could Bypass Failed Deploy Checks
+
+- **Status:** Fixed and validated locally; no unintended OTA or TestFlight
+  release was identified during this investigation.
+- **Symptoms:** The OTA and iOS deploy jobs used `always()` conditions that
+  allowed reusable and manually dispatched workflows to proceed without
+  requiring their `check` jobs to succeed.
+- **User impact:** A failed or cancelled release check could allow an OTA
+  publish or TestFlight build to start from an input or fallback ref that the
+  check had not successfully resolved and validated.
+- **Evidence:** The exact affected gates were the `deploy` job conditions in
+  `.github/workflows/deploy-ota.yml` and `.github/workflows/deploy-ios.yml`.
+  GitHub documents that `always()` allows a dependent job to run even when its
+  dependency did not succeed, while `needs.<job_id>.result` exposes `success`,
+  `failure`, `cancelled`, and `skipped`
+  ([job dependency behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-jobs),
+  [`needs` context](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#needs-context)).
+  The executable expression test reproduced 16 incorrect outcomes across
+  `workflow_call`, `workflow_dispatch`, and `workflow_run`.
+- **Root cause:** Each deploy condition used `always()` with an event-name
+  branch that became true for reusable or manual runs, bypassing the
+  prerequisite result. The iOS condition also treated `should_deploy` as a
+  `workflow_run`-only gate.
+- **Fix / mitigation:** OTA now requires
+  `needs.check.result == 'success'`. iOS requires the same successful result
+  and independently requires
+  `needs.check.outputs.should_deploy == 'true'` for every event type.
+- **Validation:** The GitHub-maintained `@actions/expressions` evaluator now
+  executes the conditions for all three event types with successful, failed,
+  and cancelled check results. All 27 scenarios pass after the fix. Actionlint,
+  yamllint, Biome, TypeScript, and `git diff --check` also pass without retries
+  or wait tuning.
+- **Remaining risk / follow-up:** GitHub-hosted CI still provides the final
+  platform-level evaluation. Keep the semantic expression test when changing
+  either mobile release gate so event-specific branches cannot bypass the
+  prerequisite again.
