@@ -7,6 +7,11 @@ import { selectedDateRangeInput } from "../lib/date-window.ts";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import {
+  buildHealthStatusFromValues,
+  buildWeightHealthStatus,
+  healthStatusMetricSchema,
+} from "../services/health-status.ts";
+import {
   type AuthenticatedContext,
   CacheTTL,
   cachedProtectedQuery,
@@ -36,6 +41,44 @@ export type {
 
 const dateWindowInput = selectedDateRangeInput(90);
 
+const smoothedWeightOutputSchema = z.object({
+  date: z.string(),
+  rawWeight: z.number().nullable(),
+  smoothedWeight: z.number(),
+  weeklyChange: z.number().nullable(),
+  interpolated: z.boolean(),
+});
+
+const bodyRecompositionOutputSchema = z.object({
+  date: z.string(),
+  weightKg: z.number(),
+  bodyFatPct: z.number(),
+  fatMassKg: z.number(),
+  leanMassKg: z.number(),
+  smoothedFatMass: z.number(),
+  smoothedLeanMass: z.number(),
+});
+
+const weightPredictionOutputSchema = z.object({
+  ratePerWeek: z.number().nullable(),
+  rateConfidence: z.number().nullable(),
+  impliedDailyCalories: z.number().nullable(),
+  periodDeltas: z.object({
+    days7: z.number().nullable(),
+    days14: z.number().nullable(),
+    days30: z.number().nullable(),
+  }),
+  goal: z
+    .object({
+      goalWeightKg: z.number(),
+      remainingKg: z.number(),
+      estimatedDate: z.string().nullable(),
+      daysRemaining: z.number().nullable(),
+    })
+    .nullable(),
+  projectionLine: z.array(z.object({ date: z.string(), projectedWeight: z.number() })),
+});
+
 function createBodyAnalyticsRepository(ctx: AuthenticatedContext) {
   return new BodyAnalyticsRepository(
     ctx.db,
@@ -63,10 +106,12 @@ export const bodyAnalyticsRouter = router({
       const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
       const repo = createBodyAnalyticsRepository(ctx);
       const predictionDays = range.days == null ? null : Math.max(range.days, 90);
-      const [smoothedWeightResult, predictionResult] = await Promise.allSettled([
-        repo.getSmoothedWeight(range.days, input.endDate),
-        repo.getWeightPrediction(predictionDays, input.endDate, goalWeightKg),
-      ]);
+      const [smoothedWeightResult, predictionResult, recompositionResult] =
+        await Promise.allSettled([
+          repo.getSmoothedWeight(range.days, input.endDate),
+          repo.getWeightPrediction(predictionDays, input.endDate, goalWeightKg),
+          repo.getRecomposition(range.days, input.endDate),
+        ]);
 
       if (smoothedWeightResult.status === "rejected") {
         throw smoothedWeightResult.reason;
@@ -75,11 +120,39 @@ export const bodyAnalyticsRouter = router({
       if (predictionResult.status === "rejected") {
         captureException(predictionResult.reason);
       }
+      if (recompositionResult.status === "rejected") {
+        throw recompositionResult.reason;
+      }
 
+      const smoothedWeight = smoothedWeightResult.value;
+      const recomposition = recompositionResult.value;
       return {
-        smoothedWeight: smoothedWeightResult.value,
+        smoothedWeight,
         prediction: predictionResult.status === "fulfilled" ? predictionResult.value : null,
+        recomposition,
+        healthStatus: [
+          buildWeightHealthStatus(
+            smoothedWeight.map((row) => row.smoothedWeight),
+            goalWeightKg,
+          ),
+          buildHealthStatusFromValues({
+            metric: "body_fat_percentage",
+            label: "Body Fat %",
+            values: recomposition.flatMap((row) =>
+              row.bodyFatPct == null ? [] : [row.bodyFatPct],
+            ),
+            intent: "neutral",
+          }),
+        ],
       };
+    },
+    {
+      outputSchema: z.object({
+        smoothedWeight: z.array(smoothedWeightOutputSchema),
+        prediction: weightPredictionOutputSchema.nullable(),
+        recomposition: z.array(bodyRecompositionOutputSchema),
+        healthStatus: z.array(healthStatusMetricSchema),
+      }),
     },
   ),
 

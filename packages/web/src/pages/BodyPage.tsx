@@ -22,8 +22,8 @@ import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeightPredictionSummary } from "../components/WeightPredictionSummary.tsx";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { useBodyDays } from "../lib/bodyDaysContext.ts";
-import { buildBodyHealthMetrics } from "../lib/bodyHealthMetrics.ts";
 import { chartColors } from "../lib/chartTheme.ts";
+import { healthStatusMetricSchema } from "../lib/healthStatus.ts";
 import { minimumSelectedRangeQueryInput, selectedRangeQueryInput } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -33,6 +33,7 @@ const trendRowSchema = z.object({
   avg_resting_hr: z.number().nullable(),
   latest_resting_hr: z.number().nullable(),
   stddev_resting_hr: z.number().nullable(),
+  healthStatus: z.array(healthStatusMetricSchema),
 });
 
 const dailyMetricRowSchema = z.object({
@@ -88,10 +89,6 @@ export function BodyPage() {
     ...selectedRangeQueryInput(days),
     endDate,
   });
-  const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({
-    ...selectedRangeQueryInput(days),
-    endDate,
-  });
   const insightsQuery = trpc.insights.compute.useQuery({
     ...minimumSelectedRangeQueryInput(days, 90),
     endDate,
@@ -120,21 +117,19 @@ export function BodyPage() {
 
   const healthStatusError =
     (trends.isError && trends.data == null ? trends.error : null) ??
-    (weightOverview.isError && weightOverview.data == null ? weightOverview.error : null) ??
-    (bodyRecomp.isError && bodyRecomp.data == null ? bodyRecomp.error : null);
+    (weightOverview.isError && weightOverview.data == null ? weightOverview.error : null);
 
   const healthMetrics = useMemo(() => {
     if (healthStatusError) return [];
 
-    return buildBodyHealthMetrics({
-      trendData,
-      weightData: smoothedWeightData,
-      recompData: bodyRecomp.data ?? [],
-      days,
-      endDate,
-      units,
-    });
-  }, [healthStatusError, trendData, smoothedWeightData, bodyRecomp.data, days, endDate, units]);
+    const restingHeartRate = trendData?.healthStatus.find(
+      (metric) => metric.metric === "resting_heart_rate",
+    );
+    return [
+      ...(restingHeartRate ? [restingHeartRate] : []),
+      ...(weightOverview.data?.healthStatus ?? []),
+    ];
+  }, [healthStatusError, trendData, weightOverview.data]);
 
   const bodyInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -153,7 +148,7 @@ export function BodyPage() {
   const hrvSectionError = getQueryError(hrvBaseline);
   const stressSectionError = getQueryError(stressData);
   const spo2SectionError = getQueryError(dailyMetrics);
-  const bodyRecompSectionError = getQueryError(bodyRecomp);
+  const bodyRecompSectionError = getQueryError(weightOverview);
   const insightsSectionError = getQueryError(insightsQuery);
 
   // SpO2/temp chart config
@@ -183,7 +178,9 @@ export function BodyPage() {
       ) : (
         <HealthStatusBar
           metrics={healthMetrics}
-          loading={trends.isLoading || weightOverview.isLoading || bodyRecomp.isLoading}
+          loading={trends.isLoading || weightOverview.isLoading}
+          formatters={{ trend_weight: (value) => units.formatWeight(value) }}
+          units={{ resting_heart_rate: "bpm", body_fat_percentage: "%" }}
         />
       )}
 
@@ -268,7 +265,10 @@ export function BodyPage() {
             {bodyRecompSectionError ? (
               <QueryStatePanel error={bodyRecompSectionError} height={250} />
             ) : (
-              <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
+              <BodyRecompositionChart
+                data={weightOverview.data?.recomposition ?? []}
+                loading={weightOverview.isLoading}
+              />
             )}
           </div>
         </div>

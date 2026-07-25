@@ -52,7 +52,7 @@ const hrvBaselineRowSchema = z.object({
 
 export type HrvBaselineRow = z.infer<typeof hrvBaselineRowSchema>;
 
-const trendsRowSchema = z.object({
+export const trendsRowSchema = z.object({
   avg_hrv: z.coerce.number().nullable(),
   avg_resting_hr: z.coerce.number().nullable(),
   avg_spo2: z.coerce.number().nullable(),

@@ -255,7 +255,36 @@ describe("dailyMetricsRouter", () => {
       ];
       const caller = makeCaller(rows);
       const result = await caller.trends({ days: 30, endDate: "2024-01-16" });
-      expect(result).toEqual(rows[0]);
+      expect(result).toEqual({
+        avg_hrv: 60,
+        avg_resting_hr: 54,
+        avg_spo2: 98,
+        avg_steps: 8000,
+        avg_skin_temp: 36.5,
+        stddev_hrv: 10.5,
+        stddev_resting_hr: 2.5,
+        stddev_spo2: 0.5,
+        stddev_skin_temp: 0.3,
+        latest_hrv: 62,
+        latest_resting_hr: 53,
+        latest_spo2: 98,
+        latest_steps: 9000,
+        latest_skin_temp: 36.6,
+        latest_date: "2024-01-16",
+        latest_steps_date: "2024-01-16",
+        healthStatus: expect.arrayContaining([
+          expect.objectContaining({
+            metric: "hrv",
+            intent: "higher",
+            statusToken: "moving_as_intended",
+          }),
+          expect.objectContaining({
+            metric: "resting_heart_rate",
+            intent: "lower",
+            statusToken: "moving_as_intended",
+          }),
+        ]),
+      });
     });
 
     it("coerces PostgreSQL string aggregates to numbers via Zod schema", async () => {
