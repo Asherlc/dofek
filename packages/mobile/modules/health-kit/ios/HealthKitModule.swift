@@ -26,9 +26,17 @@ private final class HealthKitModuleException: Exception {
     }
 }
 
+private struct HealthKitAnchoredObjects {
+    let added: [HKSample]
+    let deleted: [HKDeletedObject]
+}
+
 // swiftlint:disable:next type_body_length
 public class HealthKitModule: Module {
     private let healthStore = HKHealthStore()
+    private let anchoredQueryCoordinator = HealthKitAnchoredQueryCoordinator(
+        anchorStore: HealthKitAnchorStore(userDefaults: .standard)
+    )
     private let hasEverAuthorizedKey = "healthkit_has_ever_authorized"
     private var observerQueries: [HKObserverQuery] = []
     private let backgroundDeliveryCoordinator = HealthKitBackgroundDeliveryCoordinator()
@@ -558,14 +566,7 @@ public class HealthKitModule: Module {
             }
         }
 
-        AsyncFunction("getAnchor") { (typeIdentifier: String, promise: Promise) in
-            // Anchors are stored in UserDefaults for persistence across app launches
-            let key = "healthkit_anchor_\(typeIdentifier)"
-            let anchor = UserDefaults.standard.integer(forKey: key)
-            promise.resolve(anchor)
-        }
-
-        AsyncFunction("queryAnchoredSamples") { (typeIdentifier: String, anchorValue: Int, promise: Promise) in
+        AsyncFunction("queryAnchoredSamples") { (typeIdentifier: String, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
                 self.rejectPromise(
                     promise,
@@ -575,55 +576,73 @@ public class HealthKitModule: Module {
                 return
             }
 
-            // Reconstruct anchor from stored integer (simplified - real impl would use HKQueryAnchor)
-            let anchor: HKQueryAnchor? = anchorValue > 0 ? HKQueryAnchor(fromValue: anchorValue) : nil
+            Task {
+                do {
+                    let objects: HealthKitAnchoredObjects = try await self.anchoredQueryCoordinator.run(
+                        typeIdentifier: typeIdentifier
+                    ) { anchor in
+                        try await withCheckedThrowingContinuation { continuation in
+                            let query = HKAnchoredObjectQuery(
+                                type: sampleType,
+                                predicate: nil,
+                                anchor: anchor,
+                                limit: HKObjectQueryNoLimit
+                            ) { _, added, deleted, newAnchor, error in
+                                if let error {
+                                    continuation.resume(throwing: error)
+                                    return
+                                }
+                                continuation.resume(
+                                    returning: (
+                                        HealthKitAnchoredObjects(
+                                            added: added ?? [],
+                                            deleted: deleted ?? []
+                                        ),
+                                        newAnchor
+                                    )
+                                )
+                            }
+                            self.healthStore.execute(query)
+                        }
+                    }
 
-            let query = HKAnchoredObjectQuery(
-                type: sampleType, predicate: nil, anchor: anchor,
-                limit: HKObjectQueryNoLimit
-            ) { _, added, deleted, newAnchor, error in
-                if let error = error {
+                    let samples = (objects.added as? [HKQuantitySample])?.map { sample -> [String: Any] in
+                        let unit = HealthKitQueries.preferredUnit(for: sampleType)
+                        return [
+                            "type": typeIdentifier,
+                            "value": sample.quantity.doubleValue(for: unit),
+                            "unit": unit.unitString,
+                            "startDate": HealthKitQueries.formatDate(sample.startDate),
+                            "endDate": HealthKitQueries.formatDate(sample.endDate),
+                            "sourceName": sample.sourceRevision.source.name,
+                            "sourceBundle": sample.sourceRevision.source.bundleIdentifier,
+                            "uuid": sample.uuid.uuidString,
+                        ]
+                    } ?? []
+
+                    let deletedUUIDs = objects.deleted.map { $0.uuid.uuidString }
+
+                    promise.resolve([
+                        "samples": samples,
+                        "deletedUUIDs": deletedUUIDs,
+                    ] as [String: Any])
+                } catch let error as HealthKitAnchorStoreError {
+                    promise.reject(
+                        HealthKitModuleException(
+                            code: "ANCHOR_STATE_ERROR",
+                            reason: error.localizedDescription,
+                            cause: error
+                        )
+                    )
+                } catch {
                     self.rejectHealthKitError(
                         promise,
                         operation: "queryAnchoredSamples(\(typeIdentifier))",
                         fallbackCode: "QUERY_ERROR",
                         error: error
                     )
-                    return
                 }
-
-                let samples = (added as? [HKQuantitySample])?.map { sample -> [String: Any] in
-                    let unit = HealthKitQueries.preferredUnit(for: sampleType)
-                    return [
-                        "type": typeIdentifier,
-                        "value": sample.quantity.doubleValue(for: unit),
-                        "unit": unit.unitString,
-                        "startDate": HealthKitQueries.formatDate(sample.startDate),
-                        "endDate": HealthKitQueries.formatDate(sample.endDate),
-                        "sourceName": sample.sourceRevision.source.name,
-                        "sourceBundle": sample.sourceRevision.source.bundleIdentifier,
-                        "uuid": sample.uuid.uuidString,
-                    ]
-                } ?? []
-
-                let deletedUUIDs = deleted?.map { $0.uuid.uuidString } ?? []
-
-                // Store new anchor for next incremental query
-                if let newAnchor = newAnchor {
-                    let key = "healthkit_anchor_\(typeIdentifier)"
-                    // HKQueryAnchor doesn't expose its value directly, so we encode it
-                    if let encoded = try? NSKeyedArchiver.archivedData(withRootObject: newAnchor, requiringSecureCoding: true) {
-                        UserDefaults.standard.set(encoded, forKey: key)
-                    }
-                }
-
-                promise.resolve([
-                    "samples": samples,
-                    "deletedUUIDs": deletedUUIDs,
-                    "newAnchor": 0, // Opaque - use getAnchor() to retrieve
-                ] as [String: Any])
             }
-            self.healthStore.execute(query)
         }
 
         AsyncFunction("queryDailyStatistics") { (typeIdentifier: String, startDateStr: String, endDateStr: String, promise: Promise) in

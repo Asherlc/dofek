@@ -162,21 +162,13 @@ export async function deleteDietarySamples(syncIdentifiers: string[]): Promise<n
   return HealthKitModule.deleteDietarySamples(syncIdentifiers);
 }
 
-/** Get the anchor for incremental syncing of a given type */
-export async function getAnchor(typeIdentifier: string): Promise<number> {
-  return HealthKitModule.getAnchor(typeIdentifier);
-}
-
-/** Query samples added/deleted since the last anchor (for incremental sync) */
-export async function queryAnchoredSamples(
-  typeIdentifier: string,
-  anchor: number,
-): Promise<{
+/** Query samples added/deleted since the last successful query.
+ * The native module persists HealthKit's opaque query anchor per type. */
+export async function queryAnchoredSamples(typeIdentifier: string): Promise<{
   samples: HealthKitSample[];
   deletedUUIDs: string[];
-  newAnchor: number;
 }> {
-  return HealthKitModule.queryAnchoredSamples(typeIdentifier, anchor);
+  return HealthKitModule.queryAnchoredSamples(typeIdentifier);
 }
 
 /** Check if background delivery was previously enabled on this device */
