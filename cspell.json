@@ -54,6 +54,7 @@
     "pcall",
     "ASOF",
     "kafkajs",
+    "acks",
     "REDPANDA",
     "Redpanda",
     "redpanda",
