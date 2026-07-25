@@ -648,7 +648,11 @@ describe("SettingsScreen export flow", () => {
         })
         .mockResolvedValueOnce({
           ok: false,
-          json: () => Promise.resolve({}),
+          json: () =>
+            Promise.resolve({
+              error:
+                "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
+            }),
         }),
     );
 
@@ -660,7 +664,11 @@ describe("SettingsScreen export flow", () => {
     fireEvent.click(screen.getByText("Start Export"));
 
     await waitFor(() => {
-      expect(screen.getByText("Failed to start export")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
+        ),
+      ).toBeTruthy();
     });
   });
 

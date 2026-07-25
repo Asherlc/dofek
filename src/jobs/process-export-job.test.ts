@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ExportJobData } from "./queues.ts";
 
+process.env.JOB_FILES_DIR = "/app/job-files";
+
 const mockLoggerError = vi.fn();
 const mockLoggerWarn = vi.fn();
 vi.mock("../logger.ts", () => ({
@@ -34,7 +36,9 @@ vi.mock("../export-email.ts", () => ({
 }));
 
 const mockUnlink = vi.fn().mockResolvedValue(undefined);
+const mockMkdir = vi.fn().mockResolvedValue(undefined);
 vi.mock("node:fs/promises", () => ({
+  mkdir: (...args: unknown[]) => mockMkdir(...args),
   unlink: (...args: unknown[]) => mockUnlink(...args),
 }));
 
@@ -57,7 +61,6 @@ function createMockJob(overrides: Partial<ExportJobData> = {}): MockJob {
     data: {
       exportId: "export-1",
       userId: "user-1",
-      outputPath: "/app/job-files/dofek-export-abc.zip",
       ...overrides,
     },
     updateProgress: vi.fn().mockResolvedValue(undefined),
@@ -91,19 +94,23 @@ describe("processExportJob", () => {
     expect(mockGenerateExport).toHaveBeenCalledWith(
       mockDb,
       "user-1",
-      "/app/job-files/dofek-export-abc.zip",
+      "/app/job-files/dofek-export-export-1.zip",
       expect.any(Function),
     );
+    expect(mockMkdir).toHaveBeenCalledWith("/app/job-files", { recursive: true });
   });
 
   it("uploads the export to R2, marks completion, and emails the user", async () => {
     const job = createMockJob();
     await processExportJob(job, mockDb);
 
-    expect(mockUploadExportFileToR2).toHaveBeenCalledWith("/app/job-files/dofek-export-abc.zip", {
-      exportId: "export-1",
-      userId: "user-1",
-    });
+    expect(mockUploadExportFileToR2).toHaveBeenCalledWith(
+      "/app/job-files/dofek-export-export-1.zip",
+      {
+        exportId: "export-1",
+        userId: "user-1",
+      },
+    );
     expect(mockCreateSignedExportDownloadUrl).toHaveBeenCalledWith(
       "exports/user-1/export-1/dofek-export.zip",
     );
@@ -112,7 +119,7 @@ describe("processExportJob", () => {
       expiresAt: new Date("2026-05-03T12:00:00.000Z"),
       toEmail: "user@example.com",
     });
-    expect(mockUnlink).toHaveBeenCalledWith("/app/job-files/dofek-export-abc.zip");
+    expect(mockUnlink).toHaveBeenCalledWith("/app/job-files/dofek-export-export-1.zip");
     expect(vi.mocked(mockDb.execute)).toHaveBeenCalledTimes(3);
   });
 
@@ -126,6 +133,20 @@ describe("processExportJob", () => {
     const job = createMockJob();
 
     await expect(processExportJob(job, mockDb)).rejects.toThrow("User email is required");
+    expect(mockGenerateExport).not.toHaveBeenCalled();
+    expect(vi.mocked(mockDb.execute)).toHaveBeenCalledTimes(3);
+  });
+
+  it("fails with the delivery precondition when the export row is missing", async () => {
+    vi.mocked(mockDb.execute).mockReset();
+    vi.mocked(mockDb.execute)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    await expect(processExportJob(createMockJob(), mockDb)).rejects.toThrow(
+      "User email is required to deliver data export",
+    );
     expect(mockGenerateExport).not.toHaveBeenCalled();
     expect(vi.mocked(mockDb.execute)).toHaveBeenCalledTimes(3);
   });
@@ -201,7 +222,7 @@ describe("processExportJob", () => {
 
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       "Failed to delete local export file %s: %s",
-      "/app/job-files/dofek-export-abc.zip",
+      "/app/job-files/dofek-export-export-1.zip",
       expect.any(Error),
     );
   });
