@@ -99,6 +99,15 @@ describe("initBackgroundHealthKitSync", () => {
     expect(typeof mockAddSampleUpdateListener.mock.calls[0][0]).toBe("function");
   });
 
+  it("registers the sample listener before starting native observers", async () => {
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+
+    expect(mockAddSampleUpdateListener.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSetupBackgroundObservers.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
   it("runs an immediate catch-up sync when initialized", async () => {
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);
