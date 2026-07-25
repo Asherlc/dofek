@@ -106,6 +106,17 @@ export function createActivityRecorder(
     return latest?.speed ?? null;
   }
 
+  async function stopPartialLocationUpdates(phase: "start" | "resume"): Promise<void> {
+    try {
+      await locationAdapter.stopUpdates();
+    } catch (stopError) {
+      captureException(stopError, {
+        source: "activity-recording.stopUpdates",
+        phase,
+      });
+    }
+  }
+
   return {
     getSnapshot(): RecordingSnapshot {
       return {
@@ -132,20 +143,35 @@ export function createActivityRecorder(
 
       activityType = type;
       samples = [];
-      startTime = Date.now();
       stoppedAt = null;
       totalPausedMs = 0;
       pauseStart = null;
       error = null;
+
+      try {
+        await locationAdapter.startUpdates((sample) => {
+          if (state === "recording") {
+            samples.push(sample);
+            notify();
+          }
+        });
+      } catch (startError) {
+        await stopPartialLocationUpdates("start");
+        startTime = null;
+        state = "error";
+        error =
+          startError instanceof Error ? startError.message : "Failed to start location updates";
+        captureException(startError, {
+          source: "activity-recording.startUpdates",
+          phase: "start",
+        });
+        notify();
+        throw startError;
+      }
+
+      startTime = Date.now();
       state = "recording";
       notify();
-
-      await locationAdapter.startUpdates((sample) => {
-        if (state === "recording") {
-          samples.push(sample);
-          notify();
-        }
-      });
 
       // Ensure sensor capture is active (best-effort, non-blocking)
       sensorService?.ensureRecording().catch((error: unknown) => {
@@ -164,19 +190,33 @@ export function createActivityRecorder(
 
     async resume() {
       if (state !== "paused") return;
+
+      try {
+        await locationAdapter.startUpdates((sample) => {
+          if (state === "recording") {
+            samples.push(sample);
+            notify();
+          }
+        });
+      } catch (resumeError) {
+        await stopPartialLocationUpdates("resume");
+        error =
+          resumeError instanceof Error ? resumeError.message : "Failed to resume location updates";
+        captureException(resumeError, {
+          source: "activity-recording.startUpdates",
+          phase: "resume",
+        });
+        notify();
+        throw resumeError;
+      }
+
       if (pauseStart !== null) {
         totalPausedMs += Date.now() - pauseStart;
         pauseStart = null;
       }
+      error = null;
       state = "recording";
       notify();
-
-      await locationAdapter.startUpdates((sample) => {
-        if (state === "recording") {
-          samples.push(sample);
-          notify();
-        }
-      });
     },
 
     stop() {

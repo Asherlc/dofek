@@ -60,14 +60,14 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-node-pnpm
-      - name: Verify dependencies match Expo SDK
-        run: cd packages/mobile && pnpm expo install --check
       - uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
             EXPO_PUBLIC_OTEL_HEADERS
+      - name: Verify dependencies match Expo SDK
+        run: cd packages/mobile && pnpm expo install --check
       - name: Export iOS bundle
         run: cd packages/mobile && pnpm expo export --platform ios --clear
       - name: Validate OTA export path
@@ -168,6 +168,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: EXPO_PUBLIC_SENTRY_DSN
       - uses: ./.github/actions/setup-ccache
         with:
           cache-key-prefix: ccache-watchos

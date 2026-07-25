@@ -16047,3 +16047,77 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   prune filters
   ([Docker pruning guide](https://docs.docker.com/engine/manage-resources/pruning/));
   preserve other workspaces' running containers and named volumes.
+## 2026-07-24 — New Brace Expansion Advisory Broke PR CI
+
+- **Status:** Fixed on PR #1917; replacement CI pending.
+- **Symptoms:** `Test / Dependency Audit`, `Test / Spell Check`,
+  `Test / License Check`, and `Test / Unit Tests` failed in sequence after the
+  logger change triggered a fresh dependency matrix.
+- **User impact:** No production users were affected. PR #1917 and dependent
+  pull requests were blocked from merging.
+- **Evidence:** The audit command was
+  `pnpm audit --prod --audit-level=high --ignore-registry-errors`; its first
+  fatal finding was `brace-expansion: DoS via unbounded expansion length
+  causing an out-of-memory process crash`. GitHub's
+  [GHSA-mh99-v99m-4gvg advisory](https://github.com/advisories/GHSA-mh99-v99m-4gvg)
+  marks every release through 5.0.7 vulnerable and identifies 5.0.8 as the
+  first patched release. Spell Check first reported
+  `src/logger.test.ts:10:21 - Unknown word (Logform)`. After the security
+  override, License Check first failed with
+  `TypeError: expand is not a function` in Minimatch 3.1.5, and the coverage
+  unit job first failed with
+  `TypeError: (0 , brace_expansion_1.default) is not a function` in Minimatch
+  9.0.9.
+- **Root cause:** The new advisory made the existing 1.x, 2.x, and 5.0.7 brace
+  expansion resolutions fail the production audit. A blanket upgrade then
+  exposed legacy consumers that expected the package's former callable default
+  export. The unmaintained `license-checker@25.0.1`, older Archiver, and older
+  Minimatch/Test Exclude dependency paths were incompatible with the patched
+  named-export API.
+- **Fix / mitigation:** Pinned the canonical graph to
+  `brace-expansion@5.0.8`, `minimatch@10.2.5`, `test-exclude@8.0.0`, and
+  `archiver@8.0.0`; migrated all ZIP creation to Archiver 8's documented
+  `new ZipArchive(options)` API; updated its types; and replaced the
+  unmaintained license checker with maintained
+  [`license-checker-rseidelsohn@5.0.1`](https://github.com/RSeidelsohn/license-checker-rseidelsohn).
+  Added a scoped dictionary directive for Winston's `Logform` namespace. No
+  audit ignore, retry, timeout, or compatibility fallback was added.
+- **Validation:** Recursive dependency inspection resolves exactly one version
+  of each affected package. The exact CI unit coverage and license commands,
+  the production audit, 53 focused archive tests, 16 logger tests, the main
+  Zepp ZAB build, mobile tests and typecheck, Expo dependency validation, full
+  lint, and root/server/web typechecks pass.
+- **Remaining risk / follow-up:** Hosted CI must confirm the integration,
+  mutation, E2E, native, and coverage aggregation jobs. Keep dependency-audit
+  failures root-cause-first because newly published advisories can invalidate a
+  previously green lockfile without a repository change.
+
+## 2026-07-24 — Local Validation Exhausted Docker Disk
+
+- **Status:** Recovered with workspace-scoped cleanup and unused-image pruning.
+- **Symptoms:** Full lint's dbt compilation failed while connecting to the
+  workspace ClickHouse service. Recreating the services initially left
+  Postgres unhealthy.
+- **User impact:** No production users were affected. Local validation of PR
+  #1917 was temporarily blocked.
+- **Evidence:** ClickHouse's first fatal line reported
+  `errno: 28, strerror: No space left on device` with zero bytes available at
+  `/var/lib/clickhouse`. Postgres then failed `initdb` with
+  `could not create directory "/home/postgres/pgdata/data/pg_wal": No space
+  left on device`.
+- **Root cause:** Disposable Docker data filled the local Docker VM filesystem;
+  the issue-1776 ClickHouse volume encountered the limit during dbt
+  compilation.
+- **Fix / mitigation:** Removed only issue-1776 Compose containers, networks,
+  and named volumes with `down --remove-orphans --volumes`, pruned the empty
+  builder cache, then pruned unused rebuildable images. Other workspaces'
+  running containers and named volumes were preserved. After another completed
+  workspace removed its own ClickHouse volume, the bounded retry recreated
+  healthy Postgres, ClickHouse, and Redis services.
+- **Validation:** `pnpm compose -- up -d --wait db clickhouse redis` reported
+  all three services healthy, and the unchanged full lint command then passed,
+  including SQLFluff/dbt compilation.
+- **Remaining risk / follow-up:** The Docker VM still contains many
+  workspace-owned volumes. Archive hooks should continue removing only their
+  own Compose volumes so concurrent workspaces do not accumulate disposable
+  database state.
