@@ -16426,6 +16426,82 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   HealthKit background deliveries. Require a native simulator compile plus
   hosted Swift, mutation, mobile, and iOS build gates; physical-device
   observation remains the final runtime verification.
+## 2026-07-24 — Image Vulnerability Scan Could Not Reach Docker Hub
+
+- **Status:** External registry failure identified; replacement CI pending on
+  PR #1940.
+- **Symptoms:** `Test / Image Vulnerability Scan` failed, which also failed the
+  aggregate `Test / Security & Dependencies` gate.
+- **User impact:** No production users were affected. PR #1940 was blocked from
+  merging even though no vulnerability result was produced.
+- **Evidence:** The exact failing command was
+  `docker pull "$GRYPE_IMAGE"`. The first fatal line was
+  `Error response from daemon: Get "https://registry-1.docker.io/v2/":
+  net/http: request canceled while waiting for connection`; all five attempts
+  timed out before the final explicit pull failure.
+- **Root cause:** The hosted runner could not establish a timely connection to
+  Docker Hub. The application image built successfully, and Grype never ran, so
+  this was not a detected application-image vulnerability.
+- **Fix / mitigation:** Scheduled replacement CI on a fresh hosted runner. No
+  scan threshold, timeout, retry count, or vulnerability policy was changed.
+- **Validation:** The replacement run must pull the pinned Grype image and
+  complete the critical-vulnerability scan before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly cannot pull
+  the pinned scanner image, investigate an approved registry mirror using the
+  captured Docker Hub evidence before changing workflow behavior.
+
+## 2026-07-24 — Integration Fixtures Could Not Reach Docker Hub
+
+- **Status:** External registry failure identified; replacement CI pending on
+  PR #1937.
+- **Symptoms:** `Test / Integration Tests (1/4)` failed while its aggregate
+  `Test / Unit & Integration Tests` gate reported the required-job failure.
+- **User impact:** No production users were affected. PR #1937 was blocked from
+  merging even though 311 integration tests passed before fixture setup failed.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=1/4`. The
+  first fatal line was `Error: (HTTP code 500) server error - Get
+  "https://registry-1.docker.io/v2/": context deadline exceeded`; the later
+  `Cannot read properties of undefined (reading 'cleanup')` was a secondary
+  teardown error after fixture setup did not return a context.
+- **Root cause:** Testcontainers could not reach Docker Hub while starting the
+  fixtures for `metric-stream-location-point-migration.integration.test.ts`
+  and `seed-dev-db.integration.test.ts`. The source tests themselves did not
+  fail an assertion.
+- **Fix / mitigation:** Run replacement CI on a fresh hosted runner after
+  merging the current base. No test, timeout, retry, or application behavior is
+  being changed.
+- **Validation:** The replacement shard must start both fixtures and pass the
+  full shard before merge.
+- **Remaining risk / follow-up:** If the registry failure repeats on an
+  independent runner, investigate an approved registry mirror from the
+  captured evidence before changing workflow behavior.
+
+## 2026-07-24 — Provider Webhook Processing Failures Were Acknowledged
+
+- **Status:** Fixed locally; hosted CI pending.
+- **Symptoms:** The provider webhook route returned `200 OK` after database
+  lookup, targeted processing, queue-enqueue, and unexpected request failures.
+- **User impact:** Providers treated failed deliveries as accepted, so events
+  could be permanently lost instead of retried.
+- **Evidence:** The regression tests first failed with
+  `expected 200 to be 503` for database, BullMQ enqueue, and top-level request
+  failures.
+- **Root cause:** Per-event and top-level exception handlers logged failures
+  but unconditionally fell through to, or directly sent, a successful
+  response.
+- **Fix / mitigation:** Return `503 Service Unavailable` when any actionable
+  event is neither processed nor durably queued, continue attempting the rest
+  of a batch, and report unexpected failures to Sentry with provider and event
+  context. Invalid signatures and payloads remain non-retryable `4xx`
+  responses. RFC 9110 defines `503` for a temporarily unavailable service:
+  <https://www.rfc-editor.org/rfc/rfc9110.html#name-503-service-unavailable>.
+- **Validation:** All 37 webhook route tests pass, including executable
+  regressions for database failure, enqueue failure, continued batch
+  processing, Sentry context, and top-level failure.
+- **Remaining risk / follow-up:** Hosted CI must confirm the full server test,
+  typecheck, lint, and mutation suites before merge.
+
 ## 2026-07-24 — Quarantine PR Failed Spell Check on KafkaJS API Name
 
 - **Status:** Fixed on PR #1933; replacement CI pending.
