@@ -7,6 +7,7 @@ const testModeSchema = z.enum(["all", "changed", "integration"]);
 const testEnvironmentSchema = z.object({
   CLICKHOUSE_URL: z.string().min(1),
   DATABASE_URL: z.string().min(1),
+  REDPANDA_BROKERS: z.string().min(1),
   REDIS_URL: z.string().min(1),
 });
 
