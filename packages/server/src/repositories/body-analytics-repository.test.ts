@@ -267,7 +267,7 @@ describe("BodyAnalyticsRepository", () => {
     await expect(repo.getSmoothedWeight(90, "2024-06-01")).rejects.toThrow(
       "temporary ClickHouse failure",
     );
-    const result = await repo.getSmoothedWeight(90, "2024-06-01");
+    const result = await repo.getSmoothedWeight(null, "2024-06-01");
 
     expect(query).toHaveBeenCalledTimes(2);
     expect(result).toHaveLength(1);
@@ -337,7 +337,7 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-03", weight_kg: "79" },
       ]);
 
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
 
       expect(result).toHaveLength(3);
       expect(result[0]?.rawWeight).toBe(80);
@@ -345,6 +345,27 @@ describe("BodyAnalyticsRepository", () => {
       // 0.1 * 81 + 0.9 * 80 = 80.1
       expect(result[1]?.smoothedWeight).toBe(80.1);
       expect(result[2]?.smoothedWeight).toBe(80);
+    });
+
+    it("seeds the selected range from the full accessible weight history", async () => {
+      const rows = Array.from({ length: 10 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: index === 0 ? "100" : "110",
+      }));
+      const { repo, query } = makeRepository(rows);
+
+      const result = await repo.getSmoothedWeight(7, "2024-01-10");
+
+      expect(result[0]).toMatchObject({
+        date: "2024-01-04",
+        smoothedWeight: 102.7,
+      });
+      expect(result.at(-1)?.smoothedWeight).toBe(106.1);
+      expect(query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.not.stringContaining("subtractDays"),
+        expect.not.objectContaining({ days: expect.anything() }),
+      );
     });
 
     it("computes weekly change when enough data points exist", async () => {
@@ -355,7 +376,7 @@ describe("BodyAnalyticsRepository", () => {
       }));
 
       const { repo } = makeRepository(rows);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
 
       expect(result).toHaveLength(10);
       // First 7 entries should have null weeklyChange
@@ -373,7 +394,7 @@ describe("BodyAnalyticsRepository", () => {
         weight_kg: String(80 + index * 0.5),
       }));
       const { repo } = makeRepository(rows);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       // Index 6 (7th entry) should still have null weeklyChange
       expect(result[6]?.weeklyChange).toBeNull();
       // Index 7 (8th entry) should have non-null weeklyChange
@@ -385,7 +406,7 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-01", weight_kg: "80" },
         { date: "2024-01-02", weight_kg: "81" },
       ]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       expect(result[0]?.interpolated).toBe(false);
       expect(result[1]?.interpolated).toBe(false);
       expect(result[0]?.rawWeight).not.toBeNull();
@@ -397,7 +418,7 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-01", weight_kg: "80" },
         { date: "2024-01-03", weight_kg: "82" },
       ]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       // Should have 3 rows: Jan 1 (real), Jan 2 (interpolated), Jan 3 (real)
       expect(result).toHaveLength(3);
       expect(result[0]?.interpolated).toBe(false);
@@ -426,7 +447,7 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-03", weight_kg: "82" },
       ]);
 
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
 
       expect(result.map((row) => row.rawWeight)).toEqual([80, null, 82]);
     });
@@ -436,7 +457,7 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-01", weight_kg: "80" },
         { date: "2024-01-04", weight_kg: "83" },
       ]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       // 4 days: 80, 81(interpolated), 82(interpolated), 83
       expect(result).toHaveLength(4);
       // Smoothed values should progress gradually (EWMA with alpha=0.1)
@@ -451,7 +472,7 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-02", weight_kg: "80.456" },
       ]);
 
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       expect(result[0]?.rawWeight).toBe(80.1);
       expect(result[1]?.rawWeight).toBe(80.5);
     });
@@ -830,7 +851,7 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-01", weight_kg: "100" },
         { date: "2024-01-02", weight_kg: "110" },
       ]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       // alpha=0.1: smoothed = 0.1 * 110 + 0.9 * 100 = 101
       expect(result[1]?.smoothedWeight).toBe(101);
     });
@@ -845,7 +866,7 @@ describe("BodyAnalyticsRepository", () => {
 
     it("rounds rawWeight to 1 decimal place", async () => {
       const { repo } = makeRepository([{ date: "2024-01-01", weight_kg: "80.1234" }]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       expect(result[0]?.rawWeight).toBe(80.1);
     });
 
@@ -854,7 +875,7 @@ describe("BodyAnalyticsRepository", () => {
         { date: "2024-01-01", weight_kg: "80.1234" },
         { date: "2024-01-02", weight_kg: "81.5678" },
       ]);
-      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+      const result = await repo.getSmoothedWeight(null, "2024-06-01");
       expect(result[0]?.smoothedWeight).toBe(80.1);
       expect(result[1]?.smoothedWeight).toBe(80.3);
     });

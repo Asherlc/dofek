@@ -114,6 +114,14 @@ describe("SmoothedWeightChart", () => {
     expect(screen.getByTestId("echarts-mock")).toBeDefined();
   });
 
+  it("shows the latest Trend Weight and scale reading", () => {
+    render(<SmoothedWeightChart data={sampleData} />);
+
+    expect(screen.getByText("Trend Weight")).toBeDefined();
+    expect(screen.getByText("83.9 kg")).toBeDefined();
+    expect(screen.getByText("Scale: 83.4 kg")).toBeDefined();
+  });
+
   it("renders loading state", () => {
     render(<SmoothedWeightChart data={[]} loading={true} />);
     expect(screen.getByTestId("loading-skeleton")).toBeDefined();
@@ -252,7 +260,7 @@ describe("SmoothedWeightChart", () => {
     const series = z
       .array(z.object({ name: z.string() }).passthrough())
       .parse(capturedOption?.series);
-    const trendSeries = series.find((s) => s.name === "Trend");
+    const trendSeries = series.find((s) => s.name === "Trend Weight");
     expect(trendSeries).toBeDefined();
     expect("markLine" in (trendSeries ?? {})).toBe(true);
   });
