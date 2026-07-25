@@ -16160,3 +16160,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   mutation shards. When adding mutation-covered side effects, pair executable
   integration coverage with direct unit assertions for the side effect and
   its no-write branch.
+
+## 2026-07-24 — Cache Helper Test Failed NodeNext Typecheck
+
+- **Status:** Fixed on PR #1923; replacement CI pending.
+- **Symptoms:** The root and `@dofek/heart-rate-variability` typecheck jobs
+  failed after the cache helper unit test was added.
+- **User impact:** No production users were affected. PR #1923 remained
+  blocked from merging.
+- **Evidence:** Both jobs reported the first compiler error
+  `src/lib/cache.test.ts(7,8): error TS2835: Relative import paths need
+  explicit file extensions in ECMAScript imports`.
+- **Root cause:** The new test imported `./cache` without the `.js` extension
+  required by the repository's NodeNext module resolution.
+- **Fix / mitigation:** Changed the test import to the canonical
+  `./cache.js` specifier. No compiler setting or typecheck scope changed.
+- **Validation:** Root and `@dofek/heart-rate-variability` typechecks pass
+  locally, as do the 15 cache tests, Biome, and `git diff --check`.
+- **Remaining risk / follow-up:** Hosted CI must confirm the replacement
+  typecheck matrix. New ESM test imports should follow the same explicit
+  extension convention as production modules.

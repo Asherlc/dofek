@@ -4,7 +4,7 @@ import {
   invalidateAllUserQueries,
   invalidateUserQueryDomains,
   queryCache,
-} from "./cache";
+} from "./cache.js";
 
 const TTL_MS = 60_000;
 
