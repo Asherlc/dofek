@@ -5,61 +5,25 @@ import {
   formatNumber,
 } from "@dofek/format/format";
 import { useCountUp } from "../hooks/useCountUp.ts";
-
-interface HealthMetric {
-  label: string;
-  value: number | null | undefined;
-  avg: number | null | undefined;
-  stddev: number | null | undefined;
-  unit?: string;
-  formatValue?: FormattedMeasurementFormatter;
-  /** Whether lower is better (e.g., resting HR) */
-  lowerBetter?: boolean;
-}
+import type { HealthMetricKey, HealthStatusMetric } from "../lib/healthStatus.ts";
 
 interface HealthStatusBarProps {
-  metrics: HealthMetric[];
+  metrics: HealthStatusMetric[];
   loading?: boolean;
+  formatters?: Partial<Record<HealthMetricKey, FormattedMeasurementFormatter>>;
+  units?: Partial<Record<HealthMetricKey, string>>;
 }
 
-function getStatus(
-  value: number | null | undefined,
-  avg: number | null | undefined,
-  stddev: number | null | undefined,
-  lowerBetter?: boolean,
-): "green" | "yellow" | "red" | "unknown" {
-  if (value == null || avg == null || stddev == null || stddev === 0) return "unknown";
-  const rawZScore = (value - avg) / stddev;
-
-  // When we know the direction, deviations in the "good" direction stay green
-  if (lowerBetter !== undefined) {
-    const isBadDirection = lowerBetter ? rawZScore > 0 : rawZScore < 0;
-    if (!isBadDirection) return "green";
-  }
-
-  const absZScore = Math.abs(rawZScore);
-  if (absZScore < 1) return "green";
-  if (absZScore < 2) return "yellow";
-  return "red";
-}
-
-const statusColors = {
-  green: "bg-emerald-500",
-  yellow: "bg-amber-500",
-  red: "bg-red-500",
-  unknown: "bg-dim",
+const statusColors: Record<HealthStatusMetric["statusColor"], string> = {
+  positive: "bg-emerald-500",
+  warning: "bg-amber-500",
+  danger: "bg-red-500",
+  muted: "bg-dim",
 };
 
-const statusText = {
-  green: "Normal",
-  yellow: "Elevated",
-  red: "Abnormal",
-  unknown: "—",
-};
-
-function MetricValue({ value }: { value: number | null | undefined }) {
+function MetricValue({ value }: { value: number | null }) {
   const decimals = value != null && !Number.isInteger(value) ? 1 : 0;
-  const display = useCountUp(value ?? null, 600, decimals);
+  const display = useCountUp(value, 600, decimals);
 
   if (value == null) {
     return <span className="text-dim">—</span>;
@@ -98,32 +62,43 @@ function renderMeasurementParts(display: FormattedMeasurement) {
   ));
 }
 
-function MetricDisplay({ metric }: { metric: HealthMetric }) {
-  if (metric.formatValue) {
-    const display = metric.formatValue(metric.value);
-
-    return <>{renderMeasurementParts(display)}</>;
+function MetricDisplay({
+  metric,
+  formatter,
+  unit,
+}: {
+  metric: HealthStatusMetric;
+  formatter?: FormattedMeasurementFormatter;
+  unit?: string;
+}) {
+  if (formatter) {
+    return <>{renderMeasurementParts(formatter(metric.value))}</>;
   }
 
   return (
     <>
       <MetricValue value={metric.value} />
-      {metric.value != null && metric.unit && (
-        <span className="ml-1 text-xs font-normal text-subtle">{metric.unit}</span>
+      {metric.value != null && unit && (
+        <span className="ml-1 text-xs font-normal text-subtle">{unit}</span>
       )}
     </>
   );
 }
 
-function formatAverage(metric: HealthMetric): string {
-  if (metric.avg == null) return "";
-  if (!metric.formatValue) return formatNumber(Number(metric.avg));
-
-  const display = metric.formatValue(metric.avg);
-  return display.text;
+function formatBaseline(
+  metric: HealthStatusMetric,
+  formatter?: FormattedMeasurementFormatter,
+): string {
+  if (metric.baseline == null) return "";
+  return formatter ? formatter(metric.baseline).text : formatNumber(metric.baseline);
 }
 
-export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
+export function HealthStatusBar({
+  metrics,
+  loading,
+  formatters = {},
+  units = {},
+}: HealthStatusBarProps) {
   if (loading) {
     return (
       <div className="flex gap-3">
@@ -134,27 +109,36 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
     );
   }
 
+  if (metrics.length === 0) {
+    return (
+      <output className="card block p-4 text-sm text-muted">
+        No health status data for this period.
+      </output>
+    );
+  }
+
   return (
     <div className="flex gap-3 overflow-x-auto">
       {metrics.map((metric, index) => {
-        const status = getStatus(metric.value, metric.avg, metric.stddev, metric.lowerBetter);
+        const formatter = formatters[metric.metric];
         return (
           <div
-            key={metric.label}
+            key={metric.metric}
             className="flex-1 min-w-[120px] card card-hover p-3 stagger-fade-in"
             style={{ animationDelay: `${index * 80}ms` }}
+            title={metric.explanation}
           >
             <div className="flex items-center gap-2 mb-1">
-              <div className={`w-2 h-2 rounded-full ${statusColors[status]}`} />
+              <div className={`w-2 h-2 rounded-full ${statusColors[metric.statusColor]}`} />
               <span className="text-xs text-muted uppercase tracking-wider">{metric.label}</span>
             </div>
             <div className="text-lg font-semibold font-mono tabular-nums">
-              <MetricDisplay metric={metric} />
+              <MetricDisplay metric={metric} formatter={formatter} unit={units[metric.metric]} />
             </div>
             <div className="text-[10px] text-subtle">
-              {status !== "unknown" && metric.avg != null
-                ? `avg ${formatAverage(metric)} · ${statusText[status]}`
-                : ""}
+              {metric.baseline != null
+                ? `baseline ${formatBaseline(metric, formatter)} · ${metric.statusLabel}`
+                : metric.statusLabel}
             </div>
           </div>
         );

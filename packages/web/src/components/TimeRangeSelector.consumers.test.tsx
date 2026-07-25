@@ -32,10 +32,6 @@ vi.mock("../lib/unitContext.ts", () => ({
   }),
 }));
 
-vi.mock("../lib/bodyHealthMetrics.ts", () => ({
-  buildBodyHealthMetrics: () => [],
-}));
-
 vi.mock("./AddJournalEntryModal.tsx", () => ({
   AddJournalEntryModal: () => <div data-testid="add-journal-entry-modal" />,
 }));
@@ -121,6 +117,7 @@ vi.mock("../lib/trpc.ts", () => {
     avg_resting_hr: null,
     latest_resting_hr: null,
     stddev_resting_hr: null,
+    healthStatus: [],
   };
 
   return {
@@ -136,6 +133,8 @@ vi.mock("../lib/trpc.ts", () => {
         weightOverview: recordQuery("bodyAnalytics.weightOverview", {
           smoothedWeight: [],
           prediction: null,
+          recomposition: [],
+          healthStatus: [],
         }),
       },
       correlation: {
@@ -237,7 +236,6 @@ describe("TimeRangeSelector consumers", () => {
       { name: "dailyMetrics.list", input: { days: 7, endDate: "2026-07-08" } },
       { name: "dailyMetrics.hrvBaseline", input: { days: 7, endDate: "2026-07-08" } },
       { name: "stress.scores", input: { days: 7, endDate: "2026-07-08" } },
-      { name: "bodyAnalytics.recomposition", input: { days: 7, endDate: "2026-07-08" } },
       { name: "bodyAnalytics.weightOverview", input: { days: 7, endDate: "2026-07-08" } },
       { name: "insights.compute", input: { days: 90, endDate: "2026-07-08" } },
     ]);
@@ -251,7 +249,6 @@ describe("TimeRangeSelector consumers", () => {
       { name: "dailyMetrics.list", input: { days: null, endDate: "2026-07-08" } },
       { name: "dailyMetrics.hrvBaseline", input: { days: null, endDate: "2026-07-08" } },
       { name: "stress.scores", input: { days: null, endDate: "2026-07-08" } },
-      { name: "bodyAnalytics.recomposition", input: { days: null, endDate: "2026-07-08" } },
       { name: "bodyAnalytics.weightOverview", input: { days: null, endDate: "2026-07-08" } },
       { name: "insights.compute", input: { days: null, endDate: "2026-07-08" } },
     ]);

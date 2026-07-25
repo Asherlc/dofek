@@ -1,24 +1,33 @@
-import { formatCaloriesMeasurement, formatHRVMeasurement } from "@dofek/format/format";
-import { UnitConverter } from "@dofek/format/units";
+import { formatHRVMeasurement } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { HealthStatusMetric } from "../lib/healthStatus";
 import { HealthStatusBar } from "./HealthStatusBar";
 
-const imperialUnits = new UnitConverter("imperial");
+function hrvMetric(overrides: Partial<HealthStatusMetric> = {}): HealthStatusMetric {
+  return {
+    metric: "hrv",
+    label: "Heart Rate Variability (HRV)",
+    value: 65,
+    baseline: 60,
+    sampleDeviation: 8,
+    deviation: 0.625,
+    direction: "above",
+    intent: "higher",
+    statusToken: "moving_as_intended",
+    statusColor: "positive",
+    statusLabel: "Moving as intended",
+    explanation: "Heart Rate Variability (HRV) is above your baseline.",
+    ...overrides,
+  };
+}
 
 const meta = {
   title: "Components/HealthStatusBar",
   component: HealthStatusBar,
   tags: ["autodocs"],
   args: {
-    metrics: [
-      {
-        label: "Heart Rate Variability (HRV)",
-        value: 65,
-        avg: 60,
-        stddev: 8,
-        unit: "ms",
-      },
-    ],
+    metrics: [hrvMetric()],
+    formatters: { hrv: formatHRVMeasurement },
   },
 } satisfies Meta<typeof HealthStatusBar>;
 
@@ -31,13 +40,15 @@ export const Success: Story = {};
 export const Warning: Story = {
   args: {
     metrics: [
-      {
-        label: "Heart Rate Variability (HRV)",
+      hrvMetric({
         value: 48,
-        avg: 60,
-        stddev: 8,
-        unit: "ms",
-      },
+        deviation: -1.5,
+        direction: "below",
+        statusToken: "notable_deviation",
+        statusColor: "warning",
+        statusLabel: "Notably below baseline",
+        explanation: "Heart Rate Variability (HRV) is below your usual range.",
+      }),
     ],
   },
 };
@@ -45,13 +56,15 @@ export const Warning: Story = {
 export const Destructive: Story = {
   args: {
     metrics: [
-      {
-        label: "Heart Rate Variability (HRV)",
+      hrvMetric({
         value: 38,
-        avg: 60,
-        stddev: 8,
-        unit: "ms",
-      },
+        deviation: -2.75,
+        direction: "below",
+        statusToken: "far_from_baseline",
+        statusColor: "danger",
+        statusLabel: "Far below baseline",
+        explanation: "Heart Rate Variability (HRV) is well below your usual range.",
+      }),
     ],
   },
 };
@@ -59,41 +72,15 @@ export const Destructive: Story = {
 export const Unknown: Story = {
   args: {
     metrics: [
-      {
-        label: "Heart Rate Variability (HRV)",
+      hrvMetric({
         value: null,
-        avg: 60,
-        stddev: 8,
-        unit: "ms",
-      },
-    ],
-  },
-};
-
-export const FormattedUnits: Story = {
-  args: {
-    metrics: [
-      {
-        label: "Heart Rate Variability (HRV)",
-        value: 57,
-        avg: 51,
-        stddev: 8,
-        formatValue: formatHRVMeasurement,
-      },
-      {
-        label: "Active Energy",
-        value: 302,
-        avg: null,
-        stddev: null,
-        formatValue: formatCaloriesMeasurement,
-      },
-      {
-        label: "Skin Temp",
-        value: 34.4,
-        avg: 34.1,
-        stddev: 0.5,
-        formatValue: (value) => imperialUnits.formatTemperature(value),
-      },
+        deviation: null,
+        direction: "unknown",
+        statusToken: "insufficient_data",
+        statusColor: "muted",
+        statusLabel: "Not enough data",
+        explanation: "Not enough varied data yet to compare this value with your usual range.",
+      }),
     ],
   },
 };

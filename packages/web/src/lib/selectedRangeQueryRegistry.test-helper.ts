@@ -5,7 +5,6 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
     "dailyMetrics.list",
     "dailyMetrics.hrvBaseline",
     "stress.scores",
-    "bodyAnalytics.recomposition",
     "bodyAnalytics.weightOverview",
     "insights.compute",
   ],
