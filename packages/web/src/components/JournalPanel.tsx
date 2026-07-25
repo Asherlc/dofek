@@ -24,6 +24,30 @@ const CATEGORY_ORDER = ["wellness", "activity", "substance", "nutrition", "custo
 
 type Tab = "log" | "trends";
 
+function JournalQueryError({
+  error,
+  height,
+  label,
+  refetch,
+  retrying,
+}: {
+  error: unknown;
+  height: number;
+  label: string;
+  refetch: () => Promise<unknown>;
+  retrying: boolean;
+}) {
+  return (
+    <QueryStatePanel
+      error={error}
+      height={height}
+      onRetry={() => void refetch()}
+      retryLabel={label}
+      retrying={retrying}
+    />
+  );
+}
+
 export function JournalPanel() {
   const [tab, setTab] = useState<Tab>("log");
   const [days, setDays] = useState<TimeRangeDays>(30);
@@ -120,21 +144,21 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
       )}
 
       {entriesQuery.error && entriesQuery.data === undefined && (
-        <QueryStatePanel
+        <JournalQueryError
           error={entriesQuery.error}
           height={96}
-          onRetry={() => void entriesQuery.refetch()}
-          retryLabel="Retry journal entries"
+          label="Retry journal entries"
+          refetch={entriesQuery.refetch}
           retrying={entriesQuery.isFetching}
         />
       )}
 
       {entriesQuery.error && entriesQuery.data !== undefined && (
-        <QueryStatePanel
+        <JournalQueryError
           error={entriesQuery.error}
           height={72}
-          onRetry={() => void entriesQuery.refetch()}
-          retryLabel="Retry journal entries"
+          label="Retry journal entries"
+          refetch={entriesQuery.refetch}
           retrying={entriesQuery.isFetching}
         />
       )}
@@ -383,20 +407,20 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
     return (
       <div className="space-y-3">
         {questionsQuery.error && questionsQuery.data === undefined ? (
-          <QueryStatePanel
+          <JournalQueryError
             error={questionsQuery.error}
             height={96}
-            onRetry={() => void questionsQuery.refetch()}
-            retryLabel="Retry journal questions"
+            label="Retry journal questions"
+            refetch={questionsQuery.refetch}
             retrying={questionsQuery.isFetching}
           />
         ) : null}
         {entriesQuery.error && entriesQuery.data === undefined ? (
-          <QueryStatePanel
+          <JournalQueryError
             error={entriesQuery.error}
             height={96}
-            onRetry={() => void entriesQuery.refetch()}
-            retryLabel="Retry journal entries"
+            label="Retry journal entries"
+            refetch={entriesQuery.refetch}
             retrying={entriesQuery.isFetching}
           />
         ) : null}
@@ -407,20 +431,20 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
   const backgroundErrors = (
     <>
       {questionsQuery.error ? (
-        <QueryStatePanel
+        <JournalQueryError
           error={questionsQuery.error}
           height={72}
-          onRetry={() => void questionsQuery.refetch()}
-          retryLabel="Retry journal questions"
+          label="Retry journal questions"
+          refetch={questionsQuery.refetch}
           retrying={questionsQuery.isFetching}
         />
       ) : null}
       {entriesQuery.error ? (
-        <QueryStatePanel
+        <JournalQueryError
           error={entriesQuery.error}
           height={72}
-          onRetry={() => void entriesQuery.refetch()}
-          retryLabel="Retry journal entries"
+          label="Retry journal entries"
+          refetch={entriesQuery.refetch}
           retrying={entriesQuery.isFetching}
         />
       ) : null}

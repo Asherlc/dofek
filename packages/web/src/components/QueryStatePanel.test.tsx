@@ -33,4 +33,20 @@ describe("QueryStatePanel", () => {
 
     expect(onRetry).toHaveBeenCalledOnce();
   });
+
+  it("disables the retry action while a refetch is in flight", () => {
+    const onRetry = vi.fn();
+    render(
+      <QueryStatePanel error={new Error("Provider query failed")} onRetry={onRetry} retrying />,
+    );
+
+    const retryButton = screen.getByRole("button", { name: "Retrying..." });
+    expect(retryButton).toBeInstanceOf(HTMLButtonElement);
+    if (!(retryButton instanceof HTMLButtonElement)) {
+      throw new Error("Expected retry button");
+    }
+    expect(retryButton.disabled).toBe(true);
+    fireEvent.click(retryButton);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
 });

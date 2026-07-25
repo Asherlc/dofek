@@ -85,7 +85,8 @@ export function LifeEventsPanel() {
     { enabled: !!selectedEvent },
   );
 
-  const eventList = z.array(lifeEventSchema).parse(events.data ?? []);
+  const eventList =
+    events.data === undefined ? undefined : z.array(lifeEventSchema).parse(events.data);
 
   return (
     <div className="space-y-4">
@@ -105,7 +106,7 @@ export function LifeEventsPanel() {
       {/* Event list + add button */}
       <div className="flex items-center justify-between">
         <div className="flex flex-wrap gap-2">
-          {eventList.map((e) => (
+          {eventList?.map((e) => (
             <button
               key={e.id}
               type="button"
@@ -134,7 +135,7 @@ export function LifeEventsPanel() {
         </button>
       </div>
 
-      {events.data !== undefined && eventList.length === 0 ? (
+      {eventList?.length === 0 ? (
         <p className="text-dim text-sm text-center py-6">No life events yet.</p>
       ) : null}
 
@@ -154,7 +155,7 @@ export function LifeEventsPanel() {
 
       {/* Analysis */}
       {(() => {
-        if (!selectedEvent || eventList.length === 0) return null;
+        if (!selectedEvent || !eventList || eventList.length === 0) return null;
         const foundEvent = eventList.find((e) => e.id === selectedEvent);
         const fallbackEvent = eventList[0];
         const event = foundEvent ?? fallbackEvent;
