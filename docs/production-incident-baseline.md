@@ -16441,3 +16441,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   hosted shard is the final service-wiring proof.
 - **Remaining risk / follow-up:** Require all replacement integration shards
   and their coverage artifact upload to finish before merge.
+
+## 2026-07-24 — Analytics Integration Test Lacked uv in Hosted CI
+
+- **Status:** Fixed on PR #1945; replacement CI pending.
+- **Symptoms:** `Test / Integration Tests (4/4)` failed when the fresh
+  ClickHouse/dbt microbatch regression tried to start dbt.
+- **User impact:** No production impact. PR #1945 remained blocked from merge.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=4/4`; its
+  first fatal line was `Error: spawn uv ENOENT`. The same job's earlier
+  ClickHouse connection-reset warnings came from container readiness polling
+  and were not fatal.
+- **Root cause:** The new executable dbt regression invokes the analytics
+  project's pinned Python environment through `uv`, but hosted integration
+  shards installed only Node and pnpm. The lint job already installed uv, so
+  local and lint validation did not expose the missing integration-job
+  prerequisite.
+- **Fix / mitigation:** Added the repository-pinned `astral-sh/setup-uv` action
+  to the integration job before Vitest. Astral documents this action as the
+  supported way to make uv available in GitHub Actions:
+  <https://docs.astral.sh/uv/guides/integration/github/#using-uv-in-github-actions>.
+  No retry, timeout, skipped test, fallback, or warning continuation was added.
+- **Validation:** The focused regression passes locally against a real isolated
+  ClickHouse container and the workflow passes local action/YAML validation.
+  The replacement hosted shard is the final proof that its uv/dbt prerequisite
+  is available.
+- **Remaining risk / follow-up:** Require the replacement shard and all
+  remaining PR checks to pass before merge.
