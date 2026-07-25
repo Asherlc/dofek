@@ -15,7 +15,7 @@ export interface WebStoryCoverageResult {
 }
 
 function sourceComponentName(fileName: string): string | null {
-  if (!fileName.endsWith(".tsx") || /.(?:stories|test).tsx$/.test(fileName)) {
+  if (!fileName.endsWith(".tsx") || /\.(?:stories|test)\.tsx$/.test(fileName)) {
     return null;
   }
   return fileName.slice(0, -".tsx".length);

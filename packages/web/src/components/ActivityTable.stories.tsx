@@ -71,7 +71,11 @@ function StoryFrame({ empty = false }: { empty?: boolean }) {
   const activityRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "activity/$id",
-    component: () => null,
+    component: () => (
+      <p className="rounded-lg border border-border bg-surface p-4 text-sm text-muted">
+        Activity detail selected. Use the browser back action to return to the table.
+      </p>
+    ),
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([storyRoute, activityRoute]),

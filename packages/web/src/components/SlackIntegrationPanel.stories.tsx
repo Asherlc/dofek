@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { OperationResultObservable, TRPCLink } from "@trpc/client";
+import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
@@ -12,11 +12,16 @@ interface SlackScenario {
     connected: boolean;
   };
   loading?: boolean;
+  error?: boolean;
 }
 
 function createMockLink(scenario: SlackScenario): TRPCLink<AppRouter> {
   return () => () =>
-    scenario.loading ? createLoadingObservable() : createMockObservable(scenario.data);
+    scenario.loading
+      ? createLoadingObservable()
+      : scenario.error
+        ? createErrorObservable()
+        : createMockObservable(scenario.data);
 }
 
 function createMockObservable(data: unknown): OperationResultObservable<AppRouter, unknown> {
@@ -45,8 +50,24 @@ function createLoadingObservable(): OperationResultObservable<AppRouter, unknown
   return result;
 }
 
+function createErrorObservable(): OperationResultObservable<AppRouter, unknown> {
+  const result: OperationResultObservable<AppRouter, unknown> = {
+    subscribe(observer) {
+      observer.error?.(new TRPCClientError("Slack status is temporarily unavailable."));
+      return { unsubscribe: () => {} };
+    },
+    pipe() {
+      return result;
+    },
+  };
+  return result;
+}
+
 function SlackStory({ scenario }: { scenario: SlackScenario }) {
-  const queryClient = useMemo(() => new QueryClient(), []);
+  const queryClient = useMemo(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    [],
+  );
   const trpcClient = useMemo(
     () => trpc.createClient({ links: [createMockLink(scenario)] }),
     [scenario],
@@ -87,4 +108,9 @@ export const Loading: Story = {
 
 export const Unconfigured: Story = {
   render: () => <SlackStory scenario={{ data: { configured: false, connected: false } }} />,
+};
+
+export const ErrorState: Story = {
+  name: "Error",
+  render: () => <SlackStory scenario={{ error: true }} />,
 };

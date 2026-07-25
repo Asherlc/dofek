@@ -63,7 +63,10 @@ function createErrorObservable(): OperationResultObservable<AppRouter, unknown> 
 }
 
 function PasswordStory({ scenario }: { scenario: PasswordScenario }) {
-  const queryClient = useMemo(() => new QueryClient(), []);
+  const queryClient = useMemo(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    [],
+  );
   const trpcClient = useMemo(
     () => trpc.createClient({ links: [createMockLink(scenario)] }),
     [scenario],

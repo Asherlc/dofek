@@ -10,11 +10,14 @@ const currentCurve = [
   { durationSeconds: 3_600, label: "1 hour", bestPower: 246, activityDate: "2026-06-01" },
 ];
 
-const previousCurve = currentCurve.map((point) => ({
-  ...point,
-  bestPower: Math.round(point.bestPower * 0.94),
-  activityDate: "2026-03-30",
-}));
+const previousCurve = [
+  { durationSeconds: 5, label: "5 sec", bestPower: 921, activityDate: "2026-03-30" },
+  { durationSeconds: 30, label: "30 sec", bestPower: 602, activityDate: "2026-03-30" },
+  { durationSeconds: 60, label: "1 min", bestPower: 489, activityDate: "2026-03-30" },
+  { durationSeconds: 300, label: "5 min", bestPower: 334, activityDate: "2026-03-30" },
+  { durationSeconds: 1_200, label: "20 min", bestPower: 264, activityDate: "2026-03-30" },
+  { durationSeconds: 3_600, label: "1 hour", bestPower: 231, activityDate: "2026-03-30" },
+];
 
 const meta = {
   title: "Training/PowerCurveChart",

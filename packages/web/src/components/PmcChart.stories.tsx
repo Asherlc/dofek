@@ -3,7 +3,7 @@ import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
 import { PmcChart } from "./PmcChart.tsx";
 
 const data: PmcDataPoint[] = Array.from({ length: 35 }, (_, index) => {
-  const date = new Date(2026, 4, index + 1).toISOString().slice(0, 10);
+  const date = new Date(Date.UTC(2026, 4, index + 1)).toISOString().slice(0, 10);
   const load = index % 7 === 1 ? 82 : index % 7 === 4 ? 55 : 0;
   const ctl = 42 + index * 0.55;
   const atl = 38 + Math.sin(index / 2.4) * 13 + load * 0.08;

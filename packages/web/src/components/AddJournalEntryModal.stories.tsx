@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
-import { useMemo } from "react";
+import { type ComponentProps, useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { AddJournalEntryModal } from "./AddJournalEntryModal.tsx";
 
@@ -74,7 +74,10 @@ function createLoadingObservable(): OperationResultObservable<AppRouter, unknown
   return result;
 }
 
-function AddJournalEntryModalStory({ scenario }: { scenario: JournalModalScenario }) {
+function AddJournalEntryModalStory({
+  scenario,
+  ...modalProps
+}: { scenario: JournalModalScenario } & ComponentProps<typeof AddJournalEntryModal>) {
   const queryClient = useMemo(() => new QueryClient(), []);
   const trpcClient = useMemo(
     () => trpc.createClient({ links: [createMockLink(scenario)] }),
@@ -84,7 +87,7 @@ function AddJournalEntryModalStory({ scenario }: { scenario: JournalModalScenari
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <AddJournalEntryModal isOpen onClose={() => {}} onSuccess={() => {}} />
+        <AddJournalEntryModal {...modalProps} />
       </QueryClientProvider>
     </trpc.Provider>
   );
@@ -109,13 +112,15 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
-  render: () => <AddJournalEntryModalStory scenario={{ questions }} />,
+  render: (args) => <AddJournalEntryModalStory scenario={{ questions }} {...args} />,
 };
 
 export const Loading: Story = {
-  render: () => <AddJournalEntryModalStory scenario={{ questions: [], loading: true }} />,
+  render: (args) => (
+    <AddJournalEntryModalStory scenario={{ questions: [], loading: true }} {...args} />
+  ),
 };
 
 export const Empty: Story = {
-  render: () => <AddJournalEntryModalStory scenario={{ questions: [] }} />,
+  render: (args) => <AddJournalEntryModalStory scenario={{ questions: [] }} {...args} />,
 };

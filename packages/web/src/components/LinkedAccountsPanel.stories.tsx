@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { LinkedAccountsPanel } from "./LinkedAccountsPanel.tsx";
 
@@ -82,28 +82,13 @@ function createErrorObservable(): OperationResultObservable<AppRouter, unknown> 
 }
 
 function LinkedAccountsStory({ scenario }: { scenario: LinkedAccountsScenario }) {
-  const queryClient = useMemo(() => new QueryClient(), []);
+  const queryClient = useMemo(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    [],
+  );
   const trpcClient = useMemo(
     () => trpc.createClient({ links: [createMockLink(scenario)] }),
     [scenario],
-  );
-  const originalFetch = useMemo(() => globalThis.fetch, []);
-
-  globalThis.fetch = async () =>
-    new Response(
-      JSON.stringify({
-        identity: ["google", "apple"],
-        data: ["garmin", "strava"],
-        password: true,
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
-
-  useEffect(
-    () => () => {
-      globalThis.fetch = originalFetch;
-    },
-    [originalFetch],
   );
 
   return (
@@ -117,10 +102,32 @@ function LinkedAccountsStory({ scenario }: { scenario: LinkedAccountsScenario })
   );
 }
 
+function installConfiguredProvidersFetch(): () => void {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const requestUrl = input instanceof Request ? input.url : input.toString();
+    if (new URL(requestUrl, "http://localhost").pathname === "/api/auth/providers") {
+      return new Response(
+        JSON.stringify({
+          identity: ["google", "apple"],
+          data: ["garmin", "strava"],
+          password: true,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return previousFetch(input, init);
+  };
+  return () => {
+    globalThis.fetch = previousFetch;
+  };
+}
+
 const meta = {
   title: "Settings/LinkedAccountsPanel",
   component: LinkedAccountsPanel,
   tags: ["autodocs"],
+  beforeEach: installConfiguredProvidersFetch,
 } satisfies Meta<typeof LinkedAccountsPanel>;
 
 export default meta;

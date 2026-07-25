@@ -33,7 +33,12 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 export const Loading: Story = {
-  args: { data: [], currentRampRate: 0, recommendation: "", loading: true },
+  args: {
+    data: [],
+    currentRampRate: 0,
+    recommendation: "Loading the latest training recommendation.",
+    loading: true,
+  },
 };
 export const Empty: Story = {
   args: { data: [], currentRampRate: 0, recommendation: "Log more training to establish a trend." },

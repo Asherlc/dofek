@@ -33,7 +33,7 @@ function withRouter(Story: ComponentType) {
     createRoute({
       getParentRoute: () => rootRoute,
       path,
-      component: path === "/dashboard" ? () => <Story /> : () => null,
+      component: () => <Story />,
     }),
   );
   const router = createRouter({

@@ -98,7 +98,10 @@ function createErrorObservable(): OperationResultObservable<AppRouter, unknown> 
 }
 
 function ActivitiesStory({ scenario }: { scenario: ActivitiesScenario }) {
-  const queryClient = useMemo(() => new QueryClient(), []);
+  const queryClient = useMemo(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    [],
+  );
   const trpcClient = useMemo(
     () => trpc.createClient({ links: [createMockLink(scenario)] }),
     [scenario],

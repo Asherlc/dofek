@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
-import { useMemo } from "react";
+import { type ComponentProps, useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { TrainingInsightsPanel } from "./TrainingInsightsPanel.tsx";
 
@@ -93,7 +93,13 @@ function createLoadingObservable(): OperationResultObservable<AppRouter, unknown
   return result;
 }
 
-function TrainingInsightsStory({ scenario }: { scenario: TrainingInsightsScenario }) {
+function TrainingInsightsStory({
+  scenario,
+  days,
+}: {
+  scenario: TrainingInsightsScenario;
+  days: ComponentProps<typeof TrainingInsightsPanel>["days"];
+}) {
   const queryClient = useMemo(() => new QueryClient(), []);
   const trpcClient = useMemo(
     () => trpc.createClient({ links: [createMockLink(scenario)] }),
@@ -104,7 +110,7 @@ function TrainingInsightsStory({ scenario }: { scenario: TrainingInsightsScenari
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
         <div className="w-[900px] rounded-xl border border-border bg-surface p-5">
-          <TrainingInsightsPanel days={30} />
+          <TrainingInsightsPanel days={days} />
         </div>
       </QueryClientProvider>
     </trpc.Provider>
@@ -130,19 +136,24 @@ const emptyScenario: TrainingInsightsScenario = {
 };
 
 export const Default: Story = {
-  render: () => <TrainingInsightsStory scenario={{ volume, hrZones }} />,
+  render: (args) => <TrainingInsightsStory scenario={{ volume, hrZones }} days={args.days} />,
 };
 
 export const VolumeOnly: Story = {
-  render: () => (
-    <TrainingInsightsStory scenario={{ volume, hrZones: { maxHr: null, weeks: [] } }} />
+  render: (args) => (
+    <TrainingInsightsStory
+      scenario={{ volume, hrZones: { maxHr: null, weeks: [] } }}
+      days={args.days}
+    />
   ),
 };
 
 export const Loading: Story = {
-  render: () => <TrainingInsightsStory scenario={{ ...emptyScenario, loading: true }} />,
+  render: (args) => (
+    <TrainingInsightsStory scenario={{ ...emptyScenario, loading: true }} days={args.days} />
+  ),
 };
 
 export const Empty: Story = {
-  render: () => <TrainingInsightsStory scenario={emptyScenario} />,
+  render: (args) => <TrainingInsightsStory scenario={emptyScenario} days={args.days} />,
 };

@@ -18,9 +18,9 @@ describe("scanWebStoryCoverage", () => {
 
   it("reports missing stories in sorted order", () => {
     expect(scanWebStoryCoverage(path.join(fixtures, "missing"), new Set())).toEqual({
-      missingStories: ["Alpha.tsx", "Zulu.tsx"],
+      missingStories: ["Alpha.tsx", "Contest.tsx", "Zulu.tsx"],
       staleExemptions: [],
-      visualComponentCount: 2,
+      visualComponentCount: 3,
     });
   });
 
