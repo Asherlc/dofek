@@ -47,6 +47,8 @@ export type {
   GradeAdjustedPaceRow,
   WalkingBiomechanicsRow,
 } from "./routers/hiking.ts";
+// Monthly report router types
+export type { MonthlyReportResult, MonthSummary } from "./routers/monthly-report.ts";
 // PMC router types
 export type { PmcChartResult, PmcDataPoint, TssModelInfo } from "./routers/pmc.ts";
 // Power router types
