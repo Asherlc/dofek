@@ -6,6 +6,7 @@ This module provides the iOS-native HealthKit bridge used by the mobile app to:
 - query quantity/workout/sleep/category samples
 - query workout routes (GPS points)
 - query daily aggregate statistics
+- incrementally query samples and deletions with a native-persisted opaque anchor
 - enable background delivery + observer events
 - write dietary energy
 
@@ -30,6 +31,15 @@ HealthKit must be configured in `app.json` entitlements:
 
 - `com.apple.developer.healthkit`
 - `com.apple.developer.healthkit.background-delivery`
+
+## Incremental Anchored Queries
+
+`queryAnchoredSamples(typeIdentifier)` keeps `HKQueryAnchor` entirely inside
+the native module. The module securely archives the successful query's returned
+anchor in `UserDefaults`, restores it for the next query of that type, and does
+not expose or accept fabricated numeric anchor values in JavaScript. Apple
+documents `HKQueryAnchor` as conforming to `NSSecureCoding`:
+<https://developer.apple.com/documentation/healthkit/hkqueryanchor>.
 
 ## Local Validation
 
