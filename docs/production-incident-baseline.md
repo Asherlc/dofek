@@ -16434,6 +16434,85 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   replacement runner. If runner I/O failures recur, escalate with the failing
   runner evidence rather than adding repository-level retry behavior.
 
+## 2026-07-24 — Production Deploy Exhausted the Docker Root Disk
+
+- **Status:** Production disk pressure remediated and all enabled services
+  restored; durable workflow fixes validated locally.
+- **Symptoms:** Deploy Web run `30140043237`, job `89631520983`, stopped in
+  `Pull deploy images` while extracting the CloudBeaver image.
+- **User impact:** The requested release did not deploy. Production remained
+  available on the prior `sha-17748f8` release with every desired Swarm replica
+  running.
+- **Evidence:** The first fatal line was `failed to extract layer ... write
+  /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/81704/fs/opt/java/openjdk/lib/modules:
+  no space left on device`. Host inspection showed `/dev/sda1` at 99% with
+  825 MiB free, 201 non-running containers, 3.333 GB of reclaimable container
+  writable layers, and an unreferenced 8.5 GB `dofek_redpanda_data` volume.
+  The current `dofek_redpanda` service used the canonical
+  `/mnt/dofek-data/redpanda` bind mount instead of that legacy volume.
+- **Root cause:** The pre-pull cleanup pruned only images, while stopped and
+  created containers retained obsolete writable layers and image references;
+  the unreferenced legacy Redpanda volume consumed additional root-disk
+  capacity outside image pruning.
+- **Fix / mitigation:** After confirming the legacy volume had no container
+  references and the running Redpanda service used its data-disk bind mount,
+  removed 201 non-running containers, removed only
+  `dofek_redpanda_data`, and pruned unused images. The deploy workflow now
+  prunes non-running containers before images and hard-fails before pulling
+  unless the remote host—not the GitHub runner—has at least 8 GiB free.
+  Docker documents these object lifecycles and prune scopes in its
+  [resource-pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
+- **Validation:** Cleanup increased root-disk headroom from 825 MiB to 19 GiB
+  and reduced usage from 99% to 62%. Docker reported 23 active containers and
+  zero inactive containers; all desired Swarm services remained converged,
+  including `web` at 2/2 replicas and every enabled data service at 1/1.
+- **Follow-up evidence:** Attempt 2 passed the formerly failing image pull,
+  asset upload, and migrations before a newer skipped `workflow_run` cancelled
+  it through the top-level `cancel-in-progress` group. Manual recovery run
+  `30140671547` then checked out newer stack configuration while deploying
+  older image `sha-6c4bf05`. Its first fatal line was `failed to update service
+  dofek_cdc-health: Error response from daemon: rpc error: code = Unknown desc
+  = update out of sequence` while the monitor rolled back. Host health logs
+  proved the underlying revision skew: the newer analytics healthcheck called
+  `http://127.0.0.1:3002/readyz`, but the older image still ran the shell worker
+  without that endpoint; the newer CDC probe similarly depended on
+  `scripts/cdc-health-state.ts`, which the older entrypoint did not maintain.
+  Automatic recovery run `30141068075` passed image extraction, migrations,
+  dependency readiness, CDC configuration, and its final consumer-deploy step,
+  but the newer analytics healthcheck again rolled the older image back to zero
+  replicas. The convergence loop incorrectly accepted the rolled-back `0/0`
+  desired state as success. The new CDC task's health history showed four
+  consecutive `Health check exceeded timeout (5s)` results even though the
+  monitor logged successful CDC checks. The run's final fatal line was
+  `Missing file at path:
+  /github/file_commands/set_output_7f716ac9-82a6-4d06-9fba-45c4263a7a65`
+  from the Sentry release action: the job-level remote `DOCKER_HOST` caused the
+  Docker action to launch on the production daemon, where the GitHub runner's
+  file-command bind mount did not exist.
+- **Follow-up fix:** Quiesced the unhealthy analytics-worker restart loop while
+  preserving the healthy metric-stream sink and rolled-back CDC monitor.
+  Automatic deploys now pass the successful CI run's full commit SHA into the
+  stack workflow and check out that revision before rendering deploy
+  configuration. Manual tag deploys must use the image's source commit as the
+  workflow `--ref`. The CDC probe timeout is calibrated to 15 seconds based on
+  the measured TypeScript startup time under its 0.10 CPU limit. The final
+  consumer convergence check now requires the stack's expected one desired
+  replica instead of accepting a rollback to zero. The Sentry action overrides
+  `DOCKER_HOST` with the GitHub runner's local Docker socket.
+- **Final validation:** A targeted production rollout restored
+  `analytics-worker`, `cdc-health`, and the metric-stream ClickHouse sink on
+  `sha-005b4fd` at 1/1 each. Analytics used the healthcheck from its matching
+  image revision. CDC reached `update_state=completed` with the 15-second probe
+  timeout and retained its state-age and consecutive-failure health semantics.
+  The root filesystem retained 15 GiB free at 70% usage in the final
+  post-recovery snapshot.
+- **Remaining risk / follow-up:** Hosted CI must validate the checkout pin and
+  remote disk gate, CDC timeout, local Sentry Docker context, and strict
+  consumer convergence before merge. The top-level `cancel-in-progress` group
+  can still cancel a healthy deploy when a newer CI completion creates a deploy
+  workflow that is subsequently skipped; address that concurrency policy in a
+  separate change rather than coupling it to disk reclamation.
+
 ## 2026-07-24 — OAuth Reconnect Cleanup Mutants Survived PR CI
 
 - **Status:** Fixed locally on PR #1941; replacement CI pending.

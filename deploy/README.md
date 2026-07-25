@@ -72,6 +72,12 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - ClickHouse runs the pinned `26.6.1.1193-alpine` stable image with a 13 GiB container memory limit, a 1 CPU Swarm limit, and a checked-in `clickhouse_memory_limits_13g` profile with a 13 GiB `max_server_memory_usage` cap so large analytics queries fail or throttle inside ClickHouse instead of triggering host-level OOM kills or CPU-starving SSH/Docker on the single-node host. Version 26.6 is required for the provider-deletion live-candidate projection to stop an ordered read at its batch limit; ClickHouse 26.3 selected the same projection but read the provider's entire qualifying range. The pinned release is published by ClickHouse: <https://github.com/ClickHouse/ClickHouse/releases/tag/v26.6.1.1193-stable>. The service also loads checked-in server profile settings from `deploy/clickhouse/users.d/` and server settings from `deploy/clickhouse/config.d/`; the production stack mounts these as Docker Swarm configs so app-managed geospatial `Nullable(Point)` columns, bounded memory, and seven-day system-log TTL retention work without manual server changes. Docker Swarm config contents are immutable, so changing a checked-in config file must also rotate the config key in `deploy/stack.yml` (for example `clickhouse_memory_limits_13g`) instead of reusing the same config name with new contents.
 - The default ClickHouse profile cancels read-only HTTP queries when their client disconnects and applies a four-minute elapsed-time ceiling to every query. This keeps a timed-out web/dbt client from leaving server work alive across later retry cycles; ClickHouse documents both [`cancel_http_readonly_queries_on_client_close`](https://clickhouse.com/docs/operations/settings/settings#cancel_http_readonly_queries_on_client_close) and the elapsed-time behavior controlled by [`max_execution_time`](https://clickhouse.com/docs/operations/settings/settings#max_execution_time) with `timeout_before_checking_execution_speed=0`.
 - All production entrypoint modes that run dbt build the ordered activity and sleep/dashboard model groups with `--threads 1` to avoid concurrent or unsafe ClickHouse model builds on the single-node host. `analytics-worker` also has a 0.5 CPU Swarm limit and currently runs the dbt-native microbatched `sensor_scalar_sample` and `deduped_sensor` models plus the dirty-keyed dashboard and cycling serving models every 15 minutes. `analytics.activity_summary` is served from the incremental `analytics.activity_summary_rows` table through a thin view; `analytics.cycling_activity` and `analytics.daily_cycling` serve the cycling page; and `analytics.daily_recovery`, `analytics.daily_strain`, `analytics.daily_sleep`, and `analytics.weekly_healthspan` serve dashboard recovery, strain, sleep, and healthspan reads. After both dbt groups succeed, the analytics worker sequentially refreshes every live app query cache key registered in Redis, preserving the previous cached value unless recomputation succeeds. The worker's loopback `/readyz` endpoint exposes the current step, last failure, and last successful cycle; Swarm probes that endpoint instead of process liveness. A first-cycle failure is unhealthy immediately, and a previous success becomes unhealthy when its age exceeds the configured build interval plus retry delay. Failed model builds and cache refreshes are captured by Sentry with their failing step before entering the bounded retry path, so retries remain recovery rather than the health signal. Docker documents healthcheck exit-status behavior, dbt documents `build` as running selected models and their tests, Sentry documents captured exceptions, and Redis documents TTL-based key expiration: <https://docs.docker.com/reference/dockerfile/#healthcheck>, <https://docs.getdbt.com/reference/commands/build>, <https://docs.sentry.io/platforms/javascript/guides/node/usage/#capturing-errors>, and <https://redis.io/docs/latest/commands/expire/>. The `cdc-health` service runs `scripts/check-clickhouse-cdc.ts` every five minutes and atomically records the latest result. Its container probe fails after two consecutive failed reports or when the state is more than one interval plus 60 seconds old, so PeerDB slot loss, stale mirrors, and a stuck monitor become visible to Swarm instead of being hidden behind process liveness. Docker documents that a container becomes unhealthy after the configured consecutive probe failures and that Swarm replaces a task whose container fails its healthcheck: <https://docs.docker.com/reference/dockerfile/#healthcheck> and <https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling>.
+- The CDC state probe starts the TypeScript runtime inside a service limited to
+  0.10 CPU, so its healthcheck allows 15 seconds to complete. Production
+  measurements showed the previous 5-second limit repeatedly terminating a
+  healthy probe before it could read the state file. This timeout is scoped to
+  the probe process; the state-age and consecutive-failure thresholds still
+  determine CDC health.
 - Netdata has a 768 MiB container memory limit and a checked-in `deploy/netdata/netdata.conf` that bounds dbengine retention to two tiers: one day of per-second data capped at 96 MiB and seven days of per-minute data capped at 128 MiB. The stack mounts this file as a Docker Swarm config, so changing it must also rotate the config key in `deploy/stack.yml` (for example `netdata_db_limits_v2`).
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private MinIO staging bucket. Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory. Production mirrors use 100,000-row CDC batches and single-worker 100,000-row initial snapshot partitions so PeerDB can stay inside its fixed memory limits at the cost of slower catch-up.
 - Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
@@ -161,6 +167,18 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
 ```
 
 1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`), because `Deploy Web` is triggered by the successful `CI` `workflow_run` for `main` and deploys that tag. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
+   Automatic deploys also check out the successful CI run's full commit SHA
+   before rendering stack configuration. GitHub documents that a
+   `workflow_run` workflow's `GITHUB_SHA` is the last commit on the default
+   branch rather than necessarily the triggering workflow's commit, so using
+   `github.event.workflow_run.head_sha` keeps image code, healthchecks,
+   entrypoints, and stack configuration from different revisions from being
+   mixed:
+   <https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run>.
+   Manual image-tag deploys must dispatch the workflow with `--ref` set to the
+   full source commit for that image. After pulling the app image, the workflow
+   compares its full `SENTRY_RELEASE` with the checked-out Git commit and fails
+   before asset upload, migrations, or stack deployment when they differ.
 2. **Terraform apply** (if infra changed): updates Cloudflare-managed production DNS and storage. `ORACLE_SERVER_HOST` is required for production DNS and deploy targeting.
 3. **Deploy Web Stack** (`deploy-web-stack.yml`):
    1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.
@@ -179,10 +197,17 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       The workflow also ensures pinned third-party stack images exist on the
       host, but skips those pulls when the exact image is already present.
       Image cleanup is controlled by this deploy workflow: it prunes unused
-      Docker objects before image pulls and prunes obsolete images after a
-      successful stack deploy. Do not run a continuous background image pruner
-      on the production host, because newly pulled deploy images are not
-      referenced by a service until after migrations complete.
+      containers before unused images so stopped task containers cannot retain
+      obsolete writable layers or image references, then verifies the remote
+      root filesystem has at least 8 GiB free before pulling. Docker documents
+      that stopped containers retain writable layers, that container pruning
+      removes them, and that `docker image prune -a` removes images unused by
+      remaining containers in its
+      [resource-pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
+      The workflow prunes obsolete images again after a successful stack deploy.
+      Do not run a continuous background image pruner on the production host,
+      because newly pulled deploy images are not referenced by a service until
+      after migrations complete.
    5. Extract `/app/packages/web/dist` from the pulled deploy image, read the
       `https://assets.dofek.fit/web/<tag>/` prefix embedded in `index.html`,
       and upload every file except `index.html` to
