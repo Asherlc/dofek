@@ -1034,10 +1034,10 @@ describe("ProvidersScreen", () => {
     expect(screen.getByText("Full Sync All")).toBeTruthy();
   });
 
-  it("renders dataset-level data readiness messages on the provider list", async () => {
+  it("renders dataset-level processing progress on the provider list", async () => {
     mockDataHealthQuery.mockReturnValue({
       data: {
-        overallStatus: "blocked",
+        overallStatus: "active",
         generatedAt: "2026-06-30T08:00:00.000Z",
         scope: { providerId: null, datasets: ["providers"] },
         operations: [],
@@ -1050,8 +1050,9 @@ describe("ProvidersScreen", () => {
             latestReadModelAt: null,
             cdcLagSeconds: null,
             readModelLagSeconds: null,
-            status: "blocked",
-            message: "Sleep data is synced, but dashboard summaries are blocked.",
+            status: "active",
+            progressPercentage: 60,
+            message: "Sleep summaries are updating.",
           },
         ],
       },
@@ -1061,7 +1062,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    expect(screen.getByText("Your data update didn’t finish")).toBeTruthy();
+    expect(screen.getByText("Recomputing sleep")).toBeTruthy();
   });
 
   it("shows an explicit error when providers fail to load", async () => {
