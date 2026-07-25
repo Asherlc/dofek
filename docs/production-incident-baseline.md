@@ -17215,3 +17215,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   repeating broad local ClickHouse validation. Docker documents container
   memory constraints and out-of-memory behavior at
   <https://docs.docker.com/engine/containers/resource_constraints/#understand-the-risks-of-running-out-of-memory>.
+
+## 2026-07-25 — Fresh E2E Migration Assumed a dbt-Owned Table Existed
+
+- **Status:** Root cause fixed and validated locally; replacement CI pending on
+  PR #1966.
+- **Symptoms:** The fresh E2E migration job failed while applying ClickHouse
+  migration `0055_daily_body_measurement_lifecycle`.
+- **User impact:** No production users were affected. PR #1966 was blocked from
+  merge.
+- **Evidence:** The exact failing step ran the E2E migration service. Its first
+  fatal line was `Could not find table: daily_body_measurement`. The migration
+  ran before dbt had created `analytics.daily_body_measurement`, while the same
+  table can exist in upgraded environments.
+- **Root cause:** Migration 0055 unconditionally altered a dbt-owned serving
+  table, but a fresh environment applies tracked migrations before dbt creates
+  that table.
+- **Fix / mitigation:** Query `system.tables` and run both lifecycle-column
+  alterations only when the existing serving table is present. Fresh
+  environments skip the upgrade and let dbt create the final schema; upgraded
+  environments retain the required alteration path.
+- **Validation:** Focused migration tests cover both absent and present table
+  states, root typecheck and Biome pass, and a fresh E2E migration run applied
+  all 46 migrations through 0055 successfully without an ad-hoc wait.
+- **Remaining risk / follow-up:** The first local rerun experienced a separate
+  ClickHouse exit 137 while several workspace stacks shared Docker memory.
+  After stopping only completed issue stacks, the same fresh migration run
+  passed. Continue capturing Docker VM-level kill evidence if that capacity
+  failure recurs.
