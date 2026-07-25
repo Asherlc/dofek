@@ -379,6 +379,8 @@ export function DataSourcesPanel() {
       />
 
       {providers.error ? <QueryStatePanel error={providers.error} height={72} /> : null}
+      {stats.error ? <QueryStatePanel error={stats.error} height={72} /> : null}
+      {logs.error ? <QueryStatePanel error={logs.error} height={72} /> : null}
 
       {providers.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

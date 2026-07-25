@@ -68,6 +68,8 @@ describe("ProviderDataDeleteControl", () => {
       providerId: "strava",
       confirmation: "DELETE",
     });
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Deleting provider data..." })).not.toBeNull();
   });
 
   it("keeps concurrent sync and deletion progress visible", async () => {
@@ -108,5 +110,24 @@ describe("ProviderDataDeleteControl", () => {
     rerender(<ProviderDataDeleteControl providerId="strava" />);
 
     await waitFor(() => expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce());
+  });
+
+  it("names, focuses, and allows dismissal of the idle confirmation dialog", async () => {
+    render(<ProviderDataDeleteControl providerId="strava" />);
+
+    const trigger = screen.getByRole("button", { name: "Delete all data" });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const input = screen.getByLabelText('Type "DELETE" to confirm');
+    expect(screen.getByRole("dialog", { name: "Delete all provider data?" })).toHaveAttribute(
+      "aria-modal",
+      "true",
+    );
+    await waitFor(() => expect(input).toHaveFocus());
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(trigger).toHaveFocus();
   });
 });

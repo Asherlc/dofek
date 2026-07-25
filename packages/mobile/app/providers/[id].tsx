@@ -810,7 +810,7 @@ export default function ProviderDetailScreen() {
     );
   }
 
-  if (providerActions.inventoryError) {
+  if (providerActions.inventoryError && !providerActions.displayProvider) {
     return (
       <ProviderRouteError
         title="Could not load provider"
@@ -995,6 +995,28 @@ function ProviderDetailContent({
         loading={processingStatus.isLoading}
         contextLabel={`${formatProviderName(providerId)} data status`}
       />
+
+      {providerActions.inventoryError ? (
+        <QueryStatePanel
+          variant="error"
+          title="Could not refresh provider"
+          message={getQueryErrorMessage(providerActions.inventoryError)}
+          minHeight={72}
+        />
+      ) : null}
+
+      {stats.error ? (
+        <QueryStatePanel
+          variant="error"
+          title={
+            stats.data === undefined
+              ? "Could not load provider statistics"
+              : "Could not refresh provider statistics"
+          }
+          message={getQueryErrorMessage(stats.error)}
+          minHeight={72}
+        />
+      ) : null}
 
       {/* Actions */}
       {shouldShowActions && (

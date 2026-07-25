@@ -5,8 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
 import { LandingPage, LandingPageView } from "./LandingPage.tsx";
 
+interface MockUsableProvidersQuery {
+  data: Array<{ id: string; name: string; authType: string; importOnly: boolean }>;
+  isLoading: boolean;
+  error: Error | null;
+}
+
 const mockUsableProvidersQuery = vi.hoisted(() =>
-  vi.fn(() => ({
+  vi.fn<() => MockUsableProvidersQuery>(() => ({
     data: [
       { id: "apple_health", name: "Apple Health", authType: "file-import", importOnly: true },
       { id: "strava", name: "Strava", authType: "oauth", importOnly: false },
@@ -14,6 +20,7 @@ const mockUsableProvidersQuery = vi.hoisted(() =>
       { id: "strong-csv", name: "Strong CSV", authType: "file-import", importOnly: true },
     ],
     isLoading: false,
+    error: null,
   })),
 );
 
@@ -48,6 +55,32 @@ vi.mock("../lib/trpc.ts", () => ({
 afterEach(cleanup);
 
 describe("LandingPage", () => {
+  it("shows a provider availability error instead of an empty supported-source state", () => {
+    mockUsableProvidersQuery.mockReturnValueOnce({
+      data: [],
+      isLoading: false,
+      error: new Error("Supported sources are temporarily unavailable"),
+    });
+
+    render(<LandingPage />);
+
+    expect(screen.getByText("Supported sources are temporarily unavailable")).toBeTruthy();
+    expect(screen.queryByText(/No supported sources are currently available/i)).toBeNull();
+  });
+
+  it("keeps cached supported sources visible when their background refresh fails", () => {
+    mockUsableProvidersQuery.mockReturnValueOnce({
+      data: [{ id: "strava", name: "Strava", authType: "oauth", importOnly: false }],
+      isLoading: false,
+      error: new Error("Supported sources refresh failed"),
+    });
+
+    render(<LandingPage />);
+
+    expect(screen.getByAltText("Strava")).toBeTruthy();
+    expect(screen.getByText("Supported sources refresh failed")).toBeTruthy();
+  });
+
   it("does not render the self-hosted privacy section", () => {
     render(<LandingPage />);
     expect(screen.queryByText("Your data. Your server. Period.")).toBeNull();

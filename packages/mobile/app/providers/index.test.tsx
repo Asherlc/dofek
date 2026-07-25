@@ -1105,6 +1105,60 @@ describe("ProvidersScreen", () => {
     expect(screen.getByText("Logs failed")).toBeTruthy();
   });
 
+  it("keeps cached provider stats visible when their background refresh fails", async () => {
+    mockStatsQuery.mockReturnValue({
+      data: [
+        {
+          providerId: "wahoo",
+          totalRecords: 42,
+          activities: 42,
+          metricStream: 0,
+          dailyMetrics: 0,
+          sleepSessions: 0,
+          bodyMeasurements: 0,
+          foodEntries: 0,
+          nutritionDaily: 0,
+          healthEvents: 0,
+          labPanels: 0,
+          labResults: 0,
+          journalEntries: 0,
+        },
+      ],
+      isLoading: false,
+      error: new Error("Provider statistics refresh failed"),
+    });
+
+    await renderProvidersScreen();
+
+    expect(screen.getAllByText("42").length).toBeGreaterThan(0);
+    expect(screen.getByText("Provider statistics refresh failed")).toBeTruthy();
+  });
+
+  it("keeps cached sync history visible when its background refresh fails", async () => {
+    mockLogsQuery.mockReturnValue({
+      data: [
+        {
+          id: "log-1",
+          providerId: "wahoo",
+          dataType: "activities",
+          status: "success",
+          recordCount: 12,
+          errorMessage: null,
+          authFailureReason: null,
+          durationMs: 100,
+          syncedAt: "2026-07-24T12:00:00.000Z",
+        },
+      ],
+      isLoading: false,
+      error: new Error("Sync history refresh failed"),
+    });
+
+    await renderProvidersScreen();
+
+    expect(screen.getByText("activities")).toBeTruthy();
+    expect(screen.getByText("Sync history refresh failed")).toBeTruthy();
+  });
+
   it("passes sinceDays: 7 when Sync button is clicked", async () => {
     mockSyncMutateAsync.mockResolvedValue({ jobId: "job-1" });
     mockSyncStatusFetch.mockResolvedValue({

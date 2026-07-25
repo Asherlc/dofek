@@ -556,10 +556,10 @@ export default function ProvidersScreen() {
     pushOnly: provider.pushOnly,
   }));
   const statsMap: Record<string, ProviderStats> = {};
-  for (const s of stats.error ? [] : (stats.data ?? [])) {
+  for (const s of stats.data ?? []) {
     statsMap[s.providerId] = s;
   }
-  const logList: SyncLog[] = logs.error ? [] : (logs.data ?? []);
+  const logList: SyncLog[] = logs.data ?? [];
 
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
@@ -793,17 +793,22 @@ export default function ProvidersScreen() {
 
       {/* Sync History */}
       <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Sync History</Text>
-      {logs.isLoading ? (
-        <ActivityIndicator color={colors.accent} style={{ marginTop: 12 }} />
-      ) : logs.error ? (
+      {logs.error ? (
         <View style={styles.card}>
           <QueryStatePanel
             variant="error"
-            title="Could not load sync history"
+            title={
+              logs.data === undefined
+                ? "Could not load sync history"
+                : "Could not refresh sync history"
+            }
             message={getQueryErrorMessage(logs.error, "Failed to load sync history.")}
           />
         </View>
-      ) : logList.length === 0 ? (
+      ) : null}
+      {logs.isLoading && logs.data === undefined ? (
+        <ActivityIndicator color={colors.accent} style={{ marginTop: 12 }} />
+      ) : logs.error && logs.data === undefined ? null : logList.length === 0 ? (
         <View style={styles.card}>
           <Text style={styles.emptyText}>No sync history yet.</Text>
         </View>

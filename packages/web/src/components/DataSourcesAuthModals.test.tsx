@@ -34,16 +34,54 @@ vi.mock("../lib/telemetry.ts", () => ({
 
 afterEach(cleanup);
 
-describe("Data source authentication telemetry", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCredentialUseMutation.mockReturnValue({ mutateAsync: mockCredentialSignIn });
-    mockGarminUseMutation.mockReturnValue({ mutateAsync: mockGarminSignIn });
-    mockWhoopSignInUseMutation.mockReturnValue({ mutateAsync: mockWhoopSignIn });
-    mockWhoopVerifyUseMutation.mockReturnValue({ mutateAsync: mockWhoopVerifyCode });
-    mockWhoopSaveUseMutation.mockReturnValue({ mutateAsync: mockWhoopSaveTokens });
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockCredentialUseMutation.mockReturnValue({ mutateAsync: mockCredentialSignIn });
+  mockGarminUseMutation.mockReturnValue({ mutateAsync: mockGarminSignIn });
+  mockWhoopSignInUseMutation.mockReturnValue({ mutateAsync: mockWhoopSignIn });
+  mockWhoopVerifyUseMutation.mockReturnValue({ mutateAsync: mockWhoopVerifyCode });
+  mockWhoopSaveUseMutation.mockReturnValue({ mutateAsync: mockWhoopSaveTokens });
+});
 
+describe("data source auth dialogs", () => {
+  it.each([
+    {
+      name: "Connect Polar",
+      renderDialog: (onClose: () => void) => (
+        <CredentialAuthModal
+          providerId="polar"
+          providerName="Polar"
+          onClose={onClose}
+          onSuccess={() => {}}
+        />
+      ),
+    },
+    {
+      name: "Connect Garmin",
+      renderDialog: (onClose: () => void) => (
+        <GarminAuthModal onClose={onClose} onSuccess={() => {}} />
+      ),
+    },
+    {
+      name: "Connect WHOOP",
+      renderDialog: (onClose: () => void) => (
+        <WhoopAuthModal onClose={onClose} onSuccess={() => {}} />
+      ),
+    },
+  ])("makes $name accessible and keyboard-dismissible", async ({ name, renderDialog }) => {
+    const onClose = vi.fn();
+    render(renderDialog(onClose));
+
+    const email = screen.getByLabelText("Email");
+    expect(screen.getByRole("dialog", { name })).toHaveAttribute("aria-modal", "true");
+    await waitFor(() => expect(email).toHaveFocus());
+
+    fireEvent.keyDown(email, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Data source authentication telemetry", () => {
   it("reports credential sign-in failures without credentials", async () => {
     const error = new Error("Provider rejected credentials");
     const password = "provider-password-must-not-leak";
