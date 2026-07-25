@@ -1,4 +1,5 @@
 import type { ProcessingDisplayStatus } from "@dofek/providers/processing-status";
+import { ClipLoader } from "react-spinners";
 
 interface RecomputeStatusIndicatorProps {
   label: string;
@@ -27,47 +28,55 @@ export function RecomputeStatusIndicator({
   const clampedProgress = progress === null ? null : Math.min(100, Math.max(0, progress));
 
   return (
-    <div className="inline-flex items-center gap-2 text-xs font-medium text-muted">
-      <svg
-        width="32"
-        height="32"
-        viewBox="0 0 32 32"
-        className={ringClassByStatus[status]}
-        role="progressbar"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={clampedProgress ?? undefined}
-      >
-        <title>{label}</title>
-        <circle
-          cx="16"
-          cy="16"
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          opacity="0.2"
+    <div className="flex w-full min-w-0 items-center gap-2 text-xs font-medium text-muted">
+      {clampedProgress === null ? (
+        <ClipLoader
+          aria-label={label}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          className={`shrink-0 ${ringClassByStatus[status]}`}
+          color="currentColor"
+          data-testid="recompute-spinner"
+          role="progressbar"
+          size={32}
         />
-        <circle
-          cx="16"
-          cy="16"
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeDasharray={
-            clampedProgress === null ? `${circumference * 0.25} ${circumference}` : circumference
-          }
-          strokeDashoffset={
-            clampedProgress === null ? 0 : circumference * (1 - clampedProgress / 100)
-          }
-          transform="rotate(-90 16 16)"
-          className={clampedProgress === null ? "origin-center animate-spin" : undefined}
-        />
-      </svg>
-      <span>{label}</span>
+      ) : (
+        <svg
+          width="32"
+          height="32"
+          viewBox="0 0 32 32"
+          className={`shrink-0 ${ringClassByStatus[status]}`}
+          role="progressbar"
+          aria-label={label}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={clampedProgress}
+        >
+          <title>{label}</title>
+          <circle
+            cx="16"
+            cy="16"
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            opacity="0.2"
+          />
+          <circle
+            cx="16"
+            cy="16"
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference * (1 - clampedProgress / 100)}
+            transform="rotate(-90 16 16)"
+          />
+        </svg>
+      )}
+      <span className="min-w-0 break-words">{label}</span>
     </div>
   );
 }

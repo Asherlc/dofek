@@ -838,6 +838,9 @@ importers:
       react-dom:
         specifier: 19.2.3
         version: 19.2.3(react@19.2.3)
+      react-spinners:
+        specifier: 0.17.0
+        version: 0.17.0(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -13031,6 +13034,12 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  react-spinners@0.17.0:
+    resolution: {integrity: sha512-L/8HTylaBmIWwQzIjMq+0vyaRXuoAevzWoD35wKpNTxxtYXWZp+xtgkfD7Y4WItuX0YvdxMPU79+7VhhmbmuTQ==}
+    peerDependencies:
+      react: 19.2.3
+      react-dom: 19.2.3
 
   react-style-singleton@2.2.3:
     resolution: {integrity: sha512-b6jSvxvVnyptAiLjbkWLE/lOnR4lfTtDAl+eUC7RZy+QQWc6wRzIV2CE6xBuMmDxc2qIihtDCZD5NPOFl7fRBQ==}
@@ -29219,6 +29228,11 @@ snapshots:
       use-sidecar: 1.1.3(@types/react@19.2.14)(react@19.2.3)
     optionalDependencies:
       '@types/react': 19.2.14
+
+  react-spinners@0.17.0(react-dom@19.2.3(react@19.2.3))(react@19.2.3):
+    dependencies:
+      react: 19.2.3
+      react-dom: 19.2.3(react@19.2.3)
 
   react-style-singleton@2.2.3(@types/react@19.2.14)(react@19.2.3):
     dependencies:

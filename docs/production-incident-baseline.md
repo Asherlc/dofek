@@ -16971,6 +16971,87 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   fetch the Alpine index, investigate mirror availability and hosted-runner
   network evidence before changing the build.
 
+## 2026-07-25 — Failed Deploy Left ClickHouse Consumers Quiesced
+
+- **Status:** Unresolved; the affected [Deploy Web
+  run](https://github.com/Asherlc/dofek/actions/runs/30147912915) left both
+  ClickHouse consumer services scaled to zero.
+- **Symptoms:** Processing status reported that recomputing activities, sleep,
+  recovery, training, and body was taking longer than expected. The production
+  `analytics-worker` and `metric-stream-clickhouse-sink` services both showed
+  `0/0` replicas after the deployment; their responsibilities are documented in
+  the [metric-stream
+  runbook](metric-stream-redpanda-r2-runbook.md#required-services).
+- **User impact:** Provider processing operations cannot advance through
+  metric-stream CDC and analytics. Five operations had pending reconciliation
+  work during diagnosis, including the activity, sleep, recovery, training,
+  and body dataset set shown in the UI. The [processing-status
+  runbook](processing-status-runbook.md#monitoring-and-retention) defines
+  non-completed reconciliation work as an alert condition.
+- **Evidence:** The exact failing step was `Deploy stack without ClickHouse
+  consumers` in [Deploy Web run
+  30147912915](https://github.com/Asherlc/dofek/actions/runs/30147912915).
+  Its first fatal line was `failed to update service dofek_cdc-health: Error
+  response from daemon: rpc error: code = Unknown desc = update out of
+  sequence`. Every subsequent workflow step, including `Deploy ClickHouse
+  consumer services`, was skipped. The reconciliation monitor repeatedly
+  reported `checked 5, completed 0, waiting 5`, matching the monitor format
+  implemented by
+  [`check-clickhouse-cdc.ts`](../scripts/check-clickhouse-cdc.ts).
+- **Suspected root cause:** The reviewed [deployment
+  workflow](../.github/workflows/deploy-web-stack.yml) first applies the
+  consumer-quiesce override, then restores the consumers only after the
+  quiesced stack deploy and CDC setup succeed. Docker Swarm returned `update
+  out of sequence` while updating `dofek_cdc-health`, so the first step exited
+  and the guarded restoration step did not run. The underlying reason Swarm
+  rejected that service update was not verified; Docker documents that service
+  updates can stop when an update fails in its [Swarm service update
+  guidance](https://docs.docker.com/engine/swarm/services/#configure-a-services-update-behavior).
+- **Mitigation performed:** None. Diagnosis was read-only, so no production
+  mutation or consumer restoration was attempted.
+- **Recovery plan:** Re-run the reviewed [Deploy Web
+  workflow](../.github/workflows/deploy-web-stack.yml) so its full-stack step
+  restores `analytics-worker` and `metric-stream-clickhouse-sink`. Then use the
+  [freshness checks](metric-stream-redpanda-r2-runbook.md#freshness-checks) and
+  [processing reconciliation
+  checks](processing-status-runbook.md#diagnosis) to verify
+  that the sink acknowledges queued batches, reconciliation advances, the
+  analytics build succeeds, and query caches refresh.
+- **Remaining risk / follow-up:** The affected operations have accumulated
+  pending work and have no finite completion ETA while the consumers remain at
+  zero replicas. Add a failure cleanup or recovery path that restores
+  deliberately quiesced services without hiding the original deployment
+  failure, and make processing status distinguish unavailable infrastructure
+  from an ordinarily delayed operation.
+
+## 2026-07-25 — Integration Shard Failed Fetching the setup-uv Manifest
+
+- **Status:** Resolved on rerun without a repository change.
+- **Symptoms:** `Test / Integration Tests (2/4)` stopped during
+  `astral-sh/setup-uv` before any integration test command ran.
+- **User impact:** PR #1953 was temporarily blocked by the failed test gate.
+- **Evidence:** [Attempt 1 of CI run
+  30161182548](https://github.com/Asherlc/dofek/actions/runs/30161182548/attempts/1)
+  fell back to resolving the latest uv release from
+  `https://raw.githubusercontent.com/astral-sh/versions/main/v1/uv.ndjson`,
+  then emitted the first fatal line `fetch failed`. The other three integration
+  shards completed the same setup action successfully.
+- **Root cause:** The setup action's external manifest request failed. No
+  repository test or application code had executed, and the available runner
+  log did not identify the underlying network cause. The action's documented
+  [version resolution](https://github.com/astral-sh/setup-uv#version) uses the
+  latest release when no version is specified.
+- **Fix / mitigation:** No code or timeout change was made. The failed jobs
+  were rerun after the external request failure was identified.
+- **Validation:** [Attempt 2 of CI run
+  30161182548](https://github.com/Asherlc/dofek/actions/runs/30161182548/attempts/2)
+  completed integration shard 2, the unit-and-integration gate, the test gate,
+  and the overall CI gate successfully.
+- **Remaining risk / follow-up:** External release-metadata availability can
+  still block CI setup. If this recurs, evaluate pinning the uv tool version in
+  the reviewed workflow using setup-uv's documented `version` input rather than
+  adding retries or broader timeouts.
+
 ## 2026-07-25 — Mobile Preview Secret Load Timed Out
 
 - **Status:** External runner-egress failure identified on PR #1949;
