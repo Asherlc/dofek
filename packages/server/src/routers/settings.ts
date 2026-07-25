@@ -26,6 +26,12 @@ export const settingsRouter = router({
       // Invalidate server-side cache for settings.get and settings.getAll
       // so subsequent reads return the updated value, not stale cached data.
       await queryCache.invalidateByPrefix(`${ctx.userId}:settings.`);
+      if (input.key === "calorieGoal") {
+        await Promise.all([
+          queryCache.invalidateByPrefix(`${ctx.userId}:food.`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:nutrition.`),
+        ]);
+      }
 
       return result;
     }),

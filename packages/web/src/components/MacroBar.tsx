@@ -15,6 +15,7 @@ const colorMap = {
 
 export function MacroBar({ label, grams, percentage, color }: MacroBarProps) {
   const { bar, text } = colorMap[color];
+  const visualPercentage = Math.min(100, Math.max(0, percentage));
 
   return (
     <div className="space-y-1">
@@ -28,7 +29,7 @@ export function MacroBar({ label, grams, percentage, color }: MacroBarProps) {
       <div className="h-2 rounded-full bg-accent/10 overflow-hidden">
         <div
           className={`h-full rounded-full ${bar} transition-all duration-300`}
-          style={{ width: `${percentage}%` }}
+          style={{ width: `${visualPercentage}%` }}
         />
       </div>
     </div>

@@ -90,6 +90,9 @@ export default function FoodScreen() {
     isFetching: foodQuery.isFetching,
     isLoading: foodQuery.isLoading,
   });
+  const foodError = foodQuery.error ?? selectedDateFood.error;
+  const foodErrorMessage =
+    foodError instanceof Error ? foodError.message : "Failed to load food entries.";
 
   const mealGroups = useMemo(() => {
     const groups = new Map<string, FoodEntryRow[]>();
@@ -363,7 +366,7 @@ export default function FoodScreen() {
         {isFoodBlockingLoading ? (
           <Text style={styles.loadingText}>Loading...</Text>
         ) : foodQuery.isError || selectedDateFood.error || !summary ? (
-          <Text style={styles.errorText}>Failed to load food entries.</Text>
+          <Text style={styles.errorText}>{foodErrorMessage}</Text>
         ) : (
           MEALS.map(({ key, label }) => (
             <MealSection

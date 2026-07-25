@@ -18,6 +18,7 @@ const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | u
 }));
 let foodByDateQuery: {
   data: unknown;
+  error?: Error | null;
   isError: boolean;
   isFetching?: boolean;
   isLoading: boolean;
@@ -299,5 +300,20 @@ describe("FoodScreen AI meal confirmation", () => {
 
     expect(screen.getByText("Loading...")).toBeTruthy();
     expect(captureExceptionMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the server error message when loading food fails", async () => {
+    foodByDateQuery = {
+      data: undefined,
+      error: new Error("Nutrition data is unavailable for this date."),
+      isError: true,
+      isLoading: false,
+    };
+    const { default: FoodScreen } = await import("./food");
+
+    render(<FoodScreen />);
+
+    expect(screen.getByText("Nutrition data is unavailable for this date.")).toBeTruthy();
+    expect(screen.queryByText("Failed to load food entries.")).toBeNull();
   });
 });
