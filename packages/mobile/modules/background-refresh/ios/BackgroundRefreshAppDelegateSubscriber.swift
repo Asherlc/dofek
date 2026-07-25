@@ -18,15 +18,16 @@ public class BackgroundRefreshAppDelegateSubscriber: ExpoAppDelegateSubscriber {
             // Schedule the next refresh before doing work
             Self.scheduleRefresh()
 
-            var isCompleted = false
-            let complete = { (success: Bool) in
-                guard !isCompleted else { return }
-                isCompleted = true
-                refreshTask.setTaskCompleted(success: success)
+            guard let taskId = BackgroundRefreshModule.taskCoordinator.beginTask(completion: { success in
+                DispatchQueue.main.async {
+                    refreshTask.setTaskCompleted(success: success)
+                }
+            }) else {
+                return
             }
 
             refreshTask.expirationHandler = {
-                complete(false)
+                BackgroundRefreshModule.taskCoordinator.expireTask(id: taskId)
             }
 
             // Emit event to JS via NotificationCenter so the module can
@@ -34,13 +35,9 @@ public class BackgroundRefreshAppDelegateSubscriber: ExpoAppDelegateSubscriber {
             // to this notification when it has active listeners.
             NotificationCenter.default.post(
                 name: BackgroundRefreshModule.backgroundRefreshNotification,
-                object: nil
+                object: nil,
+                userInfo: [BackgroundRefreshModule.taskIdKey: taskId]
             )
-
-            // Give JS ~10 seconds to do its work, then mark complete.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                complete(true)
-            }
         }
 
         Self.scheduleRefresh()
