@@ -17182,3 +17182,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   validation pass without ad-hoc waits. Replacement CI must pass before merge.
 - **Remaining risk / follow-up:** None beyond completing replacement CI; the
   compiler now enforces future fixture parity with the canonical DTO.
+
+## 2026-07-25 — Concurrent Local ClickHouse Stack Restarted During Validation
+
+- **Status:** Unresolved local Docker capacity incident; focused validation
+  passed and CI validation is required.
+- **Symptoms:** The broad cycling repository integration fixture lost its
+  ClickHouse HTTP connection while rebuilding `analytics.v_activity`.
+- **User impact:** No production users were affected. One local validation
+  suite stopped before executing its four tests.
+- **Evidence:** The exact failed command was
+  `pnpm test:integration -- src/db/daily-body-measurement-read-model.integration.test.ts packages/server/src/repositories/cycling-analytics-repository.integration.test.ts`.
+  Its first fatal line was `socket hang up` during the fixture's
+  `INSERT INTO ... v_activity`. Docker then reported restart count 1 for
+  `issue-1769-clickhouse-1`, with the prior process ending at
+  `2026-07-25T22:12:18Z` and the replacement starting four seconds later.
+  The container log ended without a ClickHouse query exception. At the time,
+  six other workspace ClickHouse containers and two k3d servers were also
+  consuming the Docker VM's 7.653 GiB memory allocation.
+- **Root cause:** Not yet proven. The abrupt process loss and aggregate Docker
+  VM pressure are consistent with a host-level resource kill, but Docker did
+  not retain `OOMKilled=true` for the restarted container.
+- **Fix / mitigation:** No retry, timeout, memory-limit, or application
+  workaround was added. The issue-specific real ClickHouse lifecycle test
+  passed before and during the affected run.
+- **Validation:** The lifecycle integration test passed update, deletion,
+  tombstone, and downstream-exclusion assertions. The focused 61-test unit
+  suite also passed. The broad cycling fixture and CI remain the independent
+  validation gates.
+- **Remaining risk / follow-up:** Capture Docker daemon or VM-level kill events
+  if this recurs, and reduce concurrent disposable workspace stacks before
+  repeating broad local ClickHouse validation. Docker documents container
+  memory constraints and out-of-memory behavior at
+  <https://docs.docker.com/engine/containers/resource_constraints/#understand-the-risks-of-running-out-of-memory>.
