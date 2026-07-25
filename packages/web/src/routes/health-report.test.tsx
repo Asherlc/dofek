@@ -223,7 +223,7 @@ describe("health report route", () => {
     expect(screen.getByText("This shared report contains invalid data.")).toBeTruthy();
   });
 
-  it("keeps tokenless owner management on the authenticated query", () => {
+  it("keeps owner management without a token on the authenticated query", () => {
     mockMyReports.mockReturnValue({
       data: [],
       error: null,
