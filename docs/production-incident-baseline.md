@@ -16334,3 +16334,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   introduced.
 - **Remaining risk / follow-up:** Require the replacement hosted spell job and
   the rest of PR #1933's checks to pass before merge.
+
+## 2026-07-24 — Integration Shards Omitted the New Redpanda Prerequisite
+
+- **Status:** Fixed on PR #1933; replacement CI pending.
+- **Symptoms:** `Test / Integration Tests (4/4)` failed while the new durable
+  quarantine regression initialized.
+- **User impact:** No production impact. PR #1933 remained blocked from merge.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=4/4`; its
+  first fatal line was `REDPANDA_BROKERS is required for metric-stream
+  integration tests`. The CI integration job provided Postgres, ClickHouse,
+  and Redis services but no Redpanda service or broker address.
+- **Root cause:** Local integration runs use the Compose environment wrapper,
+  which was updated to start/pass Redpanda. Hosted shards invoke Vitest
+  directly and therefore require their own explicit service and environment
+  wiring.
+- **Fix / mitigation:** Added the repository-pinned Redpanda image as a healthy
+  integration service and passed `REDPANDA_BROKERS=localhost:9092` to all
+  shards. Redpanda documents the single-node container workflow in its
+  [Docker quickstart](https://docs.redpanda.com/current/get-started/quick-start/).
+  No test skip, conditional fallback, retry loop, or warning continuation was
+  added.
+- **Validation:** Actionlint and YAML validation pass locally. A standalone
+  container from the exact service image reached `Healthy: true` with the
+  configured health command, and its node config advertises
+  `127.0.0.1:9092`, matching the hosted port mapping. The same real-broker
+  regression passed through the local integration wrapper; the replacement
+  hosted shard is the final service-wiring proof.
+- **Remaining risk / follow-up:** Require all replacement integration shards
+  and their coverage artifact upload to finish before merge.
