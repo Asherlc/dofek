@@ -47,6 +47,27 @@ describe("daily recovery read-model lifecycle", () => {
       },
     });
 
+    const initialInputRowCount = await readPhysicalRowCount(
+      activeClient,
+      targetSchema,
+      "daily_recovery_inputs",
+    );
+    const initialRecoveryRowCount = await readPhysicalRowCount(
+      activeClient,
+      targetSchema,
+      "daily_recovery",
+    );
+
+    await materializeRecoveryInputs(activeClient, targetSchema, true);
+    await materializeRecovery(activeClient, targetSchema, true);
+
+    await expect(
+      readPhysicalRowCount(activeClient, targetSchema, "daily_recovery_inputs"),
+    ).resolves.toBe(initialInputRowCount);
+    await expect(readPhysicalRowCount(activeClient, targetSchema, "daily_recovery")).resolves.toBe(
+      initialRecoveryRowCount,
+    );
+
     await activeClient.command({ query: `TRUNCATE TABLE ${targetSchema}.v_daily_metrics` });
     await materializeRecoveryInputs(activeClient, targetSchema, true);
     await materializeRecovery(activeClient, targetSchema, true);
@@ -165,6 +186,21 @@ async function readLiveRecovery(client: ClickHouseClient, targetSchema: string):
       date: recoveryDate,
       userId: testUserId,
     },
+    format: "JSONEachRow",
+  });
+  const rows = z
+    .array(z.object({ row_count: z.coerce.number() }))
+    .parse(await result.json<unknown>());
+  return rows[0]?.row_count ?? 0;
+}
+
+async function readPhysicalRowCount(
+  client: ClickHouseClient,
+  targetSchema: string,
+  tableName: "daily_recovery" | "daily_recovery_inputs",
+): Promise<number> {
+  const result = await client.query({
+    query: `SELECT count() AS row_count FROM ${targetSchema}.${tableName}`,
     format: "JSONEachRow",
   });
   const rows = z

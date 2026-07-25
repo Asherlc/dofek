@@ -729,7 +729,9 @@ describe("production analytics read-model build", () => {
     const sql = readModel("daily_recovery_inputs");
 
     expect(sql).toContain("{% if is_incremental() %}");
-    expect(sql).toContain("existing_keys AS");
+    expect(sql).toContain("existing_rows AS");
+    expect(sql).toContain("dirty_keys AS");
+    expect(sql).toContain("IS DISTINCT FROM tuple(");
     expect(sql).toContain("analytics.v_daily_metrics");
     expect(sql).toContain("analytics.v_sleep");
     expect(sql).toContain("argMax(efficiency_pct, tuple(duration_minutes, started_at))");

@@ -10,10 +10,24 @@
 ) }}
 
 WITH {% if is_incremental() %}
-existing_keys AS (
+existing_rows AS (
     SELECT
         user_id,
-        date
+        date,
+        hrv,
+        resting_hr,
+        respiratory_rate,
+        efficiency_pct,
+        hrv_mean_30d,
+        hrv_sd_30d,
+        rhr_mean_30d,
+        rhr_sd_30d,
+        rr_mean_30d,
+        rr_sd_30d,
+        hrv_mean_60d,
+        hrv_sd_60d,
+        rhr_mean_60d,
+        rhr_sd_60d
     FROM {{ this }} FINAL
     WHERE is_deleted = 0
 ),
@@ -128,17 +142,70 @@ inputs_with_baselines AS (
     FROM daily_inputs
 ),
 
+{% if is_incremental() %}
+dirty_keys AS (
+    SELECT
+        inputs_with_baselines.user_id AS user_id,
+        inputs_with_baselines.date AS date
+    FROM inputs_with_baselines
+    LEFT JOIN existing_rows
+        ON existing_rows.user_id = inputs_with_baselines.user_id
+        AND existing_rows.date = inputs_with_baselines.date
+    WHERE existing_rows.user_id IS NULL
+        OR tuple(
+            inputs_with_baselines.hrv,
+            inputs_with_baselines.resting_hr,
+            inputs_with_baselines.respiratory_rate,
+            inputs_with_baselines.efficiency_pct,
+            inputs_with_baselines.hrv_mean_30d,
+            inputs_with_baselines.hrv_sd_30d,
+            inputs_with_baselines.rhr_mean_30d,
+            inputs_with_baselines.rhr_sd_30d,
+            inputs_with_baselines.rr_mean_30d,
+            inputs_with_baselines.rr_sd_30d,
+            inputs_with_baselines.hrv_mean_60d,
+            inputs_with_baselines.hrv_sd_60d,
+            inputs_with_baselines.rhr_mean_60d,
+            inputs_with_baselines.rhr_sd_60d
+        ) IS DISTINCT FROM tuple(
+            existing_rows.hrv,
+            existing_rows.resting_hr,
+            existing_rows.respiratory_rate,
+            existing_rows.efficiency_pct,
+            existing_rows.hrv_mean_30d,
+            existing_rows.hrv_sd_30d,
+            existing_rows.rhr_mean_30d,
+            existing_rows.rhr_sd_30d,
+            existing_rows.rr_mean_30d,
+            existing_rows.rr_sd_30d,
+            existing_rows.hrv_mean_60d,
+            existing_rows.hrv_sd_60d,
+            existing_rows.rhr_mean_60d,
+            existing_rows.rhr_sd_60d
+        )
+    UNION DISTINCT
+    SELECT
+        existing_rows.user_id AS user_id,
+        existing_rows.date AS date
+    FROM existing_rows
+    LEFT JOIN inputs_with_baselines
+        ON inputs_with_baselines.user_id = existing_rows.user_id
+        AND inputs_with_baselines.date = existing_rows.date
+    WHERE inputs_with_baselines.user_id IS NULL
+),
+{% endif %}
+
 result_keys AS (
+    {% if is_incremental() %}
+    SELECT
+        user_id,
+        date
+    FROM dirty_keys
+    {% else %}
     SELECT
         user_id,
         date
     FROM inputs_with_baselines
-    {% if is_incremental() %}
-    UNION DISTINCT
-    SELECT
-        user_id,
-        date
-    FROM existing_keys
     {% endif %}
 ),
 
