@@ -7,6 +7,8 @@ const {
   mockRevokeToken,
   mockLogger,
   mockLoadTokens,
+  mockDeleteTokens,
+  mockInvalidateByPrefix,
   mockGetAllProviders,
   mockResolveOrCreateUser,
   mockGetSessionIdFromRequest,
@@ -17,6 +19,8 @@ const {
   mockRevokeToken: vi.fn(),
   mockLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   mockLoadTokens: vi.fn(),
+  mockDeleteTokens: vi.fn(),
+  mockInvalidateByPrefix: vi.fn(),
   mockGetAllProviders: vi.fn(),
   mockResolveOrCreateUser: vi.fn(),
   mockGetSessionIdFromRequest: vi.fn(),
@@ -36,7 +40,7 @@ vi.mock("@sentry/node", () => ({
 vi.mock("../../logger.ts", () => ({ logger: mockLogger }));
 
 vi.mock("dofek/lib/cache", () => ({
-  queryCache: { invalidateByPrefix: vi.fn() },
+  queryCache: { invalidateByPrefix: mockInvalidateByPrefix },
 }));
 
 vi.mock("../../auth/account-linking.ts", () => ({
@@ -61,6 +65,7 @@ vi.mock("./slack-oauth.ts", () => ({
 
 vi.mock("dofek/db/tokens", () => ({
   loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
+  deleteTokens: (...args: unknown[]) => mockDeleteTokens(...args),
   ensureProvider: vi.fn(),
   saveTokens: vi.fn(),
 }));
@@ -154,6 +159,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
             revokeUrl: "https://api.wahooligan.com/oauth/revoke",
           },
           exchangeCode: mockExchangeCode,
+          reconnectStrategy: "revoke-then-replace",
           revokeExistingTokens: mockRevokeExistingTokens,
         }),
       },
@@ -174,7 +180,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     vi.restoreAllMocks();
   });
 
-  it("falls back to standard OAuth revocation when custom revocation fails", async () => {
+  it("does not attempt a less authoritative fallback when required revocation fails", async () => {
     // Existing tokens in the database
     mockLoadTokens.mockResolvedValue({
       accessToken: "expired-access",
@@ -190,27 +196,13 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     // Custom revocation was attempted and failed
     expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
 
-    // Standard OAuth revocation was called as fallback for both tokens
-    expect(mockRevokeToken).toHaveBeenCalledTimes(2);
-    expect(mockRevokeToken).toHaveBeenCalledWith(
-      expect.objectContaining({ revokeUrl: "https://api.wahooligan.com/oauth/revoke" }),
-      "expired-access",
+    expect(mockRevokeToken).not.toHaveBeenCalled();
+    expect(mockExchangeCode).not.toHaveBeenCalled();
+    expect(mockDeleteTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("existing connection is still active"),
     );
-    expect(mockRevokeToken).toHaveBeenCalledWith(
-      expect.objectContaining({ revokeUrl: "https://api.wahooligan.com/oauth/revoke" }),
-      "expired-refresh",
-    );
-
-    // Exchange still proceeded
-    expect(mockExchangeCode).toHaveBeenCalledWith("auth-code", undefined);
-
-    // Warning was logged
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      expect.stringContaining("Custom token revocation failed for wahoo"),
-    );
-
-    // Success response was sent
-    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
   });
 
   it("skips standard revocation when custom revocation succeeds", async () => {
@@ -231,19 +223,19 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     // Standard OAuth revocation was NOT called (custom succeeded)
     expect(mockRevokeToken).not.toHaveBeenCalled();
 
+    expect(mockDeleteTokens).toHaveBeenCalledWith(mockDb, "wahoo", "user-1");
+
     // Exchange proceeded
     expect(mockExchangeCode).toHaveBeenCalled();
   });
 
-  it("includes revocation context in logged error when exchange fails", async () => {
+  it("explains that the previous authorization was removed when token limits still block exchange", async () => {
     mockLoadTokens.mockResolvedValue({
       accessToken: "expired-access",
       refreshToken: "expired-refresh",
     });
 
-    // Both revocation methods fail
-    mockRevokeExistingTokens.mockRejectedValue(new Error("401 Unauthorized"));
-    mockRevokeToken.mockRejectedValue(new Error("Token revocation failed (503): Service error"));
+    mockRevokeExistingTokens.mockResolvedValue(undefined);
 
     // Exchange also fails with the specific Wahoo "too many tokens" error
     mockExchangeCode.mockRejectedValue(new Error("Too many unrevoked access tokens"));
@@ -257,16 +249,131 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Authorized Apps"));
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Settings"));
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("wahooligan.com/profile"));
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("previous Wahoo authorization was removed"),
+    );
+  });
 
-    // The final logged error includes both the exchange error and the revocation context
-    const allErrorMessages: string[] = mockLogger.error.mock.calls.map((call: unknown[]) =>
-      String(call[0]),
+  it("preserves an existing connection when exchange fails for a safe reconnect", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "ride-with-gps",
+        name: "Ride with GPS",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://ridewithgps.com/oauth/authorize",
+            tokenUrl: "https://ridewithgps.com/oauth/token.json",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://ridewithgps.com/oauth/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "ride-with-gps",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockExchangeCode.mockRejectedValue(new Error("provider unavailable"));
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockExchangeCode).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).not.toHaveBeenCalled();
+    expect(mockDeleteTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("existing connection is still active"),
     );
-    const callbackError = allErrorMessages.find((message) =>
-      message.includes("OAuth callback failed"),
+  });
+
+  it("clears confirmed revoked credentials when a destructive exchange fails", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://api.wahooligan.com/oauth/authorize",
+            tokenUrl: "https://api.wahooligan.com/oauth/token",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user_read"],
+          },
+          exchangeCode: mockExchangeCode,
+          revokeExistingTokens: mockRevokeExistingTokens,
+          reconnectStrategy: "revoke-then-replace",
+        }),
+      },
+    ]);
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeExistingTokens.mockResolvedValue(undefined);
+    mockExchangeCode.mockRejectedValue(new Error("token endpoint unavailable"));
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
+    expect(mockDeleteTokens).toHaveBeenCalledWith(mockDb, "wahoo", "user-1");
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("previous Wahoo authorization was removed"),
     );
-    expect(callbackError).toContain("Too many unrevoked access tokens");
-    expect(callbackError).toContain("prior revocation");
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("connect Wahoo again"));
+  });
+
+  it("retains existing credentials and aborts exchange when required revocation fails", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://api.wahooligan.com/oauth/authorize",
+            tokenUrl: "https://api.wahooligan.com/oauth/token",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user_read"],
+          },
+          exchangeCode: mockExchangeCode,
+          revokeExistingTokens: mockRevokeExistingTokens,
+          reconnectStrategy: "revoke-then-replace",
+        }),
+      },
+    ]);
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeExistingTokens.mockRejectedValue(new Error("revocation unavailable"));
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockDeleteTokens).not.toHaveBeenCalled();
+    expect(mockExchangeCode).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("existing connection is still active"),
+    );
   });
 
   it("shows deauthorization instructions when exchange fails with orphaned tokens and no stored tokens", async () => {
