@@ -21,7 +21,10 @@ function isHealthKitDatabaseInaccessible(error: unknown): boolean {
   );
 }
 
-function startHealthKitSync(trpcClient: SyncTrpcClient, onSyncComplete?: () => void) {
+function startHealthKitSync(
+  trpcClient: SyncTrpcClient,
+  onSyncComplete?: () => void | Promise<void>,
+) {
   if (syncing) {
     logger.info(TAG, "Sync already in progress, skipping");
     return;
@@ -36,7 +39,7 @@ function startHealthKitSync(trpcClient: SyncTrpcClient, onSyncComplete?: () => v
         TAG,
         `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
       );
-      onSyncComplete?.();
+      return onSyncComplete?.();
     })
     .catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
@@ -64,7 +67,7 @@ function startHealthKitSync(trpcClient: SyncTrpcClient, onSyncComplete?: () => v
  */
 export async function initBackgroundHealthKitSync(
   trpcClient: SyncTrpcClient,
-  onSyncComplete?: () => void,
+  onSyncComplete?: () => void | Promise<void>,
 ) {
   const authorizationState = await new AppleHealthAuthorizationService().resolve();
   if (!authorizationState.canAttemptSync()) {

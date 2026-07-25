@@ -22,6 +22,7 @@ import {
 } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
+import { invalidateSyncedHealthData } from "../lib/invalidate-synced-health-data";
 import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
 import { createAppQueryClient } from "../lib/query-client";
 import { runAfterUiIdle } from "../lib/runAfterUiIdle";
@@ -213,7 +214,7 @@ function AuthGate() {
       },
     };
     initBackgroundHealthKitSync(syncClient, () => {
-      queryClient.invalidateQueries();
+      return invalidateSyncedHealthData(queryClient);
     }).catch((error: unknown) => {
       logger.warn(
         "bg-healthkit-sync",
