@@ -67,6 +67,16 @@ async function fetchExports(): Promise<DataExport[]> {
   return body.exports;
 }
 
+async function getResponseErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body: unknown = await response.json();
+    return isRecord(body) && typeof body.error === "string" ? body.error : fallback;
+  } catch (error: unknown) {
+    captureException(error, { context: "data-export-response-error-json" });
+    return fallback;
+  }
+}
+
 export function ExportPanel() {
   const [exports, setExports] = useState<DataExport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +133,7 @@ export function ExportPanel() {
       });
 
       if (!triggerRes.ok) {
-        throw new Error("Failed to start export");
+        throw new Error(await getResponseErrorMessage(triggerRes, "Failed to start export"));
       }
 
       await refreshExports();

@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockCaptureException } = vi.hoisted(() => ({
+  mockCaptureException: vi.fn(),
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 vi.mock("../auth/cookies.ts", () => ({
   getSessionIdFromRequest: vi.fn(),
 }));
@@ -16,6 +24,7 @@ const mockCreateSignedExportDownloadUrl = vi.fn();
 
 import type { AddressInfo } from "node:net";
 import cookieParser from "cookie-parser";
+import { PgDialect } from "drizzle-orm/pg-core";
 import express from "express";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
@@ -113,24 +122,52 @@ describe("createExportRouter", () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const response = await request(createTestApp(), "post", "/api/export");
       expect(response.status).toBe(401);
+      expect(parseJson(response.text)).toEqual({ error: "Not authenticated" });
+      expect(mockExecute()).not.toHaveBeenCalled();
+      expect(vi.mocked(mockQueue.add)).not.toHaveBeenCalled();
+    });
+
+    it("returns 401 when the session has expired", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("expired-session");
+      vi.mocked(validateSession).mockResolvedValue(null);
+
+      const response = await request(createTestApp(), "post", "/api/export");
+
+      expect(response.status).toBe(401);
+      expect(parseJson(response.text)).toEqual({ error: "Session expired" });
+      expect(mockExecute()).not.toHaveBeenCalled();
+      expect(vi.mocked(mockQueue.add)).not.toHaveBeenCalled();
     });
 
     it("creates a queued export record and enqueues the export job", async () => {
       authenticate();
       mockExecute().mockResolvedValueOnce([{ id: createdExportId }]);
+      const nowSpy = vi
+        .spyOn(Date, "now")
+        .mockReturnValue(new Date("2026-07-24T00:00:00.000Z").getTime());
 
       const response = await request(createTestApp(), "post", "/api/export");
+      nowSpy.mockRestore();
 
       expect(response.status).toBe(200);
       expect(parseJson(response.text)).toEqual({ status: "queued", exportId: createdExportId });
       expect(mockExecute()).toHaveBeenCalledTimes(1);
+      const insertQuery = mockExecute().mock.calls[0]?.[0];
+      if (!insertQuery) {
+        throw new Error("Expected the export insert query");
+      }
+      expect(new PgDialect().sqlToQuery(insertQuery).params).toContain("2026-07-31T00:00:00.000Z");
       expect(vi.mocked(mockQueue.add)).toHaveBeenCalledWith(
         "export",
-        expect.objectContaining({
+        {
           exportId: createdExportId,
           userId: exportUserId,
-          outputPath: expect.stringMatching(/dofek-export-\d+-[a-z0-9]{4}\.zip$/),
-        }),
+        },
+        {
+          jobId: createdExportId,
+          removeOnComplete: true,
+          removeOnFail: true,
+        },
       );
     });
 
@@ -143,6 +180,29 @@ describe("createExportRouter", () => {
       expect(response.status).toBe(500);
       expect(parseJson(response.text)).toEqual({ error: "Failed to create export" });
       expect(vi.mocked(mockQueue.add)).not.toHaveBeenCalled();
+    });
+
+    it("returns a retryable error when the committed export cannot be enqueued", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([{ id: createdExportId }]);
+      vi.mocked(mockQueue.add).mockRejectedValueOnce(new Error("Redis unavailable"));
+
+      const response = await request(createTestApp(), "post", "/api/export");
+
+      expect(response.status).toBe(503);
+      expect(parseJson(response.text)).toEqual({
+        error:
+          "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
+        exportId: createdExportId,
+        retryable: true,
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "Redis unavailable" }),
+        {
+          extra: { exportId: createdExportId, userId: exportUserId },
+          tags: { source: "data-export-enqueue" },
+        },
+      );
     });
   });
 
