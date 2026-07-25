@@ -192,7 +192,7 @@ services:
           "probe",
         ]
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 3
       start_period: 15s
     deploy:

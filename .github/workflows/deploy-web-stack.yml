@@ -151,6 +151,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
 
       - name: Resolve image tag
         id: resolve
@@ -329,11 +330,42 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Prune unused images before pull
+      - name: Reclaim Docker root disk before pull
         run: |
+          set -euo pipefail
+
+          server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
+          if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
+            echo "::error::Unable to derive SSH host from DOCKER_HOST"
+            exit 1
+          fi
+
+          ssh_options=(
+            -o ConnectTimeout=30
+            -o ServerAliveInterval=30
+            -o ServerAliveCountMax=10
+          )
+
+          ssh "${ssh_options[@]}" "${SSH_USER}@${server_host}" 'df -h /'
           docker system df || true
+          docker container prune --force
           docker image prune -af
           docker system df || true
+
+          minimum_kb=$((8 * 1024 * 1024))
+          available_kb="$(
+            ssh "${ssh_options[@]}" "${SSH_USER}@${server_host}" \
+              'df --output=avail -k / | tail -n 1 | tr -d " "'
+          )"
+          ssh "${ssh_options[@]}" "${SSH_USER}@${server_host}" 'df -h /'
+          if ! [[ "$available_kb" =~ ^[0-9]+$ ]]; then
+            echo "::error::Unable to determine free space on the remote Docker root filesystem"
+            exit 1
+          fi
+          if [ "$available_kb" -lt "$minimum_kb" ]; then
+            echo "::error::Remote Docker root filesystem has less than 8 GiB free after container and image cleanup; aborting before image pulls."
+            exit 1
+          fi
 
       - name: Pull deploy images
         id: pull_images
@@ -864,6 +896,11 @@ jobs:
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              if [ "$desired_replicas" != "1" ]; then
+                docker service ps "$service_name" --no-trunc
+                echo "::error::${service_name} expected one desired replica after the full deploy, found ${desired_replicas}"
+                exit 1
+              fi
               case "$update_state" in
                 rollback_*)
                   docker service ps "$service_name" --no-trunc
@@ -876,7 +913,7 @@ jobs:
                   exit 1
                   ;;
               esac
-              if [ "$replicas" = "${desired_replicas}/${desired_replicas}" ] && {
+              if [ "$replicas" = "1/1" ] && {
                 [ -z "$update_state" ] || [ "$update_state" = "completed" ]
               }; then
                 break
@@ -894,6 +931,7 @@ jobs:
         if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
         uses: getsentry/action-release@ff07929a6537bac57790c3451cf4d364aca38528 # v3.7.0
         env:
+          DOCKER_HOST: unix:///var/run/docker.sock
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: east-bay-software
         with:
