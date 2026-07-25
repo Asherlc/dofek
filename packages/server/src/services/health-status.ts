@@ -243,7 +243,7 @@ export function buildDailyMetricHealthStatuses(trends: TrendsRow): HealthStatusM
     }),
     buildHealthStatusFromSummary({
       metric: "spo2",
-      label: "SpO2",
+      label: "Blood Oxygen Saturation (SpO2)",
       value: trends.latest_spo2,
       baseline: trends.avg_spo2,
       sampleDeviation: trends.stddev_spo2,
