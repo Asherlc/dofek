@@ -16311,3 +16311,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm checkout and the watchOS build on the
   replacement runner. If runner I/O failures recur, escalate with the failing
   runner evidence rather than adding repository-level retry behavior.
+
+## 2026-07-24 — Quarantine PR Failed Spell Check on KafkaJS API Name
+
+- **Status:** Fixed on PR #1933; replacement CI pending.
+- **Symptoms:** `Test / Spell Check` failed while the durable metric-stream
+  quarantine PR's remaining checks continued.
+- **User impact:** No production impact. PR #1933 was blocked from merging.
+- **Evidence:** The exact failing command was
+  `pnpm exec cspell --no-progress`; its first fatal finding was
+  `src/metric-stream/redpanda-consumer.integration.test.ts:188:7 - Unknown word
+  (acks)`, followed by four occurrences of the same KafkaJS producer option.
+- **Root cause:** The repository dictionary did not contain KafkaJS's canonical
+  `acks` producer field, newly used to require all in-sync replica
+  acknowledgements.
+- **Fix / mitigation:** Added the exact API identifier to the shared spelling
+  dictionary. KafkaJS documents `acks: -1` as the all-replica acknowledgement
+  mode in its [producing guide](https://kafka.js.org/docs/producing).
+- **Validation:** The unchanged source API remains typechecked and covered by
+  unit plus real-broker tests; `pnpm exec cspell --no-progress` passes locally.
+  No source rename, spelling ignore, skipped check, or warning fallback was
+  introduced.
+- **Remaining risk / follow-up:** Require the replacement hosted spell job and
+  the rest of PR #1933's checks to pass before merge.
