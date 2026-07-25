@@ -72,7 +72,7 @@ function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
   };
 }
 
-function directionFromDeviation(deviation: number): HealthStatusMetric["direction"] {
+function directionFromDeviation(deviation: number): "above" | "below" | "aligned" {
   if (deviation > 0) return "above";
   if (deviation < 0) return "below";
   return "aligned";
@@ -80,8 +80,8 @@ function directionFromDeviation(deviation: number): HealthStatusMetric["directio
 
 function isMovingAsIntended(
   intent: HealthMetricIntent,
-  direction: HealthStatusMetric["direction"],
-): boolean {
+  direction: "above" | "below" | "aligned",
+): direction is "above" | "below" {
   return (
     (intent === "higher" && direction === "above") || (intent === "lower" && direction === "below")
   );
