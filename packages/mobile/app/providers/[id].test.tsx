@@ -375,8 +375,12 @@ const appleHealthStats = {
 };
 
 function setupDefaultMocks() {
-  mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
-  mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false });
+  mockProvidersQuery.mockReturnValue({
+    data: [authorizedProvider],
+    error: null,
+    isLoading: false,
+  });
+  mockProviderStatsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
   mockDataHealthQuery.mockReturnValue({ data: null, isLoading: false, error: null });
   mockAvailableDataTypesQuery.mockReturnValue({
     data: ["activities"],
@@ -474,6 +478,21 @@ describe("ProviderDetailScreen", () => {
       expect(mockLogsQuery).not.toHaveBeenCalled();
       expect(mockDeletionStatusQuery).not.toHaveBeenCalled();
     });
+
+    it("keeps cached provider details visible after an inventory refresh failure", async () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [authorizedProvider],
+        isLoading: false,
+        error: new Error("Provider inventory refresh failed"),
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Wahoo")).toBeTruthy();
+      expect(screen.getByText("Provider inventory refresh failed")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Sync" })).toBeTruthy();
+    });
   });
 
   describe("Actions", () => {
@@ -563,10 +582,10 @@ describe("ProviderDetailScreen", () => {
       expect(screen.queryByText("Full sync")).toBeNull();
     });
 
-    it("shows provider data readiness when read models are blocked", async () => {
+    it("shows provider processing progress while read models update", async () => {
       mockDataHealthQuery.mockReturnValue({
         data: {
-          overallStatus: "blocked",
+          overallStatus: "active",
           generatedAt: "2026-06-30T12:00:00Z",
           scope: { providerId: "wahoo", datasets: ["activity"] },
           operations: [],
@@ -579,7 +598,7 @@ describe("ProviderDetailScreen", () => {
               latestReadModelAt: null,
               cdcLagSeconds: 90000,
               readModelLagSeconds: null,
-              status: "blocked",
+              status: "active",
               message: "Activity data is available, but ClickHouse mirrors are not current.",
             },
           ],
@@ -592,7 +611,7 @@ describe("ProviderDetailScreen", () => {
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("Wahoo data status")).toBeTruthy();
-      expect(screen.getByText("Your data update didn’t finish")).toBeTruthy();
+      expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
     });
 
     it("triggers generic provider sync with sinceDays=7 when Sync is clicked", async () => {
@@ -932,6 +951,21 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Activity records", () => {
+    it("shows provider statistics failures while retaining known provider details", async () => {
+      mockProviderStatsQuery.mockReturnValue({
+        data: undefined,
+        error: new Error("Provider statistics are temporarily unavailable"),
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Wahoo")).toBeTruthy();
+      expect(screen.getByText("Provider statistics are temporarily unavailable")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Sync" })).toBeTruthy();
+    });
+
     it("exposes record detail disclosure state", async () => {
       mockRecordsQuery.mockReturnValue({
         data: {

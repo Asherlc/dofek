@@ -16122,6 +16122,51 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   own Compose volumes so concurrent workspaces do not accumulate disposable
   database state.
 
+## 2026-07-24 — HealthKit Background Upload Outlived Its Delivery
+
+- **Status:** Fixed and validated locally; awaiting review and a new mobile
+  release.
+- **Symptoms:** Sentry issue
+  [`DOFEK-MOBILE-19`](https://east-bay-software.sentry.io/issues/7631866062/)
+  recorded 11 handled `TRPCClientError` events with
+  `fetch failed: UnexpectedException: The request timed out`. The supplied
+  latest event occurred at `2026-07-25T00:04:14.237Z` while the app was in the
+  background on an iPhone 16 Pro running iOS 26.5.2.
+- **User impact:** A one-day background HealthKit sync stopped while uploading
+  a 154,105-byte `healthKitSync.pushQuantitySamples` batch. The normal later
+  sync path remained able to retry the idempotent samples.
+- **Evidence:** The failed request began at `00:04:08.343Z` and timed out about
+  5.6 seconds later. No matching completed request exists in the retained
+  production web logs, while subsequent `pushQuantitySamples` requests at
+  `00:08:25Z` through `00:11:14Z` returned HTTP 200 in 48–138 ms. The server
+  logs requests on the response `finish` event. In the mobile native bridge,
+  every `HKObserverQuery` calls its delivery completion handler immediately
+  after emitting `onHealthKitSampleUpdate`; JavaScript then waits for a
+  five-second debounce before starting the HealthKit query-and-upload cycle.
+  Apple requires the observer completion handler to be called only after the
+  app finishes processing the new data
+  ([Executing Observer Queries](https://developer.apple.com/documentation/healthkit/executing-observer-queries)).
+- **Root cause:** The native HealthKit observer acknowledged successful
+  background delivery before JavaScript processed or uploaded the data,
+  relinquishing the HealthKit background execution lifecycle before the
+  delayed network request ran.
+- **Fix / mitigation:** The native bridge now retains each observer completion
+  handler under a delivery identifier carried into JavaScript. JavaScript
+  acknowledges that exact delivery only after its sync attempt finishes,
+  queues deliveries received during an active sync for a follow-up attempt,
+  and releases outstanding handlers during observer teardown.
+- **Validation:** Production services were healthy (`dofek_web` 2/2,
+  `dofek_worker` 1/1) on release `sha-17748f8`. Later HealthKit requests
+  completed normally without a timeout or server change. Test-first coverage
+  reproduced the early acknowledgement and stale-debounce failures before the
+  fix; all 16 focused TypeScript tests and all 65 Swift package tests pass
+  afterward. A Release configuration build also compiled, installed, and
+  launched successfully in iOS Simulator.
+- **Remaining risk / follow-up:** This path cannot be validated in Simulator
+  because HealthKit background delivery is device-only. A physical-device
+  background-delivery test and a corrected binary are still required;
+  foreground catch-up limits data loss on older builds but does not provide
+  timely background sync.
 ## 2026-07-24 — Analytics Refresh Failures Remained Docker-Healthy
 
 - **Status:** Root-cause fix validated locally; production deployment pending.
@@ -16290,6 +16335,82 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   CI project name across dependency startup, migrations, analytics, logs, and
   teardown before merging the fix.
 
+## 2026-07-24 — Malformed Metric-stream Events Had No Durable Quarantine
+
+- **Status:** Fixed and validated locally; hosted CI remains the merge gate.
+- **Symptoms:** A malformed JSON or schema-incompatible Redpanda event could
+  not reach ClickHouse. The current consumer correctly stopped before resolving
+  its batch, but the poison record then blocked that partition indefinitely
+  because there was no durable failure path.
+- **User impact:** Earlier consumer behavior could permanently discard malformed
+  sensor events by committing their offsets. The intermediate fail-closed
+  behavior prevented new loss but could indefinitely stall later valid sensor
+  events in the same partition.
+- **Evidence:** The regression batch contains malformed offset `0` followed by
+  valid offset `1`. When quarantine returns `quarantine unavailable`, the real
+  Redpanda group remains at offset `0`, the ClickHouse handler is not called,
+  and a restarted consumer sees offset `0` again. The first integration-harness
+  fatal line was `REDPANDA_BROKERS is required for metric-stream integration
+  tests`: `pnpm test:integration` generated the workspace broker URL but
+  stripped it before Vitest and did not start Redpanda.
+- **Root cause:** The ClickHouse consumer had only success or retry states; it
+  had no bounded durable quarantine outcome that could safely satisfy a poison
+  record before advancing the source offset. The integration tier also omitted
+  its existing Redpanda prerequisite.
+- **Fix / mitigation:** Added a Kafka-backed quarantine topic with enforced
+  delete cleanup, seven-day and 1-GiB-per-partition retention bounds, exact raw
+  payload bytes, source/error headers, and all-in-sync-replica acknowledgement.
+  The consumer now resolves a batch only after quarantine and ClickHouse both
+  succeed. The integration wrapper starts the workspace Redpanda service and
+  passes its generated broker address through the validated test environment.
+  No retry, timeout, skipped check, or warn-and-continue behavior was added.
+- **Validation:** Unit regressions cover quarantine failure, successful
+  quarantine-before-sink ordering, full replay context, tombstones, and a later
+  valid event behind an unhandled poison record. A real Redpanda integration
+  test proves offset `0` remains replayable after quarantine failure, then
+  verifies the restarted group commits offset `2` only after the quarantine
+  record is readable and the valid event is handled. It also reads back the
+  enforced topic retention configuration.
+- **Remaining risk / follow-up:** Quarantine is intentionally bounded, so
+  operators must monitor and repair records within seven days or before a
+  partition exceeds 1 GiB. Add quarantine topic volume/age alerting if
+  malformed-event frequency becomes operationally significant.
+
+## 2026-07-24 — Local Unsharded Integration Validation Exhausted Dependencies
+
+- **Status:** Local validation environment diagnosed; affected suites are being
+  rerun in bounded groups and hosted sharded CI remains the merge gate.
+- **Symptoms:** The full unsharded integration command reported FIT provider
+  failures, ClickHouse memory-limit errors, and later Postgres recovery errors.
+- **User impact:** No production impact. Local validation for issue #1775 was
+  interrupted after 103 integration files and 989 tests passed.
+- **Evidence:** The first independent fatal lines were `Unable to start the
+  native FIT decoder` and ClickHouse
+  `MEMORY_LIMIT_EXCEEDED`. The workspace ClickHouse container had restarted by
+  the post-run inspection; Postgres then reported `database system is in
+  recovery mode` during the same resource-heavy sequential run.
+- **Root cause:** The host did not have the repository's CMake, Ninja, vcpkg,
+  and native decoder prerequisites installed. Separately, the unsharded run
+  exceeded the workspace ClickHouse memory limit and interrupted dependent
+  database work; the activity power-curve suite reproduced the container exit
+  `137` even in a four-file bounded rerun. The
+  repository documents both the native decoder prerequisites and explicit
+  integration tiers in the [testing guide](testing.md#integration-dependencies).
+- **Fix / mitigation:** Installed the documented native toolchain and built the
+  decoder. Recreated only this workspace's affected services through the
+  Compose wrapper and reran the failed suites in bounded groups. No memory
+  limit, timeout, retry, skipped check, or warn-and-continue behavior changed.
+- **Validation:** The metric-stream Redpanda integration test passed against
+  the real broker. All 22 affected Wahoo, Coros, and Suunto FIT tests passed
+  after the native build. Another bounded group covering processing
+  reconciliation, Decathlon, and cycling analytics passed all 13 tests. The
+  activity power-curve rerun captured the remaining local ClickHouse exit
+  before dependent router fixtures could finish; hosted CI supplies the final
+  isolated integration validation.
+- **Remaining risk / follow-up:** Local all-at-once integration execution can
+  still exceed the Docker VM's per-service resources. Prefer the documented
+  changed or bounded integration commands locally and treat the hosted shards
+  as the complete merge gate.
 ## 2026-07-24 — watchOS CI Runner Failed Repository Checkout
 
 - **Status:** Root cause identified; replacement CI pending.
@@ -16312,3 +16433,726 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm checkout and the watchOS build on the
   replacement runner. If runner I/O failures recur, escalate with the failing
   runner evidence rather than adding repository-level retry behavior.
+
+## 2026-07-24 — Duplicate HealthKit Refreshes Exhausted a Web Pool
+
+- **Status:** Root cause fixed and validated locally; production deployment and
+  post-deploy observation pending.
+- **Symptoms:** A production `mobileDashboard.recovery` request failed once at
+  `2026-07-25T02:34:59.787Z` with the first fatal line
+  `timeout exceeded when trying to connect`. The originating
+  [Sentry issue](https://east-bay-software.sentry.io/issues/7632025587/) showed
+  that the inner `pg-pool` acquisition exceeded the configured 10-second
+  connection timeout before the HRV SQL reached PostgreSQL.
+- **User impact:** One observed mobile recovery refresh returned a server error.
+  The next recovery request succeeded, and no PostgreSQL restart, recovery-mode
+  transition, or server-wide connection-limit failure occurred.
+- **Evidence:** Swarm logs from the same `dofek_web.2` replica showed two
+  HealthKit ingestion waves about 12 seconds apart, followed by duplicate
+  `mobileDashboard.training` requests lasting 38.7 and 29.4 seconds while the
+  recovery request waited for a five-connection process pool. PostgreSQL
+  `pg_stat_statements` showed the three climbing queries used by the training
+  route averaging about 4.7–7.6 seconds. Code inspection confirmed that both
+  the root background HealthKit initializer and overview `useAutoSync` imported
+  HealthKit data, after which the root path invalidated every cached query.
+  The database was healthy during and after the event, so increasing the pool
+  or its timeout would only have hidden the duplicate client workload.
+- **Root cause:** Two independent mobile startup owners imported the same
+  HealthKit data and triggered overlapping dashboard refetches; the duplicate
+  long-running training reads occupied the replica's five PostgreSQL
+  connections long enough for recovery's pool acquisition to time out.
+- **Fix / mitigation:** Made the root background HealthKit service the single
+  ingestion owner, retained overview auto-sync only for API-provider sync and
+  outbound Dofek food writeback, and replaced the root-wide cache invalidation
+  with one shared allowlist of health-derived query families. Added observable
+  OpenTelemetry gauges for total, idle, and waiting `pg-pool` state so future
+  contention is directly distinguishable from PostgreSQL execution time.
+  Node-postgres recommends measuring application instance and pool behavior
+  before changing pool size in horizontally scaled systems
+  ([pool-sizing guide](https://node-postgres.com/guides/pool-sizing)), and
+  TanStack Query supports predicate-scoped invalidation for selecting the
+  affected cached queries
+  ([QueryClient reference](https://tanstack.com/query/latest/docs/reference/QueryClient#queryclientinvalidatequeries)).
+- **Validation:** The six focused suites pass 55 tests, including async
+  completion-error reporting and observable gauge values. `pnpm test:changed`
+  passes 485 unit/mobile tests, root and mobile package typechecks pass, and the
+  complete `pnpm lint` chain passes after starting this workspace's isolated
+  ClickHouse service and generating its local port environment. No retry,
+  timeout, or pool-size resilience knob changed.
+- **Remaining risk / follow-up:** Deploy the mobile and server changes together,
+  then verify that only one HealthKit ingestion wave occurs per startup and
+  that `postgres.pool.requests.waiting` remains zero during dashboard refreshes.
+  The slow climbing reads remain legitimate optimization candidates, but they
+  did not independently cause this incident and should be profiled separately
+  before changing their query design.
+## 2026-07-24 — Production Deploy Exhausted the Docker Root Disk
+
+- **Status:** Production disk pressure remediated and all enabled services
+  restored; durable workflow fixes validated locally.
+- **Symptoms:** Deploy Web run `30140043237`, job `89631520983`, stopped in
+  `Pull deploy images` while extracting the CloudBeaver image.
+- **User impact:** The requested release did not deploy. Production remained
+  available on the prior `sha-17748f8` release with every desired Swarm replica
+  running.
+- **Evidence:** The first fatal line was `failed to extract layer ... write
+  /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/81704/fs/opt/java/openjdk/lib/modules:
+  no space left on device`. Host inspection showed `/dev/sda1` at 99% with
+  825 MiB free, 201 non-running containers, 3.333 GB of reclaimable container
+  writable layers, and an unreferenced 8.5 GB `dofek_redpanda_data` volume.
+  The current `dofek_redpanda` service used the canonical
+  `/mnt/dofek-data/redpanda` bind mount instead of that legacy volume.
+- **Root cause:** The pre-pull cleanup pruned only images, while stopped and
+  created containers retained obsolete writable layers and image references;
+  the unreferenced legacy Redpanda volume consumed additional root-disk
+  capacity outside image pruning.
+- **Fix / mitigation:** After confirming the legacy volume had no container
+  references and the running Redpanda service used its data-disk bind mount,
+  removed 201 non-running containers, removed only
+  `dofek_redpanda_data`, and pruned unused images. The deploy workflow now
+  prunes non-running containers before images and hard-fails before pulling
+  unless the remote host—not the GitHub runner—has at least 8 GiB free.
+  Docker documents these object lifecycles and prune scopes in its
+  [resource-pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
+- **Validation:** Cleanup increased root-disk headroom from 825 MiB to 19 GiB
+  and reduced usage from 99% to 62%. Docker reported 23 active containers and
+  zero inactive containers; all desired Swarm services remained converged,
+  including `web` at 2/2 replicas and every enabled data service at 1/1.
+- **Follow-up evidence:** Attempt 2 passed the formerly failing image pull,
+  asset upload, and migrations before a newer skipped `workflow_run` cancelled
+  it through the top-level `cancel-in-progress` group. Manual recovery run
+  `30140671547` then checked out newer stack configuration while deploying
+  older image `sha-6c4bf05`. Its first fatal line was `failed to update service
+  dofek_cdc-health: Error response from daemon: rpc error: code = Unknown desc
+  = update out of sequence` while the monitor rolled back. Host health logs
+  proved the underlying revision skew: the newer analytics healthcheck called
+  `http://127.0.0.1:3002/readyz`, but the older image still ran the shell worker
+  without that endpoint; the newer CDC probe similarly depended on
+  `scripts/cdc-health-state.ts`, which the older entrypoint did not maintain.
+  Automatic recovery run `30141068075` passed image extraction, migrations,
+  dependency readiness, CDC configuration, and its final consumer-deploy step,
+  but the newer analytics healthcheck again rolled the older image back to zero
+  replicas. The convergence loop incorrectly accepted the rolled-back `0/0`
+  desired state as success. The new CDC task's health history showed four
+  consecutive `Health check exceeded timeout (5s)` results even though the
+  monitor logged successful CDC checks. The run's final fatal line was
+  `Missing file at path:
+  /github/file_commands/set_output_7f716ac9-82a6-4d06-9fba-45c4263a7a65`
+  from the Sentry release action: the job-level remote `DOCKER_HOST` caused the
+  Docker action to launch on the production daemon, where the GitHub runner's
+  file-command bind mount did not exist.
+- **Follow-up fix:** Quiesced the unhealthy analytics-worker restart loop while
+  preserving the healthy metric-stream sink and rolled-back CDC monitor.
+  Automatic deploys now pass the successful CI run's full commit SHA into the
+  stack workflow and check out that revision before rendering deploy
+  configuration. Manual tag deploys must use the image's source commit as the
+  workflow `--ref`. The CDC probe timeout is calibrated to 15 seconds based on
+  the measured TypeScript startup time under its 0.10 CPU limit. The final
+  consumer convergence check now requires the stack's expected one desired
+  replica instead of accepting a rollback to zero. The Sentry action overrides
+  `DOCKER_HOST` with the GitHub runner's local Docker socket.
+- **Final validation:** A targeted production rollout restored
+  `analytics-worker`, `cdc-health`, and the metric-stream ClickHouse sink on
+  `sha-005b4fd` at 1/1 each. Analytics used the healthcheck from its matching
+  image revision. CDC reached `update_state=completed` with the 15-second probe
+  timeout and retained its state-age and consecutive-failure health semantics.
+  The root filesystem retained 15 GiB free at 70% usage in the final
+  post-recovery snapshot.
+- **Remaining risk / follow-up:** Hosted CI must validate the checkout pin and
+  remote disk gate, CDC timeout, local Sentry Docker context, and strict
+  consumer convergence before merge. The top-level `cancel-in-progress` group
+  can still cancel a healthy deploy when a newer CI completion creates a deploy
+  workflow that is subsequently skipped; address that concurrency policy in a
+  separate change rather than coupling it to disk reclamation.
+
+## 2026-07-24 — OAuth Reconnect Cleanup Mutants Survived PR CI
+
+- **Status:** Fixed locally on PR #1941; replacement CI pending.
+- **Symptoms:** `Test / Stryker (0)` and the aggregate mutation gate failed
+  after reconnect token lifecycle handling was added.
+- **User impact:** No production users were affected. PR #1941 was blocked
+  from merging.
+- **Evidence:** The exact failed command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  Its first fatal line was
+  `Final mutation score 70.13 under breaking threshold 75, setting exit code
+  to 1 (failure)`. The report contained 15 surviving and eight uncovered
+  mutants in the new revocation cleanup and reconnect-state branches.
+- **Root cause:** The callback tests covered the principal safe and
+  destructive reconnect outcomes, but did not directly distinguish partial
+  standard-token revocation, missing refresh tokens, custom-to-standard
+  fallback, invalid destructive configuration, or non-data account-link
+  isolation. Stryker could therefore remove or invert those branches without
+  failing a test.
+- **Fix / mitigation:** Added public-callback unit tests for each missing
+  behavior. No mutation threshold, exclusion, timeout, or retry changed.
+  Stryker describes surviving mutants and break thresholds in its
+  [configuration reference](https://stryker-mutator.io/docs/stryker-js/configuration/).
+- **Validation:** All 16 focused callback tests pass. A stricter local run
+  mutating the full callback file completed with 201 mutants killed, two timed
+  out, 24 surviving, one uncovered, and an 89.04% score, above the 75% break
+  threshold.
+- **Remaining risk / follow-up:** Hosted CI must confirm the replacement shard.
+  Future OAuth lifecycle changes should pair end-to-end persistence coverage
+  with focused unit assertions for each cleanup fallback and failure-state
+  distinction.
+
+## 2026-07-24 — Data Export Queue Handoff Was Not Recoverable
+
+- **Status:** Fixed locally; hosted CI is a merge gate.
+- **Symptoms:** A data-export row could remain `queued` forever when the web
+  process committed the database insert and its subsequent BullMQ `Queue.add`
+  call failed.
+- **User impact:** A user could see an export stuck in progress indefinitely,
+  with no automatic recovery after Redis, the web process, or the worker
+  recovered.
+- **Evidence:** The exact failing operation was the POST route's `queue.add`
+  immediately after the committed `fitness.data_export` insert. The regression
+  test's first fatal line was `Error: Redis unavailable`; before the fix, the
+  route returned a generic 500 and no process scanned the durable queued row.
+- **Root cause:** Export creation used a non-transactional database-to-queue
+  handoff and generated the worker's output path only in web-process memory, so
+  the committed row did not contain enough durable identity to recreate the
+  job.
+- **Fix / mitigation:** The queued database row now acts as the durable outbox.
+  The worker polls queued rows and enqueues each export with its export UUID as
+  the BullMQ job ID, while the processor derives its temporary path from that
+  UUID. The POST route still attempts immediate enqueue, but reports a specific
+  retryable 503 and captures the failure in Sentry when Redis is unavailable.
+  BullMQ documents that an existing custom job ID prevents duplicate jobs and
+  that auto-removed jobs may be added again:
+  <https://docs.bullmq.io/guide/jobs/job-ids>.
+- **Validation:** Focused unit, web, and mobile suites pass all 168 tests,
+  including repeated dispatch, non-overlapping restart polling, deterministic
+  job data, dispatcher shutdown, server error details, and client presentation.
+  A real-Postgres integration test covers queued-row filtering, stable order,
+  and batch limits. Focused mutation runs kill every mutant in the durable row
+  query, dispatcher, changed export processor path, and changed POST route.
+- **Remaining risk / follow-up:** Hosted CI must pass before merge. The
+  dispatcher intentionally leaves the database row queued until the worker
+  claims it; BullMQ job-ID deduplication prevents concurrent duplicates while a
+  job exists.
+
+## 2026-07-24 — Fresh Local TimescaleDB Reported Healthy Before Final Restart
+
+- **Status:** Unresolved local test-infrastructure race; the repeated
+  integration test passed once initialization completed.
+- **Symptoms:** The first integration run against a newly created workspace
+  stack failed during test-database setup with
+  `Error: Connection terminated unexpectedly`.
+- **User impact:** No production impact. The first local integration run in a
+  fresh workspace can fail before executing its test body.
+- **Evidence:** The database log showed the initial server reporting
+  `database system is ready to accept connections`, followed by the image's
+  tuning/init scripts and `received fast shutdown request`. The test connected
+  during that intentional restart; the final server became healthy immediately
+  afterward.
+- **Root cause:** The Compose health probe can succeed against the temporary
+  PostgreSQL server used by the TimescaleDB image's initialization before that
+  server performs its final configured restart.
+- **Fix / mitigation:** No retry, sleep, or source workaround was added. The
+  exact integration command passed on the already initialized stack.
+- **Validation:** `src/db/data-export.integration.test.ts` passed its real
+  PostgreSQL query test after the final server startup.
+- **Remaining risk / follow-up:** Update the local Compose readiness contract
+  separately so a fresh stack is not considered ready until image
+  initialization and the final server restart have completed.
+
+## 2026-07-24 — HealthKit Observer Updates Completed Before Sync
+
+- **Status:** Fixed and validated with focused TypeScript and Swift tests plus
+  a native simulator build; hosted CI remains the merge gate.
+- **Symptoms:** Every HealthKit observer callback completed immediately after a
+  JavaScript event was emitted, while the listener waited five seconds before
+  starting its asynchronous sync.
+- **User impact:** iOS could suspend Dofek after the early acknowledgement,
+  leaving the new health samples unsynced until a later observer delivery or
+  foreground launch.
+- **Evidence:** `HealthKitModule` passed the callback into
+  `MainThreadEventEmitter`, which invoked it directly after `sendEvent`.
+  `background-health-kit-sync` then created a five-second debounce timer and
+  had no native completion API.
+- **Root cause:** The native event had no durable identity or coordinator, so
+  JavaScript could not settle the specific callback after its coalesced work.
+- **Fix / mitigation:** Native code now retains callbacks behind unique update
+  IDs in a lock-protected coordinator. JavaScript listens before observer
+  registration, batches IDs for 500 ms, runs serialized catch-up and observer
+  syncs, and completes the exact batch after success or failure. Native
+  expiration, re-registration, teardown, and Expo module destruction drain
+  callbacks exactly once; expiration and unexpected observer errors report to
+  Sentry. Apple requires observer completion only after new-data processing
+  finishes in its
+  [observer-query guide](https://developer.apple.com/documentation/healthkit/executing-observer-queries).
+- **Validation:** The regression first failed because no JavaScript completion
+  call or Swift coordinator existed. Twenty-five focused mobile tests now
+  cover single and coalesced updates, registration/re-initialization races,
+  success, failure, native bridge errors, and teardown. Sixty-seven Swift tests
+  cover exact-once completion, coalescing, expiration, teardown, and the
+  existing HealthKit helpers. The generated iOS workspace compiled
+  successfully for an iOS 26.4 simulator with code signing and Sentry upload
+  disabled.
+- **Remaining risk / follow-up:** The iOS Simulator cannot generate real
+  HealthKit background deliveries. Require a native simulator compile plus
+  hosted Swift, mutation, mobile, and iOS build gates; physical-device
+  observation remains the final runtime verification.
+
+## 2026-07-24 — Image Vulnerability Scan Could Not Reach Docker Hub
+
+- **Status:** External registry failure identified; replacement CI pending on
+  PR #1940.
+- **Symptoms:** `Test / Image Vulnerability Scan` failed, which also failed the
+  aggregate `Test / Security & Dependencies` gate.
+- **User impact:** No production users were affected. PR #1940 was blocked from
+  merging even though no vulnerability result was produced.
+- **Evidence:** The exact failing command was
+  `docker pull "$GRYPE_IMAGE"`. The first fatal line was
+  `Error response from daemon: Get "https://registry-1.docker.io/v2/":
+  net/http: request canceled while waiting for connection`; all five attempts
+  timed out before the final explicit pull failure.
+- **Root cause:** The hosted runner could not establish a timely connection to
+  Docker Hub. The application image built successfully, and Grype never ran, so
+  this was not a detected application-image vulnerability.
+- **Fix / mitigation:** Scheduled replacement CI on a fresh hosted runner. No
+  scan threshold, timeout, retry count, or vulnerability policy was changed.
+- **Validation:** The replacement run must pull the pinned Grype image and
+  complete the critical-vulnerability scan before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly cannot pull
+  the pinned scanner image, investigate an approved registry mirror using the
+  captured Docker Hub evidence before changing workflow behavior.
+
+## 2026-07-24 — Integration Fixtures Could Not Reach Docker Hub
+
+- **Status:** External registry failure identified; replacement CI pending on
+  PR #1937.
+- **Symptoms:** `Test / Integration Tests (1/4)` failed while its aggregate
+  `Test / Unit & Integration Tests` gate reported the required-job failure.
+- **User impact:** No production users were affected. PR #1937 was blocked from
+  merging even though 311 integration tests passed before fixture setup failed.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=1/4`. The
+  first fatal line was `Error: (HTTP code 500) server error - Get
+  "https://registry-1.docker.io/v2/": context deadline exceeded`; the later
+  `Cannot read properties of undefined (reading 'cleanup')` was a secondary
+  teardown error after fixture setup did not return a context.
+- **Root cause:** Testcontainers could not reach Docker Hub while starting the
+  fixtures for `metric-stream-location-point-migration.integration.test.ts`
+  and `seed-dev-db.integration.test.ts`. The source tests themselves did not
+  fail an assertion.
+- **Fix / mitigation:** Run replacement CI on a fresh hosted runner after
+  merging the current base. No test, timeout, retry, or application behavior is
+  being changed.
+- **Validation:** The replacement shard must start both fixtures and pass the
+  full shard before merge.
+- **Remaining risk / follow-up:** If the registry failure repeats on an
+  independent runner, investigate an approved registry mirror from the
+  captured evidence before changing workflow behavior.
+
+## 2026-07-24 — Provider Webhook Processing Failures Were Acknowledged
+
+- **Status:** Fixed locally; hosted CI pending.
+- **Symptoms:** The provider webhook route returned `200 OK` after database
+  lookup, targeted processing, queue-enqueue, and unexpected request failures.
+- **User impact:** Providers treated failed deliveries as accepted, so events
+  could be permanently lost instead of retried.
+- **Evidence:** The regression tests first failed with
+  `expected 200 to be 503` for database, BullMQ enqueue, and top-level request
+  failures.
+- **Root cause:** Per-event and top-level exception handlers logged failures
+  but unconditionally fell through to, or directly sent, a successful
+  response.
+- **Fix / mitigation:** Return `503 Service Unavailable` when any actionable
+  event is neither processed nor durably queued, continue attempting the rest
+  of a batch, and report unexpected failures to Sentry with provider and event
+  context. Invalid signatures and payloads remain non-retryable `4xx`
+  responses. RFC 9110 defines `503` for a temporarily unavailable service:
+  <https://www.rfc-editor.org/rfc/rfc9110.html#name-503-service-unavailable>.
+- **Validation:** All 37 webhook route tests pass, including executable
+  regressions for database failure, enqueue failure, continued batch
+  processing, Sentry context, and top-level failure.
+- **Remaining risk / follow-up:** Hosted CI must confirm the full server test,
+  typecheck, lint, and mutation suites before merge.
+
+## 2026-07-24 — Quarantine PR Failed Spell Check on KafkaJS API Name
+
+- **Status:** Fixed on PR #1933; replacement CI pending.
+- **Symptoms:** `Test / Spell Check` failed while the durable metric-stream
+  quarantine PR's remaining checks continued.
+- **User impact:** No production impact. PR #1933 was blocked from merging.
+- **Evidence:** The exact failing command was
+  `pnpm exec cspell --no-progress`; its first fatal finding was
+  `src/metric-stream/redpanda-consumer.integration.test.ts:188:7 - Unknown word
+  (acks)`, followed by four occurrences of the same KafkaJS producer option.
+- **Root cause:** The repository dictionary did not contain KafkaJS's canonical
+  `acks` producer field, newly used to require all in-sync replica
+  acknowledgements.
+- **Fix / mitigation:** Added the exact API identifier to the shared spelling
+  dictionary. KafkaJS documents `acks: -1` as the all-replica acknowledgement
+  mode in its [producing guide](https://kafka.js.org/docs/producing).
+- **Validation:** The unchanged source API remains typechecked and covered by
+  unit plus real-broker tests; `pnpm exec cspell --no-progress` passes locally.
+  No source rename, spelling ignore, skipped check, or warning fallback was
+  introduced.
+- **Remaining risk / follow-up:** Require the replacement hosted spell job and
+  the rest of PR #1933's checks to pass before merge.
+
+## 2026-07-24 — Integration Shards Omitted the New Redpanda Prerequisite
+
+- **Status:** Fixed on PR #1933; replacement CI pending.
+- **Symptoms:** `Test / Integration Tests (4/4)` failed while the new durable
+  quarantine regression initialized.
+- **User impact:** No production impact. PR #1933 remained blocked from merge.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=4/4`; its
+  first fatal line was `REDPANDA_BROKERS is required for metric-stream
+  integration tests`. The CI integration job provided Postgres, ClickHouse,
+  and Redis services but no Redpanda service or broker address.
+- **Root cause:** Local integration runs use the Compose environment wrapper,
+  which was updated to start/pass Redpanda. Hosted shards invoke Vitest
+  directly and therefore require their own explicit service and environment
+  wiring.
+- **Fix / mitigation:** Added the repository-pinned Redpanda image as a healthy
+  integration service and passed `REDPANDA_BROKERS=localhost:9092` to all
+  shards. Redpanda documents the single-node container workflow in its
+  [Docker quickstart](https://docs.redpanda.com/current/get-started/quick-start/).
+  No test skip, conditional fallback, retry loop, or warning continuation was
+  added.
+- **Validation:** Actionlint and YAML validation pass locally. A standalone
+  container from the exact service image reached `Healthy: true` with the
+  configured health command, and its node config advertises
+  `127.0.0.1:9092`, matching the hosted port mapping. The same real-broker
+  regression passed through the local integration wrapper; the replacement
+  hosted shard is the final service-wiring proof.
+- **Remaining risk / follow-up:** Require all replacement integration shards
+  and their coverage artifact upload to finish before merge.
+
+## 2026-07-24 — Analytics Integration Test Lacked uv in Hosted CI
+
+- **Status:** Fixed on PR #1945; replacement CI pending.
+- **Symptoms:** `Test / Integration Tests (4/4)` failed when the fresh
+  ClickHouse/dbt microbatch regression tried to start dbt.
+- **User impact:** No production impact. PR #1945 remained blocked from merge.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=4/4`; its
+  first fatal line was `Error: spawn uv ENOENT`. The same job's earlier
+  ClickHouse connection-reset warnings came from container readiness polling
+  and were not fatal.
+- **Root cause:** The new executable dbt regression invokes the analytics
+  project's pinned Python environment through `uv`, but hosted integration
+  shards installed only Node and pnpm. The lint job already installed uv, so
+  local and lint validation did not expose the missing integration-job
+  prerequisite.
+- **Fix / mitigation:** Added the repository-pinned `astral-sh/setup-uv` action
+  to the integration job before Vitest. Astral documents this action as the
+  supported way to make uv available in GitHub Actions:
+  <https://docs.astral.sh/uv/guides/integration/github/#using-uv-in-github-actions>.
+  No retry, timeout, skipped test, fallback, or warning continuation was added.
+- **Validation:** The focused regression passes locally against a real isolated
+  ClickHouse container and the workflow passes local action/YAML validation.
+  The replacement hosted shard is the final proof that its uv/dbt prerequisite
+  is available.
+- **Remaining risk / follow-up:** Require the replacement shard and all
+  remaining PR checks to pass before merge.
+
+## 2026-07-24 — Knip Did Not Recognize the External uv Binary
+
+- **Status:** Fixed on PR #1945; replacement CI pending.
+- **Symptoms:** `Test / Knip` failed after the analytics build runner began
+  invoking uv.
+- **User impact:** No production impact. PR #1945 remained blocked from merge.
+- **Evidence:** The exact failing command was `pnpm knip`; the first new fatal
+  finding was `Unlisted binaries (1)`, followed by
+  `uv  scripts/run-local-analytics-build.ts`. The earlier mobile Sentry config
+  loader message also appears in successful Knip jobs and did not cause this
+  regression.
+- **Root cause:** uv is an intentionally external repository-tool prerequisite,
+  not an npm dependency, but the root Knip workspace had not declared it among
+  the externally provided binaries.
+- **Fix / mitigation:** Added `uv` to the existing root `ignoreBinaries` list
+  alongside `dbt`, `cmake`, and other externally installed tools. Knip
+  documents `ignoreBinaries` specifically for used binaries that are not
+  provided by a package dependency:
+  <https://knip.dev/reference/configuration#ignorebinaries>.
+  No file, dependency, or issue category was excluded.
+- **Validation:** `pnpm knip` passes locally with the uv invocation still
+  analyzed, and the replacement hosted Knip job remains the merge gate.
+- **Remaining risk / follow-up:** Require the replacement Knip job and all
+  remaining PR checks to pass before merge.
+
+## 2026-07-24 — HealthKit Swift Mutation Run Timed Out
+
+- **Status:** Root cause fixed locally; replacement hosted mutation validation
+  pending.
+- **Symptoms:** `Test / Swift Mutation Testing` on PR #1937 ran until the
+  step-level 30-minute limit, then the aggregate test and CI gates failed.
+- **User impact:** No production users were affected. The HealthKit observer
+  completion fix was blocked from merging.
+- **Evidence:** The exact command was
+  `muter --files-to-mutate
+  "ios/HealthKitObserverUpdateCoordinator.swift,ios/MainThreadEventEmitter.swift"`.
+  Its first fatal line was `The action 'Run Muter' has timed out after 30
+  minutes.` Isolating the files locally showed the emitter's sole mutant was
+  killed in 19 seconds. The coordinator's first `RemoveSideEffects` mutant
+  removed `lock.lock()` while retaining `lock.unlock()`; all 72 tests printed
+  as passed, but the mutated XCTest process remained alive indefinitely.
+- **Root cause:** Separate manual lock and unlock calls let the mutation
+  operator create an invalid half-lock critical section. That corrupted the
+  lock lifecycle after assertions completed, so Muter waited forever for the
+  test process instead of reporting a surviving mutant.
+- **Fix / mitigation:** Replaced every manual lock/unlock pair in the
+  coordinator with Foundation's scoped `NSLock.withLock` operation. Scoped
+  locking keeps acquisition and release indivisible and guarantees release
+  when the operation exits; Foundation documents `NSLock` as the mutual
+  exclusion primitive:
+  <https://developer.apple.com/documentation/foundation/nslock>. No timeout,
+  retry, mutation exclusion, or skipped check was added.
+- **Validation:** The unchanged 72-test Swift package suite passes on the
+  refactored coordinator. The isolated coordinator mutation run completed in
+  20 seconds and killed all four mutants; the isolated emitter run completed
+  in 19 seconds and killed its sole mutant. The combined exact hosted command
+  completed in 25 seconds and killed all five mutants at a 100% mutation
+  score. Replacement hosted CI remains the merge gate.
+- **Remaining risk / follow-up:** Muter log filenames contain colons and cannot
+  be uploaded by GitHub's artifact action when a run fails. Fix artifact
+  sanitization separately only if a future failing run needs those logs; it did
+  not cause this mutation timeout.
+
+## 2026-07-25 — Local ClickHouse Integration Rebuild Exhausted Shared VM Memory
+
+- **Status:** Root cause identified and broad local validation passed after
+  completed workspaces naturally released shared Docker VM memory.
+- **Symptoms:** A broad router integration run failed during ClickHouse fixture
+  construction, and subsequent scoped Compose and Docker status commands did
+  not receive a daemon response.
+- **User impact:** No production users were affected. Local validation for
+  issue #1750 could not complete the broad `router-data` suite.
+- **Evidence:** The initial exact failing command was
+  `pnpm test:integration -- packages/server/src/routers/router-data.integration.test.ts`.
+  Its first fatal line was `Error: socket hang up` while executing the fixture
+  `INSERT INTO ... v_activity`. The scoped
+  `pnpm compose -- down --remove-orphans --volumes`, `pnpm compose -- ps -a`,
+  and `docker info` commands subsequently received no daemon response and were
+  manually terminated. After the daemon recovered normally, only the
+  `issue-1750` Compose project was removed and recreated. The unchanged command
+  then failed before any assertion with ClickHouse error 241:
+  `(total) memory limit exceeded`, at 954.95 MiB RSS against an 882.57 MiB
+  limit. ClickHouse reported only 300–500 MiB of OS memory available in the
+  7.65 GiB Docker VM. `MemoryWorker` logs showed it repeatedly lowering the
+  server hard limit from the configured 3 GiB ceiling to roughly 600–800 MiB
+  based on available memory. Concurrent isolated workspaces each had
+  ClickHouse processes using roughly 600–680 MiB. ClickHouse documents that
+  memory overcommit terminates an overcommitted query when the server reaches
+  its memory limit:
+  <https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#memory-limit-exceeded-for-query>.
+- **Root cause:** Concurrent workspace databases exhausted the shared Docker
+  VM's available memory, so ClickHouse dynamically lowered its server memory
+  limit below the fixture rebuild's measured peak and terminated the query; no
+  product assertion failed.
+- **Fix / mitigation:** No product test, timeout, retry, memory limit, or
+  application behavior was changed. Cleanup and fresh startup were restricted
+  to the `issue-1750` Compose project, preserving every other workspace.
+- **Validation:** The focused serial
+  `efficiency.polarizationTrend` integration suite passed all seven tests,
+  including exact 80% and 90% zone boundaries, insufficient-data status,
+  server-computed totals, and the serialized polarization classification.
+  After available memory rose to 2.22 GiB and ClickHouse's dynamic server limit
+  rose to 2.36 GiB, the unchanged broad `router-data` integration command
+  passed all 51 tests without an ad-hoc wait, retry, timeout, or memory-setting
+  change.
+- **Remaining risk / follow-up:** Concurrent local ClickHouse stacks can still
+  exhaust the fixed-size shared Docker VM. Keep workspace-scoped cleanup as
+  part of completed work and rely on hosted CI as the full integration gate.
+## 2026-07-24 — Metro Secret Load Could Not Reach Infisical
+
+- **Status:** External network failure identified on PR #1945; replacement CI
+  pending.
+- **Symptoms:** `Build Mobile / Metro Bundle` failed before the Metro build
+  command ran.
+- **User impact:** No production impact. PR #1945 remained blocked from merge.
+- **Evidence:** The failing secret-load step ran
+  `infisical login --method=oidc-auth`; its first fatal line was
+  `error: unable to authenticate with oidc auth`, caused by
+  `dial tcp 3.212.82.44:443: i/o timeout` while posting to
+  `https://app.infisical.com/api/v1/auth/oidc-auth/login`.
+- **Root cause:** The hosted runner could not establish a connection to the
+  Infisical OIDC endpoint. Dependency installation and GitHub token minting had
+  already succeeded, and the Metro command never started, so this was not an
+  application bundle failure. Infisical documents that GitHub's OIDC token is
+  exchanged at that endpoint for a short-lived access token:
+  <https://infisical.com/docs/documentation/platform/identities/oidc-auth/github>.
+- **Fix / mitigation:** Schedule replacement CI on a fresh hosted runner. No
+  authentication fallback, retry, timeout, cached secret, or bundle behavior
+  was changed.
+- **Validation:** The preceding hosted run passed the Metro bundle on the same
+  PR changes, and the replacement job must complete the Infisical exchange and
+  bundle before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly time out
+  against Infisical, investigate provider availability and runner egress with
+  the captured endpoint evidence before changing workflow behavior.
+
+## 2026-07-24 — E2E Image Build Could Not Fetch Alpine Package Index
+
+- **Status:** External registry failure identified on PR #1941; replacement CI
+  pending.
+- **Symptoms:** `Test / E2E Tests (Web)` failed while building the E2E server
+  image, before Cypress started.
+- **User impact:** No production impact. PR #1941 remained blocked from merge.
+- **Evidence:** The failing Dockerfile command was
+  `apk add --no-cache ca-certificates libbz2 libstdc++`; its first causal fatal
+  line was
+  `WARNING: fetching https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/APKINDEX.tar.gz: TLS: unspecified error`.
+  The later `no such package` messages and buildx exit code 2 followed because
+  apk could not load the repository index.
+- **Root cause:** The hosted BuildKit runner could not establish the TLS
+  connection needed to fetch Alpine's package index. Alpine documents that
+  `apk` retrieves repository indexes before resolving and installing packages:
+  <https://wiki.alpinelinux.org/wiki/Alpine_Package_Keeper>.
+- **Fix / mitigation:** Schedule replacement CI on a fresh hosted runner. No
+  package substitution, mirror fallback, retry, timeout, or image behavior was
+  changed.
+- **Validation:** The same Dockerfile build passed on prior independent PR
+  runs, and the web application build passed in the affected run. The
+  replacement E2E job must fetch the index, build the image, and complete
+  Cypress before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly fail to
+  fetch the Alpine index, investigate mirror availability and hosted-runner
+  network evidence before changing the build.
+
+## 2026-07-25 — Failed Deploy Left ClickHouse Consumers Quiesced
+
+- **Status:** Unresolved; the affected [Deploy Web
+  run](https://github.com/Asherlc/dofek/actions/runs/30147912915) left both
+  ClickHouse consumer services scaled to zero.
+- **Symptoms:** Processing status reported that recomputing activities, sleep,
+  recovery, training, and body was taking longer than expected. The production
+  `analytics-worker` and `metric-stream-clickhouse-sink` services both showed
+  `0/0` replicas after the deployment; their responsibilities are documented in
+  the [metric-stream
+  runbook](metric-stream-redpanda-r2-runbook.md#required-services).
+- **User impact:** Provider processing operations cannot advance through
+  metric-stream CDC and analytics. Five operations had pending reconciliation
+  work during diagnosis, including the activity, sleep, recovery, training,
+  and body dataset set shown in the UI. The [processing-status
+  runbook](processing-status-runbook.md#monitoring-and-retention) defines
+  non-completed reconciliation work as an alert condition.
+- **Evidence:** The exact failing step was `Deploy stack without ClickHouse
+  consumers` in [Deploy Web run
+  30147912915](https://github.com/Asherlc/dofek/actions/runs/30147912915).
+  Its first fatal line was `failed to update service dofek_cdc-health: Error
+  response from daemon: rpc error: code = Unknown desc = update out of
+  sequence`. Every subsequent workflow step, including `Deploy ClickHouse
+  consumer services`, was skipped. The reconciliation monitor repeatedly
+  reported `checked 5, completed 0, waiting 5`, matching the monitor format
+  implemented by
+  [`check-clickhouse-cdc.ts`](../scripts/check-clickhouse-cdc.ts).
+- **Suspected root cause:** The reviewed [deployment
+  workflow](../.github/workflows/deploy-web-stack.yml) first applies the
+  consumer-quiesce override, then restores the consumers only after the
+  quiesced stack deploy and CDC setup succeed. Docker Swarm returned `update
+  out of sequence` while updating `dofek_cdc-health`, so the first step exited
+  and the guarded restoration step did not run. The underlying reason Swarm
+  rejected that service update was not verified; Docker documents that service
+  updates can stop when an update fails in its [Swarm service update
+  guidance](https://docs.docker.com/engine/swarm/services/#configure-a-services-update-behavior).
+- **Mitigation performed:** None. Diagnosis was read-only, so no production
+  mutation or consumer restoration was attempted.
+- **Recovery plan:** Re-run the reviewed [Deploy Web
+  workflow](../.github/workflows/deploy-web-stack.yml) so its full-stack step
+  restores `analytics-worker` and `metric-stream-clickhouse-sink`. Then use the
+  [freshness checks](metric-stream-redpanda-r2-runbook.md#freshness-checks) and
+  [processing reconciliation
+  checks](processing-status-runbook.md#diagnosis) to verify
+  that the sink acknowledges queued batches, reconciliation advances, the
+  analytics build succeeds, and query caches refresh.
+- **Remaining risk / follow-up:** The affected operations have accumulated
+  pending work and have no finite completion ETA while the consumers remain at
+  zero replicas. Add a failure cleanup or recovery path that restores
+  deliberately quiesced services without hiding the original deployment
+  failure, and make processing status distinguish unavailable infrastructure
+  from an ordinarily delayed operation.
+
+## 2026-07-25 — Integration Shard Failed Fetching the setup-uv Manifest
+
+- **Status:** Resolved on rerun without a repository change.
+- **Symptoms:** `Test / Integration Tests (2/4)` stopped during
+  `astral-sh/setup-uv` before any integration test command ran.
+- **User impact:** PR #1953 was temporarily blocked by the failed test gate.
+- **Evidence:** [Attempt 1 of CI run
+  30161182548](https://github.com/Asherlc/dofek/actions/runs/30161182548/attempts/1)
+  fell back to resolving the latest uv release from
+  `https://raw.githubusercontent.com/astral-sh/versions/main/v1/uv.ndjson`,
+  then emitted the first fatal line `fetch failed`. The other three integration
+  shards completed the same setup action successfully.
+- **Root cause:** The setup action's external manifest request failed. No
+  repository test or application code had executed, and the available runner
+  log did not identify the underlying network cause. The action's documented
+  [version resolution](https://github.com/astral-sh/setup-uv#version) uses the
+  latest release when no version is specified.
+- **Fix / mitigation:** No code or timeout change was made. The failed jobs
+  were rerun after the external request failure was identified.
+- **Validation:** [Attempt 2 of CI run
+  30161182548](https://github.com/Asherlc/dofek/actions/runs/30161182548/attempts/2)
+  completed integration shard 2, the unit-and-integration gate, the test gate,
+  and the overall CI gate successfully.
+- **Remaining risk / follow-up:** External release-metadata availability can
+  still block CI setup. If this recurs, evaluate pinning the uv tool version in
+  the reviewed workflow using setup-uv's documented `version` input rather than
+  adding retries or broader timeouts.
+
+## 2026-07-25 — Mobile Preview Secret Load Timed Out
+
+- **Status:** External runner-egress failure identified on PR #1949;
+  replacement CI pending.
+- **Symptoms:** `Publish Mobile Preview OTA` failed before the Expo update
+  command ran.
+- **User impact:** No production users were affected. PR #1949 remained blocked
+  from merge.
+- **Evidence:** The exact failed step was
+  `Load mobile preview secrets from Infisical`, which ran
+  `infisical login --method=oidc-auth`. Its first causal fatal line was
+  `Post "https://app.infisical.com/api/v1/auth/oidc-auth/login": dial tcp
+  3.212.82.44:443: i/o timeout`; the subsequent authentication error and exit
+  code 1 followed from that connection failure.
+- **Root cause:** The hosted runner could not establish an HTTPS connection to
+  Infisical's OIDC endpoint after successfully checking out the repository,
+  installing dependencies, and minting the GitHub OIDC token. Infisical
+  documents that the GitHub token is exchanged at that endpoint for a
+  short-lived access token:
+  <https://infisical.com/docs/documentation/platform/identities/oidc-auth/github>.
+- **Fix / mitigation:** Trigger replacement CI on a fresh hosted runner. No
+  authentication fallback, retry, timeout, cached secret, or application
+  behavior changed.
+- **Validation:** The preceding PR run passed the same mobile-preview workflow,
+  and local lint, typechecks, focused tests, and the 13,453-test unit/mobile
+  suite pass on the current source. The replacement run must complete the
+  Infisical exchange and publish step before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly time out
+  against Infisical, investigate provider availability and runner egress using
+  the captured endpoint evidence before changing workflow behavior.
+
+## 2026-07-25 — Mobile Preview Object Upload Returned InternalError
+
+- **Status:** Resolved after the external upload service recovered; replacement
+  CI passed.
+- **Symptoms:** PR #1956's `Publish Mobile Preview OTA` check failed after the
+  iOS bundle and OTA export completed successfully.
+- **User impact:** No production users were affected. The PR remained blocked
+  until an independently scheduled replacement publish passed.
+- **Evidence:** The exact failed step was `Publish OTA to PR branch`. The first
+  fatal line was
+  `File upload failed ... <Code>InternalError</Code><Message>We encountered an internal error. Please try again.</Message>`.
+  The export had already produced the iOS bundle and loaded one platform, so
+  the failure occurred at the object upload boundary rather than during
+  application compilation. The OTA health endpoint subsequently returned HTTP
+  200. The S3 API defines `InternalError` as an HTTP 500 server error:
+  <https://docs.aws.amazon.com/AmazonS3/latest/API/API_Error.html>.
+- **Root cause:** The S3-compatible OTA object-upload service returned its
+  server-side `InternalError` response for the generated bundle. There was no
+  application build, credential, or repository test failure.
+- **Fix / mitigation:** Schedule the failed workflow on a replacement hosted
+  runner after the OTA health endpoint recovered. No retry, timeout, fallback,
+  workflow behavior, or application code changed.
+- **Validation:** The replacement `Publish Mobile Preview OTA` job completed
+  checkout, dependency setup, secret loading, export, upload, and PR-comment
+  publication successfully in 2m18s on the same source revision.
+- **Remaining risk / follow-up:** If independent publishes repeatedly return
+  `InternalError`, correlate the OTA service and object-storage logs before
+  changing workflow behavior.

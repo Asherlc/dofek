@@ -6,7 +6,7 @@ import {
 
 const activeSnapshot: ProcessingStatusSnapshot = {
   generatedAt: "2026-07-22T12:00:00.000Z",
-  scope: { providerId: "kaya", datasets: ["activity"] },
+  scope: { providerId: "garmin", datasets: ["activity"] },
   overallStatus: "active",
   datasets: [
     {
@@ -22,7 +22,7 @@ const activeSnapshot: ProcessingStatusSnapshot = {
   operations: [
     {
       id: "00000000-0000-4000-8000-000000001852",
-      providerId: "kaya",
+      providerId: "garmin",
       kind: "provider_sync",
       createdAt: "2026-07-22T11:58:00.000Z",
       status: "active",
@@ -44,6 +44,15 @@ const activeSnapshot: ProcessingStatusSnapshot = {
     },
   ],
 };
+const activeDataset = activeSnapshot.datasets.at(0);
+if (!activeDataset) throw new Error("Expected the processing story to include a dataset");
+const longRecomputeDatasetLabels = [
+  ["activity", "Activities"],
+  ["sleep", "Sleep"],
+  ["recovery", "Recovery"],
+  ["training", "Training"],
+  ["body", "Body"],
+] satisfies ReadonlyArray<readonly [string, string]>;
 
 const meta = {
   title: "State/ProcessingStatusWidget",
@@ -54,6 +63,58 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Active: Story = {};
+export const SleepUpdate: Story = {
+  name: "Sleep update",
+  args: {
+    data: {
+      ...activeSnapshot,
+      scope: { providerId: null, datasets: ["sleep"] },
+      datasets: [
+        {
+          ...activeDataset,
+          key: "sleep",
+          label: "Sleep",
+        },
+      ],
+    },
+  },
+};
+export const TrainingUpdate: Story = {
+  name: "Training update",
+  args: {
+    data: {
+      ...activeSnapshot,
+      scope: { providerId: null, datasets: ["training"] },
+      datasets: [
+        {
+          ...activeDataset,
+          key: "training",
+          label: "Training",
+        },
+      ],
+    },
+  },
+};
+export const LongRecompute: Story = {
+  name: "Long recompute",
+  args: {
+    data: {
+      ...activeSnapshot,
+      scope: {
+        providerId: null,
+        datasets: ["activity", "sleep", "recovery", "training", "body"],
+      },
+      overallStatus: "delayed",
+      datasets: longRecomputeDatasetLabels.map(([key, label]) => ({
+        ...activeDataset,
+        key,
+        label,
+        status: "delayed",
+        progressPercentage: null,
+      })),
+    },
+  },
+};
 export const Delayed: Story = { args: { data: { ...activeSnapshot, overallStatus: "delayed" } } };
 export const Partial: Story = { args: { data: { ...activeSnapshot, overallStatus: "partial" } } };
 export const Failed: Story = { args: { data: { ...activeSnapshot, overallStatus: "failed" } } };

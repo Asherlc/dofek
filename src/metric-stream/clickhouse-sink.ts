@@ -535,12 +535,13 @@ export async function runMetricStreamClickHouseSinkFromEnv(): Promise<void> {
     throw new Error("ClickHouse metric-stream sink requires an insert-capable client");
   }
 
-  const { consumer, topic } = createKafkaMetricStreamConsumerFromEnv(
+  const { consumer, quarantine, topic } = createKafkaMetricStreamConsumerFromEnv(
     "metric-stream-clickhouse-sink",
   );
 
   await runMetricStreamEventConsumer({
     consumer,
+    quarantine,
     topic,
     handleEvents: async (events, context) => {
       await applyMetricStreamEventsToClickHouse(client, events, context);

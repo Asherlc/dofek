@@ -128,6 +128,15 @@ export default function TodayScreen() {
         <ProviderGuide onDismiss={providerGuide.dismiss} providers={providerGuide.providers} />
       )}
 
+      {providerGuide.error ? (
+        <QueryStatePanel
+          variant="error"
+          title="Could not refresh provider setup"
+          message={getQueryErrorMessage(providerGuide.error)}
+          minHeight={72}
+        />
+      ) : null}
+
       <ProcessingStatusWidget
         data={processingStatusQuery.data}
         error={processingStatusQuery.error}

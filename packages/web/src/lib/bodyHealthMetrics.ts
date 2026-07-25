@@ -75,7 +75,7 @@ export function buildBodyHealthMetrics({
 
   return [
     {
-      label: "Body Weight",
+      label: "Trend Weight",
       value: windowedWeight.at(-1)?.smoothedWeight ?? null,
       avg: mean(smoothedWeights),
       stddev: stddev(smoothedWeights),

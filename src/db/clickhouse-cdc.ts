@@ -96,6 +96,7 @@ const analyticsSourceTables = [
   "lab_result",
   "journal_entry",
   "provider",
+  "provider_connection",
   "provider_priority",
   "device_priority",
   "sensor_provider_priority",
@@ -144,6 +145,7 @@ const rawAnalyticsMirrorTableMappings: Record<
     "sleep_stage",
     "daily_metrics",
     "provider",
+    "provider_connection",
     "provider_priority",
     "device_priority",
     "processing_flow_marker",
@@ -160,6 +162,11 @@ const rawAnalyticsMirrorTableMappings: Record<
 };
 const requiredExistingMirrorTableMappings = {
   dofek_fitness_raw_analytics: [
+    {
+      sourceTableIdentifier: "fitness.provider_connection",
+      destinationTableIdentifier: "provider_connection",
+      exclude: [],
+    },
     {
       sourceTableIdentifier: "fitness.processing_flow_marker",
       destinationTableIdentifier: "processing_flow_marker",

@@ -180,7 +180,7 @@ export async function persistProviderConnection(params: {
     const { isWebhookProvider } = await import("dofek/providers/types");
     if (isWebhookProvider(params.provider)) {
       const { registerWebhookForProvider } = await import("../webhooks.ts");
-      await registerWebhookForProvider(params.db, params.provider);
+      await registerWebhookForProvider(params.db, params.provider, params.userId);
       logger.info(`[auth] Webhook registered for ${params.provider.id}`);
     }
   } catch (webhookErr: unknown) {

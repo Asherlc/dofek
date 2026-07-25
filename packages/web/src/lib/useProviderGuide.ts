@@ -17,9 +17,15 @@ export function useProviderGuide() {
   );
   const dismissed = status.data?.dismissed === true;
   const isLoading = providers.isLoading || status.isLoading;
+  const hasProviderInventory = providers.data !== undefined;
+  const hasDismissalStatus = status.data !== undefined;
 
   const showProviderGuide =
-    forceProviderGuide || (!isLoading && shouldShowProviderGuide(connectedCount, dismissed));
+    (forceProviderGuide && hasProviderInventory) ||
+    (!isLoading &&
+      hasProviderInventory &&
+      hasDismissalStatus &&
+      shouldShowProviderGuide(connectedCount, dismissed));
 
   function dismiss() {
     dismissMutation.mutate(undefined, {
@@ -32,6 +38,7 @@ export function useProviderGuide() {
   return {
     showProviderGuide,
     dismiss,
+    error: providers.error ?? status.error,
     isLoading,
     providers: guideProviders,
   };

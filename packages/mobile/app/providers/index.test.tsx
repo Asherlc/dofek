@@ -1034,10 +1034,10 @@ describe("ProvidersScreen", () => {
     expect(screen.getByText("Full Sync All")).toBeTruthy();
   });
 
-  it("renders dataset-level data readiness messages on the provider list", async () => {
+  it("renders dataset-level processing progress on the provider list", async () => {
     mockDataHealthQuery.mockReturnValue({
       data: {
-        overallStatus: "blocked",
+        overallStatus: "active",
         generatedAt: "2026-06-30T08:00:00.000Z",
         scope: { providerId: null, datasets: ["providers"] },
         operations: [],
@@ -1050,8 +1050,9 @@ describe("ProvidersScreen", () => {
             latestReadModelAt: null,
             cdcLagSeconds: null,
             readModelLagSeconds: null,
-            status: "blocked",
-            message: "Sleep data is synced, but dashboard summaries are blocked.",
+            status: "active",
+            progressPercentage: 60,
+            message: "Sleep summaries are updating.",
           },
         ],
       },
@@ -1061,7 +1062,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    expect(screen.getByText("Your data update didn’t finish")).toBeTruthy();
+    expect(screen.getByText("Recomputing sleep")).toBeTruthy();
   });
 
   it("shows an explicit error when providers fail to load", async () => {
@@ -1102,6 +1103,60 @@ describe("ProvidersScreen", () => {
     await renderProvidersScreen();
 
     expect(screen.getByText("Logs failed")).toBeTruthy();
+  });
+
+  it("keeps cached provider stats visible when their background refresh fails", async () => {
+    mockStatsQuery.mockReturnValue({
+      data: [
+        {
+          providerId: "wahoo",
+          totalRecords: 42,
+          activities: 42,
+          metricStream: 0,
+          dailyMetrics: 0,
+          sleepSessions: 0,
+          bodyMeasurements: 0,
+          foodEntries: 0,
+          nutritionDaily: 0,
+          healthEvents: 0,
+          labPanels: 0,
+          labResults: 0,
+          journalEntries: 0,
+        },
+      ],
+      isLoading: false,
+      error: new Error("Provider statistics refresh failed"),
+    });
+
+    await renderProvidersScreen();
+
+    expect(screen.getAllByText("42").length).toBeGreaterThan(0);
+    expect(screen.getByText("Provider statistics refresh failed")).toBeTruthy();
+  });
+
+  it("keeps cached sync history visible when its background refresh fails", async () => {
+    mockLogsQuery.mockReturnValue({
+      data: [
+        {
+          id: "log-1",
+          providerId: "wahoo",
+          dataType: "activities",
+          status: "success",
+          recordCount: 12,
+          errorMessage: null,
+          authFailureReason: null,
+          durationMs: 100,
+          syncedAt: "2026-07-24T12:00:00.000Z",
+        },
+      ],
+      isLoading: false,
+      error: new Error("Sync history refresh failed"),
+    });
+
+    await renderProvidersScreen();
+
+    expect(screen.getByText("activities")).toBeTruthy();
+    expect(screen.getByText("Sync history refresh failed")).toBeTruthy();
   });
 
   it("passes sinceDays: 7 when Sync button is clicked", async () => {

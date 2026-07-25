@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
 import type { ProviderState, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
@@ -30,7 +32,9 @@ export function DataSourcesPanel() {
   const stats = trpc.sync.providerStats.useQuery();
   const logs = trpc.sync.logs.useQuery({ limit: 100 });
   const processingStatus = useProcessingStatus({ datasets: ["providers"] });
-  const syncMutation = trpc.sync.triggerSync.useMutation();
+  const syncMutation = trpc.sync.triggerSync.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const trpcUtils = trpc.useUtils();
 
   const [providerStates, setProviderStates] = useState<Record<string, ProviderState>>({});
@@ -59,10 +63,23 @@ export function DataSourcesPanel() {
       pollSyncJob({
         jobId,
         providerIds,
-        fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
+        fetchStatus: (id) =>
+          trpcUtils.sync.syncStatus.fetch(
+            { jobId: id },
+            { staleTime: 0, meta: locallyReportedErrorMeta },
+          ),
         updateState,
         onComplete: () => {
           trpcUtils.invalidate();
+        },
+        onError: (error) => {
+          const providerId = providerIds.length === 1 ? providerIds[0] : undefined;
+          captureException(
+            error,
+            providerId
+              ? { operation: "sync.syncStatus", providerId }
+              : { operation: "sync.syncStatus" },
+          );
         },
       }),
     [trpcUtils, updateState],
@@ -94,6 +111,10 @@ export function DataSourcesPanel() {
         if (!jobId) return;
         await doPollSyncJob(jobId, [providerId]);
       } catch (err: unknown) {
+        captureException(err, {
+          operation: "sync.triggerSync",
+          providerId,
+        });
         updateState(providerId, {
           status: "error",
           message: err instanceof Error ? err.message : "Sync failed",
@@ -144,6 +165,7 @@ export function DataSourcesPanel() {
           }),
         );
       } catch (err: unknown) {
+        captureException(err, { operation: "sync.triggerSync" });
         for (const p of enabled) {
           updateState(p.id, {
             status: "error",
@@ -357,6 +379,8 @@ export function DataSourcesPanel() {
       />
 
       {providers.error ? <QueryStatePanel error={providers.error} height={72} /> : null}
+      {stats.error ? <QueryStatePanel error={stats.error} height={72} /> : null}
+      {logs.error ? <QueryStatePanel error={logs.error} height={72} /> : null}
 
       {providers.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

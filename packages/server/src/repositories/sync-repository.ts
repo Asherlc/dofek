@@ -48,7 +48,7 @@ const clickHouseProviderStatsRowSchema = z.object({
 // Domain types
 // ---------------------------------------------------------------------------
 
-export interface ProviderToken {
+export interface ProviderConnection {
   providerId: string;
   updatedAt: Date;
 }
@@ -122,14 +122,17 @@ export class SyncRepository {
     this.#providerStatsStore = providerStatsStore;
   }
 
-  /** Get distinct provider IDs that have OAuth tokens for this user. */
-  async getConnectedProviderIds(): Promise<ProviderToken[]> {
+  /** Get provider connections for this user, including push-only sources without tokens. */
+  async getConnectedProviderIds(): Promise<ProviderConnection[]> {
     const rows = await executeWithSchema(
       this.#db,
       tokenRowSchema,
-      sql`SELECT DISTINCT ot.provider_id, ot.updated_at
-          FROM fitness.oauth_token ot
-          WHERE ot.user_id = ${this.#userId}`,
+      sql`SELECT pc.provider_id, COALESCE(ot.updated_at, pc.created_at) AS updated_at
+          FROM fitness.provider_connection pc
+          LEFT JOIN fitness.oauth_token ot
+            ON ot.user_id = pc.user_id
+            AND ot.provider_id = pc.provider_id
+          WHERE pc.user_id = ${this.#userId}`,
     );
     return rows.map((row) => ({ providerId: row.provider_id, updatedAt: row.updated_at }));
   }

@@ -31,6 +31,7 @@ import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart
 import { DaySelector } from "../../components/DaySelector";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
 import { safeParseRows } from "../../lib/safe-parse";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
@@ -183,6 +184,14 @@ export default function StrainScreen() {
     { days, endDate },
     { placeholderData: (previousData) => previousData },
   );
+  const hrZonesQuery = trpc.training.hrZones.useQuery(
+    { days },
+    { placeholderData: (previousData) => previousData },
+  );
+  const polarizationQuery = trpc.efficiency.polarizationTrend.useQuery(
+    { days },
+    { placeholderData: (previousData) => previousData },
+  );
   const processingStatus = useProcessingStatus({ datasets: ["activity", "recovery", "training"] });
 
   useEffect(() => {
@@ -192,6 +201,22 @@ export default function StrainScreen() {
       captureException(trainingQuery.error);
     }
   }, [trainingQuery.isError, trainingQuery.error]);
+
+  useEffect(() => {
+    if (hrZonesQuery.isError && hrZonesQuery.error) {
+      if (reportedTrainingErrors.has(hrZonesQuery.error)) return;
+      reportedTrainingErrors.add(hrZonesQuery.error);
+      captureException(hrZonesQuery.error);
+    }
+  }, [hrZonesQuery.isError, hrZonesQuery.error]);
+
+  useEffect(() => {
+    if (polarizationQuery.isError && polarizationQuery.error) {
+      if (reportedTrainingErrors.has(polarizationQuery.error)) return;
+      reportedTrainingErrors.add(polarizationQuery.error);
+      captureException(polarizationQuery.error);
+    }
+  }, [polarizationQuery.isError, polarizationQuery.error]);
 
   const trainingData = trainingQuery.data;
 
@@ -262,6 +287,8 @@ export default function StrainScreen() {
     invalidate: () =>
       Promise.all([
         utils.mobileDashboard.training.invalidate(),
+        utils.training.hrZones.invalidate(),
+        utils.efficiency.polarizationTrend.invalidate(),
         utils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
@@ -482,6 +509,31 @@ export default function StrainScreen() {
                 )}
               </View>
             )}
+
+          {hrZonesQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              title="Could not load intensity distribution"
+              message={hrZonesQuery.error.message}
+            />
+          ) : hrZonesQuery.isLoading && hrZonesQuery.data == null ? (
+            <QueryStatePanel variant="loading" minHeight={120} />
+          ) : null}
+
+          {polarizationQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              title="Could not load cycling polarization"
+              message={polarizationQuery.error.message}
+            />
+          ) : polarizationQuery.isLoading && polarizationQuery.data == null ? (
+            <QueryStatePanel variant="loading" minHeight={120} />
+          ) : null}
+
+          <TrainingDistributionCards
+            intensityDistribution={hrZonesQuery.data?.intensityDistribution ?? null}
+            polarization={polarizationQuery.data ?? null}
+          />
 
           {/* Recent activities */}
           <View style={styles.section}>

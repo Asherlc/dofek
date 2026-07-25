@@ -23,6 +23,7 @@ import {
   ignoredCalorieExpenditureTypes,
   pointInTimeDailyMetricTypes,
 } from "../routers/health-kit-sync-schemas.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -351,11 +352,12 @@ export class HealthKitSyncRepository {
 
   /** Ensure the apple_health provider row exists */
   async ensureProvider(): Promise<void> {
-    await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${PROVIDER_ID}, 'Apple Health', ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#db,
+      providerId: PROVIDER_ID,
+      providerName: "Apple Health",
+      userId: this.#userId,
+    });
   }
 
   /** Process body measurement samples */

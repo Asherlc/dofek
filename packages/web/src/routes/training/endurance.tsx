@@ -29,7 +29,7 @@ function EnduranceTab() {
     <>
       <Section
         title="Polarization Index"
-        subtitle="Weekly training distribution — above 2.0 means mostly easy and hard, little moderate"
+        subtitle="Weekly cycling distribution using the Treff three-zone model"
       >
         {polarization.error ? (
           <QueryStatePanel error={polarization.error} />

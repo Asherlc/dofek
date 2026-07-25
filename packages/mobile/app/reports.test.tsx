@@ -1,6 +1,11 @@
 /** @vitest-environment jsdom */
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const monthlyQueryControl = vi.hoisted(() => ({
+  showError: false,
+  preserveData: false,
+}));
 
 vi.mock("../components/HealthReportShareButton", () => ({
   HealthReportShareButton: ({ input }: { input: { reportType: string } }) => (
@@ -36,22 +41,27 @@ vi.mock("../lib/trpc", () => ({
     monthlyReport: {
       report: {
         useQuery: () => ({
-          data: {
-            current: {
-              monthStart: "2026-07-01",
-              trainingHours: 20,
-              activityCount: 10,
-              avgDailyStrain: 8,
-              avgSleepMinutes: 450,
-              avgRestingHr: 55,
-              avgHrv: 48,
-              trainingHoursTrend: null,
-              avgSleepTrend: null,
-            },
-            history: [],
-          },
+          data:
+            monthlyQueryControl.showError && !monthlyQueryControl.preserveData
+              ? undefined
+              : {
+                  current: {
+                    monthStart: "2026-07-01",
+                    trainingHours: 20,
+                    activityCount: 10,
+                    avgDailyStrain: 8,
+                    avgSleepMinutes: 450,
+                    avgRestingHr: 55,
+                    avgHrv: 48,
+                    trainingHoursTrend: null,
+                    avgSleepTrend: null,
+                  },
+                  history: [],
+                },
           isLoading: false,
-          error: null,
+          error: monthlyQueryControl.showError
+            ? new Error("Monthly report service unavailable")
+            : null,
         }),
       },
     },
@@ -69,6 +79,11 @@ vi.mock("../theme", () => ({
 }));
 
 describe("ReportsScreen", () => {
+  beforeEach(() => {
+    monthlyQueryControl.showError = false;
+    monthlyQueryControl.preserveData = false;
+  });
+
   it("shows weekly and monthly report surfaces with share actions", async () => {
     const { default: ReportsScreen } = await import("./reports");
 
@@ -78,5 +93,26 @@ describe("ReportsScreen", () => {
     expect(screen.getByText("Monthly Report")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Share weekly report" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Share monthly report" })).toBeTruthy();
+  });
+
+  it("shows the monthly server error instead of the empty state", async () => {
+    monthlyQueryControl.showError = true;
+    const { default: ReportsScreen } = await import("./reports");
+
+    render(<ReportsScreen />);
+
+    expect(screen.getByText("Monthly report service unavailable")).toBeTruthy();
+    expect(screen.queryByText("Not enough monthly data to create a report.")).toBeNull();
+  });
+
+  it("keeps cached monthly report data visible during a background failure", async () => {
+    monthlyQueryControl.showError = true;
+    monthlyQueryControl.preserveData = true;
+    const { default: ReportsScreen } = await import("./reports");
+
+    render(<ReportsScreen />);
+
+    expect(screen.getByRole("button", { name: "Share monthly report" })).toBeTruthy();
+    expect(screen.queryByText("Monthly report service unavailable")).toBeNull();
   });
 });

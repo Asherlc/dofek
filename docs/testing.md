@@ -20,12 +20,14 @@ pnpm test:changed:all
 pnpm test:coverage:all
 ```
 
-These commands start the current workspace's Postgres, ClickHouse, and Redis
-services through `pnpm compose:up`, load `.env.local`, and set
-`TEST_DATABASE_URL` to the workspace Postgres URL. `setupTestDatabase()` fails
-immediately when that URL is absent; it never creates an unbounded generic
-Testcontainers instance. Within a Vitest process it creates one migrated
-template database and clones an isolated database for each test file.
+These commands start the current workspace's Postgres, ClickHouse, Redis, and
+Redpanda services through `pnpm compose:up`, load `.env.local`, and set
+`TEST_DATABASE_URL` to the workspace Postgres URL. Redpanda-backed integration
+tests receive the generated workspace-local `REDPANDA_BROKERS` value so they
+cannot connect to another workspace's broker. `setupTestDatabase()` fails
+immediately when the Postgres URL is absent; it never creates an unbounded
+generic Testcontainers instance. Within a Vitest process it creates one
+migrated template database and clones an isolated database for each test file.
 
 The Vitest projects remain separate in CI: unit, mobile, and four integration
 shards are invoked explicitly. Stryker uses the Docker-free mutation config and
@@ -39,6 +41,7 @@ Sources:
 - Vitest test projects: https://vitest.dev/guide/projects
 - Vitest `--shard` option for splitting CI test runs: https://vitest.dev/guide/cli.html#shard
 - Stryker Vitest runner configuration: https://stryker-mutator.io/docs/stryker-js/vitest-runner/
+- Redpanda Kafka API compatibility: https://docs.redpanda.com/current/develop/kafka-clients/
 
 ### Isolated browser end-to-end stack
 

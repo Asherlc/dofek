@@ -282,7 +282,9 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_sensor_sample");
 
     expect(sql).toContain("incremental_strategy='microbatch'");
-    expect(sql).toContain("activity_sensor_sample_begin = var('activity_sensor_sample_begin', '2000-01-01')");
+    expect(sql).toContain(
+      "activity_sensor_sample_begin = var('activity_sensor_sample_begin', default_microbatch_begin)",
+    );
     expect(sql).toContain("begin=activity_sensor_sample_begin");
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
@@ -306,11 +308,15 @@ describe("production analytics read-model build", () => {
     expect(sourcesYaml).toContain("name: ingest");
     expect(sourcesYaml).toContain("event_time: ingested_at");
     expect(sensorScalarSampleSql).toContain("event_time='_peerdb_synced_at'");
-    expect(sensorScalarSampleSql).toContain("sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', '2000-01-01')");
+    expect(sensorScalarSampleSql).toContain(
+      "sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', default_microbatch_begin)",
+    );
     expect(sensorScalarSampleSql).toContain("begin=sensor_scalar_sample_begin");
     expect(sensorScalarSampleSql).toContain("source('ingest', 'metric_stream_freshness')");
     expect(dedupedSensorSql).toContain("event_time='refreshed_at'");
-    expect(dedupedSensorSql).toContain("deduped_sensor_begin = var('deduped_sensor_begin', '2000-01-01')");
+    expect(dedupedSensorSql).toContain(
+      "deduped_sensor_begin = var('deduped_sensor_begin', default_microbatch_begin)",
+    );
     expect(dedupedSensorSql).toContain("begin=deduped_sensor_begin");
     expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");
     expect(dedupedSensorSql).toContain("source_refreshed_at AS refreshed_at");
@@ -323,7 +329,9 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_location_sample");
 
     expect(sql).toContain("incremental_strategy='microbatch'");
-    expect(sql).toContain("activity_location_sample_begin = var('activity_location_sample_begin', '2000-01-01')");
+    expect(sql).toContain(
+      "activity_location_sample_begin = var('activity_location_sample_begin', default_microbatch_begin)",
+    );
     expect(sql).toContain("begin=activity_location_sample_begin");
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");

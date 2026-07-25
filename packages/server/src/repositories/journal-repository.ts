@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { currentDateRangePredicate, type RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -78,11 +79,12 @@ export class JournalRepository {
 
   /** Ensure the 'dofek' provider row exists (for manual entries). */
   async ensureDofekProvider(): Promise<void> {
-    await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App', ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#db,
+      providerId: DOFEK_PROVIDER_ID,
+      providerName: "Dofek App",
+      userId: this.#userId,
+    });
   }
 
   /** List all available journal questions ordered by sort_order. */

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { locallyReportedErrorMeta } from "../../../lib/query-client.ts";
 import { captureException } from "../../../lib/telemetry.ts";
 import { trpc } from "../../../lib/trpc.ts";
 
@@ -7,6 +8,7 @@ export function RecomputeActivityButton({ activityId }: { activityId: string }) 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const trpcUtils = trpc.useUtils();
   const recomputeMutation = trpc.activity.recompute.useMutation({
+    meta: locallyReportedErrorMeta,
     onSuccess: async () => {
       setErrorMessage(null);
       setIsRecomputing(true);

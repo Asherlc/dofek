@@ -75,7 +75,7 @@ describe("bodyAnalyticsRouter", () => {
   describe("smoothedWeight", () => {
     it("returns empty array when no data", async () => {
       const caller = makeCaller([]);
-      const result = await caller.smoothedWeight({ days: 90, endDate: "2026-03-15" });
+      const result = await caller.smoothedWeight({ days: 90, endDate: "2024-01-08" });
       expect(result).toEqual([]);
     });
 
@@ -91,7 +91,7 @@ describe("bodyAnalyticsRouter", () => {
         { date: "2024-01-08", weight_kg: 79.8 },
       ];
       const caller = makeCaller(rows);
-      const result = await caller.smoothedWeight({ days: 90, endDate: "2026-03-15" });
+      const result = await caller.smoothedWeight({ days: 90, endDate: "2024-01-08" });
 
       expect(result).toHaveLength(8);
       expect(result[0]?.rawWeight).toBe(80);
@@ -207,14 +207,14 @@ describe("bodyAnalyticsRouter", () => {
         weight_kg: 80 - index * 0.1,
       }));
       const caller = makeCaller(rows);
-      const result = await caller.weightOverview({ days: 90, endDate: "2026-03-15" });
+      const result = await caller.weightOverview({ days: 90, endDate: "2024-01-20" });
 
       expect(result.smoothedWeight).toHaveLength(20);
       expect(result.prediction?.ratePerWeek).not.toBeNull();
       expect(result.prediction?.periodDeltas).toBeDefined();
     });
 
-    it("uses a lower date bound for finite selected ranges", async () => {
+    it("fetches full history through the selected end date for finite ranges", async () => {
       const sensorStore = makeMockSensorStore([]);
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -227,8 +227,12 @@ describe("bodyAnalyticsRouter", () => {
 
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
-      expect(queryText).toContain("subtractDays(toDate({endDate:String}), {days:UInt32})");
-      expect(queryParams).toMatchObject({ endDate: "2026-03-15", days: 90 });
+      expect(queryText).toContain(
+        "toDate(toTimeZone(recorded_at, {timezone:String})) <= toDate({endDate:String})",
+      );
+      expect(queryText).not.toContain("subtractDays");
+      expect(queryParams).toMatchObject({ endDate: "2026-03-15" });
+      expect(queryParams).not.toHaveProperty("days");
     });
 
     it("omits the lower date bound when days is null", async () => {
@@ -276,7 +280,7 @@ describe("bodyAnalyticsRouter", () => {
       );
       const caller = makeCaller(rows);
 
-      const result = await caller.weightOverview({ days: 90, endDate: "2026-03-15" });
+      const result = await caller.weightOverview({ days: 90, endDate: "2024-01-20" });
 
       expect(result.smoothedWeight).toHaveLength(20);
       expect(result.prediction).toBeNull();

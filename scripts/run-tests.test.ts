@@ -18,6 +18,7 @@ describe("run-tests", () => {
       [
         "CLICKHOUSE_URL=http://default:health@127.0.0.1:18123",
         "DATABASE_URL=postgres://health:health@127.0.0.1:15432/health",
+        "REDPANDA_BROKERS=127.0.0.1:19092",
         "REDIS_URL=redis://127.0.0.1:16379",
         "",
       ].join("\n"),

@@ -6,6 +6,7 @@ import {
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -548,11 +549,12 @@ export class FoodRepository {
 
   /** Ensure the 'dofek' provider row exists (for self-created entries). */
   async ensureDofekProvider(): Promise<void> {
-    await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App', ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#db,
+      providerId: DOFEK_PROVIDER_ID,
+      providerName: "Dofek App",
+      userId: this.#userId,
+    });
   }
 
   /** Create a new food entry with nutrition data. Returns the created entry row plus nutrients. */

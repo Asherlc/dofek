@@ -212,6 +212,24 @@ describe("selected chart range query builders", () => {
     expect(cacheSetCalls.at(-1)?.ttlMs).toBe(1);
   });
 
+  it("validates days-only selected chart outputs", async () => {
+    const testRouter = router({
+      powerCurve: selectedChartRangeQuery(
+        "power.powerCurve",
+        1,
+        ({ range }) => ({ days: range.days }),
+        { outputSchema: z.object({ days: z.number() }) },
+      ),
+    });
+    const caller = createTestCallerFactory(testRouter)({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.powerCurve({ days: null })).rejects.toThrow();
+  });
+
   it("injects ChartRange into date-window selected chart handlers", async () => {
     const testRouter = router({
       sleepList: selectedChartDateRangeQuery("sleep.list", 1, ({ input, range }) => ({

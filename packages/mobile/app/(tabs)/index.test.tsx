@@ -20,6 +20,7 @@ let mockDashboardData: unknown;
 let mockDashboardError: Error | null = null;
 let mockAnomalyData: unknown;
 let mockDataHealthData: unknown;
+let mockProviderGuideError: Error | null = null;
 const mockDataHealthRefetch = vi.fn(() => Promise.resolve());
 
 vi.mock("expo-router", () => ({
@@ -94,6 +95,7 @@ vi.mock("../../lib/useProviderGuide", () => ({
   useProviderGuide: () => ({
     showProviderGuide: false,
     dismiss: vi.fn(),
+    error: mockProviderGuideError,
     isLoading: false,
     providers: [],
   }),
@@ -177,6 +179,7 @@ describe("TodayScreen independent loading states", () => {
     };
     mockAnomalyData = undefined;
     mockDataHealthData = undefined;
+    mockProviderGuideError = null;
     mockDashboardError = null;
     mockRouterPush.mockClear();
     mockDashboardRefetch.mockClear();
@@ -202,6 +205,7 @@ describe("TodayScreen independent loading states", () => {
           cdcLagSeconds: 7200,
           readModelLagSeconds: 7200,
           status: "stale",
+          progressPercentage: null,
           message: "Daily metrics data is synced, but dashboard summaries are still catching up.",
         },
       ],
@@ -216,7 +220,19 @@ describe("TodayScreen independent loading states", () => {
       },
       expect.any(Object),
     );
-    expect(screen.getByText("Processing is taking longer than expected")).toBeTruthy();
+    expect(
+      screen.getByText("Recomputing daily metrics is taking longer than expected"),
+    ).toBeTruthy();
+  });
+
+  it("shows provider setup status failures without hiding dashboard data", async () => {
+    mockProviderGuideError = new Error("Provider setup status is temporarily unavailable");
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("Provider setup status is temporarily unavailable")).toBeTruthy();
+    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
   });
 
   afterEach(() => {
