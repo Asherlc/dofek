@@ -168,7 +168,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
 
       const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body));
       let subscriptionFound = false;
-      let signatureIsValid = false;
+      let signatureIsValid: boolean | undefined;
       for await (const subscription of webhookSubscriptionRepository.iterateActiveByProviderName(
         providerName,
       )) {
