@@ -260,7 +260,7 @@ describe("DailyOverview", () => {
     fireEvent.click(findButton(screen.getByText("Recovery")));
 
     // Should show an explanation of what data is needed
-    expect(screen.getByText(/Recovery score needs HRV/)).toBeTruthy();
+    expect(screen.getByText(/Recovery score needs heart rate variability/)).toBeTruthy();
   });
 
   it("shows explanation when empty sleep ring is clicked", () => {

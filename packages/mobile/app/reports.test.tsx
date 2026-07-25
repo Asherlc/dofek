@@ -91,6 +91,7 @@ describe("ReportsScreen", () => {
 
     expect(screen.getByText("Weekly Report")).toBeTruthy();
     expect(screen.getByText("Monthly Report")).toBeTruthy();
+    expect(screen.getAllByText("Average Heart Rate Variability (HRV)")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Share weekly report" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Share monthly report" })).toBeTruthy();
   });

@@ -6,10 +6,12 @@ const meta = {
   component: MacroSummary,
   args: {
     calories: 1250,
-    caloriesGoal: 2000,
-    proteinGrams: 110,
-    carbsGrams: 140,
-    fatGrams: 45,
+    calorieGoal: { target: 2000, remaining: 750, over: 0, progressPercentage: 62.5 },
+    macros: {
+      protein: { grams: 110, calories: 440, percentage: 35 },
+      carbs: { grams: 140, calories: 560, percentage: 45 },
+      fat: { grams: 45, calories: 405, percentage: 32 },
+    },
   },
 } satisfies Meta<typeof MacroSummary>;
 
@@ -22,17 +24,23 @@ export const Default: Story = {};
 export const LowProgress: Story = {
   args: {
     calories: 300,
-    proteinGrams: 20,
-    carbsGrams: 40,
-    fatGrams: 5,
+    calorieGoal: { target: 2000, remaining: 1700, over: 0, progressPercentage: 15 },
+    macros: {
+      protein: { grams: 20, calories: 80, percentage: 27 },
+      carbs: { grams: 40, calories: 160, percentage: 53 },
+      fat: { grams: 5, calories: 45, percentage: 15 },
+    },
   },
 };
 
 export const GoalReached: Story = {
   args: {
     calories: 2100,
-    proteinGrams: 160,
-    carbsGrams: 220,
-    fatGrams: 60,
+    calorieGoal: { target: 2000, remaining: 0, over: 100, progressPercentage: 100 },
+    macros: {
+      protein: { grams: 160, calories: 640, percentage: 30 },
+      carbs: { grams: 220, calories: 880, percentage: 42 },
+      fat: { grams: 60, calories: 540, percentage: 26 },
+    },
   },
 };

@@ -36,6 +36,15 @@ const USER_SCOPED_DELETE_TABLES = [
 ];
 
 const GLOBAL_PROVIDER_TABLES = new Set(["fitness.exercise_alias"]);
+export const DEFAULT_CALORIE_GOAL = 2000;
+
+function parseCalorieGoal(value: unknown): number {
+  const numericValue =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(numericValue) && numericValue > 0
+    ? Math.round(numericValue)
+    : DEFAULT_CALORIE_GOAL;
+}
 
 function isUndefinedTableError(error: unknown): boolean {
   if (error instanceof Error) {
@@ -86,6 +95,12 @@ export class SettingsRepository {
       sql`SELECT key, value FROM fitness.user_settings WHERE user_id = ${this.#userId} ORDER BY key`,
     );
     return rows.map((row) => ({ key: row.key, value: row.value }));
+  }
+
+  /** Get the user's positive calorie goal, or the canonical default. */
+  async getCalorieGoal(): Promise<number> {
+    const setting = await this.get("calorieGoal");
+    return parseCalorieGoal(setting?.value);
   }
 
   /** Upsert a setting. Returns the saved setting or throws on failure. */

@@ -1,10 +1,39 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildDailyMetricHealthStatuses,
   buildHealthStatusFromSummary,
   buildHealthStatusFromValues,
   buildWeightHealthStatus,
   resolveWeightGoalIntent,
 } from "./health-status.ts";
+
+describe("buildDailyMetricHealthStatuses", () => {
+  it("uses a layman-readable blood oxygen label", () => {
+    const statuses = buildDailyMetricHealthStatuses({
+      avg_hrv: null,
+      avg_resting_hr: null,
+      avg_spo2: 97,
+      avg_steps: null,
+      avg_skin_temp: null,
+      stddev_hrv: null,
+      stddev_resting_hr: null,
+      stddev_spo2: 1,
+      stddev_steps: null,
+      stddev_skin_temp: null,
+      latest_hrv: null,
+      latest_resting_hr: null,
+      latest_spo2: 98,
+      latest_steps: null,
+      latest_skin_temp: null,
+      latest_date: "2026-07-25",
+      latest_steps_date: null,
+    });
+
+    expect(statuses.find((status) => status.metric === "spo2")?.label).toBe(
+      "Blood Oxygen Saturation (SpO2)",
+    );
+  });
+});
 
 describe("buildHealthStatusFromSummary", () => {
   it("treats a positive deviation as moving as intended when higher values are supported", () => {

@@ -19,6 +19,7 @@
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
     "@dofek/imu": "workspace:*",
+    "@dofek/nutrition": "workspace:*",
     "@dofek/onboarding": "workspace:*",
     "@dofek/providers": "workspace:*",
     "@dofek/recovery": "workspace:*",

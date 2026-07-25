@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { createPendingEntryStore, type PendingEntryStore } from "./pending-entry-store.ts";
 
 const slackBlockSchema = z.object({
@@ -21,7 +22,6 @@ const slackBlockSchema = z.object({
 });
 
 const DOFEK_PROVIDER_ID = "dofek";
-const DEFAULT_CALORIE_GOAL = 2000;
 
 export const FALLBACK_TIMEZONE = process.env.TIMEZONE ?? "America/Los_Angeles";
 
@@ -56,25 +56,12 @@ export interface DailyCalorieProgress {
   caloriesConsumed: number;
 }
 
-const calorieGoalRowSchema = z.object({ value: z.unknown().nullable() });
 const dailyCaloriesRowSchema = z.object({ calories_consumed: z.coerce.number() });
 const confirmedSummaryRowSchema = z.object({
   food_name: z.string(),
   calories: z.coerce.number().nullable(),
   date: dateStringSchema,
 });
-
-function parseCalorieGoal(rawValue: unknown): number {
-  const numericValue =
-    typeof rawValue === "number"
-      ? rawValue
-      : typeof rawValue === "string"
-        ? Number(rawValue)
-        : Number.NaN;
-  return Number.isFinite(numericValue) && numericValue > 0
-    ? Math.round(numericValue)
-    : DEFAULT_CALORIE_GOAL;
-}
 
 /**
  * Extract the latest confirm button context from thread messages returned by
@@ -372,15 +359,7 @@ export class FoodEntryRepository {
   }
 
   async loadDailyCalorieProgress(userId: string, date: string): Promise<DailyCalorieProgress> {
-    const calorieGoalRows = await executeWithSchema(
-      this.#db,
-      calorieGoalRowSchema,
-      sql`SELECT value FROM fitness.user_settings
-          WHERE user_id = ${userId}
-            AND key = 'calorieGoal'
-          LIMIT 1`,
-    );
-    const calorieGoal = parseCalorieGoal(calorieGoalRows[0]?.value);
+    const calorieGoal = await new SettingsRepository(this.#db, userId).getCalorieGoal();
 
     const dailyCaloriesRows = await executeWithSchema(
       this.#db,

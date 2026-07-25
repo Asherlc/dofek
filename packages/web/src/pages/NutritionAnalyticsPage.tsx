@@ -37,7 +37,7 @@ export function NutritionAnalyticsPage() {
         </div>
         {/* Adaptive TDEE */}
         <Section
-          title="Adaptive TDEE"
+          title="Adaptive Total Daily Energy Expenditure (TDEE)"
           subtitle="Estimated from logged calorie intake and observed body-weight change"
         >
           {adaptiveTdee.isError && <QueryStatePanel error={adaptiveTdee.error} height={72} />}
@@ -66,7 +66,7 @@ export function NutritionAnalyticsPage() {
         {/* Micronutrient Adequacy */}
         <Section
           title="Micronutrient Adequacy"
-          subtitle={`Average daily intake as % of Recommended Dietary Allowance (${formatTimeRangeLabel(days)})`}
+          subtitle={`Average daily intake as % of Recommended Dietary Allowance (RDA) (${formatTimeRangeLabel(days)})`}
         >
           {micronutrients.isError && <QueryStatePanel error={micronutrients.error} height={72} />}
           <MicronutrientChart data={micronutrients.data ?? []} loading={micronutrients.isLoading} />

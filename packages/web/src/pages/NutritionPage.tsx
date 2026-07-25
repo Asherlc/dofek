@@ -9,6 +9,7 @@ import {
   type FoodEntryNutrientDetail,
   foodEntryNutrientDetailsFromLegacyColumns,
 } from "@dofek/nutrition/food-entry-nutrition";
+import { selectedDateNutritionSummarySchema } from "@dofek/nutrition/selected-date-summary";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useMemo, useState } from "react";
 import { z } from "zod";
@@ -20,8 +21,6 @@ import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
-
-const CALORIES_PER_GRAM = { protein: 4, carbs: 4, fat: 9 } as const;
 
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snack", "other"];
 
@@ -47,25 +46,10 @@ export const foodEntrySchema = z
   .passthrough();
 export type FoodEntry = z.infer<typeof foodEntrySchema>;
 
-export function computeDailyTotals(entries: FoodEntry[]) {
-  let totalCalories = 0;
-  let totalProtein = 0;
-  let totalCarbs = 0;
-  let totalFat = 0;
-
-  for (const entry of entries) {
-    totalCalories += entry.calories ?? 0;
-    totalProtein += entry.protein_g ?? 0;
-    totalCarbs += entry.carbs_g ?? 0;
-    totalFat += entry.fat_g ?? 0;
-  }
-
-  return { totalCalories, totalProtein, totalCarbs, totalFat };
-}
-
-export function computeMealCalories(entries: FoodEntry[]): number {
-  return entries.reduce((sum, e) => sum + (e.calories ?? 0), 0);
-}
+export const selectedDateFoodSchema = z.object({
+  entries: z.array(foodEntrySchema),
+  summary: selectedDateNutritionSummarySchema,
+});
 
 export function getFoodEntryNutrientDetails(entry: FoodEntry): FoodEntryNutrientDetail[] {
   return foodEntryNutrientDetailsFromLegacyColumns(entry);
@@ -78,9 +62,6 @@ export function NutritionPage() {
   const [collapsedMeals, setCollapsedMeals] = useState<Set<string>>(new Set());
   const [aiMealInput, setAiMealInput] = useState("");
   const [aiMealInputError, setAiMealInputError] = useState<string | null>(null);
-
-  const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
-  const calorieGoal = Number(calorieGoalQuery.data?.value ?? 2000);
 
   const dateString = formatDateForQuery(selectedDate);
 
@@ -108,14 +89,14 @@ export function NutritionPage() {
   type AiMealItems = Awaited<ReturnType<typeof analyzeItemsMutation.mutateAsync>>["items"];
   const [pendingAiMealItems, setPendingAiMealItems] = useState<AiMealItems>([]);
 
-  const entries = foodQuery.error ? [] : z.array(foodEntrySchema).parse(foodQuery.data ?? []);
+  const selectedDateFood =
+    foodQuery.data === undefined ? undefined : selectedDateFoodSchema.parse(foodQuery.data);
+  const entries = selectedDateFood?.entries ?? [];
   const isFoodBlockingLoading = shouldShowBlockingLoading({
     data: entries,
     isFetching: foodQuery.isFetching,
     isLoading: foodQuery.isLoading,
   });
-
-  const dailyTotals = useMemo(() => computeDailyTotals(entries), [entries]);
 
   const mealGroups = useMemo(() => {
     const groups = new Map<string, FoodEntry[]>();
@@ -224,9 +205,6 @@ export function NutritionPage() {
     setAiMealInput(value);
     setPendingAiMealItems([]);
   }
-
-  const calorieProgress = Math.min((dailyTotals.totalCalories / calorieGoal) * 100, 100);
-  const calorieColor = dailyTotals.totalCalories > calorieGoal ? "bg-red-500" : "bg-emerald-500";
 
   return (
     <>
@@ -363,9 +341,9 @@ export function NutritionPage() {
         {/* Loading state */}
         {isFoodBlockingLoading && <ChartLoadingSkeleton height={200} />}
 
-        {foodQuery.error ? (
-          <QueryStatePanel error={foodQuery.error} height={200} />
-        ) : (
+        {foodQuery.error && <QueryStatePanel error={foodQuery.error} height={200} />}
+
+        {selectedDateFood && (
           <>
             {/* Daily summary */}
             <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-5">
@@ -374,21 +352,31 @@ export function NutritionPage() {
                   <span className="text-sm font-medium text-muted">Calories</span>
                   <span className="text-sm text-muted tabular-nums">
                     <span className="text-xl font-semibold text-foreground">
-                      {formatCalories(dailyTotals.totalCalories)}
+                      {formatCalories(selectedDateFood.summary.calories)}
                     </span>
-                    <span className="ml-1">/ {formatCalories(calorieGoal)}</span>
+                    <span className="ml-1">
+                      / {formatCalories(selectedDateFood.summary.calorieGoal.target)}
+                    </span>
                   </span>
                 </div>
                 <div className="h-3 rounded-full bg-accent/10 overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${calorieColor} transition-all duration-300`}
-                    style={{ width: `${calorieProgress}%` }}
+                    className={`h-full rounded-full ${
+                      selectedDateFood.summary.calorieGoal.over > 0
+                        ? "bg-red-500"
+                        : "bg-emerald-500"
+                    } transition-all duration-300`}
+                    style={{
+                      width: `${selectedDateFood.summary.calorieGoal.progressPercentage}%`,
+                    }}
                   />
                 </div>
                 <div className="text-xs text-subtle tabular-nums">
-                  {calorieGoal - dailyTotals.totalCalories > 0
-                    ? `${formatCalories(calorieGoal - dailyTotals.totalCalories)} remaining`
-                    : `${formatCalories(dailyTotals.totalCalories - calorieGoal)} over goal`}
+                  {selectedDateFood.summary.calorieGoal.remaining > 0
+                    ? `${formatCalories(selectedDateFood.summary.calorieGoal.remaining)} remaining`
+                    : selectedDateFood.summary.calorieGoal.over > 0
+                      ? `${formatCalories(selectedDateFood.summary.calorieGoal.over)} over goal`
+                      : "Calorie goal reached"}
                 </div>
               </div>
 
@@ -396,23 +384,20 @@ export function NutritionPage() {
               <div className="space-y-3">
                 <MacroBar
                   label="Protein"
-                  grams={formatGrams(dailyTotals.totalProtein)}
-                  caloriesFromMacro={dailyTotals.totalProtein * CALORIES_PER_GRAM.protein}
-                  totalCalories={dailyTotals.totalCalories}
+                  grams={formatGrams(selectedDateFood.summary.macros.protein.grams)}
+                  percentage={selectedDateFood.summary.macros.protein.percentage}
                   color="blue"
                 />
                 <MacroBar
                   label="Carbs"
-                  grams={formatGrams(dailyTotals.totalCarbs)}
-                  caloriesFromMacro={dailyTotals.totalCarbs * CALORIES_PER_GRAM.carbs}
-                  totalCalories={dailyTotals.totalCalories}
+                  grams={formatGrams(selectedDateFood.summary.macros.carbs.grams)}
+                  percentage={selectedDateFood.summary.macros.carbs.percentage}
                   color="amber"
                 />
                 <MacroBar
                   label="Fat"
-                  grams={formatGrams(dailyTotals.totalFat)}
-                  caloriesFromMacro={dailyTotals.totalFat * CALORIES_PER_GRAM.fat}
-                  totalCalories={dailyTotals.totalCalories}
+                  grams={formatGrams(selectedDateFood.summary.macros.fat.grams)}
+                  percentage={selectedDateFood.summary.macros.fat.percentage}
                   color="red"
                 />
               </div>
@@ -422,7 +407,7 @@ export function NutritionPage() {
             {!isFoodBlockingLoading &&
               MEAL_ORDER.map((mealType) => {
                 const mealEntries = mealGroups.get(mealType) ?? [];
-                const mealCalories = computeMealCalories(mealEntries);
+                const mealCalories = selectedDateFood.summary.mealCalories[mealType];
                 const isCollapsed = collapsedMeals.has(mealType);
 
                 return (
