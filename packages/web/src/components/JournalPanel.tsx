@@ -2,10 +2,13 @@ import { formatDateLong } from "@dofek/format/format";
 import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { useMemo, useState } from "react";
 import { z } from "zod";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { AddJournalEntryModal } from "./AddJournalEntryModal.tsx";
 import { ChartRangeProvider } from "./DofekChart.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 import { TimeRangeSelector } from "./TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "./TimeSeriesChart.tsx";
 
@@ -20,6 +23,30 @@ const CATEGORY_LABELS: Record<string, string> = {
 const CATEGORY_ORDER = ["wellness", "activity", "substance", "nutrition", "custom"];
 
 type Tab = "log" | "trends";
+
+function JournalQueryError({
+  error,
+  height,
+  label,
+  refetch,
+  retrying,
+}: {
+  error: unknown;
+  height: number;
+  label: string;
+  refetch: () => Promise<unknown>;
+  retrying: boolean;
+}) {
+  return (
+    <QueryStatePanel
+      error={error}
+      height={height}
+      onRetry={() => void refetch()}
+      retryLabel={label}
+      retrying={retrying}
+    />
+  );
+}
 
 export function JournalPanel() {
   const [tab, setTab] = useState<Tab>("log");
@@ -77,7 +104,11 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
   const utils = trpc.useUtils();
   const entriesQuery = trpc.journal.entries.useQuery(selectedRangeQueryInput(days));
   const deleteMutation = trpc.journal.delete.useMutation({
+    meta: locallyReportedErrorMeta,
     onSuccess: () => utils.journal.entries.invalidate(),
+    onError: (error) => {
+      captureException(error, { operation: "journal.delete" });
+    },
   });
 
   const entries = useMemo(() => {
@@ -108,9 +139,31 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
         </button>
       </div>
 
-      {entriesQuery.isLoading && <p className="text-muted text-sm text-center py-8">Loading...</p>}
+      {entriesQuery.isLoading && entriesQuery.data === undefined && (
+        <QueryStatePanel variant="loading" height={96} />
+      )}
 
-      {!entriesQuery.isLoading && entries.length === 0 && (
+      {entriesQuery.error && entriesQuery.data === undefined && (
+        <JournalQueryError
+          error={entriesQuery.error}
+          height={96}
+          label="Retry journal entries"
+          refetch={entriesQuery.refetch}
+          retrying={entriesQuery.isFetching}
+        />
+      )}
+
+      {entriesQuery.error && entriesQuery.data !== undefined && (
+        <JournalQueryError
+          error={entriesQuery.error}
+          height={72}
+          label="Retry journal entries"
+          refetch={entriesQuery.refetch}
+          retrying={entriesQuery.isFetching}
+        />
+      )}
+
+      {!entriesQuery.isLoading && entriesQuery.data !== undefined && entries.length === 0 && (
         <p className="text-dim text-sm text-center py-8">No journal entries yet.</p>
       )}
 
@@ -122,6 +175,10 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
           onDelete={(id) => deleteMutation.mutate({ id })}
         />
       ))}
+
+      {deleteMutation.error ? (
+        <p className="text-xs text-red-400 mt-3">{deleteMutation.error.message}</p>
+      ) : null}
 
       {showModal && (
         <AddJournalEntryModal
@@ -336,16 +393,76 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
     });
   }
 
-  if (questionsQuery.isLoading || entriesQuery.isLoading) {
-    return <p className="text-muted text-sm text-center py-8">Loading...</p>;
+  if (
+    (questionsQuery.isLoading && questionsQuery.data === undefined) ||
+    (entriesQuery.isLoading && entriesQuery.data === undefined)
+  ) {
+    return <QueryStatePanel variant="loading" height={96} />;
   }
 
+  if (
+    (questionsQuery.error && questionsQuery.data === undefined) ||
+    (entriesQuery.error && entriesQuery.data === undefined)
+  ) {
+    return (
+      <div className="space-y-3">
+        {questionsQuery.error && questionsQuery.data === undefined ? (
+          <JournalQueryError
+            error={questionsQuery.error}
+            height={96}
+            label="Retry journal questions"
+            refetch={questionsQuery.refetch}
+            retrying={questionsQuery.isFetching}
+          />
+        ) : null}
+        {entriesQuery.error && entriesQuery.data === undefined ? (
+          <JournalQueryError
+            error={entriesQuery.error}
+            height={96}
+            label="Retry journal entries"
+            refetch={entriesQuery.refetch}
+            retrying={entriesQuery.isFetching}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
+  const backgroundErrors = (
+    <>
+      {questionsQuery.error ? (
+        <JournalQueryError
+          error={questionsQuery.error}
+          height={72}
+          label="Retry journal questions"
+          refetch={questionsQuery.refetch}
+          retrying={questionsQuery.isFetching}
+        />
+      ) : null}
+      {entriesQuery.error ? (
+        <JournalQueryError
+          error={entriesQuery.error}
+          height={72}
+          label="Retry journal entries"
+          refetch={entriesQuery.refetch}
+          retrying={entriesQuery.isFetching}
+        />
+      ) : null}
+    </>
+  );
+
   if (chartableQuestions.length === 0) {
-    return <p className="text-dim text-sm text-center py-8">No numeric journal data to chart.</p>;
+    return (
+      <div className="space-y-3">
+        {backgroundErrors}
+        <p className="text-dim text-sm text-center py-8">No numeric journal data to chart.</p>
+      </div>
+    );
   }
 
   return (
     <div>
+      {backgroundErrors}
       <div className="flex flex-wrap gap-1.5 mb-4">
         {chartableQuestions.map((q) => (
           <button
