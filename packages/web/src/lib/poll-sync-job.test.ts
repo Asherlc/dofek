@@ -25,8 +25,10 @@ describe("pollSyncJob", () => {
 
   it("resets syncing providers when fetch throws", async () => {
     const updateState = vi.fn();
-    const fetchStatus = vi.fn().mockRejectedValue(new Error("Network error"));
+    const error = new Error("Network error");
+    const fetchStatus = vi.fn().mockRejectedValue(error);
     const onComplete = vi.fn();
+    const onError = vi.fn();
 
     await pollSyncJob({
       jobId: "sync-123",
@@ -34,9 +36,11 @@ describe("pollSyncJob", () => {
       fetchStatus,
       updateState,
       onComplete,
+      onError,
     });
 
     expect(updateState).toHaveBeenCalledWith("wahoo", expect.objectContaining({ status: "error" }));
+    expect(onError).toHaveBeenCalledWith(error);
   });
 
   it("updates provider states from job and calls onComplete when done", async () => {

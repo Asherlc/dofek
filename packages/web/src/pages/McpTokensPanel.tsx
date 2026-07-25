@@ -1,5 +1,6 @@
 import { formatDateTime } from "@dofek/format/format";
 import { useState } from "react";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -31,8 +32,12 @@ function formatTimestamp(value: Date | string | null): string {
 export function McpTokensPanel() {
   const trpcUtils = trpc.useUtils();
   const tokens = trpc.mcp.listTokens.useQuery();
-  const createTokenMutation = trpc.mcp.createToken.useMutation();
-  const revokeTokenMutation = trpc.mcp.revokeToken.useMutation();
+  const createTokenMutation = trpc.mcp.createToken.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const revokeTokenMutation = trpc.mcp.revokeToken.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const [name, setName] = useState("Codex");
   const [expiresAt, setExpiresAt] = useState("");
   const [selectedScopes, setSelectedScopes] = useState<Set<McpScope>>(
