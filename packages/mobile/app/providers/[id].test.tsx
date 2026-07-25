@@ -563,10 +563,10 @@ describe("ProviderDetailScreen", () => {
       expect(screen.queryByText("Full sync")).toBeNull();
     });
 
-    it("shows provider data readiness when read models are blocked", async () => {
+    it("shows provider processing progress while read models update", async () => {
       mockDataHealthQuery.mockReturnValue({
         data: {
-          overallStatus: "blocked",
+          overallStatus: "active",
           generatedAt: "2026-06-30T12:00:00Z",
           scope: { providerId: "wahoo", datasets: ["activity"] },
           operations: [],
@@ -579,7 +579,7 @@ describe("ProviderDetailScreen", () => {
               latestReadModelAt: null,
               cdcLagSeconds: 90000,
               readModelLagSeconds: null,
-              status: "blocked",
+              status: "active",
               message: "Activity data is available, but ClickHouse mirrors are not current.",
             },
           ],
@@ -592,7 +592,7 @@ describe("ProviderDetailScreen", () => {
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("Wahoo data status")).toBeTruthy();
-      expect(screen.getByText("Your data update didn’t finish")).toBeTruthy();
+      expect(screen.getByText("Updating your data")).toBeTruthy();
     });
 
     it("triggers generic provider sync with sinceDays=7 when Sync is clicked", async () => {

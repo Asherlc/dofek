@@ -1,14 +1,21 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs, useRouter } from "expo-router";
-import { Pressable, StyleSheet } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { AlertsBell } from "../../components/AlertsBell";
 import { getTabIconName, selectedTabBackgroundColor } from "../../lib/tab-selection";
+import { useProcessingAlerts } from "../../lib/useProcessingAlerts";
 import { colors } from "../../theme";
 
 export default function TabsLayout() {
   const router = useRouter();
+  const alerts = useProcessingAlerts();
+  const activeAlertCount = alerts.data?.alerts.length ?? 0;
+  const alertsButton = () => (
+    <AlertsBell activeCount={activeAlertCount} onPress={() => router.push("/alerts")} />
+  );
 
   return (
-    <Tabs screenOptions={tabsScreenOptions}>
+    <Tabs screenOptions={{ ...tabsScreenOptions, headerRight: alertsButton }}>
       <Tabs.Screen
         name="index"
         options={{
@@ -17,14 +24,17 @@ export default function TabsLayout() {
             <Ionicons name={getTabIconName("index", focused)} size={size} color={color} />
           ),
           headerRight: () => (
-            <Pressable
-              onPress={() => router.push("/settings")}
-              style={styles.headerButton}
-              accessibilityRole="button"
-              accessibilityLabel="Settings"
-            >
-              <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
-            </Pressable>
+            <View style={styles.headerActions}>
+              {alertsButton()}
+              <Pressable
+                onPress={() => router.push("/settings")}
+                style={styles.headerButton}
+                accessibilityRole="button"
+                accessibilityLabel="Settings"
+              >
+                <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+              </Pressable>
+            </View>
           ),
         }}
       />
@@ -97,8 +107,13 @@ const styles = StyleSheet.create({
     fontSize: 17,
   },
   headerButton: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
+  },
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    paddingRight: 4,
   },
 });
 

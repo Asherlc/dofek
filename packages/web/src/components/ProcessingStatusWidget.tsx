@@ -2,10 +2,12 @@ import {
   type ProcessingDisplayStage,
   type ProcessingDisplayStatus,
   processingAggregateProgress,
-  processingCurrentFailure,
   processingHeading,
   processingStatusMessage,
+  processingTarget,
 } from "@dofek/providers/processing-status";
+import { RecomputeStatusIndicator } from "./RecomputeStatusIndicator.tsx";
+import { SourceProcessingStatusCard } from "./SourceProcessingStatusCard.tsx";
 
 export interface ProcessingStatusSnapshot {
   generatedAt: string;
@@ -50,17 +52,6 @@ interface ProcessingStatusWidgetProps {
   alwaysVisible?: boolean;
 }
 
-const borderClassByStatus: Record<ProcessingDisplayStatus, string> = {
-  ready: "border-l-emerald-500",
-  waiting: "border-l-blue-500",
-  active: "border-l-blue-500",
-  partial: "border-l-blue-500",
-  delayed: "border-l-amber-500",
-  blocked: "border-l-red-500",
-  failed: "border-l-red-500",
-  cancelled: "border-l-slate-400",
-};
-
 export function ProcessingStatusWidget({
   data,
   error = null,
@@ -81,49 +72,48 @@ export function ProcessingStatusWidget({
   }
   if (error && !data) {
     return (
-      <section
-        className="w-full rounded-lg border border-l-4 border-l-red-500 bg-white px-3 py-2.5 text-slate-950 shadow-sm"
-        aria-live="polite"
-      >
-        <h2 className="text-sm font-semibold">Processing status is unavailable</h2>
-        <p className="mt-0.5 text-xs text-slate-600">{error.message}</p>
-      </section>
+      <SourceProcessingStatusCard
+        heading="Processing status is unavailable"
+        message={error.message}
+        progress={null}
+        status="failed"
+      />
     );
   }
-  if (!data || (data.overallStatus === "ready" && !alwaysVisible)) return null;
+  if (
+    !data ||
+    data.overallStatus === "failed" ||
+    data.overallStatus === "blocked" ||
+    (data.overallStatus === "ready" && !alwaysVisible)
+  ) {
+    return null;
+  }
 
-  const currentFailure = processingCurrentFailure(data);
   const progress = processingAggregateProgress(data.datasets);
+  const target = processingTarget({
+    providerId: data.scope.providerId,
+    datasets: data.datasets,
+    operationKind: data.operations[0]?.kind,
+  });
+  const statusMessage = processingStatusMessage({
+    status: data.overallStatus,
+    errorMessage: null,
+  });
+  const heading = processingHeading(data.overallStatus, target);
+
+  if (target.action === "recompute") {
+    return (
+      <RecomputeStatusIndicator label={heading} progress={progress} status={data.overallStatus} />
+    );
+  }
 
   return (
-    <section
-      className={`w-full rounded-lg border border-l-4 bg-white px-3 py-2.5 text-slate-950 shadow-sm ${borderClassByStatus[data.overallStatus]}`}
-      aria-live="polite"
-    >
-      {contextLabel ? (
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          {contextLabel}
-        </p>
-      ) : null}
-      <h2 className="text-sm font-semibold">{processingHeading(data.overallStatus)}</h2>
-      <p className="mt-0.5 text-xs text-slate-600">
-        {processingStatusMessage({
-          status: data.overallStatus,
-          errorMessage: currentFailure,
-        })}
-      </p>
-      {progress !== null && data.overallStatus !== "ready" ? (
-        <div
-          className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200"
-          role="progressbar"
-          aria-label="Processing progress"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={progress}
-        >
-          <div className="h-full bg-blue-500" style={{ width: `${progress}%` }} />
-        </div>
-      ) : null}
-    </section>
+    <SourceProcessingStatusCard
+      contextLabel={contextLabel}
+      heading={heading}
+      message={statusMessage}
+      progress={progress}
+      status={data.overallStatus}
+    />
   );
 }

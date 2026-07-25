@@ -47,6 +47,11 @@ vi.mock("../lib/auth-context.tsx", () => ({
   useAuth: mockUseAuth,
 }));
 
+vi.mock("../lib/processing-alerts-context.tsx", () => ({
+  ProcessingAlertsProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useActiveProcessingAlertCount: () => 0,
+}));
+
 // Import triggers createRootRoute, which captures the component.
 import "./__root.tsx";
 

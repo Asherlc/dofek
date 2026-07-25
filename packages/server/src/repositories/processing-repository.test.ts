@@ -420,6 +420,158 @@ describe("ProcessingRepository", () => {
     expect(result.overallStatus).toBe("cancelled");
   });
 
+  it("turns the current provider analytics failure into a customer alert", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "garmin",
+        kind: "provider_sync",
+        datasetKeys: ["providers"],
+        outputManifest: { providers: ["relational"] },
+        events: [
+          event(1, {
+            stage: "ingest",
+            status: "succeeded",
+            datasetKey: null,
+          }),
+          event(2, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "providers",
+            errorCode: "upstream_skipped",
+            errorMessage: "Some analytics calculations could not be completed.",
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "providers",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        {
+          id: `${operationId}:providers`,
+          providerId: "garmin",
+          providerLabel: "Garmin",
+          datasetKey: "providers",
+          occurredAt: "2026-07-22T18:00:00.000Z",
+          title: "Garmin summary wasn’t updated",
+          message:
+            "Your Garmin data synced, but its totals and latest-sync information couldn’t be refreshed. Your previously synced data is still available.",
+          action: "retry_sync",
+          actionLabel: "Retry Garmin sync",
+        },
+      ],
+    });
+  });
+
+  it("uses import-specific guidance for a failed file import", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "garmin-dump",
+        kind: "file_import",
+        datasetKeys: ["activity"],
+        events: [
+          event(1, {
+            stage: "ingest",
+            status: "failed",
+            datasetKey: "activity",
+            errorCode: "file_import_failed",
+            errorMessage: "The file could not be imported.",
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "ingest",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        expect.objectContaining({
+          providerLabel: "Garmin Dump",
+          title: "Garmin Dump file wasn’t imported",
+          action: "retry_import",
+          actionLabel: "Import Garmin Dump again",
+        }),
+      ],
+    });
+  });
+
+  it("directs failed provider ingestion to reconnect the named source", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "whoop",
+        kind: "provider_sync",
+        events: [
+          event(1, {
+            stage: "ingest",
+            status: "failed",
+            datasetKey: "activity",
+            errorCode: "provider_sync_failed",
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "ingest",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        expect.objectContaining({
+          providerLabel: "WHOOP (Cloud)",
+          title: "WHOOP (Cloud) couldn’t sync",
+          action: "reconnect",
+          actionLabel: "Reconnect WHOOP (Cloud)",
+        }),
+      ],
+    });
+  });
+
+  it("does not alert for resolved or in-progress datasets", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([operation()]);
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [],
+    });
+  });
+
   it("keeps model details private while preserving independent output paths", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([
       operation({

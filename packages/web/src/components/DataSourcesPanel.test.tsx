@@ -206,10 +206,10 @@ describe("DataSourcesPanel", () => {
     mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   });
 
-  it("shows server data readiness messages above provider cards", () => {
+  it("shows active processing progress above provider cards", () => {
     mockDataHealthQuery.mockReturnValue({
       data: {
-        overallStatus: "blocked",
+        overallStatus: "active",
         generatedAt: "2026-06-30T08:00:00.000Z",
         scope: { providerId: null, datasets: ["providers"] },
         operations: [],
@@ -222,8 +222,9 @@ describe("DataSourcesPanel", () => {
             latestReadModelAt: "2026-06-29T07:00:00.000Z",
             cdcLagSeconds: 60,
             readModelLagSeconds: 86400,
-            status: "blocked",
-            message: "Activities are synced, but activity summaries need attention.",
+            status: "active",
+            progressPercentage: 60,
+            message: "Activities are updating.",
           },
         ],
       },
@@ -237,7 +238,7 @@ describe("DataSourcesPanel", () => {
       { datasets: ["providers"] },
       expect.any(Object),
     );
-    const readiness = screen.getByText("Your data update didn’t finish");
+    const readiness = screen.getByText("Updating your data");
     const provider = screen.getByText("Garmin");
 
     expect(

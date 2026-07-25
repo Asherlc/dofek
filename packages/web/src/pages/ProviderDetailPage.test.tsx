@@ -389,7 +389,7 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.queryByText("Import only")).toBeNull();
   });
 
-  it("shows provider data readiness when read models are blocked", async () => {
+  it("shows provider processing progress while read models update", async () => {
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
       {
@@ -402,7 +402,7 @@ describe("ProviderDetailPage import-only providers", () => {
       },
     ];
     mockDataHealth.data = {
-      overallStatus: "blocked",
+      overallStatus: "active",
       generatedAt: "2026-06-30T12:00:00Z",
       scope: { providerId: "wahoo", datasets: ["activity"] },
       operations: [],
@@ -410,7 +410,7 @@ describe("ProviderDetailPage import-only providers", () => {
         {
           key: "activity",
           label: "Activities",
-          status: "blocked",
+          status: "active",
           currentStage: "cdc",
           progressPercentage: null,
           lastAdvancedAt: "2026-06-29T12:00:00Z",
@@ -423,7 +423,7 @@ describe("ProviderDetailPage import-only providers", () => {
     render(<ProviderDetailPage />);
 
     expect(screen.getByText("Wahoo data status")).toBeTruthy();
-    expect(screen.getByText("Your data update didn’t finish")).toBeTruthy();
+    expect(screen.getByText("Updating your data")).toBeTruthy();
   });
 
   it("shows single-provider cooldown outcome without polling a fake job", async () => {

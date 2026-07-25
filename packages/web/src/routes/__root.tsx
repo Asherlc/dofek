@@ -9,6 +9,7 @@ import {
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { QueryErrorBoundary } from "../components/QueryErrorBoundary.tsx";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
+import { ProcessingAlertsProvider } from "../lib/processing-alerts-context.tsx";
 
 const PUBLIC_PATHS = new Set(["/", "/login", "/privacy", "/reset-password"]);
 
@@ -104,7 +105,7 @@ function AuthGate() {
 
   if (!user) return content;
 
-  return content;
+  return <ProcessingAlertsProvider>{content}</ProcessingAlertsProvider>;
 }
 
 function parseReturnTo(value: unknown): string | undefined {

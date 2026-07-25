@@ -1,3 +1,5 @@
+import type { ProcessingAlert } from "@dofek/providers/processing-alerts";
+import { providerLabel } from "@dofek/providers/providers";
 import type { Database } from "dofek/db";
 import {
   DATASET_CONTRACTS,
@@ -61,6 +63,104 @@ export interface ProcessingStatusSnapshot {
   overallStatus: DerivedProcessingStatus;
   datasets: ProcessingStatusDataset[];
   operations: ProcessingStatusOperation[];
+}
+
+interface ServerProcessingAlert extends Omit<ProcessingAlert, "datasetKey"> {
+  datasetKey: ProcessingDatasetKey;
+}
+
+export interface ProcessingAlertsSnapshot {
+  generatedAt: string;
+  alerts: ServerProcessingAlert[];
+}
+
+function datasetSubject(datasetKey: ProcessingDatasetKey, label: string): string {
+  if (datasetKey === "providers") return "summary";
+  return label.toLowerCase();
+}
+
+function buildProcessingAlert(
+  dataset: ProcessingStatusDataset,
+  operation: ProcessingStatusOperation,
+): ServerProcessingAlert {
+  const failedEvent = [...operation.timeline]
+    .filter(
+      (event) =>
+        event.status === "failed" &&
+        (event.datasetKey === null || event.datasetKey === dataset.key),
+    )
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0];
+  const sourceLabel = operation.providerId ? providerLabel(operation.providerId) : null;
+  const subject = datasetSubject(dataset.key, dataset.label);
+  const occurredAt = failedEvent?.occurredAt ?? dataset.lastAdvancedAt ?? operation.createdAt;
+
+  if (operation.kind === "file_import") {
+    const importedFile = sourceLabel ? `the ${sourceLabel} file` : "your file";
+    return {
+      id: `${operation.id}:${dataset.key}`,
+      providerId: operation.providerId,
+      providerLabel: sourceLabel,
+      datasetKey: dataset.key,
+      occurredAt,
+      title:
+        failedEvent?.stage === "ingest"
+          ? sourceLabel
+            ? `${sourceLabel} file wasn’t imported`
+            : "Your file wasn’t imported"
+          : sourceLabel
+            ? `${sourceLabel} ${subject} wasn’t updated`
+            : `${dataset.label} wasn’t updated`,
+      message:
+        failedEvent?.stage === "ingest"
+          ? `Dofek couldn’t finish importing ${importedFile}. Check that you selected the correct file, then import it again.`
+          : `Dofek imported ${importedFile}, but couldn’t update ${subject}. Your previously imported data is still available.`,
+      action: "retry_import",
+      actionLabel: sourceLabel ? `Import ${sourceLabel} again` : "Import the file again",
+    };
+  }
+
+  if (operation.kind === "provider_sync" && sourceLabel) {
+    if (failedEvent?.stage === "ingest" || failedEvent?.errorCode === "provider_sync_failed") {
+      return {
+        id: `${operation.id}:${dataset.key}`,
+        providerId: operation.providerId,
+        providerLabel: sourceLabel,
+        datasetKey: dataset.key,
+        occurredAt,
+        title: `${sourceLabel} couldn’t sync`,
+        message: `Dofek couldn’t get the latest data from ${sourceLabel}. Reconnect ${sourceLabel}, then start the sync again.`,
+        action: "reconnect",
+        actionLabel: `Reconnect ${sourceLabel}`,
+      };
+    }
+
+    return {
+      id: `${operation.id}:${dataset.key}`,
+      providerId: operation.providerId,
+      providerLabel: sourceLabel,
+      datasetKey: dataset.key,
+      occurredAt,
+      title: `${sourceLabel} ${subject} wasn’t updated`,
+      message:
+        dataset.key === "providers"
+          ? `Your ${sourceLabel} data synced, but its totals and latest-sync information couldn’t be refreshed. Your previously synced data is still available.`
+          : `Your ${sourceLabel} data synced, but Dofek couldn’t update ${subject}. Your previously synced data is still available.`,
+      action: "retry_sync",
+      actionLabel: `Retry ${sourceLabel} sync`,
+    };
+  }
+
+  return {
+    id: `${operation.id}:${dataset.key}`,
+    providerId: operation.providerId,
+    providerLabel: sourceLabel,
+    datasetKey: dataset.key,
+    occurredAt,
+    title: `${dataset.label} wasn’t updated`,
+    message: `Dofek couldn’t update ${subject}. Your existing data is still available. Contact support for help.`,
+    action: "contact_support",
+    actionLabel: "Contact support",
+  };
 }
 
 function operationState(operation: ProcessingOperationWithEvents, now: Date) {
@@ -194,6 +294,18 @@ export class ProcessingRepository {
           })),
       })),
     };
+  }
+
+  async alerts(): Promise<ProcessingAlertsSnapshot> {
+    const snapshot = await this.status({});
+    const alerts = snapshot.datasets.flatMap((dataset) => {
+      if (dataset.status !== "failed" && dataset.status !== "blocked") return [];
+      const currentOperation = snapshot.operations.find((operation) =>
+        operation.datasets.includes(dataset.key),
+      );
+      return currentOperation ? [buildProcessingAlert(dataset, currentOperation)] : [];
+    });
+    return { generatedAt: snapshot.generatedAt, alerts };
   }
 
   async history(input: { cursor?: string | null; limit: number }) {

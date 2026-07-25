@@ -29,7 +29,13 @@ const mobileLinkClass =
 const mobileActiveLinkClass =
   "rounded-md px-3 py-2 text-xs font-semibold bg-accent/10 text-foreground whitespace-nowrap";
 
-export function AppHeader({ children }: { children?: ReactNode }) {
+export function AppHeader({
+  children,
+  activeAlertCount = 0,
+}: {
+  children?: ReactNode;
+  activeAlertCount?: number;
+}) {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const mobileNavigationId = "app-mobile-navigation";
@@ -68,6 +74,7 @@ export function AppHeader({ children }: { children?: ReactNode }) {
             <h1 className="text-lg font-semibold tracking-tight shrink-0">Dofek</h1>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <AlertLink activeCount={activeAlertCount} compact />
             {children}
             {user && (
               <button
@@ -125,6 +132,10 @@ export function AppHeader({ children }: { children?: ReactNode }) {
           ))}
         </nav>
 
+        <div className="mt-4">
+          <AlertLink activeCount={activeAlertCount} />
+        </div>
+
         <div className="mt-auto space-y-3">
           {children}
           {user && (
@@ -161,6 +172,53 @@ export function AppHeader({ children }: { children?: ReactNode }) {
         </div>
       </aside>
     </>
+  );
+}
+
+function AlertLink({ activeCount, compact = false }: { activeCount: number; compact?: boolean }) {
+  const accessibleLabel = activeCount === 0 ? "Alerts" : `Alerts, ${activeCount} active`;
+  return (
+    <Link
+      to="/alerts"
+      aria-label={accessibleLabel}
+      className={
+        compact
+          ? "relative flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-accent/10 hover:text-foreground"
+          : "flex items-center justify-between rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-accent/10 hover:text-foreground"
+      }
+      activeProps={compact ? undefined : { className: desktopActiveLinkClass }}
+    >
+      <span className="flex items-center gap-2">
+        <BellIcon />
+        {compact ? null : <span>Alerts</span>}
+      </span>
+      {activeCount > 0 ? (
+        <span
+          className={
+            compact
+              ? "absolute -right-1 -top-1 min-w-4 rounded-full bg-red-500 px-1 text-center text-[10px] font-bold leading-4 text-white"
+              : "min-w-5 rounded-full bg-red-500 px-1.5 text-center text-[11px] font-bold leading-5 text-white"
+          }
+          aria-hidden="true"
+        >
+          {activeCount}
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M18 8a6 6 0 00-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

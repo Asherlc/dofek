@@ -4,7 +4,7 @@ import { type ProcessingStatusSnapshot, ProcessingStatusWidget } from "./Process
 
 const snapshot: ProcessingStatusSnapshot = {
   generatedAt: "2026-07-22T12:00:00.000Z",
-  scope: { providerId: "kaya", datasets: ["activity"] },
+  scope: { providerId: "garmin", datasets: ["activity"] },
   overallStatus: "active",
   datasets: [
     {
@@ -20,7 +20,7 @@ const snapshot: ProcessingStatusSnapshot = {
   operations: [
     {
       id: "00000000-0000-4000-8000-000000001852",
-      providerId: "kaya",
+      providerId: "garmin",
       kind: "provider_sync",
       createdAt: "2026-07-22T11:58:00.000Z",
       status: "active",
@@ -49,7 +49,7 @@ describe("ProcessingStatusWidget", () => {
     const ready: ProcessingStatusSnapshot = { ...snapshot, overallStatus: "ready" };
     expect(render(<ProcessingStatusWidget data={ready} />).container.innerHTML).toBe("");
     render(<ProcessingStatusWidget data={ready} alwaysVisible />);
-    expect(screen.getByText("Data is ready")).toBeTruthy();
+    expect(screen.getByText("Garmin sync complete")).toBeTruthy();
   });
 
   it("shows progress without exposing internal processing stages", () => {
@@ -57,8 +57,28 @@ describe("ProcessingStatusWidget", () => {
     expect(
       screen.getByTestId("processing-status-progress").getAttribute("accessibilityValue"),
     ).not.toBeNull();
+    expect(screen.getByText("Syncing Garmin")).toBeTruthy();
+    expect(
+      screen.queryByText("Your existing data stays available while this update finishes."),
+    ).toBeNull();
     expect(screen.queryByRole("button", { name: "Show processing details" })).toBeNull();
     expect(screen.queryByText("Receiving data")).toBeNull();
+  });
+
+  it("names the affected area when processing is not provider-scoped", () => {
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          scope: { providerId: null, datasets: ["sleep"] },
+          datasets: [{ ...activityDataset, key: "sleep", label: "Sleep" }],
+        }}
+      />,
+    );
+
+    const progress = screen.getByRole("progressbar", { name: "Recomputing sleep" });
+    expect(progress.getAttribute("accessibilityValue")).not.toBeNull();
+    expect(screen.getByText("Recomputing sleep")).toBeTruthy();
   });
 
   it("surfaces the server error message", () => {
@@ -74,73 +94,8 @@ describe("ProcessingStatusWidget", () => {
       />,
     );
 
-    expect(screen.getByText("Updating your data")).toBeTruthy();
+    expect(screen.getByText("Syncing Garmin")).toBeTruthy();
     expect(screen.queryByText("Processing status is unavailable")).toBeNull();
-  });
-
-  it("uses failures only from the latest operation for each dataset", () => {
-    const currentOperation = snapshot.operations.at(0);
-    const timelineEvent = currentOperation?.timeline.at(0);
-    if (!currentOperation || !timelineEvent) {
-      throw new Error("Expected the processing snapshot fixture to include a timeline event");
-    }
-    render(
-      <ProcessingStatusWidget
-        data={{
-          ...snapshot,
-          overallStatus: "failed",
-          datasets: [
-            ...snapshot.datasets,
-            {
-              ...activityDataset,
-              key: "sleep",
-              label: "Sleep",
-              status: "failed",
-              progressPercentage: null,
-            },
-          ],
-          operations: [
-            {
-              ...currentOperation,
-              id: "00000000-0000-4000-8000-000000001853",
-              createdAt: "2026-07-22T11:59:00.000Z",
-              status: "active",
-              timeline: [timelineEvent],
-            },
-            {
-              ...currentOperation,
-              createdAt: "2026-07-22T11:58:30.000Z",
-              status: "failed",
-              timeline: [
-                {
-                  ...timelineEvent,
-                  status: "failed",
-                  errorMessage: "The historical activity update failed.",
-                },
-              ],
-            },
-            {
-              ...currentOperation,
-              id: "00000000-0000-4000-8000-000000001854",
-              createdAt: "2026-07-21T11:58:00.000Z",
-              status: "failed",
-              datasets: ["sleep"],
-              timeline: [
-                {
-                  ...timelineEvent,
-                  status: "failed",
-                  datasetKey: "sleep",
-                  errorMessage: "The current sleep update failed.",
-                },
-              ],
-            },
-          ],
-        }}
-      />,
-    );
-
-    expect(screen.getByText("The current sleep update failed.")).toBeTruthy();
-    expect(screen.queryByText("The historical activity update failed.")).toBeNull();
   });
 
   it("hides aggregate progress when a non-ready dataset has no progress", () => {

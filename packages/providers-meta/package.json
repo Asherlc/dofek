@@ -8,6 +8,7 @@
     "./provider-stats": "./src/provider-stats.ts",
     "./whoop": "./src/whoop.ts",
     "./push-providers": "./src/push-providers.ts",
+    "./processing-alerts": "./src/processing-alerts.ts",
     "./processing-status": "./src/processing-status.ts"
   },
   "dependencies": {
