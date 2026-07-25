@@ -4595,6 +4595,7 @@ describe("createAuthRouter", () => {
         expect.stringContaining("DB connection lost"),
         expect.objectContaining({ err: expect.any(Error) }),
       );
+      expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
       expect(mockExchangeCode).not.toHaveBeenCalled();
     });
   });

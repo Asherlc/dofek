@@ -124,6 +124,32 @@ describe("data provider OAuth reconnect", () => {
     await expect(loadTokens(testCtx.db, "wahoo", TEST_USER_ID)).resolves.toBeNull();
   });
 
+  it("preserves stored Wahoo tokens when provider revocation fails", async () => {
+    await seedConnection("wahoo", "Wahoo");
+    let tokenRequests = 0;
+    mswServer.use(
+      http.delete("https://api.wahooligan.com/v1/permissions", () =>
+        HttpResponse.text("temporary outage", { status: 503 }),
+      ),
+      http.post("https://api.wahooligan.com/oauth/token", () => {
+        tokenRequests++;
+        return HttpResponse.json({
+          access_token: "replacement-access-token",
+          refresh_token: "replacement-refresh-token",
+          expires_in: 3600,
+          scope: "user_read",
+        });
+      }),
+    );
+
+    const response = await callback("wahoo");
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain("existing connection is still active");
+    await expect(loadTokens(testCtx.db, "wahoo", TEST_USER_ID)).resolves.toEqual(EXISTING_TOKENS);
+    expect(tokenRequests).toBe(0);
+  });
+
   it("replaces Wahoo tokens after revoking the provider-limited authorization", async () => {
     await seedConnection("wahoo", "Wahoo");
     let revocationRequests = 0;

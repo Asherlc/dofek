@@ -245,7 +245,21 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
 
       reconnectFailure = { kind: "removed", providerName: provider.name };
       const { deleteTokens } = await import("dofek/db/tokens");
-      await deleteTokens(db, providerId, stateUserId);
+      try {
+        await deleteTokens(db, providerId, stateUserId);
+      } catch (deleteError: unknown) {
+        const detail = deleteError instanceof Error ? deleteError.message : String(deleteError);
+        const cleanupError = new Error(
+          `${providerId} authorization was revoked but its stored credential could not be deleted; a stale revoked credential remains stored: ${detail}`,
+          { cause: deleteError },
+        );
+        logger.error(`[auth] ${cleanupError.message}`, {
+          err: deleteError,
+          providerId,
+          userId: stateUserId,
+        });
+        throw cleanupError;
+      }
       await queryCache.invalidateByPrefix(`${stateUserId}:sync.providers`);
     }
 

@@ -100,6 +100,7 @@ vi.mock("./shared.ts", () => ({
   })),
 }));
 
+import * as Sentry from "@sentry/node";
 import { MissingEmailForSignupError } from "../../auth/account-linking.ts";
 import { handleOAuth2Callback } from "./data-provider-callback.ts";
 
@@ -615,6 +616,41 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       expect.stringContaining("previous Wahoo authorization was removed"),
     );
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("connect Wahoo again"));
+  });
+
+  it("reports a stale revoked credential when local deletion fails", async () => {
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeExistingTokens.mockResolvedValue(undefined);
+    mockDeleteTokens.mockRejectedValue(new Error("database unavailable"));
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
+    expect(mockExchangeCode).not.toHaveBeenCalled();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "wahoo authorization was revoked but its stored credential could not be deleted",
+      ),
+      expect.objectContaining({
+        err: expect.any(Error),
+        providerId: "wahoo",
+        userId: "user-1",
+      }),
+    );
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("stale revoked credential remains stored"),
+        cause: expect.objectContaining({ message: "database unavailable" }),
+      }),
+    );
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("previous Wahoo authorization was removed"),
+    );
   });
 
   it("retains existing credentials and aborts exchange when required revocation fails", async () => {
