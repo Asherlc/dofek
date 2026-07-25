@@ -142,9 +142,11 @@ describe("LifeEventsPanel", () => {
   it("shows and reports create failures without clearing the form", () => {
     const createError = new Error("Life event was not saved");
     let onError: ((error: unknown) => void) | undefined;
+    let meta: unknown;
     const mutate = vi.fn();
     mocks.createUseMutation.mockImplementation(
-      (options: { onError?: (error: unknown) => void }) => {
+      (options: { meta?: unknown; onError?: (error: unknown) => void }) => {
+        meta = options.meta;
         onError = options.onError;
         return { error: createError, isPending: false, mutate };
       },
@@ -159,6 +161,7 @@ describe("LifeEventsPanel", () => {
     act(() => onError?.(createError));
 
     expect(mutate).toHaveBeenCalledWith(expect.objectContaining({ label: "Keep this event" }));
+    expect(meta).toEqual({ errorReportedLocally: true });
     expect(screen.getByText(createError.message)).toBeDefined();
     const label = screen.getByRole("textbox", { name: "Label" });
     expect(label).toBeInstanceOf(HTMLInputElement);
@@ -174,9 +177,11 @@ describe("LifeEventsPanel", () => {
   it("shows and reports delete failures without clearing the selection", () => {
     const deleteError = new Error("Life event could not be deleted");
     let onError: ((error: unknown) => void) | undefined;
+    let meta: unknown;
     const mutate = vi.fn();
     mocks.deleteUseMutation.mockImplementation(
-      (options: { onError?: (error: unknown) => void }) => {
+      (options: { meta?: unknown; onError?: (error: unknown) => void }) => {
+        meta = options.meta;
         onError = options.onError;
         return { error: deleteError, isPending: false, mutate };
       },
@@ -189,6 +194,7 @@ describe("LifeEventsPanel", () => {
     act(() => onError?.(deleteError));
 
     expect(mutate).toHaveBeenCalledWith({ id: "event-1" });
+    expect(meta).toEqual({ errorReportedLocally: true });
     expect(screen.getByText(deleteError.message)).toBeDefined();
     expect(screen.getByRole("button", { name: "Delete" })).toBeDefined();
     expect(mocks.captureException).toHaveBeenCalledWith(deleteError, {

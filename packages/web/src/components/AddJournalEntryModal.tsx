@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { z } from "zod";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -30,6 +31,7 @@ function todayString(): string {
 export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalEntryModalProps) {
   const questionsQuery = trpc.journal.questions.useQuery();
   const createMutation = trpc.journal.create.useMutation({
+    meta: locallyReportedErrorMeta,
     onSuccess,
     onError: (error) => {
       captureException(error, { operation: "journal.create" });

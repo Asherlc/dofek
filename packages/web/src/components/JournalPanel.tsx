@@ -2,6 +2,7 @@ import { formatDateLong } from "@dofek/format/format";
 import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { useMemo, useState } from "react";
 import { z } from "zod";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -79,6 +80,7 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
   const utils = trpc.useUtils();
   const entriesQuery = trpc.journal.entries.useQuery(selectedRangeQueryInput(days));
   const deleteMutation = trpc.journal.delete.useMutation({
+    meta: locallyReportedErrorMeta,
     onSuccess: () => utils.journal.entries.invalidate(),
     onError: (error) => {
       captureException(error, { operation: "journal.delete" });

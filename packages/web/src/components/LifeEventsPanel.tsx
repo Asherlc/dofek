@@ -9,6 +9,7 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { useState } from "react";
 import { z } from "zod";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -60,6 +61,7 @@ export function LifeEventsPanel() {
   const utils = trpc.useUtils();
   const events = trpc.lifeEvents.list.useQuery();
   const createMutation = trpc.lifeEvents.create.useMutation({
+    meta: locallyReportedErrorMeta,
     onSuccess: () => {
       utils.lifeEvents.list.invalidate();
       setShowForm(false);
@@ -69,6 +71,7 @@ export function LifeEventsPanel() {
     },
   });
   const deleteMutation = trpc.lifeEvents.delete.useMutation({
+    meta: locallyReportedErrorMeta,
     onSuccess: () => {
       utils.lifeEvents.list.invalidate();
       setSelectedEvent(null);

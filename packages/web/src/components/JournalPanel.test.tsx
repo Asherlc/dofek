@@ -120,17 +120,22 @@ describe("JournalPanel", () => {
   it("shows and reports delete failures while keeping the entry available to retry", () => {
     const deleteError = new Error("Journal entry could not be deleted");
     let onError: ((error: unknown) => void) | undefined;
+    let meta: unknown;
     const mutate = vi.fn();
-    mocks.deleteMutation.mockImplementation((options: { onError?: (error: unknown) => void }) => {
-      onError = options.onError;
-      return { error: deleteError, isPending: false, mutate };
-    });
+    mocks.deleteMutation.mockImplementation(
+      (options: { meta?: unknown; onError?: (error: unknown) => void }) => {
+        meta = options.meta;
+        onError = options.onError;
+        return { error: deleteError, isPending: false, mutate };
+      },
+    );
 
     render(<JournalPanel />);
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     act(() => onError?.(deleteError));
 
     expect(mutate).toHaveBeenCalledWith({ id: "entry-1" });
+    expect(meta).toEqual({ errorReportedLocally: true });
     expect(screen.getByText(deleteError.message)).toBeDefined();
     expect(screen.getByRole("button", { name: "Delete" })).toBeDefined();
     expect(mocks.captureException).toHaveBeenCalledWith(deleteError, {

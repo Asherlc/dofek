@@ -68,11 +68,15 @@ describe("AddJournalEntryModal", () => {
   it("shows and reports create failures without clearing the form", () => {
     const createError = new Error("Journal entry was not saved");
     let onError: ((error: unknown) => void) | undefined;
+    let meta: unknown;
     const mutate = vi.fn();
-    mocks.createMutation.mockImplementation((options: { onError?: (error: unknown) => void }) => {
-      onError = options.onError;
-      return { error: createError, isPending: false, mutate };
-    });
+    mocks.createMutation.mockImplementation(
+      (options: { meta?: unknown; onError?: (error: unknown) => void }) => {
+        meta = options.meta;
+        onError = options.onError;
+        return { error: createError, isPending: false, mutate };
+      },
+    );
 
     render(<AddJournalEntryModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} />);
     fireEvent.change(screen.getByRole("combobox", { name: "Question" }), {
@@ -90,6 +94,7 @@ describe("AddJournalEntryModal", () => {
         answerText: "Keep this answer",
       }),
     );
+    expect(meta).toEqual({ errorReportedLocally: true });
     expect(screen.getByText(createError.message)).toBeDefined();
     const answer = screen.getByRole("textbox", { name: "Answer" });
     expect(answer).toBeInstanceOf(HTMLTextAreaElement);
