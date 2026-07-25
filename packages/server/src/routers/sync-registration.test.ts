@@ -34,6 +34,7 @@ vi.mock("../trpc.ts", async () => {
 });
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: vi.fn(),
   queryCache: {
     invalidateByPrefix: vi.fn(),
     get: vi.fn(),

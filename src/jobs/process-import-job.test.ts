@@ -24,6 +24,12 @@ const { writeFile, access } = await import("node:fs/promises");
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
 const mockLoggerWarn = vi.fn();
+const mockInvalidateAllUserQueries = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("../lib/cache.ts", () => ({
+  invalidateAllUserQueries: (...args: unknown[]) => mockInvalidateAllUserQueries(...args),
+}));
+
 vi.mock("../logger.ts", () => ({
   logger: {
     info: (...args: unknown[]) => mockLoggerInfo(...args),
@@ -236,6 +242,7 @@ describe("processImportJob", () => {
     mockImportFitFile.mockResolvedValue({ recordsSynced: 1, errors: [] });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
+    mockInvalidateAllUserQueries.mockResolvedValue(undefined);
     mockCreateProcessingOperation.mockClear();
     mockAppendProcessingStageEvent.mockClear();
     mockRecordMetricStreamBatchPublished.mockClear();
@@ -285,6 +292,9 @@ describe("processImportJob", () => {
 
       await runImportJob(job, mockDb);
 
+      expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000001",
+      );
       expect(mockCreateProcessingOperation).toHaveBeenCalledWith(mockDb, {
         userId: "00000000-0000-4000-8000-000000000001",
         providerId: "apple_health",

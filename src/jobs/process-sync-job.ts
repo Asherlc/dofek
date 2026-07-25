@@ -7,6 +7,7 @@ import type { Database, SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
@@ -364,6 +365,9 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           }),
         ),
       );
+      if (result.recordsSynced > 0) {
+        await invalidateAllUserQueries(job.data.userId);
+      }
       if (result.continued) {
         syncRunContinued = true;
         providerStatus[provider.id] = {

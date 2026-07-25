@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { PersonalizationRepository } from "../repositories/personalization-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -28,13 +29,17 @@ export const personalizationRouter = router({
   refit: protectedProcedure.mutation(async ({ ctx }) => {
     const sensorStore = requireSensorStore(ctx.sensorStore, "personalization.refit");
     const repo = new PersonalizationRepository(ctx.db, ctx.userId, sensorStore);
-    return repo.refit();
+    const result = await repo.refit();
+    await invalidateUserQueryDomains(ctx.userId, ["personalization"]);
+    return result;
   }),
 
   /** Reset to defaults by deleting personalized params */
   reset: protectedProcedure.mutation(async ({ ctx }) => {
     const sensorStore = requireSensorStore(ctx.sensorStore, "personalization.reset");
     const repo = new PersonalizationRepository(ctx.db, ctx.userId, sensorStore);
-    return repo.reset();
+    const result = await repo.reset();
+    await invalidateUserQueryDomains(ctx.userId, ["personalization"]);
+    return result;
   }),
 });
