@@ -776,18 +776,18 @@ describe("syncWhoopBle", () => {
     const bleError = new Error("BLE error");
     vi.mocked(whoopDeps.connect).mockRejectedValue(bleError);
 
-    await syncWhoopBle(trpcClient, whoopDeps);
+    await expect(syncWhoopBle(trpcClient, whoopDeps)).rejects.toBe(bleError);
 
     expect(captureException).toHaveBeenCalledWith(bleError, {
       source: "whoop-ble-background-refresh",
     });
   });
 
-  it("does not throw on errors", async () => {
-    vi.mocked(whoopDeps.connect).mockRejectedValue(new Error("BLE error"));
+  it("rejects on errors so the native background task can report failure", async () => {
+    const error = new Error("BLE error");
+    vi.mocked(whoopDeps.connect).mockRejectedValue(error);
 
-    // Should not throw
-    await syncWhoopBle(trpcClient, whoopDeps);
+    await expect(syncWhoopBle(trpcClient, whoopDeps)).rejects.toBe(error);
   });
 });
 

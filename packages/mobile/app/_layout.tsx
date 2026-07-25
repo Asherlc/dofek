@@ -14,6 +14,7 @@ import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
 } from "../lib/background-health-kit-sync";
+import { runRequiredBackgroundRefreshWork } from "../lib/background-refresh-work";
 import {
   createWatchSyncClient,
   initBackgroundWatchInertialMeasurementUnitSync,
@@ -30,7 +31,7 @@ import { trpc } from "../lib/trpc";
 import { createTrpcFetch } from "../lib/trpc-fetch";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { getVersionHeaders } from "../lib/version-headers";
-import { addBackgroundRefreshListener, scheduleRefresh } from "../modules/background-refresh";
+import { addBackgroundRefreshListener } from "../modules/background-refresh";
 import {
   addConnectionStateListener as addWhoopConnectionStateListener,
   confirmRealtimeDataDrain as confirmWhoopRealtimeDataDrain,
@@ -242,27 +243,6 @@ function AuthGate() {
     // retry WHOOP BLE connection so coverage continues even if the user
     // never opens the app.
     const refreshSubscription = addBackgroundRefreshListener(() => {
-      // Restart Watch IMU recording
-      initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch((error: unknown) => {
-        captureException(error, { source: "bg-refresh-watch-sync" });
-      });
-
-      // Restart phone accelerometer recording
-      initBackgroundAccelerometerSync(imuSyncClient).catch((error: unknown) => {
-        captureException(error, { source: "bg-refresh-accel-sync" });
-      });
-
-      // Retry WHOOP BLE connection and flush buffered IMU samples
-      import("../modules/whoop-ble")
-        .then(({ retryConnection }) => {
-          retryConnection().catch((error: unknown) => {
-            captureException(error, { source: "bg-refresh-whoop-retry" });
-          });
-        })
-        .catch((error: unknown) => {
-          captureException(error, { source: "bg-refresh-whoop-import" });
-        });
-
       // Upload any WHOOP BLE samples buffered since last sync
       const whoopRealtimeSyncClient = {
         whoopBleSync: {
@@ -273,28 +253,44 @@ function AuthGate() {
           },
         },
       };
-      syncWhoopBle(
-        imuSyncClient,
+      return runRequiredBackgroundRefreshWork([
         {
-          isBluetoothAvailable,
-          findWhoop,
-          connect: whoopConnect,
-          startImuStreaming,
-          stopImuStreaming,
-          peekBufferedSamples: peekWhoopSamples,
-          confirmSamplesDrain: confirmWhoopSamplesDrain,
-          peekBufferedRealtimeData: peekWhoopRealtimeData,
-          confirmRealtimeDataDrain: confirmWhoopRealtimeDataDrain,
-          addConnectionStateListener: addWhoopConnectionStateListener,
-          disconnect: whoopDisconnect,
+          source: "bg-refresh-watch-sync",
+          run: () => initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient),
         },
-        whoopRealtimeSyncClient,
-      ).catch((error: unknown) => {
-        captureException(error, { source: "bg-refresh-whoop-flush" });
-      });
-
-      // Re-schedule for next wakeup
-      scheduleRefresh();
+        {
+          source: "bg-refresh-accel-sync",
+          run: () => initBackgroundAccelerometerSync(imuSyncClient),
+        },
+        {
+          source: "bg-refresh-whoop-retry",
+          run: async () => {
+            const { retryConnection } = await import("../modules/whoop-ble");
+            await retryConnection();
+          },
+        },
+        {
+          source: "bg-refresh-whoop-flush",
+          run: () =>
+            syncWhoopBle(
+              imuSyncClient,
+              {
+                isBluetoothAvailable,
+                findWhoop,
+                connect: whoopConnect,
+                startImuStreaming,
+                stopImuStreaming,
+                peekBufferedSamples: peekWhoopSamples,
+                confirmSamplesDrain: confirmWhoopSamplesDrain,
+                peekBufferedRealtimeData: peekWhoopRealtimeData,
+                confirmRealtimeDataDrain: confirmWhoopRealtimeDataDrain,
+                addConnectionStateListener: addWhoopConnectionStateListener,
+                disconnect: whoopDisconnect,
+              },
+              whoopRealtimeSyncClient,
+            ),
+        },
+      ]);
     });
 
     return () => {
