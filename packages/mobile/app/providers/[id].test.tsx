@@ -592,7 +592,7 @@ describe("ProviderDetailScreen", () => {
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("Wahoo data status")).toBeTruthy();
-      expect(screen.getByText("Updating your data")).toBeTruthy();
+      expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
     });
 
     it("triggers generic provider sync with sinceDays=7 when Sync is clicked", async () => {

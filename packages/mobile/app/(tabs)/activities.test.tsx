@@ -123,6 +123,7 @@ vi.mock("../../lib/useRefresh", () => ({
 vi.mock("react-native-svg", () => ({
   default: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) =>
     createElement("svg", props, children),
+  Circle: (props: Record<string, unknown>) => createElement("circle", props),
   Polyline: ({ testID, ...props }: Record<string, unknown>) =>
     createElement("polyline", { ...props, "data-testid": testID }),
 }));
@@ -206,7 +207,7 @@ describe("ActivitiesScreen", () => {
     render(<ActivitiesScreen />);
 
     expect(processingStatusInput).toEqual({ datasets: ["activity"] });
-    expect(screen.getByText("Updating your data")).toBeDefined();
+    expect(screen.getByText("Recomputing activities")).toBeDefined();
   });
 
   it("uses QueryStatePanel for overview loading state", () => {

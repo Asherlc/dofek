@@ -1062,7 +1062,7 @@ describe("ProvidersScreen", () => {
 
     await renderProvidersScreen();
 
-    expect(screen.getByText("Updating your data")).toBeTruthy();
+    expect(screen.getByText("Recomputing sleep")).toBeTruthy();
   });
 
   it("shows an explicit error when providers fail to load", async () => {

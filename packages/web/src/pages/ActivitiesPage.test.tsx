@@ -235,7 +235,7 @@ describe("ActivitiesPage", () => {
     render(<ActivitiesPage />);
 
     expect(processingStatusInput).toEqual({ datasets: ["activity"] });
-    expect(screen.getByText("Updating your data")).toBeDefined();
+    expect(screen.getByText("Recomputing activities", { selector: "span" })).toBeDefined();
     expect(screen.getByRole("progressbar")).toBeTruthy();
   });
 

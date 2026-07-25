@@ -423,7 +423,7 @@ describe("ProviderDetailPage import-only providers", () => {
     render(<ProviderDetailPage />);
 
     expect(screen.getByText("Wahoo data status")).toBeTruthy();
-    expect(screen.getByText("Updating your data")).toBeTruthy();
+    expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
   });
 
   it("shows single-provider cooldown outcome without polling a fake job", async () => {
