@@ -212,6 +212,7 @@ export async function loadMobileTrainingTab(
         strain.workload_ratio AS workload_ratio
       FROM analytics.daily_strain AS strain FINAL
       WHERE strain.user_id = {userId:UUID}
+        AND strain.is_deleted = 0
         AND strain.date > toDate({outputWindowStart:String})
         AND strain.date <= toDate({endDate:String})
         ${strainAccessClause(ctx.accessWindow)}

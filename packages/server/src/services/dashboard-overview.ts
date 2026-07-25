@@ -133,6 +133,7 @@ export async function loadDashboardOverview({
             strain.daily_load
           FROM analytics.daily_strain AS strain FINAL
           WHERE strain.user_id = {userId:UUID}
+            AND strain.is_deleted = 0
             AND strain.date > toDate({endDate:String}) - {days:UInt32}
             AND strain.date <= toDate({endDate:String})
             ${accessWindowDateClause(accessWindow, "strain.date")}
@@ -145,6 +146,7 @@ export async function loadDashboardOverview({
       `SELECT coalesce(strain.daily_load, 0) AS load
           FROM analytics.daily_strain AS strain FINAL
           WHERE strain.user_id = {userId:UUID}
+            AND strain.is_deleted = 0
             AND strain.date = toDate({endDate:String}) - 1
             ${accessWindowDateClause(accessWindow, "strain.date")}`,
       { userId, endDate, ...dateParams },

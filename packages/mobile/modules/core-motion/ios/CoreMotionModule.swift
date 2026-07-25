@@ -1,6 +1,33 @@
+import Foundation
+
+#if os(iOS) && canImport(ExpoModulesCore)
 import CoreMotion
 import ExpoModulesCore
+#endif
 
+enum CoreMotionIsoDateParser {
+    private static let fractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let internetDateTime: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    static func parse(_ value: String) -> Date? {
+        if let date = fractionalSeconds.date(from: value) {
+            return date
+        }
+
+        return internetDateTime.date(from: value)
+    }
+}
+
+#if os(iOS) && canImport(ExpoModulesCore)
 // CMSensorDataList conforms to NSFastEnumeration but not Swift's Sequence,
 // so we add conformance to enable for-in loops.
 extension CMSensorDataList: @retroactive Sequence {
@@ -11,24 +38,6 @@ extension CMSensorDataList: @retroactive Sequence {
 
 private let lastSyncKey = "com.dofek.coreMotion.lastSyncTimestamp"
 private let recordingActiveKey = "com.dofek.coreMotion.recordingActive"
-
-private enum CoreMotionIsoDateFormatters {
-    static let fractionalSeconds: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    static let internetDateTime = ISO8601DateFormatter()
-}
-
-private func parseIsoDate(_ value: String) -> Date? {
-    if let date = CoreMotionIsoDateFormatters.fractionalSeconds.date(from: value) {
-        return date
-    }
-
-    return CoreMotionIsoDateFormatters.internetDateTime.date(from: value)
-}
 
 public class CoreMotionModule: Module {
     private let sensorRecorder = CMSensorRecorder()
@@ -107,8 +116,8 @@ public class CoreMotionModule: Module {
                 return
             }
 
-            guard let fromDate = parseIsoDate(fromDateString),
-                  let toDate = parseIsoDate(toDateString) else {
+            guard let fromDate = CoreMotionIsoDateParser.parse(fromDateString),
+                  let toDate = CoreMotionIsoDateParser.parse(toDateString) else {
                 promise.reject("COREMOTION_INVALID_DATE", "Invalid ISO 8601 date string")
                 return
             }
@@ -159,3 +168,4 @@ public class CoreMotionModule: Module {
         }
     }
 }
+#endif
