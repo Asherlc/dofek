@@ -322,6 +322,16 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
 });
 
 describe("POST /api/webhooks/:providerName — event processing", () => {
+  it("rate-limits repeated rejected webhook requests", async () => {
+    const app = createTestApp();
+    let response = { status: 0, body: "" };
+    for (let attempt = 0; attempt <= 60; attempt++) {
+      response = await request(app, "post", "/api/webhooks/unknown", "{}");
+    }
+
+    expect(response.status).toBe(429);
+  });
+
   it("returns 404 for unknown provider", async () => {
     const res = await request(createTestApp(), "post", "/api/webhooks/unknown", "{}");
     expect(res.status).toBe(404);
