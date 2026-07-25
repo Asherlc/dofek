@@ -123,6 +123,51 @@ The archive service should use Redpanda Connect with:
 Redpanda Connect documents `aws_s3` as self-managed and non-enterprise, and it
 documents Cloudflare R2 support through custom endpoint and path-style settings.
 
+## Malformed-event quarantine
+
+The ClickHouse consumer creates and enforces a dedicated
+`metric-stream-v1.quarantine.v1` topic before it begins consuming the source
+topic. The quarantine is intentionally bounded:
+
+- cleanup policy: `delete`
+- time retention: 604800000 ms (7 days)
+- size retention: 1073741824 bytes (1 GiB per partition)
+
+Redpanda supports topic-level `retention.ms` and `retention.bytes` overrides
+through the Kafka Admin API. Both limits make old records eligible for
+deletion, so investigate quarantine events promptly instead of treating the
+topic as a second archive.
+
+Each quarantined record's value is the exact original payload bytes. Keeping
+the payload raw avoids base64 size expansion near Kafka's message limit. Its
+headers provide `dofek-quarantine-version`, `dofek-quarantined-at`,
+`dofek-source-topic`, `dofek-source-partition`, `dofek-source-offset`,
+`dofek-error-name`, and `dofek-error-message`.
+
+The record key is `<source-topic>:<partition>:<offset>`. The consumer publishes
+with `acks: -1`, which requires every in-sync replica to acknowledge the
+quarantine write. It resolves the source batch only after every malformed
+payload is quarantined and every valid event in the batch reaches ClickHouse.
+If parsing, quarantine, or ClickHouse fails, no source offset in that batch is
+resolved; a later valid event therefore cannot bypass an earlier unhandled
+offset in the same partition.
+
+Inspect recent quarantine records without joining a consumer group:
+
+```bash
+docker exec "$(docker ps --filter name=dofek_redpanda -q | head -n1)" \
+  rpk topic consume metric-stream-v1.quarantine.v1 \
+  --offset start --num 100 --format json
+```
+
+Before replaying, deploy the schema or payload correction, validate the raw
+record value against the current metric-stream schema, and produce it to the
+partition recorded in the headers with all-replica acknowledgement.
+Do not delete the quarantine record manually; retain its original coordinates
+as incident evidence and let the configured bounds expire it. Redpanda's
+`rpk topic produce --partition` flag can target the recorded partition, while
+`--acks=-1` requests all in-sync replicas.
+
 ## Freshness Checks
 
 Run concrete freshness checks from the production host:
@@ -237,3 +282,13 @@ If strain, activity load, or other metric-stream analytics go stale:
   <https://docs.redpanda.com/redpanda-connect/components/outputs/aws_s3/>
 - Redpanda Connect component catalog:
   <https://docs.redpanda.com/redpanda-connect/components/about/>
+- Redpanda topic configuration properties:
+  <https://docs.redpanda.com/current/reference/properties/topic-properties/>
+- Redpanda `rpk topic consume`:
+  <https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-consume/>
+- Redpanda `rpk topic produce`:
+  <https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-produce/>
+- KafkaJS producing acknowledgements:
+  <https://kafka.js.org/docs/producing>
+- KafkaJS manual batch offset resolution:
+  <https://kafka.js.org/docs/consuming>
