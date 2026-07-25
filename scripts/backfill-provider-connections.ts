@@ -296,6 +296,7 @@ export async function backfillProviderConnections(
     for (const source of sources) {
       connectionsInserted += await backfillSource(client, source);
     }
+    await client.query("UPDATE fitness.provider SET user_id = NULL WHERE user_id IS NOT NULL");
     await enforceConnectionIntegrity(client);
     return { sourcesCompleted: sources.length, connectionsInserted };
   } finally {

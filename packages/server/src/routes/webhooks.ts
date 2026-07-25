@@ -102,19 +102,23 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
         return;
       }
 
-      const subscriptions =
-        await webhookSubscriptionRepository.getActiveByProviderName(providerName);
-      if (subscriptions.length === 0) {
+      const query = Object.fromEntries(Object.entries(req.query).map(([k, v]) => [k, String(v)]));
+      let subscriptionFound = false;
+      let response: ReturnType<typeof handleValidationChallenge> = null;
+      for await (const subscription of webhookSubscriptionRepository.iterateActiveByProviderName(
+        providerName,
+      )) {
+        subscriptionFound = true;
+        response = handleValidationChallenge(query, subscription.verifyToken);
+        if (response !== null) {
+          break;
+        }
+      }
+      if (!subscriptionFound) {
         logger.warn(`[webhook] No active subscription for ${providerName} challenge`);
         res.status(404).send("No subscription");
         return;
       }
-
-      const query = Object.fromEntries(Object.entries(req.query).map(([k, v]) => [k, String(v)]));
-      const response =
-        subscriptions
-          .map((subscription) => handleValidationChallenge(query, subscription.verifyToken))
-          .find((candidate) => candidate !== null) ?? null;
 
       if (response === null) {
         res.status(400).send("Challenge failed");
@@ -150,23 +154,28 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
         return;
       }
 
-      const subscriptions =
-        await webhookSubscriptionRepository.getActiveByProviderName(providerName);
-      if (subscriptions.length === 0) {
+      const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body));
+      let subscriptionFound = false;
+      let signatureIsValid = false;
+      for await (const subscription of webhookSubscriptionRepository.iterateActiveByProviderName(
+        providerName,
+      )) {
+        subscriptionFound = true;
+        signatureIsValid = provider.verifyWebhookSignature(
+          rawBody,
+          req.headers,
+          subscription.signingSecret ?? subscription.verifyToken,
+        );
+        if (signatureIsValid) {
+          break;
+        }
+      }
+      if (!subscriptionFound) {
         logger.warn(`[webhook] No active subscription for ${providerName}`);
         res.status(404).send("No subscription");
         return;
       }
 
-      const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body));
-
-      const signatureIsValid = subscriptions.some((subscription) =>
-        provider.verifyWebhookSignature(
-          rawBody,
-          req.headers,
-          subscription.signingSecret ?? subscription.verifyToken,
-        ),
-      );
       if (!signatureIsValid) {
         logger.warn(`[webhook] Invalid signature for ${providerName}`);
         res.status(401).send("Invalid signature");

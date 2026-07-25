@@ -47,7 +47,7 @@ export const provider = fitness.table(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     apiBaseUrl: text("api_base_url"),
-    /** @deprecated Rollback-only legacy owner. Provider ownership lives in provider_connection. */
+    /** @deprecated Legacy owner cleared during migration. Ownership lives in provider_connection. */
     userId: uuid("user_id").references(() => userProfile.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

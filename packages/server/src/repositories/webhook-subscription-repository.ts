@@ -56,7 +56,9 @@ export class WebhookSubscriptionRepository {
     this.#db = db;
   }
 
-  async getActiveByProviderName(providerName: string): Promise<ActiveWebhookSubscription[]> {
+  async *iterateActiveByProviderName(
+    providerName: string,
+  ): AsyncGenerator<ActiveWebhookSubscription> {
     const rows = await executeWithSchema(
       this.#db,
       activeSubscriptionRowSchema,
@@ -65,27 +67,25 @@ export class WebhookSubscriptionRepository {
           WHERE provider_name = ${providerName} AND status = 'active'
           ORDER BY created_at`,
     );
-    return Promise.all(
-      rows.map(async (row) => {
-        const verifyToken = await decryptCredentialValue(
-          row.verify_token,
-          webhookSecretContext(providerName, "verify_token"),
-        );
-        const signingSecret = row.signing_secret
-          ? await decryptCredentialValue(
-              row.signing_secret,
-              webhookSecretContext(providerName, "signing_secret"),
-            )
-          : null;
+    for (const row of rows) {
+      const verifyToken = await decryptCredentialValue(
+        row.verify_token,
+        webhookSecretContext(providerName, "verify_token"),
+      );
+      const signingSecret = row.signing_secret
+        ? await decryptCredentialValue(
+            row.signing_secret,
+            webhookSecretContext(providerName, "signing_secret"),
+          )
+        : null;
 
-        return {
-          id: row.id,
-          providerId: row.provider_id,
-          verifyToken,
-          signingSecret,
-        };
-      }),
-    );
+      yield {
+        id: row.id,
+        providerId: row.provider_id,
+        verifyToken,
+        signingSecret,
+      };
+    }
   }
 
   async hasActiveByProviderName(providerName: string): Promise<boolean> {

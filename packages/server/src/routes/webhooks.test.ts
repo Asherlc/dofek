@@ -409,6 +409,34 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     expect(verifySpy).toHaveBeenCalledTimes(2);
   });
 
+  it("stops decrypting subscriptions after a signing secret matches", async () => {
+    const verifySpy = vi.fn(() => true);
+    const provider = createMockWebhookProvider({
+      verifyWebhookSignature: verifySpy,
+      parseWebhookPayload: vi.fn(() => []),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema.mockResolvedValue([
+      {
+        id: "sub-1",
+        provider_id: "test-provider",
+        verify_token: "first-token",
+        signing_secret: "first-secret",
+      },
+      {
+        id: "sub-2",
+        provider_id: "test-provider",
+        verify_token: "second-token",
+        signing_secret: "enc:v1:not-valid-encrypted-value",
+      },
+    ]);
+
+    const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", "{}");
+
+    expect(res.status).toBe(200);
+    expect(verifySpy).toHaveBeenCalledTimes(1);
+  });
+
   it("returns 400 for invalid JSON body", async () => {
     const provider = createMockWebhookProvider();
     mockGetAllProviders.mockReturnValue([provider]);

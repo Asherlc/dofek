@@ -60,6 +60,12 @@ describe("provider connection backfill", () => {
       { user_id: firstUserId, provider_id: "legacy-owner-source" },
       { user_id: secondUserId, provider_id: "oauth-owner-source" },
     ]);
+    const catalogOwnerResult = await client.query(
+      `SELECT user_id
+       FROM fitness.provider
+       WHERE id = 'legacy-owner-source'`,
+    );
+    expect(catalogOwnerResult.rows).toEqual([{ user_id: null }]);
 
     const constraintResult = await client.query(
       `SELECT conname, convalidated
@@ -94,5 +100,8 @@ describe("provider connection backfill", () => {
         [secondUserId],
       ),
     ).rejects.toMatchObject({ code: "23503" });
+    await expect(
+      client.query("DELETE FROM fitness.user_profile WHERE id = $1", [firstUserId]),
+    ).resolves.toMatchObject({ rowCount: 1 });
   });
 });
