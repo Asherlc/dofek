@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSetupBackgroundObservers = vi.fn().mockResolvedValue(true);
+const mockTeardownBackgroundObservers = vi.fn();
 const mockAddSampleUpdateListener = vi.fn().mockReturnValue({ remove: vi.fn() });
+const mockCompleteBackgroundDelivery = vi.fn().mockReturnValue(true);
 const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
 const mockIsAvailable = vi.fn().mockReturnValue(true);
 const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
@@ -17,7 +19,9 @@ vi.mock("../modules/health-kit", () => ({
   getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
   requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
   setupBackgroundObservers: (...args: unknown[]) => mockSetupBackgroundObservers(...args),
+  teardownBackgroundObservers: (...args: unknown[]) => mockTeardownBackgroundObservers(...args),
   addSampleUpdateListener: (...args: unknown[]) => mockAddSampleUpdateListener(...args),
+  completeBackgroundDelivery: (...args: unknown[]) => mockCompleteBackgroundDelivery(...args),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
   queryWorkouts: vi.fn().mockResolvedValue([]),
@@ -40,6 +44,25 @@ import {
   teardownBackgroundHealthKitSync,
 } from "./background-health-kit-sync";
 
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value: T): void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolvePromise: ((value: T) => void) | undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    promise,
+    resolve(value) {
+      if (!resolvePromise) throw new Error("Deferred promise was not initialized");
+      resolvePromise(value);
+    },
+  };
+}
+
 function createMockClient() {
   return {
     healthKitSync: {
@@ -61,8 +84,8 @@ function createMockClient() {
 
 describe("initBackgroundHealthKitSync", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
     teardownBackgroundHealthKitSync();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -82,6 +105,15 @@ describe("initBackgroundHealthKitSync", () => {
 
     expect(mockAddSampleUpdateListener).toHaveBeenCalledTimes(1);
     expect(typeof mockAddSampleUpdateListener.mock.calls[0][0]).toBe("function");
+  });
+
+  it("registers the sample listener before starting native observers", async () => {
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+
+    expect(mockAddSampleUpdateListener.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSetupBackgroundObservers.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
   });
 
   it("runs an immediate catch-up sync when initialized", async () => {
@@ -119,7 +151,10 @@ describe("initBackgroundHealthKitSync", () => {
 
     // Trigger the listener callback
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
-    listener();
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      deliveryId: "delivery-success",
+    });
 
     // Advance past debounce timer
     await vi.advanceTimersByTimeAsync(5000);
@@ -127,6 +162,7 @@ describe("initBackgroundHealthKitSync", () => {
     await vi.runAllTimersAsync();
 
     expect(onSyncComplete).toHaveBeenCalledTimes(2);
+    expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-success");
     vi.useRealTimers();
   });
 
@@ -148,12 +184,16 @@ describe("initBackgroundHealthKitSync", () => {
     await initBackgroundHealthKitSync(client, onSyncComplete);
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
-    listener();
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      deliveryId: "delivery-failure",
+    });
 
     await vi.advanceTimersByTimeAsync(5000);
     await vi.runAllTimersAsync();
 
     expect(onSyncComplete).not.toHaveBeenCalled();
+    expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-failure");
     vi.useRealTimers();
   });
 
@@ -174,7 +214,10 @@ describe("initBackgroundHealthKitSync", () => {
     await initBackgroundHealthKitSync(client);
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
-    listener();
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      deliveryId: "delivery-network-error",
+    });
 
     await vi.advanceTimersByTimeAsync(5000);
     await vi.runAllTimersAsync();
@@ -196,7 +239,10 @@ describe("initBackgroundHealthKitSync", () => {
     await initBackgroundHealthKitSync(client);
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
-    listener();
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      deliveryId: "delivery-locked",
+    });
 
     await vi.advanceTimersByTimeAsync(5000);
     await vi.runAllTimersAsync();
@@ -206,6 +252,89 @@ describe("initBackgroundHealthKitSync", () => {
       "bg-healthkit-sync",
       "Device locked, skipping sync",
     );
+    expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-locked");
+    vi.useRealTimers();
+  });
+
+  it("does not acknowledge a delivery until its sync attempt finishes", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.waitFor(() => {
+      expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+    });
+
+    const upload = deferred<{ inserted: number }>();
+    client.healthKitSync.pushWorkouts.mutate.mockClear();
+    client.healthKitSync.pushWorkouts.mutate.mockReturnValueOnce(upload.promise);
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      deliveryId: "delivery-deferred",
+    });
+
+    expect(mockCompleteBackgroundDelivery).not.toHaveBeenCalledWith("delivery-deferred");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+    expect(mockCompleteBackgroundDelivery).not.toHaveBeenCalledWith("delivery-deferred");
+
+    upload.resolve({ inserted: 0 });
+    await vi.waitFor(() => {
+      expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-deferred");
+    });
+    vi.useRealTimers();
+  });
+
+  it("queues a follow-up sync for a delivery received during an active sync", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.waitFor(() => {
+      expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+    });
+
+    const firstUpload = deferred<{ inserted: number }>();
+    const secondUpload = deferred<{ inserted: number }>();
+    client.healthKitSync.pushWorkouts.mutate.mockClear();
+    client.healthKitSync.pushWorkouts.mutate
+      .mockReturnValueOnce(firstUpload.promise)
+      .mockReturnValueOnce(secondUpload.promise);
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      deliveryId: "delivery-first",
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierRestingHeartRate",
+      deliveryId: "delivery-second",
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      deliveryId: "delivery-third",
+    });
+
+    firstUpload.resolve({ inserted: 0 });
+    await vi.waitFor(() => {
+      expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-first");
+      expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(2);
+    });
+    expect(mockCompleteBackgroundDelivery).not.toHaveBeenCalledWith("delivery-second");
+    expect(mockCompleteBackgroundDelivery).not.toHaveBeenCalledWith("delivery-third");
+
+    secondUpload.resolve({ inserted: 0 });
+    await vi.waitFor(() => {
+      expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-second");
+      expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-third");
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
 
@@ -237,8 +366,26 @@ describe("teardownBackgroundHealthKitSync", () => {
 
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);
+    mockTeardownBackgroundObservers.mockClear();
     teardownBackgroundHealthKitSync();
 
     expect(mockRemove).toHaveBeenCalledTimes(1);
+    expect(mockTeardownBackgroundObservers).toHaveBeenCalledTimes(1);
+  });
+
+  it("acknowledges deliveries still waiting for their debounce timer", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      deliveryId: "delivery-pending-teardown",
+    });
+
+    teardownBackgroundHealthKitSync();
+
+    expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-pending-teardown");
+    vi.useRealTimers();
   });
 });

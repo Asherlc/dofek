@@ -1,5 +1,10 @@
 import type { EventSubscription } from "expo-modules-core";
-import { addSampleUpdateListener, setupBackgroundObservers } from "../modules/health-kit";
+import {
+  addSampleUpdateListener,
+  completeBackgroundDelivery,
+  setupBackgroundObservers,
+  teardownBackgroundObservers,
+} from "../modules/health-kit";
 import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple-health-provider";
 import type { SyncTrpcClient } from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
@@ -11,6 +16,9 @@ const HEALTHKIT_DATABASE_INACCESSIBLE_CODE = "HEALTHKIT_DATABASE_INACCESSIBLE";
 let subscription: EventSubscription | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let syncing = false;
+let syncRequested = false;
+let lifecycleGeneration = 0;
+const pendingDeliveryIds = new Set<string>();
 
 function isHealthKitDatabaseInaccessible(error: unknown): boolean {
   return (
@@ -21,12 +29,42 @@ function isHealthKitDatabaseInaccessible(error: unknown): boolean {
   );
 }
 
-function startHealthKitSync(trpcClient: SyncTrpcClient, onSyncComplete?: () => void) {
+function takePendingDeliveryIds(): string[] {
+  const deliveryIds = [...pendingDeliveryIds];
+  pendingDeliveryIds.clear();
+  return deliveryIds;
+}
+
+function acknowledgeDeliveries(deliveryIds: string[]) {
+  for (const deliveryId of deliveryIds) {
+    try {
+      completeBackgroundDelivery(deliveryId);
+    } catch (error: unknown) {
+      captureException(error, {
+        source: "bg-healthkit-delivery-completion",
+        deliveryId,
+      });
+    }
+  }
+}
+
+function startHealthKitSync(
+  trpcClient: SyncTrpcClient,
+  onSyncComplete?: () => void,
+  includePendingDeliveries = false,
+) {
   if (syncing) {
+    if (includePendingDeliveries && pendingDeliveryIds.size > 0) {
+      syncRequested = true;
+      logger.info(TAG, "Sync already in progress, follow-up queued");
+      return;
+    }
     logger.info(TAG, "Sync already in progress, skipping");
     return;
   }
 
+  const generation = lifecycleGeneration;
+  const deliveryIds = includePendingDeliveries ? takePendingDeliveryIds() : [];
   syncing = true;
   logger.info(TAG, "Starting sync");
   new AppleHealthSyncService({ trpcClient })
@@ -51,8 +89,39 @@ function startHealthKitSync(trpcClient: SyncTrpcClient, onSyncComplete?: () => v
       captureException(error, { source: TAG });
     })
     .finally(() => {
+      acknowledgeDeliveries(deliveryIds);
+      if (generation !== lifecycleGeneration) {
+        return;
+      }
       syncing = false;
+      if (syncRequested) {
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+          debounceTimer = null;
+        }
+        syncRequested = false;
+        startHealthKitSync(trpcClient, onSyncComplete, true);
+      }
     });
+}
+
+function resetBackgroundObserverLifecycle() {
+  lifecycleGeneration++;
+  syncing = false;
+  syncRequested = false;
+
+  if (subscription) {
+    logger.info(TAG, "Tearing down: removing listener");
+    subscription.remove();
+    subscription = null;
+  }
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+
+  acknowledgeDeliveries(takePendingDeliveryIds());
+  teardownBackgroundObservers();
 }
 
 /**
@@ -66,45 +135,33 @@ export async function initBackgroundHealthKitSync(
   trpcClient: SyncTrpcClient,
   onSyncComplete?: () => void,
 ) {
+  resetBackgroundObserverLifecycle();
   const authorizationState = await new AppleHealthAuthorizationService().resolve();
   if (!authorizationState.canAttemptSync()) {
     logger.info(TAG, "HealthKit not available, skipping init");
     return;
   }
 
-  // Set up native observer queries
-  await setupBackgroundObservers();
-  logger.info(TAG, "Background observers registered");
-  startHealthKitSync(trpcClient, onSyncComplete);
-
-  // Clean up any existing listener
-  if (subscription) {
-    logger.info(TAG, "Removing previous listener before re-init");
-    subscription.remove();
-    subscription = null;
-  }
-
-  // Listen for sample update events and debounce into a single sync
-  subscription = addSampleUpdateListener(() => {
+  // Register JavaScript before starting native queries because HealthKit can
+  // deliver an observer update immediately when the query starts.
+  subscription = addSampleUpdateListener(({ deliveryId }) => {
+    pendingDeliveryIds.add(deliveryId);
     logger.info(TAG, "Sample update event received, debouncing");
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      startHealthKitSync(trpcClient, onSyncComplete);
+      debounceTimer = null;
+      startHealthKitSync(trpcClient, onSyncComplete, true);
     }, DEBOUNCE_MS);
   });
+
+  await setupBackgroundObservers();
+  logger.info(TAG, "Background observers registered");
+  startHealthKitSync(trpcClient, onSyncComplete);
 
   logger.info(TAG, "Init complete, listening for HealthKit updates");
 }
 
 /** Clean up background sync listeners and timers */
 export function teardownBackgroundHealthKitSync() {
-  if (subscription) {
-    logger.info(TAG, "Tearing down: removing listener");
-    subscription.remove();
-    subscription = null;
-  }
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
-    debounceTimer = null;
-  }
+  resetBackgroundObserverLifecycle();
 }

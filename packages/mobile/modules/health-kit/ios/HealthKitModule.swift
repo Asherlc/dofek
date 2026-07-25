@@ -31,6 +31,15 @@ public class HealthKitModule: Module {
     private let healthStore = HKHealthStore()
     private let hasEverAuthorizedKey = "healthkit_has_ever_authorized"
     private var observerQueries: [HKObserverQuery] = []
+    private let backgroundDeliveryCoordinator = HealthKitBackgroundDeliveryCoordinator()
+
+    private func stopBackgroundObservers() {
+        for query in observerQueries {
+            healthStore.stop(query)
+        }
+        observerQueries.removeAll()
+        backgroundDeliveryCoordinator.completeAll()
+    }
 
     private func isAuthorizationNotDetermined(_ error: Error) -> Bool {
         guard let healthKitError = error as? HKError else {
@@ -64,6 +73,10 @@ public class HealthKitModule: Module {
         Name("HealthKit")
 
         Events("onHealthKitSampleUpdate")
+
+        OnDestroy {
+            self.stopBackgroundObservers()
+        }
 
         Function("isAvailable") {
             return HKHealthStore.isHealthDataAvailable()
@@ -694,6 +707,14 @@ public class HealthKitModule: Module {
             return UserDefaults.standard.bool(forKey: "healthkit_background_delivery_enabled")
         }
 
+        Function("completeBackgroundDelivery") { (deliveryId: String) in
+            return self.backgroundDeliveryCoordinator.complete(deliveryId)
+        }
+
+        Function("teardownBackgroundObservers") {
+            self.stopBackgroundObservers()
+        }
+
         AsyncFunction("enableBackgroundDelivery") { (typeIdentifier: String, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
                 self.rejectPromise(
@@ -726,25 +747,31 @@ public class HealthKitModule: Module {
                 return
             }
 
-            // Remove any existing observer queries
-            for query in self.observerQueries {
-                self.healthStore.stop(query)
-            }
-            self.observerQueries.removeAll()
+            self.stopBackgroundObservers()
 
             // Set up an observer for each read type
             for objectType in readTypes {
                 guard let sampleType = objectType as? HKSampleType else { continue }
 
-                let query = HKObserverQuery(sampleType: sampleType, predicate: nil) { [weak self] _, completionHandler, error in
+                let query = HKObserverQuery(
+                    sampleType: sampleType,
+                    predicate: nil
+                ) { [weak self] _, completionHandler, error in
                     if error == nil {
+                        guard let self else {
+                            completionHandler()
+                            return
+                        }
+                        let deliveryId = self.backgroundDeliveryCoordinator.register(
+                            completionHandler
+                        )
                         MainThreadEventEmitter.emit(
                             [
                                 "typeIdentifier": sampleType.identifier,
+                                "deliveryId": deliveryId,
                             ],
-                            completion: completionHandler,
                             send: { payload in
-                                self?.sendEvent("onHealthKitSampleUpdate", payload)
+                                self.sendEvent("onHealthKitSampleUpdate", payload)
                             }
                         )
                     } else {
