@@ -17082,3 +17082,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If independent runners repeatedly time out
   against Infisical, investigate provider availability and runner egress using
   the captured endpoint evidence before changing workflow behavior.
+
+## 2026-07-25 — Mobile Preview Secret Load Timeout Recurred
+
+- **Status:** External runner-egress failure identified on PR #1961;
+  replacement CI pending.
+- **Symptoms:** `Publish Mobile Preview OTA` failed before Expo export or
+  publication began.
+- **User impact:** No production users were affected. PR #1961 was temporarily
+  blocked from merge.
+- **Evidence:** The exact failed step in [workflow run
+  30175976190](https://github.com/Asherlc/dofek/actions/runs/30175976190) was
+  `Load mobile preview secrets from Infisical`. Its first causal fatal line was
+  `Post "https://app.infisical.com/api/v1/auth/oidc-auth/login": dial tcp
+  100.49.202.214:443: i/o timeout`; GitHub OIDC token minting and the Infisical
+  CLI installation had already succeeded.
+- **Root cause:** The hosted runner could not establish the HTTPS connection
+  needed to exchange its GitHub OIDC token at Infisical's login endpoint. The
+  application, nutrition changes, and Expo build had not executed. Infisical
+  documents this token-exchange flow:
+  <https://infisical.com/docs/documentation/platform/identities/oidc-auth/github>.
+- **Fix / mitigation:** Trigger replacement CI on a new hosted runner. No
+  retry, timeout, fallback secret path, or workflow behavior was added.
+- **Validation:** Local lint, all package typechecks, 13,516 unit/mobile tests,
+  and 15 real-Postgres food integration tests pass. Replacement CI must
+  complete secret loading and mobile-preview publication before merge.
+- **Remaining risk / follow-up:** This is a second independently observed
+  runner-to-Infisical timeout. If another independent runner fails at the same
+  endpoint, investigate provider availability and runner egress before
+  changing authentication workflow behavior.
