@@ -1,7 +1,10 @@
 import { useMemo, useRef, useState } from "react";
 import { z } from "zod";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ModalDialog, ModalDialogTitle } from "./ModalDialog.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface AddJournalEntryModalProps {
   isOpen: boolean;
@@ -28,7 +31,13 @@ function todayString(): string {
 
 export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalEntryModalProps) {
   const questionsQuery = trpc.journal.questions.useQuery();
-  const createMutation = trpc.journal.create.useMutation({ onSuccess });
+  const createMutation = trpc.journal.create.useMutation({
+    meta: locallyReportedErrorMeta,
+    onSuccess,
+    onError: (error) => {
+      captureException(error, { operation: "journal.create" });
+    },
+  });
 
   const questions = useMemo(() => {
     if (!questionsQuery.data) return [];
@@ -43,12 +52,12 @@ export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalE
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   const selectedQuestion = useMemo(
-    () => questions.find((q) => q.slug === selectedSlug),
+    () => questions.find((question) => question.slug === selectedSlug),
     [questions, selectedSlug],
   );
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
     if (!selectedSlug || !date) return;
 
     let numericValue: number | null = null;
@@ -93,42 +102,58 @@ export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalE
             id="journal-date"
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(event) => setDate(event.target.value)}
             className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
           />
         </div>
 
-        <div>
-          <label htmlFor="journal-question" className="block text-sm font-medium text-muted mb-1">
-            Question
-          </label>
-          <select
-            id="journal-question"
-            value={selectedSlug}
-            onChange={(e) => {
-              setSelectedSlug(e.target.value);
-              setAnswerNumeric("");
-              setAnswerText("");
-              setBooleanValue(false);
-            }}
-            className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
-          >
-            <option value="">Select a question...</option>
-            {questions.map((q) => (
-              <option key={q.slug} value={q.slug}>
-                {q.display_name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {questionsQuery.isLoading && questionsQuery.data === undefined ? (
+          <QueryStatePanel variant="loading" height={96} />
+        ) : null}
 
-        {selectedQuestion && (
+        {questionsQuery.error ? (
+          <QueryStatePanel
+            error={questionsQuery.error}
+            height={96}
+            onRetry={() => void questionsQuery.refetch()}
+            retryLabel="Retry journal questions"
+            retrying={questionsQuery.isFetching}
+          />
+        ) : null}
+
+        {questionsQuery.data !== undefined ? (
+          <div>
+            <label htmlFor="journal-question" className="block text-sm font-medium text-muted mb-1">
+              Question
+            </label>
+            <select
+              id="journal-question"
+              value={selectedSlug}
+              onChange={(event) => {
+                setSelectedSlug(event.target.value);
+                setAnswerNumeric("");
+                setAnswerText("");
+                setBooleanValue(false);
+              }}
+              className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
+            >
+              <option value="">Select a question...</option>
+              {questions.map((question) => (
+                <option key={question.slug} value={question.slug}>
+                  {question.display_name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+
+        {selectedQuestion ? (
           <div>
             <label htmlFor="journal-answer" className="block text-sm font-medium text-muted mb-1">
               Answer
             </label>
 
-            {selectedQuestion.data_type === "boolean" && (
+            {selectedQuestion.data_type === "boolean" ? (
               <div className="flex items-center gap-3">
                 <button
                   type="button"
@@ -145,32 +170,36 @@ export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalE
                   Yes
                 </button>
               </div>
-            )}
+            ) : null}
 
-            {selectedQuestion.data_type === "numeric" && (
+            {selectedQuestion.data_type === "numeric" ? (
               <input
                 id="journal-answer"
                 type="number"
                 step="any"
                 value={answerNumeric}
-                onChange={(e) => setAnswerNumeric(e.target.value)}
+                onChange={(event) => setAnswerNumeric(event.target.value)}
                 placeholder={selectedQuestion.unit ? `Value (${selectedQuestion.unit})` : "Value"}
                 className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
               />
-            )}
+            ) : null}
 
-            {selectedQuestion.data_type === "text" && (
+            {selectedQuestion.data_type === "text" ? (
               <textarea
                 id="journal-answer"
                 value={answerText}
-                onChange={(e) => setAnswerText(e.target.value)}
+                onChange={(event) => setAnswerText(event.target.value)}
                 placeholder="Your answer..."
                 rows={3}
                 className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm resize-none"
               />
-            )}
+            ) : null}
           </div>
-        )}
+        ) : null}
+
+        {createMutation.error ? (
+          <p className="text-xs text-red-400">{createMutation.error.message}</p>
+        ) : null}
 
         <div className="flex justify-end gap-2 pt-2">
           <button

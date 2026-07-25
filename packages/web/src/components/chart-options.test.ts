@@ -4,6 +4,44 @@ import { buildPolarizationTrendOption } from "./PolarizationTrendChart.tsx";
 import { buildRampRateOption } from "./RampRateChart.tsx";
 import { buildSleepAnalyticsOption } from "./SleepAnalyticsChart.tsx";
 
+function makePolarizationWeek(input: {
+  week: string;
+  polarizationIndex: number | null;
+  z1Seconds: number;
+  z2Seconds: number;
+  z3Seconds: number;
+  status?: "polarized" | "not_polarized" | "insufficient_data";
+}) {
+  const totalSeconds = input.z1Seconds + input.z2Seconds + input.z3Seconds;
+  const percent = (seconds: number) =>
+    totalSeconds > 0 ? Math.round((seconds / totalSeconds) * 1000) / 10 : 0;
+  const status =
+    input.status ??
+    (input.polarizationIndex === null
+      ? "insufficient_data"
+      : input.polarizationIndex > 2
+        ? "polarized"
+        : "not_polarized");
+  const statusLabel =
+    status === "polarized"
+      ? "Polarized"
+      : status === "not_polarized"
+        ? "Not polarized"
+        : "Insufficient data";
+  return {
+    ...input,
+    status,
+    statusLabel,
+    totalSeconds,
+    zonePercentages: {
+      z1: percent(input.z1Seconds),
+      z2: percent(input.z2Seconds),
+      z3: percent(input.z3Seconds),
+    },
+    explanation: `Server explanation: ${statusLabel}`,
+  };
+}
+
 /**
  * Helper to extract typed fields from ECharts options (which return ECBasicOption).
  * Uses runtime checks instead of `as` casts to satisfy the linter.
@@ -27,20 +65,20 @@ function getTooltipFormatter(option: Record<string, unknown>): (...args: unknown
 
 describe("PolarizationTrendChart option builder", () => {
   const sampleWeeks = [
-    {
+    makePolarizationWeek({
       week: "2024-01-01",
       polarizationIndex: 2.5,
       z1Seconds: 3600,
       z2Seconds: 600,
       z3Seconds: 900,
-    },
-    {
+    }),
+    makePolarizationWeek({
       week: "2024-01-08",
       polarizationIndex: 1.8,
       z1Seconds: 2400,
       z2Seconds: 1200,
       z3Seconds: 600,
-    },
+    }),
   ];
 
   it("marks series with empty data as tooltip-hidden", () => {
@@ -66,20 +104,20 @@ describe("PolarizationTrendChart option builder", () => {
 
   it("keeps week points even when polarization index is null", () => {
     const weeksWithGap = [
-      {
+      makePolarizationWeek({
         week: "2024-01-01",
         polarizationIndex: null,
         z1Seconds: 3600,
         z2Seconds: 0,
         z3Seconds: 900,
-      },
-      {
+      }),
+      makePolarizationWeek({
         week: "2024-01-08",
         polarizationIndex: 1.9,
         z1Seconds: 2400,
         z2Seconds: 1200,
         z3Seconds: 600,
-      },
+      }),
     ];
 
     const option = buildPolarizationTrendOption(weeksWithGap);
@@ -135,29 +173,30 @@ describe("PolarizationTrendChart option builder", () => {
     expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2.0]);
   });
 
-  it("colors data points green at or above 2.0 and red below 2.0", () => {
+  it("colors data points from server status and keeps the exact 2.0 boundary non-polarized", () => {
     const weeksWithBoundary = [
-      {
+      makePolarizationWeek({
         week: "2024-01-01",
         polarizationIndex: 2.5,
         z1Seconds: 3600,
         z2Seconds: 600,
         z3Seconds: 900,
-      },
-      {
+      }),
+      makePolarizationWeek({
         week: "2024-01-08",
         polarizationIndex: 1.8,
         z1Seconds: 2400,
         z2Seconds: 1200,
         z3Seconds: 600,
-      },
-      {
+      }),
+      makePolarizationWeek({
         week: "2024-01-15",
         polarizationIndex: 2.0,
         z1Seconds: 3000,
         z2Seconds: 800,
         z3Seconds: 700,
-      },
+        status: "not_polarized",
+      }),
     ];
     const option = buildPolarizationTrendOption(weeksWithBoundary);
     const allSeries = getSeriesArray(option);
@@ -171,35 +210,35 @@ describe("PolarizationTrendChart option builder", () => {
     expect(polarizationIndexSeries.data[1]).toHaveProperty("itemStyle", {
       color: statusColors.danger,
     });
-    // 2.0 (exactly at threshold) → green
+    // 2.0 (exactly at threshold) is not polarized → red
     expect(polarizationIndexSeries.data[2]).toHaveProperty("itemStyle", {
-      color: statusColors.positive,
+      color: statusColors.danger,
     });
   });
 
   it("shows incomplete weeks as distinct markers at yMin", () => {
     const weeksWithGap = [
-      {
+      makePolarizationWeek({
         week: "2024-01-01",
         polarizationIndex: null,
         z1Seconds: 3600,
         z2Seconds: 0,
         z3Seconds: 900,
-      },
-      {
+      }),
+      makePolarizationWeek({
         week: "2024-01-08",
         polarizationIndex: 1.9,
         z1Seconds: 2400,
         z2Seconds: 1200,
         z3Seconds: 600,
-      },
-      {
+      }),
+      makePolarizationWeek({
         week: "2024-01-15",
         polarizationIndex: null,
         z1Seconds: 1800,
         z2Seconds: 600,
         z3Seconds: 0,
-      },
+      }),
     ];
 
     const option = buildPolarizationTrendOption(weeksWithGap);
@@ -233,20 +272,20 @@ describe("PolarizationTrendChart option builder", () => {
 
   it("explains missing zones when PI is unavailable", () => {
     const weeksWithGap = [
-      {
+      makePolarizationWeek({
         week: "2024-01-01",
         polarizationIndex: null,
         z1Seconds: 3600,
         z2Seconds: 0,
         z3Seconds: 900,
-      },
-      {
+      }),
+      makePolarizationWeek({
         week: "2024-01-08",
         polarizationIndex: 1.9,
         z1Seconds: 2400,
         z2Seconds: 1200,
         z3Seconds: 600,
-      },
+      }),
     ];
 
     const option = buildPolarizationTrendOption(weeksWithGap);
@@ -260,8 +299,9 @@ describe("PolarizationTrendChart option builder", () => {
         seriesName: "Polarization Index",
       },
     ]);
-    expect(html).toContain("Insufficient zone coverage");
-    expect(html).toContain("Missing zones this week: Zone 2");
+    expect(html).toContain("Insufficient data");
+    expect(html).toContain("Server explanation: Insufficient data");
+    expect(html).toContain("Zone 2 (threshold, 80-90% max HR): 0m");
   });
 });
 

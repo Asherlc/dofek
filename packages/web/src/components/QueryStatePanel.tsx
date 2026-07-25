@@ -3,6 +3,9 @@ interface QueryStatePanelProps {
   variant?: "loading" | "error" | "empty";
   message?: string;
   height?: number;
+  onRetry?: () => void;
+  retryLabel?: string;
+  retrying?: boolean;
 }
 
 function getQueryErrorMessage(error: unknown, fallback = "Failed to load data."): string {
@@ -20,6 +23,9 @@ export function QueryStatePanel({
   variant = error ? "error" : "empty",
   message,
   height = 180,
+  onRetry,
+  retryLabel = "Retry",
+  retrying = false,
 }: QueryStatePanelProps) {
   if (variant === "loading") {
     return (
@@ -44,6 +50,16 @@ export function QueryStatePanel({
       data-testid={`query-state-${variant}`}
     >
       <p>{resolvedMessage}</p>
+      {onRetry ? (
+        <button
+          type="button"
+          disabled={retrying}
+          onClick={onRetry}
+          className="mt-3 text-xs px-3 py-1.5 rounded bg-accent/10 border border-border-strong text-foreground disabled:text-dim disabled:cursor-not-allowed"
+        >
+          {retrying ? "Retrying..." : retryLabel}
+        </button>
+      ) : null}
     </div>
   );
 }

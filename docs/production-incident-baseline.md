@@ -16915,6 +16915,51 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   sanitization separately only if a future failing run needs those logs; it did
   not cause this mutation timeout.
 
+## 2026-07-25 — Local ClickHouse Integration Rebuild Exhausted Shared VM Memory
+
+- **Status:** Root cause identified and broad local validation passed after
+  completed workspaces naturally released shared Docker VM memory.
+- **Symptoms:** A broad router integration run failed during ClickHouse fixture
+  construction, and subsequent scoped Compose and Docker status commands did
+  not receive a daemon response.
+- **User impact:** No production users were affected. Local validation for
+  issue #1750 could not complete the broad `router-data` suite.
+- **Evidence:** The initial exact failing command was
+  `pnpm test:integration -- packages/server/src/routers/router-data.integration.test.ts`.
+  Its first fatal line was `Error: socket hang up` while executing the fixture
+  `INSERT INTO ... v_activity`. The scoped
+  `pnpm compose -- down --remove-orphans --volumes`, `pnpm compose -- ps -a`,
+  and `docker info` commands subsequently received no daemon response and were
+  manually terminated. After the daemon recovered normally, only the
+  `issue-1750` Compose project was removed and recreated. The unchanged command
+  then failed before any assertion with ClickHouse error 241:
+  `(total) memory limit exceeded`, at 954.95 MiB RSS against an 882.57 MiB
+  limit. ClickHouse reported only 300–500 MiB of OS memory available in the
+  7.65 GiB Docker VM. `MemoryWorker` logs showed it repeatedly lowering the
+  server hard limit from the configured 3 GiB ceiling to roughly 600–800 MiB
+  based on available memory. Concurrent isolated workspaces each had
+  ClickHouse processes using roughly 600–680 MiB. ClickHouse documents that
+  memory overcommit terminates an overcommitted query when the server reaches
+  its memory limit:
+  <https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#memory-limit-exceeded-for-query>.
+- **Root cause:** Concurrent workspace databases exhausted the shared Docker
+  VM's available memory, so ClickHouse dynamically lowered its server memory
+  limit below the fixture rebuild's measured peak and terminated the query; no
+  product assertion failed.
+- **Fix / mitigation:** No product test, timeout, retry, memory limit, or
+  application behavior was changed. Cleanup and fresh startup were restricted
+  to the `issue-1750` Compose project, preserving every other workspace.
+- **Validation:** The focused serial
+  `efficiency.polarizationTrend` integration suite passed all seven tests,
+  including exact 80% and 90% zone boundaries, insufficient-data status,
+  server-computed totals, and the serialized polarization classification.
+  After available memory rose to 2.22 GiB and ClickHouse's dynamic server limit
+  rose to 2.36 GiB, the unchanged broad `router-data` integration command
+  passed all 51 tests without an ad-hoc wait, retry, timeout, or memory-setting
+  change.
+- **Remaining risk / follow-up:** Concurrent local ClickHouse stacks can still
+  exhaust the fixed-size shared Docker VM. Keep workspace-scoped cleanup as
+  part of completed work and rely on hosted CI as the full integration gate.
 ## 2026-07-24 — Metro Secret Load Could Not Reach Infisical
 
 - **Status:** External network failure identified on PR #1945; replacement CI
@@ -17111,3 +17156,58 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   runner-to-Infisical timeout. If another independent runner fails at the same
   endpoint, investigate provider availability and runner egress before
   changing authentication workflow behavior.
+
+## 2026-07-25 — Mobile Preview Object Upload Returned InternalError
+
+- **Status:** Resolved after the external upload service recovered; replacement
+  CI passed.
+- **Symptoms:** PR #1956's `Publish Mobile Preview OTA` check failed after the
+  iOS bundle and OTA export completed successfully.
+- **User impact:** No production users were affected. The PR remained blocked
+  until an independently scheduled replacement publish passed.
+- **Evidence:** The exact failed step was `Publish OTA to PR branch`. The first
+  fatal line was
+  `File upload failed ... <Code>InternalError</Code><Message>We encountered an internal error. Please try again.</Message>`.
+  The export had already produced the iOS bundle and loaded one platform, so
+  the failure occurred at the object upload boundary rather than during
+  application compilation. The OTA health endpoint subsequently returned HTTP
+  200. The S3 API defines `InternalError` as an HTTP 500 server error:
+  <https://docs.aws.amazon.com/AmazonS3/latest/API/API_Error.html>.
+- **Root cause:** The S3-compatible OTA object-upload service returned its
+  server-side `InternalError` response for the generated bundle. There was no
+  application build, credential, or repository test failure.
+- **Fix / mitigation:** Schedule the failed workflow on a replacement hosted
+  runner after the OTA health endpoint recovered. No retry, timeout, fallback,
+  workflow behavior, or application code changed.
+- **Validation:** The replacement `Publish Mobile Preview OTA` job completed
+  checkout, dependency setup, secret loading, export, upload, and PR-comment
+  publication successfully in 2m18s on the same source revision.
+- **Remaining risk / follow-up:** If independent publishes repeatedly return
+  `InternalError`, correlate the OTA service and object-storage logs before
+  changing workflow behavior.
+
+## 2026-07-25 — Story Fixtures Lagged the Canonical Polarization DTO
+
+- **Status:** Direct fix validated locally; replacement CI pending on PR #1958.
+- **Symptoms:** `Test / Typecheck (dofek-web)` failed, which also failed the
+  aggregate `Test / Lint & Static Analysis` gate.
+- **User impact:** No production users were affected. PR #1958 was blocked from
+  merge.
+- **Evidence:** The exact failing command in [CI run
+  30174882951](https://github.com/Asherlc/dofek/actions/runs/30174882951) was
+  `pnpm run typecheck` in `packages/web`. Its first fatal line reported
+  `PolarizationTrendChart.stories.tsx(6,3): error TS2739`, because the fixture
+  omitted `totalSeconds`, `zonePercentages`, `status`, `statusLabel`, and
+  `explanation`.
+- **Root cause:** PR #1958 added visual fixtures for the earlier
+  `PolarizationWeek` shape, then current `main` made those server-computed
+  fields required in the canonical DTO. The PR merge ref therefore exposed a
+  real stale-fixture type error that the branch's earlier local run could not
+  see.
+- **Fix / mitigation:** Merge current `origin/main` and update every
+  polarization story fixture to provide the complete canonical server DTO. No
+  CI timeout, retry, skip, or type suppression was added.
+- **Validation:** `pnpm --filter dofek-web typecheck` and targeted Biome
+  validation pass without ad-hoc waits. Replacement CI must pass before merge.
+- **Remaining risk / follow-up:** None beyond completing replacement CI; the
+  compiler now enforces future fixture parity with the canonical DTO.

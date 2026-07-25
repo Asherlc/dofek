@@ -1417,12 +1417,24 @@ describe("Router data coverage", () => {
           zone4: number;
           zone5: number;
         }[];
+        intensityDistribution: {
+          model: "karvonen-five-zone";
+          activityScope: "endurance";
+          totalSeconds: number;
+          zones: Array<{ zone: number; seconds: number; percent: number }>;
+          explanation: string;
+        };
       }>("training.hrZones", { days: 90 });
 
       // User profile has max_hr = 190, so maxHr should be set
       if (result.maxHr) {
         expect(result.maxHr).toBe(190);
         expect(Array.isArray(result.weeks)).toBe(true);
+        expect(result.intensityDistribution).toMatchObject({
+          model: "karvonen-five-zone",
+          activityScope: "endurance",
+        });
+        expect(result.intensityDistribution.totalSeconds).toBeGreaterThanOrEqual(0);
       }
     });
   });

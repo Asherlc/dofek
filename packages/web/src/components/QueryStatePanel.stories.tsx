@@ -14,3 +14,17 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const Retryable: Story = {
+  args: {
+    onRetry: () => {},
+    retryLabel: "Retry dashboard data",
+  },
+};
+
+export const Retrying: Story = {
+  args: {
+    onRetry: () => {},
+    retrying: true,
+  },
+};
