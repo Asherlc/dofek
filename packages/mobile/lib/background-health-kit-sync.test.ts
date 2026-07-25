@@ -38,7 +38,7 @@ vi.mock("./telemetry", () => ({
   },
 }));
 
-import { queryWorkouts } from "../modules/health-kit";
+import { queryDailyStatistics, queryWorkouts } from "../modules/health-kit";
 import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
@@ -115,6 +115,43 @@ describe("initBackgroundHealthKitSync", () => {
     await vi.waitFor(() => {
       expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("logs structured stage duration and context", async () => {
+    vi.useFakeTimers();
+    const firstStage = createDeferred<[]>();
+    vi.mocked(queryDailyStatistics).mockReturnValueOnce(firstStage.promise);
+
+    try {
+      await initBackgroundHealthKitSync(createMockClient());
+
+      expect(mockLoggerInfo).toHaveBeenCalledWith("bg-healthkit-sync", "Sync stage started", {
+        operation: "queryDailyStatistics",
+        typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      });
+
+      await vi.advanceTimersByTimeAsync(250);
+      firstStage.resolve([]);
+      await vi.waitFor(() => {
+        expect(mockLoggerInfo).toHaveBeenCalledWith(
+          "bg-healthkit-sync",
+          "Sync stage completed",
+          expect.objectContaining({
+            operation: "queryDailyStatistics",
+            typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+            outcome: "succeeded",
+          }),
+        );
+      });
+      const completion = mockLoggerInfo.mock.calls.find(
+        ([, message, data]) =>
+          message === "Sync stage completed" &&
+          data?.typeIdentifier === "HKQuantityTypeIdentifierStepCount",
+      );
+      expect(completion?.[2]?.durationMs).toBeGreaterThanOrEqual(250);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sets up sync even when the legacy authorization flag is false", async () => {

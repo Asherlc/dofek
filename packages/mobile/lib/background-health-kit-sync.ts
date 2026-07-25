@@ -6,7 +6,7 @@ import {
   teardownBackgroundObservers,
 } from "../modules/health-kit";
 import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple-health-provider";
-import type { SyncTrpcClient } from "./health-kit-sync";
+import type { HealthKitSyncStage, SyncTrpcClient } from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";
@@ -25,6 +25,45 @@ let pendingCatchUp:
 const pendingUpdateIds = new Set<string>();
 let syncing: true | undefined;
 
+type BackgroundHealthKitSyncStage =
+  | HealthKitSyncStage
+  | {
+      operation: "postSyncCallback";
+    };
+
+function createStageTelemetry() {
+  let active:
+    | {
+        stage: BackgroundHealthKitSyncStage;
+        startedAt: number;
+      }
+    | undefined;
+
+  function complete(outcome: "succeeded" | "failed"): void {
+    if (!active) {
+      return;
+    }
+    logger.info(TAG, "Sync stage completed", {
+      ...active.stage,
+      durationMs: Math.max(0, Date.now() - active.startedAt),
+      outcome,
+    });
+    active = undefined;
+  }
+
+  return {
+    start(stage: BackgroundHealthKitSyncStage): void {
+      complete("succeeded");
+      active = {
+        stage,
+        startedAt: Date.now(),
+      };
+      logger.info(TAG, "Sync stage started", { ...stage });
+    },
+    complete,
+  };
+}
+
 function isHealthKitDatabaseInaccessible(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -38,13 +77,17 @@ async function performHealthKitSync(
   trpcClient: SyncTrpcClient,
   onSyncComplete?: () => void | Promise<void>,
 ): Promise<boolean> {
+  const startedAt = Date.now();
+  const stageTelemetry = createStageTelemetry();
   logger.info(TAG, "Starting sync");
   let result: Awaited<ReturnType<AppleHealthSyncService["sync"]>>;
   try {
     result = await new AppleHealthSyncService({ trpcClient }).sync({
       syncRangeDays: 1,
+      onStage: stageTelemetry.start,
     });
   } catch (error) {
+    stageTelemetry.complete("failed");
     const message = error instanceof Error ? error.message : String(error);
     // HealthKit encrypts data at rest while the device is locked. This is a
     // known transient condition (the next foreground event will succeed),
@@ -58,14 +101,27 @@ async function performHealthKitSync(
     return false;
   }
 
-  logger.info(TAG, `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`);
+  stageTelemetry.complete("succeeded");
+  logger.info(TAG, `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`, {
+    durationMs: Math.max(0, Date.now() - startedAt),
+    errorCount: result.errors.length,
+    inserted: result.inserted,
+  });
   try {
-    await onSyncComplete?.();
+    if (onSyncComplete) {
+      stageTelemetry.start({ operation: "postSyncCallback" });
+      await onSyncComplete();
+      stageTelemetry.complete("succeeded");
+    }
   } catch (error) {
+    stageTelemetry.complete("failed");
     const message = error instanceof Error ? error.message : String(error);
     logger.warn(TAG, `Sync completion callback failed: ${message}`);
     captureException(error, { source: TAG });
   }
+  logger.info(TAG, "Observer processing complete", {
+    durationMs: Math.max(0, Date.now() - startedAt),
+  });
   return true;
 }
 

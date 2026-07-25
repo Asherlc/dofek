@@ -34,10 +34,13 @@ for 500 ms, runs one coalesced sync, and reports the batch result through
 destruction stop the queries and complete every callback still pending.
 
 A native 25-second expiration completes an update exactly once and reports the
-expired ID to Sentry if JavaScript never responds. This is a failure boundary,
-not a successful sync signal; the next HealthKit delivery remains eligible to
-retry the same data. Apple's background-delivery contract requires calling the
-observer completion handler only after processing the new data finishes:
+expired update ID, HealthKit sample type, and monotonic callback age to Sentry
+if JavaScript never responds. JavaScript logs the start and completion of each
+query, upload batch, and post-sync callback with its duration and item context.
+This is a failure boundary, not a successful sync signal; the next HealthKit
+delivery remains eligible to retry the same data. Apple's background-delivery
+contract requires calling the observer completion handler only after processing
+the new data finishes:
 <https://developer.apple.com/documentation/healthkit/executing-observer-queries>
 and
 <https://developer.apple.com/documentation/healthkit/hkhealthstore/enablebackgrounddelivery(for:frequency:withcompletion:)>.

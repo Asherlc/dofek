@@ -17156,3 +17156,54 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If independent publishes repeatedly return
   `InternalError`, correlate the OTA service and object-storage logs before
   changing workflow behavior.
+
+## 2026-07-25 — HealthKit Observer Sync Exceeded Its Completion Deadline
+
+- **Status:** Root cause confirmed and diagnostic instrumentation implemented;
+  production physical-device evidence is pending.
+- **Symptoms:** Sentry issue
+  [`DOFEK-MOBILE-1C`](https://east-bay-software.sentry.io/issues/7633118736/)
+  recorded 19 handled `com.dofek.healthkit-observer: Code: 1` events between
+  `2026-07-25T20:16:37Z` and `20:16:47Z`. All events came from one physical
+  iPhone running iOS 26.5.2 while Dofek was in the background.
+- **User impact:** Nineteen observer callbacks reached the native expiration
+  path before JavaScript acknowledged them, so HealthKit can redeliver those
+  updates. The associated sync itself succeeded and reported 1,324 inserted
+  rows with zero errors, so this event does not show data loss or an app crash.
+- **Evidence:** The exact failing boundary was the native observer coordinator's
+  25-second expiration, whose first fatal event was
+  `com.dofek.healthkit-observer: Code: 1`. Sentry breadcrumbs show sample
+  deliveries beginning at `20:16:12.383Z`, JavaScript logging `Starting sync`
+  at `20:16:13.021Z`, and `Sync complete: 1324 inserted, 0 errors` only at
+  `20:16:45.055Z`, approximately 32 seconds later. The native stack captured
+  `HealthKitObserverUpdateCoordinator.register` and its expiration reporter.
+  Code inspection confirmed that
+  [`HealthKitModule.swift`](../packages/mobile/modules/health-kit/ios/HealthKitModule.swift)
+  expires each retained callback after 25 seconds, while
+  [`background-health-kit-sync.ts`](../packages/mobile/lib/background-health-kit-sync.ts)
+  acknowledges the batch only after the complete one-day query-and-upload
+  operation settles. Apple requires apps to call the observer completion
+  handler after processing the delivered data in its
+  [observer-query guidance](https://developer.apple.com/documentation/healthkit/executing-observer-queries).
+- **Root cause:** A successful one-day HealthKit query-and-upload cycle took
+  about 32 seconds, but the native bridge expired every observer callback after
+  25 seconds, making expiration inevitable before JavaScript could acknowledge
+  the completed work.
+- **Fix / mitigation:** Added structured start/completion telemetry around each
+  HealthKit query, upload batch, workout route, sleep operation, and post-sync
+  callback, including duration and batch/item context. Native expiration events
+  now include the update ID, HealthKit sample type, and monotonic callback age.
+  The 25-second deadline and observer acknowledgement behavior are unchanged;
+  increasing the timeout would hide the measured slow critical path rather
+  than fix it.
+- **Validation:** The focused mobile Vitest suite passed 58 tests, the native
+  Swift package passed 72 tests, mobile TypeScript typechecking passed, and
+  focused Biome and strict SwiftLint checks passed with zero violations. The
+  `ExpoHealthKit` native target also compiled successfully in the generated iOS
+  application workspace.
+- **Remaining risk / follow-up:** The new duration and batch-size
+  instrumentation must ship before it can identify the slow stage on a
+  physical device. Use that production evidence to remove the identified slow
+  or redundant work from the observer completion critical path, then validate
+  that every callback completes before expiration without increasing the
+  deadline.
