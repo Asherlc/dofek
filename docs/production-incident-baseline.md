@@ -16212,3 +16212,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Require hosted E2E CI to confirm the explicit
   CI project name across dependency startup, migrations, analytics, logs, and
   teardown before merging the fix.
+
+## 2026-07-24 — watchOS CI Runner Failed Repository Checkout
+
+- **Status:** Root cause identified; replacement CI pending.
+- **Symptoms:** `Build Mobile / watchOS Build` failed before source checkout
+  completed on PR #1923 after merging the latest `main`.
+- **User impact:** No production users were affected. PR #1923 was temporarily
+  blocked from merging.
+- **Evidence:** All three checkout attempts failed while Git wrote fetched pack
+  files. The first fatal line was
+  `fatal: fsync error on '.git/objects/pack/tmp_pack_76fdAK': Input/output
+  error`, followed by `fetch-pack: invalid index-pack output`.
+- **Root cause:** The hosted macOS runner returned an input/output error while
+  `actions/checkout` wrote Git object-pack data; no repository build command
+  ran, and the failure was unrelated to source compilation.
+- **Fix / mitigation:** Scheduled replacement CI on a fresh hosted runner
+  without changing checkout retries, timeouts, or source behavior.
+- **Validation:** The preceding hosted run passed the same watchOS build, all
+  106 checks passed before the base merge, and the merged tree passes root
+  typecheck plus 4,854 changed unit/mobile tests locally.
+- **Remaining risk / follow-up:** Confirm checkout and the watchOS build on the
+  replacement runner. If runner I/O failures recur, escalate with the failing
+  runner evidence rather than adding repository-level retry behavior.
