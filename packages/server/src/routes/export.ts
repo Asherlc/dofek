@@ -1,22 +1,12 @@
-import { mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { Queue } from "bullmq";
-import type { ExportJobData } from "dofek/jobs/queues";
+import * as Sentry from "@sentry/node";
+import { type DataExportQueue, enqueueDataExport } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-
-/**
- * Shared directory for export files that the worker container can access.
- * In production, both web and worker containers mount the `job_files` volume
- * at /app/job-files. Falls back to OS temp dir for local development.
- */
-const JOB_FILES_DIR = process.env.JOB_FILES_DIR || join(tmpdir(), "dofek-job-files");
-mkdirSync(JOB_FILES_DIR, { recursive: true });
+import { logger } from "../logger.ts";
 
 const EXPORT_FILENAME = "dofek-export.zip";
 const EXPORT_TTL_DAYS = 7;
@@ -66,7 +56,7 @@ function toExportResponse(row: z.infer<typeof exportListRowSchema>) {
 
 interface ExportRouterDeps {
   db: import("dofek/db").Database;
-  exportQueue: Pick<Queue<ExportJobData>, "add">;
+  exportQueue: DataExportQueue;
   createSignedDownloadUrl?: SignedDownloadUrlFactory;
 }
 
@@ -117,12 +107,7 @@ export function createExportRouter({
       return;
     }
 
-    const queue = exportQueue;
     const expiresAt = new Date(Date.now() + EXPORT_TTL_DAYS * 24 * 60 * 60 * 1000);
-    const outputPath = join(
-      JOB_FILES_DIR,
-      `dofek-export-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.zip`,
-    );
     const rows = await executeWithSchema(
       db,
       insertExportRowSchema,
@@ -136,11 +121,22 @@ export function createExportRouter({
       return;
     }
 
-    await queue.add("export", {
-      exportId,
-      userId: session.userId,
-      outputPath,
-    });
+    try {
+      await enqueueDataExport({ exportId, userId: session.userId }, exportQueue);
+    } catch (error: unknown) {
+      Sentry.captureException(error, {
+        tags: { source: "data-export-enqueue" },
+        extra: { exportId, userId: session.userId },
+      });
+      logger.error(`[export] Failed to enqueue durable export ${exportId}: ${String(error)}`);
+      res.status(503).json({
+        error:
+          "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
+        exportId,
+        retryable: true,
+      });
+      return;
+    }
 
     res.json({ status: "queued", exportId });
   });

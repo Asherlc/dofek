@@ -16312,3 +16312,64 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm checkout and the watchOS build on the
   replacement runner. If runner I/O failures recur, escalate with the failing
   runner evidence rather than adding repository-level retry behavior.
+
+## 2026-07-24 — Data Export Queue Handoff Was Not Recoverable
+
+- **Status:** Fixed locally; hosted CI is a merge gate.
+- **Symptoms:** A data-export row could remain `queued` forever when the web
+  process committed the database insert and its subsequent BullMQ `Queue.add`
+  call failed.
+- **User impact:** A user could see an export stuck in progress indefinitely,
+  with no automatic recovery after Redis, the web process, or the worker
+  recovered.
+- **Evidence:** The exact failing operation was the POST route's `queue.add`
+  immediately after the committed `fitness.data_export` insert. The regression
+  test's first fatal line was `Error: Redis unavailable`; before the fix, the
+  route returned a generic 500 and no process scanned the durable queued row.
+- **Root cause:** Export creation used a non-transactional database-to-queue
+  handoff and generated the worker's output path only in web-process memory, so
+  the committed row did not contain enough durable identity to recreate the
+  job.
+- **Fix / mitigation:** The queued database row now acts as the durable outbox.
+  The worker polls queued rows and enqueues each export with its export UUID as
+  the BullMQ job ID, while the processor derives its temporary path from that
+  UUID. The POST route still attempts immediate enqueue, but reports a specific
+  retryable 503 and captures the failure in Sentry when Redis is unavailable.
+  BullMQ documents that an existing custom job ID prevents duplicate jobs and
+  that auto-removed jobs may be added again:
+  <https://docs.bullmq.io/guide/jobs/job-ids>.
+- **Validation:** Focused unit, web, and mobile suites pass all 168 tests,
+  including repeated dispatch, non-overlapping restart polling, deterministic
+  job data, dispatcher shutdown, server error details, and client presentation.
+  A real-Postgres integration test covers queued-row filtering, stable order,
+  and batch limits. Focused mutation runs kill every mutant in the durable row
+  query, dispatcher, changed export processor path, and changed POST route.
+- **Remaining risk / follow-up:** Hosted CI must pass before merge. The
+  dispatcher intentionally leaves the database row queued until the worker
+  claims it; BullMQ job-ID deduplication prevents concurrent duplicates while a
+  job exists.
+
+## 2026-07-24 — Fresh Local TimescaleDB Reported Healthy Before Final Restart
+
+- **Status:** Unresolved local test-infrastructure race; the repeated
+  integration test passed once initialization completed.
+- **Symptoms:** The first integration run against a newly created workspace
+  stack failed during test-database setup with
+  `Error: Connection terminated unexpectedly`.
+- **User impact:** No production impact. The first local integration run in a
+  fresh workspace can fail before executing its test body.
+- **Evidence:** The database log showed the initial server reporting
+  `database system is ready to accept connections`, followed by the image's
+  tuning/init scripts and `received fast shutdown request`. The test connected
+  during that intentional restart; the final server became healthy immediately
+  afterward.
+- **Root cause:** The Compose health probe can succeed against the temporary
+  PostgreSQL server used by the TimescaleDB image's initialization before that
+  server performs its final configured restart.
+- **Fix / mitigation:** No retry, sleep, or source workaround was added. The
+  exact integration command passed on the already initialized stack.
+- **Validation:** `src/db/data-export.integration.test.ts` passed its real
+  PostgreSQL query test after the final server startup.
+- **Remaining risk / follow-up:** Update the local Compose readiness contract
+  separately so a fresh stack is not considered ready until image
+  initialization and the final server restart have completed.

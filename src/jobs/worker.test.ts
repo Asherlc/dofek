@@ -43,6 +43,7 @@ const hoisted = vi.hoisted(() => {
   const mockReconcileGarminProgress = vi.fn().mockRejectedValueOnce(reconcileGarminProgressError);
   const mockCloseGarminProgress = vi.fn().mockResolvedValue(undefined);
   const mockCloseProviderDataDeletionOutbox = vi.fn().mockResolvedValue(undefined);
+  const mockCloseDataExportOutbox = vi.fn().mockResolvedValue(undefined);
   const mockCloseFileUploadOutbox = vi.fn().mockResolvedValue(undefined);
   const mockCloseFileUploadReconciler = vi.fn().mockResolvedValue(undefined);
   const mockImportUploadStorage = { name: "import-upload-storage" };
@@ -72,6 +73,7 @@ const hoisted = vi.hoisted(() => {
     mockReconcileGarminProgress,
     mockCloseGarminProgress,
     mockCloseProviderDataDeletionOutbox,
+    mockCloseDataExportOutbox,
     mockCloseFileUploadOutbox,
     mockCloseFileUploadReconciler,
     mockImportUploadStorage,
@@ -165,6 +167,12 @@ vi.mock("./provider-data-deletion-outbox.ts", () => ({
   })),
 }));
 
+vi.mock("./data-export-outbox.ts", () => ({
+  startDataExportOutboxDispatcher: vi.fn(() => ({
+    close: hoisted.mockCloseDataExportOutbox,
+  })),
+}));
+
 vi.mock("./file-upload-outbox.ts", () => ({
   startFileUploadOutboxDispatcher: vi.fn(() => ({
     close: hoisted.mockCloseFileUploadOutbox,
@@ -217,6 +225,7 @@ vi.mock("./queues.ts", () => ({
   },
   getRedisConnection: vi.fn(() => ({})),
   getImportQueue: vi.fn(() => ({})),
+  getDataExportQueue: vi.fn(() => ({})),
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
   IMPORT_QUEUE: "import-queue",
   FIT_FILE_IMPORT_QUEUE: "fit-file-import-queue",
@@ -264,6 +273,7 @@ const {
   mockReconcileGarminProgress,
   mockCloseGarminProgress,
   mockCloseProviderDataDeletionOutbox,
+  mockCloseDataExportOutbox,
   workerOnMocks,
   workerProcessors,
 } = hoisted;
@@ -432,6 +442,16 @@ describe("worker module", () => {
     });
     expect(logger.error).toHaveBeenCalledWith(
       "[worker] Failed to reconcile Garmin import progress: Error: progress Redis unavailable",
+    );
+  });
+
+  it("starts export outbox recovery with the durable database row and export queue", async () => {
+    const { startDataExportOutboxDispatcher } = await import("./data-export-outbox.ts");
+    const { getDataExportQueue } = await import("./queues.ts");
+
+    expect(startDataExportOutboxDispatcher).toHaveBeenCalledWith(
+      mockDatabase,
+      vi.mocked(getDataExportQueue).mock.results[0]?.value,
     );
   });
 
@@ -1174,7 +1194,7 @@ describe("worker module", () => {
     const { processExportJob } = await import("./process-export-job.ts");
     vi.mocked(processExportJob).mockClear();
 
-    await invokeProcessor("export-queue", { userId: "u", outputPath: "/tmp/out.zip" });
+    await invokeProcessor("export-queue", { exportId: "export-1", userId: "u" });
 
     expect(processExportJob).toHaveBeenCalled();
   });
@@ -1338,6 +1358,7 @@ describe("worker module", () => {
     expect(mockReadinessClose).toHaveBeenCalledOnce();
     expect(mockCloseGarminProgress).toHaveBeenCalledOnce();
     expect(mockCloseProviderDataDeletionOutbox).toHaveBeenCalledOnce();
+    expect(mockCloseDataExportOutbox).toHaveBeenCalledOnce();
     expect(hoisted.mockCloseFileUploadOutbox).toHaveBeenCalledOnce();
     expect(hoisted.mockCloseFileUploadReconciler).toHaveBeenCalledOnce();
     expect(mockClose).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
