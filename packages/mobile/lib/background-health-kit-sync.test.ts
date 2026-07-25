@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSetupBackgroundObservers = vi.fn().mockResolvedValue(true);
-const mockTeardownBackgroundObservers = vi.fn();
 const mockAddSampleUpdateListener = vi.fn().mockReturnValue({ remove: vi.fn() });
-const mockCompleteBackgroundDelivery = vi.fn().mockReturnValue(true);
+const mockCompleteObserverUpdates = vi.fn().mockReturnValue(0);
+const mockTeardownBackgroundObservers = vi.fn().mockReturnValue(0);
 const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
 const mockIsAvailable = vi.fn().mockReturnValue(true);
 const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
@@ -19,9 +19,9 @@ vi.mock("../modules/health-kit", () => ({
   getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
   requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
   setupBackgroundObservers: (...args: unknown[]) => mockSetupBackgroundObservers(...args),
-  teardownBackgroundObservers: (...args: unknown[]) => mockTeardownBackgroundObservers(...args),
   addSampleUpdateListener: (...args: unknown[]) => mockAddSampleUpdateListener(...args),
-  completeBackgroundDelivery: (...args: unknown[]) => mockCompleteBackgroundDelivery(...args),
+  completeObserverUpdates: (...args: unknown[]) => mockCompleteObserverUpdates(...args),
+  teardownBackgroundObservers: (...args: unknown[]) => mockTeardownBackgroundObservers(...args),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
   queryWorkouts: vi.fn().mockResolvedValue([]),
@@ -44,25 +44,6 @@ import {
   teardownBackgroundHealthKitSync,
 } from "./background-health-kit-sync";
 
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve(value: T): void;
-}
-
-function deferred<T>(): Deferred<T> {
-  let resolvePromise: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((resolve) => {
-    resolvePromise = resolve;
-  });
-  return {
-    promise,
-    resolve(value) {
-      if (!resolvePromise) throw new Error("Deferred promise was not initialized");
-      resolvePromise(value);
-    },
-  };
-}
-
 function createMockClient() {
   return {
     healthKitSync: {
@@ -80,6 +61,17 @@ function createMockClient() {
       },
     },
   };
+}
+
+function createDeferred<T>() {
+  let resolve: ((value: T) => void) | undefined;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  if (!resolve) {
+    throw new Error("deferred resolver was not initialized");
+  }
+  return { promise, resolve };
 }
 
 describe("initBackgroundHealthKitSync", () => {
@@ -152,8 +144,8 @@ describe("initBackgroundHealthKitSync", () => {
     // Trigger the listener callback
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
-      deliveryId: "delivery-success",
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
     });
 
     // Advance past debounce timer
@@ -162,7 +154,6 @@ describe("initBackgroundHealthKitSync", () => {
     await vi.runAllTimersAsync();
 
     expect(onSyncComplete).toHaveBeenCalledTimes(2);
-    expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-success");
     vi.useRealTimers();
   });
 
@@ -185,15 +176,14 @@ describe("initBackgroundHealthKitSync", () => {
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
-      deliveryId: "delivery-failure",
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
     });
 
     await vi.advanceTimersByTimeAsync(5000);
     await vi.runAllTimersAsync();
 
     expect(onSyncComplete).not.toHaveBeenCalled();
-    expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-failure");
     vi.useRealTimers();
   });
 
@@ -215,8 +205,8 @@ describe("initBackgroundHealthKitSync", () => {
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
-      deliveryId: "delivery-network-error",
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
     });
 
     await vi.advanceTimersByTimeAsync(5000);
@@ -230,18 +220,21 @@ describe("initBackgroundHealthKitSync", () => {
 
   it("does not report locked-device errors to Sentry", async () => {
     vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCaptureException.mockClear();
+    mockCompleteObserverUpdates.mockClear();
     vi.mocked(queryWorkouts).mockRejectedValueOnce(
       Object.assign(new Error("HealthKit data is unavailable while the device is locked"), {
         code: "HEALTHKIT_DATABASE_INACCESSIBLE",
       }),
     );
-    const client = createMockClient();
-    await initBackgroundHealthKitSync(client);
 
     const listener = mockAddSampleUpdateListener.mock.calls[0][0];
     listener({
-      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
-      deliveryId: "delivery-locked",
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
     });
 
     await vi.advanceTimersByTimeAsync(5000);
@@ -252,90 +245,24 @@ describe("initBackgroundHealthKitSync", () => {
       "bg-healthkit-sync",
       "Device locked, skipping sync",
     );
-    expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-locked");
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
     vi.useRealTimers();
   });
 
-  it("does not acknowledge a delivery until its sync attempt finishes", async () => {
-    vi.useFakeTimers();
-    const client = createMockClient();
-    await initBackgroundHealthKitSync(client);
+  it.each([
+    null,
+    "locked",
+    { code: "OTHER_ERROR" },
+  ])("reports a non-HealthKit database error to Sentry: %j", async (syncError) => {
+    vi.mocked(queryWorkouts).mockRejectedValueOnce(syncError);
+
+    await initBackgroundHealthKitSync(createMockClient());
+
     await vi.waitFor(() => {
-      expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+      expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+        source: "bg-healthkit-sync",
+      });
     });
-
-    const upload = deferred<{ inserted: number }>();
-    client.healthKitSync.pushWorkouts.mutate.mockClear();
-    client.healthKitSync.pushWorkouts.mutate.mockReturnValueOnce(upload.promise);
-    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
-    listener({
-      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
-      deliveryId: "delivery-deferred",
-    });
-
-    expect(mockCompleteBackgroundDelivery).not.toHaveBeenCalledWith("delivery-deferred");
-    await vi.advanceTimersByTimeAsync(5000);
-    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
-    expect(mockCompleteBackgroundDelivery).not.toHaveBeenCalledWith("delivery-deferred");
-
-    upload.resolve({ inserted: 0 });
-    await vi.waitFor(() => {
-      expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-deferred");
-    });
-    vi.useRealTimers();
-  });
-
-  it("queues a follow-up sync for a delivery received during an active sync", async () => {
-    vi.useFakeTimers();
-    const client = createMockClient();
-    await initBackgroundHealthKitSync(client);
-    await vi.waitFor(() => {
-      expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
-    });
-
-    const firstUpload = deferred<{ inserted: number }>();
-    const secondUpload = deferred<{ inserted: number }>();
-    client.healthKitSync.pushWorkouts.mutate.mockClear();
-    client.healthKitSync.pushWorkouts.mutate
-      .mockReturnValueOnce(firstUpload.promise)
-      .mockReturnValueOnce(secondUpload.promise);
-    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
-
-    listener({
-      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
-      deliveryId: "delivery-first",
-    });
-    await vi.advanceTimersByTimeAsync(5000);
-    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
-
-    listener({
-      typeIdentifier: "HKQuantityTypeIdentifierRestingHeartRate",
-      deliveryId: "delivery-second",
-    });
-    await vi.advanceTimersByTimeAsync(5000);
-    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
-
-    listener({
-      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
-      deliveryId: "delivery-third",
-    });
-
-    firstUpload.resolve({ inserted: 0 });
-    await vi.waitFor(() => {
-      expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-first");
-      expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(2);
-    });
-    expect(mockCompleteBackgroundDelivery).not.toHaveBeenCalledWith("delivery-second");
-    expect(mockCompleteBackgroundDelivery).not.toHaveBeenCalledWith("delivery-third");
-
-    secondUpload.resolve({ inserted: 0 });
-    await vi.waitFor(() => {
-      expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-second");
-      expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-third");
-    });
-    await vi.advanceTimersByTimeAsync(5000);
-    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(2);
-    vi.useRealTimers();
   });
 
   it("skips init when HealthKit is not available", async () => {
@@ -357,35 +284,322 @@ describe("initBackgroundHealthKitSync", () => {
 
     expect(mockRemove).toHaveBeenCalledTimes(1);
   });
+
+  it("uses the latest client and callback when re-initialized during a running sync", async () => {
+    const firstClient = createMockClient();
+    const firstSync = createDeferred<{ inserted: number }>();
+    firstClient.healthKitSync.pushWorkouts.mutate.mockReturnValueOnce(firstSync.promise);
+    vi.mocked(queryWorkouts).mockResolvedValueOnce([
+      {
+        activityType: 1,
+        startDate: "2026-03-22T10:00:00Z",
+        endDate: "2026-03-22T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+      },
+    ]);
+    const firstOnSyncComplete = vi.fn();
+    await initBackgroundHealthKitSync(firstClient, firstOnSyncComplete);
+
+    const secondClient = createMockClient();
+    const secondOnSyncComplete = vi.fn();
+    await initBackgroundHealthKitSync(secondClient, secondOnSyncComplete);
+    expect(secondClient.healthKitSync.pushWorkouts.mutate).not.toHaveBeenCalled();
+
+    firstSync.resolve({ inserted: 1 });
+    await vi.waitFor(() => {
+      expect(secondClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+    });
+
+    expect(firstOnSyncComplete).toHaveBeenCalledTimes(1);
+    expect(secondOnSyncComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("tears down and reports an observer registration failure", async () => {
+    const registrationError = new Error("observer registration failed");
+    const mockRemove = vi.fn();
+    mockAddSampleUpdateListener.mockReturnValueOnce({ remove: mockRemove });
+    mockSetupBackgroundObservers.mockRejectedValueOnce(registrationError);
+
+    await expect(initBackgroundHealthKitSync(createMockClient())).rejects.toBe(registrationError);
+
+    expect(mockRemove).toHaveBeenCalledOnce();
+    expect(mockTeardownBackgroundObservers).toHaveBeenCalledOnce();
+    expect(mockCaptureException).toHaveBeenCalledWith(registrationError, {
+      source: "bg-healthkit-sync",
+      operation: "setupBackgroundObservers",
+    });
+  });
+
+  it("queues an observer update delivered during the initial catch-up sync", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    const catchUp = createDeferred<{ inserted: number }>();
+    client.healthKitSync.pushWorkouts.mutate.mockReturnValueOnce(catchUp.promise);
+    vi.mocked(queryWorkouts).mockResolvedValueOnce([
+      {
+        activityType: 1,
+        startDate: "2026-03-22T10:00:00Z",
+        endDate: "2026-03-22T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+      },
+    ]);
+    await initBackgroundHealthKitSync(client);
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(mockCompleteObserverUpdates).not.toHaveBeenCalled();
+
+    catchUp.resolve({ inserted: 1 });
+    await vi.waitFor(() => {
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], true);
+    });
+    vi.useRealTimers();
+  });
+
+  it("preserves an observer update delivered while native registration is finishing", async () => {
+    vi.useFakeTimers();
+    mockSetupBackgroundObservers.mockImplementationOnce(async () => {
+      const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+      listener({
+        typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+        updateId: "registration-update",
+      });
+      return true;
+    });
+
+    await initBackgroundHealthKitSync(createMockClient());
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.runAllTimersAsync();
+
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["registration-update"], true);
+    vi.useRealTimers();
+  });
+
+  it("keeps one observer update outstanding until its sync settles", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCompleteObserverUpdates.mockClear();
+
+    const sync = createDeferred<{ inserted: number }>();
+    client.healthKitSync.pushWorkouts.mutate.mockReturnValueOnce(sync.promise);
+    vi.mocked(queryWorkouts).mockResolvedValueOnce([
+      {
+        activityType: 1,
+        startDate: "2026-03-22T10:00:00Z",
+        endDate: "2026-03-22T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+      },
+    ]);
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(mockCompleteObserverUpdates).not.toHaveBeenCalled();
+
+    sync.resolve({ inserted: 1 });
+    await vi.waitFor(() => {
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], true);
+    });
+    vi.useRealTimers();
+  });
+
+  it("coalesces debounced observer updates and completes every callback once", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCompleteObserverUpdates.mockClear();
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+    await vi.advanceTimersByTimeAsync(400);
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      updateId: "update-2",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.runAllTimersAsync();
+
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(1);
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1", "update-2"], true);
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it("debounces an update received while the preceding observer sync is still running", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCompleteObserverUpdates.mockClear();
+
+    const firstSync = createDeferred<{ inserted: number }>();
+    client.healthKitSync.pushWorkouts.mutate.mockReturnValueOnce(firstSync.promise);
+    vi.mocked(queryWorkouts)
+      .mockResolvedValueOnce([
+        {
+          activityType: 1,
+          startDate: "2026-03-22T10:00:00Z",
+          endDate: "2026-03-22T11:00:00Z",
+          duration: 3600,
+          totalDistance: 10000,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          activityType: 1,
+          startDate: "2026-03-22T12:00:00Z",
+          endDate: "2026-03-22T13:00:00Z",
+          duration: 3600,
+          totalDistance: 10000,
+        },
+      ]);
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      updateId: "update-2",
+    });
+
+    firstSync.resolve({ inserted: 1 });
+    await vi.advanceTimersByTimeAsync(499);
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(1);
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], true);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.runAllTimersAsync();
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(2);
+    expect(mockCompleteObserverUpdates).toHaveBeenLastCalledWith(["update-2"], true);
+    vi.useRealTimers();
+  });
+
+  it("completes a failed observer batch unsuccessfully and reports the error", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCaptureException.mockClear();
+    mockCompleteObserverUpdates.mockClear();
+
+    const networkError = new Error("network timeout");
+    client.healthKitSync.pushWorkouts.mutate.mockRejectedValueOnce(networkError);
+    vi.mocked(queryWorkouts).mockResolvedValueOnce([
+      {
+        activityType: 1,
+        startDate: "2026-03-22T10:00:00Z",
+        endDate: "2026-03-22T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+      },
+    ]);
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+    expect(mockCaptureException).toHaveBeenCalledWith(networkError, {
+      source: "bg-healthkit-sync",
+    });
+    vi.useRealTimers();
+  });
+
+  it("reports a native observer acknowledgement failure", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCaptureException.mockClear();
+    const acknowledgementError = new Error("native acknowledgement failed");
+    mockCompleteObserverUpdates.mockImplementationOnce(() => {
+      throw acknowledgementError;
+    });
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.runAllTimersAsync();
+
+    expect(mockCaptureException).toHaveBeenCalledWith(acknowledgementError, {
+      source: "bg-healthkit-sync",
+      operation: "completeObserverUpdates",
+      updateCount: 1,
+    });
+    vi.useRealTimers();
+  });
 });
 
 describe("teardownBackgroundHealthKitSync", () => {
-  it("removes the listener and clears timers", async () => {
+  beforeEach(() => {
+    teardownBackgroundHealthKitSync();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    teardownBackgroundHealthKitSync();
+  });
+
+  it("removes the listener, clears timers, and drains pending native callbacks", async () => {
+    vi.useFakeTimers();
     const mockRemove = vi.fn();
     mockAddSampleUpdateListener.mockReturnValue({ remove: mockRemove });
 
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);
-    mockTeardownBackgroundObservers.mockClear();
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
     teardownBackgroundHealthKitSync();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.runAllTimersAsync();
 
     expect(mockRemove).toHaveBeenCalledTimes(1);
     expect(mockTeardownBackgroundObservers).toHaveBeenCalledTimes(1);
+    expect(mockCompleteObserverUpdates).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
-  it("acknowledges deliveries still waiting for their debounce timer", async () => {
-    vi.useFakeTimers();
-    const client = createMockClient();
-    await initBackgroundHealthKitSync(client);
-    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
-    listener({
-      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
-      deliveryId: "delivery-pending-teardown",
+  it("reports a native observer teardown failure", () => {
+    const teardownError = new Error("native teardown failed");
+    mockTeardownBackgroundObservers.mockImplementationOnce(() => {
+      throw teardownError;
     });
 
     teardownBackgroundHealthKitSync();
 
-    expect(mockCompleteBackgroundDelivery).toHaveBeenCalledWith("delivery-pending-teardown");
-    vi.useRealTimers();
+    expect(mockCaptureException).toHaveBeenCalledWith(teardownError, {
+      source: "bg-healthkit-sync",
+      operation: "teardownBackgroundObservers",
+    });
   });
 });

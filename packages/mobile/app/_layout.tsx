@@ -382,6 +382,12 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="alerts"
+            options={{
+              title: "Alerts",
+            }}
+          />
+          <Stack.Screen
             name="reports"
             options={{
               title: "Health Reports",

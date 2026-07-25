@@ -1,11 +1,13 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockUseSearch = vi.hoisted(() => vi.fn());
 const mockGetShared = vi.hoisted(() => vi.fn());
 const mockMyReports = vi.hoisted(() => vi.fn());
+const mockCaptureException = vi.hoisted(() => vi.fn());
+const mockWriteText = vi.hoisted(() => vi.fn());
 
 const captured = vi.hoisted<{
   component: (() => ReactElement) | null;
@@ -63,6 +65,10 @@ vi.mock("../lib/trpc.ts", () => ({
   },
 }));
 
+vi.mock("../lib/telemetry.ts", () => ({
+  captureException: mockCaptureException,
+}));
+
 import "./health-report.tsx";
 
 const weeklyReport = {
@@ -94,6 +100,14 @@ function renderRoute(token: string | null | undefined) {
   const Component = captured.component;
   return render(<Component />);
 }
+
+beforeEach(() => {
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: mockWriteText },
+  });
+  mockWriteText.mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   cleanup();
@@ -236,5 +250,69 @@ describe("health report route", () => {
     expect(mockGetShared).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { name: "Health Reports" })).toBeTruthy();
     expect(screen.getByText(/No shared reports yet/)).toBeTruthy();
+  });
+
+  it("shows the owner list error instead of the empty state", () => {
+    mockMyReports.mockReturnValue({
+      data: undefined,
+      error: new Error("Health report list is unavailable."),
+      isLoading: false,
+    });
+
+    renderRoute(undefined);
+
+    expect(screen.getByText("Health report list is unavailable.")).toBeTruthy();
+    expect(screen.queryByText(/No shared reports yet/)).toBeNull();
+  });
+
+  it("shows copied only after the clipboard write succeeds", async () => {
+    let completeWrite = () => {};
+    mockWriteText.mockReturnValue(
+      new Promise<void>((resolve) => {
+        completeWrite = resolve;
+      }),
+    );
+    mockMyReports.mockReturnValue({
+      data: [weeklyReport],
+      error: null,
+      isLoading: false,
+    });
+
+    renderRoute(undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Copy Link" }));
+
+    expect(screen.getByRole("button", { name: "Copy Link" })).toBeTruthy();
+    completeWrite();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
+    });
+    expect(mockWriteText).toHaveBeenCalledWith(
+      `${window.location.origin}/health-report?token=shared-token`,
+    );
+  });
+
+  it("reports clipboard rejection and provides a manual-copy fallback", async () => {
+    const clipboardError = new Error("Clipboard permission denied");
+    mockWriteText.mockRejectedValue(clipboardError);
+    mockMyReports.mockReturnValue({
+      data: [weeklyReport],
+      error: null,
+      isLoading: false,
+    });
+
+    renderRoute(undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Copy Link" }));
+
+    await waitFor(() => {
+      expect(mockCaptureException).toHaveBeenCalledWith(clipboardError, {
+        source: "health-report-list-link-copy",
+      });
+    });
+    expect(screen.getByRole("button", { name: "Copy Link" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Copy report link manually" })).toHaveValue(
+      `${window.location.origin}/health-report?token=shared-token`,
+    );
   });
 });

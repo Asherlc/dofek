@@ -4400,7 +4400,7 @@ describe("createAuthRouter", () => {
     });
   });
 
-  describe("GET /callback (pre-exchange token revocation)", () => {
+  describe("GET /callback (reconnect token revocation)", () => {
     it("uses provider-specific revocation when available", async () => {
       vi.mocked(loadTokens).mockResolvedValueOnce({
         accessToken: "old-access",
@@ -4451,6 +4451,9 @@ describe("createAuthRouter", () => {
       });
       expect(revokeToken).not.toHaveBeenCalled();
       expect(mockExchangeCode).toHaveBeenCalledWith("code", undefined);
+      expect(mockExchangeCode.mock.invocationCallOrder[0]).toBeLessThan(
+        mockRevokeExistingTokens.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      );
     });
 
     it("revokes existing access and refresh tokens when revokeUrl is configured", async () => {
@@ -4507,8 +4510,11 @@ describe("createAuthRouter", () => {
         "old-refresh",
       );
 
-      // Exchange should still happen after revocation
+      // Safe reconnect exchanges the replacement before revoking old tokens.
       expect(mockExchangeCode).toHaveBeenCalledWith("code", undefined);
+      expect(mockExchangeCode.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(revokeToken).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      );
     });
 
     it("skips revocation when no existing tokens are stored", async () => {
@@ -4550,7 +4556,7 @@ describe("createAuthRouter", () => {
       expect(mockExchangeCode).toHaveBeenCalled();
     });
 
-    it("proceeds with exchange even when revocation fails", async () => {
+    it("fails before exchange when existing credentials cannot be loaded", async () => {
       vi.mocked(loadTokens).mockRejectedValueOnce(new Error("DB connection lost"));
 
       const mockExchangeCode = vi.fn(() =>
@@ -4584,11 +4590,13 @@ describe("createAuthRouter", () => {
       const state = new URL(location).searchParams.get("state");
 
       const callbackRes = await request(app, "get", `/callback?code=code&state=${state}`);
-      expect(callbackRes.status).toBe(200);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("Pre-exchange token revocation failed for wahoo"),
+      expect(callbackRes.status).toBe(500);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("DB connection lost"),
+        expect.objectContaining({ err: expect.any(Error) }),
       );
-      expect(mockExchangeCode).toHaveBeenCalled();
+      expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+      expect(mockExchangeCode).not.toHaveBeenCalled();
     });
   });
 

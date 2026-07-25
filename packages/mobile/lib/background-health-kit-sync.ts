@@ -1,7 +1,7 @@
 import type { EventSubscription } from "expo-modules-core";
 import {
   addSampleUpdateListener,
-  completeBackgroundDelivery,
+  completeObserverUpdates,
   setupBackgroundObservers,
   teardownBackgroundObservers,
 } from "../modules/health-kit";
@@ -10,15 +10,20 @@ import type { SyncTrpcClient } from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";
-const DEBOUNCE_MS = 5000;
+const DEBOUNCE_MS = 500;
 const HEALTHKIT_DATABASE_INACCESSIBLE_CODE = "HEALTHKIT_DATABASE_INACCESSIBLE";
 
 let subscription: EventSubscription | null = null;
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-let syncing = false;
-let syncRequested = false;
-let lifecycleGeneration = 0;
-const pendingDeliveryIds = new Set<string>();
+let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+let observerSyncReady: true | undefined;
+let pendingCatchUp:
+  | {
+      onSyncComplete?: () => void;
+      trpcClient: SyncTrpcClient;
+    }
+  | undefined;
+const pendingUpdateIds = new Set<string>();
+let syncing: true | undefined;
 
 function isHealthKitDatabaseInaccessible(error: unknown): boolean {
   return (
@@ -29,99 +34,86 @@ function isHealthKitDatabaseInaccessible(error: unknown): boolean {
   );
 }
 
-function takePendingDeliveryIds(): string[] {
-  const deliveryIds = [...pendingDeliveryIds];
-  pendingDeliveryIds.clear();
-  return deliveryIds;
-}
-
-function acknowledgeDeliveries(deliveryIds: string[]) {
-  for (const deliveryId of deliveryIds) {
-    try {
-      completeBackgroundDelivery(deliveryId);
-    } catch (error: unknown) {
-      captureException(error, {
-        source: "bg-healthkit-delivery-completion",
-        deliveryId,
-      });
+async function performHealthKitSync(
+  trpcClient: SyncTrpcClient,
+  onSyncComplete?: () => void,
+): Promise<boolean> {
+  logger.info(TAG, "Starting sync");
+  try {
+    const result = await new AppleHealthSyncService({ trpcClient }).sync({
+      syncRangeDays: 1,
+    });
+    logger.info(TAG, `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`);
+    onSyncComplete?.();
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // HealthKit encrypts data at rest while the device is locked. This is a
+    // known transient condition (the next foreground event will succeed),
+    // not an actionable error, so log it but don't send it to Sentry.
+    if (isHealthKitDatabaseInaccessible(error)) {
+      logger.info(TAG, "Device locked, skipping sync");
+      return false;
     }
+    logger.warn(TAG, `Sync failed: ${message}`);
+    captureException(error, { source: TAG });
+    return false;
   }
 }
 
-function startHealthKitSync(
+function acknowledgeObserverUpdates(updateIds: string[], succeeded: boolean): void {
+  try {
+    completeObserverUpdates(updateIds, succeeded);
+  } catch (error) {
+    captureException(error, {
+      source: TAG,
+      operation: "completeObserverUpdates",
+      updateCount: updateIds.length,
+    });
+  }
+}
+
+async function drainSyncQueue(
   trpcClient: SyncTrpcClient,
   onSyncComplete?: () => void,
-  includePendingDeliveries = false,
-) {
+): Promise<void> {
   if (syncing) {
-    if (includePendingDeliveries && pendingDeliveryIds.size > 0) {
-      syncRequested = true;
-      logger.info(TAG, "Sync already in progress, follow-up queued");
-      return;
-    }
-    logger.info(TAG, "Sync already in progress, skipping");
     return;
   }
 
-  const generation = lifecycleGeneration;
-  const deliveryIds = includePendingDeliveries ? takePendingDeliveryIds() : [];
+  const catchUp = pendingCatchUp;
+  if (catchUp) {
+    pendingCatchUp = undefined;
+  } else if (!observerSyncReady) {
+    return;
+  }
+
+  const updateIds = catchUp ? [] : Array.from(pendingUpdateIds);
+  if (!catchUp) {
+    pendingUpdateIds.clear();
+    observerSyncReady = undefined;
+  }
+
   syncing = true;
-  logger.info(TAG, "Starting sync");
-  new AppleHealthSyncService({ trpcClient })
-    .sync({ syncRangeDays: 1 })
-    .then((result) => {
-      logger.info(
-        TAG,
-        `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
-      );
-      onSyncComplete?.();
-    })
-    .catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      // HealthKit encrypts data at rest while the device is locked. This is a
-      // known transient condition (the next foreground event will succeed),
-      // not an actionable error, so log it but don't send it to Sentry.
-      if (isHealthKitDatabaseInaccessible(error)) {
-        logger.info(TAG, "Device locked, skipping sync");
-        return;
-      }
-      logger.warn(TAG, `Sync failed: ${message}`);
-      captureException(error, { source: TAG });
-    })
-    .finally(() => {
-      acknowledgeDeliveries(deliveryIds);
-      if (generation !== lifecycleGeneration) {
-        return;
-      }
-      syncing = false;
-      if (syncRequested) {
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-          debounceTimer = null;
-        }
-        syncRequested = false;
-        startHealthKitSync(trpcClient, onSyncComplete, true);
-      }
-    });
+  const succeeded = await performHealthKitSync(
+    catchUp?.trpcClient ?? trpcClient,
+    catchUp?.onSyncComplete ?? onSyncComplete,
+  );
+  if (updateIds.length > 0) {
+    acknowledgeObserverUpdates(updateIds, succeeded);
+  }
+  syncing = undefined;
+
+  await drainSyncQueue(trpcClient, onSyncComplete);
 }
 
-function resetBackgroundObserverLifecycle() {
-  lifecycleGeneration++;
-  syncing = false;
-  syncRequested = false;
-
-  if (subscription) {
-    logger.info(TAG, "Tearing down: removing listener");
-    subscription.remove();
-    subscription = null;
-  }
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
-    debounceTimer = null;
-  }
-
-  acknowledgeDeliveries(takePendingDeliveryIds());
-  teardownBackgroundObservers();
+function scheduleObserverSync(trpcClient: SyncTrpcClient, onSyncComplete?: () => void): void {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    debounceTimer = undefined;
+    observerSyncReady = true;
+    void drainSyncQueue(trpcClient, onSyncComplete);
+  }, DEBOUNCE_MS);
 }
 
 /**
@@ -135,33 +127,61 @@ export async function initBackgroundHealthKitSync(
   trpcClient: SyncTrpcClient,
   onSyncComplete?: () => void,
 ) {
-  resetBackgroundObserverLifecycle();
   const authorizationState = await new AppleHealthAuthorizationService().resolve();
   if (!authorizationState.canAttemptSync()) {
     logger.info(TAG, "HealthKit not available, skipping init");
     return;
   }
 
-  // Register JavaScript before starting native queries because HealthKit can
-  // deliver an observer update immediately when the query starts.
-  subscription = addSampleUpdateListener(({ deliveryId }) => {
-    pendingDeliveryIds.add(deliveryId);
+  // Clean up any existing listener
+  if (subscription) {
+    logger.info(TAG, "Removing previous listener before re-init");
+    teardownBackgroundHealthKitSync();
+  }
+
+  // Listen before registering native observers so an immediate HealthKit
+  // delivery can never race ahead of the JavaScript callback.
+  subscription = addSampleUpdateListener((event) => {
     logger.info(TAG, "Sample update event received, debouncing");
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null;
-      startHealthKitSync(trpcClient, onSyncComplete, true);
-    }, DEBOUNCE_MS);
+    pendingUpdateIds.add(event.updateId);
+    scheduleObserverSync(trpcClient, onSyncComplete);
   });
 
-  await setupBackgroundObservers();
+  try {
+    await setupBackgroundObservers();
+  } catch (error) {
+    captureException(error, {
+      source: TAG,
+      operation: "setupBackgroundObservers",
+    });
+    teardownBackgroundHealthKitSync();
+    throw error;
+  }
   logger.info(TAG, "Background observers registered");
-  startHealthKitSync(trpcClient, onSyncComplete);
+  pendingCatchUp = { trpcClient, onSyncComplete };
+  void drainSyncQueue(trpcClient, onSyncComplete);
 
   logger.info(TAG, "Init complete, listening for HealthKit updates");
 }
 
 /** Clean up background sync listeners and timers */
 export function teardownBackgroundHealthKitSync() {
-  resetBackgroundObserverLifecycle();
+  if (subscription) {
+    logger.info(TAG, "Tearing down: removing listener");
+    subscription.remove();
+    subscription = null;
+  }
+  clearTimeout(debounceTimer);
+  debounceTimer = undefined;
+  observerSyncReady = undefined;
+  pendingCatchUp = undefined;
+  pendingUpdateIds.clear();
+  try {
+    teardownBackgroundObservers();
+  } catch (error) {
+    captureException(error, {
+      source: TAG,
+      operation: "teardownBackgroundObservers",
+    });
+  }
 }

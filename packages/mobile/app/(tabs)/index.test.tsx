@@ -202,6 +202,7 @@ describe("TodayScreen independent loading states", () => {
           cdcLagSeconds: 7200,
           readModelLagSeconds: 7200,
           status: "stale",
+          progressPercentage: null,
           message: "Daily metrics data is synced, but dashboard summaries are still catching up.",
         },
       ],
@@ -216,7 +217,9 @@ describe("TodayScreen independent loading states", () => {
       },
       expect.any(Object),
     );
-    expect(screen.getByText("Processing is taking longer than expected")).toBeTruthy();
+    expect(
+      screen.getByText("Recomputing daily metrics is taking longer than expected"),
+    ).toBeTruthy();
   });
 
   afterEach(() => {

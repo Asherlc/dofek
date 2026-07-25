@@ -81,7 +81,7 @@ export interface SyncResult {
 
 export interface HealthKitSampleUpdate {
   typeIdentifier: string;
-  deliveryId: string;
+  updateId: string;
 }
 
 /** Check whether HealthKit authorization has already been requested.
@@ -187,14 +187,14 @@ export async function setupBackgroundObservers(): Promise<boolean> {
   return HealthKitModule.setupBackgroundObservers();
 }
 
-/** Acknowledge one observer delivery after its corresponding sync attempt finishes. */
-export function completeBackgroundDelivery(deliveryId: string): boolean {
-  return HealthKitModule.completeBackgroundDelivery(deliveryId);
+/** Complete specific HealthKit observer callbacks after their coalesced sync settles. */
+export function completeObserverUpdates(updateIds: string[], succeeded: boolean): number {
+  return HealthKitModule.completeObserverUpdates(updateIds, succeeded);
 }
 
-/** Stop observer queries and release any native deliveries that JavaScript cannot finish. */
-export function teardownBackgroundObservers(): void {
-  HealthKitModule.teardownBackgroundObservers();
+/** Stop native observer queries and complete every callback that is still pending. */
+export function teardownBackgroundObservers(): number {
+  return HealthKitModule.teardownBackgroundObservers();
 }
 
 /** Listen for HealthKit sample update events from background observers.

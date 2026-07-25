@@ -1,8 +1,9 @@
 // swiftlint:disable file_length
 import ExpoModulesCore
 import HealthKit
+import Sentry
 
-private final class HealthKitModuleException: Exception {
+private final class HealthKitModuleException: ExpoModulesCore.Exception {
     private let exceptionCode: String
     private let exceptionReason: String
 
@@ -38,15 +39,31 @@ public class HealthKitModule: Module {
         anchorStore: HealthKitAnchorStore(userDefaults: .standard)
     )
     private let hasEverAuthorizedKey = "healthkit_has_ever_authorized"
+    private let observerUpdateCoordinator = HealthKitObserverUpdateCoordinator(
+        timeout: 25,
+        reportExpiration: { updateId in
+            SentrySDK.capture(
+                error: NSError(
+                    domain: "com.dofek.healthkit-observer",
+                    code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "HealthKit observer update expired before JavaScript sync completed",
+                        "updateId": updateId,
+                    ]
+                )
+            )
+        }
+    )
     private var observerQueries: [HKObserverQuery] = []
-    private let backgroundDeliveryCoordinator = HealthKitBackgroundDeliveryCoordinator()
 
-    private func stopBackgroundObservers() {
+    @discardableResult
+    private func stopBackgroundObservers() -> Int {
         for query in observerQueries {
             healthStore.stop(query)
         }
         observerQueries.removeAll()
-        backgroundDeliveryCoordinator.completeAll()
+        return observerUpdateCoordinator.completeAll()
     }
 
     private func isAuthorizationNotDetermined(_ error: Error) -> Bool {
@@ -83,7 +100,7 @@ public class HealthKitModule: Module {
         Events("onHealthKitSampleUpdate")
 
         OnDestroy {
-            self.stopBackgroundObservers()
+            _ = self.stopBackgroundObservers()
         }
 
         Function("isAvailable") {
@@ -726,14 +743,6 @@ public class HealthKitModule: Module {
             return UserDefaults.standard.bool(forKey: "healthkit_background_delivery_enabled")
         }
 
-        Function("completeBackgroundDelivery") { (deliveryId: String) in
-            return self.backgroundDeliveryCoordinator.complete(deliveryId)
-        }
-
-        Function("teardownBackgroundObservers") {
-            self.stopBackgroundObservers()
-        }
-
         AsyncFunction("enableBackgroundDelivery") { (typeIdentifier: String, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
                 self.rejectPromise(
@@ -766,36 +775,36 @@ public class HealthKitModule: Module {
                 return
             }
 
+            // Re-registration must settle every callback owned by the old queries.
             self.stopBackgroundObservers()
 
             // Set up an observer for each read type
             for objectType in readTypes {
                 guard let sampleType = objectType as? HKSampleType else { continue }
 
-                let query = HKObserverQuery(
-                    sampleType: sampleType,
-                    predicate: nil
-                ) { [weak self] _, completionHandler, error in
-                    if error == nil {
-                        guard let self else {
-                            completionHandler()
-                            return
-                        }
-                        let deliveryId = self.backgroundDeliveryCoordinator.register(
-                            completionHandler
-                        )
-                        MainThreadEventEmitter.emit(
-                            [
-                                "typeIdentifier": sampleType.identifier,
-                                "deliveryId": deliveryId,
-                            ],
-                            send: { payload in
-                                self.sendEvent("onHealthKitSampleUpdate", payload)
-                            }
-                        )
-                    } else {
+                let query = HKObserverQuery(sampleType: sampleType, predicate: nil) { [weak self] _, completionHandler, error in
+                    guard let self else {
                         completionHandler()
+                        return
                     }
+                    if let error {
+                        SentrySDK.capture(error: error)
+                        completionHandler()
+                        return
+                    }
+
+                    let updateId = self.observerUpdateCoordinator.register(
+                        completion: completionHandler
+                    )
+                    MainThreadEventEmitter.emit(
+                        [
+                            "typeIdentifier": sampleType.identifier,
+                            "updateId": updateId,
+                        ],
+                        send: { payload in
+                            self.sendEvent("onHealthKitSampleUpdate", payload)
+                        }
+                    )
                 }
                 self.observerQueries.append(query)
                 self.healthStore.execute(query)
@@ -836,6 +845,20 @@ public class HealthKitModule: Module {
                     )
                 }
             }
+        }
+
+        Function("completeObserverUpdates") { (updateIds: [String], succeeded: Bool) -> Int in
+            if !succeeded {
+                NSLog(
+                    "[HealthKit] Completing %d observer updates after a failed sync",
+                    updateIds.count
+                )
+            }
+            return self.observerUpdateCoordinator.complete(updateIds: updateIds)
+        }
+
+        Function("teardownBackgroundObservers") { () -> Int in
+            return self.stopBackgroundObservers()
         }
 
         // ============================================================
