@@ -12,6 +12,13 @@ describe("createAppQueryClient", () => {
     mockCaptureException.mockReset();
   });
 
+  it("marks locally reported errors with an immutable true flag", () => {
+    expect(locallyReportedErrorMeta).toEqual({
+      errorReportedLocally: true,
+    });
+    expect(Object.isFrozen(locallyReportedErrorMeta)).toBe(true);
+  });
+
   it("reports query errors with only the procedure name", async () => {
     const queryClient = createAppQueryClient();
     const queryError = new Error("Unexpected end of JSON input");
@@ -71,6 +78,37 @@ describe("createAppQueryClient", () => {
       operation: "credentialAuth.signIn",
     });
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(secret);
+  });
+
+  it.each([
+    {
+      name: "a missing mutation key",
+      mutationKey: undefined,
+    },
+    {
+      name: "a non-array procedure path",
+      mutationKey: [123],
+    },
+    {
+      name: "a procedure path with a non-string segment",
+      mutationKey: [["credentialAuth", 123]],
+    },
+  ])("reports unknown for $name", async ({ mutationKey }) => {
+    const queryClient = createAppQueryClient();
+    const mutationError = new Error("Unknown operation failed");
+    const mutation = queryClient.getMutationCache().build(queryClient, {
+      mutationKey,
+      mutationFn: async () => {
+        throw mutationError;
+      },
+    });
+
+    await expect(mutation.execute(undefined)).rejects.toThrow(mutationError);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(mutationError, {
+      source: "react-query-mutation",
+      operation: "unknown",
+    });
   });
 
   it("does not duplicate a mutation error reported by its caller", async () => {
