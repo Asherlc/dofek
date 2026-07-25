@@ -16847,3 +16847,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If independent runners repeatedly fail to
   fetch the Alpine index, investigate mirror availability and hosted-runner
   network evidence before changing the build.
+
+## 2026-07-25 — Mobile Preview Secret Load Timed Out
+
+- **Status:** External runner-egress failure identified on PR #1949;
+  replacement CI pending.
+- **Symptoms:** `Publish Mobile Preview OTA` failed before the Expo update
+  command ran.
+- **User impact:** No production users were affected. PR #1949 remained blocked
+  from merge.
+- **Evidence:** The exact failed step was
+  `Load mobile preview secrets from Infisical`, which ran
+  `infisical login --method=oidc-auth`. Its first causal fatal line was
+  `Post "https://app.infisical.com/api/v1/auth/oidc-auth/login": dial tcp
+  3.212.82.44:443: i/o timeout`; the subsequent authentication error and exit
+  code 1 followed from that connection failure.
+- **Root cause:** The hosted runner could not establish an HTTPS connection to
+  Infisical's OIDC endpoint after successfully checking out the repository,
+  installing dependencies, and minting the GitHub OIDC token. Infisical
+  documents that the GitHub token is exchanged at that endpoint for a
+  short-lived access token:
+  <https://infisical.com/docs/documentation/platform/identities/oidc-auth/github>.
+- **Fix / mitigation:** Trigger replacement CI on a fresh hosted runner. No
+  authentication fallback, retry, timeout, cached secret, or application
+  behavior changed.
+- **Validation:** The preceding PR run passed the same mobile-preview workflow,
+  and local lint, typechecks, focused tests, and the 13,453-test unit/mobile
+  suite pass on the current source. The replacement run must complete the
+  Infisical exchange and publish step before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly time out
+  against Infisical, investigate provider availability and runner egress using
+  the captured endpoint evidence before changing workflow behavior.
