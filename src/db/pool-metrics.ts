@@ -23,14 +23,24 @@ const waitingRequests = meter.createObservableGauge("postgres.pool.requests.wait
   unit: "{requests}",
 });
 
+let activePool: PostgresPoolMetricsSource | null = null;
+
+totalConnections.addCallback((result) => {
+  if (activePool) {
+    result.observe(activePool.totalCount);
+  }
+});
+idleConnections.addCallback((result) => {
+  if (activePool) {
+    result.observe(activePool.idleCount);
+  }
+});
+waitingRequests.addCallback((result) => {
+  if (activePool) {
+    result.observe(activePool.waitingCount);
+  }
+});
+
 export function registerPostgresPoolMetrics(pool: PostgresPoolMetricsSource): void {
-  totalConnections.addCallback((result) => {
-    result.observe(pool.totalCount);
-  });
-  idleConnections.addCallback((result) => {
-    result.observe(pool.idleCount);
-  });
-  waitingRequests.addCallback((result) => {
-    result.observe(pool.waitingCount);
-  });
+  activePool = pool;
 }

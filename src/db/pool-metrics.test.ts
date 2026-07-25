@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 const metricsMocks = vi.hoisted(() => {
-  const callbacks = new Map<string, (result: { observe(value: number): void }) => void>();
+  const callbacks: Array<{
+    name: string;
+    callback(result: { observe(value: number): void }): void;
+  }> = [];
   const createObservableGauge = vi.fn((name: string) => ({
     addCallback: vi.fn((callback: (result: { observe(value: number): void }) => void) => {
-      callbacks.set(name, callback);
+      callbacks.push({ name, callback });
     }),
   }));
   return {
@@ -21,15 +24,22 @@ vi.mock("@opentelemetry/api", () => ({
 import { registerPostgresPoolMetrics } from "./pool-metrics.ts";
 
 describe("registerPostgresPoolMetrics", () => {
-  it("observes total, idle, and waiting pool state", () => {
+  it("observes the latest pool without registering duplicate callbacks", () => {
+    expect(metricsMocks.callbacks).toHaveLength(3);
+
     registerPostgresPoolMetrics({
       totalCount: 5,
       idleCount: 1,
       waitingCount: 3,
     });
+    registerPostgresPoolMetrics({
+      totalCount: 7,
+      idleCount: 2,
+      waitingCount: 4,
+    });
     const observed = new Map<string, number>();
 
-    for (const [name, callback] of metricsMocks.callbacks) {
+    for (const { name, callback } of metricsMocks.callbacks) {
       callback({
         observe(value) {
           observed.set(name, value);
@@ -39,11 +49,12 @@ describe("registerPostgresPoolMetrics", () => {
 
     expect(observed).toEqual(
       new Map([
-        ["postgres.pool.connections.total", 5],
-        ["postgres.pool.connections.idle", 1],
-        ["postgres.pool.requests.waiting", 3],
+        ["postgres.pool.connections.total", 7],
+        ["postgres.pool.connections.idle", 2],
+        ["postgres.pool.requests.waiting", 4],
       ]),
     );
+    expect(metricsMocks.callbacks).toHaveLength(3);
   });
 
   it("declares pool gauges with operational metadata", () => {
