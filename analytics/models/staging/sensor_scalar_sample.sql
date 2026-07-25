@@ -1,4 +1,5 @@
-{% set sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', '2000-01-01') %}
+{% set default_microbatch_begin = run_started_at.strftime('%Y-%m-%d') %}
+{% set sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', default_microbatch_begin) %}
 
 {{ config(
     materialized='incremental',

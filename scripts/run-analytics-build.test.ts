@@ -35,6 +35,12 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
+        microbatchBounds: {
+          sensor_scalar_sample_begin: "2025-02-03",
+          deduped_sensor_begin: "2025-02-03",
+          activity_sensor_sample_begin: "2025-02-03",
+          activity_location_sample_begin: "2025-04-05",
+        },
         runDbt,
         readArtifact,
         recordRun,
@@ -51,6 +57,8 @@ describe("runAnalyticsBuild", () => {
       "1",
       "--target-path",
       "/tmp/dofek-dbt-test",
+      "--vars",
+      '{"sensor_scalar_sample_begin":"2025-02-03","deduped_sensor_begin":"2025-02-03","activity_sensor_sample_begin":"2025-02-03","activity_location_sample_begin":"2025-04-05"}',
       "--select",
       "provider_stats",
     ]);
@@ -67,6 +75,12 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
+        microbatchBounds: {
+          sensor_scalar_sample_begin: "2025-02-03",
+          deduped_sensor_begin: "2025-02-03",
+          activity_sensor_sample_begin: "2025-02-03",
+          activity_location_sample_begin: "2025-04-05",
+        },
         runDbt: async () => 1,
         readArtifact: async (name) =>
           name === "manifest.json"
