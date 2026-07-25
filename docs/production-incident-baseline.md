@@ -16013,3 +16013,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   issues. Add `SENTRY_READ_AUTH_TOKEN` to Infisical as documented in
   [`docs/sentry.md`](sentry.md) so unexpected alerts can be confirmed directly
   from their event payload and stack trace.
+
+## 2026-07-24 — Query-Cache Integration Setup Exhausted Docker Disk
+
+- **Status:** Resolved; no production impact.
+- **Symptoms:** The issue-1718 integration environment could not start
+  Redpanda or initialize PostgreSQL.
+- **User impact:** Local executable cache-invalidation tests were blocked.
+  Production and CI were not affected.
+- **Evidence:** Docker's virtual disk was 100% full. The first Redpanda fatal
+  line was `mkdir failed: No space left on device` for its crash-report
+  directory, and PostgreSQL then failed with
+  `initdb: error: could not create directory
+  "/home/postgres/pgdata/data/pg_wal": No space left on device`.
+  `docker system df` reported 22.66 GB of reclaimable volumes.
+- **Root cause:** Accumulated abandoned anonymous test volumes and stopped
+  Timescale test containers, combined with a completed issue-1705 Compose
+  stack, exhausted the shared Docker Desktop virtual disk.
+- **Fix / mitigation:** Removed only explicitly identified dangling anonymous
+  test volumes and stopped disposable test containers, then the completed
+  issue-1705 workspace removed its own Compose containers, network, and named
+  volumes. No broad volume or system prune was used. Docker documents that
+  `docker compose down --volumes` removes volumes declared by that Compose
+  project and attached anonymous volumes
+  ([Docker Compose reference](https://docs.docker.com/reference/cli/docker/compose/down/)).
+- **Validation:** The issue-1718 PostgreSQL, ClickHouse, Redis, and Redpanda
+  services all started healthy. The real database/cache integration suites
+  subsequently passed 40 tests, including every new mutation invalidation
+  case.
+- **Remaining risk / follow-up:** Abandoned Testcontainers resources can refill
+  the shared virtual disk. Continue using the scoped recovery sequence in
+  [`docs/testing.md`](testing.md#docker-disk-recovery) and Docker's documented
+  prune filters
+  ([Docker pruning guide](https://docs.docker.com/engine/manage-resources/pruning/));
+  preserve other workspaces' running containers and named volumes.

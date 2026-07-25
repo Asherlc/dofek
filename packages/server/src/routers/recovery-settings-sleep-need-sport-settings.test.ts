@@ -20,6 +20,8 @@ vi.mock("../trpc.ts", async () => {
 });
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: vi.fn().mockResolvedValue(undefined),
+  invalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },
@@ -39,7 +41,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
 import { recoveryRouter } from "./recovery.ts";
 import { settingsRouter } from "./settings.ts";
@@ -641,6 +643,7 @@ describe("settingsRouter", () => {
       expect(mockTransaction).toHaveBeenCalledTimes(1);
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 4);
       expectCallsUseNonEmptySql(txExecute);
+      expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
     });
   });
 

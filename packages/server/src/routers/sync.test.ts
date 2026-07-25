@@ -138,6 +138,7 @@ vi.mock("dofek/providers/types", () => ({
 }));
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: (userId: string) => mockInvalidateByPrefix(`${userId}:`),
   queryCache: {
     invalidateByPrefix: mockInvalidateByPrefix,
     get: vi.fn().mockResolvedValue(undefined),

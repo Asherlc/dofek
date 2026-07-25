@@ -1,3 +1,4 @@
+import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
 import { LifeEventsRepository } from "../repositories/life-events-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -21,7 +22,9 @@ export const lifeEventsRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
-      return repo.create(input);
+      const event = await repo.create(input);
+      await invalidateUserQueryDomains(ctx.userId, ["lifeEvents"]);
+      return event;
     }),
 
   update: protectedProcedure
@@ -39,12 +42,18 @@ export const lifeEventsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, ...fields } = input;
       const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
-      return repo.update(id, fields);
+      const event = await repo.update(id, fields);
+      if (event !== null) {
+        await invalidateUserQueryDomains(ctx.userId, ["lifeEvents"]);
+      }
+      return event;
     }),
 
   delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
     const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
-    return repo.delete(input.id);
+    const result = await repo.delete(input.id);
+    await invalidateUserQueryDomains(ctx.userId, ["lifeEvents"]);
+    return result;
   }),
 
   /** Analyze: compare metrics before vs after (or during vs outside) a life event */
