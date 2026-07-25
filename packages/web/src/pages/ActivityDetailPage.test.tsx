@@ -95,8 +95,28 @@ const mockStreamPoints: Array<{
 ];
 const initialMockStreamPoints = mockStreamPoints.map((point) => ({ ...point }));
 
+interface MockQueryResult<T> {
+  data: T | undefined;
+  error: Error | null;
+  isError: boolean;
+  isLoading: boolean;
+}
+
+const mockActivityByIdUseQuery = vi.fn<
+  () => MockQueryResult<ActivityDetail> & { error: (Error & { data?: { code?: string } }) | null }
+>(() => ({
+  data: mockActivity,
+  error: null,
+  isError: false,
+  isLoading: false,
+}));
 const mockStrengthExercisesUseQuery = vi.fn(
-  (_input?: unknown, _options?: { enabled?: boolean }) => ({ data: [], isLoading: false }),
+  (_input?: unknown, _options?: { enabled?: boolean }): MockQueryResult<unknown[]> => ({
+    data: [],
+    error: null,
+    isError: false,
+    isLoading: false,
+  }),
 );
 const mockClimbingEntriesUseQuery = vi.fn(
   (
@@ -132,10 +152,10 @@ interface MockPowerZonesResult {
 }
 
 interface MockHrZonesResult {
-  data: MockHrZone[];
+  data: MockHrZone[] | undefined;
   isLoading: boolean;
   isError: boolean;
-  error: { message: string } | null;
+  error: Error | null;
 }
 
 function defaultMockHrZonesResult(): MockHrZonesResult {
@@ -150,16 +170,19 @@ function defaultMockHrZonesResult(): MockHrZonesResult {
 const mockHrZonesUseQuery = vi.fn(
   (_input?: unknown, _options?: unknown): MockHrZonesResult => defaultMockHrZonesResult(),
 );
-const mockStreamUseQuery = vi.fn((_input?: unknown, _options?: unknown) => ({
-  data: mockStreamPoints,
-  isLoading: false,
-}));
+const mockStreamUseQuery = vi.fn(
+  (_input?: unknown, _options?: unknown): MockQueryResult<typeof mockStreamPoints> => ({
+    data: mockStreamPoints,
+    error: null,
+    isError: false,
+    isLoading: false,
+  }),
+);
 const mockPowerZonesUseQuery = vi.fn(
-  (
-    _input?: unknown,
-    _options?: { enabled?: boolean },
-  ): { data: MockPowerZonesResult | null; isLoading: boolean } => ({
-    data: null,
+  (_input?: unknown, _options?: { enabled?: boolean }): MockQueryResult<MockPowerZonesResult> => ({
+    data: undefined,
+    error: null,
+    isError: false,
     isLoading: false,
   }),
 );
@@ -177,7 +200,7 @@ const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefin
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     activity: {
-      byId: { useQuery: () => ({ data: mockActivity, isLoading: false, error: null }) },
+      byId: { useQuery: mockActivityByIdUseQuery },
       stream: { useQuery: mockStreamUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
@@ -230,9 +253,18 @@ vi.mock("leaflet", () => ({
 }));
 
 afterEach(() => {
+  mockActivityByIdUseQuery.mockReset();
+  mockActivityByIdUseQuery.mockReturnValue({
+    data: mockActivity,
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
   mockStreamUseQuery.mockClear();
   mockStreamUseQuery.mockImplementation((_input?: unknown, _options?: unknown) => ({
     data: mockStreamPoints,
+    error: null,
+    isError: false,
     isLoading: false,
   }));
   mockHrZonesUseQuery.mockReset();
@@ -241,6 +273,20 @@ afterEach(() => {
   );
   mockClimbingEntriesUseQuery.mockReset();
   mockClimbingEntriesUseQuery.mockReturnValue({ data: [], isLoading: false });
+  mockStrengthExercisesUseQuery.mockReset();
+  mockStrengthExercisesUseQuery.mockReturnValue({
+    data: [],
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
+  mockPowerZonesUseQuery.mockReset();
+  mockPowerZonesUseQuery.mockReturnValue({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
   mockStreamPoints.splice(
     0,
     mockStreamPoints.length,
@@ -389,6 +435,109 @@ async function importPage() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("shows the primary server error instead of reporting a missing activity", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: undefined,
+      error: Object.assign(new Error("Activity database is unavailable."), {
+        data: { code: "INTERNAL_SERVER_ERROR" },
+      }),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Activity database is unavailable.")).toBeDefined();
+    expect(screen.queryByText("Activity not found")).toBeNull();
+  });
+
+  it("uses the not-found state only for a NOT_FOUND response", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: undefined,
+      error: Object.assign(new Error("Activity not found"), {
+        data: { code: "NOT_FOUND" },
+      }),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Activity not found")).toBeDefined();
+  });
+
+  it("shows a sensor section error when the stream query fails without data", async () => {
+    mockStreamUseQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Sensor stream is unavailable."),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Sensor stream is unavailable.")).toBeDefined();
+  });
+
+  it("keeps cached stream charts visible during a background refresh error", async () => {
+    mockStreamUseQuery.mockReturnValue({
+      data: mockStreamPoints,
+      error: new Error("Sensor stream refresh failed."),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Performance")).toBeDefined();
+    expect(screen.getByText("Sensor stream refresh failed.")).toBeDefined();
+  });
+
+  it("shows a strength exercise section error", async () => {
+    const originalActivity = { ...mockActivity };
+    Object.assign(mockActivity, { activityType: "strength" });
+    mockStrengthExercisesUseQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Strength exercises are unavailable."),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Strength exercises are unavailable.")).toBeDefined();
+    Object.assign(mockActivity, originalActivity);
+  });
+
+  it("shows a power zone section error", async () => {
+    const originalActivity = { ...mockActivity };
+    const originalStream = [...mockStreamPoints];
+    Object.assign(mockActivity, { activityType: "cycling", avgPower: 220, maxPower: 360 });
+    mockStreamPoints.splice(
+      0,
+      mockStreamPoints.length,
+      ...originalStream.map((point) => ({ ...point, power: 210 })),
+    );
+    mockPowerZonesUseQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Power zones are unavailable."),
+      isError: true,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Power zones are unavailable.")).toBeDefined();
+    Object.assign(mockActivity, originalActivity);
+    mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
+  });
+
   it("recomputes the activity and invalidates detail caches", async () => {
     const ActivityDetailPage = await importPage();
     renderWithUnits(<ActivityDetailPage />);
@@ -943,7 +1092,7 @@ describe("ActivityDetailPage", () => {
         data: [],
         isLoading: false,
         isError: true,
-        error: { message: "Unable to load heart rate zones" },
+        error: new Error("Unable to load heart rate zones"),
       });
 
       const ActivityDetailPage = await importPage();
@@ -994,6 +1143,8 @@ describe("ActivityDetailPage", () => {
             { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 66.7 },
           ],
         },
+        error: null,
+        isError: false,
         isLoading: false,
       });
 
