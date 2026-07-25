@@ -16469,3 +16469,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   is available.
 - **Remaining risk / follow-up:** Require the replacement shard and all
   remaining PR checks to pass before merge.
+
+## 2026-07-24 — Knip Did Not Recognize the External uv Binary
+
+- **Status:** Fixed on PR #1945; replacement CI pending.
+- **Symptoms:** `Test / Knip` failed after the analytics build runner began
+  invoking uv.
+- **User impact:** No production impact. PR #1945 remained blocked from merge.
+- **Evidence:** The exact failing command was `pnpm knip`; the first new fatal
+  finding was `Unlisted binaries (1)`, followed by
+  `uv  scripts/run-local-analytics-build.ts`. The earlier mobile Sentry config
+  loader message also appears in successful Knip jobs and did not cause this
+  regression.
+- **Root cause:** uv is an intentionally external repository-tool prerequisite,
+  not an npm dependency, but the root Knip workspace had not declared it among
+  the externally provided binaries.
+- **Fix / mitigation:** Added `uv` to the existing root `ignoreBinaries` list
+  alongside `dbt`, `cmake`, and other externally installed tools. Knip
+  documents `ignoreBinaries` specifically for used binaries that are not
+  provided by a package dependency:
+  <https://knip.dev/reference/configuration#ignorebinaries>.
+  No file, dependency, or issue category was excluded.
+- **Validation:** `pnpm knip` passes locally with the uv invocation still
+  analyzed, and the replacement hosted Knip job remains the merge gate.
+- **Remaining risk / follow-up:** Require the replacement Knip job and all
+  remaining PR checks to pass before merge.

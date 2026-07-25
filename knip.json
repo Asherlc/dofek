@@ -14,7 +14,7 @@
       "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js}"],
       "ignoreDependencies": ["sharp", "tsx"],
       "ignoreBinaries": [
-        "cmake", "dbt", "expo", "infisical", "open", "openssl",
+        "cmake", "dbt", "expo", "infisical", "open", "openssl", "uv",
         "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
         "AGPL-1.0-only", "AGPL-3.0-only", "AGPL-3.0-or-later"
       ],
