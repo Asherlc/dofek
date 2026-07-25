@@ -80,6 +80,21 @@ vi.mock("../lib/auth-context", () => ({
 }));
 
 const mockLinkedAccountsRefetch = vi.fn();
+const mockCaptureException = vi.fn();
+const mockSettingsGetData = vi.fn();
+const mockSettingsSetData = vi.fn();
+const mockSettingsInvalidate = vi.fn();
+const mockSettingsSetMutate = vi.fn();
+const mockUnitSettingRefetch = vi.fn();
+const mockUnitSettingQuery: {
+  data: { key: string; value: unknown } | undefined;
+  error: Error | null;
+  refetch: typeof mockUnitSettingRefetch;
+} = {
+  data: { key: "unitSystem", value: "metric" },
+  error: null,
+  refetch: mockUnitSettingRefetch,
+};
 const mockZeppPairingClaim = vi.fn();
 type ZeppPairingMutationOptions = {
   onError?: (error: { message: string }) => void;
@@ -119,7 +134,13 @@ vi.mock("../lib/trpc", () => ({
       invalidate: vi.fn(),
       auth: { passwordCredentialStatus: { invalidate: vi.fn() } },
       bodyAnalytics: { weightPrediction: { invalidate: vi.fn() } },
-      settings: { get: { setData: vi.fn() } },
+      settings: {
+        get: {
+          getData: mockSettingsGetData,
+          setData: mockSettingsSetData,
+          invalidate: mockSettingsInvalidate,
+        },
+      },
     }),
     sync: {
       providers: {
@@ -200,10 +221,13 @@ vi.mock("../lib/trpc", () => ({
     },
     settings: {
       get: {
-        useQuery: () => ({ data: { value: "metric" }, refetch: vi.fn() }),
+        useQuery: (input: { key: string }) =>
+          input.key === "unitSystem"
+            ? mockUnitSettingQuery
+            : { data: { value: "metric" }, error: null, refetch: vi.fn() },
       },
       set: {
-        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+        useMutation: () => ({ mutate: mockSettingsSetMutate, isPending: false }),
       },
       deleteAllUserData: {
         useMutation: () => ({ mutate: vi.fn(), isPending: false }),
@@ -220,6 +244,10 @@ vi.mock("../lib/trpc", () => ({
   },
 }));
 
+vi.mock("../lib/telemetry", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 beforeEach(() => {
   mockProvidersQuery.data = mockProvidersData;
   mockProvidersQuery.error = null;
@@ -231,7 +259,50 @@ beforeEach(() => {
   };
   mockZeppPairingMutationOptions = null;
   mockSetPasswordMutationOptions = null;
+  mockUnitSettingQuery.data = { key: "unitSystem", value: "metric" };
+  mockUnitSettingQuery.error = null;
   vi.clearAllMocks();
+});
+
+describe("SettingsScreen unit system", () => {
+  it("restores the exact cached unit setting and shows the server error when a write fails", async () => {
+    const previousSetting = { key: "unitSystem", value: "metric" };
+    mockSettingsGetData.mockReturnValue(previousSetting);
+    const { default: SettingsScreen } = await import("./settings");
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Imperial" }));
+    const options = mockSettingsSetMutate.mock.calls[0]?.[1];
+    const writeError = new Error("Unit preference was not saved.");
+    act(() => options.onError(writeError));
+
+    expect(mockSettingsSetData).toHaveBeenLastCalledWith({ key: "unitSystem" }, previousSetting);
+    expect(Alert.alert).toHaveBeenCalledWith("Error", writeError.message);
+    expect(mockCaptureException).toHaveBeenCalledWith(writeError, {
+      context: "unit-system-write",
+    });
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps cached units visible and displays an exact background read error", async () => {
+    const readError = new Error("Unit settings could not be loaded.");
+    mockUnitSettingQuery.error = readError;
+    const { default: SettingsScreen } = await import("./settings");
+    render(<SettingsScreen />);
+
+    expect(screen.getByRole("button", { name: "Metric" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByText(readError.message)).toBeTruthy();
+    await waitFor(() =>
+      expect(mockCaptureException).toHaveBeenCalledWith(readError, {
+        context: "unit-system-read",
+      }),
+    );
+    expect(mockCaptureException.mock.calls.filter(([error]) => error === readError)).toHaveLength(
+      1,
+    );
+  });
 });
 
 describe("SettingsScreen data sources", () => {
