@@ -15,8 +15,7 @@ export interface CoreMotionDeps {
 export interface WatchDeps {
   isAvailable(): boolean;
   requestSync(): Promise<boolean>;
-  getPendingSamples(): Promise<InertialMeasurementUnitSample[]>;
-  acknowledgeSamples(): void;
+  syncPendingFiles(): Promise<void>;
 }
 
 /** Abstraction over WHOOP BLE module for IMU streaming during activity recording */
@@ -148,14 +147,11 @@ export function createInertialMeasurementUnitService(
         }
       }
 
-      // Sync Watch IMU data
+      // Sync Watch accelerometer and altitude files through their per-file
+      // pipelines so only files whose complete upload succeeded are deleted.
       if (watch.isAvailable()) {
         try {
-          const watchSamples = await watch.getPendingSamples();
-          if (watchSamples.length > 0) {
-            await uploadBatched("Apple Watch", "apple_watch", watchSamples);
-            watch.acknowledgeSamples();
-          }
+          await watch.syncPendingFiles();
         } catch (error: unknown) {
           captureException(error, { source: "activity-save-watch-sync" });
           // Best-effort — don't fail activity save

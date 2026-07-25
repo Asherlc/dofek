@@ -47,18 +47,6 @@ export async function requestWatchRecording(): Promise<boolean> {
   return WatchMotionModule.requestWatchRecording();
 }
 
-/** Read all pending accelerometer sample files transferred from the Watch.
- * Files are gzip-compressed JSON arrays. Parsing happens on a background thread.
- * @returns Flattened array of all samples from all pending files. */
-export async function getPendingWatchSamples(): Promise<InertialMeasurementUnitSample[]> {
-  return WatchMotionModule.getPendingWatchSamples();
-}
-
-/** Delete all pending Watch transfer files after successful server upload. */
-export function acknowledgeWatchSamples(): void {
-  WatchMotionModule.acknowledgeWatchSamples();
-}
-
 function isSafePendingFileName(fileName: string): boolean {
   if (!fileName) return false;
   if (fileName.includes("..")) return false;
@@ -106,15 +94,4 @@ export function deleteWatchFile(fileName: string): void {
     throw new Error(`Invalid pending watch file name: ${fileName}`);
   }
   WatchMotionModule.deleteWatchFile(fileName);
-}
-
-/** Get the timestamp of the last successful Watch accelerometer sync.
- * Returns null if never synced. */
-export function getLastWatchSyncTimestamp(): string | null {
-  return WatchMotionModule.getLastWatchSyncTimestamp();
-}
-
-/** Update the last Watch sync timestamp after a successful upload. */
-export function setLastWatchSyncTimestamp(timestamp: string): void {
-  WatchMotionModule.setLastWatchSyncTimestamp(timestamp);
 }
