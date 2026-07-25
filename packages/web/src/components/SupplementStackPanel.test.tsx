@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { SupplementStackPanel } from "./SupplementStackPanel.tsx";
 
 interface QueryState {
@@ -85,6 +86,24 @@ describe("SupplementStackPanel", () => {
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
 
+  it("uses the shared query state panel while the stack initially loads", () => {
+    mocks.query.data = undefined;
+    mocks.query.isLoading = true;
+
+    render(<SupplementStackPanel />);
+
+    expect(screen.getByTestId("query-state-loading")).toBeDefined();
+  });
+
+  it("uses the shared query state panel for an empty stack", () => {
+    mocks.query.data = [];
+
+    render(<SupplementStackPanel />);
+
+    expect(screen.getByTestId("query-state-empty")).toBeDefined();
+    expect(screen.getByText(/No supplements configured/)).toBeDefined();
+  });
+
   it("preserves cached supplements during a background refresh failure", () => {
     mocks.query.error = new Error("Supplement refresh failed.");
 
@@ -101,7 +120,7 @@ describe("SupplementStackPanel", () => {
 
     act(() => mocks.saveOptions?.onError?.(saveError));
 
-    expect(mocks.saveOptions?.meta).toEqual({ errorReportedLocally: true });
+    expect(mocks.saveOptions?.meta).toBe(locallyReportedErrorMeta);
     expect(mocks.captureException).toHaveBeenCalledWith(saveError, {
       operation: "supplements.save",
     });

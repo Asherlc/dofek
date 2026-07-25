@@ -1,5 +1,6 @@
 import { formatNutritionAmount } from "@dofek/format/format";
 import { useState } from "react";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -123,7 +124,7 @@ export function SupplementStackPanel() {
     onError: (error) => {
       captureException(error, { operation: "supplements.save" });
     },
-    meta: { errorReportedLocally: true },
+    meta: locallyReportedErrorMeta,
   });
 
   const supplements: Supplement[] = stack.data ?? [];
@@ -161,7 +162,7 @@ export function SupplementStackPanel() {
   };
 
   if (stack.isLoading && !hasCanonicalStack) {
-    return <div className="h-20 rounded-lg bg-skeleton animate-pulse" />;
+    return <QueryStatePanel variant="loading" height={80} />;
   }
 
   if (stack.error && !hasCanonicalStack) {
@@ -173,9 +174,11 @@ export function SupplementStackPanel() {
       {stack.error ? <QueryStatePanel error={stack.error} height={72} /> : null}
 
       {supplements.length === 0 && !showAdd && (
-        <p className="text-xs text-dim">
-          No supplements configured. Add your daily stack and it will be synced as nutrition data.
-        </p>
+        <QueryStatePanel
+          variant="empty"
+          message="No supplements configured. Add your daily stack and it will be synced as nutrition data."
+          height={72}
+        />
       )}
 
       {supplements.map((supp, i) => (
