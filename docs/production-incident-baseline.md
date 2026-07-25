@@ -16389,6 +16389,119 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   replacement runner. If runner I/O failures recur, escalate with the failing
   runner evidence rather than adding repository-level retry behavior.
 
+## 2026-07-24 — HealthKit Observer Updates Completed Before Sync
+
+- **Status:** Fixed and validated with focused TypeScript and Swift tests plus
+  a native simulator build; hosted CI remains the merge gate.
+- **Symptoms:** Every HealthKit observer callback completed immediately after a
+  JavaScript event was emitted, while the listener waited five seconds before
+  starting its asynchronous sync.
+- **User impact:** iOS could suspend Dofek after the early acknowledgement,
+  leaving the new health samples unsynced until a later observer delivery or
+  foreground launch.
+- **Evidence:** `HealthKitModule` passed the callback into
+  `MainThreadEventEmitter`, which invoked it directly after `sendEvent`.
+  `background-health-kit-sync` then created a five-second debounce timer and
+  had no native completion API.
+- **Root cause:** The native event had no durable identity or coordinator, so
+  JavaScript could not settle the specific callback after its coalesced work.
+- **Fix / mitigation:** Native code now retains callbacks behind unique update
+  IDs in a lock-protected coordinator. JavaScript listens before observer
+  registration, batches IDs for 500 ms, runs serialized catch-up and observer
+  syncs, and completes the exact batch after success or failure. Native
+  expiration, re-registration, teardown, and Expo module destruction drain
+  callbacks exactly once; expiration and unexpected observer errors report to
+  Sentry. Apple requires observer completion only after new-data processing
+  finishes in its
+  [observer-query guide](https://developer.apple.com/documentation/healthkit/executing-observer-queries).
+- **Validation:** The regression first failed because no JavaScript completion
+  call or Swift coordinator existed. Twenty-five focused mobile tests now
+  cover single and coalesced updates, registration/re-initialization races,
+  success, failure, native bridge errors, and teardown. Sixty-seven Swift tests
+  cover exact-once completion, coalescing, expiration, teardown, and the
+  existing HealthKit helpers. The generated iOS workspace compiled
+  successfully for an iOS 26.4 simulator with code signing and Sentry upload
+  disabled.
+- **Remaining risk / follow-up:** The iOS Simulator cannot generate real
+  HealthKit background deliveries. Require a native simulator compile plus
+  hosted Swift, mutation, mobile, and iOS build gates; physical-device
+  observation remains the final runtime verification.
+## 2026-07-24 — Image Vulnerability Scan Could Not Reach Docker Hub
+
+- **Status:** External registry failure identified; replacement CI pending on
+  PR #1940.
+- **Symptoms:** `Test / Image Vulnerability Scan` failed, which also failed the
+  aggregate `Test / Security & Dependencies` gate.
+- **User impact:** No production users were affected. PR #1940 was blocked from
+  merging even though no vulnerability result was produced.
+- **Evidence:** The exact failing command was
+  `docker pull "$GRYPE_IMAGE"`. The first fatal line was
+  `Error response from daemon: Get "https://registry-1.docker.io/v2/":
+  net/http: request canceled while waiting for connection`; all five attempts
+  timed out before the final explicit pull failure.
+- **Root cause:** The hosted runner could not establish a timely connection to
+  Docker Hub. The application image built successfully, and Grype never ran, so
+  this was not a detected application-image vulnerability.
+- **Fix / mitigation:** Scheduled replacement CI on a fresh hosted runner. No
+  scan threshold, timeout, retry count, or vulnerability policy was changed.
+- **Validation:** The replacement run must pull the pinned Grype image and
+  complete the critical-vulnerability scan before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly cannot pull
+  the pinned scanner image, investigate an approved registry mirror using the
+  captured Docker Hub evidence before changing workflow behavior.
+
+## 2026-07-24 — Integration Fixtures Could Not Reach Docker Hub
+
+- **Status:** External registry failure identified; replacement CI pending on
+  PR #1937.
+- **Symptoms:** `Test / Integration Tests (1/4)` failed while its aggregate
+  `Test / Unit & Integration Tests` gate reported the required-job failure.
+- **User impact:** No production users were affected. PR #1937 was blocked from
+  merging even though 311 integration tests passed before fixture setup failed.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=1/4`. The
+  first fatal line was `Error: (HTTP code 500) server error - Get
+  "https://registry-1.docker.io/v2/": context deadline exceeded`; the later
+  `Cannot read properties of undefined (reading 'cleanup')` was a secondary
+  teardown error after fixture setup did not return a context.
+- **Root cause:** Testcontainers could not reach Docker Hub while starting the
+  fixtures for `metric-stream-location-point-migration.integration.test.ts`
+  and `seed-dev-db.integration.test.ts`. The source tests themselves did not
+  fail an assertion.
+- **Fix / mitigation:** Run replacement CI on a fresh hosted runner after
+  merging the current base. No test, timeout, retry, or application behavior is
+  being changed.
+- **Validation:** The replacement shard must start both fixtures and pass the
+  full shard before merge.
+- **Remaining risk / follow-up:** If the registry failure repeats on an
+  independent runner, investigate an approved registry mirror from the
+  captured evidence before changing workflow behavior.
+
+## 2026-07-24 — Provider Webhook Processing Failures Were Acknowledged
+
+- **Status:** Fixed locally; hosted CI pending.
+- **Symptoms:** The provider webhook route returned `200 OK` after database
+  lookup, targeted processing, queue-enqueue, and unexpected request failures.
+- **User impact:** Providers treated failed deliveries as accepted, so events
+  could be permanently lost instead of retried.
+- **Evidence:** The regression tests first failed with
+  `expected 200 to be 503` for database, BullMQ enqueue, and top-level request
+  failures.
+- **Root cause:** Per-event and top-level exception handlers logged failures
+  but unconditionally fell through to, or directly sent, a successful
+  response.
+- **Fix / mitigation:** Return `503 Service Unavailable` when any actionable
+  event is neither processed nor durably queued, continue attempting the rest
+  of a batch, and report unexpected failures to Sentry with provider and event
+  context. Invalid signatures and payloads remain non-retryable `4xx`
+  responses. RFC 9110 defines `503` for a temporarily unavailable service:
+  <https://www.rfc-editor.org/rfc/rfc9110.html#name-503-service-unavailable>.
+- **Validation:** All 37 webhook route tests pass, including executable
+  regressions for database failure, enqueue failure, continued batch
+  processing, Sentry context, and top-level failure.
+- **Remaining risk / follow-up:** Hosted CI must confirm the full server test,
+  typecheck, lint, and mutation suites before merge.
+
 ## 2026-07-24 — Quarantine PR Failed Spell Check on KafkaJS API Name
 
 - **Status:** Fixed on PR #1933; replacement CI pending.
@@ -16494,3 +16607,41 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   analyzed, and the replacement hosted Knip job remains the merge gate.
 - **Remaining risk / follow-up:** Require the replacement Knip job and all
   remaining PR checks to pass before merge.
+
+## 2026-07-24 — HealthKit Swift Mutation Run Timed Out
+
+- **Status:** Root cause fixed locally; replacement hosted mutation validation
+  pending.
+- **Symptoms:** `Test / Swift Mutation Testing` on PR #1937 ran until the
+  step-level 30-minute limit, then the aggregate test and CI gates failed.
+- **User impact:** No production users were affected. The HealthKit observer
+  completion fix was blocked from merging.
+- **Evidence:** The exact command was
+  `muter --files-to-mutate
+  "ios/HealthKitObserverUpdateCoordinator.swift,ios/MainThreadEventEmitter.swift"`.
+  Its first fatal line was `The action 'Run Muter' has timed out after 30
+  minutes.` Isolating the files locally showed the emitter's sole mutant was
+  killed in 19 seconds. The coordinator's first `RemoveSideEffects` mutant
+  removed `lock.lock()` while retaining `lock.unlock()`; all 72 tests printed
+  as passed, but the mutated XCTest process remained alive indefinitely.
+- **Root cause:** Separate manual lock and unlock calls let the mutation
+  operator create an invalid half-lock critical section. That corrupted the
+  lock lifecycle after assertions completed, so Muter waited forever for the
+  test process instead of reporting a surviving mutant.
+- **Fix / mitigation:** Replaced every manual lock/unlock pair in the
+  coordinator with Foundation's scoped `NSLock.withLock` operation. Scoped
+  locking keeps acquisition and release indivisible and guarantees release
+  when the operation exits; Foundation documents `NSLock` as the mutual
+  exclusion primitive:
+  <https://developer.apple.com/documentation/foundation/nslock>. No timeout,
+  retry, mutation exclusion, or skipped check was added.
+- **Validation:** The unchanged 72-test Swift package suite passes on the
+  refactored coordinator. The isolated coordinator mutation run completed in
+  20 seconds and killed all four mutants; the isolated emitter run completed
+  in 19 seconds and killed its sole mutant. The combined exact hosted command
+  completed in 25 seconds and killed all five mutants at a 100% mutation
+  score. Replacement hosted CI remains the merge gate.
+- **Remaining risk / follow-up:** Muter log filenames contain colons and cannot
+  be uploaded by GitHub's artifact action when a run fails. Fix artifact
+  sanitization separately only if a future failing run needs those logs; it did
+  not cause this mutation timeout.

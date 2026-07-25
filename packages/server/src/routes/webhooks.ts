@@ -10,7 +10,7 @@
  * 3. Parses the payload into WebhookEvents
  * 4. Resolves the external owner ID → internal user + provider row
  * 5. Enqueues a targeted BullMQ sync job for that user+provider
- * 6. Returns 200 immediately (providers expect fast responses)
+ * 6. Returns 200 only after each actionable event is processed or durably queued
  */
 
 import { randomBytes } from "node:crypto";
@@ -33,6 +33,39 @@ const providerUserRow = z.object({
 interface WebhookRouterDeps {
   db: import("dofek/db").Database;
   syncQueue: import("bullmq").Queue;
+}
+
+type WebhookFailurePhase =
+  | "event-processing"
+  | "request-processing"
+  | "targeted-sync"
+  | "validation-challenge";
+
+function captureWebhookFailure(
+  error: unknown,
+  providerName: string,
+  phase: WebhookFailurePhase,
+  event?: WebhookEvent,
+): void {
+  if (event) {
+    captureException(error, {
+      extra: { ownerExternalId: event.ownerExternalId },
+      tags: {
+        provider: providerName,
+        webhookEventType: event.eventType,
+        webhookObjectType: event.objectType,
+        webhookPhase: phase,
+      },
+    });
+    return;
+  }
+
+  captureException(error, {
+    tags: {
+      provider: providerName,
+      webhookPhase: phase,
+    },
+  });
 }
 
 export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouterDeps): Router {
@@ -86,6 +119,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
       logger.info(`[webhook] Validated ${providerName} challenge`);
       res.json(response);
     } catch (err) {
+      captureWebhookFailure(err, providerName, "validation-challenge");
       logger.error(`[webhook] Challenge error for ${providerName}: ${err}`);
       res.status(500).send("Internal error");
     }
@@ -157,6 +191,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
       // Resolve external owner IDs → internal user+provider and process events
       // `processed` counts all successfully handled events (targeted or fallback) and is used for log summary.
       let processed = 0;
+      let failed = 0;
 
       for (const event of events) {
         try {
@@ -199,7 +234,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
               processed++;
               continue;
             } catch (err) {
-              captureException(err);
+              captureWebhookFailure(err, providerName, "targeted-sync", event);
               logger.warn(
                 `[webhook] ${providerName}: targeted sync failed, falling back to full sync: ${err}`,
               );
@@ -219,6 +254,8 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
             `[webhook] ${providerName}: enqueued full sync for user ${user_id} (${event.eventType} ${event.objectType})`,
           );
         } catch (err) {
+          failed++;
+          captureWebhookFailure(err, providerName, "event-processing", event);
           logger.error(
             `[webhook] ${providerName}: failed to process event for ${event.ownerExternalId}: ${err}`,
           );
@@ -226,13 +263,19 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
       }
 
       logger.info(
-        `[webhook] ${providerName}: processed ${events.length} events, ${processed} synced`,
+        `[webhook] ${providerName}: received ${events.length} events, ${processed} accepted, ${failed} failed`,
       );
+
+      if (failed > 0) {
+        res.status(503).send("Retry later");
+        return;
+      }
+
       res.status(200).send("OK");
     } catch (err) {
+      captureWebhookFailure(err, providerName, "request-processing");
       logger.error(`[webhook] Error processing ${providerName} event: ${err}`);
-      // Still return 200 to prevent retries that could cause loops
-      res.status(200).send("OK");
+      res.status(503).send("Retry later");
     }
   });
 

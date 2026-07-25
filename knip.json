@@ -31,6 +31,7 @@
       }
     },
     "packages/web": {
+      "entry": ["test-setup.ts"],
       "vitest": {
         "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.{ts,tsx}"]

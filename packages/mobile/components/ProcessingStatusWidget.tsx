@@ -2,12 +2,12 @@ import {
   type ProcessingDisplayStage,
   type ProcessingDisplayStatus,
   processingAggregateProgress,
-  processingCurrentFailure,
   processingHeading,
   processingStatusMessage,
+  processingTarget,
 } from "@dofek/providers/processing-status";
-import { StyleSheet, Text, View } from "react-native";
-import { colors, radius, spacing } from "../theme";
+import { RecomputeStatusIndicator } from "./RecomputeStatusIndicator";
+import { SourceProcessingStatusCard } from "./SourceProcessingStatusCard";
 
 export interface ProcessingStatusSnapshot {
   generatedAt: string;
@@ -61,84 +61,48 @@ export function ProcessingStatusWidget({
   if (loading && !data) return null;
   if (error && !data) {
     return (
-      <View style={[styles.container, styles.failed]} accessibilityRole="summary">
-        <Text style={styles.heading}>Processing status is unavailable</Text>
-        <Text style={styles.message}>{error.message}</Text>
-      </View>
+      <SourceProcessingStatusCard
+        heading="Processing status is unavailable"
+        message={error.message}
+        progress={null}
+        status="failed"
+      />
     );
   }
-  if (!data || (data.overallStatus === "ready" && !alwaysVisible)) return null;
+  if (
+    !data ||
+    data.overallStatus === "failed" ||
+    data.overallStatus === "blocked" ||
+    (data.overallStatus === "ready" && !alwaysVisible)
+  ) {
+    return null;
+  }
 
-  const currentFailure = processingCurrentFailure(data);
   const progress = processingAggregateProgress(data.datasets);
+  const target = processingTarget({
+    providerId: data.scope.providerId,
+    datasets: data.datasets,
+    operationKind: data.operations[0]?.kind,
+  });
+  const statusMessage = processingStatusMessage({
+    status: data.overallStatus,
+    errorMessage: null,
+  });
+  const heading = processingHeading(data.overallStatus, target);
+
+  if (target.action === "recompute") {
+    return (
+      <RecomputeStatusIndicator label={heading} progress={progress} status={data.overallStatus} />
+    );
+  }
 
   return (
-    <View
-      style={[styles.container, borderStyleByStatus[data.overallStatus]]}
-      accessibilityRole="summary"
-      accessibilityLiveRegion={
-        data.overallStatus === "active" || data.overallStatus === "partial" ? "polite" : "none"
-      }
-    >
-      {contextLabel ? <Text style={styles.contextLabel}>{contextLabel}</Text> : null}
-      <Text style={styles.heading}>{processingHeading(data.overallStatus)}</Text>
-      <Text style={styles.message}>
-        {processingStatusMessage({
-          status: data.overallStatus,
-          errorMessage: currentFailure,
-        })}
-      </Text>
-      {progress !== null && data.overallStatus !== "ready" ? (
-        <View
-          style={styles.progressTrack}
-          testID="processing-status-progress"
-          accessibilityRole="progressbar"
-          accessibilityLabel="Processing progress"
-          accessibilityValue={{ min: 0, max: 100, now: progress }}
-        >
-          <View style={[styles.progressFill, { width: `${progress}%` }]} />
-        </View>
-      ) : null}
-    </View>
+    <SourceProcessingStatusCard
+      contextLabel={contextLabel}
+      heading={heading}
+      message={statusMessage}
+      progress={progress}
+      status={data.overallStatus}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: colors.surface,
-    borderColor: colors.surfaceSecondary,
-    borderLeftWidth: 4,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    gap: spacing.xs,
-    padding: spacing.sm,
-  },
-  contextLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-  },
-  heading: { color: colors.text, fontSize: 14, fontWeight: "700" },
-  message: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
-  progressTrack: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.full,
-    height: 6,
-    marginTop: spacing.xs,
-    overflow: "hidden",
-  },
-  progressFill: { backgroundColor: colors.accent, height: 6 },
-  failed: { borderLeftColor: colors.negative },
-});
-
-const borderStyleByStatus = StyleSheet.create({
-  ready: { borderLeftColor: colors.positive },
-  waiting: { borderLeftColor: colors.accent },
-  active: { borderLeftColor: colors.accent },
-  partial: { borderLeftColor: colors.accent },
-  delayed: { borderLeftColor: colors.warning },
-  blocked: { borderLeftColor: colors.negative },
-  failed: { borderLeftColor: colors.negative },
-  cancelled: { borderLeftColor: colors.textTertiary },
-});

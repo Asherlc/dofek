@@ -234,8 +234,16 @@ describe("Dashboard", () => {
       },
       expect.any(Object),
     );
-    expect(screen.getByText("Processing is taking longer than expected")).toBeTruthy();
-    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(
+      screen.getByText("Recomputing daily metrics is taking longer than expected", {
+        selector: "span",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("progressbar", {
+        name: "Recomputing daily metrics is taking longer than expected",
+      }),
+    ).toBeTruthy();
   });
 
   it("does not enable insights during the initial core dashboard load", () => {

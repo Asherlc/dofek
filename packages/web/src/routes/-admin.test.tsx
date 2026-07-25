@@ -13,6 +13,11 @@ vi.mock("../lib/auth-context.tsx", () => ({
   useAuth: mockUseAuth,
 }));
 
+vi.mock("../lib/processing-alerts-context.tsx", () => ({
+  ProcessingAlertsProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useActiveProcessingAlertCount: () => 0,
+}));
+
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     admin: {
