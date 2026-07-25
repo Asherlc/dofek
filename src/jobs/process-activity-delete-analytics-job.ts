@@ -7,7 +7,7 @@ import {
   waitForPeerDbProviderDeletes,
 } from "../analytics/activity-read-model-build.ts";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
-import { queryCache } from "../lib/cache.ts";
+import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import type { ActivityAnalyticsJobData } from "./queues.ts";
 
@@ -35,7 +35,7 @@ async function rebuildActivityAnalytics(
   await updateActivityAnalyticsProgress(job, 60, "Rebuilding activity analytics...");
   await runActivityReadModelBuild();
   await updateActivityAnalyticsProgress(job, 90, "Invalidating activity analytics cache...");
-  await queryCache.invalidateByPrefix(`${userId}:`);
+  await invalidateAllUserQueries(userId);
   logger.info(logMessage);
   await updateActivityAnalyticsProgress(job, 100, "Activity analytics refresh complete.");
 }
@@ -56,7 +56,7 @@ export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJo
       await updateActivityAnalyticsProgress(job, 60, "Rebuilding provider analytics...");
       await runProviderDeleteReadModelBuild();
       await updateActivityAnalyticsProgress(job, 90, "Invalidating provider analytics cache...");
-      await queryCache.invalidateByPrefix(`${userId}:`);
+      await invalidateAllUserQueries(userId);
       logger.info(
         `[provider-delete-analytics] Refreshed all read models after deleting provider ${job.data.providerId} for user ${userId}`,
       );

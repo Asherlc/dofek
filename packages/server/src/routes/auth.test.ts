@@ -74,6 +74,7 @@ vi.mock("../auth/account-linking.ts", () => ({
 }));
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: vi.fn(() => Promise.resolve()),
   queryCache: { invalidateByPrefix: vi.fn(() => Promise.resolve()) },
 }));
 
@@ -133,7 +134,7 @@ import cookieParser from "cookie-parser";
 import { revokeToken } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
 import { loadTokens } from "dofek/db/tokens";
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { getAllProviders } from "dofek/providers/registry";
 import { isWebhookProvider, type SyncProvider } from "dofek/providers/types";
 import express from "express";
@@ -1250,6 +1251,7 @@ describe("createAuthRouter", () => {
       const executeCalls = vi.mocked(fakeDb.execute).mock.calls;
       // Should have at least 2 calls: installation insert + auth_account insert
       expect(executeCalls.length).toBeGreaterThanOrEqual(2);
+      expect(invalidateAllUserQueries).toHaveBeenCalledWith("real-user-id");
 
       fetchSpy.mockRestore();
       delete process.env.SLACK_CLIENT_ID;

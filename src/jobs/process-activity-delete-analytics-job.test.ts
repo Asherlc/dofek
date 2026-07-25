@@ -37,9 +37,7 @@ vi.mock("../db/clickhouse.ts", () => ({
 }));
 
 vi.mock("../lib/cache.ts", () => ({
-  queryCache: {
-    invalidateByPrefix: (...args: unknown[]) => mockInvalidateByPrefix(...args),
-  },
+  invalidateAllUserQueries: (userId: string) => mockInvalidateByPrefix(`${userId}:`),
 }));
 
 import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
