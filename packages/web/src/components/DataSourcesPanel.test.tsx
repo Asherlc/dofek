@@ -60,6 +60,13 @@ const mockProviderStatsQuery = vi.hoisted(() =>
     error: null,
   })),
 );
+const mockLogsQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  })),
+);
 const mockCaptureException = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/trpc.ts", () => ({
@@ -72,7 +79,7 @@ vi.mock("../lib/trpc.ts", () => ({
         useQuery: mockProvidersQuery,
       },
       providerStats: { useQuery: mockProviderStatsQuery },
-      logs: { useQuery: () => ({ data: [], isLoading: false }) },
+      logs: { useQuery: mockLogsQuery },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
       activeImports: { useQuery: mockActiveImportsQuery },
       triggerSync: { useMutation: mockTriggerSyncUseMutation },
@@ -215,6 +222,8 @@ describe("DataSourcesPanel", () => {
     mockActiveImportsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockProviderStatsQuery.mockReset();
     mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockLogsQuery.mockReset();
+    mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockCaptureException.mockReset();
   });
 
@@ -282,6 +291,45 @@ describe("DataSourcesPanel", () => {
 
     expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
     expect(screen.getByText(refreshError.message)).toBeTruthy();
+  });
+
+  it("shows provider stats failures without hiding known provider cards", () => {
+    const statsError = new Error("Provider statistics are temporarily unavailable");
+    mockProviderStatsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: statsError,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
+    expect(screen.getByText(statsError.message)).toBeTruthy();
+  });
+
+  it("keeps cached sync history on cards when its background refresh fails", () => {
+    const cachedLog = {
+      id: "log-1",
+      providerId: "garmin",
+      dataType: "activities",
+      status: "success",
+      recordCount: 12,
+      errorMessage: null,
+      authFailureReason: null,
+      durationMs: 100,
+      syncedAt: "2026-07-24T12:00:00.000Z",
+    };
+    const logsError = new Error("Sync history refresh failed");
+    mockLogsQuery.mockReturnValue({
+      data: [cachedLog],
+      isLoading: false,
+      error: logsError,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
+    expect(screen.getByText(logsError.message)).toBeTruthy();
   });
 
   it("shows sync-all skipped and failed provider outcomes only on matching cards", async () => {

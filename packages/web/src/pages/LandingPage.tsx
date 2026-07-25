@@ -116,10 +116,21 @@ export interface LandingPageProvider {
 export function LandingPage() {
   const usableProviders = trpc.sync.usableProviders.useQuery();
 
-  return <LandingPageView usableProviders={usableProviders.data ?? []} />;
+  return (
+    <LandingPageView
+      usableProviders={usableProviders.data ?? []}
+      usableProvidersError={usableProviders.error}
+    />
+  );
 }
 
-export function LandingPageView({ usableProviders }: { usableProviders: LandingPageProvider[] }) {
+export function LandingPageView({
+  usableProviders,
+  usableProvidersError,
+}: {
+  usableProviders: LandingPageProvider[];
+  usableProvidersError?: unknown;
+}) {
   const usableProviderIds = new Set(usableProviders.map((provider) => provider.id));
   const featuredProviders = FEATURED_PROVIDERS.filter((provider) =>
     usableProviderIds.has(provider.id),
@@ -130,7 +141,7 @@ export function LandingPageView({ usableProviders }: { usableProviders: LandingP
       <LandingNav />
       <main>
         <HeroSection />
-        <ProviderStrip providers={featuredProviders} />
+        <ProviderStrip providers={featuredProviders} error={usableProvidersError} />
         <PillarsSection />
         <InspectionSection />
         <MobileAppSection />
@@ -487,11 +498,24 @@ function LineChart({ color }: { color: string }) {
   );
 }
 
-function ProviderStrip({ providers }: { providers: FeaturedProvider[] }) {
+function ProviderStrip({ providers, error }: { providers: FeaturedProvider[]; error?: unknown }) {
+  const errorMessage =
+    error instanceof Error && error.message.trim().length > 0
+      ? error.message
+      : "Supported sources are temporarily unavailable.";
+
   return (
     <section id="integrations" className="border-b border-[#dce8df] bg-[#fbfdfb] py-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 sm:px-6">
         <div className="text-sm font-semibold text-[#062f29]">Supported sources</div>
+        {error ? (
+          <div
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+          >
+            {errorMessage}
+          </div>
+        ) : null}
         {providers.length > 0 ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {providers.map(({ id, label, ext }) => (
@@ -509,7 +533,7 @@ function ProviderStrip({ providers }: { providers: FeaturedProvider[] }) {
               </div>
             ))}
           </div>
-        ) : (
+        ) : error ? null : (
           <div className="rounded-lg border border-[#dce8df] bg-white p-5 text-sm text-[#45645b]">
             No supported sources are currently available.
           </div>
