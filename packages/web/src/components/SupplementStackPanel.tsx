@@ -1,6 +1,8 @@
 import { formatNutritionAmount } from "@dofek/format/format";
 import { useState } from "react";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface Supplement {
   name: string;
@@ -118,11 +120,19 @@ export function SupplementStackPanel() {
   const stack = trpc.supplements.list.useQuery();
   const saveMutation = trpc.supplements.save.useMutation({
     onSuccess: () => utils.supplements.list.invalidate(),
+    onError: (error) => {
+      captureException(error, { operation: "supplements.save" });
+    },
+    meta: { errorReportedLocally: true },
   });
 
   const supplements: Supplement[] = stack.data ?? [];
+  const hasCanonicalStack = stack.data !== undefined;
 
   const handleSave = (updated: Supplement[]) => {
+    if (!hasCanonicalStack) {
+      return;
+    }
     saveMutation.mutate({ supplements: updated });
   };
 
@@ -150,12 +160,18 @@ export function SupplementStackPanel() {
     handleSave(updated);
   };
 
-  if (stack.isLoading) {
+  if (stack.isLoading && !hasCanonicalStack) {
     return <div className="h-20 rounded-lg bg-skeleton animate-pulse" />;
+  }
+
+  if (stack.error && !hasCanonicalStack) {
+    return <QueryStatePanel error={stack.error} height={120} />;
   }
 
   return (
     <div className="space-y-3">
+      {stack.error ? <QueryStatePanel error={stack.error} height={72} /> : null}
+
       {supplements.length === 0 && !showAdd && (
         <p className="text-xs text-dim">
           No supplements configured. Add your daily stack and it will be synced as nutrition data.
