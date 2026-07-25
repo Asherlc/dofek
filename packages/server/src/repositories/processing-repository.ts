@@ -238,11 +238,9 @@ export class ProcessingRepository {
       const latest = relevant[0]?.state.datasets.find(
         (dataset) => dataset.datasetKey === datasetKey,
       );
-      const lastReady = relevant.find(({ state }) =>
-        state.datasets.some(
-          (dataset) => dataset.datasetKey === datasetKey && dataset.status === "ready",
-        ),
-      );
+      const lastReadyDataset = relevant
+        .flatMap(({ state }) => state.datasets)
+        .find((dataset) => dataset.datasetKey === datasetKey && dataset.status === "ready");
       const contract = DATASET_CONTRACTS.find((candidate) => candidate.key === datasetKey);
       if (!contract) throw new Error(`Missing processing dataset contract for ${datasetKey}`);
       return {
@@ -252,10 +250,7 @@ export class ProcessingRepository {
         currentStage: latest?.currentStage ?? null,
         progressPercentage: latest?.progressPercentage ?? null,
         lastAdvancedAt: latest?.lastAdvancedAt?.toISOString() ?? null,
-        lastReadyAt:
-          lastReady?.state.datasets
-            .find((dataset) => dataset.datasetKey === datasetKey)
-            ?.lastAdvancedAt?.toISOString() ?? null,
+        lastReadyAt: lastReadyDataset?.lastAdvancedAt?.toISOString() ?? null,
       };
     });
     return {

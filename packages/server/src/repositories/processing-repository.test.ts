@@ -513,8 +513,85 @@ describe("ProcessingRepository", () => {
         expect.objectContaining({
           providerLabel: "Garmin Dump",
           title: "Garmin Dump file wasn’t imported",
+          message:
+            "Dofek couldn’t finish importing the Garmin Dump file. Check that you selected the correct file, then import it again.",
           action: "retry_import",
           actionLabel: "Import Garmin Dump again",
+        }),
+      ],
+    });
+  });
+
+  it("retries a provider sync when the dataset failed without a matching failure event", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "garmin",
+        kind: "provider_sync",
+        events: [event(1, { stage: "ingest", status: "succeeded" })],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        expect.objectContaining({
+          title: "Garmin activities wasn’t updated",
+          action: "retry_sync",
+        }),
+      ],
+    });
+  });
+
+  it("uses dataset-specific guidance when provider analytics fail", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "garmin",
+        kind: "provider_sync",
+        events: [
+          event(1, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+            errorCode: "analytics_failed",
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        expect.objectContaining({
+          title: "Garmin activities wasn’t updated",
+          message:
+            "Your Garmin data synced, but Dofek couldn’t update activities. Your previously synced data is still available.",
+          action: "retry_sync",
         }),
       ],
     });
@@ -530,7 +607,7 @@ describe("ProcessingRepository", () => {
             stage: "ingest",
             status: "failed",
             datasetKey: "activity",
-            errorCode: "provider_sync_failed",
+            errorCode: "request_failed",
           }),
         ],
       }),
@@ -559,6 +636,242 @@ describe("ProcessingRepository", () => {
           actionLabel: "Reconnect WHOOP (Cloud)",
         }),
       ],
+    });
+  });
+
+  it("directs a provider-level sync failure to reconnect even after ingestion", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "whoop",
+        kind: "provider_sync",
+        events: [
+          event(1, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+            errorCode: "provider_sync_failed",
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        expect.objectContaining({
+          title: "WHOOP (Cloud) couldn’t sync",
+          action: "reconnect",
+        }),
+      ],
+    });
+  });
+
+  it("uses the latest matching failure when operation events cover several datasets", async () => {
+    const latestFailureAt = new Date("2026-07-22T17:45:00.000Z");
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: null,
+        events: [
+          event(1, {
+            stage: "ingest",
+            status: "failed",
+            datasetKey: "activity",
+            occurredAt: new Date("2026-07-22T17:00:00.000Z"),
+          }),
+          event(2, {
+            stage: "analytics",
+            status: "succeeded",
+            datasetKey: "activity",
+            occurredAt: new Date("2026-07-22T17:50:00.000Z"),
+          }),
+          event(3, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "sleep",
+            occurredAt: new Date("2026-07-22T17:55:00.000Z"),
+          }),
+          event(4, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: null,
+            occurredAt: latestFailureAt,
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        {
+          id: `${operationId}:activity`,
+          providerId: null,
+          providerLabel: null,
+          datasetKey: "activity",
+          occurredAt: latestFailureAt.toISOString(),
+          title: "Activities wasn’t updated",
+          message:
+            "Dofek imported your file, but couldn’t update activities. Your previously imported data is still available.",
+          action: "retry_import",
+          actionLabel: "Import the file again",
+        },
+      ],
+    });
+  });
+
+  it("uses generic import guidance and the operation time when no failure event is available", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: null,
+        events: [event(1, { stage: "ingest", status: "succeeded" })],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "ingest",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: null,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        expect.objectContaining({
+          occurredAt: "2026-07-22T18:00:00.000Z",
+          title: "Activities wasn’t updated",
+          message:
+            "Dofek imported your file, but couldn’t update activities. Your previously imported data is still available.",
+          actionLabel: "Import the file again",
+        }),
+      ],
+    });
+  });
+
+  it("falls back to support guidance for a failed recomputation", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "garmin",
+        kind: "recompute",
+        events: [
+          event(1, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+          }),
+        ],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [
+        {
+          id: `${operationId}:activity`,
+          providerId: "garmin",
+          providerLabel: "Garmin",
+          datasetKey: "activity",
+          occurredAt: "2026-07-22T18:00:00.000Z",
+          title: "Activities wasn’t updated",
+          message:
+            "Dofek couldn’t update activities. Your existing data is still available. Contact support for help.",
+          action: "contact_support",
+          actionLabel: "Contact support",
+        },
+      ],
+    });
+  });
+
+  it("omits a failed dataset alert when its operation is no longer available", async () => {
+    const repository = new ProcessingRepository(database, userId);
+    vi.spyOn(repository, "status").mockResolvedValue({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      scope: { providerId: null, datasets: ["activity"] },
+      overallStatus: "failed",
+      datasets: [
+        {
+          key: "activity",
+          label: "Activities",
+          status: "failed",
+          currentStage: "analytics",
+          progressPercentage: null,
+          lastAdvancedAt: "2026-07-22T18:00:00.000Z",
+          lastReadyAt: null,
+        },
+      ],
+      operations: [],
+    });
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [],
+    });
+  });
+
+  it("alerts when a dataset is blocked", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([operation()]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "blocked",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "analytics",
+          status: "blocked",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    await expect(repository.alerts()).resolves.toEqual({
+      generatedAt: "2026-07-22T18:00:00.000Z",
+      alerts: [expect.objectContaining({ datasetKey: "activity", action: "retry_import" })],
     });
   });
 
@@ -656,16 +969,16 @@ describe("ProcessingRepository", () => {
       datasets: [
         {
           datasetKey: "activity",
-          currentStage: "cache_refresh",
-          status: "ready",
-          progressPercentage: 100,
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
           lastAdvancedAt: now,
         },
         {
           datasetKey: "sleep",
-          currentStage: "cdc",
-          status: "failed",
-          progressPercentage: null,
+          currentStage: "cache_refresh",
+          status: "ready",
+          progressPercentage: 100,
           lastAdvancedAt: now,
         },
       ],
@@ -676,7 +989,7 @@ describe("ProcessingRepository", () => {
 
     expect(result.operations[0]).toEqual(
       expect.objectContaining({
-        status: "ready",
+        status: "failed",
         datasets: ["activity"],
         timeline: [
           expect.objectContaining({ datasetKey: null }),
@@ -684,6 +997,39 @@ describe("ProcessingRepository", () => {
         ],
       }),
     );
+  });
+
+  it("does not include an unrequested dataset failure in operation status", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        datasetKeys: ["activity", "sleep"],
+        outputManifest: { activity: ["relational"], sleep: ["relational"] },
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "cache_refresh",
+          status: "ready",
+          progressPercentage: 100,
+          lastAdvancedAt: now,
+        },
+        {
+          datasetKey: "sleep",
+          currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+    const repository = new ProcessingRepository(database, userId);
+
+    const result = await repository.status({ datasets: ["activity"] });
+
+    expect(result.operations[0]?.status).toBe("ready");
   });
 
   it("delegates history with the authenticated user and pagination", async () => {
