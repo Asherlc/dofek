@@ -37,6 +37,7 @@
     "react": "19.2.3",
     "react-body-highlighter": "2.0.5",
     "react-dom": "19.2.3",
+    "react-spinners": "0.17.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

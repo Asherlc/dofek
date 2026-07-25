@@ -46,6 +46,13 @@ const activeSnapshot: ProcessingStatusSnapshot = {
 };
 const activeDataset = activeSnapshot.datasets.at(0);
 if (!activeDataset) throw new Error("Expected the processing story to include a dataset");
+const longRecomputeDatasetLabels = [
+  ["activity", "Activities"],
+  ["sleep", "Sleep"],
+  ["recovery", "Recovery"],
+  ["training", "Training"],
+  ["body", "Body"],
+] satisfies ReadonlyArray<readonly [string, string]>;
 
 const meta = {
   title: "State/ProcessingStatusWidget",
@@ -85,6 +92,26 @@ export const TrainingUpdate: Story = {
           label: "Training",
         },
       ],
+    },
+  },
+};
+export const LongRecompute: Story = {
+  name: "Long recompute",
+  args: {
+    data: {
+      ...activeSnapshot,
+      scope: {
+        providerId: null,
+        datasets: ["activity", "sleep", "recovery", "training", "body"],
+      },
+      overallStatus: "delayed",
+      datasets: longRecomputeDatasetLabels.map(([key, label]) => ({
+        ...activeDataset,
+        key,
+        label,
+        status: "delayed",
+        progressPercentage: null,
+      })),
     },
   },
 };
