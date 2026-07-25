@@ -1,3 +1,7 @@
+import type {
+  MacroNutritionSummary,
+  SelectedDateNutritionSummary,
+} from "@dofek/nutrition/selected-date-summary";
 import type { Database } from "dofek/db";
 import {
   nullableNutrientAmountEntriesFromLegacyFields,
@@ -80,6 +84,18 @@ const dailyNutritionSummaryRowSchema = dailyTotalsRowSchema.extend({
   source_providers: z.array(z.string()),
 });
 
+const selectedDateNutritionTotalsRowSchema = z.object({
+  calories: z.coerce.number(),
+  protein_g: z.coerce.number(),
+  carbs_g: z.coerce.number(),
+  fat_g: z.coerce.number(),
+  breakfast_calories: z.coerce.number(),
+  lunch_calories: z.coerce.number(),
+  dinner_calories: z.coerce.number(),
+  snack_calories: z.coerce.number(),
+  other_calories: z.coerce.number(),
+});
+
 const foodSearchRowSchema = z.object({
   food_name: z.string(),
   food_description: z.string().nullable(),
@@ -113,6 +129,7 @@ export type DailyTotalsRow = z.infer<typeof dailyTotalsRowSchema>;
 export type DailyNutritionSummaryRow = z.infer<typeof dailyNutritionSummaryRowSchema>;
 export type FoodSearchRow = z.infer<typeof foodSearchRowSchema>;
 export type HealthKitWriteBackFoodEntryRow = z.infer<typeof healthKitWriteBackFoodEntryRowSchema>;
+type SelectedDateNutritionTotalsRow = z.infer<typeof selectedDateNutritionTotalsRowSchema>;
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -218,6 +235,48 @@ export class DailyNutritionSummary {
   get sourceProviders(): string[] {
     return this.#row.source_providers;
   }
+}
+
+function summarizeMacro(
+  grams: number,
+  caloriesPerGram: number,
+  totalCalories: number,
+): MacroNutritionSummary {
+  const calories = grams * caloriesPerGram;
+  return {
+    grams,
+    calories,
+    percentage: totalCalories > 0 ? Math.round((calories / totalCalories) * 100) : 0,
+  };
+}
+
+function selectedDateNutritionSummary(
+  row: SelectedDateNutritionTotalsRow,
+  calorieGoal: number,
+): SelectedDateNutritionSummary {
+  const remaining = Math.max(calorieGoal - row.calories, 0);
+  const over = Math.max(row.calories - calorieGoal, 0);
+  return {
+    calories: row.calories,
+    mealCalories: {
+      breakfast: row.breakfast_calories,
+      lunch: row.lunch_calories,
+      dinner: row.dinner_calories,
+      snack: row.snack_calories,
+      other: row.other_calories,
+    },
+    calorieGoal: {
+      target: calorieGoal,
+      remaining,
+      over,
+      progressPercentage: Math.min((row.calories / calorieGoal) * 100, 100),
+    },
+    macros: {
+      protein: summarizeMacro(row.protein_g, 4, row.calories),
+      carbs: summarizeMacro(row.carbs_g, 4, row.calories),
+      fat: summarizeMacro(row.fat_g, 9, row.calories),
+    },
+  };
 }
 
 /** A food search result for quick re-logging. */
@@ -457,6 +516,54 @@ export class FoodRepository {
           ORDER BY meal ASC, food_name ASC`,
     );
     return rows.map((row) => new FoodEntry(row));
+  }
+
+  /** Canonical display summary for one selected date. */
+  async nutritionSummaryByDate(
+    date: string,
+    calorieGoal: number,
+  ): Promise<SelectedDateNutritionSummary> {
+    const rows = await executeWithSchema(
+      this.#db,
+      selectedDateNutritionTotalsRowSchema,
+      sql`WITH daily AS (
+            SELECT
+              COALESCE(SUM(calories), 0) AS calories,
+              COALESCE(SUM(protein_g), 0) AS protein_g,
+              COALESCE(SUM(carbs_g), 0) AS carbs_g,
+              COALESCE(SUM(fat_g), 0) AS fat_g
+            FROM fitness.v_nutrition_daily
+            WHERE user_id = ${this.#userId}
+              AND date = ${date}::date
+          ),
+          meal_totals AS (
+            SELECT
+              COALESCE(meal, 'other') AS meal,
+              COALESCE(SUM(calories), 0) AS calories
+            FROM fitness.v_food_entry_with_nutrition
+            WHERE user_id = ${this.#userId}
+              AND confirmed = true
+              AND date = ${date}::date
+            GROUP BY COALESCE(meal, 'other')
+          ),
+          meals AS (
+            SELECT
+              COALESCE(SUM(calories) FILTER (WHERE meal = 'breakfast'), 0) AS breakfast_calories,
+              COALESCE(SUM(calories) FILTER (WHERE meal = 'lunch'), 0) AS lunch_calories,
+              COALESCE(SUM(calories) FILTER (WHERE meal = 'dinner'), 0) AS dinner_calories,
+              COALESCE(SUM(calories) FILTER (WHERE meal = 'snack'), 0) AS snack_calories,
+              COALESCE(SUM(calories) FILTER (WHERE meal = 'other'), 0) AS other_calories
+            FROM meal_totals
+          )
+          SELECT daily.*, meals.*
+          FROM daily
+          CROSS JOIN meals`,
+    );
+    const row = rows[0];
+    if (!row) {
+      throw new Error(`Failed to aggregate nutrition summary for ${date}`);
+    }
+    return selectedDateNutritionSummary(row, calorieGoal);
   }
 
   /** Get daily calorie/macro totals aggregated by day. */

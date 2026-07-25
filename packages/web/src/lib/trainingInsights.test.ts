@@ -6,7 +6,7 @@ function makeInsight(overrides: Partial<Insight> & Pick<Insight, "id" | "action"
   return {
     type: "conditional",
     confidence: "strong",
-    metric: "next-day HRV",
+    metric: "next-day heart rate variability",
     message: "Test insight",
     detail: "detail",
     whenTrue: { mean: 50, n: 10 },

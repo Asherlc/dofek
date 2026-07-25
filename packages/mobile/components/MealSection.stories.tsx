@@ -29,6 +29,7 @@ const meta = {
         fat_g: 1,
       },
     ],
+    totalCalories: 470,
     onAddFood: (mealKey: string) => void mealKey,
     onDeleteFood: (id: string) => void id,
     deleting: false,
@@ -44,6 +45,7 @@ export const Default: Story = {};
 export const Empty: Story = {
   args: {
     entries: [],
+    totalCalories: 0,
   },
 };
 

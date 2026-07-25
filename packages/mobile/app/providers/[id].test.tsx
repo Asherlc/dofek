@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -240,8 +240,10 @@ const mockInvalidateLogs = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: false });
 const mockSettingsSetMutate = vi.fn();
+const mockSettingsGetGetData = vi.fn();
 const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
+const mockCaptureException = vi.fn();
 const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
   refreshing: false,
   onRefresh: vi.fn(),
@@ -300,10 +302,18 @@ vi.mock("../../lib/trpc", () => ({
         logs: { invalidate: mockInvalidateDetailLogs },
       },
       settings: {
-        get: { setData: mockSettingsGetSetData, invalidate: mockSettingsGetInvalidate },
+        get: {
+          getData: mockSettingsGetGetData,
+          setData: mockSettingsGetSetData,
+          invalidate: mockSettingsGetInvalidate,
+        },
       },
     }),
   },
+}));
+
+vi.mock("../../lib/telemetry", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
 vi.mock("../../modules/health-kit", () => ({
@@ -1099,8 +1109,10 @@ describe("ProviderDetailScreen", () => {
       mockLogsQuery.mockReturnValue({ data: [], isLoading: false });
       mockSettingsGetQuery.mockReturnValue({ data: null, isLoading: false });
       mockSettingsSetMutate.mockReset();
+      mockSettingsGetGetData.mockReset();
       mockSettingsGetSetData.mockReset();
       mockSettingsGetInvalidate.mockReset();
+      mockCaptureException.mockReset();
     });
 
     it("renders wear location picker when providerId is whoop", async () => {
@@ -1153,7 +1165,10 @@ describe("ProviderDetailScreen", () => {
 
       expect(mockSettingsSetMutate).toHaveBeenCalledWith(
         { key: "whoop.wearLocation", value: "bicep" },
-        expect.objectContaining({ onSettled: expect.any(Function) }),
+        expect.objectContaining({
+          onError: expect.any(Function),
+          onSettled: expect.any(Function),
+        }),
       );
     });
 
@@ -1167,6 +1182,62 @@ describe("ProviderDetailScreen", () => {
         { key: "whoop.wearLocation" },
         { key: "whoop.wearLocation", value: "chest" },
       );
+    });
+
+    it("restores the exact cached location and displays the server error when a write fails", async () => {
+      const previousSetting = { key: "whoop.wearLocation", value: "bicep" };
+      mockSettingsGetQuery.mockReturnValue({
+        data: previousSetting,
+        error: null,
+        isLoading: false,
+      });
+      mockSettingsGetGetData.mockReturnValue(previousSetting);
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Chest / Torso"));
+      const options = mockSettingsSetMutate.mock.calls[0]?.[1];
+      const writeError = new Error("Wear location was not saved.");
+      act(() => options.onError(writeError));
+      act(() => options.onSettled());
+
+      expect(mockSettingsGetSetData).toHaveBeenLastCalledWith(
+        { key: "whoop.wearLocation" },
+        previousSetting,
+      );
+      expect(mockSettingsGetInvalidate).toHaveBeenCalledWith({ key: "whoop.wearLocation" });
+      expect(screen.getByText(writeError.message)).toBeTruthy();
+      expect(mockCaptureException).toHaveBeenCalledWith(writeError, {
+        context: "whoop-wear-location-write",
+      });
+      expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps cached location visible and displays an exact background read error", async () => {
+      const readError = new Error("Wear location could not be loaded.");
+      mockSettingsGetQuery.mockReturnValue({
+        data: { key: "whoop.wearLocation", value: "bicep" },
+        error: readError,
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(
+        screen
+          .getByRole("button", {
+            name: "Bicep / Upper Arm, Bicep band, arm sleeve, or impact sleeve",
+          })
+          .getAttribute("aria-selected"),
+      ).toBe("true");
+      expect(screen.getByText(readError.message)).toBeTruthy();
+      await waitFor(() =>
+        expect(mockCaptureException).toHaveBeenCalledWith(readError, {
+          context: "whoop-wear-location-read",
+        }),
+      );
+      expect(mockCaptureException).toHaveBeenCalledTimes(1);
     });
   });
 });
