@@ -3,8 +3,7 @@ import { formatNutritionNumber } from "@dofek/format/format";
 interface MacroBarProps {
   label: string;
   grams: string;
-  caloriesFromMacro: number;
-  totalCalories: number;
+  percentage: number;
   color: "blue" | "amber" | "red";
 }
 
@@ -14,8 +13,7 @@ const colorMap = {
   red: { bar: "bg-red-500", text: "text-red-400" },
 } as const;
 
-export function MacroBar({ label, grams, caloriesFromMacro, totalCalories, color }: MacroBarProps) {
-  const percentage = totalCalories > 0 ? Math.round((caloriesFromMacro / totalCalories) * 100) : 0;
+export function MacroBar({ label, grams, percentage, color }: MacroBarProps) {
   const { bar, text } = colorMap[color];
 
   return (
@@ -30,7 +28,7 @@ export function MacroBar({ label, grams, caloriesFromMacro, totalCalories, color
       <div className="h-2 rounded-full bg-accent/10 overflow-hidden">
         <div
           className={`h-full rounded-full ${bar} transition-all duration-300`}
-          style={{ width: `${Math.min(percentage, 100)}%` }}
+          style={{ width: `${percentage}%` }}
         />
       </div>
     </div>

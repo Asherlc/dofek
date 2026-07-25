@@ -106,7 +106,76 @@ describe("Food router", () => {
       expect(result.result.data).toBeDefined();
       const data = result.result.data;
       // Should contain the entries we created above
-      expect(data.length).toBeGreaterThanOrEqual(2);
+      expect(data.entries.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("aggregates nutrient rows into canonical daily, meal, goal, and macro metrics", async () => {
+      const date = "2025-04-12";
+      const uniqueSuffix = crypto.randomUUID();
+      const breakfastId = crypto.randomUUID();
+      const lunchId = crypto.randomUUID();
+      const otherId = crypto.randomUUID();
+      const unconfirmedId = crypto.randomUUID();
+      await testCtx.db.execute(sql`
+        INSERT INTO fitness.user_settings (user_id, key, value)
+        VALUES (${TEST_USER_ID}, 'calorieGoal', '1600'::jsonb)
+        ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
+      `);
+      await testCtx.db.execute(sql`
+        INSERT INTO fitness.food_entry (
+          id, user_id, provider_id, external_id, date, meal, food_name, confirmed
+        )
+        VALUES
+          (${breakfastId}, ${TEST_USER_ID}, 'dofek', ${`summary-breakfast-${uniqueSuffix}`}, ${date}::date, 'breakfast', 'Summary breakfast', true),
+          (${lunchId}, ${TEST_USER_ID}, 'dofek', ${`summary-lunch-${uniqueSuffix}`}, ${date}::date, 'lunch', 'Summary lunch', true),
+          (${otherId}, ${TEST_USER_ID}, 'dofek', ${`summary-other-${uniqueSuffix}`}, ${date}::date, NULL, 'Summary other', true),
+          (${unconfirmedId}, ${TEST_USER_ID}, 'dofek', ${`summary-unconfirmed-${uniqueSuffix}`}, ${date}::date, 'dinner', 'Unconfirmed summary dinner', false)
+      `);
+      await testCtx.db.execute(sql`
+        INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+        VALUES
+          (${breakfastId}, 'calories', 400),
+          (${breakfastId}, 'protein', 25),
+          (${breakfastId}, 'carbohydrate', 35),
+          (${breakfastId}, 'fat', 18),
+          (${lunchId}, 'calories', 500),
+          (${lunchId}, 'protein', 25),
+          (${lunchId}, 'carbohydrate', 60),
+          (${lunchId}, 'fat', 18),
+          (${otherId}, 'calories', 100),
+          (${otherId}, 'protein', 5),
+          (${otherId}, 'carbohydrate', 10),
+          (${otherId}, 'fat', 4),
+          (${unconfirmedId}, 'calories', 900),
+          (${unconfirmedId}, 'protein', 90),
+          (${unconfirmedId}, 'carbohydrate', 90),
+          (${unconfirmedId}, 'fat', 60)
+      `);
+
+      const result = await query("food.byDate", { date });
+
+      expect(result.result.data.entries).toHaveLength(3);
+      expect(result.result.data.summary).toEqual({
+        calories: 1000,
+        mealCalories: {
+          breakfast: 400,
+          lunch: 500,
+          dinner: 0,
+          snack: 0,
+          other: 100,
+        },
+        calorieGoal: {
+          target: 1600,
+          remaining: 600,
+          over: 0,
+          progressPercentage: 62.5,
+        },
+        macros: {
+          protein: { grams: 55, calories: 220, percentage: 22 },
+          carbs: { grams: 105, calories: 420, percentage: 42 },
+          fat: { grams: 40, calories: 360, percentage: 36 },
+        },
+      });
     });
   });
 
@@ -281,7 +350,7 @@ describe("Food router", () => {
 
       // Verify it's gone
       const entries = await query("food.byDate", { date: "2025-02-01" });
-      const remaining: Array<{ id: string }> = entries.result.data;
+      const remaining: Array<{ id: string }> = entries.result.data.entries;
       const found = remaining.find((e) => e.id === entryId);
       expect(found).toBeUndefined();
     });
@@ -306,7 +375,7 @@ describe("Food router", () => {
       expect(deleteResult.result.data.success).toBe(true);
 
       const entries = await query("food.byDate", { date: "2025-02-03" });
-      const remaining: Array<{ id: string }> = entries.result.data;
+      const remaining: Array<{ id: string }> = entries.result.data.entries;
       expect(remaining.some((entry) => entry.id === firstId)).toBe(false);
       expect(remaining.some((entry) => entry.id === secondId)).toBe(true);
     });
@@ -321,14 +390,14 @@ describe("Food router", () => {
       const cachedEntryId: string = created.result.data.id;
 
       const beforeDelete = await query("food.byDate", { date: "2025-02-05" });
-      const cachedEntries: Array<{ id: string }> = beforeDelete.result.data;
+      const cachedEntries: Array<{ id: string }> = beforeDelete.result.data.entries;
       expect(cachedEntries.some((entry) => entry.id === cachedEntryId)).toBe(true);
 
       const deleteResult = await mutate("food.delete", { id: cachedEntryId });
       expect(deleteResult.result.data.success).toBe(true);
 
       const afterDelete = await query("food.byDate", { date: "2025-02-05" });
-      const remainingEntries: Array<{ id: string }> = afterDelete.result.data;
+      const remainingEntries: Array<{ id: string }> = afterDelete.result.data.entries;
       expect(remainingEntries.some((entry) => entry.id === cachedEntryId)).toBe(false);
     });
 

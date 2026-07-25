@@ -16,12 +16,12 @@ import {
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
 import { openExternalUrl } from "../../lib/open-external-url";
-import { safeParseRows } from "../../lib/safe-parse";
+import { safeParseData } from "../../lib/safe-parse";
 import { captureException, logger } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
-import { type FoodEntryRow, FoodEntrySchema } from "../../types/api";
+import { FoodByDateSchema, type FoodEntryRow } from "../../types/api";
 import { type LoggerTab, TABS } from "../food/add-types";
 
 const MEALS = [
@@ -63,10 +63,6 @@ export default function FoodScreen() {
   }, []);
 
   const trpcUtils = trpc.useUtils();
-  const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
-  const calorieGoal =
-    typeof calorieGoalQuery.data?.value === "number" ? calorieGoalQuery.data.value : 2000;
-
   const foodQuery = trpc.food.byDate.useQuery(
     { date: dateString },
     { placeholderData: (previousData) => previousData },
@@ -79,31 +75,21 @@ export default function FoodScreen() {
     onSuccess: () => foodQuery.refetch(),
   });
 
-  const foodRows =
+  const foodResponse =
     foodQuery.data === undefined && (foodQuery.isLoading || foodQuery.isFetching)
-      ? []
+      ? undefined
       : foodQuery.data;
-  const entriesParsed = safeParseRows(FoodEntrySchema, foodRows, "food:byDate");
-  const entries = entriesParsed.data;
+  const selectedDateFood =
+    foodResponse === undefined
+      ? { data: undefined, error: null }
+      : safeParseData(FoodByDateSchema, foodResponse, "food:byDate");
+  const entries = selectedDateFood.data?.entries ?? [];
+  const summary = selectedDateFood.data?.summary;
   const isFoodBlockingLoading = shouldShowBlockingLoading({
     data: entries,
     isFetching: foodQuery.isFetching,
     isLoading: foodQuery.isLoading,
   });
-
-  const dailyTotals = useMemo(() => {
-    let totalCalories = 0;
-    let totalProtein = 0;
-    let totalCarbs = 0;
-    let totalFat = 0;
-    for (const entry of entries) {
-      totalCalories += entry.calories ?? 0;
-      totalProtein += entry.protein_g ?? 0;
-      totalCarbs += entry.carbs_g ?? 0;
-      totalFat += entry.fat_g ?? 0;
-    }
-    return { totalCalories, totalProtein, totalCarbs, totalFat };
-  }, [entries]);
 
   const mealGroups = useMemo(() => {
     const groups = new Map<string, FoodEntryRow[]>();
@@ -195,11 +181,7 @@ export default function FoodScreen() {
   }
 
   const { refreshing, onRefresh } = useRefresh({
-    invalidate: () =>
-      Promise.all([
-        trpcUtils.food.byDate.invalidate({ date: dateString }),
-        trpcUtils.settings.get.invalidate({ key: "calorieGoal" }),
-      ]).then(() => undefined),
+    invalidate: () => trpcUtils.food.byDate.invalidate({ date: dateString }),
   });
   const aiLoggingInProgress = analyzeItemsMutation.isPending || createAiEntryMutation.isPending;
 
@@ -370,17 +352,17 @@ export default function FoodScreen() {
           </TouchableOpacity>
         )}
 
-        <MacroSummary
-          calories={dailyTotals.totalCalories}
-          caloriesGoal={calorieGoal}
-          proteinGrams={Math.round(dailyTotals.totalProtein)}
-          carbsGrams={Math.round(dailyTotals.totalCarbs)}
-          fatGrams={Math.round(dailyTotals.totalFat)}
-        />
+        {summary && (
+          <MacroSummary
+            calories={summary.calories}
+            calorieGoal={summary.calorieGoal}
+            macros={summary.macros}
+          />
+        )}
 
         {isFoodBlockingLoading ? (
           <Text style={styles.loadingText}>Loading...</Text>
-        ) : foodQuery.isError || entriesParsed.error ? (
+        ) : foodQuery.isError || selectedDateFood.error || !summary ? (
           <Text style={styles.errorText}>Failed to load food entries.</Text>
         ) : (
           MEALS.map(({ key, label }) => (
@@ -389,6 +371,7 @@ export default function FoodScreen() {
               mealName={label}
               mealKey={key}
               entries={mealGroups.get(key) ?? []}
+              totalCalories={summary.mealCalories[key]}
               onAddFood={handleAddFood}
               onDeleteFood={handleDeleteFood}
               deleting={deleteMutation.isPending}
