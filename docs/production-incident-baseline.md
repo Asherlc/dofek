@@ -16335,6 +16335,82 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   CI project name across dependency startup, migrations, analytics, logs, and
   teardown before merging the fix.
 
+## 2026-07-24 — Malformed Metric-stream Events Had No Durable Quarantine
+
+- **Status:** Fixed and validated locally; hosted CI remains the merge gate.
+- **Symptoms:** A malformed JSON or schema-incompatible Redpanda event could
+  not reach ClickHouse. The current consumer correctly stopped before resolving
+  its batch, but the poison record then blocked that partition indefinitely
+  because there was no durable failure path.
+- **User impact:** Earlier consumer behavior could permanently discard malformed
+  sensor events by committing their offsets. The intermediate fail-closed
+  behavior prevented new loss but could indefinitely stall later valid sensor
+  events in the same partition.
+- **Evidence:** The regression batch contains malformed offset `0` followed by
+  valid offset `1`. When quarantine returns `quarantine unavailable`, the real
+  Redpanda group remains at offset `0`, the ClickHouse handler is not called,
+  and a restarted consumer sees offset `0` again. The first integration-harness
+  fatal line was `REDPANDA_BROKERS is required for metric-stream integration
+  tests`: `pnpm test:integration` generated the workspace broker URL but
+  stripped it before Vitest and did not start Redpanda.
+- **Root cause:** The ClickHouse consumer had only success or retry states; it
+  had no bounded durable quarantine outcome that could safely satisfy a poison
+  record before advancing the source offset. The integration tier also omitted
+  its existing Redpanda prerequisite.
+- **Fix / mitigation:** Added a Kafka-backed quarantine topic with enforced
+  delete cleanup, seven-day and 1-GiB-per-partition retention bounds, exact raw
+  payload bytes, source/error headers, and all-in-sync-replica acknowledgement.
+  The consumer now resolves a batch only after quarantine and ClickHouse both
+  succeed. The integration wrapper starts the workspace Redpanda service and
+  passes its generated broker address through the validated test environment.
+  No retry, timeout, skipped check, or warn-and-continue behavior was added.
+- **Validation:** Unit regressions cover quarantine failure, successful
+  quarantine-before-sink ordering, full replay context, tombstones, and a later
+  valid event behind an unhandled poison record. A real Redpanda integration
+  test proves offset `0` remains replayable after quarantine failure, then
+  verifies the restarted group commits offset `2` only after the quarantine
+  record is readable and the valid event is handled. It also reads back the
+  enforced topic retention configuration.
+- **Remaining risk / follow-up:** Quarantine is intentionally bounded, so
+  operators must monitor and repair records within seven days or before a
+  partition exceeds 1 GiB. Add quarantine topic volume/age alerting if
+  malformed-event frequency becomes operationally significant.
+
+## 2026-07-24 — Local Unsharded Integration Validation Exhausted Dependencies
+
+- **Status:** Local validation environment diagnosed; affected suites are being
+  rerun in bounded groups and hosted sharded CI remains the merge gate.
+- **Symptoms:** The full unsharded integration command reported FIT provider
+  failures, ClickHouse memory-limit errors, and later Postgres recovery errors.
+- **User impact:** No production impact. Local validation for issue #1775 was
+  interrupted after 103 integration files and 989 tests passed.
+- **Evidence:** The first independent fatal lines were `Unable to start the
+  native FIT decoder` and ClickHouse
+  `MEMORY_LIMIT_EXCEEDED`. The workspace ClickHouse container had restarted by
+  the post-run inspection; Postgres then reported `database system is in
+  recovery mode` during the same resource-heavy sequential run.
+- **Root cause:** The host did not have the repository's CMake, Ninja, vcpkg,
+  and native decoder prerequisites installed. Separately, the unsharded run
+  exceeded the workspace ClickHouse memory limit and interrupted dependent
+  database work; the activity power-curve suite reproduced the container exit
+  `137` even in a four-file bounded rerun. The
+  repository documents both the native decoder prerequisites and explicit
+  integration tiers in the [testing guide](testing.md#integration-dependencies).
+- **Fix / mitigation:** Installed the documented native toolchain and built the
+  decoder. Recreated only this workspace's affected services through the
+  Compose wrapper and reran the failed suites in bounded groups. No memory
+  limit, timeout, retry, skipped check, or warn-and-continue behavior changed.
+- **Validation:** The metric-stream Redpanda integration test passed against
+  the real broker. All 22 affected Wahoo, Coros, and Suunto FIT tests passed
+  after the native build. Another bounded group covering processing
+  reconciliation, Decathlon, and cycling analytics passed all 13 tests. The
+  activity power-curve rerun captured the remaining local ClickHouse exit
+  before dependent router fixtures could finish; hosted CI supplies the final
+  isolated integration validation.
+- **Remaining risk / follow-up:** Local all-at-once integration execution can
+  still exceed the Docker VM's per-service resources. Prefer the documented
+  changed or bounded integration commands locally and treat the hosted shards
+  as the complete merge gate.
 ## 2026-07-24 — watchOS CI Runner Failed Repository Checkout
 
 - **Status:** Root cause identified; replacement CI pending.
@@ -16357,3 +16433,56 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm checkout and the watchOS build on the
   replacement runner. If runner I/O failures recur, escalate with the failing
   runner evidence rather than adding repository-level retry behavior.
+
+## 2026-07-24 — Quarantine PR Failed Spell Check on KafkaJS API Name
+
+- **Status:** Fixed on PR #1933; replacement CI pending.
+- **Symptoms:** `Test / Spell Check` failed while the durable metric-stream
+  quarantine PR's remaining checks continued.
+- **User impact:** No production impact. PR #1933 was blocked from merging.
+- **Evidence:** The exact failing command was
+  `pnpm exec cspell --no-progress`; its first fatal finding was
+  `src/metric-stream/redpanda-consumer.integration.test.ts:188:7 - Unknown word
+  (acks)`, followed by four occurrences of the same KafkaJS producer option.
+- **Root cause:** The repository dictionary did not contain KafkaJS's canonical
+  `acks` producer field, newly used to require all in-sync replica
+  acknowledgements.
+- **Fix / mitigation:** Added the exact API identifier to the shared spelling
+  dictionary. KafkaJS documents `acks: -1` as the all-replica acknowledgement
+  mode in its [producing guide](https://kafka.js.org/docs/producing).
+- **Validation:** The unchanged source API remains typechecked and covered by
+  unit plus real-broker tests; `pnpm exec cspell --no-progress` passes locally.
+  No source rename, spelling ignore, skipped check, or warning fallback was
+  introduced.
+- **Remaining risk / follow-up:** Require the replacement hosted spell job and
+  the rest of PR #1933's checks to pass before merge.
+
+## 2026-07-24 — Integration Shards Omitted the New Redpanda Prerequisite
+
+- **Status:** Fixed on PR #1933; replacement CI pending.
+- **Symptoms:** `Test / Integration Tests (4/4)` failed while the new durable
+  quarantine regression initialized.
+- **User impact:** No production impact. PR #1933 remained blocked from merge.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=4/4`; its
+  first fatal line was `REDPANDA_BROKERS is required for metric-stream
+  integration tests`. The CI integration job provided Postgres, ClickHouse,
+  and Redis services but no Redpanda service or broker address.
+- **Root cause:** Local integration runs use the Compose environment wrapper,
+  which was updated to start/pass Redpanda. Hosted shards invoke Vitest
+  directly and therefore require their own explicit service and environment
+  wiring.
+- **Fix / mitigation:** Added the repository-pinned Redpanda image as a healthy
+  integration service and passed `REDPANDA_BROKERS=localhost:9092` to all
+  shards. Redpanda documents the single-node container workflow in its
+  [Docker quickstart](https://docs.redpanda.com/current/get-started/quick-start/).
+  No test skip, conditional fallback, retry loop, or warning continuation was
+  added.
+- **Validation:** Actionlint and YAML validation pass locally. A standalone
+  container from the exact service image reached `Healthy: true` with the
+  configured health command, and its node config advertises
+  `127.0.0.1:9092`, matching the hosted port mapping. The same real-broker
+  regression passed through the local integration wrapper; the replacement
+  hosted shard is the final service-wiring proof.
+- **Remaining risk / follow-up:** Require all replacement integration shards
+  and their coverage artifact upload to finish before merge.

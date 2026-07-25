@@ -21,6 +21,7 @@ final class WhoopBleConnectionManager {
     var centralManager: CBCentralManager?
     var cmdResponseCharacteristic: CBCharacteristic?
     var dataCharacteristic: CBCharacteristic?
+    var notificationSubscriptionTracker: WhoopBleNotificationSubscriptionTracker?
     var autoReconnect = false
     var wasStreaming = false
 
@@ -247,6 +248,36 @@ final class WhoopBleConnectionManager {
         cmdCharacteristic = nil
         cmdResponseCharacteristic = nil
         dataCharacteristic = nil
+        notificationSubscriptionTracker = nil
+    }
+
+    /// Applies the asynchronous notification-subscription result to the
+    /// connection handshake. A non-nil return means every requested
+    /// characteristic is notifying and contains the previous streaming intent.
+    func settleNotificationSubscriptionUpdate(
+        _ update: WhoopBleNotificationSubscriptionTracker.UpdateResult,
+        failureDetail: String,
+        cancelPeripheral: () -> Void
+    ) -> Bool? {
+        guard state == .subscribing else { return nil }
+
+        switch update {
+        case .ignored, .waiting:
+            return nil
+        case .failed:
+            abortHandshake(
+                with: .notificationSubscriptionFailed(failureDetail),
+                cancelPeripheral: cancelPeripheral
+            )
+            return nil
+        case .ready:
+            notificationSubscriptionTracker = nil
+            setState(.ready)
+            let previouslyStreaming = wasStreaming
+            wasStreaming = false
+            finishConnect(.success(true))
+            return previouslyStreaming
+        }
     }
 
     /// Keep one timeout active for the complete connect/discovery handshake.
@@ -255,7 +286,9 @@ final class WhoopBleConnectionManager {
         let timeoutWorkItem = DispatchWorkItem { [weak self] in
             guard
                 let self,
-                self.state == .connecting || self.state == .discoveringServices
+                self.state == .connecting
+                    || self.state == .discoveringServices
+                    || self.state == .subscribing
             else { return }
             self.abortHandshake(with: .timeout, cancelPeripheral: cancelPeripheral)
         }
@@ -287,7 +320,11 @@ final class WhoopBleConnectionManager {
         with error: WhoopBleConnectionError,
         cancelPeripheral: () -> Void
     ) {
-        guard state == .connecting || state == .discoveringServices else { return }
+        guard
+            state == .connecting
+                || state == .discoveringServices
+                || state == .subscribing
+        else { return }
         autoReconnect = false
         cancelPeripheral()
         cleanup()

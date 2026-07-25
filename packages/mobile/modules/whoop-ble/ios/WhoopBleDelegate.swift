@@ -86,6 +86,18 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     func peripheral(
         _ peripheral: CBPeripheral,
+        didUpdateNotificationStateFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        connectionManager?.handleNotificationStateUpdated(
+            peripheral,
+            characteristic: characteristic,
+            error: error
+        )
+    }
+
+    func peripheral(
+        _ peripheral: CBPeripheral,
         didWriteValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {

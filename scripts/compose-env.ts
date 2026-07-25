@@ -179,6 +179,7 @@ if (process.argv.includes("--up")) {
       "db",
       "clickhouse",
       "redis",
+      "redpanda",
     ],
     {
       cwd: workspaceDirectory,
