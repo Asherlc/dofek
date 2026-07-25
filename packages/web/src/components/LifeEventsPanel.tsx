@@ -156,9 +156,7 @@ export function LifeEventsPanel() {
       {/* Analysis */}
       {(() => {
         if (!selectedEvent || !eventList || eventList.length === 0) return null;
-        const foundEvent = eventList.find((e) => e.id === selectedEvent);
-        const fallbackEvent = eventList[0];
-        const event = foundEvent ?? fallbackEvent;
+        const event = eventList.find((e) => e.id === selectedEvent);
         if (!event) return null;
         return (
           <>

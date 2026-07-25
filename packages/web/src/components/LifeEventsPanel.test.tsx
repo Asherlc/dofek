@@ -139,6 +139,23 @@ describe("LifeEventsPanel", () => {
     expect(refetch).toHaveBeenCalledOnce();
   });
 
+  it("does not show another event with stale selected-event analysis", () => {
+    mocks.analyzeUseQuery.mockReturnValue({ data: analysisData, error: null, isLoading: false });
+    const { rerender } = render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Started creatine/i }));
+
+    mocks.listUseQuery.mockReturnValue({
+      data: [{ ...event, id: "event-2", label: "Replacement event" }],
+      error: null,
+      isLoading: false,
+    });
+    rerender(<LifeEventsPanel />);
+
+    expect(screen.getByRole("button", { name: /Replacement event/i })).toBeDefined();
+    expect(screen.queryByRole("heading", { name: /Replacement event/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
   it("shows and reports create failures without clearing the form", () => {
     const createError = new Error("Life event was not saved");
     let onError: ((error: unknown) => void) | undefined;
