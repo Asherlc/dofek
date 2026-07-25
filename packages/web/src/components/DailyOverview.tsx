@@ -686,7 +686,7 @@ export function DailyOverview({
         {latestReadiness && readinessIsFresh ? (
           <RecoveryBreakdown readiness={latestReadiness} />
         ) : (
-          <EmptyBreakdown message="Recovery score needs HRV, resting heart rate, and sleep data from a connected wearable." />
+          <EmptyBreakdown message="Recovery score needs heart rate variability, resting heart rate, and sleep data from a connected wearable." />
         )}
       </ExpandableBreakdown>
 

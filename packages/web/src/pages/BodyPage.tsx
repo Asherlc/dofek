@@ -105,7 +105,7 @@ export function BodyPage() {
 
   const spo2Series = useMemo(
     () => ({
-      name: "SpO2",
+      name: "Blood Oxygen Saturation (SpO2)",
       data: metrics.map((d): [string, number | null] => [d.date, d.spo2_avg]),
       color: chartColors.blue,
       areaStyle: true,
@@ -159,16 +159,16 @@ export function BodyPage() {
   // SpO2/temp chart config
   const spo2TempTitle =
     hasSpO2 && hasSkinTemp
-      ? "Blood Oxygen & Skin Temperature"
+      ? "Blood Oxygen Saturation (SpO2) & Skin Temperature"
       : hasSpO2
-        ? "Blood Oxygen (SpO2)"
+        ? "Blood Oxygen Saturation (SpO2)"
         : "Skin Temperature";
 
   const spo2TempYAxis =
     hasSpO2 && hasSkinTemp
-      ? [{ name: "SpO2 (%)", min: 90 }, { name: units.temperatureLabel }]
+      ? [{ name: "Blood Oxygen Saturation (%)", min: 90 }, { name: units.temperatureLabel }]
       : hasSpO2
-        ? [{ name: "SpO2 (%)", min: 90 }]
+        ? [{ name: "Blood Oxygen Saturation (%)", min: 90 }]
         : [{ name: units.temperatureLabel }];
 
   return (

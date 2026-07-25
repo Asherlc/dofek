@@ -12,7 +12,7 @@ const meta = {
   args: {
     metrics: [
       {
-        label: "HRV",
+        label: "Heart Rate Variability (HRV)",
         value: 65,
         avg: 60,
         stddev: 8,
@@ -32,7 +32,7 @@ export const Warning: Story = {
   args: {
     metrics: [
       {
-        label: "HRV",
+        label: "Heart Rate Variability (HRV)",
         value: 48,
         avg: 60,
         stddev: 8,
@@ -46,7 +46,7 @@ export const Destructive: Story = {
   args: {
     metrics: [
       {
-        label: "HRV",
+        label: "Heart Rate Variability (HRV)",
         value: 38,
         avg: 60,
         stddev: 8,
@@ -60,7 +60,7 @@ export const Unknown: Story = {
   args: {
     metrics: [
       {
-        label: "HRV",
+        label: "Heart Rate Variability (HRV)",
         value: null,
         avg: 60,
         stddev: 8,

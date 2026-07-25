@@ -476,23 +476,23 @@ describe("buildSkinTempSeries", () => {
 });
 
 describe("spo2TempSectionConfig", () => {
-  it("returns combined title and dual axes when both SpO2 and skin temp are present", () => {
+  it("returns combined title and dual axes when both blood oxygen and skin temp are present", () => {
     const config = spo2TempSectionConfig(true, true, new UnitConverter("imperial"));
-    expect(config.title).toBe("SpO2 & Skin Temperature");
+    expect(config.title).toBe("Blood Oxygen Saturation (SpO2) & Skin Temperature");
     expect(config.subtitle).toContain("oxygen");
     expect(config.subtitle).toContain("skin");
     expect(config.yAxis).toHaveLength(2);
-    expect(config.yAxis[0]?.name).toBe("SpO2 (%)");
+    expect(config.yAxis[0]?.name).toBe("Blood Oxygen Saturation (%)");
     expect(config.yAxis[1]?.name).toBe("°F");
   });
 
-  it("returns SpO2-only title and single axis when only SpO2 data exists", () => {
+  it("returns blood-oxygen-only title and single axis when only blood oxygen data exists", () => {
     const config = spo2TempSectionConfig(true, false, new UnitConverter("metric"));
-    expect(config.title).toBe("Blood Oxygen (SpO2)");
+    expect(config.title).toBe("Blood Oxygen Saturation (SpO2)");
     expect(config.subtitle).toContain("oxygen");
     expect(config.subtitle).not.toContain("skin");
     expect(config.yAxis).toHaveLength(1);
-    expect(config.yAxis[0]?.name).toBe("SpO2 (%)");
+    expect(config.yAxis[0]?.name).toBe("Blood Oxygen Saturation (%)");
   });
 
   it("returns skin temp-only title and single axis when only skin temp exists", () => {

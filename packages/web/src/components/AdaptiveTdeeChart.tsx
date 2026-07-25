@@ -24,7 +24,7 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
         option={{}}
         loading={loading}
         empty={true}
-        emptyMessage="Need calorie tracking + weight measurements for TDEE estimation"
+        emptyMessage="Need calorie tracking and weight measurements to estimate Total Daily Energy Expenditure (TDEE)"
       />
     );
   }
@@ -62,7 +62,7 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
         { color: chartColors.blue, width: 1, lineStyle: { opacity: 0.5 } },
       ),
       dofekSeries.line(
-        "Estimated TDEE",
+        "Estimated Total Daily Energy Expenditure (TDEE)",
         tdeePoints.map((d) => [d.date, d.estimatedTdee]),
         { color: chartColors.amber, width: 3 },
       ),
@@ -85,7 +85,9 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
       {data.estimatedTdee != null && (
         <div className="flex items-baseline gap-3">
           <span className="text-2xl font-bold text-foreground">{data.estimatedTdee}</span>
-          <span className="text-sm text-muted">kcal/day estimated TDEE</span>
+          <span className="text-sm text-muted">
+            kcal/day estimated total daily energy expenditure (TDEE)
+          </span>
           <span className="text-xs text-dim">
             ({Math.round(data.confidence * 100)}% confidence, {data.dataPoints} data points)
           </span>

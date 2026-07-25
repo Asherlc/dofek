@@ -50,7 +50,7 @@ export const Steps: Story = {
 
 export const HeartRateVariability: Story = {
   args: {
-    series: [{ name: "HRV", data: hrvData, color: chartColors.teal }],
+    series: [{ name: "Heart Rate Variability (HRV)", data: hrvData, color: chartColors.teal }],
     yAxis: [{ name: "ms" }],
   },
 };
@@ -58,10 +58,15 @@ export const HeartRateVariability: Story = {
 export const DualAxis: Story = {
   args: {
     series: [
-      { name: "SpO2", data: spo2Data, color: chartColors.blue, areaStyle: true },
+      {
+        name: "Blood Oxygen Saturation (SpO2)",
+        data: spo2Data,
+        color: chartColors.blue,
+        areaStyle: true,
+      },
       { name: "Skin Temp", data: skinTempData, color: chartColors.amber, yAxisIndex: 1 },
     ],
-    yAxis: [{ name: "SpO2 (%)", min: 90 }, { name: "°C" }],
+    yAxis: [{ name: "Blood Oxygen Saturation (%)", min: 90 }, { name: "°C" }],
   },
 };
 

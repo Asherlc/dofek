@@ -87,7 +87,7 @@ function makeInsight(overrides: Partial<Insight> & Pick<Insight, "id" | "action"
   return {
     type: "conditional",
     confidence: "strong",
-    metric: "next-day HRV",
+    metric: "next-day heart rate variability",
     message: "Test insight",
     detail: "detail",
     whenTrue: { mean: 50, n: 10 },
@@ -131,12 +131,12 @@ describe("TrainingOverview training insights", () => {
         makeInsight({
           id: "training",
           action: "30+ min exercise",
-          message: "Exercise boosts next-day HRV",
+          message: "Exercise boosts next-day heart rate variability",
         }),
         makeInsight({
           id: "sleep",
           action: "7+ hours of sleep",
-          message: "Sleep boosts next-day HRV",
+          message: "Sleep boosts next-day heart rate variability",
         }),
       ],
       isLoading: false,
@@ -147,8 +147,8 @@ describe("TrainingOverview training insights", () => {
     render(<TrainingOverview />);
 
     expect(screen.getByText("Training Insights")).toBeTruthy();
-    expect(screen.getByText("Exercise boosts next-day HRV")).toBeTruthy();
-    expect(screen.queryByText("Sleep boosts next-day HRV")).toBeNull();
+    expect(screen.getByText("Exercise boosts next-day heart rate variability")).toBeTruthy();
+    expect(screen.queryByText("Sleep boosts next-day heart rate variability")).toBeNull();
     expect(screen.getAllByTestId("correlation-card")).toHaveLength(1);
   });
 
@@ -158,7 +158,7 @@ describe("TrainingOverview training insights", () => {
         makeInsight({
           id: "sleep",
           action: "7+ hours of sleep",
-          message: "Sleep boosts next-day HRV",
+          message: "Sleep boosts next-day heart rate variability",
         }),
       ],
       isLoading: false,

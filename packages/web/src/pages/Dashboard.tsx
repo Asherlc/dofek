@@ -80,16 +80,16 @@ export function spo2TempSectionConfig(
 ): { title: string; subtitle: string; yAxis: { name: string; min?: number }[] } {
   if (hasSpO2 && hasSkinTemp) {
     return {
-      title: "SpO2 & Skin Temperature",
+      title: "Blood Oxygen Saturation (SpO2) & Skin Temperature",
       subtitle: "Blood oxygen saturation and wrist skin temperature over time",
-      yAxis: [{ name: "SpO2 (%)", min: 90 }, { name: units.temperatureLabel }],
+      yAxis: [{ name: "Blood Oxygen Saturation (%)", min: 90 }, { name: units.temperatureLabel }],
     };
   }
   if (hasSpO2) {
     return {
-      title: "Blood Oxygen (SpO2)",
+      title: "Blood Oxygen Saturation (SpO2)",
       subtitle: "Blood oxygen saturation over time",
-      yAxis: [{ name: "SpO2 (%)", min: 90 }],
+      yAxis: [{ name: "Blood Oxygen Saturation (%)", min: 90 }],
     };
   }
   return {
@@ -131,7 +131,7 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
       lowerBetter: true,
     },
     trendData.latest_spo2 != null && {
-      label: "SpO2",
+      label: "Blood Oxygen Saturation (SpO2)",
       value: trendData.latest_spo2,
       avg: trendData.avg_spo2,
       stddev: trendData.stddev_spo2,

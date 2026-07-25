@@ -284,6 +284,7 @@ describe("TimeRangeSelector consumers", () => {
   it("passes finite and All ranges to Nutrition Analytics chart queries", async () => {
     const { NutritionAnalyticsPage } = await import("../pages/NutritionAnalyticsPage.tsx");
     render(<NutritionAnalyticsPage />);
+    expect(screen.getByText("Adaptive Total Daily Energy Expenditure (TDEE)")).toBeTruthy();
 
     clearQueryCalls();
     fireEvent.click(screen.getByRole("button", { name: "7d" }));
@@ -304,7 +305,7 @@ describe("TimeRangeSelector consumers", () => {
       { name: "nutritionAnalytics.adaptiveTdee", input: { days: null } },
     ]);
     expectRegistryCovered("nutritionAnalytics");
-    expect(screen.getByText(/Recommended Dietary Allowance \(All\)/)).toBeTruthy();
+    expect(screen.getByText(/Recommended Dietary Allowance \(RDA\) \(All\)/)).toBeTruthy();
     expect(screen.queryByText(/null days/)).toBeNull();
   });
 

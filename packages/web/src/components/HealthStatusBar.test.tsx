@@ -72,7 +72,14 @@ describe("HealthStatusBar", () => {
       const { container } = render(
         <HealthStatusBar
           metrics={[
-            { label: "HRV", value: 65, avg: 50, stddev: 10, unit: "ms", lowerBetter: false },
+            {
+              label: "Heart Rate Variability",
+              value: 65,
+              avg: 50,
+              stddev: 10,
+              unit: "ms",
+              lowerBetter: false,
+            },
           ]}
         />,
       );
@@ -88,7 +95,14 @@ describe("HealthStatusBar", () => {
       render(
         <HealthStatusBar
           metrics={[
-            { label: "HRV", value: 35, avg: 50, stddev: 10, unit: "ms", lowerBetter: false },
+            {
+              label: "Heart Rate Variability",
+              value: 35,
+              avg: 50,
+              stddev: 10,
+              unit: "ms",
+              lowerBetter: false,
+            },
           ]}
         />,
       );

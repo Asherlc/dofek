@@ -57,4 +57,19 @@ describe("AnomalyAlertBanner", () => {
     const emptyResult = render(<AnomalyAlertBanner anomalies={[]} />);
     expect(emptyResult.container.innerHTML).toBe("");
   });
+
+  it("expands heart rate terms in illness guidance", () => {
+    render(
+      <AnomalyAlertBanner
+        anomalies={[
+          makeAnomaly(),
+          makeAnomaly({ metric: "Resting Heart Rate", value: 75, zScore: 2.4 }),
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Combined elevated resting heart rate and depressed heart rate variability/),
+    ).toBeTruthy();
+  });
 });
