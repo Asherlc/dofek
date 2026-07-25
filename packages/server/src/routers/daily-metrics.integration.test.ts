@@ -176,16 +176,19 @@ describe("dailyMetrics data correctness", () => {
       const result = await query<{
         avg_hrv: number | null;
         avg_steps: number | null;
+        stddev_steps: number | null;
       }>("dailyMetrics.trends", { days: 30, endDate });
 
       expect(result).not.toBeNull();
       // Averages should be computed (not null) since we have 27 days of data
       expect(result.avg_hrv).not.toBeNull();
       expect(result.avg_steps).not.toBeNull();
+      expect(result.stddev_steps).not.toBeNull();
 
       // Sanity check: averages should be in expected ranges
       expect(result.avg_steps).toBeGreaterThan(5000);
       expect(result.avg_steps).toBeLessThan(15000);
+      expect(result.stddev_steps).toBeGreaterThan(0);
     });
 
     it("uses a representative recent resting heart rate instead of one noisy latest night", async () => {
