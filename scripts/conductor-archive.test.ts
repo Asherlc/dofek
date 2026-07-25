@@ -49,7 +49,10 @@ appendFileSync(process.env.DOCKER_LOG_PATH, JSON.stringify({
   workingDirectory: process.env.PWD,
 }) + "\\n");
 if (arguments.includes("config")) process.stdout.write('{"name":"${composeProjectName}"}');
-if (arguments[0] === "container" && arguments[1] === "ls") process.stdout.write("container-id\\n");
+if (arguments[0] === "container" && arguments[1] === "ls") {
+  const filter = arguments.at(-1);
+  process.stdout.write(filter.endsWith("-e2e") ? "e2e-container-id\\n" : "container-id\\n");
+}
 `,
     );
     chmodSync(fakeDockerPath, 0o755);
@@ -90,9 +93,11 @@ if (arguments[0] === "container" && arguments[1] === "ls") process.stdout.write(
           (invocation) => invocation.workingDirectory === physicalWorkspaceDirectory,
         ),
       ).toBe(true);
-      expect(
-        composeCalls.every((invocation) => invocation.composeProjectName === composeProjectName),
-      ).toBe(true);
+      expect(composeCalls.map((invocation) => invocation.composeProjectName)).toEqual([
+        composeProjectName,
+        composeProjectName,
+        `${composeProjectName}-e2e`,
+      ]);
       expect(
         composeCalls.every(
           (invocation) =>
@@ -100,6 +105,12 @@ if (arguments[0] === "container" && arguments[1] === "ls") process.stdout.write(
         ),
       ).toBe(true);
       expect(composeDownCalls).toHaveLength(2);
+      expect(
+        composeDownCalls.map((invocation) => {
+          const projectNameIndex = invocation.arguments.indexOf("--project-name");
+          return invocation.arguments[projectNameIndex + 1];
+        }),
+      ).toEqual([composeProjectName, `${composeProjectName}-e2e`]);
       expect(
         composeDownCalls.every((invocation) => invocation.arguments.includes("--remove-orphans")),
       ).toBe(true);
@@ -111,6 +122,12 @@ if (arguments[0] === "container" && arguments[1] === "ls") process.stdout.write(
         "rm",
         "--force",
         "container-id",
+      ]);
+      expect(dockerCalls.map((invocation) => invocation.arguments)).toContainEqual([
+        "container",
+        "rm",
+        "--force",
+        "e2e-container-id",
       ]);
     } finally {
       rmSync(workspaceDirectory, { force: true, recursive: true });

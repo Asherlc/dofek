@@ -28,6 +28,8 @@ jobs:
     name: Build Mobile
     needs: detect-changes
     uses: ./.github/workflows/build-mobile.yml
+    with:
+      changed: ${{ needs.detect-changes.outputs.mobile == 'true' }}
     secrets: inherit
 
   build-web:
