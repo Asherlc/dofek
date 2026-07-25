@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { z } from "zod";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface AddJournalEntryModalProps {
   isOpen: boolean;
@@ -27,7 +29,12 @@ function todayString(): string {
 
 export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalEntryModalProps) {
   const questionsQuery = trpc.journal.questions.useQuery();
-  const createMutation = trpc.journal.create.useMutation({ onSuccess });
+  const createMutation = trpc.journal.create.useMutation({
+    onSuccess,
+    onError: (error) => {
+      captureException(error, { operation: "journal.create" });
+    },
+  });
 
   const questions = useMemo(() => {
     if (!questionsQuery.data) return [];
@@ -99,29 +106,48 @@ export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalE
             />
           </div>
 
-          <div>
-            <label htmlFor="journal-question" className="block text-sm font-medium text-muted mb-1">
-              Question
-            </label>
-            <select
-              id="journal-question"
-              value={selectedSlug}
-              onChange={(e) => {
-                setSelectedSlug(e.target.value);
-                setAnswerNumeric("");
-                setAnswerText("");
-                setBooleanValue(false);
-              }}
-              className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
-            >
-              <option value="">Select a question...</option>
-              {questions.map((q) => (
-                <option key={q.slug} value={q.slug}>
-                  {q.display_name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {questionsQuery.isLoading && questionsQuery.data === undefined ? (
+            <QueryStatePanel variant="loading" height={96} />
+          ) : null}
+
+          {questionsQuery.error ? (
+            <QueryStatePanel
+              error={questionsQuery.error}
+              height={96}
+              onRetry={() => void questionsQuery.refetch()}
+              retryLabel="Retry journal questions"
+              retrying={questionsQuery.isFetching}
+            />
+          ) : null}
+
+          {questionsQuery.data !== undefined ? (
+            <div>
+              <label
+                htmlFor="journal-question"
+                className="block text-sm font-medium text-muted mb-1"
+              >
+                Question
+              </label>
+              <select
+                id="journal-question"
+                value={selectedSlug}
+                onChange={(e) => {
+                  setSelectedSlug(e.target.value);
+                  setAnswerNumeric("");
+                  setAnswerText("");
+                  setBooleanValue(false);
+                }}
+                className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
+              >
+                <option value="">Select a question...</option>
+                {questions.map((q) => (
+                  <option key={q.slug} value={q.slug}>
+                    {q.display_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           {selectedQuestion && (
             <div>
@@ -172,6 +198,10 @@ export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalE
               )}
             </div>
           )}
+
+          {createMutation.error ? (
+            <p className="text-xs text-red-400">{createMutation.error.message}</p>
+          ) : null}
 
           <div className="flex justify-end gap-2 pt-2">
             <button

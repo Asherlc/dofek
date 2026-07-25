@@ -9,8 +9,10 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { useState } from "react";
 import { z } from "zod";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 const lifeEventSchema = z.object({
   id: z.string(),
@@ -62,11 +64,17 @@ export function LifeEventsPanel() {
       utils.lifeEvents.list.invalidate();
       setShowForm(false);
     },
+    onError: (error) => {
+      captureException(error, { operation: "lifeEvents.create" });
+    },
   });
   const deleteMutation = trpc.lifeEvents.delete.useMutation({
     onSuccess: () => {
       utils.lifeEvents.list.invalidate();
       setSelectedEvent(null);
+    },
+    onError: (error) => {
+      captureException(error, { operation: "lifeEvents.delete" });
     },
   });
   const analysis = trpc.lifeEvents.analyze.useQuery(
@@ -78,6 +86,19 @@ export function LifeEventsPanel() {
 
   return (
     <div className="space-y-4">
+      {events.isLoading && events.data === undefined ? (
+        <QueryStatePanel variant="loading" height={96} />
+      ) : null}
+      {events.error ? (
+        <QueryStatePanel
+          error={events.error}
+          height={96}
+          onRetry={() => void events.refetch()}
+          retryLabel="Retry life events"
+          retrying={events.isFetching}
+        />
+      ) : null}
+
       {/* Event list + add button */}
       <div className="flex items-center justify-between">
         <div className="flex flex-wrap gap-2">
@@ -110,13 +131,22 @@ export function LifeEventsPanel() {
         </button>
       </div>
 
+      {events.data !== undefined && eventList.length === 0 ? (
+        <p className="text-dim text-sm text-center py-6">No life events yet.</p>
+      ) : null}
+
       {/* Add form */}
       {showForm && (
-        <AddEventForm
-          onSubmit={(data) => createMutation.mutate(data)}
-          onCancel={() => setShowForm(false)}
-          loading={createMutation.isPending}
-        />
+        <>
+          <AddEventForm
+            onSubmit={(data) => createMutation.mutate(data)}
+            onCancel={() => setShowForm(false)}
+            loading={createMutation.isPending}
+          />
+          {createMutation.error ? (
+            <p className="text-xs text-red-400">{createMutation.error.message}</p>
+          ) : null}
+        </>
       )}
 
       {/* Analysis */}
@@ -127,14 +157,29 @@ export function LifeEventsPanel() {
         const event = foundEvent ?? fallbackEvent;
         if (!event) return null;
         return (
-          <EventAnalysis
-            event={event}
-            analysis={eventAnalysisDataSchema.nullable().parse(analysis.data ?? null)}
-            loading={analysis.isLoading}
-            windowDays={windowDays}
-            onWindowChange={setWindowDays}
-            onDelete={() => deleteMutation.mutate({ id: selectedEvent })}
-          />
+          <>
+            {analysis.error ? (
+              <QueryStatePanel
+                error={analysis.error}
+                height={96}
+                onRetry={() => void analysis.refetch()}
+                retryLabel="Retry event analysis"
+                retrying={analysis.isFetching}
+              />
+            ) : null}
+            <EventAnalysis
+              event={event}
+              analysis={eventAnalysisDataSchema.nullable().parse(analysis.data ?? null)}
+              loading={analysis.isLoading && analysis.data === undefined}
+              windowDays={windowDays}
+              onWindowChange={setWindowDays}
+              onDelete={() => deleteMutation.mutate({ id: selectedEvent })}
+              deleting={deleteMutation.isPending}
+            />
+            {deleteMutation.error ? (
+              <p className="text-xs text-red-400">{deleteMutation.error.message}</p>
+            ) : null}
+          </>
         );
       })()}
     </div>
@@ -300,6 +345,7 @@ function EventAnalysis({
   windowDays,
   onWindowChange,
   onDelete,
+  deleting,
 }: {
   event: LifeEvent;
   analysis: EventAnalysisData | null;
@@ -307,6 +353,7 @@ function EventAnalysis({
   windowDays: number;
   onWindowChange: (days: number) => void;
   onDelete: () => void;
+  deleting: boolean;
 }) {
   const units = useUnitConverter();
   if (loading) {
@@ -374,9 +421,10 @@ function EventAnalysis({
           <button
             type="button"
             onClick={onDelete}
+            disabled={deleting}
             className="text-xs text-red-800 hover:text-red-500 transition-colors"
           >
-            Delete
+            {deleting ? "Deleting..." : "Delete"}
           </button>
         </div>
       </div>
