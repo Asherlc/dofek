@@ -37,8 +37,10 @@ function makeSensorStore({
           },
         ];
       } else if (queryText.includes("analytics.daily_strain") && queryText.includes(" AS load")) {
+        expect(queryText).toContain("strain.is_deleted = 0");
         rows = [{ load: 0 }];
       } else if (queryText.includes("analytics.daily_strain")) {
+        expect(queryText).toContain("strain.is_deleted = 0");
         rows = [{ metric_date: metricDate, daily_load: 120 }];
       } else {
         rows = [];

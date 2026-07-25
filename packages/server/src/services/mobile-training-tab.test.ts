@@ -336,6 +336,7 @@ describe("loadMobileTrainingTab", () => {
     );
 
     expect(String(strainQuery?.[1])).toContain("strain.date >= toDate({accessStartDate:String})");
+    expect(String(strainQuery?.[1])).toContain("strain.is_deleted = 0");
     expect(String(strainQuery?.[1])).toContain(
       "strain.date < toDate({accessEndDateExclusive:String})",
     );

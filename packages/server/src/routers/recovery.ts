@@ -298,6 +298,7 @@ export const recoveryRouter = router({
           strain.workload_ratio AS workload_ratio
         FROM analytics.daily_strain AS strain FINAL
         WHERE strain.user_id = {userId:UUID}
+          AND strain.is_deleted = 0
           ${clickHouseWindowStartPredicate({
             expression: "strain.date",
             days: range.days,
@@ -655,6 +656,7 @@ export const recoveryRouter = router({
           strain.daily_load AS daily_load
         FROM analytics.daily_strain AS strain FINAL
         WHERE strain.user_id = {userId:UUID}
+          AND strain.is_deleted = 0
           AND strain.date >= toDate({windowStart:String})
           AND strain.date <= toDate({endDate:String})
           ${accessWindowClause}

@@ -6,15 +6,16 @@ const workspaceDirectory = realpathSync(process.cwd());
 const composeEnvironmentPath = join(workspaceDirectory, ".env.local");
 const composeFilePath = join(workspaceDirectory, "docker-compose.yml");
 const composeProjectName = basename(workspaceDirectory);
+const e2eComposeProjectName = `${composeProjectName}-e2e`;
 
-function runDocker(dockerArguments: string[]): string {
+function runDocker(dockerArguments: string[], selectedProjectName = composeProjectName): string {
   const result = spawnSync("docker", dockerArguments, {
     cwd: workspaceDirectory,
     encoding: "utf8",
     env: {
       ...process.env,
       COMPOSE_FILE: composeFilePath,
-      COMPOSE_PROJECT_NAME: composeProjectName,
+      COMPOSE_PROJECT_NAME: selectedProjectName,
       PWD: workspaceDirectory,
     },
     stdio: ["ignore", "pipe", "inherit"],
@@ -65,7 +66,7 @@ function getComposeProjectName(): string {
   return parsedConfig.name;
 }
 
-function runComposeDown(composeFile: string | null): void {
+function runComposeDown(composeFile: string | null, selectedProjectName: string): void {
   const selectedComposeFile =
     composeFile === null ? composeFilePath : join(workspaceDirectory, composeFile);
   if (!existsSync(selectedComposeFile)) {
@@ -75,7 +76,7 @@ function runComposeDown(composeFile: string | null): void {
   const dockerArguments = [
     "compose",
     "--project-name",
-    composeProjectName,
+    selectedProjectName,
     "--project-directory",
     workspaceDirectory,
   ];
@@ -86,18 +87,21 @@ function runComposeDown(composeFile: string | null): void {
 
   dockerArguments.push("--file", selectedComposeFile);
   dockerArguments.push("down", "--remove-orphans", "--volumes");
-  runDocker(dockerArguments);
+  runDocker(dockerArguments, selectedProjectName);
 }
 
 function removeProjectContainers(projectName: string): void {
-  const containerIds = runDocker([
-    "container",
-    "ls",
-    "--all",
-    "--quiet",
-    "--filter",
-    `label=com.docker.compose.project=${projectName}`,
-  ])
+  const containerIds = runDocker(
+    [
+      "container",
+      "ls",
+      "--all",
+      "--quiet",
+      "--filter",
+      `label=com.docker.compose.project=${projectName}`,
+    ],
+    projectName,
+  )
     .split("\n")
     .map((containerId) => containerId.trim())
     .filter((containerId) => containerId.length > 0);
@@ -106,13 +110,16 @@ function removeProjectContainers(projectName: string): void {
     return;
   }
 
-  runDocker(["container", "rm", "--force", ...containerIds]);
+  runDocker(["container", "rm", "--force", ...containerIds], projectName);
 }
 
 const projectName = getComposeProjectName();
 
-runComposeDown(null);
-runComposeDown("docker-compose.e2e.yml");
+runComposeDown(null, projectName);
+runComposeDown("docker-compose.e2e.yml", e2eComposeProjectName);
 removeProjectContainers(projectName);
+removeProjectContainers(e2eComposeProjectName);
 
-console.log(`Removed Docker containers for Compose project ${projectName}`);
+console.log(
+  `Removed Docker containers for Compose projects ${projectName} and ${e2eComposeProjectName}`,
+);
