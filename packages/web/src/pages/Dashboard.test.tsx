@@ -84,10 +84,11 @@ vi.mock("../components/DailyOverview.tsx", () => ({
 }));
 
 vi.mock("../components/DashboardEvidenceOverview.tsx", () => ({
-  DashboardEvidenceOverview: (props: { insightError?: ReactNode }) => {
+  DashboardEvidenceOverview: (props: { healthMonitor?: ReactNode; insightError?: ReactNode }) => {
     mockDashboardEvidenceOverview(props);
     return (
       <section aria-label="Dashboard overview">
+        {props.healthMonitor}
         {props.insightError ?? <div>Sleep consistency + Heart Rate Variability</div>}
       </section>
     );
@@ -427,6 +428,7 @@ describe("Dashboard", () => {
         stddev_hrv: 7.5,
         stddev_resting_hr: 3.1,
         stddev_spo2: null,
+        stddev_steps: null,
         stddev_skin_temp: null,
         latest_hrv: 48,
         latest_resting_hr: 55,
@@ -434,6 +436,7 @@ describe("Dashboard", () => {
         latest_steps: null,
         latest_skin_temp: null,
         latest_date: "2026-05-27",
+        healthStatus: [],
       },
       isLoading: false,
       error: null,
@@ -482,6 +485,37 @@ describe("Dashboard", () => {
         restingHeartRateError: chartError,
       }),
     );
+  });
+
+  it("keeps cached health status visible during a background refresh error", () => {
+    mockTrendsQuery.mockReturnValue({
+      data: {
+        avg_hrv: 43.8,
+        avg_resting_hr: 56.2,
+        avg_spo2: null,
+        avg_steps: null,
+        avg_skin_temp: null,
+        stddev_hrv: 7.5,
+        stddev_resting_hr: 3.1,
+        stddev_spo2: null,
+        stddev_steps: null,
+        stddev_skin_temp: null,
+        latest_hrv: 48,
+        latest_resting_hr: 55,
+        latest_spo2: null,
+        latest_steps: null,
+        latest_skin_temp: null,
+        latest_date: "2026-05-27",
+        healthStatus: [],
+      },
+      isLoading: false,
+      error: new Error("Health status refresh failed."),
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByText("Health status bar")).toBeTruthy();
+    expect(screen.getByText("Health status refresh failed.")).toBeTruthy();
   });
 });
 
@@ -600,35 +634,41 @@ describe("healthMonitorSubtitle", () => {
 });
 
 describe("buildHealthMetrics", () => {
-  it("includes resting heart rate as a lower-is-better health metric", () => {
-    const metrics = buildHealthMetrics(
-      {
-        avg_hrv: 43.8,
-        avg_resting_hr: 56.2,
-        avg_spo2: null,
-        avg_steps: null,
-        avg_skin_temp: null,
-        stddev_hrv: 7.5,
-        stddev_resting_hr: 3.1,
-        stddev_spo2: null,
-        stddev_skin_temp: null,
-        latest_hrv: 48,
-        latest_resting_hr: 55,
-        latest_spo2: null,
-        latest_steps: null,
-        latest_skin_temp: null,
-        latest_date: "2025-03-15",
-      },
-      new UnitConverter("metric"),
-    );
-
-    expect(metrics).toContainEqual({
+  it("passes through the canonical server health status without recalculating it", () => {
+    const restingHeartRateStatus = {
+      metric: "resting_heart_rate" as const,
       label: "Resting Heart Rate",
       value: 55,
-      avg: 56.2,
-      stddev: 3.1,
-      unit: "bpm",
-      lowerBetter: true,
+      baseline: 56.2,
+      sampleDeviation: 3.1,
+      deviation: -0.39,
+      direction: "below" as const,
+      intent: "lower" as const,
+      statusToken: "moving_as_intended" as const,
+      statusColor: "positive" as const,
+      statusLabel: "Moving as intended",
+      explanation: "Resting Heart Rate is below your baseline.",
+    };
+    const metrics = buildHealthMetrics({
+      avg_hrv: 43.8,
+      avg_resting_hr: 56.2,
+      avg_spo2: null,
+      avg_steps: null,
+      avg_skin_temp: null,
+      stddev_hrv: 7.5,
+      stddev_resting_hr: 3.1,
+      stddev_spo2: null,
+      stddev_steps: null,
+      stddev_skin_temp: null,
+      latest_hrv: 48,
+      latest_resting_hr: 55,
+      latest_spo2: null,
+      latest_steps: null,
+      latest_skin_temp: null,
+      latest_date: "2025-03-15",
+      healthStatus: [restingHeartRateStatus],
     });
+
+    expect(metrics).toEqual([restingHeartRateStatus]);
   });
 });
