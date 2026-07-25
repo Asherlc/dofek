@@ -275,8 +275,10 @@ describe("SettingsScreen unit system", () => {
     const options = mockSettingsSetMutate.mock.calls[0]?.[1];
     const writeError = new Error("Unit preference was not saved.");
     act(() => options.onError(writeError));
+    act(() => options.onSettled());
 
     expect(mockSettingsSetData).toHaveBeenLastCalledWith({ key: "unitSystem" }, previousSetting);
+    expect(mockSettingsInvalidate).toHaveBeenCalledWith({ key: "unitSystem" });
     expect(Alert.alert).toHaveBeenCalledWith("Error", writeError.message);
     expect(mockCaptureException).toHaveBeenCalledWith(writeError, {
       context: "unit-system-write",

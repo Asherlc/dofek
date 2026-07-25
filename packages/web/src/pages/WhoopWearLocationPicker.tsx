@@ -40,7 +40,7 @@ export function WhoopWearLocationPicker() {
           setWriteError(error.message);
           captureException(error, { context: "whoop-wear-location-write" });
         },
-        onSuccess: () => {
+        onSettled: () => {
           void trpcUtils.settings.get.invalidate({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
         },
       },

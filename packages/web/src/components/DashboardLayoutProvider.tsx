@@ -11,23 +11,11 @@ import { trpc } from "../lib/trpc.ts";
 
 const SETTINGS_KEY = "dashboardLayout";
 
-const dashboardLayoutSchema = z.preprocess(
-  (value) => {
-    if (typeof value !== "string") {
-      return value;
-    }
-    try {
-      return JSON.parse(value);
-    } catch {
-      return undefined;
-    }
-  },
-  z.object({
-    order: z.array(z.string()),
-    hidden: z.array(z.string()),
-    collapsed: z.record(z.string(), z.boolean()),
-  }),
-);
+const dashboardLayoutSchema = z.object({
+  order: z.array(z.string()),
+  hidden: z.array(z.string()),
+  collapsed: z.record(z.string(), z.boolean()),
+});
 
 function normalizeLayout(layout: DashboardLayout): DashboardLayout {
   const knownSections = new Set(DEFAULT_LAYOUT.order);
@@ -60,7 +48,19 @@ export function DashboardLayoutProvider({ children }: { children: React.ReactNod
     if (setting.data?.value == null) {
       return;
     }
-    const parsed = dashboardLayoutSchema.safeParse(setting.data.value);
+    let value = setting.data.value;
+    if (typeof value === "string") {
+      try {
+        value = JSON.parse(value);
+      } catch (error) {
+        if (lastInvalidValue.current !== setting.data.value) {
+          lastInvalidValue.current = setting.data.value;
+          captureException(error, { context: "dashboard-layout-parse" });
+        }
+        return;
+      }
+    }
+    const parsed = dashboardLayoutSchema.safeParse(value);
     if (parsed.success) {
       setLayoutState(normalizeLayout(parsed.data));
       return;
@@ -92,7 +92,7 @@ export function DashboardLayoutProvider({ children }: { children: React.ReactNod
             setWriteError(error.message);
             captureException(error, { context: "dashboard-layout-write" });
           },
-          onSuccess: () => {
+          onSettled: () => {
             void utils.settings.get.invalidate({ key: SETTINGS_KEY });
           },
         },

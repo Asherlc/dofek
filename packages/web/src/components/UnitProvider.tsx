@@ -57,7 +57,7 @@ export function UnitProvider({ children }: { children: React.ReactNode }) {
             setWriteError(error.message);
             captureException(error, { context: "unit-system-write" });
           },
-          onSuccess: () => {
+          onSettled: () => {
             void utils.settings.get.invalidate({ key: SETTINGS_KEY });
           },
         },

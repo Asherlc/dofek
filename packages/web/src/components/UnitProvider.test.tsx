@@ -112,9 +112,11 @@ describe("UnitProvider", () => {
     const options = mocks.mutate.mock.calls[0]?.[1];
     const writeError = new Error("Unit preference was not saved.");
     act(() => options.onError(writeError));
+    act(() => options.onSettled());
 
     expect(screen.getByTestId("unit-system").textContent).toBe("metric");
     expect(mocks.setData).toHaveBeenLastCalledWith({ key: "unitSystem" }, previousSetting);
+    expect(mocks.invalidate).toHaveBeenCalledWith({ key: "unitSystem" });
     expect(screen.getByRole("alert").textContent).toBe(writeError.message);
     expect(mocks.captureException).toHaveBeenCalledWith(writeError, {
       context: "unit-system-write",

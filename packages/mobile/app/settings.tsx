@@ -146,7 +146,7 @@ export default function SettingsScreen() {
           captureException(error, { context: "unit-system-write" });
           Alert.alert("Error", error.message);
         },
-        onSuccess: () => {
+        onSettled: () => {
           void trpcUtils.settings.get.invalidate({ key: "unitSystem" });
         },
       },

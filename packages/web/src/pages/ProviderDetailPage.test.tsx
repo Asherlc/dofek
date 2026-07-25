@@ -784,7 +784,7 @@ describe("WhoopWearLocationPicker", () => {
       { key: "whoop.wearLocation", value: "bicep" },
       expect.objectContaining({
         onError: expect.any(Function),
-        onSuccess: expect.any(Function),
+        onSettled: expect.any(Function),
       }),
     );
   });
@@ -816,11 +816,13 @@ describe("WhoopWearLocationPicker", () => {
     const options = mockSettingsSetMutate.mock.calls[0]?.[1];
     const writeError = new Error("Wear location was not saved.");
     act(() => options.onError(writeError));
+    act(() => options.onSettled());
 
     expect(mockSettingsGetSetData).toHaveBeenLastCalledWith(
       { key: "whoop.wearLocation" },
       previousSetting,
     );
+    expect(mockSettingsGetInvalidate).toHaveBeenCalledWith({ key: "whoop.wearLocation" });
     expect(screen.getByRole("alert").textContent).toBe(writeError.message);
     expect(mockCaptureException).toHaveBeenCalledWith(writeError, {
       context: "whoop-wear-location-write",

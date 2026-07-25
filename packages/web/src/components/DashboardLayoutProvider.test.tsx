@@ -83,6 +83,7 @@ describe("DashboardLayoutProvider", () => {
 
     expect(screen.getByTestId("hidden").textContent).toBe("");
     await waitFor(() => expect(mocks.captureException).toHaveBeenCalledTimes(1));
+    expect(mocks.captureException.mock.calls[0]?.[0]).toBeInstanceOf(SyntaxError);
   });
 
   it("preserves the loaded layout and displays an exact background read error", async () => {
@@ -129,9 +130,11 @@ describe("DashboardLayoutProvider", () => {
     const options = mocks.mutate.mock.calls[0]?.[1];
     const writeError = new Error("Dashboard layout could not be saved.");
     act(() => options.onError(writeError));
+    act(() => options.onSettled());
 
     expect(screen.getByTestId("hidden").textContent).toBe("sleep");
     expect(mocks.setData).toHaveBeenLastCalledWith({ key: "dashboardLayout" }, previousSetting);
+    expect(mocks.invalidate).toHaveBeenCalledWith({ key: "dashboardLayout" });
     expect(screen.getByRole("alert").textContent).toBe(writeError.message);
     expect(mocks.captureException).toHaveBeenCalledWith(writeError, {
       context: "dashboard-layout-write",
