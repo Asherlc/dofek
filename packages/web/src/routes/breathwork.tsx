@@ -112,23 +112,22 @@ function BreathworkPage() {
     }
 
     let phaseIdx = 0;
-    let phaseElapsed = 0;
-    let _elapsed = 0;
+    let phaseElapsedMs = 0;
 
     timerRef.current = setInterval(() => {
-      phaseElapsed += 0.05;
-      _elapsed += 0.05;
+      phaseElapsedMs += 50;
 
       const currentPhaseDef = phases[phaseIdx];
       if (!currentPhaseDef) return;
 
-      const progress = Math.min(phaseElapsed / currentPhaseDef.duration, 1);
+      const phaseDurationMs = currentPhaseDef.duration * 1_000;
+      const progress = Math.min(phaseElapsedMs / phaseDurationMs, 1);
       setPhaseProgress(progress);
       setCurrentPhase(currentPhaseDef.phase);
 
-      if (phaseElapsed >= currentPhaseDef.duration) {
+      if (phaseElapsedMs >= phaseDurationMs) {
         phaseIdx++;
-        phaseElapsed = 0;
+        phaseElapsedMs = 0;
 
         if (phaseIdx >= phases.length) {
           phaseIdx = 0;

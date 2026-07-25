@@ -285,4 +285,30 @@ describe("BreathworkPage", () => {
     expect(screen.queryByRole("button", { name: "Retry Save" })).toBeNull();
     expect(screen.getByRole("button", { name: "Start Session" })).toHaveProperty("disabled", false);
   });
+
+  it("saves at the exact configured duration without accumulated timer drift", () => {
+    vi.useFakeTimers();
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        description: "Calming pattern",
+        inhaleSeconds: 4,
+        exhaleSeconds: 4,
+        defaultRounds: 1,
+      },
+    ];
+
+    renderBreathworkPage();
+    fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
+    act(() => {
+      vi.advanceTimersByTime(8_000);
+    });
+
+    expect(state.mutationInput).toMatchObject({
+      techniqueId: "box-breathing",
+      rounds: 1,
+      durationSeconds: 8,
+    });
+  });
 });
