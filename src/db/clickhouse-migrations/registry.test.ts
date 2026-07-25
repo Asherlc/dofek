@@ -59,10 +59,11 @@ describe("clickHouseMigrations", () => {
       ]),
     });
     expect(migrations.at(-1)).toMatchObject({
-      id: "0054_activity_load_lifecycle",
+      id: "0055_bound_body_measurement_refresh",
       statements: expect.arrayContaining([
-        expect.stringContaining("ALTER TABLE analytics.daily_activity_load"),
-        expect.stringContaining("ALTER TABLE analytics.daily_strain"),
+        "DROP VIEW IF EXISTS analytics.v_body_measurement",
+        "DROP TABLE IF EXISTS analytics.v_body_measurement",
+        expect.stringContaining("lagInFrame(recorded_at"),
       ]),
     });
   });

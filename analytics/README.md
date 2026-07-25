@@ -24,9 +24,14 @@ stages scalar metric samples, `deduped_sensor` reads `sensor_scalar_sample`, and
 `activity_vo2max_estimate` reads `deduped_sensor` to keep the expensive VO2 max
 activity/sample joins out of web/API requests. `deduped_activities` materializes
 the activity overlap graph once, and `deduped_activity_members` exposes canonical
-activity/member aliases for downstream models. `sleep_heart_rate_sample`,
-`activity_sensor_sample`, and `activity_location_sample` are bounded microbatch
-intermediates over sample time. `resting_heart_rate_sleep_window` aggregates the
+activity/member aliases for downstream models. `activity_sensor_sample` and
+`activity_location_sample` are bounded microbatch intermediates over sample
+time. `sleep_heart_rate_sample` instead advances through at most 32 dirty sleep
+keys per incremental build, including lifecycle tombstones, so one accumulated
+sleep backlog cannot monopolize a build. dbt documents incremental models as
+transforming only the rows selected by the model's incremental filter:
+<https://docs.getdbt.com/docs/build/incremental-models>.
+`resting_heart_rate_sleep_window` aggregates the
 sleep sample intermediary, while `activity_sensor_summary_rows` and
 `activity_location_summary_rows` aggregate the activity sample intermediaries
 before `activity_stream_points`, `activity_heart_rate_zones`, and
@@ -76,7 +81,7 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `activity_stream_points`, `activity_heart_rate_zones`, `activity_summary_rows`,
 `hiking_activity`, `activity_vo2max_estimate`, `activity_aerobic_efficiency`, `activity_polarization_zones`, `activity_power_curve`, `cycling_activity`, `daily_cycling`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
-and `weekly_healthspan`. Sample-time models use dbt's `microbatch`
+and `weekly_healthspan`. Activity sample-time models use dbt's `microbatch`
 incremental strategy with daily batches and short lookbacks so ClickHouse
 processes bounded windows instead of one large activity/window query. Activity
 stream staging uses the `metric_stream_freshness` source alias and batches by

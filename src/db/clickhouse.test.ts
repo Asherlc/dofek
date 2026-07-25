@@ -240,7 +240,10 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("connected_components AS");
     expect(sql).toContain("min(toString(connected_activity_id)) AS group_id");
     expect(sql).toContain("min(toString(connected_sleep_id)) AS group_id");
-    expect(sql).toContain("min(toString(connected_measurement_id)) AS group_id");
+    expect(sql).not.toContain("connected_measurement_id");
+    expect(sql).toContain("lagInFrame(recorded_at");
+    expect(sql).toContain("PARTITION BY final_groups.user_id, final_groups.group_id");
+    expect(sql).toContain("ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW");
     expect(sql).toContain(
       "concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))",
     );

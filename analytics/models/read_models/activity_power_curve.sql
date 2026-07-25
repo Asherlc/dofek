@@ -4,7 +4,8 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id, duration_seconds)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
@@ -18,6 +19,37 @@ WITH current_activity AS (
         is_deleted,
         refreshed_at
     FROM {{ ref('activity_summary_rows') }} FINAL
+),
+
+current_power_state AS (
+    SELECT
+        activity_id,
+        user_id,
+        max(refreshed_at) AS refreshed_at
+    FROM {{ ref('activity_sensor_sample') }}
+    WHERE channel = 'power'
+        AND scalar > 0
+        AND is_deleted = 0
+    GROUP BY
+        activity_id,
+        user_id
+),
+
+current_power_activity AS (
+    SELECT
+        current_activity.activity_id,
+        current_activity.user_id,
+        greatest(
+            current_activity.refreshed_at,
+            current_power_state.refreshed_at
+        ) AS source_refreshed_at
+    FROM current_activity
+    INNER JOIN current_power_state
+        ON current_power_state.activity_id = current_activity.activity_id
+        AND current_power_state.user_id = current_activity.user_id
+    WHERE current_activity.is_deleted = 0
+        AND current_activity.ended_at IS NOT NULL
+        AND current_activity.activity_type IN ('cycling', 'road_cycling', 'mountain_biking', 'gravel_cycling', 'indoor_cycling', 'virtual_cycling', 'e_bike_cycling', 'cyclocross', 'track_cycling', 'bmx', 'hand_cycling', 'running', 'swimming', 'walking', 'hiking')
 ),
 
 {% if is_incremental() %}
@@ -34,14 +66,14 @@ existing_activity_state AS (
 
 source_dirty_activity_keys AS (
     SELECT
-        current_activity.activity_id,
-        current_activity.user_id
-    FROM current_activity
+        current_power_activity.activity_id,
+        current_power_activity.user_id
+    FROM current_power_activity
     LEFT JOIN existing_activity_state
-        ON existing_activity_state.activity_id = current_activity.activity_id
-        AND existing_activity_state.user_id = current_activity.user_id
+        ON existing_activity_state.activity_id = current_power_activity.activity_id
+        AND existing_activity_state.user_id = current_power_activity.user_id
     WHERE existing_activity_state.activity_id IS NULL
-        OR current_activity.refreshed_at > existing_activity_state.refreshed_at
+        OR current_power_activity.source_refreshed_at > existing_activity_state.refreshed_at
 ),
 
 stale_activity_keys AS (
@@ -49,10 +81,10 @@ stale_activity_keys AS (
         existing_activity_state.activity_id,
         existing_activity_state.user_id
     FROM existing_activity_state
-    LEFT JOIN current_activity
-        ON current_activity.activity_id = existing_activity_state.activity_id
-        AND current_activity.user_id = existing_activity_state.user_id
-    WHERE current_activity.activity_id IS NULL
+    LEFT JOIN current_power_activity
+        ON current_power_activity.activity_id = existing_activity_state.activity_id
+        AND current_power_activity.user_id = existing_activity_state.user_id
+    WHERE current_power_activity.activity_id IS NULL
 ),
 {% endif %}
 
@@ -71,10 +103,7 @@ activity_keys AS (
     SELECT
         activity_id,
         user_id
-    FROM current_activity
-    WHERE is_deleted = 0
-        AND ended_at IS NOT NULL
-        AND activity_type IN ('cycling', 'road_cycling', 'mountain_biking', 'gravel_cycling', 'indoor_cycling', 'virtual_cycling', 'e_bike_cycling', 'cyclocross', 'track_cycling', 'bmx', 'hand_cycling', 'running', 'swimming', 'walking', 'hiking')
+    FROM current_power_activity
     {% endif %}
 ),
 

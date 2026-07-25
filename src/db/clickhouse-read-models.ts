@@ -587,7 +587,7 @@ GROUP BY
 
 function buildBodyMeasurementReadModelSql(): string {
   return `${refreshableMergeTreeViewHeader("analytics.v_body_measurement", "(user_id, recorded_at)", "15 MINUTE")}
-WITH RECURSIVE
+WITH
 body_measurement_samples AS (
   SELECT
     id,
@@ -693,41 +693,46 @@ ranked AS (
   LEFT JOIN device_priority_match
     ON device_priority_match.measurement_id = active_body.id
 ),
-pairs AS (
-  SELECT left_body.id AS id1, right_body.id AS id2
-  FROM ranked AS left_body
-  INNER JOIN ranked AS right_body
-    ON left_body.user_id = right_body.user_id
-   AND toString(left_body.id) < toString(right_body.id)
-   AND abs(dateDiff('second', left_body.recorded_at, right_body.recorded_at)) < 300
+ordered_measurements AS (
+  SELECT
+    id,
+    user_id,
+    recorded_at,
+    row_number() OVER (
+      PARTITION BY user_id
+      ORDER BY recorded_at, toString(id)
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS measurement_number,
+    lagInFrame(recorded_at, 1, recorded_at) OVER (
+      PARTITION BY user_id
+      ORDER BY recorded_at, toString(id)
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS previous_recorded_at
+  FROM ranked
 ),
-graph_edges AS (
-  SELECT id1 AS from_id, id2 AS to_id
-  FROM pairs
-  UNION ALL
-  SELECT id2 AS from_id, id1 AS to_id
-  FROM pairs
-),
-connected_components AS (
+group_boundaries AS (
   SELECT
     id AS measurement_id,
-    id AS connected_measurement_id,
-    [toString(id)] AS visited_measurement_ids
-  FROM ranked
-  UNION ALL
-  SELECT
-    connected_components.measurement_id AS measurement_id,
-    graph_edges.to_id AS connected_measurement_id,
-    arrayConcat(connected_components.visited_measurement_ids, [toString(graph_edges.to_id)]) AS visited_measurement_ids
-  FROM connected_components
-  INNER JOIN graph_edges
-    ON graph_edges.from_id = connected_components.connected_measurement_id
-  WHERE NOT has(connected_components.visited_measurement_ids, toString(graph_edges.to_id))
+    user_id,
+    recorded_at,
+    if(
+      measurement_number = 1
+        OR dateDiff('second', previous_recorded_at, recorded_at) >= 300,
+      toUInt8(1),
+      toUInt8(0)
+    ) AS is_group_start
+  FROM ordered_measurements
 ),
 final_groups AS (
-  SELECT measurement_id, min(toString(connected_measurement_id)) AS group_id
-  FROM connected_components
-  GROUP BY measurement_id
+  SELECT
+    measurement_id,
+    user_id,
+    sum(is_group_start) OVER (
+      PARTITION BY user_id
+      ORDER BY recorded_at, toString(measurement_id)
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS group_id
+  FROM group_boundaries
 ),
 best AS (
   SELECT *
@@ -743,7 +748,7 @@ best AS (
       ranked.source_name AS source_name,
       ranked.priority AS priority,
       row_number() OVER (
-        PARTITION BY final_groups.group_id
+        PARTITION BY final_groups.user_id, final_groups.group_id
         ORDER BY ranked.priority ASC, toString(ranked.id) ASC
       ) AS row_number
     FROM final_groups
@@ -776,6 +781,7 @@ SELECT
 FROM best
 INNER JOIN final_groups
   ON final_groups.group_id = best.group_id
+ AND final_groups.user_id = best.user_id
 INNER JOIN ranked
   ON ranked.id = final_groups.measurement_id
 GROUP BY best.id, best.provider_id, best.user_id, best.external_id, best.recorded_at, best.created_at, best.source_name`;
