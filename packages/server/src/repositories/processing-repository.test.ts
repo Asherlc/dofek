@@ -999,7 +999,7 @@ describe("ProcessingRepository", () => {
     );
   });
 
-  it("does not include an unrequested dataset failure in operation status", async () => {
+  it("does not include a dataset failure outside the requested scope", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([
       operation({
         datasetKeys: ["activity", "sleep"],
