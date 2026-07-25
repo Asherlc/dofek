@@ -16,7 +16,7 @@ vi.mock("../../lib/trpc", () => ({
     mobileDashboard: {
       recovery: {
         useQuery: () => ({
-          data: mockRecoveryData,
+          data: mockRecoveryData == null ? undefined : { healthStatus: [], ...mockRecoveryData },
           isLoading: mockRecoveryLoading,
           isFetching: mockRecoveryFetching,
         }),
