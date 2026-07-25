@@ -37,25 +37,6 @@ describe("production analytics read-model build", () => {
     expect(workerBlockMatch?.groups?.body).not.toContain("dbt build");
   });
 
-  it("delays the first scheduled analytics build after container startup", () => {
-    const entrypoint = readProjectFile("entrypoint.sh");
-    const analyticsWorkerBlockMatch = entrypoint.match(/  analytics-worker\)\n(?<body>[\s\S]*?)\n    ;;/);
-
-    expect(analyticsWorkerBlockMatch).not.toBeNull();
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("ANALYTICS_BUILD_STARTUP_DELAY_SECONDS:-120");
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
-      'require_non_negative_integer "ANALYTICS_BUILD_INTERVAL_SECONDS" "$interval_seconds"',
-    );
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
-      'require_non_negative_integer "ANALYTICS_BUILD_RETRY_DELAY_SECONDS" "$retry_delay_seconds"',
-    );
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
-      'require_non_negative_integer "ANALYTICS_BUILD_STARTUP_DELAY_SECONDS" "$startup_delay_seconds"',
-    );
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("sleep \"$startup_delay_seconds\"");
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("dbt build");
-  });
-
   it("does not run analytics dbt builds in the deploy migration path", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const migrateBlockMatch = entrypoint.match(/  migrate\)\n(?<body>[\s\S]*?)\n    ;;/);
@@ -89,8 +70,8 @@ describe("production analytics read-model build", () => {
     const activityMatch = entrypoint.match(/^DBT_ACTIVITY_MODELS="([^"]+)"$/m);
     const sleepDashboardMatch = entrypoint.match(/^DBT_SLEEP_DASHBOARD_MODELS="([^"]+)"$/m);
 
-    // DBT_ACTIVITY_MODELS order is load-bearing: upstream intermediaries must build
-    // before downstream activity read models and provider_stats in run_dbt_safe_builds().
+    // The E2E build keeps upstream intermediaries before downstream activity
+    // read models and provider_stats.
     expect(activityMatch?.[1]?.split(" ")).toEqual([
       "sensor_scalar_sample",
       "deduped_sensor",
@@ -130,7 +111,6 @@ describe("production analytics read-model build", () => {
       "healthspan_activity_zone_minutes",
       "weekly_healthspan",
     ]);
-    expect(entrypoint).toContain('DBT_SAFE_MODELS="$DBT_ACTIVITY_MODELS $DBT_SLEEP_DASHBOARD_MODELS"');
     expect(entrypoint).toContain("run_dbt_safe_builds()");
     expect(entrypoint).toContain('--select "$DBT_ACTIVITY_MODELS" &&');
     expect(entrypoint).toContain('--select "$DBT_SLEEP_DASHBOARD_MODELS"');

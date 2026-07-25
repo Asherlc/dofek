@@ -6,8 +6,18 @@ TypeScript directly; dbt discovers them by path and runs them as models.
 The call sites are:
 
 - `pnpm analytics:build` for local/manual runs.
-- `entrypoint.sh` `migrate`, `sync`, `worker`, and `analytics` modes, which run `dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS`.
-- `entrypoint.sh` `analytics-worker` mode, which runs `dbt build --threads 1 --select $DBT_SAFE_MODELS` on an interval in production. Production sets the interval to 15 minutes and uses a bounded retry delay after failures so a transient ClickHouse outage does not turn into an immediate dbt restart loop.
+- `entrypoint.sh` `migrate`, `sync`, `worker`, and `analytics` modes, which
+  build the ordered activity and sleep/dashboard model groups with one dbt
+  thread.
+- `entrypoint.sh` `analytics-worker` mode, which delegates the scheduled build
+  loop to `scripts/run-analytics-worker.ts`. The worker exposes loopback
+  `/readyz` state for the current step, last failure, and last successful
+  cycle. A failed first cycle is unhealthy immediately; after a prior success,
+  health becomes unavailable when that success is older than the configured
+  build interval plus retry delay. Production keeps the bounded retry delay as
+  a recovery path, while Docker health reflects refresh progress independently.
+  Docker documents that healthcheck command exit status determines container
+  health: <https://docs.docker.com/reference/dockerfile/#healthcheck>.
 
 Model dependencies are declared with dbt `ref()` calls. `sensor_scalar_sample`
 stages scalar metric samples, `deduped_sensor` reads `sensor_scalar_sample`, and
