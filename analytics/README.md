@@ -99,6 +99,41 @@ lower-level recovery, activity-load, and zone-minute models remain internal
 ingredients. `provider_stats` remains the route-facing provider inventory model
 so request paths do not recompute provider counts from raw source tables.
 
+## Microbatch start bounds and historical backfills
+
+The production analytics runner and `pnpm analytics:build` resolve one lower
+bound for scalar sensor models and one for location models from the earliest
+relevant `ingest.metric_stream.ingested_at` value. When a source group is
+empty, its bound is the current UTC day, so a fresh database schedules only the
+current daily batch. Direct dbt invocations have the same current-day fallback
+in the four model configs. dbt documents `begin` as the initial/full-refresh
+starting point and notes that it does not discover the earliest event timestamp
+from the data automatically:
+<https://docs.getdbt.com/reference/resource-configs/begin>.
+
+Historical replay must be an explicit, bounded operator action. Supply both
+`--event-time-start` and `--event-time-end`, select only the required
+microbatch models, and monitor ClickHouse capacity while the run is active:
+
+```sh
+pnpm tsx scripts/with-env.ts -- env \
+  DBT_TARGET=dev \
+  UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+  uv run --project analytics dbt run \
+  --project-dir analytics \
+  --profiles-dir analytics \
+  --threads 1 \
+  --event-time-start "2025-01-01" \
+  --event-time-end "2025-02-01" \
+  --select "sensor_scalar_sample deduped_sensor activity_sensor_sample activity_location_sample"
+```
+
+Choose the smallest interval that contains the data being repaired and advance
+long backfills in separately observed windows. dbt's microbatch documentation
+defines these flags as the supported historical backfill controls and
+recommends providing both bounds:
+<https://docs.getdbt.com/docs/build/incremental-microbatch#backfills>.
+
 After both safe dbt build groups succeed, `scripts/warm-query-cache.ts` replays
 every live query key registered in Redis with its original user, timezone,
 procedure path, and input. Refresh mode bypasses the old value and overwrites it

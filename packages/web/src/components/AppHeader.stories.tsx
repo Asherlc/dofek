@@ -12,6 +12,7 @@ import { AppHeader } from "./AppHeader";
 
 const storyPaths = [
   "/dashboard",
+  "/alerts",
   "/training",
   "/activities",
   "/sleep",
@@ -90,5 +91,11 @@ export const WithHeaderAction: Story = {
         30 days
       </button>
     ),
+  },
+};
+
+export const WithActiveAlerts: Story = {
+  args: {
+    activeAlertCount: 3,
   },
 };

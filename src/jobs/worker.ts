@@ -11,6 +11,7 @@ import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
 import { initProductionSentry } from "../lib/sentry.ts";
 import { jobContext, logger } from "../logger.ts";
+import { startDataExportOutboxDispatcher } from "./data-export-outbox.ts";
 import { startFileUploadOutboxDispatcher } from "./file-upload-outbox.ts";
 import { startFileUploadReconciler } from "./file-upload-reconciliation.ts";
 import { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
@@ -37,6 +38,7 @@ import {
   FIT_FILE_IMPORT_QUEUE,
   type FitFileImportBatchJobData,
   type FitFileImportJobData,
+  getDataExportQueue,
   getImportQueue,
   getProviderDataDeletionQueue,
   getRedisConnection,
@@ -335,6 +337,7 @@ const providerDataDeletionOutboxDispatcher = startProviderDataDeletionOutboxDisp
   db,
   getProviderDataDeletionQueue(),
 );
+const dataExportOutboxDispatcher = startDataExportOutboxDispatcher(db, getDataExportQueue());
 const fileUploadOutboxDispatcher = startFileUploadOutboxDispatcher(db, getImportQueue());
 const fileUploadReconciler = startFileUploadReconciler(db, getImportUploadStorage());
 
@@ -492,6 +495,7 @@ async function shutdown() {
       readinessServer.close((error) => (error ? reject(error) : resolve()));
     }),
     providerDataDeletionOutboxDispatcher.close(),
+    dataExportOutboxDispatcher.close(),
     fileUploadOutboxDispatcher.close(),
     fileUploadReconciler.close(),
     ...allWorkers.map((worker) => worker.close()),

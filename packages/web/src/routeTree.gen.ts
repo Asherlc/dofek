@@ -32,6 +32,7 @@ import { Route as CorrelationRouteImport } from './routes/correlation'
 import { Route as BreathworkRouteImport } from './routes/breathwork'
 import { Route as BodyRouteImport } from './routes/body'
 import { Route as BehaviorImpactRouteImport } from './routes/behavior-impact'
+import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ActivitiesRouteImport } from './routes/activities'
 import { Route as IndexRouteImport } from './routes/index'
@@ -169,6 +170,11 @@ const BehaviorImpactRoute = BehaviorImpactRouteImport.update({
   path: '/behavior-impact',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AlertsRoute = AlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -283,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/activities': typeof ActivitiesRoute
   '/admin': typeof AdminRouteWithChildren
+  '/alerts': typeof AlertsRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/breathwork': typeof BreathworkRoute
@@ -328,6 +335,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/activities': typeof ActivitiesRoute
+  '/alerts': typeof AlertsRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/breathwork': typeof BreathworkRoute
   '/correlation': typeof CorrelationRoute
@@ -371,6 +379,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/activities': typeof ActivitiesRoute
   '/admin': typeof AdminRouteWithChildren
+  '/alerts': typeof AlertsRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/breathwork': typeof BreathworkRoute
@@ -419,6 +428,7 @@ export interface FileRouteTypes {
     | '/'
     | '/activities'
     | '/admin'
+    | '/alerts'
     | '/behavior-impact'
     | '/body'
     | '/breathwork'
@@ -464,6 +474,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/activities'
+    | '/alerts'
     | '/behavior-impact'
     | '/breathwork'
     | '/correlation'
@@ -506,6 +517,7 @@ export interface FileRouteTypes {
     | '/'
     | '/activities'
     | '/admin'
+    | '/alerts'
     | '/behavior-impact'
     | '/body'
     | '/breathwork'
@@ -553,6 +565,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ActivitiesRoute: typeof ActivitiesRoute
   AdminRoute: typeof AdminRouteWithChildren
+  AlertsRoute: typeof AlertsRoute
   BehaviorImpactRoute: typeof BehaviorImpactRoute
   BodyRoute: typeof BodyRouteWithChildren
   BreathworkRoute: typeof BreathworkRoute
@@ -740,6 +753,13 @@ declare module '@tanstack/react-router' {
       path: '/behavior-impact'
       fullPath: '/behavior-impact'
       preLoaderRoute: typeof BehaviorImpactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts': {
+      id: '/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -976,6 +996,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ActivitiesRoute: ActivitiesRoute,
   AdminRoute: AdminRouteWithChildren,
+  AlertsRoute: AlertsRoute,
   BehaviorImpactRoute: BehaviorImpactRoute,
   BodyRoute: BodyRouteWithChildren,
   BreathworkRoute: BreathworkRoute,

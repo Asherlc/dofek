@@ -79,6 +79,11 @@ export interface SyncResult {
   endDate: string;
 }
 
+export interface HealthKitSampleUpdate {
+  typeIdentifier: string;
+  updateId: string;
+}
+
 /** Check whether HealthKit authorization has already been requested.
  * Returns "unnecessary" if the user has already been asked,
  * "shouldRequest" if permissions still need to be requested,
@@ -157,21 +162,13 @@ export async function deleteDietarySamples(syncIdentifiers: string[]): Promise<n
   return HealthKitModule.deleteDietarySamples(syncIdentifiers);
 }
 
-/** Get the anchor for incremental syncing of a given type */
-export async function getAnchor(typeIdentifier: string): Promise<number> {
-  return HealthKitModule.getAnchor(typeIdentifier);
-}
-
-/** Query samples added/deleted since the last anchor (for incremental sync) */
-export async function queryAnchoredSamples(
-  typeIdentifier: string,
-  anchor: number,
-): Promise<{
+/** Query samples added/deleted since the last successful query.
+ * The native module persists HealthKit's opaque query anchor per type. */
+export async function queryAnchoredSamples(typeIdentifier: string): Promise<{
   samples: HealthKitSample[];
   deletedUUIDs: string[];
-  newAnchor: number;
 }> {
-  return HealthKitModule.queryAnchoredSamples(typeIdentifier, anchor);
+  return HealthKitModule.queryAnchoredSamples(typeIdentifier);
 }
 
 /** Check if background delivery was previously enabled on this device */
@@ -190,10 +187,20 @@ export async function setupBackgroundObservers(): Promise<boolean> {
   return HealthKitModule.setupBackgroundObservers();
 }
 
+/** Complete specific HealthKit observer callbacks after their coalesced sync settles. */
+export function completeObserverUpdates(updateIds: string[], succeeded: boolean): number {
+  return HealthKitModule.completeObserverUpdates(updateIds, succeeded);
+}
+
+/** Stop native observer queries and complete every callback that is still pending. */
+export function teardownBackgroundObservers(): number {
+  return HealthKitModule.teardownBackgroundObservers();
+}
+
 /** Listen for HealthKit sample update events from background observers.
  * Returns a subscription that can be removed with `.remove()`. */
 export function addSampleUpdateListener(
-  callback: (event: { typeIdentifier: string }) => void,
+  callback: (event: HealthKitSampleUpdate) => void,
 ): EventSubscription {
   return HealthKitModule.addListener("onHealthKitSampleUpdate", callback);
 }
