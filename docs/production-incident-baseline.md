@@ -16592,3 +16592,49 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   be uploaded by GitHub's artifact action when a run fails. Fix artifact
   sanitization separately only if a future failing run needs those logs; it did
   not cause this mutation timeout.
+
+## 2026-07-25 — Local ClickHouse Integration Rebuild Exhausted Shared VM Memory
+
+- **Status:** Root cause identified and broad local validation passed after
+  completed workspaces naturally released shared Docker VM memory.
+- **Symptoms:** A broad router integration run failed during ClickHouse fixture
+  construction, and subsequent scoped Compose and Docker status commands did
+  not receive a daemon response.
+- **User impact:** No production users were affected. Local validation for
+  issue #1750 could not complete the broad `router-data` suite.
+- **Evidence:** The initial exact failing command was
+  `pnpm test:integration -- packages/server/src/routers/router-data.integration.test.ts`.
+  Its first fatal line was `Error: socket hang up` while executing the fixture
+  `INSERT INTO ... v_activity`. The scoped
+  `pnpm compose -- down --remove-orphans --volumes`, `pnpm compose -- ps -a`,
+  and `docker info` commands subsequently received no daemon response and were
+  manually terminated. After the daemon recovered normally, only the
+  `issue-1750` Compose project was removed and recreated. The unchanged command
+  then failed before any assertion with ClickHouse error 241:
+  `(total) memory limit exceeded`, at 954.95 MiB RSS against an 882.57 MiB
+  limit. ClickHouse reported only 300–500 MiB of OS memory available in the
+  7.65 GiB Docker VM. `MemoryWorker` logs showed it repeatedly lowering the
+  server hard limit from the configured 3 GiB ceiling to roughly 600–800 MiB
+  based on available memory. Concurrent isolated workspaces each had
+  ClickHouse processes using roughly 600–680 MiB. ClickHouse documents that
+  memory overcommit terminates an overcommitted query when the server reaches
+  its memory limit:
+  <https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#memory-limit-exceeded-for-query>.
+- **Root cause:** Concurrent workspace databases exhausted the shared Docker
+  VM's available memory, so ClickHouse dynamically lowered its server memory
+  limit below the fixture rebuild's measured peak and terminated the query; no
+  product assertion failed.
+- **Fix / mitigation:** No product test, timeout, retry, memory limit, or
+  application behavior was changed. Cleanup and fresh startup were restricted
+  to the `issue-1750` Compose project, preserving every other workspace.
+- **Validation:** The focused serial
+  `efficiency.polarizationTrend` integration suite passed all seven tests,
+  including exact 80% and 90% zone boundaries, insufficient-data status,
+  server-computed totals, and the serialized polarization classification.
+  After available memory rose to 2.22 GiB and ClickHouse's dynamic server limit
+  rose to 2.36 GiB, the unchanged broad `router-data` integration command
+  passed all 51 tests without an ad-hoc wait, retry, timeout, or memory-setting
+  change.
+- **Remaining risk / follow-up:** Concurrent local ClickHouse stacks can still
+  exhaust the fixed-size shared Docker VM. Keep workspace-scoped cleanup as
+  part of completed work and rely on hosted CI as the full integration gate.

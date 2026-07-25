@@ -178,7 +178,20 @@ describe("TrainingRepository", () => {
     it("returns null maxHr and empty weeks when no data", async () => {
       const { repo, execute, sensorStore } = makeRepository([]);
       const result = await repo.getHrZones(90);
-      expect(result).toEqual({ maxHr: null, weeks: [] });
+      expect(result).toEqual({
+        maxHr: null,
+        weeks: [],
+        intensityDistribution: {
+          model: "karvonen-five-zone",
+          activityScope: "endurance",
+          totalSeconds: 0,
+          zones: expect.arrayContaining([
+            expect.objectContaining({ zone: 0, label: "Below Zone 1", seconds: 0, percent: 0 }),
+            expect.objectContaining({ zone: 5, label: "VO2max", seconds: 0, percent: 0 }),
+          ]),
+          explanation: expect.stringContaining("does not classify training polarization"),
+        },
+      });
       expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
       expect(executedSql(execute)).toContain("activity_type IN");
       expect(sensorStore.query).not.toHaveBeenCalled();
@@ -202,6 +215,15 @@ describe("TrainingRepository", () => {
       expect(result.weeks).toHaveLength(1);
       expect(result.weeks[0]?.zone0).toBe(75);
       expect(result.weeks[0]?.zone2).toBe(200);
+      expect(result.intensityDistribution).toMatchObject({
+        model: "karvonen-five-zone",
+        activityScope: "endurance",
+        totalSeconds: 585,
+        zones: expect.arrayContaining([
+          { zone: 0, label: "Below Zone 1", seconds: 75, percent: 12.8 },
+          { zone: 2, label: "Aerobic", seconds: 200, percent: 34.2 },
+        ]),
+      });
     });
 
     it("uses activity-specific heart-rate values in canonical zone SQL", async () => {

@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
@@ -29,6 +30,32 @@ function requireSensorStore(
   }
   return sensorStore;
 }
+
+const polarizationTrendOutputSchema = z.object({
+  model: z.literal("treff-three-zone"),
+  activityScope: z.literal("cycling"),
+  threshold: z.literal(2),
+  maxHr: z.number().nullable(),
+  weeks: z.array(
+    z.object({
+      week: z.string(),
+      z1Seconds: z.number(),
+      z2Seconds: z.number(),
+      z3Seconds: z.number(),
+      polarizationIndex: z.number().nullable(),
+      totalSeconds: z.number(),
+      zonePercentages: z.object({
+        z1: z.number(),
+        z2: z.number(),
+        z3: z.number(),
+      }),
+      status: z.enum(["polarized", "not_polarized", "insufficient_data"]),
+      statusLabel: z.string(),
+      explanation: z.string(),
+    }),
+  ),
+  explanation: z.string(),
+}) satisfies z.ZodType<PolarizationTrendResult>;
 
 export const efficiencyRouter = router({
   aerobicEfficiency: selectedChartRangeQuery(
@@ -82,5 +109,6 @@ export const efficiencyRouter = router({
       );
       return repo.getPolarizationTrend(range);
     },
+    { outputSchema: polarizationTrendOutputSchema },
   ),
 });
