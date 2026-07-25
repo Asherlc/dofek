@@ -226,6 +226,36 @@ describe("TrainingRepository", () => {
       });
     });
 
+    it("returns an empty distribution when activity rows have no usable max heart rate", async () => {
+      const { repo } = makeRepository([
+        {
+          max_hr: null,
+          week: "2024-01-15",
+          zone0: 75,
+          zone1: 100,
+          zone2: 200,
+          zone3: 150,
+          zone4: 50,
+          zone5: 10,
+        },
+      ]);
+
+      await expect(repo.getHrZones(90)).resolves.toEqual({
+        maxHr: null,
+        weeks: [],
+        intensityDistribution: {
+          model: "karvonen-five-zone",
+          activityScope: "endurance",
+          totalSeconds: 0,
+          zones: expect.arrayContaining([
+            expect.objectContaining({ zone: 0, seconds: 0, percent: 0 }),
+            expect.objectContaining({ zone: 5, seconds: 0, percent: 0 }),
+          ]),
+          explanation: expect.stringContaining("does not classify training polarization"),
+        },
+      });
+    });
+
     it("uses activity-specific heart-rate values in canonical zone SQL", async () => {
       const { repo, sensorStore } = makeRepository([], undefined, 1);
 
