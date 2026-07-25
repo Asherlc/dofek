@@ -1,3 +1,6 @@
+#if canImport(Sentry)
+import Sentry
+#endif
 import Foundation
 import WatchConnectivity
 
@@ -121,19 +124,17 @@ final class TransferManager: ObservableObject {
             }
 
             // Transfer via WCSession
-            let metadata: [String: Any] = [
-                "type": "accelerometer_samples",
-                "sampleCount": result.count,
-                "hasGyroscope": !gyroSamples.isEmpty,
-                "transferredAt": ISO8601DateFormatter().string(from: Date()),
-            ]
+            var metadata = accelerometerRecorder.transferMetadata(through: result.through)
+            metadata["type"] = "accelerometer_samples"
+            metadata["sampleCount"] = result.count
+            metadata["hasGyroscope"] = !gyroSamples.isEmpty
+            metadata["transferredAt"] = ISO8601DateFormatter().string(from: Date())
 
             session.transferFile(compressedURL, metadata: metadata)
 
             DispatchQueue.main.async { [weak self] in
-                self?.accelerometerRecorder.markTransferComplete()
-                self?.lastTransferStatus = "Sent \(result.count) samples (\(compressedSize / 1024) KB)"
-                self?.isTransferring = false
+                self?.lastTransferStatus =
+                    "Queued \(result.count) samples (\(compressedSize / 1024) KB)"
             }
 
             transferAltimeterSamples()
@@ -151,6 +152,8 @@ final class TransferManager: ObservableObject {
         mergedURL: URL?,
         error: Error
     ) {
+        reportUnexpectedTransferFailure(error)
+
         for url in tempFilesToCleanup {
             try? FileManager.default.removeItem(at: url)
         }
@@ -312,6 +315,10 @@ final class TransferManager: ObservableObject {
 
     private func handleFileTransferFinished(_ fileTransfer: WCSessionFileTransfer, error: Error?) {
         let transferType = fileTransfer.file.metadata?["type"] as? String
+        if transferType == "accelerometer_samples" {
+            handleAccelerometerTransferFinished(fileTransfer, error: error)
+            return
+        }
         guard transferType == "altitude_samples" else { return }
 
         let transferredURL = fileTransfer.file.fileURL
@@ -333,6 +340,51 @@ final class TransferManager: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             self?.lastTransferStatus = "Sent \(sampleCount) altitude samples"
         }
+    }
+
+    private func handleAccelerometerTransferFinished(
+        _ fileTransfer: WCSessionFileTransfer,
+        error: Error?
+    ) {
+        let metadata = fileTransfer.file.metadata
+        let sampleCount = metadata?["sampleCount"] as? Int ?? 0
+
+        switch accelerometerRecorder.completeTransfer(metadata: metadata, error: error) {
+        case .confirmed:
+            DispatchQueue.main.async { [weak self] in
+                self?.accelerometerRecorder.markTransferComplete()
+                self?.lastTransferStatus = "Sent \(sampleCount) samples"
+                self?.isTransferring = false
+            }
+        case let .failed(transferError):
+            reportUnexpectedTransferFailure(transferError)
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus =
+                    "Transfer error: \(transferError.localizedDescription)"
+                self?.isTransferring = false
+            }
+        case .invalidMetadata:
+            let metadataError = NSError(
+                domain: "com.dofek.watch.transfer",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Accelerometer transfer completed without a valid cursor boundary",
+                ]
+            )
+            reportUnexpectedTransferFailure(metadataError)
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus = "Transfer error: Missing accelerometer cursor"
+                self?.isTransferring = false
+            }
+        }
+    }
+
+    private func reportUnexpectedTransferFailure(_ error: Error) {
+        NSLog("[DofekWatch] Transfer failed: %@", error.localizedDescription)
+        #if canImport(Sentry)
+        SentrySDK.capture(error: error)
+        #endif
     }
 
     /// Compress a file using zlib via Foundation's NSData.compressed(using:).

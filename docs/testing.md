@@ -42,21 +42,20 @@ Sources:
 
 ### Isolated browser end-to-end stack
 
-Generate a unique Compose project name for each browser E2E run, keep every
-command in the same shell, and reuse that name so concurrent or stale runs
-cannot share resources:
+Use the repository Compose wrapper with the `e2e` project suffix for every
+browser E2E command. The wrapper resolves that to `<workspace>-e2e`, which is
+stable within the workspace and distinct from the normal `<workspace>` project:
 
 ```bash
-e2e_project_name="dofek-e2e-audit-$(date +%s)-$$"
-docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
-docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
+pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml up -d --build --wait --wait-timeout 180
+pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml ps -a
 if ! pnpm e2e:web:run; then
-  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml ps -a
-  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml logs --no-color
-  docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
+  pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml ps -a
+  pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml logs --no-color
+  pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml down -v
   exit 1
 fi
-docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
+pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml down -v
 ```
 
 The isolated topology includes Redpanda and explicit metric-stream producer
@@ -67,8 +66,8 @@ documents health-gated dependency startup in its
 The `activity-recording.cy.ts` API test exercises this dependency by saving a
 recorded activity with sensor samples through the authenticated tRPC endpoint.
 
-Use a task-specific project name rather than Compose's directory-derived
-default; Docker documents project-name isolation and precedence here:
+Use the `e2e` suffix for startup, reuse, service inspection, logs, and teardown.
+Docker documents project-name isolation and precedence here:
 <https://docs.docker.com/compose/how-tos/project-name/>.
 
 The failure branch preserves container state and complete service logs before
@@ -134,11 +133,12 @@ deleting unused cross-workspace data. Docker documents which object types each p
 removes in its [resource pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
 
 Conductor's archive hook runs the equivalent Compose shutdown for both the
-default and E2E files using the archived workspace's physical directory and
-project name. It removes that project's containers, networks, anonymous
-volumes, and declared named volumes while preserving shared images, build
-cache, and resources belonging to other workspaces. This matches Docker
-Compose's documented [`down --volumes` behavior](https://docs.docker.com/reference/cli/docker/compose/down/).
+default `<workspace>` project and isolated `<workspace>-e2e` project using the
+archived workspace's physical directory. It removes those projects'
+containers, networks, anonymous volumes, and declared named volumes while
+preserving shared images, build cache, and resources belonging to other
+workspaces. This matches Docker Compose's documented
+[`down --volumes` behavior](https://docs.docker.com/reference/cli/docker/compose/down/).
 
 Router integration tests that exercise activity sensor analytics use ClickHouse-backed
 test stores. The test helper isolates ClickHouse databases per test database, creates
@@ -167,7 +167,8 @@ pnpm e2e:web:reuse
 
 `pnpm e2e:web:reuse` starts the existing E2E compose services with `--no-build`,
 waits for migrations and analytics setup, keeps volumes after Cypress exits, and
-passes extra flags through to Cypress:
+passes extra flags through to Cypress. Both commands use the isolated
+`<workspace>-e2e` Compose project:
 
 ```bash
 pnpm e2e:web:reuse -- --spec cypress/e2e/dashboard.cy.ts

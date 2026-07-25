@@ -162,6 +162,7 @@ describe("sleepNeedRouter", () => {
       expect(result.canRecommend).toBe(false);
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       expect(queryText).toContain("analytics.daily_strain FINAL");
+      expect(queryText).toContain("is_deleted = 0");
       expect(queryText).toContain("toDate(toTimeZone(toDateTime(date), {timezone:String}))");
       expect(queryText).not.toContain("analytics.activity_summary");
     });
