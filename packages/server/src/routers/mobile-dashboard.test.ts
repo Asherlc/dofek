@@ -774,6 +774,7 @@ describe("mobileDashboard.recovery", () => {
         goal: null,
         projectionLine: [],
       },
+      healthStatus: [],
       healthspan: {
         healthspanScore: null,
         yearsDelta: null,
@@ -838,6 +839,7 @@ describe("mobileDashboard.recovery", () => {
         goal: null,
         projectionLine: [],
       },
+      healthStatus: [],
       healthspan: {
         healthspanScore: null,
         yearsDelta: null,

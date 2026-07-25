@@ -2,7 +2,7 @@ import { formatDateMedium, formatDateTime } from "@dofek/format/format";
 import { formatMeasurementText, UnitConverter } from "@dofek/format/units";
 import { useRouter } from "expo-router";
 import * as Updates from "expo-updates";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -24,6 +24,7 @@ import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStateP
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { useAuth } from "../lib/auth-context";
+import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
@@ -34,6 +35,7 @@ const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] 
   { value: "metric", label: "Metric", description: "kg, km, °C" },
   { value: "imperial", label: "Imperial", description: "lbs, mi, °F" },
 ];
+const reportedUnitReadErrors = new WeakSet<object>();
 
 function formatLocalizedDateTime(date: Date | null | undefined): string {
   if (!date) return "n/a";
@@ -81,6 +83,7 @@ export default function SettingsScreen() {
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
   const setSettingMutation = trpc.settings.set.useMutation();
+  const lastUnitReadError = useRef<unknown>(null);
   const deleteAllDataMutation = trpc.settings.deleteAllUserData.useMutation({
     onSuccess: async () => {
       await trpcUtils.invalidate();
@@ -120,13 +123,32 @@ export default function SettingsScreen() {
   const units = new UnitConverter(currentUnitSystem);
   const kgToLbs = 2.20462;
 
+  useEffect(() => {
+    if (
+      unitSetting.error &&
+      lastUnitReadError.current !== unitSetting.error &&
+      !reportedUnitReadErrors.has(unitSetting.error)
+    ) {
+      lastUnitReadError.current = unitSetting.error;
+      reportedUnitReadErrors.add(unitSetting.error);
+      captureException(unitSetting.error, { context: "unit-system-read" });
+    }
+  }, [unitSetting.error]);
+
   function handleUnitChange(value: UnitSystem) {
+    const previousSetting = trpcUtils.settings.get.getData({ key: "unitSystem" });
     trpcUtils.settings.get.setData({ key: "unitSystem" }, { key: "unitSystem", value });
     setSettingMutation.mutate(
       { key: "unitSystem", value },
       {
-        onSuccess: () => unitSetting.refetch(),
-        onError: () => unitSetting.refetch(),
+        onError: (error) => {
+          trpcUtils.settings.get.setData({ key: "unitSystem" }, previousSetting);
+          captureException(error, { context: "unit-system-write" });
+          Alert.alert("Error", error.message);
+        },
+        onSettled: () => {
+          void trpcUtils.settings.get.invalidate({ key: "unitSystem" });
+        },
       },
     );
   }
@@ -346,6 +368,7 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Units</Text>
         <Text style={styles.sectionDescription}>Choose how measurements are displayed</Text>
+        {unitSetting.error && <Text style={styles.unitErrorText}>{unitSetting.error.message}</Text>}
         <View style={styles.unitRow}>
           {UNIT_OPTIONS.map((option) => {
             const isSelected = currentUnitSystem === option.value;
@@ -861,6 +884,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textTertiary,
     marginTop: 2,
+  },
+  unitErrorText: {
+    color: colors.danger,
+    fontSize: 12,
+    marginBottom: 8,
   },
 
   // ── Goal Weight ──

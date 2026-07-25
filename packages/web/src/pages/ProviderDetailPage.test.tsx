@@ -151,6 +151,7 @@ const mockDisconnectMutation = { mutateAsync: vi.fn(), isPending: false };
 const mockDeleteAllDataMutation = { mutateAsync: vi.fn(), isPending: false };
 const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: false });
 const mockSettingsSetMutate = vi.fn();
+const mockSettingsGetGetData = vi.fn();
 const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
@@ -198,7 +199,11 @@ vi.mock("../lib/trpc.ts", () => ({
         records: { invalidate: vi.fn() },
       },
       settings: {
-        get: { setData: mockSettingsGetSetData, invalidate: mockSettingsGetInvalidate },
+        get: {
+          getData: mockSettingsGetGetData,
+          setData: mockSettingsGetSetData,
+          invalidate: mockSettingsGetInvalidate,
+        },
       },
     }),
   },
@@ -852,6 +857,7 @@ describe("WhoopWearLocationPicker", () => {
     ];
     mockSettingsGetQuery.mockReturnValue({ data: null, isLoading: false });
     mockSettingsSetMutate.mockReset();
+    mockSettingsGetGetData.mockReset();
     mockSettingsGetSetData.mockReset();
     mockSettingsGetInvalidate.mockReset();
   });
@@ -936,7 +942,10 @@ describe("WhoopWearLocationPicker", () => {
 
     expect(mockSettingsSetMutate).toHaveBeenCalledWith(
       { key: "whoop.wearLocation", value: "bicep" },
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.objectContaining({
+        onError: expect.any(Function),
+        onSettled: expect.any(Function),
+      }),
     );
   });
 
@@ -950,5 +959,55 @@ describe("WhoopWearLocationPicker", () => {
       { key: "whoop.wearLocation" },
       { key: "whoop.wearLocation", value: "chest" },
     );
+  });
+
+  it("restores the exact cached location and displays the server error when a write fails", async () => {
+    const previousSetting = { key: "whoop.wearLocation", value: "bicep" };
+    mockSettingsGetQuery.mockReturnValue({
+      data: previousSetting,
+      error: null,
+      isLoading: false,
+    });
+    mockSettingsGetGetData.mockReturnValue(previousSetting);
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    fireEvent.click(screen.getByText("Chest / Torso"));
+    const options = mockSettingsSetMutate.mock.calls[0]?.[1];
+    const writeError = new Error("Wear location was not saved.");
+    act(() => options.onError(writeError));
+    act(() => options.onSettled());
+
+    expect(mockSettingsGetSetData).toHaveBeenLastCalledWith(
+      { key: "whoop.wearLocation" },
+      previousSetting,
+    );
+    expect(mockSettingsGetInvalidate).toHaveBeenCalledWith({ key: "whoop.wearLocation" });
+    expect(screen.getByRole("alert").textContent).toBe(writeError.message);
+    expect(mockCaptureException).toHaveBeenCalledWith(writeError, {
+      context: "whoop-wear-location-write",
+    });
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps cached location visible and displays an exact background read error", async () => {
+    const readError = new Error("Wear location could not be loaded.");
+    mockSettingsGetQuery.mockReturnValue({
+      data: { key: "whoop.wearLocation", value: "bicep" },
+      error: readError,
+      isLoading: false,
+    });
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Bicep / Upper Arm").closest("button")?.className).toContain(
+      "border-emerald-500",
+    );
+    expect(screen.getByRole("alert").textContent).toBe(readError.message);
+    expect(mockCaptureException).toHaveBeenCalledWith(readError, {
+      context: "whoop-wear-location-read",
+    });
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
   });
 });

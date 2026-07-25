@@ -863,29 +863,29 @@ describe("Router data coverage", () => {
   describe("settings", () => {
     it("set creates a setting and get retrieves it", async () => {
       const setResult = await mutate<{ key: string; value: unknown }>("settings.set", {
-        key: "theme",
-        value: "dark",
+        key: "unitSystem",
+        value: "metric",
       });
-      expect(setResult.key).toBe("theme");
+      expect(setResult.key).toBe("unitSystem");
 
       await queryCache.invalidateAll();
 
       const getResult = await query<{ key: string; value: unknown } | null>("settings.get", {
-        key: "theme",
+        key: "unitSystem",
       });
       expect(getResult).not.toBeNull();
-      expect(getResult?.key).toBe("theme");
-      expect(getResult?.value).toBe("dark");
+      expect(getResult?.key).toBe("unitSystem");
+      expect(getResult?.value).toBe("metric");
     });
 
     it("set upserts an existing setting", async () => {
-      await mutate("settings.set", { key: "theme", value: "light" });
+      await mutate("settings.set", { key: "unitSystem", value: "imperial" });
       await queryCache.invalidateAll();
 
       const result = await query<{ key: string; value: unknown } | null>("settings.get", {
-        key: "theme",
+        key: "unitSystem",
       });
-      expect(result?.value).toBe("light");
+      expect(result?.value).toBe("imperial");
     });
 
     it("get returns null for missing key", async () => {
@@ -895,15 +895,15 @@ describe("Router data coverage", () => {
 
     it("getAll returns all settings", async () => {
       // Set a second setting
-      await mutate("settings.set", { key: "locale", value: "en-US" });
+      await mutate("settings.set", { key: "whoop.wearLocation", value: "wrist" });
       await queryCache.invalidateAll();
 
       const result = await query<{ key: string; value: unknown }[]>("settings.getAll");
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBeGreaterThanOrEqual(2);
       const keys = result.map((r) => r.key);
-      expect(keys).toContain("theme");
-      expect(keys).toContain("locale");
+      expect(keys).toContain("unitSystem");
+      expect(keys).toContain("whoop.wearLocation");
     });
 
     it("slackStatus returns configured and connected booleans", async () => {

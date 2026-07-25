@@ -1,0 +1,172 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildHealthStatusFromSummary,
+  buildHealthStatusFromValues,
+  buildWeightHealthStatus,
+  resolveWeightGoalIntent,
+} from "./health-status.ts";
+
+describe("buildHealthStatusFromSummary", () => {
+  it("treats a positive deviation as moving as intended when higher values are supported", () => {
+    expect(
+      buildHealthStatusFromSummary({
+        metric: "hrv",
+        label: "Heart Rate Variability (HRV)",
+        value: 65,
+        baseline: 50,
+        sampleDeviation: 10,
+        intent: "higher",
+      }),
+    ).toMatchObject({
+      deviation: 1.5,
+      direction: "above",
+      intent: "higher",
+      statusToken: "moving_as_intended",
+      statusColor: "positive",
+      statusLabel: "Moving as intended",
+    });
+  });
+
+  it("classifies a negative deviation against a supported higher-value direction", () => {
+    expect(
+      buildHealthStatusFromSummary({
+        metric: "hrv",
+        label: "Heart Rate Variability (HRV)",
+        value: 35,
+        baseline: 50,
+        sampleDeviation: 10,
+        intent: "higher",
+      }),
+    ).toMatchObject({
+      deviation: -1.5,
+      direction: "below",
+      statusToken: "notable_deviation",
+      statusColor: "warning",
+      statusLabel: "Notably below baseline",
+    });
+  });
+
+  it.each([
+    { value: 70, direction: "above" as const, deviation: 2 },
+    { value: 30, direction: "below" as const, deviation: -2 },
+  ])("uses neutral language for a $direction deviation", ({ value, direction, deviation }) => {
+    const result = buildHealthStatusFromSummary({
+      metric: "body_fat_percentage",
+      label: "Body Fat %",
+      value,
+      baseline: 50,
+      sampleDeviation: 10,
+      intent: "neutral",
+    });
+
+    expect(result).toMatchObject({
+      deviation,
+      direction,
+      statusToken: "far_from_baseline",
+      statusColor: "danger",
+      statusLabel: `Far ${direction} baseline`,
+    });
+    expect(result.explanation).not.toMatch(/abnormal|normal/i);
+  });
+
+  it.each([
+    { value: null, baseline: 50, sampleDeviation: 10 },
+    { value: 50, baseline: null, sampleDeviation: 10 },
+    { value: 50, baseline: 50, sampleDeviation: null },
+    { value: 50, baseline: 50, sampleDeviation: 0 },
+  ])("returns an insufficient-data DTO for missing or zero variance", (input) => {
+    expect(
+      buildHealthStatusFromSummary({
+        metric: "skin_temperature",
+        label: "Skin Temperature",
+        intent: "neutral",
+        ...input,
+      }),
+    ).toMatchObject({
+      deviation: null,
+      direction: "unknown",
+      statusToken: "insufficient_data",
+      statusColor: "muted",
+      statusLabel: "Not enough data",
+    });
+  });
+});
+
+describe("buildHealthStatusFromValues", () => {
+  it("computes the baseline mean and sample deviation on the server", () => {
+    expect(
+      buildHealthStatusFromValues({
+        metric: "steps",
+        label: "Steps",
+        values: [70, 72, 74],
+        intent: "neutral",
+      }),
+    ).toMatchObject({
+      value: 74,
+      baseline: 72,
+      sampleDeviation: 2,
+      deviation: 1,
+      direction: "above",
+      statusToken: "notable_deviation",
+    });
+  });
+});
+
+describe("resolveWeightGoalIntent", () => {
+  it("returns loss intent when the goal is below both the current value and baseline", () => {
+    expect(resolveWeightGoalIntent({ goalWeightKg: 70, currentWeightKg: 80, baselineKg: 82 })).toBe(
+      "lower",
+    );
+  });
+
+  it("returns gain intent when the goal is above both the current value and baseline", () => {
+    expect(resolveWeightGoalIntent({ goalWeightKg: 90, currentWeightKg: 82, baselineKg: 80 })).toBe(
+      "higher",
+    );
+  });
+
+  it("returns maintenance intent when the goal is aligned with the current range", () => {
+    expect(resolveWeightGoalIntent({ goalWeightKg: 81, currentWeightKg: 81, baselineKg: 80 })).toBe(
+      "maintain",
+    );
+  });
+
+  it("returns neutral intent when no goal is configured", () => {
+    expect(
+      resolveWeightGoalIntent({ goalWeightKg: null, currentWeightKg: 81, baselineKg: 80 }),
+    ).toBe("neutral");
+  });
+});
+
+describe("buildWeightHealthStatus", () => {
+  it.each([
+    {
+      goalWeightKg: 70,
+      values: [82, 80],
+      intent: "lower",
+      statusToken: "moving_as_intended",
+    },
+    {
+      goalWeightKg: 90,
+      values: [80, 82],
+      intent: "higher",
+      statusToken: "moving_as_intended",
+    },
+    {
+      goalWeightKg: 81,
+      values: [80, 82],
+      intent: "maintain",
+      statusToken: "near_baseline",
+    },
+  ])("classifies weight using $intent goal intent", ({
+    goalWeightKg,
+    values,
+    intent,
+    statusToken,
+  }) => {
+    expect(buildWeightHealthStatus(values, goalWeightKg)).toMatchObject({
+      intent,
+      statusToken,
+    });
+  });
+});
