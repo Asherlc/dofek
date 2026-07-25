@@ -99,6 +99,15 @@ describe("initBackgroundHealthKitSync", () => {
     expect(typeof mockAddSampleUpdateListener.mock.calls[0][0]).toBe("function");
   });
 
+  it("registers the sample listener before starting native observers", async () => {
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+
+    expect(mockAddSampleUpdateListener.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSetupBackgroundObservers.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
   it("runs an immediate catch-up sync when initialized", async () => {
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);
@@ -176,6 +185,19 @@ describe("initBackgroundHealthKitSync", () => {
 
     expect(onSyncComplete).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it("reports asynchronous completion callback failures to Sentry", async () => {
+    const client = createMockClient();
+    const invalidationError = new Error("cache invalidation failed");
+
+    await initBackgroundHealthKitSync(client, () => Promise.reject(invalidationError));
+
+    await vi.waitFor(() => {
+      expect(mockCaptureException).toHaveBeenCalledWith(invalidationError, {
+        source: "bg-healthkit-sync",
+      });
+    });
   });
 
   it("reports sync failures to Sentry", async () => {

@@ -202,6 +202,7 @@ export class WahooProvider implements WebhookProvider {
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      reconnectStrategy: "revoke-then-replace",
       revokeExistingTokens: async (tokens) => {
         // Try revoking with the stored access token first.
         try {
