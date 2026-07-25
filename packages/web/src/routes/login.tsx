@@ -8,6 +8,7 @@ import {
   registerWithPassword,
   requestPasswordReset,
 } from "../lib/auth.ts";
+import { captureException } from "../lib/telemetry.ts";
 
 type AuthMode = "login" | "register" | "reset";
 
@@ -27,6 +28,7 @@ function LoginPage() {
     fetchConfiguredProviders()
       .then(setProviders)
       .catch((err: unknown) => {
+        captureException(err, { operation: "auth.providers" });
         setError(err instanceof Error ? err.message : "Failed to load providers");
       })
       .finally(() => setLoading(false));
@@ -61,6 +63,9 @@ function LoginPage() {
           : await loginWithPassword({ email, password, returnTo });
       window.location.href = result.redirect;
     } catch (err: unknown) {
+      captureException(err, {
+        operation: authMode === "register" ? "auth.register" : "auth.login",
+      });
       setFormError(err instanceof Error ? err.message : "Authentication failed");
     } finally {
       setSubmitting(false);
@@ -75,6 +80,7 @@ function LoginPage() {
       const result = await requestPasswordReset(email);
       setFormError(result.message);
     } catch (err: unknown) {
+      captureException(err, { operation: "auth.password-reset-request" });
       setFormError(err instanceof Error ? err.message : "Password reset failed");
     } finally {
       setSubmitting(false);

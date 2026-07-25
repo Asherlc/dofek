@@ -155,6 +155,7 @@ const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 const mockPollSyncJob = vi.fn();
+const mockSyncStatusFetch = vi.fn();
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -189,7 +190,7 @@ vi.mock("../lib/trpc.ts", () => ({
       sync: {
         providers: { invalidate: vi.fn() },
         providerStats: { invalidate: vi.fn() },
-        syncStatus: { fetch: vi.fn() },
+        syncStatus: { fetch: mockSyncStatusFetch },
       },
       providerDetail: {
         availableDataTypes: { invalidate: vi.fn() },
@@ -622,8 +623,62 @@ describe("ProviderDetailPage import-only providers", () => {
       fireEvent.click(screen.getByText("Sync Last 7 Days"));
     });
 
-    expect(mockCaptureException).toHaveBeenCalledWith(syncError, { context: "sync-provider" });
+    expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+      operation: "sync.triggerSync",
+      providerId: "wahoo",
+    });
     expect(screen.getByText("Queue unavailable")).toBeTruthy();
+  });
+
+  it("reports provider polling failures without the job id", async () => {
+    const jobId = "secret-provider-job-id";
+    const pollError = new Error("Sync status unavailable");
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      jobId,
+      jobIds: [jobId],
+      providerJobs: [{ providerId: "wahoo", jobId, queueName: "sync-wahoo" }],
+      providerResults: [{ providerId: "wahoo", status: "started", jobId }],
+    });
+    mockPollSyncJob.mockImplementationOnce(
+      async ({
+        fetchStatus,
+        onError,
+      }: {
+        fetchStatus: (id: string) => Promise<unknown>;
+        onError: (error: unknown) => void;
+      }) => {
+        await fetchStatus(jobId);
+        onError(pollError);
+      },
+    );
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+
+    expect(mockSyncStatusFetch).toHaveBeenCalledWith(
+      { jobId },
+      { staleTime: 0, meta: { errorReportedLocally: true } },
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(pollError, {
+      operation: "sync.syncStatus",
+      providerId: "wahoo",
+    });
+    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(jobId);
   });
 
   it("does not trigger sync for an inverted date range", async () => {

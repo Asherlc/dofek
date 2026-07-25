@@ -168,6 +168,7 @@ jobs:
     needs: [check, terraform]
     uses: ./.github/workflows/deploy-web-stack.yml
     with:
+      commit_sha: ${{ inputs.automatic_commit_sha }}
       image_tag: ${{ needs.check.outputs.image_tag }}
       server_host: ${{ needs.terraform.outputs.server_host }}
       ssh_user: ${{ inputs.ssh_user }}
