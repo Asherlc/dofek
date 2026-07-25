@@ -27,7 +27,10 @@ let package = Package(
                 "expo-target.config.js",
                 "pods.rb",
             ],
-            sources: ["AccelerometerTransferCursor.swift"]
+            sources: [
+                "AccelerometerTransferCursor.swift",
+                "GyroscopeSampleBuffer.swift",
+            ]
         ),
         .testTarget(
             name: "DofekWatchTransferCoreTests",
@@ -39,7 +42,10 @@ let package = Package(
                 "AltitudeCalculator.test.swift",
                 "TransferManager.test.swift",
             ],
-            sources: ["AccelerometerTransferCursor.test.swift"]
+            sources: [
+                "AccelerometerTransferCursor.test.swift",
+                "GyroscopeSampleBuffer.test.swift",
+            ]
         ),
     ]
 )

@@ -16014,6 +16014,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [`docs/sentry.md`](sentry.md) so unexpected alerts can be confirmed directly
   from their event payload and stack trace.
 
+## 2026-07-24 — Query-Cache Integration Setup Exhausted Docker Disk
+
+- **Status:** Resolved; no production impact.
+- **Symptoms:** The issue-1718 integration environment could not start
+  Redpanda or initialize PostgreSQL.
+- **User impact:** Local executable cache-invalidation tests were blocked.
+  Production and CI were not affected.
+- **Evidence:** Docker's virtual disk was 100% full. The first Redpanda fatal
+  line was `mkdir failed: No space left on device` for its crash-report
+  directory, and PostgreSQL then failed with
+  `initdb: error: could not create directory
+  "/home/postgres/pgdata/data/pg_wal": No space left on device`.
+  `docker system df` reported 22.66 GB of reclaimable volumes.
+- **Root cause:** Accumulated abandoned anonymous test volumes and stopped
+  Timescale test containers, combined with a completed issue-1705 Compose
+  stack, exhausted the shared Docker Desktop virtual disk.
+- **Fix / mitigation:** Removed only explicitly identified dangling anonymous
+  test volumes and stopped disposable test containers, then the completed
+  issue-1705 workspace removed its own Compose containers, network, and named
+  volumes. No broad volume or system prune was used. Docker documents that
+  `docker compose down --volumes` removes volumes declared by that Compose
+  project and attached anonymous volumes
+  ([Docker Compose reference](https://docs.docker.com/reference/cli/docker/compose/down/)).
+- **Validation:** The issue-1718 PostgreSQL, ClickHouse, Redis, and Redpanda
+  services all started healthy. The real database/cache integration suites
+  subsequently passed 40 tests, including every new mutation invalidation
+  case.
+- **Remaining risk / follow-up:** Abandoned Testcontainers resources can refill
+  the shared virtual disk. Continue using the scoped recovery sequence in
+  [`docs/testing.md`](testing.md#docker-disk-recovery) and Docker's documented
+  prune filters
+  ([Docker pruning guide](https://docs.docker.com/engine/manage-resources/pruning/));
+  preserve other workspaces' running containers and named volumes.
 ## 2026-07-24 — New Brace Expansion Advisory Broke PR CI
 
 - **Status:** Fixed on PR #1917; replacement CI pending.
@@ -16089,6 +16122,64 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   own Compose volumes so concurrent workspaces do not accumulate disposable
   database state.
 
+## 2026-07-24 — Cache-Invalidation Mutants Survived PR CI
+
+- **Status:** Fixed on PR #1923; replacement CI pending.
+- **Symptoms:** Seven `Test / Stryker` shards failed after cache invalidation
+  was added to domain mutations. After their test gaps were fixed, the
+  replacement run exposed one final shard covering the centralized cache
+  helpers themselves.
+- **User impact:** No production users were affected. PR #1923 was blocked
+  from merging.
+- **Evidence:** Each failed shard completed its dry run successfully, then
+  reported surviving conditional, block, or array-declaration mutants on the
+  new invalidation paths. The first fatal line was
+  `Final mutation score 0.00 under breaking threshold 75, setting exit code to
+  1 (failure)`.
+- **Root cause:** The real-cache integration tests proved end-to-end behavior,
+  but mutation testing intentionally excludes integration tests. Existing
+  Docker-free router unit tests exercised the writes without asserting the
+  invalidator domain or the null/no-write branch, so removing or emptying the
+  invalidation calls did not fail those tests. The centralized helpers also
+  lacked a colocated unit test, leaving their block and collection mutants
+  uncovered by Stryker's related-test selection.
+- **Fix / mitigation:** Added focused assertions to the existing colocated
+  unit tests for every affected domain, plus null-result assertions for
+  journal, life-event, menstrual-cycle, and breathwork mutations. Added both
+  affected user assertions for Slack orphan repair and public-interface tests
+  that verify domain-scoped, user-scoped, and global helper invalidation. No
+  mutation threshold, exclusion, or suppression changed. Stryker documents
+  surviving mutants and break thresholds in its
+  [configuration reference](https://stryker-mutator.io/docs/stryker-js/configuration/).
+- **Validation:** The seven focused files pass 235 unit tests, and the cache
+  helper suite passes all 15 cache tests. Running the exact failed mutation
+  ranges locally killed all 35 generated mutants for a 100% mutation score.
+  Full typecheck and lint also pass after refreshing the merged lockfile
+  dependencies.
+- **Remaining risk / follow-up:** Hosted CI must confirm all replacement
+  mutation shards. When adding mutation-covered side effects, pair executable
+  integration coverage with direct unit assertions for the side effect and
+  its no-write branch.
+
+## 2026-07-24 — Cache Helper Test Failed NodeNext Typecheck
+
+- **Status:** Fixed on PR #1923; replacement CI pending.
+- **Symptoms:** The root and `@dofek/heart-rate-variability` typecheck jobs
+  failed after the cache helper unit test was added.
+- **User impact:** No production users were affected. PR #1923 remained
+  blocked from merging.
+- **Evidence:** Both jobs reported the first compiler error
+  `src/lib/cache.test.ts(7,8): error TS2835: Relative import paths need
+  explicit file extensions in ECMAScript imports`.
+- **Root cause:** The new test imported `./cache` without the `.js` extension
+  required by the repository's NodeNext module resolution.
+- **Fix / mitigation:** Changed the test import to the canonical
+  `./cache.js` specifier. No compiler setting or typecheck scope changed.
+- **Validation:** Root and `@dofek/heart-rate-variability` typechecks pass
+  locally, as do the 15 cache tests, Biome, and `git diff --check`.
+- **Remaining risk / follow-up:** Hosted CI must confirm the replacement
+  typecheck matrix. New ESM test imports should follow the same explicit
+  extension convention as production modules.
 ## 2026-07-20 — Local E2E Replaced the Developer Compose Stack
 
 - **Status:** Fixed and validated locally; hosted CI is a merge gate.
@@ -16198,3 +16289,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   still exceed the Docker VM's per-service resources. Prefer the documented
   changed or bounded integration commands locally and treat the hosted shards
   as the complete merge gate.
+## 2026-07-24 — watchOS CI Runner Failed Repository Checkout
+
+- **Status:** Root cause identified; replacement CI pending.
+- **Symptoms:** `Build Mobile / watchOS Build` failed before source checkout
+  completed on PR #1923 after merging the latest `main`.
+- **User impact:** No production users were affected. PR #1923 was temporarily
+  blocked from merging.
+- **Evidence:** All three checkout attempts failed while Git wrote fetched pack
+  files. The first fatal line was
+  `fatal: fsync error on '.git/objects/pack/tmp_pack_76fdAK': Input/output
+  error`, followed by `fetch-pack: invalid index-pack output`.
+- **Root cause:** The hosted macOS runner returned an input/output error while
+  `actions/checkout` wrote Git object-pack data; no repository build command
+  ran, and the failure was unrelated to source compilation.
+- **Fix / mitigation:** Scheduled replacement CI on a fresh hosted runner
+  without changing checkout retries, timeouts, or source behavior.
+- **Validation:** The preceding hosted run passed the same watchOS build, all
+  106 checks passed before the base merge, and the merged tree passes root
+  typecheck plus 4,854 changed unit/mobile tests locally.
+- **Remaining risk / follow-up:** Confirm checkout and the watchOS build on the
+  replacement runner. If runner I/O failures recur, escalate with the failing
+  runner evidence rather than adding repository-level retry behavior.

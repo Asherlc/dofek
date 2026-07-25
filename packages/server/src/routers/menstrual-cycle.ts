@@ -1,3 +1,4 @@
+import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
 import {
   type CurrentPhaseResult,
@@ -36,7 +37,11 @@ export const menstrualCycleRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const repo = new MenstrualCycleRepository(ctx.db, ctx.userId);
-      return repo.logPeriod(input.startDate, input.endDate, input.notes);
+      const period = await repo.logPeriod(input.startDate, input.endDate, input.notes);
+      if (period !== null) {
+        await invalidateUserQueryDomains(ctx.userId, ["menstrualCycle"]);
+      }
+      return period;
     }),
 
   /** Period history for the past N months */

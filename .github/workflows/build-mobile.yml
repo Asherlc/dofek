@@ -2,59 +2,20 @@ name: Build Mobile
 
 on:
   workflow_call:
+    inputs:
+      changed:
+        required: true
+        type: boolean
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  check-mobile-changes:
-    name: Check Mobile Changes
-    runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.check.outputs.changed }}
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-      - id: check
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          if [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            CHANGED=$(git diff --name-only origin/$BASE_REF...HEAD -- \
-              packages/mobile/ \
-              packages/auth/ \
-              packages/format/ \
-              packages/nutrition/ \
-              packages/onboarding/ \
-              packages/providers-meta/ \
-              packages/scoring/ \
-              packages/training/ \
-              packages/zones/ \
-              packages/server/ \
-              package.json \
-              pnpm-lock.yaml \
-              pnpm-workspace.yaml \
-              tsconfig.json)
-            if [ -n "$CHANGED" ]; then
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-              echo "iOS files changed:"
-              echo "$CHANGED"
-            else
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              echo "No iOS changes detected, skipping native build"
-            fi
-          fi
-
   build-metro-bundle:
     name: Metro Bundle
-    needs: check-mobile-changes
     if: >-
-      needs.check-mobile-changes.outputs.changed == 'true' &&
+      inputs.changed &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
@@ -80,9 +41,8 @@ jobs:
 
   build-ios-native:
     name: iOS Native Build
-    needs: check-mobile-changes
     if: >-
-      needs.check-mobile-changes.outputs.changed == 'true' &&
+      inputs.changed &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-26
     env:
@@ -160,8 +120,7 @@ jobs:
 
   build-watchos:
     name: watchOS Build
-    needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
+    if: inputs.changed
     runs-on: macos-26
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -243,8 +202,7 @@ jobs:
 
   lint-ios-podspecs:
     name: iOS Podspec Lint
-    needs: check-mobile-changes
-    if: needs.check-mobile-changes.outputs.changed == 'true'
+    if: inputs.changed
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -265,14 +223,13 @@ jobs:
 
   mobile-gate:
     name: Mobile Build Gate
-    needs: [check-mobile-changes, build-metro-bundle, build-ios-native, build-watchos, lint-ios-podspecs]
+    needs: [build-metro-bundle, build-ios-native, build-watchos, lint-ios-podspecs]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check results
         run: |
           for result in \
-            "${{ needs.check-mobile-changes.result }}" \
             "${{ needs.build-metro-bundle.result }}" \
             "${{ needs.build-ios-native.result }}" \
             "${{ needs.build-watchos.result }}" \

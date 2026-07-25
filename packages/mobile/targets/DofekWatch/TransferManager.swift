@@ -88,7 +88,7 @@ final class TransferManager: ObservableObject {
             return
         }
 
-        let gyroSamples = gyroscopeRecorder.queryNewSamples()
+        let gyroSamples = gyroscopeRecorder.copyBufferedSamples()
         var tempFilesToCleanup: [URL] = [result.url]
         var mergedURL: URL?
 
@@ -128,6 +128,7 @@ final class TransferManager: ObservableObject {
             metadata["type"] = "accelerometer_samples"
             metadata["sampleCount"] = result.count
             metadata["hasGyroscope"] = !gyroSamples.isEmpty
+            metadata["gyroscopeSampleCount"] = gyroSamples.count
             metadata["transferredAt"] = ISO8601DateFormatter().string(from: Date())
 
             session.transferFile(compressedURL, metadata: metadata)
@@ -348,10 +349,12 @@ final class TransferManager: ObservableObject {
     ) {
         let metadata = fileTransfer.file.metadata
         let sampleCount = metadata?["sampleCount"] as? Int ?? 0
+        let gyroscopeSampleCount = metadata?["gyroscopeSampleCount"] as? Int ?? 0
 
         switch accelerometerRecorder.completeTransfer(metadata: metadata, error: error) {
         case .confirmed:
             DispatchQueue.main.async { [weak self] in
+                self?.gyroscopeRecorder.confirmTransferredSamples(count: gyroscopeSampleCount)
                 self?.accelerometerRecorder.markTransferComplete()
                 self?.lastTransferStatus = "Sent \(sampleCount) samples"
                 self?.isTransferring = false

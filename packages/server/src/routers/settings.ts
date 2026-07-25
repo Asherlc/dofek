@@ -1,4 +1,4 @@
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { z } from "zod";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -38,6 +38,7 @@ export const settingsRouter = router({
   deleteAllUserData: protectedProcedure.mutation(async ({ ctx }) => {
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     await repo.deleteAllUserData(DISCONNECT_CHILD_TABLES);
+    await invalidateAllUserQueries(ctx.userId);
     return { success: true };
   }),
 });

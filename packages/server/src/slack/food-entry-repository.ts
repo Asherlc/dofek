@@ -1,5 +1,6 @@
 import type { Database } from "dofek/db";
 import { nutrientAmountEntriesFromLegacyFields } from "dofek/db/nutrient-columns";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
@@ -222,6 +223,10 @@ export class FoodEntryRepository {
                 SET user_id = ${correctId}
                 WHERE user_id = ${orphanId}`,
           );
+          await Promise.all([
+            invalidateAllUserQueries(orphanId),
+            invalidateAllUserQueries(correctId),
+          ]);
           return { userId: correctId, timezone };
         }
       }
@@ -239,6 +244,7 @@ export class FoodEntryRepository {
           VALUES (${userId}, 'slack', ${slackUserId}, ${name}, ${email})`,
     );
 
+    await invalidateAllUserQueries(userId);
     logger.info(`[slack] Linked Slack user ${slackUserId} to user ${userId} (${name})`);
     return { userId, timezone };
   }

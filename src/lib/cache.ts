@@ -163,3 +163,38 @@ export const queryCache: CacheStore =
     : process.env.NODE_ENV === "test"
       ? new MemoryCacheStore()
       : new RedisCacheStore();
+
+const USER_QUERY_PREFIXES = {
+  breathwork: ["breathwork.history"],
+  journalEntries: ["journal.entries", "journal.trends", "behaviorImpact."],
+  lifeEvents: ["lifeEvents."],
+  menstrualCycle: ["menstrualCycle."],
+  personalization: ["personalization.", "mobileDashboard.", "recovery.", "stress.", "pmc."],
+  sportSettings: ["sportSettings."],
+} as const;
+
+export type UserQueryCacheDomain = keyof typeof USER_QUERY_PREFIXES;
+
+/**
+ * Invalidates every cached read model derived from the supplied user domains.
+ * Keep the dependency map here so router, job, and REST write paths agree.
+ */
+export async function invalidateUserQueryDomains(
+  userId: string,
+  domains: readonly UserQueryCacheDomain[],
+): Promise<void> {
+  const prefixes = new Set(domains.flatMap((domain) => USER_QUERY_PREFIXES[domain]));
+  await Promise.all(
+    [...prefixes].map((prefix) => queryCache.invalidateByPrefix(`${userId}:${prefix}`)),
+  );
+}
+
+/** Invalidates every cached query for a user after a cross-domain write. */
+export async function invalidateAllUserQueries(userId: string): Promise<void> {
+  await queryCache.invalidateByPrefix(`${userId}:`);
+}
+
+/** Invalidates the shared query cache after a write to globally visible data. */
+export async function invalidateAllQueries(): Promise<void> {
+  await queryCache.invalidateAll();
+}
