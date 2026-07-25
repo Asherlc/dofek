@@ -176,7 +176,9 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
    mixed:
    <https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run>.
    Manual image-tag deploys must dispatch the workflow with `--ref` set to the
-   full source commit for that image.
+   full source commit for that image. After pulling the app image, the workflow
+   compares its full `SENTRY_RELEASE` with the checked-out Git commit and fails
+   before asset upload, migrations, or stack deployment when they differ.
 2. **Terraform apply** (if infra changed): updates Cloudflare-managed production DNS and storage. `ORACLE_SERVER_HOST` is required for production DNS and deploy targeting.
 3. **Deploy Web Stack** (`deploy-web-stack.yml`):
    1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.

@@ -385,6 +385,11 @@ jobs:
             echo "::error::Image ghcr.io/asherlc/dofek:${IMAGE_TAG} does not declare SENTRY_RELEASE"
             exit 1
           fi
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [ "$sentry_release" != "$checked_out_sha" ]; then
+            echo "::error::Checked-out commit ${checked_out_sha} does not match image SENTRY_RELEASE ${sentry_release}; dispatch the workflow from the image's source commit."
+            exit 1
+          fi
           echo "sentry_release=$sentry_release" >> "$GITHUB_OUTPUT"
 
           server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
