@@ -20,6 +20,7 @@ import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { toFilterOptions } from "../lib/provider-detail-filter-options.ts";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ProviderDataDeleteControl } from "./ProviderDataDeleteControl.tsx";
@@ -82,7 +83,9 @@ export function ProviderDetailPage() {
     : null;
 
   // Sync state
-  const syncMutation = trpc.sync.triggerSync.useMutation();
+  const syncMutation = trpc.sync.triggerSync.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncPercentage, setSyncPercentage] = useState<number | undefined>(undefined);
@@ -127,7 +130,11 @@ export function ProviderDetailPage() {
         await pollSyncJob({
           jobId,
           providerIds: [providerId],
-          fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
+          fetchStatus: (id) =>
+            trpcUtils.sync.syncStatus.fetch(
+              { jobId: id },
+              { staleTime: 0, meta: locallyReportedErrorMeta },
+            ),
           updateState: (_id, state) => {
             setSyncPercentage(state.percentage);
             if (state.message) setSyncMessage(state.message);
@@ -149,9 +156,18 @@ export function ProviderDetailPage() {
             trpcUtils.providerDetail.logs.invalidate();
             trpcUtils.providerDetail.records.invalidate();
           },
+          onError: (error) => {
+            captureException(error, {
+              operation: "sync.syncStatus",
+              providerId,
+            });
+          },
         });
       } catch (err: unknown) {
-        captureException(err, { context: "sync-provider" });
+        captureException(err, {
+          operation: "sync.triggerSync",
+          providerId,
+        });
         setSyncStatus("error");
         setSyncPercentage(undefined);
         setSyncMessage(err instanceof Error ? err.message : "Sync failed");
