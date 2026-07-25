@@ -155,17 +155,17 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
 }
 
 export function isCoreDashboardReady({
-  readinessSettled,
-  workloadRatioSettled,
-  strainTargetSettled,
-  sleepPerformanceSettled,
+  readinessReady,
+  workloadRatioReady,
+  strainTargetReady,
+  sleepPerformanceReady,
 }: {
-  readinessSettled: boolean;
-  workloadRatioSettled: boolean;
-  strainTargetSettled: boolean;
-  sleepPerformanceSettled: boolean;
+  readinessReady: boolean;
+  workloadRatioReady: boolean;
+  strainTargetReady: boolean;
+  sleepPerformanceReady: boolean;
 }): boolean {
-  return readinessSettled && workloadRatioSettled && strainTargetSettled && sleepPerformanceSettled;
+  return readinessReady && workloadRatioReady && strainTargetReady && sleepPerformanceReady;
 }
 
 export function Dashboard() {
@@ -179,10 +179,15 @@ export function Dashboard() {
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const coreDashboardReady = isCoreDashboardReady({
-    readinessSettled: readinessData.isFetched,
-    workloadRatioSettled: workloadRatio.isFetched,
-    strainTargetSettled: strainTarget.isFetched,
-    sleepPerformanceSettled: sleepPerformance.isFetched,
+    readinessReady:
+      readinessData.data !== undefined || (readinessData.isFetched && readinessData.error == null),
+    workloadRatioReady:
+      workloadRatio.data !== undefined || (workloadRatio.isFetched && workloadRatio.error == null),
+    strainTargetReady:
+      strainTarget.data !== undefined || (strainTarget.isFetched && strainTarget.error == null),
+    sleepPerformanceReady:
+      sleepPerformance.data !== undefined ||
+      (sleepPerformance.isFetched && sleepPerformance.error == null),
   });
   const insightsQuery = trpc.insights.compute.useQuery(
     { days, endDate },
@@ -249,6 +254,10 @@ export function Dashboard() {
         workloadLoading={workloadRatio.isLoading}
         strainTargetLoading={strainTarget.isLoading}
         sleepLoading={sleepPerformance.isLoading}
+        readinessError={readinessData.error}
+        workloadError={workloadRatio.error}
+        strainTargetError={strainTarget.error}
+        sleepError={sleepPerformance.error}
       />
       <DashboardEvidenceOverview
         days={days}

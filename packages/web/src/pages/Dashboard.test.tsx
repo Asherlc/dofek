@@ -68,9 +68,13 @@ const mockDataHealthQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
 const mockDashboardEvidenceOverview = vi.hoisted(() => vi.fn());
+const mockDailyOverview = vi.hoisted(() => vi.fn());
 
 vi.mock("../components/DailyOverview.tsx", () => ({
-  DailyOverview: () => <section aria-label="Daily health summary">Daily overview</section>,
+  DailyOverview: (props: Record<string, unknown>) => {
+    mockDailyOverview(props);
+    return <section aria-label="Daily health summary">Daily overview</section>;
+  },
 }));
 
 vi.mock("../components/DashboardEvidenceOverview.tsx", () => ({
@@ -195,6 +199,7 @@ describe("Dashboard", () => {
     mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockDashboardEvidenceOverview.mockClear();
+    mockDailyOverview.mockClear();
   });
 
   it("shows data readiness when dashboard summaries are stale", () => {
@@ -289,7 +294,7 @@ describe("Dashboard", () => {
     );
   });
 
-  it("enables insights after core dashboard queries settle, including on error", () => {
+  it("does not enable insights when a core dashboard prerequisite fails without data", () => {
     mockReadinessQuery.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -301,7 +306,65 @@ describe("Dashboard", () => {
 
     expect(mockInsightsQuery).toHaveBeenCalledWith(
       expect.anything(),
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it("enables insights when a failed background refresh retains prerequisite data", () => {
+    mockReadinessQuery.mockReturnValue({
+      data: coreDashboardQueryData.readiness,
+      isLoading: false,
+      isFetched: true,
+      error: new Error("Readiness refresh unavailable"),
+    });
+
+    render(<Dashboard />);
+
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("passes every core dashboard query error into the daily summary", () => {
+    const readinessError = new Error("Readiness unavailable");
+    const workloadError = new Error("Workload unavailable");
+    const strainTargetError = new Error("Strain target unavailable");
+    const sleepError = new Error("Sleep performance unavailable");
+    mockReadinessQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: readinessError,
+    });
+    mockWorkloadQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: workloadError,
+    });
+    mockStrainTargetQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: strainTargetError,
+    });
+    mockSleepPerformanceQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: sleepError,
+    });
+
+    render(<Dashboard />);
+
+    expect(mockDailyOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        readinessError,
+        workloadError,
+        strainTargetError,
+        sleepError,
+      }),
     );
   });
 
@@ -403,24 +466,24 @@ describe("Dashboard", () => {
 });
 
 describe("isCoreDashboardReady", () => {
-  it("returns false while any core dashboard query is still in flight", () => {
+  it("returns false while any core dashboard prerequisite is not ready", () => {
     expect(
       isCoreDashboardReady({
-        readinessSettled: false,
-        workloadRatioSettled: true,
-        strainTargetSettled: true,
-        sleepPerformanceSettled: true,
+        readinessReady: false,
+        workloadRatioReady: true,
+        strainTargetReady: true,
+        sleepPerformanceReady: true,
       }),
     ).toBe(false);
   });
 
-  it("returns true once all core dashboard queries have settled", () => {
+  it("returns true once all core dashboard prerequisites are ready", () => {
     expect(
       isCoreDashboardReady({
-        readinessSettled: true,
-        workloadRatioSettled: true,
-        strainTargetSettled: true,
-        sleepPerformanceSettled: true,
+        readinessReady: true,
+        workloadRatioReady: true,
+        strainTargetReady: true,
+        sleepPerformanceReady: true,
       }),
     ).toBe(true);
   });
