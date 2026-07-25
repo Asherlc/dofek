@@ -188,6 +188,8 @@ ORDER BY (user_id, member_activity_id)`,
         }
       });
 
+      expect(batchEvents).toHaveLength(microbatchModels.length);
+
       expect(
         Object.fromEntries(
           batchEvents.map((event) => [

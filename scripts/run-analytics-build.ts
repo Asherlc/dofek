@@ -92,31 +92,35 @@ function runDbtProcess(argumentsList: readonly string[]): Promise<number> {
 export async function runAnalyticsBuildFromEnvironment(): Promise<void> {
   const { mkdtemp } = await import("node:fs/promises");
   const artifactDirectory = await mkdtemp(join(tmpdir(), "dofek-dbt-artifacts-"));
-  const database = createDatabaseFromEnv();
-  const clickHouse = createClickHouseClientFromEnv();
   try {
-    const microbatchBounds = await resolveAnalyticsMicrobatchBounds(clickHouse);
-    const result = await runAnalyticsBuild({
-      selectedModels: PRODUCTION_DBT_MODELS,
-      artifactDirectory,
-      microbatchBounds,
-      runDbt: runDbtProcess,
-      readArtifact: async (name) => {
-        const serializedArtifact = await readFile(join(artifactDirectory, name), "utf8");
-        const parsedArtifact: unknown = JSON.parse(serializedArtifact);
-        return parsedArtifact;
-      },
-      recordRun: (run) => recordAnalyticsRunForPendingProcessing(database, run),
-    });
-    console.log(
-      `[analytics-processing] recorded ${result.datasets} datasets; ${result.failed} failed`,
-    );
+    const database = createDatabaseFromEnv();
+    try {
+      const clickHouse = createClickHouseClientFromEnv();
+      try {
+        const microbatchBounds = await resolveAnalyticsMicrobatchBounds(clickHouse);
+        const result = await runAnalyticsBuild({
+          selectedModels: PRODUCTION_DBT_MODELS,
+          artifactDirectory,
+          microbatchBounds,
+          runDbt: runDbtProcess,
+          readArtifact: async (name) => {
+            const serializedArtifact = await readFile(join(artifactDirectory, name), "utf8");
+            const parsedArtifact: unknown = JSON.parse(serializedArtifact);
+            return parsedArtifact;
+          },
+          recordRun: (run) => recordAnalyticsRunForPendingProcessing(database, run),
+        });
+        console.log(
+          `[analytics-processing] recorded ${result.datasets} datasets; ${result.failed} failed`,
+        );
+      } finally {
+        await clickHouse.close?.();
+      }
+    } finally {
+      await database.$client.end();
+    }
   } finally {
-    await Promise.all([
-      database.$client.end(),
-      clickHouse.close?.(),
-      rm(artifactDirectory, { recursive: true, force: true }),
-    ]);
+    await rm(artifactDirectory, { recursive: true, force: true });
   }
 }
 

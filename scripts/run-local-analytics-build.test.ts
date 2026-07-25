@@ -1,8 +1,40 @@
-import { describe, expect, it, vi } from "vitest";
+import { fileURLToPath } from "node:url";
+import * as Sentry from "@sentry/node";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import type { AnalyticsMicrobatchQueryClient } from "../src/processing/analytics-microbatch-bounds.ts";
 import { runLocalAnalyticsBuild } from "./run-local-analytics-build.ts";
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+vi.mock("../src/db/clickhouse.ts", () => ({
+  createClickHouseClientFromEnv: vi.fn(),
+}));
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
 describe("runLocalAnalyticsBuild", () => {
+  it("reports unexpected direct-entrypoint failures before rethrowing", async () => {
+    const originalScriptPath = process.argv[1];
+    const scriptPath = fileURLToPath(new URL("./run-local-analytics-build.ts", import.meta.url));
+    const initializationError = new Error("CLICKHOUSE_URL is required");
+    vi.mocked(createClickHouseClientFromEnv).mockImplementation(() => {
+      throw initializationError;
+    });
+    vi.resetModules();
+    process.argv[1] = scriptPath;
+
+    try {
+      await expect(import("./run-local-analytics-build.ts")).rejects.toBe(initializationError);
+      expect(Sentry.captureException).toHaveBeenCalledWith(initializationError);
+    } finally {
+      process.argv[1] = originalScriptPath;
+    }
+  });
+
   it("passes source-derived microbatch bounds to dbt", async () => {
     const clickHouse: AnalyticsMicrobatchQueryClient = {
       query: vi.fn(async () => ({

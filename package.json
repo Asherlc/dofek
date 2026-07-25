@@ -115,7 +115,7 @@
     "compose:up": "tsx scripts/compose-env.ts --up",
     "migrate": "tsx scripts/with-env.ts -- drizzle-kit migrate && tsx scripts/generate-schema-diagram.ts",
     "setup-db": "tsx scripts/with-env.ts -- tsx src/db/run-migrate.ts",
-    "analytics:build": "tsx scripts/with-env.ts -- tsx scripts/run-local-analytics-build.ts",
+    "analytics:build": "pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/run-local-analytics-build.ts",
     "seed": "tsx scripts/seed-dev-db.ts",
     "review:seed-clickhouse": "tsx scripts/with-env.ts -- tsx scripts/seed-review-clickhouse.ts",
     "generate": "drizzle-kit generate && tsx scripts/generate-schema-diagram.ts",

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { captureException } from "@sentry/node";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import {
   type AnalyticsMicrobatchQueryClient,
@@ -65,5 +66,10 @@ async function runLocalAnalyticsBuildFromEnvironment(): Promise<void> {
 
 const scriptPath = process.argv[1];
 if (scriptPath && import.meta.url === pathToFileURL(scriptPath).href) {
-  await runLocalAnalyticsBuildFromEnvironment();
+  try {
+    await runLocalAnalyticsBuildFromEnvironment();
+  } catch (error: unknown) {
+    captureException(error);
+    throw error;
+  }
 }
