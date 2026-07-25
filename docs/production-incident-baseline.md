@@ -16645,3 +16645,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   be uploaded by GitHub's artifact action when a run fails. Fix artifact
   sanitization separately only if a future failing run needs those logs; it did
   not cause this mutation timeout.
+
+## 2026-07-24 — Metro Secret Load Could Not Reach Infisical
+
+- **Status:** External network failure identified on PR #1945; replacement CI
+  pending.
+- **Symptoms:** `Build Mobile / Metro Bundle` failed before the Metro build
+  command ran.
+- **User impact:** No production impact. PR #1945 remained blocked from merge.
+- **Evidence:** The failing secret-load step ran
+  `infisical login --method=oidc-auth`; its first fatal line was
+  `error: unable to authenticate with oidc auth`, caused by
+  `dial tcp 3.212.82.44:443: i/o timeout` while posting to
+  `https://app.infisical.com/api/v1/auth/oidc-auth/login`.
+- **Root cause:** The hosted runner could not establish a connection to the
+  Infisical OIDC endpoint. Dependency installation and GitHub token minting had
+  already succeeded, and the Metro command never started, so this was not an
+  application bundle failure. Infisical documents that GitHub's OIDC token is
+  exchanged at that endpoint for a short-lived access token:
+  <https://infisical.com/docs/documentation/platform/identities/oidc-auth/github>.
+- **Fix / mitigation:** Schedule replacement CI on a fresh hosted runner. No
+  authentication fallback, retry, timeout, cached secret, or bundle behavior
+  was changed.
+- **Validation:** The preceding hosted run passed the Metro bundle on the same
+  PR changes, and the replacement job must complete the Infisical exchange and
+  bundle before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly time out
+  against Infisical, investigate provider availability and runner egress with
+  the captured endpoint evidence before changing workflow behavior.
