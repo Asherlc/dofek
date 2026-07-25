@@ -299,6 +299,284 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     );
   });
 
+  it("revokes only present superseded tokens after a safe replacement succeeds", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "ride-with-gps",
+        name: "Ride with GPS",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://ridewithgps.com/oauth/authorize",
+            tokenUrl: "https://ridewithgps.com/oauth/token.json",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://ridewithgps.com/oauth/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "ride-with-gps",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: null,
+    });
+    mockRevokeToken.mockResolvedValue(undefined);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockPersistProviderConnection).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).toHaveBeenCalledWith(
+      expect.objectContaining({ revokeUrl: "https://ridewithgps.com/oauth/revoke" }),
+      "working-access",
+    );
+    expect(mockLogger.error).not.toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it("keeps a safe replacement active when one superseded token cannot be revoked", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "ride-with-gps",
+        name: "Ride with GPS",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://ridewithgps.com/oauth/authorize",
+            tokenUrl: "https://ridewithgps.com/oauth/token.json",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://ridewithgps.com/oauth/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "ride-with-gps",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeToken
+      .mockRejectedValueOnce(new Error("revocation endpoint unavailable"))
+      .mockResolvedValueOnce(undefined);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockPersistProviderConnection).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).toHaveBeenCalledTimes(2);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining("access token revocation failed: revocation endpoint unavailable"),
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining("superseded authorization cleanup failed"),
+    );
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it("falls back to standard revocation after safe custom cleanup fails", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "ride-with-gps",
+        name: "Ride with GPS",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://ridewithgps.com/oauth/authorize",
+            tokenUrl: "https://ridewithgps.com/oauth/token.json",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://ridewithgps.com/oauth/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+          revokeExistingTokens: mockRevokeExistingTokens,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "ride-with-gps",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeExistingTokens.mockRejectedValue(new Error("custom cleanup unavailable"));
+    mockRevokeToken.mockResolvedValue(undefined);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockPersistProviderConnection).toHaveBeenCalledOnce();
+    expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).toHaveBeenCalledTimes(2);
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Custom revocation failed"),
+    );
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it("uses successful safe custom cleanup without a standard revocation endpoint", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "custom-provider",
+        name: "Custom Provider",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://custom.example/authorize",
+            tokenUrl: "https://custom.example/token",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+          },
+          exchangeCode: mockExchangeCode,
+          revokeExistingTokens: mockRevokeExistingTokens,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "custom-provider",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeExistingTokens.mockResolvedValue(undefined);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockPersistProviderConnection).toHaveBeenCalledOnce();
+    expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).not.toHaveBeenCalled();
+    expect(mockLogger.warn).not.toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it("rejects a destructive strategy without a pre-exchange revocation handler", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "misconfigured-provider",
+        name: "Misconfigured Provider",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://misconfigured.example/authorize",
+            tokenUrl: "https://misconfigured.example/token",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://misconfigured.example/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+          reconnectStrategy: "revoke-then-replace",
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "misconfigured-provider",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockExchangeCode).not.toHaveBeenCalled();
+    expect(mockDeleteTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining("pre-exchange revocation but has no revocation handler"),
+      expect.anything(),
+    );
+  });
+
+  it("does not load data-connection tokens for an account-link callback", async () => {
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "ride-with-gps",
+      codeVerifier: undefined,
+      intent: "link",
+      linkUserId: "user-1",
+      userId: undefined,
+      returnTo: undefined,
+    });
+    const mockGetUserIdentity = vi.fn().mockResolvedValue({
+      providerAccountId: "rwgps-account-1",
+      email: "rwgps@example.com",
+      name: "Ride with GPS User",
+    });
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "ride-with-gps",
+        name: "Ride with GPS",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://ridewithgps.com/oauth/authorize",
+            tokenUrl: "https://ridewithgps.com/oauth/token.json",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://ridewithgps.com/oauth/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+          getUserIdentity: mockGetUserIdentity,
+        }),
+      },
+    ]);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockLoadTokens).not.toHaveBeenCalled();
+    expect(mockRevokeToken).not.toHaveBeenCalled();
+    expect(mockResolveOrCreateUser).toHaveBeenCalledWith(
+      mockDb,
+      "ride-with-gps",
+      expect.objectContaining({ providerAccountId: "rwgps-account-1" }),
+      "user-1",
+    );
+    expect(res.redirect).toHaveBeenCalledWith("/settings");
+  });
+
   it("clears confirmed revoked credentials when a destructive exchange fails", async () => {
     mockGetAllProviders.mockReturnValue([
       {
