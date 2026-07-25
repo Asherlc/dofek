@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+
+const mockInvalidateUserQueryDomains = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
+vi.mock("dofek/lib/cache", () => ({
+  invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -56,6 +62,10 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 const createCaller = createTestCallerFactory(personalizationRouter);
 
 describe("personalizationRouter", () => {
+  beforeEach(() => {
+    mockInvalidateUserQueryDomains.mockClear();
+  });
+
   describe("status", () => {
     it("returns not personalized with defaults when no stored params", async () => {
       mockLoadPersonalizedParams.mockResolvedValue(null);
@@ -216,6 +226,7 @@ describe("personalizationRouter", () => {
       expect(result.fittedAt).toBe("2026-03-18T14:00:00Z");
       expect(result.effective.exponentialMovingAverage.chronicTrainingLoadDays).toBe(35);
       expect(result.parameters.exponentialMovingAverage).not.toBeNull();
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["personalization"]);
     });
 
     it("returns defaults for null sub-params in effective", async () => {
@@ -244,6 +255,7 @@ describe("personalizationRouter", () => {
       expect(result.parameters.sleepTarget).toBeNull();
       expect(result.parameters.stressThresholds).toBeNull();
       expect(result.parameters.trainingImpulseConstants).toBeNull();
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["personalization"]);
     });
 
     it("passes db and userId to refitAllParams", async () => {
@@ -285,6 +297,7 @@ describe("personalizationRouter", () => {
 
       expect(mockExecute).toHaveBeenCalledTimes(1);
       expect(result.effective).toEqual(DEFAULT_PARAMS);
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["personalization"]);
     });
 
     it("calls db.execute to delete the settings row", async () => {

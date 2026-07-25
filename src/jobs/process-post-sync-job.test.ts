@@ -14,9 +14,7 @@ vi.mock("../personalization/refit.ts", () => ({
 }));
 
 vi.mock("../lib/cache.ts", () => ({
-  queryCache: {
-    invalidateByPrefix: (...args: unknown[]) => mockInvalidateByPrefix(...args),
-  },
+  invalidateAllUserQueries: (userId: string) => mockInvalidateByPrefix(`${userId}:`),
 }));
 
 vi.mock("../logger.ts", () => ({

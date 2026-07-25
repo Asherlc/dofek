@@ -41,6 +41,11 @@ vi.mock("@sentry/node", () => ({
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
 const mockLoggerWarn = vi.fn();
+const mockInvalidateAllUserQueries = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("../lib/cache.ts", () => ({
+  invalidateAllUserQueries: (...args: unknown[]) => mockInvalidateAllUserQueries(...args),
+}));
 
 vi.mock("../logger.ts", () => ({
   logger: {
@@ -357,6 +362,7 @@ describe("processSyncJob", () => {
     });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
+    mockInvalidateAllUserQueries.mockResolvedValue(undefined);
     mockProviderQueueAdd.mockResolvedValue(createMockQueuedJob());
     mockProviderQueueGetJob.mockResolvedValue(undefined);
     mockCreateProcessingOperation.mockClear();
@@ -387,6 +393,43 @@ describe("processSyncJob", () => {
 
     expect(providerA.sync).toHaveBeenCalledOnce();
     expect(providerB.sync).toHaveBeenCalledOnce();
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledTimes(2);
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+  });
+
+  it("invalidates WHOOP journal queries after a nonzero sync", async () => {
+    const provider = createMockProvider({
+      id: "whoop",
+      name: "WHOOP",
+      sync: vi.fn().mockResolvedValue({
+        provider: "whoop",
+        recordsSynced: 2,
+        errors: [],
+        duration: 100,
+      } satisfies SyncResult),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "whoop" }), mockDb);
+
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledOnce();
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+  });
+
+  it("does not invalidate queries when a sync writes no records", async () => {
+    const provider = createMockProvider({
+      sync: vi.fn().mockResolvedValue({
+        provider: "test-provider",
+        recordsSynced: 0,
+        errors: [],
+        duration: 100,
+      } satisfies SyncResult),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockInvalidateAllUserQueries).not.toHaveBeenCalled();
   });
 
   it("records a retry-stable processing lifecycle and correlates metric batches", async () => {
