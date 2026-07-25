@@ -435,6 +435,10 @@ describe("TodayScreen independent loading states", () => {
     render(<TodayScreen />);
 
     expect(screen.getByText("Dashboard failed")).toBeTruthy();
+    expect(mockAnomalyUseQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: false }),
+    );
   });
 
   it("shows a sleep coach error card when the sleep-need query fails", async () => {
