@@ -2,6 +2,11 @@ import { Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import * as winston from "winston";
 import { jobContext, logger } from "./logger.ts";
+import {
+  CaptureInfoTransport,
+  consoleTransportFormat,
+  createCaptureLogger,
+} from "./test-helpers.ts";
 
 describe("logger", () => {
   it("has Console and BullJobTransport transports", () => {
@@ -38,17 +43,100 @@ describe("logger", () => {
           callback();
         },
       }),
-      // Use the same format as the console transport in logger.ts
-      format: logger.transports[0]?.format,
+      format: consoleTransportFormat(),
     });
+    const captureLogger = createCaptureLogger(capture);
 
-    logger.add(capture);
-    logger.info("capture test");
-    logger.remove(capture);
+    captureLogger.info("capture test");
+    captureLogger.close();
 
     expect(output.length).toBeGreaterThan(0);
     expect(output[0]).toContain("info");
     expect(output[0]).toContain("capture test");
+  });
+
+  it("interpolates one and multiple substitution arguments for console output", () => {
+    const output: string[] = [];
+    const capture = new winston.transports.Stream({
+      stream: new Writable({
+        write(chunk: Buffer, _encoding: string, callback: () => void) {
+          output.push(chunk.toString());
+          callback();
+        },
+      }),
+      format: consoleTransportFormat(),
+    });
+    const captureLogger = createCaptureLogger(capture);
+
+    captureLogger.info("Imported FIT file %s", "activity.fit");
+    captureLogger.error(
+      "Failed to mark export %s as failed: %s",
+      "export-42",
+      "database unavailable",
+    );
+    captureLogger.close();
+
+    expect(output).toEqual([
+      expect.stringContaining("Imported FIT file activity.fit"),
+      expect.stringContaining("Failed to mark export export-42 as failed: database unavailable"),
+    ]);
+    expect(output.join("\n")).not.toContain("%s");
+  });
+
+  it("provides interpolated messages in the info shape consumed by OTel", async () => {
+    const capture = new CaptureInfoTransport();
+    const captureLogger = createCaptureLogger(capture);
+
+    try {
+      captureLogger.warn("Advisory unlock failed for %s: %s", "migration-7", "connection closed");
+      await vi.waitFor(() => expect(capture.entries).toHaveLength(1));
+    } finally {
+      captureLogger.close();
+    }
+
+    expect(capture.entries).toEqual([
+      {
+        level: "warn",
+        message: "Advisory unlock failed for migration-7: connection closed",
+      },
+    ]);
+  });
+
+  it("preserves Error messages and stacks during interpolation", async () => {
+    const capture = new CaptureInfoTransport();
+    const redisError = new Error("Redis connection closed");
+    const captureLogger = createCaptureLogger(capture);
+
+    try {
+      captureLogger.warn("Advisory unlock failed: %s", redisError);
+      await vi.waitFor(() => expect(capture.entries).toHaveLength(1));
+    } finally {
+      captureLogger.close();
+    }
+
+    expect(capture.entries[0]?.message).toContain("Error: Redis connection closed");
+    expect(capture.entries[0]?.message).toContain(redisError.stack);
+  });
+
+  it("keeps sanitized FIT values interpolated across transports", async () => {
+    const capture = new CaptureInfoTransport();
+    const captureLogger = createCaptureLogger(capture);
+
+    try {
+      captureLogger.error(
+        "Failed to import FIT file %s: %s",
+        "[redacted]_activity.fit",
+        "Native decoder rejected token=[REDACTED]",
+      );
+      await vi.waitFor(() => expect(capture.entries).toHaveLength(1));
+    } finally {
+      captureLogger.close();
+    }
+
+    expect(capture.entries[0]?.message).toBe(
+      "Failed to import FIT file [redacted]_activity.fit: Native decoder rejected token=[REDACTED]",
+    );
+    expect(capture.entries[0]?.message).not.toContain("%s");
   });
 
   it("forwards logs to job.log() when inside jobContext", async () => {
@@ -56,23 +144,23 @@ describe("logger", () => {
 
     await jobContext.run(mockJob, async () => {
       logger.info("test message");
-      // Winston transports are async — give the transport time to fire
-      await new Promise((r) => setTimeout(r, 50));
+      await vi.waitFor(() =>
+        expect(mockJob.log).toHaveBeenCalledWith(expect.stringContaining("test message")),
+      );
     });
-
-    expect(mockJob.log).toHaveBeenCalledWith(expect.stringContaining("test message"));
   });
 
   it("formats BullJobTransport output with level prefix", async () => {
     const mockJob = { log: vi.fn().mockResolvedValue(1) };
 
     await jobContext.run(mockJob, async () => {
-      logger.warn("warning here");
-      await new Promise((r) => setTimeout(r, 50));
+      logger.warn("Failed to update export %s: %s", "export-42", "Redis unavailable");
+      await vi.waitFor(() =>
+        expect(mockJob.log).toHaveBeenCalledWith(
+          "[warn] Failed to update export export-42: Redis unavailable",
+        ),
+      );
     });
-
-    expect(mockJob.log).toHaveBeenCalledWith(expect.stringContaining("[warn]"));
-    expect(mockJob.log).toHaveBeenCalledWith(expect.stringContaining("warning here"));
   });
 
   it("does not throw when job.log() rejects", async () => {
@@ -81,10 +169,8 @@ describe("logger", () => {
     await jobContext.run(mockJob, async () => {
       // Should not throw even when job.log rejects
       expect(() => logger.info("will fail to log")).not.toThrow();
-      await new Promise((r) => setTimeout(r, 50));
+      await vi.waitFor(() => expect(mockJob.log).toHaveBeenCalled());
     });
-
-    expect(mockJob.log).toHaveBeenCalled();
   });
 
   it("does not call job.log() when outside jobContext", () => {
