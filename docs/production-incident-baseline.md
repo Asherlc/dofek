@@ -16126,7 +16126,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 - **Status:** Fixed on PR #1923; replacement CI pending.
 - **Symptoms:** Seven `Test / Stryker` shards failed after cache invalidation
-  was added to domain mutations.
+  was added to domain mutations. After their test gaps were fixed, the
+  replacement run exposed one final shard covering the centralized cache
+  helpers themselves.
 - **User impact:** No production users were affected. PR #1923 was blocked
   from merging.
 - **Evidence:** Each failed shard completed its dry run successfully, then
@@ -16138,18 +16140,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   but mutation testing intentionally excludes integration tests. Existing
   Docker-free router unit tests exercised the writes without asserting the
   invalidator domain or the null/no-write branch, so removing or emptying the
-  invalidation calls did not fail those tests.
+  invalidation calls did not fail those tests. The centralized helpers also
+  lacked a colocated unit test, leaving their block and collection mutants
+  uncovered by Stryker's related-test selection.
 - **Fix / mitigation:** Added focused assertions to the existing colocated
   unit tests for every affected domain, plus null-result assertions for
   journal, life-event, menstrual-cycle, and breathwork mutations. Added both
-  affected user assertions for Slack orphan repair. No mutation threshold,
-  exclusion, or suppression changed. Stryker documents surviving mutants and
-  break thresholds in its
+  affected user assertions for Slack orphan repair and public-interface tests
+  that verify domain-scoped, user-scoped, and global helper invalidation. No
+  mutation threshold, exclusion, or suppression changed. Stryker documents
+  surviving mutants and break thresholds in its
   [configuration reference](https://stryker-mutator.io/docs/stryker-js/configuration/).
-- **Validation:** The seven focused files pass 235 unit tests. Running the
-  exact failed mutation ranges locally killed all 29 generated mutants for a
-  100% mutation score. Full typecheck and lint also pass after refreshing the
-  merged lockfile dependencies.
+- **Validation:** The seven focused files pass 235 unit tests, and the cache
+  helper suite passes all 15 cache tests. Running the exact failed mutation
+  ranges locally killed all 35 generated mutants for a 100% mutation score.
+  Full typecheck and lint also pass after refreshing the merged lockfile
+  dependencies.
 - **Remaining risk / follow-up:** Hosted CI must confirm all replacement
   mutation shards. When adding mutation-covered side effects, pair executable
   integration coverage with direct unit assertions for the side effect and
