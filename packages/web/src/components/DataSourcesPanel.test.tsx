@@ -41,6 +41,7 @@ const mockProvidersQuery = vi.hoisted(() =>
 );
 
 const mockSyncMutateAsync = vi.hoisted(() => vi.fn());
+const mockTriggerSyncUseMutation = vi.hoisted(() => vi.fn());
 const mockPollSyncJob = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
 const mockSyncStatusFetch = vi.hoisted(() => vi.fn());
@@ -59,6 +60,7 @@ const mockProviderStatsQuery = vi.hoisted(() =>
     error: null,
   })),
 );
+const mockCaptureException = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -73,7 +75,7 @@ vi.mock("../lib/trpc.ts", () => ({
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
       activeImports: { useQuery: mockActiveImportsQuery },
-      triggerSync: { useMutation: () => ({ mutateAsync: mockSyncMutateAsync, isPending: false }) },
+      triggerSync: { useMutation: mockTriggerSyncUseMutation },
       syncStatus: { fetch: vi.fn() },
     },
     useUtils: () => ({
@@ -84,6 +86,10 @@ vi.mock("../lib/trpc.ts", () => ({
       },
     }),
   },
+}));
+
+vi.mock("../lib/telemetry.ts", () => ({
+  captureException: mockCaptureException,
 }));
 
 vi.mock("./DataSourcesAuthModals.tsx", () => ({
@@ -189,6 +195,11 @@ describe("DataSourcesPanel", () => {
     });
     mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockSyncMutateAsync.mockReset();
+    mockTriggerSyncUseMutation.mockReset();
+    mockTriggerSyncUseMutation.mockReturnValue({
+      mutateAsync: mockSyncMutateAsync,
+      isPending: false,
+    });
     mockSyncMutateAsync.mockResolvedValue({
       jobId: undefined,
       jobIds: [],
@@ -204,6 +215,7 @@ describe("DataSourcesPanel", () => {
     mockActiveImportsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockProviderStatsQuery.mockReset();
     mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockCaptureException.mockReset();
   });
 
   it("shows active processing progress above provider cards", () => {
@@ -352,6 +364,79 @@ describe("DataSourcesPanel", () => {
       );
     });
     expect(mockPollSyncJob).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports provider sync startup failures with sanitized context", async () => {
+    const error = new Error("Provider queue unavailable");
+    mockSyncMutateAsync.mockRejectedValue(error);
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(within(screen.getByTestId("provider-card-garmin")).getByText("Sync"));
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("provider-card-garmin")).getByText(error.message),
+      ).toBeTruthy(),
+    );
+    expect(mockTriggerSyncUseMutation).toHaveBeenCalledWith({
+      meta: { errorReportedLocally: true },
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      operation: "sync.triggerSync",
+      providerId: "garmin",
+    });
+  });
+
+  it("reports bulk sync startup failures once without provider inputs", async () => {
+    const error = new Error("Provider queues unavailable");
+    mockSyncMutateAsync.mockRejectedValue(error);
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(screen.getByText("Sync All"));
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("provider-card-garmin")).getByText(error.message),
+      ).toBeTruthy(),
+    );
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      operation: "sync.triggerSync",
+    });
+  });
+
+  it("reports polling failures without the job id and skips the global duplicate", async () => {
+    const pollError = new Error("Sync status unavailable");
+    const jobId = "secret-job-id";
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId,
+      jobIds: [jobId],
+      providerJobs: [{ providerId: "garmin", jobId, queueName: "sync-garmin" }],
+      providerResults: [
+        { providerId: "garmin", status: "started", jobId, queueName: "sync-garmin" },
+      ],
+    });
+    mockPollSyncJob.mockImplementation(async (options) => {
+      await options.fetchStatus(jobId);
+      options.onError?.(pollError);
+    });
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(within(screen.getByTestId("provider-card-garmin")).getByText("Sync"));
+
+    await waitFor(() => expect(mockCaptureException).toHaveBeenCalled());
+    expect(mockSyncStatusFetch).toHaveBeenCalledWith(
+      { jobId },
+      {
+        staleTime: 0,
+        meta: { errorReportedLocally: true },
+      },
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(pollError, {
+      operation: "sync.syncStatus",
+      providerId: "garmin",
+    });
+    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(jobId);
   });
 
   it("shows Kaya as a file import source with export upload routes", () => {

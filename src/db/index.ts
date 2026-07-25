@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { logger } from "../logger.ts";
 import { drizzleSchema as schema } from "./drizzle-schema.ts";
+import { registerPostgresPoolMetrics } from "./pool-metrics.ts";
 
 type DrizzleDatabase = ReturnType<typeof drizzle<typeof schema>>;
 type QueryRow = Record<string, unknown>;
@@ -60,6 +61,7 @@ export function createDatabase(connectionString: string): Database {
     keepAlive: true, // TCP keep-alive detects dead connections from network/server drops
     keepAliveInitialDelayMillis: 60_000,
   });
+  registerPostgresPoolMetrics(client);
   client.on("error", (error) => {
     logger.error(`[db] PostgreSQL pool idle client error: ${error.message}`);
     Sentry.captureException(error, { tags: { source: "postgres-pool" } });

@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -20,6 +21,7 @@ function CyclePage() {
   const [startDate, setStartDate] = useState(formatDateYmd());
   const utils = trpc.useUtils();
   const logMutation = trpc.menstrualCycle.logPeriod.useMutation({
+    meta: locallyReportedErrorMeta,
     onSuccess: async () => {
       await Promise.all([
         utils.menstrualCycle.currentPhase.invalidate(),
