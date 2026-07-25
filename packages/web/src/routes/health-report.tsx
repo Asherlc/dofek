@@ -149,15 +149,22 @@ function SharedHealthReport({ token }: { token: string }) {
 function HealthReportManagement() {
   const { data: reports, error, isLoading } = trpc.healthReport.myReports.useQuery();
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [manualCopyLink, setManualCopyLink] = useState<{
+    token: string;
+    url: string;
+  } | null>(null);
 
   const copyLink = async (token: string) => {
     const url = `${window.location.origin}/health-report?token=${token}`;
+    setCopiedToken(null);
+    setManualCopyLink(null);
     try {
       await navigator.clipboard.writeText(url);
       setCopiedToken(token);
       setTimeout(() => setCopiedToken(null), 2000);
     } catch (copyError: unknown) {
       captureException(copyError, { source: "health-report-list-link-copy" });
+      setManualCopyLink({ token, url });
     }
   };
 
@@ -186,30 +193,44 @@ function HealthReportManagement() {
             ) : (
               <div className="space-y-2">
                 {reports.map((report) => (
-                  <div
-                    key={report.id}
-                    className="flex items-center justify-between py-3 border-b border-border last:border-0"
-                  >
-                    <div>
-                      <span className="text-sm font-medium text-foreground capitalize">
-                        {report.reportType} Report
-                      </span>
-                      <span className="text-xs text-dim ml-2">
-                        {formatDateMedium(report.createdAt)}
-                      </span>
-                      {report.expiresAt && (
-                        <span className="text-xs text-muted ml-2">
-                          Expires {formatDateMedium(report.expiresAt)}
+                  <div key={report.id} className="border-b border-border py-3 last:border-0">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium text-foreground capitalize">
+                          {report.reportType} Report
                         </span>
-                      )}
+                        <span className="text-xs text-dim ml-2">
+                          {formatDateMedium(report.createdAt)}
+                        </span>
+                        {report.expiresAt && (
+                          <span className="text-xs text-muted ml-2">
+                            Expires {formatDateMedium(report.expiresAt)}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void copyLink(report.shareToken)}
+                        className="px-3 py-1.5 bg-accent/15 text-accent rounded text-xs font-medium hover:bg-accent/25 transition-colors"
+                      >
+                        {copiedToken === report.shareToken ? "Copied" : "Copy Link"}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void copyLink(report.shareToken)}
-                      className="px-3 py-1.5 bg-accent/15 text-accent rounded text-xs font-medium hover:bg-accent/25 transition-colors"
-                    >
-                      {copiedToken === report.shareToken ? "Copied" : "Copy Link"}
-                    </button>
+                    {manualCopyLink?.token === report.shareToken && (
+                      <div className="mt-3 space-y-1">
+                        <p className="text-xs text-muted">
+                          Clipboard access failed. Select and copy this link manually.
+                        </p>
+                        <input
+                          type="text"
+                          readOnly
+                          aria-label="Copy report link manually"
+                          value={manualCopyLink.url}
+                          onFocus={(event) => event.currentTarget.select()}
+                          className="w-full rounded border border-border bg-page px-2 py-1.5 text-xs text-foreground"
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
