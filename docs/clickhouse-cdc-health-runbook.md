@@ -35,9 +35,26 @@ The durability control is the production WAL and PeerDB work-unit budget:
 Postgres allows six logical slots/senders and caps each slot at 64 GiB, while
 PeerDB mirrors use 100,000-row CDC batches and single-worker 100,000-row initial
 snapshot partitions. The production `cdc-health` service runs this check every
-five minutes and reports failures to logs/Sentry without crash-looping the
-monitor container; local runs are still useful when actively triaging an
-incident.
+five minutes and atomically records each result. Its health probe tolerates one
+failed report so the next scheduled check can demonstrate recovery, then fails
+after a second consecutive failure. A missing or stale result also fails after
+one interval plus 60 seconds, covering a stuck monitor. The probe runs every ten
+seconds and Docker marks the container unhealthy after three consecutive probe
+failures; Swarm then replaces the failed task. Docker documents both
+[healthcheck status transitions](https://docs.docker.com/reference/dockerfile/#healthcheck)
+and [Swarm task replacement after a failed healthcheck](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling).
+Local runs are still useful when actively triaging an incident.
+
+Inspect the latest monitor evidence inside the current task:
+
+```bash
+docker exec "$(docker ps --filter name=dofek_cdc-health -q | head -n 1)" \
+  cat /tmp/dofek-cdc-health-state.json
+```
+
+`lastCheckedAt`, `lastSuccessfulAt`, and `consecutiveFailures` distinguish a
+currently failing check from a monitor that stopped updating. A passing check
+resets the failure count and updates both timestamps.
 
 ## Triage
 

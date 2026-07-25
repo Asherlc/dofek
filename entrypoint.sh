@@ -95,11 +95,14 @@ case "${1:-sync}" in
         exit 1
         ;;
     esac
+    $NODE scripts/cdc-health-state.ts initialize
     while true; do
       if $NODE scripts/check-clickhouse-cdc.ts; then
+        $NODE scripts/cdc-health-state.ts success
         sleep "$interval_seconds"
       else
         status="$?"
+        $NODE scripts/cdc-health-state.ts failure
         echo "cdc-health: check failed with exit status $status; retrying in ${interval_seconds}s" >&2
         sleep "$interval_seconds"
       fi

@@ -16122,6 +16122,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   own Compose volumes so concurrent workspaces do not accumulate disposable
   database state.
 
+## 2026-07-24 — CDC Failures Did Not Affect Service Health
+
+- **Status:** Fixed and validated locally; hosted CI is a merge gate.
+- **Symptoms:** The `cdc-health` process logged and reported failed CDC checks
+  indefinitely while its Swarm service remained healthy.
+- **User impact:** Operators and deploy verification could see a green service
+  during lost replication slots, stale mirrors, or unreachable CDC
+  dependencies, leaving user dashboards stale without an unhealthy service.
+- **Evidence:** `scripts/check-clickhouse-cdc.ts` exited nonzero and the
+  entrypoint logged `cdc-health: check failed with exit status ...`, but the
+  healthcheck command was only `pgrep -f cdc-health || exit 1`. The monitor
+  process remained alive because its loop intentionally retried.
+- **Root cause:** The service probe measured only process liveness, and the
+  retry wrapper did not expose the check result or its age to Docker.
+- **Fix / mitigation:** The monitor now atomically records startup, failure,
+  and success state with last-check and last-success timestamps. Its probe
+  fails after two consecutive failed reports or when state is older than one
+  configured interval plus 60 seconds. Docker applies the existing three-probe
+  health threshold, and Swarm replaces unhealthy tasks as documented in
+  [Docker's healthcheck reference](https://docs.docker.com/reference/dockerfile/#healthcheck)
+  and [Swarm scheduling guide](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling).
+- **Validation:** The regression first failed because no durable state or
+  probe existed. Executable state-file and CLI tests now inject repeated
+  failures, assert the unhealthy result, inject success, and verify recovery
+  with an updated last-success timestamp. Entrypoint coverage verifies every
+  check result is persisted before the retry sleep.
+- **Remaining risk / follow-up:** Require hosted lint, unit, mutation, and
+  deployment-file validation before merging. After deployment, confirm a
+  deterministic failed report changes the task health and a subsequent passing
+  report clears the state without manual file repair.
+
 ## 2026-07-24 — Cache-Invalidation Mutants Survived PR CI
 
 - **Status:** Fixed on PR #1923; replacement CI pending.
@@ -16180,6 +16211,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Hosted CI must confirm the replacement
   typecheck matrix. New ESM test imports should follow the same explicit
   extension convention as production modules.
+
 ## 2026-07-20 — Local E2E Replaced the Developer Compose Stack
 
 - **Status:** Fixed and validated locally; hosted CI is a merge gate.
