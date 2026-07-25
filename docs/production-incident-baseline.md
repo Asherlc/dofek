@@ -16795,3 +16795,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If independent runners repeatedly fail to
   fetch the Alpine index, investigate mirror availability and hosted-runner
   network evidence before changing the build.
+
+## 2026-07-25 — Failed Deploy Left ClickHouse Consumers Quiesced
+
+- **Status:** Unresolved; production consumers remain scaled to zero.
+- **Symptoms:** Processing status reported that recomputing activities, sleep,
+  recovery, training, and body was taking longer than expected. The production
+  `analytics-worker` and `metric-stream-clickhouse-sink` services both showed
+  `0/0` replicas after the deployment.
+- **User impact:** Provider processing operations cannot advance through
+  metric-stream CDC and analytics. Five operations had pending reconciliation
+  work during diagnosis, including the activity, sleep, recovery, training,
+  and body dataset set shown in the UI. Existing served data remains available.
+- **Evidence:** The exact failing step was `Deploy stack without ClickHouse
+  consumers` in [Deploy Web run
+  30147912915](https://github.com/Asherlc/dofek/actions/runs/30147912915).
+  Its first fatal line was `failed to update service dofek_cdc-health: Error
+  response from daemon: rpc error: code = Unknown desc = update out of
+  sequence`. Every subsequent workflow step, including `Deploy ClickHouse
+  consumer services`, was skipped. The reconciliation monitor repeatedly
+  reported `checked 5, completed 0, waiting 5`.
+- **Root cause:** The deployment deliberately scaled the ClickHouse consumers
+  to zero before updating the stack. Docker Swarm rejected the later
+  `dofek_cdc-health` service update as out of sequence, causing the job to exit
+  before the workflow restored the quiesced consumers.
+- **Fix / mitigation:** No production mutation was performed during diagnosis.
+  Restore the consumers through the reviewed deployment recovery path, then
+  verify that the metric-stream sink acknowledges queued batches, processing
+  reconciliation advances, the analytics build succeeds, and query caches
+  refresh.
+- **Remaining risk / follow-up:** The affected operations have accumulated
+  pending work and have no finite completion ETA while the consumers remain at
+  zero replicas. Add a failure cleanup or recovery path that restores
+  deliberately quiesced services without hiding the original deployment
+  failure, and make processing status distinguish unavailable infrastructure
+  from an ordinarily delayed operation.
