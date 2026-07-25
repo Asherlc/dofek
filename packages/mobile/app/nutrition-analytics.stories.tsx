@@ -2,10 +2,10 @@ import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { View } from "react-native";
+import { createNutritionAnalyticsStoryLink } from "../.storybook/nutrition-analytics-story-link";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import NutritionAnalyticsScreen from "./nutrition-analytics";
-import { createNutritionAnalyticsStoryLink } from "./nutrition-analytics-story-link";
 
 function NutritionAnalyticsStoryFrame() {
   const queryClient = useMemo(
