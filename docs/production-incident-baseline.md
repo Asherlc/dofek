@@ -16267,3 +16267,41 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm checkout and the watchOS build on the
   replacement runner. If runner I/O failures recur, escalate with the failing
   runner evidence rather than adding repository-level retry behavior.
+
+## 2026-07-24 — HealthKit Observer Updates Completed Before Sync
+
+- **Status:** Fixed and validated with focused TypeScript and Swift tests plus
+  a native simulator build; hosted CI remains the merge gate.
+- **Symptoms:** Every HealthKit observer callback completed immediately after a
+  JavaScript event was emitted, while the listener waited five seconds before
+  starting its asynchronous sync.
+- **User impact:** iOS could suspend Dofek after the early acknowledgement,
+  leaving the new health samples unsynced until a later observer delivery or
+  foreground launch.
+- **Evidence:** `HealthKitModule` passed the callback into
+  `MainThreadEventEmitter`, which invoked it directly after `sendEvent`.
+  `background-health-kit-sync` then created a five-second debounce timer and
+  had no native completion API.
+- **Root cause:** The native event had no durable identity or coordinator, so
+  JavaScript could not settle the specific callback after its coalesced work.
+- **Fix / mitigation:** Native code now retains callbacks behind unique update
+  IDs in a lock-protected coordinator. JavaScript listens before observer
+  registration, batches IDs for 500 ms, runs serialized catch-up and observer
+  syncs, and completes the exact batch after success or failure. Native
+  expiration, re-registration, teardown, and Expo module destruction drain
+  callbacks exactly once; expiration and unexpected observer errors report to
+  Sentry. Apple requires observer completion only after new-data processing
+  finishes in its
+  [observer-query guide](https://developer.apple.com/documentation/healthkit/executing-observer-queries).
+- **Validation:** The regression first failed because no JavaScript completion
+  call or Swift coordinator existed. Twenty-five focused mobile tests now
+  cover single and coalesced updates, registration/re-initialization races,
+  success, failure, native bridge errors, and teardown. Sixty-seven Swift tests
+  cover exact-once completion, coalescing, expiration, teardown, and the
+  existing HealthKit helpers. The generated iOS workspace compiled
+  successfully for an iOS 26.4 simulator with code signing and Sentry upload
+  disabled.
+- **Remaining risk / follow-up:** The iOS Simulator cannot generate real
+  HealthKit background deliveries. Require a native simulator compile plus
+  hosted Swift, mutation, mobile, and iOS build gates; physical-device
+  observation remains the final runtime verification.

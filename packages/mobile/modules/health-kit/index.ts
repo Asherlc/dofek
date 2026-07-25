@@ -79,6 +79,11 @@ export interface SyncResult {
   endDate: string;
 }
 
+export interface HealthKitSampleUpdate {
+  typeIdentifier: string;
+  updateId: string;
+}
+
 /** Check whether HealthKit authorization has already been requested.
  * Returns "unnecessary" if the user has already been asked,
  * "shouldRequest" if permissions still need to be requested,
@@ -190,10 +195,20 @@ export async function setupBackgroundObservers(): Promise<boolean> {
   return HealthKitModule.setupBackgroundObservers();
 }
 
+/** Complete specific HealthKit observer callbacks after their coalesced sync settles. */
+export function completeObserverUpdates(updateIds: string[], succeeded: boolean): number {
+  return HealthKitModule.completeObserverUpdates(updateIds, succeeded);
+}
+
+/** Stop native observer queries and complete every callback that is still pending. */
+export function teardownBackgroundObservers(): number {
+  return HealthKitModule.teardownBackgroundObservers();
+}
+
 /** Listen for HealthKit sample update events from background observers.
  * Returns a subscription that can be removed with `.remove()`. */
 export function addSampleUpdateListener(
-  callback: (event: { typeIdentifier: string }) => void,
+  callback: (event: HealthKitSampleUpdate) => void,
 ): EventSubscription {
   return HealthKitModule.addListener("onHealthKitSampleUpdate", callback);
 }
