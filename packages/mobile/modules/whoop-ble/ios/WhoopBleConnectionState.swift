@@ -13,6 +13,8 @@ enum WhoopBleConnectionError: Error {
     case invalidPeripheralId(String)
     case peripheralNotFound(String)
     case timeout
+    case serviceDiscoveryFailed(String)
+    case characteristicDiscoveryFailed(String)
     case serviceNotFound
     case characteristicsNotFound
     case disconnected(String?)
