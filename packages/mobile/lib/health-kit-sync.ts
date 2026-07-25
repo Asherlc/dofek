@@ -5,6 +5,7 @@ import type {
   SleepSample,
   WorkoutSample,
 } from "../modules/health-kit";
+import { isHealthKitDatabaseInaccessible } from "./health-kit-errors";
 import { captureException } from "./telemetry";
 
 // Additive types use HKStatisticsCollectionQuery for proper source deduplication.
@@ -229,6 +230,9 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
               });
             }
           } catch (error) {
+            if (isHealthKitDatabaseInaccessible(error)) {
+              throw error;
+            }
             captureException(error, {
               source: "health-kit-workout-route-query",
               workoutUuid: workout.uuid,
