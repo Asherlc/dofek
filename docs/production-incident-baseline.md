@@ -16434,6 +16434,57 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   replacement runner. If runner I/O failures recur, escalate with the failing
   runner evidence rather than adding repository-level retry behavior.
 
+## 2026-07-24 — Duplicate HealthKit Refreshes Exhausted a Web Pool
+
+- **Status:** Root cause fixed and validated locally; production deployment and
+  post-deploy observation pending.
+- **Symptoms:** A production `mobileDashboard.recovery` request failed once at
+  `2026-07-25T02:34:59.787Z` with the first fatal line
+  `timeout exceeded when trying to connect`. The originating
+  [Sentry issue](https://east-bay-software.sentry.io/issues/7632025587/) showed
+  that the inner `pg-pool` acquisition exceeded the configured 10-second
+  connection timeout before the HRV SQL reached PostgreSQL.
+- **User impact:** One observed mobile recovery refresh returned a server error.
+  The next recovery request succeeded, and no PostgreSQL restart, recovery-mode
+  transition, or server-wide connection-limit failure occurred.
+- **Evidence:** Swarm logs from the same `dofek_web.2` replica showed two
+  HealthKit ingestion waves about 12 seconds apart, followed by duplicate
+  `mobileDashboard.training` requests lasting 38.7 and 29.4 seconds while the
+  recovery request waited for a five-connection process pool. PostgreSQL
+  `pg_stat_statements` showed the three climbing queries used by the training
+  route averaging about 4.7–7.6 seconds. Code inspection confirmed that both
+  the root background HealthKit initializer and overview `useAutoSync` imported
+  HealthKit data, after which the root path invalidated every cached query.
+  The database was healthy during and after the event, so increasing the pool
+  or its timeout would only have hidden the duplicate client workload.
+- **Root cause:** Two independent mobile startup owners imported the same
+  HealthKit data and triggered overlapping dashboard refetches; the duplicate
+  long-running training reads occupied the replica's five PostgreSQL
+  connections long enough for recovery's pool acquisition to time out.
+- **Fix / mitigation:** Made the root background HealthKit service the single
+  ingestion owner, retained overview auto-sync only for API-provider sync and
+  outbound Dofek food writeback, and replaced the root-wide cache invalidation
+  with one shared allowlist of health-derived query families. Added observable
+  OpenTelemetry gauges for total, idle, and waiting `pg-pool` state so future
+  contention is directly distinguishable from PostgreSQL execution time.
+  Node-postgres recommends measuring application instance and pool behavior
+  before changing pool size in horizontally scaled systems
+  ([pool-sizing guide](https://node-postgres.com/guides/pool-sizing)), and
+  TanStack Query supports predicate-scoped invalidation for selecting the
+  affected cached queries
+  ([QueryClient reference](https://tanstack.com/query/latest/docs/reference/QueryClient#queryclientinvalidatequeries)).
+- **Validation:** The six focused suites pass 55 tests, including async
+  completion-error reporting and observable gauge values. `pnpm test:changed`
+  passes 485 unit/mobile tests, root and mobile package typechecks pass, and the
+  complete `pnpm lint` chain passes after starting this workspace's isolated
+  ClickHouse service and generating its local port environment. No retry,
+  timeout, or pool-size resilience knob changed.
+- **Remaining risk / follow-up:** Deploy the mobile and server changes together,
+  then verify that only one HealthKit ingestion wave occurs per startup and
+  that `postgres.pool.requests.waiting` remains zero during dashboard refreshes.
+  The slow climbing reads remain legitimate optimization candidates, but they
+  did not independently cause this incident and should be profiled separately
+  before changing their query design.
 ## 2026-07-24 — Production Deploy Exhausted the Docker Root Disk
 
 - **Status:** Production disk pressure remediated and all enabled services
@@ -16919,3 +16970,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If independent runners repeatedly fail to
   fetch the Alpine index, investigate mirror availability and hosted-runner
   network evidence before changing the build.
+
+## 2026-07-25 — Mobile Preview Secret Load Timed Out
+
+- **Status:** External runner-egress failure identified on PR #1949;
+  replacement CI pending.
+- **Symptoms:** `Publish Mobile Preview OTA` failed before the Expo update
+  command ran.
+- **User impact:** No production users were affected. PR #1949 remained blocked
+  from merge.
+- **Evidence:** The exact failed step was
+  `Load mobile preview secrets from Infisical`, which ran
+  `infisical login --method=oidc-auth`. Its first causal fatal line was
+  `Post "https://app.infisical.com/api/v1/auth/oidc-auth/login": dial tcp
+  3.212.82.44:443: i/o timeout`; the subsequent authentication error and exit
+  code 1 followed from that connection failure.
+- **Root cause:** The hosted runner could not establish an HTTPS connection to
+  Infisical's OIDC endpoint after successfully checking out the repository,
+  installing dependencies, and minting the GitHub OIDC token. Infisical
+  documents that the GitHub token is exchanged at that endpoint for a
+  short-lived access token:
+  <https://infisical.com/docs/documentation/platform/identities/oidc-auth/github>.
+- **Fix / mitigation:** Trigger replacement CI on a fresh hosted runner. No
+  authentication fallback, retry, timeout, cached secret, or application
+  behavior changed.
+- **Validation:** The preceding PR run passed the same mobile-preview workflow,
+  and local lint, typechecks, focused tests, and the 13,453-test unit/mobile
+  suite pass on the current source. The replacement run must complete the
+  Infisical exchange and publish step before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly time out
+  against Infisical, investigate provider availability and runner egress using
+  the captured endpoint evidence before changing workflow behavior.

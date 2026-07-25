@@ -10,8 +10,12 @@ const mockDrizzleReturn = {
 const mockDrizzle = vi.fn(() => mockDrizzleReturn);
 const mockPoolInstance = {
   on: vi.fn(),
+  totalCount: 0,
+  idleCount: 0,
+  waitingCount: 0,
 };
 const mockPool = vi.fn(() => mockPoolInstance);
+const mockRegisterPostgresPoolMetrics = vi.fn();
 
 vi.mock("@sentry/node", () => ({
   captureException: mockCaptureException,
@@ -25,6 +29,10 @@ vi.mock("../logger.ts", () => ({
   logger: {
     error: mockLoggerError,
   },
+}));
+
+vi.mock("./pool-metrics.ts", () => ({
+  registerPostgresPoolMetrics: mockRegisterPostgresPoolMetrics,
 }));
 
 vi.mock("pg", () => ({
@@ -61,6 +69,14 @@ describe("db/index", () => {
       createDatabase("postgres://localhost:5432/test");
 
       expect(mockDrizzle).toHaveBeenCalledWith(mockPoolInstance, { schema: drizzleSchema });
+    });
+
+    it("registers observable pool state metrics", async () => {
+      const { createDatabase } = await import("./index.ts");
+
+      createDatabase("postgres://localhost:5432/test");
+
+      expect(mockRegisterPostgresPoolMetrics).toHaveBeenCalledWith(mockPoolInstance);
     });
 
     it("reports idle pool client errors", async () => {
