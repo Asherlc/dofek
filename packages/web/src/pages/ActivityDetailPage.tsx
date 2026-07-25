@@ -307,31 +307,25 @@ export function ActivityDetailPage() {
           </Section>
         )}
 
-        {isCycling &&
-          hasPower &&
-          (powerZones.isLoading || powerZones.error || powerZones.data != null) && (
-            <Section
-              title="Power Zones"
-              description="This chart shows how much time you spent in each power zone."
-            >
-              {powerZones.error && powerZones.data == null ? (
-                <QueryStatePanel error={powerZones.error} height={250} />
-              ) : powerZones.data ? (
-                <>
-                  <PowerZonesChart
-                    zones={powerZones.data.zones}
-                    ftp={powerZones.data.ftp}
-                    loading={powerZones.isLoading}
-                  />
-                  {powerZones.error ? (
-                    <QueryStatePanel error={powerZones.error} height={72} />
-                  ) : null}
-                </>
-              ) : (
-                <QueryStatePanel variant="loading" height={250} />
-              )}
-            </Section>
-          )}
+        {isCycling && hasPower && (powerZones.error || powerZones.data != null) && (
+          <Section
+            title="Power Zones"
+            description="This chart shows how much time you spent in each power zone."
+          >
+            {powerZones.error && powerZones.data == null ? (
+              <QueryStatePanel error={powerZones.error} height={250} />
+            ) : powerZones.data ? (
+              <>
+                <PowerZonesChart
+                  zones={powerZones.data.zones}
+                  ftp={powerZones.data.ftp}
+                  loading={powerZones.isLoading}
+                />
+                {powerZones.error ? <QueryStatePanel error={powerZones.error} height={72} /> : null}
+              </>
+            ) : null}
+          </Section>
+        )}
       </div>
     </PageLayout>
   );

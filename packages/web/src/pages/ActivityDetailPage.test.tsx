@@ -538,6 +538,30 @@ describe("ActivityDetailPage", () => {
     mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
   });
 
+  it("does not show a transient power zone section before a nullable result resolves", async () => {
+    const originalActivity = { ...mockActivity };
+    const originalStream = [...mockStreamPoints];
+    Object.assign(mockActivity, { activityType: "cycling", avgPower: 220, maxPower: 360 });
+    mockStreamPoints.splice(
+      0,
+      mockStreamPoints.length,
+      ...originalStream.map((point) => ({ ...point, power: 210 })),
+    );
+    mockPowerZonesUseQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isError: false,
+      isLoading: true,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.queryByText("Power Zones")).toBeNull();
+    Object.assign(mockActivity, originalActivity);
+    mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
+  });
+
   it("recomputes the activity and invalidates detail caches", async () => {
     const ActivityDetailPage = await importPage();
     renderWithUnits(<ActivityDetailPage />);
