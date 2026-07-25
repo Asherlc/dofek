@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Options as YauzlOptions, ZipFile } from "yauzl";
 import yauzl from "yauzl";
@@ -18,7 +18,7 @@ async function createTempDirectory(): Promise<string> {
 }
 
 async function createZip(entries: Record<string, Buffer | string>): Promise<Buffer> {
-  const archive = archiver("zip", { zlib: { level: 1 } });
+  const archive = new ZipArchive({ zlib: { level: 1 } });
   const stream = new PassThrough();
   const chunks: Buffer[] = [];
   stream.on("data", (chunk) => {

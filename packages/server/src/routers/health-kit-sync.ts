@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/node";
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -177,7 +177,7 @@ export const healthKitSyncRouter = router({
 
       // Invalidate cached data so queries pick up the newly ingested data
       if (inserted > 0 && errors.length === 0) {
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, {
@@ -229,7 +229,7 @@ export const healthKitSyncRouter = router({
       });
 
       if (inserted > 0) {
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, { endpoint: "pushWorkouts", status: "success" });
@@ -252,7 +252,7 @@ export const healthKitSyncRouter = router({
       );
 
       if (inserted > 0) {
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, { endpoint: "pushWorkoutRoutes", status: "success" });
@@ -270,7 +270,7 @@ export const healthKitSyncRouter = router({
       const inserted = await processSleepSamples(ctx.db, ctx.userId, input.samples);
 
       if (inserted > 0) {
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, { endpoint: "pushSleepSamples", status: "success" });

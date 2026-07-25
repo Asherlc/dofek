@@ -30,7 +30,7 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
   });
 
   it("does not apply a duplicate event twice", async () => {
-    await repository.updateSubscriptionForStripeCustomer({
+    const firstUpdatedUserIds = await repository.updateSubscriptionForStripeCustomer({
       stripeEventId: "evt_duplicate_integration",
       stripeEventCreated: 1_777_000_100,
       stripeCustomerId: testCustomerId,
@@ -38,7 +38,7 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       stripeSubscriptionStatus: "active",
       stripeCurrentPeriodEnd: null,
     });
-    await repository.updateSubscriptionForStripeCustomer({
+    const duplicateUpdatedUserIds = await repository.updateSubscriptionForStripeCustomer({
       stripeEventId: "evt_duplicate_integration",
       stripeEventCreated: 1_777_000_100,
       stripeCustomerId: testCustomerId,
@@ -46,6 +46,8 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       stripeSubscriptionStatus: "canceled",
       stripeCurrentPeriodEnd: null,
     });
+    expect(firstUpdatedUserIds).toEqual([testUserId]);
+    expect(duplicateUpdatedUserIds).toEqual([]);
 
     const rows = await testContext.db.execute<{
       stripe_subscription_id: string;
@@ -62,7 +64,7 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
   });
 
   it("does not let an older event overwrite the newer event", async () => {
-    await repository.updateSubscriptionForStripeCustomer({
+    const newerUpdatedUserIds = await repository.updateSubscriptionForStripeCustomer({
       stripeEventId: "evt_newer_integration",
       stripeEventCreated: 1_777_000_200,
       stripeCustomerId: testCustomerId,
@@ -70,7 +72,7 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       stripeSubscriptionStatus: "canceled",
       stripeCurrentPeriodEnd: null,
     });
-    await repository.updateSubscriptionForStripeCustomer({
+    const olderUpdatedUserIds = await repository.updateSubscriptionForStripeCustomer({
       stripeEventId: "evt_older_integration",
       stripeEventCreated: 1_777_000_100,
       stripeCustomerId: testCustomerId,
@@ -78,6 +80,8 @@ describe("BillingRepository subscription webhook updates (integration)", () => {
       stripeSubscriptionStatus: "active",
       stripeCurrentPeriodEnd: null,
     });
+    expect(newerUpdatedUserIds).toEqual([testUserId]);
+    expect(olderUpdatedUserIds).toEqual([]);
 
     const rows = await testContext.db.execute<{
       stripe_subscription_id: string;

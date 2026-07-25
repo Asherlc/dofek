@@ -7,8 +7,12 @@ import {
 import type { ProviderDataDeletionJobData } from "./queues.ts";
 
 const mockCaptureException = vi.hoisted(() => vi.fn());
+const mockInvalidateAllUserQueries = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock("@sentry/node", () => ({ captureException: mockCaptureException }));
+vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: mockInvalidateAllUserQueries,
+}));
 
 const firstId = "10000000-0000-4000-8000-000000000001";
 const secondId = "20000000-0000-4000-8000-000000000002";
@@ -181,11 +185,15 @@ describe("processProviderDataDeletionJob", () => {
       job.data.providerId,
       job.data.eventId,
     );
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith(job.data.userId);
     expect(markCompleted).toHaveBeenCalledWith(job.data.eventId);
     expect(command.mock.invocationCallOrder[1]).toBeLessThan(
       enqueueAnalyticsRefresh.mock.invocationCallOrder[0] ?? 0,
     );
     expect(enqueueAnalyticsRefresh.mock.invocationCallOrder[0]).toBeLessThan(
+      mockInvalidateAllUserQueries.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(mockInvalidateAllUserQueries.mock.invocationCallOrder[0]).toBeLessThan(
       markCompleted.mock.invocationCallOrder[0] ?? 0,
     );
   });

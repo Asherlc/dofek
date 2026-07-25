@@ -1,4 +1,5 @@
 import { type BreathworkTechnique, TECHNIQUES } from "@dofek/scoring/breathwork";
+import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
 import { BreathworkRepository } from "../repositories/breathwork-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -20,6 +21,9 @@ export const breathworkRouter = router({
     .mutation(async ({ ctx, input }) => {
       const repo = new BreathworkRepository(ctx.db, ctx.userId);
       const session = await repo.logSession(input);
+      if (session !== null) {
+        await invalidateUserQueryDomains(ctx.userId, ["breathwork"]);
+      }
       return session?.toDetail() ?? null;
     }),
   history: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })

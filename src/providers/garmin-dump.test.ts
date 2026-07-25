@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { Encoder, Profile, Utils } from "@garmin/fitsdk";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import {
@@ -100,7 +100,7 @@ async function createZip(
   entries: Record<string, Buffer | string>,
   options: { store?: boolean } = {},
 ): Promise<Buffer> {
-  const archive = archiver("zip", options.store ? { store: true } : { zlib: { level: 1 } });
+  const archive = new ZipArchive(options.store ? { store: true } : { zlib: { level: 1 } });
   const stream = new PassThrough();
   const chunks: Buffer[] = [];
   stream.on("data", (chunk) => {

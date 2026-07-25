@@ -6,11 +6,14 @@ function readEntrypoint(): string {
 }
 
 describe("entrypoint cdc-health mode", () => {
-  it("continues checking at the configured interval after a failed CDC health check", () => {
+  it("persists each CDC health result while continuing checks at the configured interval", () => {
     const entrypoint = readEntrypoint();
     const cdcHealthBlockMatch = entrypoint.match(/ {2}cdc-health\)\n(?<body>[\s\S]*?)\n {4};;/);
     const cdcHealthBlock = cdcHealthBlockMatch?.groups?.body;
 
+    expect(cdcHealthBlock).toContain("$NODE scripts/cdc-health-state.ts initialize");
+    expect(cdcHealthBlock).toContain("$NODE scripts/cdc-health-state.ts success");
+    expect(cdcHealthBlock).toContain("$NODE scripts/cdc-health-state.ts failure");
     expect(cdcHealthBlock).toMatch(
       /echo "cdc-health: check failed with exit status \$status; retrying in \$\{interval_seconds\}s"/,
     );

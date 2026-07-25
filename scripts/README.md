@@ -63,6 +63,8 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   are lost, inactive, or retaining dangerous WAL, and when active ClickHouse
   mirrors have stale `_peerdb_synced_at` values.
   - Usage: `pnpm check:clickhouse-cdc`
+- `cdc-health-state.ts`: Atomically records CDC monitor outcomes and implements
+  the bounded-age/failure probe used by the production `cdc-health` service.
 - `check-ota-manifest.ts`: Sends the production iOS [Expo Updates protocol
   request](https://docs.expo.dev/technical-specs/expo-updates-1/) and prints
   the deployed update metadata, or reports that no update is available.
@@ -70,6 +72,10 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   overrides for local and preview checks.
   - Usage: `pnpm check:mobile-update`
   - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
+- `e2e-web.ts`: Starts the isolated web E2E stack, runs Cypress, and always
+  tears the stack down. Setup or Cypress failures remain the command's exit
+  status after cleanup.
+  - Usage: `pnpm e2e:web`
 
 ## Reverse Engineering (WHOOP)
 

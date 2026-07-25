@@ -44,6 +44,7 @@ vi.mock("../lib/ai-nutrition.ts", () => ({
 }));
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: vi.fn().mockResolvedValue(undefined),
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },
@@ -54,7 +55,7 @@ vi.mock("@sentry/node", () => ({
 }));
 
 import * as Sentry from "@sentry/node";
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
 import { createSlackBot } from "./bot.ts";
 import { FoodEntryRepository } from "./food-entry-repository.ts";
@@ -2182,6 +2183,8 @@ describe("bot.ts — registerHandlers", () => {
 
       // Verify the orphan repair happened: UPDATE auth_account + UPDATE food_entry
       expect(mockExecute).toHaveBeenCalled();
+      expect(invalidateAllUserQueries).toHaveBeenCalledWith("orphan-user");
+      expect(invalidateAllUserQueries).toHaveBeenCalledWith("correct-user");
       expect(chatUpdate).toHaveBeenCalled();
     });
 

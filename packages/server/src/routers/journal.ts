@@ -1,3 +1,4 @@
+import { invalidateAllQueries, invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { rangeDaysSchema } from "../lib/date-window.ts";
@@ -42,7 +43,9 @@ export const journalRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const repository = new JournalRepository(ctx.db, ctx.userId);
-      return repository.createEntry(input);
+      const entry = await repository.createEntry(input);
+      await invalidateUserQueryDomains(ctx.userId, ["journalEntries"]);
+      return entry;
     }),
 
   /** Update a manual journal entry (only own entries via dofek provider) */
@@ -56,13 +59,19 @@ export const journalRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const repository = new JournalRepository(ctx.db, ctx.userId);
-      return repository.updateEntry(input);
+      const entry = await repository.updateEntry(input);
+      if (entry !== null) {
+        await invalidateUserQueryDomains(ctx.userId, ["journalEntries"]);
+      }
+      return entry;
     }),
 
   /** Delete a manual journal entry (only own entries via dofek provider) */
   delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
     const repository = new JournalRepository(ctx.db, ctx.userId);
-    return repository.deleteEntry(input.id);
+    const result = await repository.deleteEntry(input.id);
+    await invalidateUserQueryDomains(ctx.userId, ["journalEntries"]);
+    return result;
   }),
 
   /** Create a custom journal question */
@@ -81,6 +90,8 @@ export const journalRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const repository = new JournalRepository(ctx.db, ctx.userId);
-      return repository.createQuestion(input);
+      const question = await repository.createQuestion(input);
+      await invalidateAllQueries();
+      return question;
     }),
 });

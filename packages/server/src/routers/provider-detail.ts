@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { SyncDatabase } from "dofek/db";
 import { getProviderDataDeletionQueue } from "dofek/jobs/queues";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { z } from "zod";
 import { providerDataDeletesTotal } from "../lib/metrics.ts";
 import { operationStatusOutputSchema, readOperationProgress } from "../lib/operation-progress.ts";
@@ -247,6 +248,7 @@ export const providerDetailRouter = router({
       await revokeTokensOnDisconnect(ctx.db, ctx.userId, input.providerId);
 
       await repo.deleteProviderData(input.providerId);
+      await invalidateAllUserQueries(ctx.userId);
       return { success: true };
     }),
 
@@ -265,6 +267,7 @@ export const providerDetailRouter = router({
 
       const request = await repo.requestProviderDataDeletion(input.providerId);
       providerDataDeletesTotal.inc({ provider_id: input.providerId });
+      await invalidateAllUserQueries(ctx.userId);
       return { success: true, operationId: request.eventId };
     }),
 

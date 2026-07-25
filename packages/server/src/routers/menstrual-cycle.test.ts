@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
+
+const mockInvalidateUserQueryDomains = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
+vi.mock("dofek/lib/cache", () => ({
+  invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -31,6 +37,10 @@ import { menstrualCycleRouter } from "./menstrual-cycle.ts";
 const createCaller = createTestCallerFactory(menstrualCycleRouter);
 
 describe("menstrualCycleRouter", () => {
+  beforeEach(() => {
+    mockInvalidateUserQueryDomains.mockClear();
+  });
+
   describe("currentPhase", () => {
     it("returns null phase when no periods logged", async () => {
       const caller = createCaller({
@@ -81,12 +91,14 @@ describe("menstrualCycleRouter", () => {
           id: "p1",
           start_date: "2026-01-15",
           end_date: "2026-01-20",
+          duration_days: 6,
           notes: null,
         },
         {
           id: "p2",
           start_date: "2026-02-12",
           end_date: "2026-02-17",
+          duration_days: 6,
           notes: null,
         },
       ];
@@ -99,6 +111,8 @@ describe("menstrualCycleRouter", () => {
 
       expect(result).toHaveLength(2);
       expect(result[0]?.startDate).toBe("2026-01-15");
+      expect(result[0]?.durationDays).toBe(6);
+      expect(result[0]?.durationLabel).toBe("6 days");
       expect(result[1]?.startDate).toBe("2026-02-12");
     });
 
@@ -129,11 +143,52 @@ describe("menstrualCycleRouter", () => {
   });
 
   describe("logPeriod", () => {
+    it("rejects an end date before the start date without writing", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.logPeriod({ startDate: "2026-03-02", endDate: "2026-03-01" }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringContaining("Period end date cannot be before start date."),
+      });
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("allows a period to start and end on the same date", async () => {
+      const insertedRow = {
+        id: "same-day-id",
+        start_date: "2026-03-01",
+        end_date: "2026-03-01",
+        duration_days: 1,
+        notes: null,
+      };
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([insertedRow]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.logPeriod({
+        startDate: "2026-03-01",
+        endDate: "2026-03-01",
+      });
+
+      expect(result?.durationDays).toBe(1);
+      expect(result?.durationLabel).toBe("1 day");
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["menstrualCycle"]);
+    });
+
     it("logs a new period start", async () => {
       const insertedRow = {
         id: "new-id",
         start_date: "2026-03-01",
         end_date: null,
+        duration_days: null,
         notes: null,
       };
 
@@ -145,6 +200,21 @@ describe("menstrualCycleRouter", () => {
 
       expect(result?.id).toBe("new-id");
       expect(result?.startDate).toBe("2026-03-01");
+      expect(result?.durationDays).toBeNull();
+      expect(result?.durationLabel).toBeNull();
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["menstrualCycle"]);
+    });
+
+    it("does not invalidate when no period is written", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.logPeriod({ startDate: "2026-03-01" });
+
+      expect(result).toBeNull();
+      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
     });
   });
 });

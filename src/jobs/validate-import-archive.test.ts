@@ -3,14 +3,14 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { validateImportArchive } from "./validate-import-archive.ts";
 
 const temporaryDirectories: string[] = [];
 
 async function zipBuffer(entryName: string): Promise<Buffer> {
-  const archive = archiver("zip", { zlib: { level: 1 } });
+  const archive = new ZipArchive({ zlib: { level: 1 } });
   const output = new PassThrough();
   const chunks: Buffer[] = [];
   output.on("data", (chunk: Buffer) => chunks.push(chunk));

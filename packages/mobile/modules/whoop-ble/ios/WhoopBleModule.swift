@@ -67,6 +67,10 @@ public class WhoopBleModule: Module {
                         promise.reject("NOT_FOUND", "Peripheral not found: \(identifier)")
                     case .timeout:
                         promise.reject("TIMEOUT", "Connection timed out")
+                    case .serviceDiscoveryFailed(let message):
+                        promise.reject("SERVICE_DISCOVERY_FAILED", message)
+                    case .characteristicDiscoveryFailed(let message):
+                        promise.reject("CHARACTERISTIC_DISCOVERY_FAILED", message)
                     case .serviceNotFound:
                         promise.reject("NO_SERVICE", "WHOOP service not found")
                     case .characteristicsNotFound:

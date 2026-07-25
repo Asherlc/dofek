@@ -415,6 +415,7 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(result.displayedDate).toBeNull();
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     expect(queryText).toContain("analytics.daily_strain AS strain FINAL");
+    expect(queryText).toContain("strain.is_deleted = 0");
     expect(queryText).toContain("toDate(toTimeZone(toDateTime(strain.date), {timezone:String}))");
     expect(queryText).not.toContain("analytics.activity_summary");
     expect(vi.mocked(sensorStore.query).mock.calls[0]?.[3]).toEqual({ priority: "dashboard" });
@@ -1439,6 +1440,7 @@ describe("recoveryRouter.strainTarget", () => {
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
     expect(queryText).toContain("analytics.daily_strain AS strain FINAL");
+    expect(queryText).toContain("strain.is_deleted = 0");
     expect(queryText).toContain("toString(strain.date) AS date");
     expect(queryText).toContain("strain.date >= toDate({windowStart:String})");
     expect(queryText).not.toContain("analytics.activity_summary");

@@ -13,7 +13,7 @@ import {
   type SyncJobData,
 } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
@@ -403,7 +403,7 @@ const syncRouterProcedures = {
     // ClickHouse read models update outside the API server, but the API
     // server's in-memory cache can still hold stale results until TTL expiry.
     if (operationProgress.status === "completed" || operationProgress.status === "failed") {
-      await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+      await invalidateAllUserQueries(ctx.userId);
     }
 
     return {

@@ -15945,6 +15945,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the strict timeout and capture correlated reverse-proxy and OTA request
   telemetry before changing behavior.
 
+## 2026-07-24 — Local E2E Setup Exhausted Docker Disk
+
+- **Status:** Resolved; no production impact.
+- **Symptoms:** `pnpm e2e:web` failed while initializing its disposable
+  PostgreSQL database, before Cypress could start.
+- **User impact:** Local E2E validation was blocked. Production and CI were not
+  affected.
+- **Evidence:** The first fatal database line was
+  `initdb: error: could not create directory "/home/postgres/pgdata/data/pg_wal": No space left on device`.
+  `docker system df` reported 10.17 GB of build cache, 9.166 GB reclaimable,
+  plus 22.66 GB of unused local volumes that were left untouched.
+- **Root cause:** Rebuildable Docker build cache exhausted the Docker Desktop
+  virtual disk while several isolated issue workspaces were validating in
+  parallel.
+- **Fix / mitigation:** Removed only the failed issue-1788 E2E resources and
+  ran `docker builder prune -af`, reclaiming 10.17 GB. No other workspace's
+  running containers or named volumes were removed.
+- **Validation:** A clean `pnpm e2e:web` retry completed all eight Cypress
+  specs and 26 tests successfully, returned exit code 0, and removed its E2E
+  containers and network during teardown.
+- **Remaining risk / follow-up:** Parallel issue workspaces can refill the
+  Docker virtual disk. Follow the scoped cleanup sequence in
+  [`docs/testing.md`](testing.md#docker-disk-recovery) before considering
+  broader image cleanup, and never prune named volumes without explicit
+  approval.
+
 ## 2026-07-24 — Zwift Activity Sync Received a Transient 503
 
 - **Status:** Recovered without intervention; alert-noise fix validated locally
@@ -15987,3 +16013,257 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   issues. Add `SENTRY_READ_AUTH_TOKEN` to Infisical as documented in
   [`docs/sentry.md`](sentry.md) so unexpected alerts can be confirmed directly
   from their event payload and stack trace.
+
+## 2026-07-24 — Query-Cache Integration Setup Exhausted Docker Disk
+
+- **Status:** Resolved; no production impact.
+- **Symptoms:** The issue-1718 integration environment could not start
+  Redpanda or initialize PostgreSQL.
+- **User impact:** Local executable cache-invalidation tests were blocked.
+  Production and CI were not affected.
+- **Evidence:** Docker's virtual disk was 100% full. The first Redpanda fatal
+  line was `mkdir failed: No space left on device` for its crash-report
+  directory, and PostgreSQL then failed with
+  `initdb: error: could not create directory
+  "/home/postgres/pgdata/data/pg_wal": No space left on device`.
+  `docker system df` reported 22.66 GB of reclaimable volumes.
+- **Root cause:** Accumulated abandoned anonymous test volumes and stopped
+  Timescale test containers, combined with a completed issue-1705 Compose
+  stack, exhausted the shared Docker Desktop virtual disk.
+- **Fix / mitigation:** Removed only explicitly identified dangling anonymous
+  test volumes and stopped disposable test containers, then the completed
+  issue-1705 workspace removed its own Compose containers, network, and named
+  volumes. No broad volume or system prune was used. Docker documents that
+  `docker compose down --volumes` removes volumes declared by that Compose
+  project and attached anonymous volumes
+  ([Docker Compose reference](https://docs.docker.com/reference/cli/docker/compose/down/)).
+- **Validation:** The issue-1718 PostgreSQL, ClickHouse, Redis, and Redpanda
+  services all started healthy. The real database/cache integration suites
+  subsequently passed 40 tests, including every new mutation invalidation
+  case.
+- **Remaining risk / follow-up:** Abandoned Testcontainers resources can refill
+  the shared virtual disk. Continue using the scoped recovery sequence in
+  [`docs/testing.md`](testing.md#docker-disk-recovery) and Docker's documented
+  prune filters
+  ([Docker pruning guide](https://docs.docker.com/engine/manage-resources/pruning/));
+  preserve other workspaces' running containers and named volumes.
+## 2026-07-24 — New Brace Expansion Advisory Broke PR CI
+
+- **Status:** Fixed on PR #1917; replacement CI pending.
+- **Symptoms:** `Test / Dependency Audit`, `Test / Spell Check`,
+  `Test / License Check`, and `Test / Unit Tests` failed in sequence after the
+  logger change triggered a fresh dependency matrix.
+- **User impact:** No production users were affected. PR #1917 and dependent
+  pull requests were blocked from merging.
+- **Evidence:** The audit command was
+  `pnpm audit --prod --audit-level=high --ignore-registry-errors`; its first
+  fatal finding was `brace-expansion: DoS via unbounded expansion length
+  causing an out-of-memory process crash`. GitHub's
+  [GHSA-mh99-v99m-4gvg advisory](https://github.com/advisories/GHSA-mh99-v99m-4gvg)
+  marks every release through 5.0.7 vulnerable and identifies 5.0.8 as the
+  first patched release. Spell Check first reported
+  `src/logger.test.ts:10:21 - Unknown word (Logform)`. After the security
+  override, License Check first failed with
+  `TypeError: expand is not a function` in Minimatch 3.1.5, and the coverage
+  unit job first failed with
+  `TypeError: (0 , brace_expansion_1.default) is not a function` in Minimatch
+  9.0.9.
+- **Root cause:** The new advisory made the existing 1.x, 2.x, and 5.0.7 brace
+  expansion resolutions fail the production audit. A blanket upgrade then
+  exposed legacy consumers that expected the package's former callable default
+  export. The unmaintained `license-checker@25.0.1`, older Archiver, and older
+  Minimatch/Test Exclude dependency paths were incompatible with the patched
+  named-export API.
+- **Fix / mitigation:** Pinned the canonical graph to
+  `brace-expansion@5.0.8`, `minimatch@10.2.5`, `test-exclude@8.0.0`, and
+  `archiver@8.0.0`; migrated all ZIP creation to Archiver 8's documented
+  `new ZipArchive(options)` API; updated its types; and replaced the
+  unmaintained license checker with maintained
+  [`license-checker-rseidelsohn@5.0.1`](https://github.com/RSeidelsohn/license-checker-rseidelsohn).
+  Added a scoped dictionary directive for Winston's `Logform` namespace. No
+  audit ignore, retry, timeout, or compatibility fallback was added.
+- **Validation:** Recursive dependency inspection resolves exactly one version
+  of each affected package. The exact CI unit coverage and license commands,
+  the production audit, 53 focused archive tests, 16 logger tests, the main
+  Zepp ZAB build, mobile tests and typecheck, Expo dependency validation, full
+  lint, and root/server/web typechecks pass.
+- **Remaining risk / follow-up:** Hosted CI must confirm the integration,
+  mutation, E2E, native, and coverage aggregation jobs. Keep dependency-audit
+  failures root-cause-first because newly published advisories can invalidate a
+  previously green lockfile without a repository change.
+
+## 2026-07-24 — Local Validation Exhausted Docker Disk
+
+- **Status:** Recovered with workspace-scoped cleanup and unused-image pruning.
+- **Symptoms:** Full lint's dbt compilation failed while connecting to the
+  workspace ClickHouse service. Recreating the services initially left
+  Postgres unhealthy.
+- **User impact:** No production users were affected. Local validation of PR
+  #1917 was temporarily blocked.
+- **Evidence:** ClickHouse's first fatal line reported
+  `errno: 28, strerror: No space left on device` with zero bytes available at
+  `/var/lib/clickhouse`. Postgres then failed `initdb` with
+  `could not create directory "/home/postgres/pgdata/data/pg_wal": No space
+  left on device`.
+- **Root cause:** Disposable Docker data filled the local Docker VM filesystem;
+  the issue-1776 ClickHouse volume encountered the limit during dbt
+  compilation.
+- **Fix / mitigation:** Removed only issue-1776 Compose containers, networks,
+  and named volumes with `down --remove-orphans --volumes`, pruned the empty
+  builder cache, then pruned unused rebuildable images. Other workspaces'
+  running containers and named volumes were preserved. After another completed
+  workspace removed its own ClickHouse volume, the bounded retry recreated
+  healthy Postgres, ClickHouse, and Redis services.
+- **Validation:** `pnpm compose -- up -d --wait db clickhouse redis` reported
+  all three services healthy, and the unchanged full lint command then passed,
+  including SQLFluff/dbt compilation.
+- **Remaining risk / follow-up:** The Docker VM still contains many
+  workspace-owned volumes. Archive hooks should continue removing only their
+  own Compose volumes so concurrent workspaces do not accumulate disposable
+  database state.
+
+## 2026-07-24 — CDC Failures Did Not Affect Service Health
+
+- **Status:** Fixed and validated locally; hosted CI is a merge gate.
+- **Symptoms:** The `cdc-health` process logged and reported failed CDC checks
+  indefinitely while its Swarm service remained healthy.
+- **User impact:** Operators and deploy verification could see a green service
+  during lost replication slots, stale mirrors, or unreachable CDC
+  dependencies, leaving user dashboards stale without an unhealthy service.
+- **Evidence:** `scripts/check-clickhouse-cdc.ts` exited nonzero and the
+  entrypoint logged `cdc-health: check failed with exit status ...`, but the
+  healthcheck command was only `pgrep -f cdc-health || exit 1`. The monitor
+  process remained alive because its loop intentionally retried.
+- **Root cause:** The service probe measured only process liveness, and the
+  retry wrapper did not expose the check result or its age to Docker.
+- **Fix / mitigation:** The monitor now atomically records startup, failure,
+  and success state with last-check and last-success timestamps. Its probe
+  fails after two consecutive failed reports or when state is older than one
+  configured interval plus 60 seconds. Docker applies the existing three-probe
+  health threshold, and Swarm replaces unhealthy tasks as documented in
+  [Docker's healthcheck reference](https://docs.docker.com/reference/dockerfile/#healthcheck)
+  and [Swarm scheduling guide](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling).
+- **Validation:** The regression first failed because no durable state or
+  probe existed. Executable state-file and CLI tests now inject repeated
+  failures, assert the unhealthy result, inject success, and verify recovery
+  with an updated last-success timestamp. Entrypoint coverage verifies every
+  check result is persisted before the retry sleep.
+- **Remaining risk / follow-up:** Require hosted lint, unit, mutation, and
+  deployment-file validation before merging. After deployment, confirm a
+  deterministic failed report changes the task health and a subsequent passing
+  report clears the state without manual file repair.
+
+## 2026-07-24 — Cache-Invalidation Mutants Survived PR CI
+
+- **Status:** Fixed on PR #1923; replacement CI pending.
+- **Symptoms:** Seven `Test / Stryker` shards failed after cache invalidation
+  was added to domain mutations. After their test gaps were fixed, the
+  replacement run exposed one final shard covering the centralized cache
+  helpers themselves.
+- **User impact:** No production users were affected. PR #1923 was blocked
+  from merging.
+- **Evidence:** Each failed shard completed its dry run successfully, then
+  reported surviving conditional, block, or array-declaration mutants on the
+  new invalidation paths. The first fatal line was
+  `Final mutation score 0.00 under breaking threshold 75, setting exit code to
+  1 (failure)`.
+- **Root cause:** The real-cache integration tests proved end-to-end behavior,
+  but mutation testing intentionally excludes integration tests. Existing
+  Docker-free router unit tests exercised the writes without asserting the
+  invalidator domain or the null/no-write branch, so removing or emptying the
+  invalidation calls did not fail those tests. The centralized helpers also
+  lacked a colocated unit test, leaving their block and collection mutants
+  uncovered by Stryker's related-test selection.
+- **Fix / mitigation:** Added focused assertions to the existing colocated
+  unit tests for every affected domain, plus null-result assertions for
+  journal, life-event, menstrual-cycle, and breathwork mutations. Added both
+  affected user assertions for Slack orphan repair and public-interface tests
+  that verify domain-scoped, user-scoped, and global helper invalidation. No
+  mutation threshold, exclusion, or suppression changed. Stryker documents
+  surviving mutants and break thresholds in its
+  [configuration reference](https://stryker-mutator.io/docs/stryker-js/configuration/).
+- **Validation:** The seven focused files pass 235 unit tests, and the cache
+  helper suite passes all 15 cache tests. Running the exact failed mutation
+  ranges locally killed all 35 generated mutants for a 100% mutation score.
+  Full typecheck and lint also pass after refreshing the merged lockfile
+  dependencies.
+- **Remaining risk / follow-up:** Hosted CI must confirm all replacement
+  mutation shards. When adding mutation-covered side effects, pair executable
+  integration coverage with direct unit assertions for the side effect and
+  its no-write branch.
+
+## 2026-07-24 — Cache Helper Test Failed NodeNext Typecheck
+
+- **Status:** Fixed on PR #1923; replacement CI pending.
+- **Symptoms:** The root and `@dofek/heart-rate-variability` typecheck jobs
+  failed after the cache helper unit test was added.
+- **User impact:** No production users were affected. PR #1923 remained
+  blocked from merging.
+- **Evidence:** Both jobs reported the first compiler error
+  `src/lib/cache.test.ts(7,8): error TS2835: Relative import paths need
+  explicit file extensions in ECMAScript imports`.
+- **Root cause:** The new test imported `./cache` without the `.js` extension
+  required by the repository's NodeNext module resolution.
+- **Fix / mitigation:** Changed the test import to the canonical
+  `./cache.js` specifier. No compiler setting or typecheck scope changed.
+- **Validation:** Root and `@dofek/heart-rate-variability` typechecks pass
+  locally, as do the 15 cache tests, Biome, and `git diff --check`.
+- **Remaining risk / follow-up:** Hosted CI must confirm the replacement
+  typecheck matrix. New ESM test imports should follow the same explicit
+  extension convention as production modules.
+
+## 2026-07-20 — Local E2E Replaced the Developer Compose Stack
+
+- **Status:** Fixed and validated locally; hosted CI is a merge gate.
+- **Symptoms:** Running `pnpm e2e:web` in the `bismarck` workspace recreated
+  the normal database, ClickHouse, and Redis containers, reported Redpanda as
+  an orphan, then removed the recreated services during failure teardown.
+- **User impact:** The workspace's development and integration-test services
+  were interrupted. Named volumes remained intact, so no persistent data loss
+  was observed.
+- **Evidence:** The failing E2E startup reported
+  `Container bismarck-redis-1 Recreate`,
+  `Container bismarck-clickhouse-1 Recreate`, and
+  `Container bismarck-db-1 Recreate`. After teardown,
+  `docker inspect bismarck-db-1` returned `no such object`.
+- **Root cause:** The shared Compose wrapper forced both
+  `docker-compose.yml` and `docker-compose.e2e.yml` to use the physical
+  workspace basename as their project name, so Compose treated the two stacks
+  as one project.
+- **Fix / mitigation:** Added an explicit wrapper-level project suffix and
+  routed all local E2E startup, reuse, inspection, log, and teardown commands
+  through `<workspace>-e2e`. CI uses the explicit `dofek-ci-e2e` project, and
+  Conductor archive cleanup now removes the default and isolated E2E projects
+  separately.
+- **Validation:** Wrapper regressions verify that `--project-suffix e2e` is
+  consumed rather than forwarded and resolves to `<workspace>-e2e`; archive
+  regressions verify independent teardown and orphan cleanup for both project
+  names. Docker Compose documents that custom project names isolate multiple
+  instances on the same host:
+  <https://docs.docker.com/compose/how-tos/project-name/>.
+- **Remaining risk / follow-up:** Require hosted E2E CI to confirm the explicit
+  CI project name across dependency startup, migrations, analytics, logs, and
+  teardown before merging the fix.
+
+## 2026-07-24 — watchOS CI Runner Failed Repository Checkout
+
+- **Status:** Root cause identified; replacement CI pending.
+- **Symptoms:** `Build Mobile / watchOS Build` failed before source checkout
+  completed on PR #1923 after merging the latest `main`.
+- **User impact:** No production users were affected. PR #1923 was temporarily
+  blocked from merging.
+- **Evidence:** All three checkout attempts failed while Git wrote fetched pack
+  files. The first fatal line was
+  `fatal: fsync error on '.git/objects/pack/tmp_pack_76fdAK': Input/output
+  error`, followed by `fetch-pack: invalid index-pack output`.
+- **Root cause:** The hosted macOS runner returned an input/output error while
+  `actions/checkout` wrote Git object-pack data; no repository build command
+  ran, and the failure was unrelated to source compilation.
+- **Fix / mitigation:** Scheduled replacement CI on a fresh hosted runner
+  without changing checkout retries, timeouts, or source behavior.
+- **Validation:** The preceding hosted run passed the same watchOS build, all
+  106 checks passed before the base merge, and the merged tree passes root
+  typecheck plus 4,854 changed unit/mobile tests locally.
+- **Remaining risk / follow-up:** Confirm checkout and the watchOS build on the
+  replacement runner. If runner I/O failures recur, escalate with the failing
+  runner evidence rather than adding repository-level retry behavior.

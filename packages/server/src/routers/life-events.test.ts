@@ -1,8 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { mockCachedProtectedQuery } = vi.hoisted(() => ({
+const { mockCachedProtectedQuery, mockInvalidateUserQueryDomains } = vi.hoisted(() => ({
   mockCachedProtectedQuery: vi.fn(),
+  mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("dofek/lib/cache", () => ({
+  invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -82,6 +87,10 @@ function makeSensorStore(bodyRows: Record<string, unknown>[] = [], sleepRows: un
 }
 
 describe("lifeEventsRouter", () => {
+  beforeEach(() => {
+    mockInvalidateUserQueryDomains.mockClear();
+  });
+
   it("uses short caches for life event read queries", () => {
     const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map(
       (call) => call[0],
@@ -140,6 +149,7 @@ describe("lifeEventsRouter", () => {
 
       expect(result.id).toBe("evt-new");
       expect(result.label).toBe("New job");
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["lifeEvents"]);
     });
 
     it("accepts all optional fields", async () => {
@@ -217,6 +227,7 @@ describe("lifeEventsRouter", () => {
       });
 
       expect(result?.label).toBe("Updated label");
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["lifeEvents"]);
     });
 
     it("returns null when no changes provided", async () => {
@@ -226,6 +237,7 @@ describe("lifeEventsRouter", () => {
       });
 
       expect(result).toBeNull();
+      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
     });
   });
 
@@ -237,6 +249,7 @@ describe("lifeEventsRouter", () => {
       });
 
       expect(result).toEqual({ success: true });
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["lifeEvents"]);
     });
   });
 

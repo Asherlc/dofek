@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "./db/index.ts";
@@ -231,7 +231,7 @@ export async function generateExport(
   outputPath: string,
   onProgress: (info: ExportProgress) => void,
 ): Promise<ExportResult> {
-  const archive = archiver("zip", { zlib: { level: 6 } });
+  const archive = new ZipArchive({ zlib: { level: 6 } });
   const output = createWriteStream(outputPath);
 
   const finished = new Promise<void>((resolve, reject) => {

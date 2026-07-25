@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { z } from "zod";
@@ -107,11 +108,13 @@ export async function handleSlackCallback(
         sql`UPDATE fitness.food_entry SET user_id = ${slackState.userId}
             WHERE user_id = ${orphanUserId}`,
       );
+      await invalidateAllUserQueries(orphanUserId);
       logger.info(
         `[auth] Migrated food entries from orphan ${orphanUserId} to ${slackState.userId}`,
       );
     }
 
+    await invalidateAllUserQueries(slackState.userId);
     logger.info(
       `[auth] Linked Slack user ${installerSlackUserId} to dofek user ${slackState.userId}`,
     );

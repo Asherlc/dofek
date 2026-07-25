@@ -1,7 +1,7 @@
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import { TRPCError } from "@trpc/server";
 import { getProviderRateLimitStatusFromRedis } from "dofek/admin/provider-rate-limit-status";
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { resolveAccessWindow } from "../billing/entitlement.ts";
@@ -392,6 +392,7 @@ export const adminRouter = router({
                 paid_grant_reason = EXCLUDED.paid_grant_reason,
                 updated_at = NOW()`,
         );
+        await invalidateAllUserQueries(input.userId);
         return { ok: true };
       }
 
@@ -401,6 +402,7 @@ export const adminRouter = router({
                 updated_at = NOW()
             WHERE user_id = ${input.userId}`,
       );
+      await invalidateAllUserQueries(input.userId);
       return { ok: true };
     }),
 

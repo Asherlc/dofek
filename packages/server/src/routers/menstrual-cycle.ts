@@ -1,3 +1,4 @@
+import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
 import {
   type CurrentPhaseResult,
@@ -19,19 +20,28 @@ export const menstrualCycleRouter = router({
   /** Log a new period start/end */
   logPeriod: protectedProcedure
     .input(
-      z.object({
-        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        endDate: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .nullable()
-          .default(null),
-        notes: z.string().nullable().default(null),
-      }),
+      z
+        .object({
+          startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          endDate: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .nullable()
+            .default(null),
+          notes: z.string().nullable().default(null),
+        })
+        .refine(({ startDate, endDate }) => endDate === null || endDate >= startDate, {
+          message: "Period end date cannot be before start date.",
+          path: ["endDate"],
+        }),
     )
     .mutation(async ({ ctx, input }) => {
       const repo = new MenstrualCycleRepository(ctx.db, ctx.userId);
-      return repo.logPeriod(input.startDate, input.endDate, input.notes);
+      const period = await repo.logPeriod(input.startDate, input.endDate, input.notes);
+      if (period !== null) {
+        await invalidateUserQueryDomains(ctx.userId, ["menstrualCycle"]);
+      }
+      return period;
     }),
 
   /** Period history for the past N months */
