@@ -70,13 +70,24 @@ describe("Settings router", () => {
   }
 
   describe("set and get", () => {
-    it("sets a setting and gets it back", async () => {
-      await mutate("settings.set", { key: "testSetting", value: 42 });
+    it("sets a known setting and gets it back", async () => {
+      await mutate("settings.set", { key: "unitSystem", value: "imperial" });
 
-      const result = await query("settings.get", { key: "testSetting" });
+      const result = await query("settings.get", { key: "unitSystem" });
       expect(result.result.data).toBeDefined();
-      expect(result.result.data.key).toBe("testSetting");
-      expect(result.result.data.value).toBe(42);
+      expect(result.result.data.key).toBe("unitSystem");
+      expect(result.result.data.value).toBe("imperial");
+    });
+
+    it.each([
+      { key: "unitSystem", value: "kelvin" },
+      { key: "dashboardLayout", value: { order: [], hidden: [], collapsed: "invalid" } },
+      { key: "whoop.wearLocation", value: "ankle" },
+      { key: "unknownSetting", value: true },
+    ])("rejects malformed or unknown setting $key", async (input) => {
+      const result = await mutate("settings.set", input);
+
+      expect(result.error.data.code).toBe("BAD_REQUEST");
     });
   });
 
@@ -89,28 +100,28 @@ describe("Settings router", () => {
 
   describe("upsert", () => {
     it("overwrites an existing value", async () => {
-      await mutate("settings.set", { key: "upsertTest", value: "first" });
-      await mutate("settings.set", { key: "upsertTest", value: "second" });
+      await mutate("settings.set", { key: "unitSystem", value: "metric" });
+      await mutate("settings.set", { key: "unitSystem", value: "imperial" });
 
-      const result = await query("settings.get", { key: "upsertTest" });
-      expect(result.result.data.value).toBe("second");
+      const result = await query("settings.get", { key: "unitSystem" });
+      expect(result.result.data.value).toBe("imperial");
     });
   });
 
   describe("cache invalidation on set", () => {
     it("returns the updated value after set, not the stale cached value", async () => {
       // 1. Set initial value
-      await mutate("settings.set", { key: "cacheTest", value: "metric" });
+      await mutate("settings.set", { key: "unitSystem", value: "metric" });
 
       // 2. Read it — populates the server-side cache
-      const first = await query("settings.get", { key: "cacheTest" });
+      const first = await query("settings.get", { key: "unitSystem" });
       expect(first.result.data.value).toBe("metric");
 
       // 3. Update the value
-      await mutate("settings.set", { key: "cacheTest", value: "imperial" });
+      await mutate("settings.set", { key: "unitSystem", value: "imperial" });
 
       // 4. Read again — should return "imperial", not stale "metric"
-      const second = await query("settings.get", { key: "cacheTest" });
+      const second = await query("settings.get", { key: "unitSystem" });
       expect(second.result.data.value).toBe("imperial");
     });
   });
@@ -118,8 +129,8 @@ describe("Settings router", () => {
   describe("getAll", () => {
     it("returns all settings", async () => {
       // Ensure we have at least two settings from previous tests
-      await mutate("settings.set", { key: "allTestA", value: 1 });
-      await mutate("settings.set", { key: "allTestB", value: 2 });
+      await mutate("settings.set", { key: "unitSystem", value: "metric" });
+      await mutate("settings.set", { key: "whoop.wearLocation", value: "wrist" });
 
       const result = await query("settings.getAll");
       expect(result.result.data).toBeDefined();
@@ -127,8 +138,8 @@ describe("Settings router", () => {
       expect(settings.length).toBeGreaterThanOrEqual(2);
 
       const keys = settings.map((s) => s.key);
-      expect(keys).toContain("allTestA");
-      expect(keys).toContain("allTestB");
+      expect(keys).toContain("unitSystem");
+      expect(keys).toContain("whoop.wearLocation");
     });
   });
 
@@ -240,9 +251,9 @@ describe("Settings router", () => {
       expect(userSettingsAfter[0]?.count).toBe(0);
 
       // Session should remain usable after data deletion.
-      await mutate("settings.set", { key: "afterDelete", value: true });
-      const settingResult = await query("settings.get", { key: "afterDelete" });
-      expect(settingResult.result.data.value).toBe(true);
+      await mutate("settings.set", { key: "unitSystem", value: "metric" });
+      const settingResult = await query("settings.get", { key: "unitSystem" });
+      expect(settingResult.result.data.value).toBe("metric");
     });
   });
 });
