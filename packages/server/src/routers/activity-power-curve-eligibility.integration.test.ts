@@ -21,7 +21,7 @@ function renderDirtyActivityKeysSql(analyticsDatabase: string, targetTable: stri
     "existing_activity_state",
     "source_dirty_activity_keys",
   ] as const;
-  const ctes = cteNames.map((name) => {
+  const commonTableExpressions = cteNames.map((name) => {
     const sql = extractCteSql(modelSql, name)
       .replace(
         /\{\{\s*ref\('activity_summary_rows'\)\s*\}\}/g,
@@ -35,7 +35,7 @@ function renderDirtyActivityKeysSql(analyticsDatabase: string, targetTable: stri
     return `${name} AS (${sql})`;
   });
 
-  return `WITH ${ctes.join(",\n")}
+  return `WITH ${commonTableExpressions.join(",\n")}
 SELECT toString(activity_id) AS activity_id
 FROM source_dirty_activity_keys
 ORDER BY activity_id
