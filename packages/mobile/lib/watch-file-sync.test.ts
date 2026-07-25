@@ -196,4 +196,26 @@ describe("syncWatchAccelerometerFiles", () => {
     // File should NOT be deleted because not all batches succeeded
     expect(mockDeleteWatchFile).not.toHaveBeenCalled();
   });
+
+  it("does not read or delete a file that arrives after the sync snapshot", async () => {
+    const pendingFileNames = ["watch-accel-existing.json.gz"];
+    mockGetPendingWatchFileNames.mockImplementation(() => [...pendingFileNames]);
+    mockReadWatchFile.mockResolvedValue(makeSamples(1));
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockImplementation(
+      async () => {
+        pendingFileNames.push("watch-accel-arrived-during-sync.json.gz");
+        return { inserted: 1 };
+      },
+    );
+
+    const result = await syncWatchAccelerometerFiles(trpcClient);
+
+    expect(result).toEqual({ totalInserted: 1, filesProcessed: 1, filesFailed: 0 });
+    expect(mockGetPendingWatchFileNames).toHaveBeenCalledTimes(1);
+    expect(mockReadWatchFile).toHaveBeenCalledTimes(1);
+    expect(mockReadWatchFile).toHaveBeenCalledWith("watch-accel-existing.json.gz");
+    expect(mockDeleteWatchFile).toHaveBeenCalledTimes(1);
+    expect(mockDeleteWatchFile).toHaveBeenCalledWith("watch-accel-existing.json.gz");
+    expect(mockDeleteWatchFile).not.toHaveBeenCalledWith("watch-accel-arrived-during-sync.json.gz");
+  });
 });

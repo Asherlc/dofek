@@ -5,8 +5,6 @@ import WatchConnectivity
 public class WatchMotionModule: Module, WatchFileReceiverObserver {
     private var session: WCSession?
     private let pendingDirectory = WatchFileInbox.shared.pendingDirectory
-    private let defaults = UserDefaults.standard
-    private let lastSyncKey = "com.dofek.watch-motion.lastSyncTimestamp"
 
     // swiftlint:disable:next function_body_length
     public func definition() -> ModuleDefinition {
@@ -84,21 +82,6 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
             })
         }
 
-        AsyncFunction("getPendingWatchSamples") { (promise: Promise) in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let samples = try self.readAndParsePendingFiles()
-                    promise.resolve(samples)
-                } catch {
-                    promise.reject("PARSE_ERROR", "Failed to parse Watch samples: \(error.localizedDescription)")
-                }
-            }
-        }
-
-        Function("acknowledgeWatchSamples") {
-            self.deletePendingFiles()
-        }
-
         /// List the file names in the pending transfer directory.
         /// Used by the per-file sync to process files individually.
         Function("getPendingWatchFileNames") { () -> [String] in
@@ -156,14 +139,6 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
             NSLog("[WatchMotion] deleteWatchFile: %@", fileName)
             try? FileManager.default.removeItem(at: fileURL)
         }
-
-        Function("getLastWatchSyncTimestamp") { () -> String? in
-            return self.defaults.string(forKey: self.lastSyncKey)
-        }
-
-        Function("setLastWatchSyncTimestamp") { (timestamp: String) in
-            self.defaults.set(timestamp, forKey: self.lastSyncKey)
-        }
     }
 
     // MARK: - File received from Watch
@@ -215,43 +190,6 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
             includingPropertiesForKeys: nil
         )
         return contents?.count ?? 0
-    }
-
-    private func readAndParsePendingFiles() throws -> [[String: Any]] {
-        let fileManager = FileManager.default
-        let contents = try fileManager.contentsOfDirectory(
-            at: pendingDirectory,
-            includingPropertiesForKeys: nil
-        )
-
-        var allSamples: [[String: Any]] = []
-
-        for fileURL in contents {
-            do {
-                let fileData = try Data(contentsOf: fileURL)
-                let samples = try SampleFileParser.parse(fileData)
-                allSamples.append(contentsOf: samples)
-            } catch {
-                NSLog("[WatchMotion] Failed to parse pending file %@: %@", fileURL.lastPathComponent, error.localizedDescription)
-                // Skip this file and continue processing others.
-                // The file will be deleted when acknowledgeWatchSamples() runs,
-                // preventing it from blocking future syncs.
-            }
-        }
-
-        return allSamples
-    }
-
-    private func deletePendingFiles() {
-        let fileManager = FileManager.default
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: pendingDirectory,
-            includingPropertiesForKeys: nil
-        ) else { return }
-
-        for fileURL in contents {
-            try? fileManager.removeItem(at: fileURL)
-        }
     }
 }
 
