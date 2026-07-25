@@ -16122,6 +16122,82 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   own Compose volumes so concurrent workspaces do not accumulate disposable
   database state.
 
+## 2026-07-24 — Analytics Refresh Failures Remained Docker-Healthy
+
+- **Status:** Root-cause fix validated locally; production deployment pending.
+- **Symptoms:** Scheduled analytics refreshes repeatedly failed while Docker
+  Swarm continued to report `dofek_analytics-worker` as `1/1` and its container
+  health as `healthy`.
+- **User impact:** Analytics serving tables could remain stale or empty without
+  making deploy health or routine service checks fail.
+- **Evidence:** The exact failing path was `entrypoint.sh analytics-worker` →
+  `run_dbt_safe_builds` → `scripts/run-analytics-build.ts`. The first fatal dbt
+  line in the inspected production window was
+  `Failure in model sleep_heart_rate_sample`, followed by ClickHouse code 159
+  `Timeout exceeded: elapsed 240315.091353 ms, maximum: 240000 ms`.
+  `activity_power_curve` failed in the same cycle, and later cycles also failed
+  `provider_stats`. The shell then logged
+  `analytics-worker: dbt build failed with exit status 1; retrying in 300s`.
+  At the same time, the live task had been running for eight hours and Docker
+  reported `health=healthy` because the configured probe only matched the
+  long-lived `analytics-worker` process.
+- **Root cause:** The analytics-worker healthcheck measured shell-process
+  liveness, while the shell intentionally stayed alive across every dbt failure.
+  It held no last-success state and could not report the failing refresh step to
+  Sentry, so refresh failure and container health were independent.
+- **Fix / mitigation:** Replaced the shell retry loop with a TypeScript
+  analytics worker that records the active step, model-level failure message,
+  last failure, and last successful complete build-plus-cache cycle. It reports
+  failed cycles to Sentry, retains the bounded retry delay, and serves a
+  loopback `/readyz` endpoint. Swarm now probes that endpoint; a failed first
+  cycle returns HTTP 503 immediately, a prior success returns 503 once its age
+  exceeds the configured cadence plus retry budget, and a later successful
+  cycle restores HTTP 200. Docker healthchecks use command exit status to mark
+  containers healthy or unhealthy:
+  <https://docs.docker.com/reference/dockerfile/#healthcheck>.
+- **Validation:** Deterministic unit tests reproduce an
+  `activity_power_curve: TIMEOUT_EXCEEDED` dbt failure, preserve the original
+  model/error in telemetry and readiness state, assert HTTP 503, exercise the
+  retry delay, and confirm a later successful cycle updates last-success time
+  and restores HTTP 200. Focused analytics-worker, entrypoint, dbt runner, and
+  read-model tests pass, as do root TypeScript validation and Biome checks.
+- **Remaining risk / follow-up:** Deploy the change and confirm the next
+  production failure produces a Sentry event and an unhealthy Swarm task, then
+  confirm a clean cycle restores health. The existing retry delay remains
+  justified only as secondary recovery for transient ClickHouse failures; it no
+  longer determines whether the service appears healthy.
+
+## 2026-07-24 — CDC Failures Did Not Affect Service Health
+
+- **Status:** Fixed and validated locally; hosted CI is a merge gate.
+- **Symptoms:** The `cdc-health` process logged and reported failed CDC checks
+  indefinitely while its Swarm service remained healthy.
+- **User impact:** Operators and deploy verification could see a green service
+  during lost replication slots, stale mirrors, or unreachable CDC
+  dependencies, leaving user dashboards stale without an unhealthy service.
+- **Evidence:** `scripts/check-clickhouse-cdc.ts` exited nonzero and the
+  entrypoint logged `cdc-health: check failed with exit status ...`, but the
+  healthcheck command was only `pgrep -f cdc-health || exit 1`. The monitor
+  process remained alive because its loop intentionally retried.
+- **Root cause:** The service probe measured only process liveness, and the
+  retry wrapper did not expose the check result or its age to Docker.
+- **Fix / mitigation:** The monitor now atomically records startup, failure,
+  and success state with last-check and last-success timestamps. Its probe
+  fails after two consecutive failed reports or when state is older than one
+  configured interval plus 60 seconds. Docker applies the existing three-probe
+  health threshold, and Swarm replaces unhealthy tasks as documented in
+  [Docker's healthcheck reference](https://docs.docker.com/reference/dockerfile/#healthcheck)
+  and [Swarm scheduling guide](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling).
+- **Validation:** The regression first failed because no durable state or
+  probe existed. Executable state-file and CLI tests now inject repeated
+  failures, assert the unhealthy result, inject success, and verify recovery
+  with an updated last-success timestamp. Entrypoint coverage verifies every
+  check result is persisted before the retry sleep.
+- **Remaining risk / follow-up:** Require hosted lint, unit, mutation, and
+  deployment-file validation before merging. After deployment, confirm a
+  deterministic failed report changes the task health and a subsequent passing
+  report clears the state without manual file repair.
+
 ## 2026-07-24 — Cache-Invalidation Mutants Survived PR CI
 
 - **Status:** Fixed on PR #1923; replacement CI pending.
@@ -16180,6 +16256,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Hosted CI must confirm the replacement
   typecheck matrix. New ESM test imports should follow the same explicit
   extension convention as production modules.
+
 ## 2026-07-20 — Local E2E Replaced the Developer Compose Stack
 
 - **Status:** Fixed and validated locally; hosted CI is a merge gate.

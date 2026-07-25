@@ -95,7 +95,7 @@ describe("runAnalyticsBuild", () => {
               },
         recordRun,
       }),
-    ).rejects.toThrow("dbt build failed with exit code 1");
+    ).rejects.toThrow("dbt build failed with exit code 1: provider_stats: database error");
 
     expect(recordRun).toHaveBeenCalledOnce();
   });
