@@ -16468,6 +16468,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   workflow that is subsequently skipped; address that concurrency policy in a
   separate change rather than coupling it to disk reclamation.
 
+## 2026-07-24 — OAuth Reconnect Cleanup Mutants Survived PR CI
+
+- **Status:** Fixed locally on PR #1941; replacement CI pending.
+- **Symptoms:** `Test / Stryker (0)` and the aggregate mutation gate failed
+  after reconnect token lifecycle handling was added.
+- **User impact:** No production users were affected. PR #1941 was blocked
+  from merging.
+- **Evidence:** The exact failed command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  Its first fatal line was
+  `Final mutation score 70.13 under breaking threshold 75, setting exit code
+  to 1 (failure)`. The report contained 15 surviving and eight uncovered
+  mutants in the new revocation cleanup and reconnect-state branches.
+- **Root cause:** The callback tests covered the principal safe and
+  destructive reconnect outcomes, but did not directly distinguish partial
+  standard-token revocation, missing refresh tokens, custom-to-standard
+  fallback, invalid destructive configuration, or non-data account-link
+  isolation. Stryker could therefore remove or invert those branches without
+  failing a test.
+- **Fix / mitigation:** Added public-callback unit tests for each missing
+  behavior. No mutation threshold, exclusion, timeout, or retry changed.
+  Stryker describes surviving mutants and break thresholds in its
+  [configuration reference](https://stryker-mutator.io/docs/stryker-js/configuration/).
+- **Validation:** All 16 focused callback tests pass. A stricter local run
+  mutating the full callback file completed with 201 mutants killed, two timed
+  out, 24 surviving, one uncovered, and an 89.04% score, above the 75% break
+  threshold.
+- **Remaining risk / follow-up:** Hosted CI must confirm the replacement shard.
+  Future OAuth lifecycle changes should pair end-to-end persistence coverage
+  with focused unit assertions for each cleanup fallback and failure-state
+  distinction.
+
 ## 2026-07-24 — Data Export Queue Handoff Was Not Recoverable
 
 - **Status:** Fixed locally; hosted CI is a merge gate.
@@ -16814,3 +16846,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If independent runners repeatedly time out
   against Infisical, investigate provider availability and runner egress with
   the captured endpoint evidence before changing workflow behavior.
+
+## 2026-07-24 — E2E Image Build Could Not Fetch Alpine Package Index
+
+- **Status:** External registry failure identified on PR #1941; replacement CI
+  pending.
+- **Symptoms:** `Test / E2E Tests (Web)` failed while building the E2E server
+  image, before Cypress started.
+- **User impact:** No production impact. PR #1941 remained blocked from merge.
+- **Evidence:** The failing Dockerfile command was
+  `apk add --no-cache ca-certificates libbz2 libstdc++`; its first causal fatal
+  line was
+  `WARNING: fetching https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/APKINDEX.tar.gz: TLS: unspecified error`.
+  The later `no such package` messages and buildx exit code 2 followed because
+  apk could not load the repository index.
+- **Root cause:** The hosted BuildKit runner could not establish the TLS
+  connection needed to fetch Alpine's package index. Alpine documents that
+  `apk` retrieves repository indexes before resolving and installing packages:
+  <https://wiki.alpinelinux.org/wiki/Alpine_Package_Keeper>.
+- **Fix / mitigation:** Schedule replacement CI on a fresh hosted runner. No
+  package substitution, mirror fallback, retry, timeout, or image behavior was
+  changed.
+- **Validation:** The same Dockerfile build passed on prior independent PR
+  runs, and the web application build passed in the affected run. The
+  replacement E2E job must fetch the index, build the image, and complete
+  Cypress before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly fail to
+  fetch the Alpine index, investigate mirror availability and hosted-runner
+  network evidence before changing the build.

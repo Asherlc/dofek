@@ -82,7 +82,7 @@ export interface OAuthConfig {
    *  Some providers (e.g. Strava) require "," instead. */
   scopeSeparator?: string;
   /** OAuth 2.0 Token Revocation endpoint (RFC 7009).
-   *  When set, existing tokens can be revoked before exchanging a new authorization code. */
+   *  When set, superseded tokens can be revoked during reconnect. */
   revokeUrl?: string;
 }
 
