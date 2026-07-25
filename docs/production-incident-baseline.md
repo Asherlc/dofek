@@ -17203,19 +17203,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   fatal line was again `socket hang up`, restart count advanced to 1, and
   Docker again retained `OOMKilled=false`. At the time, four other workspace
   ClickHouse containers and two k3d servers were also running in the Docker
-  VM's 7.653 GiB memory allocation.
-- **Root cause:** Not yet proven. The abrupt process loss and aggregate Docker
-  VM pressure are consistent with a host-level resource kill, but Docker did
-  not retain `OOMKilled=true` for the restarted container.
+  VM's 7.653 GiB memory allocation. On recurrence, the persisted ClickHouse
+  error log recorded `MEMORY_LIMIT_EXCEEDED` while flushing
+  `system.metric_log`: current RSS was 2.40 GiB against a 2.44 GiB process
+  limit immediately before exit 137.
+- **Root cause:** The reused issue-1769 ClickHouse test volume consumed the
+  process memory limit during system-log maintenance while the Docker VM was
+  already running four other ClickHouse instances. The process exited and
+  Compose restarted it; Docker did not attribute that inner-process exit as
+  `OOMKilled=true`.
 - **Fix / mitigation:** No retry, timeout, memory-limit, or application
   workaround was added. Completed issue stacks were stopped through the
   workspace Compose wrapper, and the issue-1769 Postgres, Redis, and Redpanda
   services were stopped while the focused ClickHouse-only validation ran.
+  When the persisted test volume reproduced the failure, only issue-1769's
+  disposable Compose volumes were removed and a fresh ClickHouse volume was
+  created.
 - **Validation:** The lifecycle integration test passed update, deletion,
   tombstone, downstream-exclusion, and refresh-snapshot watermark assertions
   on the stable real ClickHouse process. The focused 39-test unit suite,
   analytics policy, targeted SQLFluff, root typecheck, and Biome also passed.
-  The broad cycling fixture and CI remain the independent validation gates.
+  The fresh-volume lifecycle run also passed the production
+  `weekly_healthspan` update and deletion propagation assertions. The broad
+  cycling fixture and CI remain the independent validation gates.
 - **Remaining risk / follow-up:** Capture Docker daemon or VM-level kill events
   if this recurs, and reduce concurrent disposable workspace stacks before
   repeating broad local ClickHouse validation. Docker documents container

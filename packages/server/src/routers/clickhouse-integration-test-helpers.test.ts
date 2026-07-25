@@ -376,7 +376,16 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".weekly_healthspan") &&
-          command.includes(".v_daily_metrics"),
+          command.includes(".v_daily_metrics") &&
+          (command.match(/daily_body_measurement FINAL/g)?.length ?? 0) === 2,
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".daily_body_measurement") &&
+          command.includes("ORDER BY (user_id, measurement_id)"),
       ),
     ).toBe(true);
   });

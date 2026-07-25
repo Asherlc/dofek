@@ -2,7 +2,7 @@ import { z } from "zod";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 import type { ClickHouseMigration } from "./types.ts";
 
-const tableCountRowsSchema = z.tuple([z.object({ count: z.union([z.string(), z.number()]) })]);
+const tableCountRowsSchema = z.tuple([z.object({ count: z.coerce.number().int().nonnegative() })]);
 
 export function createMigration(): ClickHouseMigration {
   const statements = [
@@ -24,14 +24,14 @@ export function createMigration(): ClickHouseMigration {
       if (!client.query) {
         throw new Error("ClickHouse migrations require a query-capable client");
       }
-      const result = await client.query<{ count: string | number }>({
+      const result = await client.query<{ count: string }>({
         query:
           "SELECT count() AS count FROM system.tables WHERE database = 'analytics' AND name = {name:String}",
         format: "JSONEachRow",
         query_params: { name: "daily_body_measurement" },
       });
       const rows = tableCountRowsSchema.parse(await result.json());
-      if (Number(rows[0].count) === 0) {
+      if (rows[0].count === 0) {
         return;
       }
       for (const statement of statements) {

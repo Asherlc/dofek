@@ -487,7 +487,7 @@ export function buildTestHealthspanReadModelSelectSql(
   SELECT
     user_id,
     toMonday(date) AS week_start
-  FROM ${databases.analytics}.daily_body_measurement
+  FROM ${databases.analytics}.daily_body_measurement FINAL
   WHERE is_deleted = 0
   GROUP BY user_id, toMonday(date)
 ),
@@ -517,7 +517,7 @@ body_by_week AS (
     toMonday(date) AS week_start,
     argMax(weight_kg, (recorded_at, refresh_version, measurement_id)) AS weight_kg,
     argMax(body_fat_pct, (recorded_at, refresh_version, measurement_id)) AS body_fat_pct
-  FROM ${databases.analytics}.daily_body_measurement
+  FROM ${databases.analytics}.daily_body_measurement FINAL
   WHERE is_deleted = 0
   GROUP BY user_id, toMonday(date)
 ),

@@ -555,7 +555,7 @@ refreshed_at DateTime64(9)`,
               : shortViewName === "daily_recovery"
                 ? "(user_id, date)"
                 : shortViewName === "daily_body_measurement"
-                  ? "(user_id, recorded_at, measurement_id)"
+                  ? "(user_id, measurement_id)"
                   : shortViewName === "daily_endurance_load" ||
                       shortViewName === "daily_activity_load" ||
                       shortViewName === "healthspan_activity_zone_minutes"

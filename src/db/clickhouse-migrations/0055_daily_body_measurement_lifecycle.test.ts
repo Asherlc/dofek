@@ -17,7 +17,7 @@ class TestClickHouseClient implements ClickHouseCommandClient {
   readonly command = vi.fn(async () => undefined);
   readonly queryCalls: QueryOptions[] = [];
 
-  constructor(readonly tableCount: number) {}
+  constructor(readonly tableCount: number | string) {}
 
   async query<TRow extends object>(options: QueryOptions): Promise<{ json(): Promise<TRow[]> }> {
     this.queryCalls.push(options);
@@ -79,5 +79,12 @@ describe("0055_daily_body_measurement_lifecycle", () => {
       client,
       migration.statements[1],
     );
+  });
+
+  it("rejects a malformed serving-table count", async () => {
+    const client = new TestClickHouseClient("not-a-count");
+
+    await expect(createMigration().run?.(client, "postgres://test")).rejects.toThrow();
+    expect(mockRunClickHouseMigrationStatement).not.toHaveBeenCalled();
   });
 });
