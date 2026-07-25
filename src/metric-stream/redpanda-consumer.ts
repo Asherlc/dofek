@@ -2,6 +2,10 @@ import { captureException } from "@sentry/node";
 import { Kafka } from "kafkajs";
 import { logger } from "../logger.ts";
 import { type MetricStreamRedpandaEvent, metricStreamRedpandaEventSchema } from "./events.ts";
+import {
+  KafkaMetricStreamQuarantineWriter,
+  type MetricStreamQuarantineWriter,
+} from "./redpanda-quarantine.ts";
 
 export interface MetricStreamKafkaMessage {
   offset: string;
@@ -34,6 +38,7 @@ export interface RunMetricStreamEventConsumerOptions {
     events: MetricStreamRedpandaEvent[],
     context: MetricStreamConsumerBatchContext,
   ): Promise<void>;
+  quarantine: MetricStreamQuarantineWriter;
   topic: string;
 }
 
@@ -44,11 +49,8 @@ export interface MetricStreamConsumerBatchContext {
 }
 
 function parseMetricStreamMessage(
-  message: MetricStreamKafkaMessage,
-): MetricStreamRedpandaEvent | null {
-  if (!message.value) {
-    return null;
-  }
+  message: MetricStreamKafkaMessage & { value: Buffer },
+): MetricStreamRedpandaEvent {
   try {
     return metricStreamRedpandaEventSchema.parse(JSON.parse(message.value.toString("utf8")));
   } catch (error) {
@@ -73,6 +75,7 @@ function parseMetricStreamMessage(
 export async function runMetricStreamEventConsumer(
   options: RunMetricStreamEventConsumerOptions,
 ): Promise<void> {
+  await options.quarantine.connect();
   await options.consumer.connect();
   await options.consumer.subscribe({ topic: options.topic, fromBeginning: false });
   await options.consumer.run({
@@ -81,10 +84,45 @@ export async function runMetricStreamEventConsumer(
       const events: MetricStreamRedpandaEvent[] = [];
       const eventOffsets: string[] = [];
       for (const message of payload.batch.messages) {
-        const event = parseMetricStreamMessage(message);
-        if (event) {
+        if (!message.value) {
+          continue;
+        }
+        try {
+          const event = parseMetricStreamMessage({
+            offset: message.offset,
+            value: message.value,
+          });
           events.push(event);
           eventOffsets.push(message.offset);
+        } catch (error) {
+          try {
+            await options.quarantine.write({
+              error,
+              offset: message.offset,
+              partition: payload.batch.partition,
+              payload: message.value,
+              topic: payload.batch.topic,
+            });
+          } catch (quarantineError) {
+            const messageText =
+              quarantineError instanceof Error ? quarantineError.message : String(quarantineError);
+            logger.error(
+              `[metric-stream] Failed to quarantine Redpanda message at ${payload.batch.topic}/${payload.batch.partition}/${message.offset}: ${messageText}`,
+            );
+            captureException(quarantineError, {
+              extra: {
+                offset: message.offset,
+                partition: payload.batch.partition,
+                topic: payload.batch.topic,
+                valueBytes: message.value.byteLength,
+              },
+              tags: {
+                metricStreamConsumer: "redpanda",
+                metricStreamFailure: "quarantine-write",
+              },
+            });
+            throw quarantineError;
+          }
         }
       }
 
@@ -119,7 +157,11 @@ function readRequiredEnvironmentValue(
 export function createKafkaMetricStreamConsumerFromEnv(
   groupId: string,
   env: NodeJS.ProcessEnv = process.env,
-): { consumer: MetricStreamConsumerLike; topic: string } {
+): {
+  consumer: MetricStreamConsumerLike;
+  quarantine: MetricStreamQuarantineWriter;
+  topic: string;
+} {
   const topic = readRequiredEnvironmentValue(env, "METRIC_STREAM_TOPIC");
   const brokers = readRequiredEnvironmentValue(env, "REDPANDA_BROKERS")
     .split(",")
@@ -141,6 +183,11 @@ export function createKafkaMetricStreamConsumerFromEnv(
       subscribe: (options) => kafkaConsumer.subscribe(options),
       run: (options) => kafkaConsumer.run(options),
     },
+    quarantine: new KafkaMetricStreamQuarantineWriter({
+      admin: kafka.admin(),
+      producer: kafka.producer(),
+      sourceTopic: topic,
+    }),
     topic,
   };
 }

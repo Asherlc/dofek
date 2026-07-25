@@ -188,7 +188,7 @@ export async function warmRegisteredQueryCachesWithOutcomes<TDatabase, TSensorSt
   return { refreshed, failed, skipped, outcomes };
 }
 
-async function main(): Promise<void> {
+export async function warmQueryCacheFromEnvironment(): Promise<void> {
   const db = createDatabaseFromEnv();
   const clickHouseClient = createClickHouseClientFromEnv();
   const sensorStore = new ClickHouseActivitySensorStore(clickHouseClient);
@@ -218,12 +218,12 @@ async function main(): Promise<void> {
       `[cache-warmer] Refreshed ${result.refreshed} app query caches; skipped ${result.skipped}`,
     );
   } finally {
-    await clickHouseClient.close?.();
+    await Promise.all([db.$client.end(), clickHouseClient.close?.()]);
   }
 }
 
 const scriptPath = process.argv[1];
 if (scriptPath && import.meta.url === pathToFileURL(scriptPath).href) {
-  await main();
+  await warmQueryCacheFromEnvironment();
   process.exit(0);
 }

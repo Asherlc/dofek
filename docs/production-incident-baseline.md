@@ -16122,6 +16122,51 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   own Compose volumes so concurrent workspaces do not accumulate disposable
   database state.
 
+## 2026-07-24 — Analytics Refresh Failures Remained Docker-Healthy
+
+- **Status:** Root-cause fix validated locally; production deployment pending.
+- **Symptoms:** Scheduled analytics refreshes repeatedly failed while Docker
+  Swarm continued to report `dofek_analytics-worker` as `1/1` and its container
+  health as `healthy`.
+- **User impact:** Analytics serving tables could remain stale or empty without
+  making deploy health or routine service checks fail.
+- **Evidence:** The exact failing path was `entrypoint.sh analytics-worker` →
+  `run_dbt_safe_builds` → `scripts/run-analytics-build.ts`. The first fatal dbt
+  line in the inspected production window was
+  `Failure in model sleep_heart_rate_sample`, followed by ClickHouse code 159
+  `Timeout exceeded: elapsed 240315.091353 ms, maximum: 240000 ms`.
+  `activity_power_curve` failed in the same cycle, and later cycles also failed
+  `provider_stats`. The shell then logged
+  `analytics-worker: dbt build failed with exit status 1; retrying in 300s`.
+  At the same time, the live task had been running for eight hours and Docker
+  reported `health=healthy` because the configured probe only matched the
+  long-lived `analytics-worker` process.
+- **Root cause:** The analytics-worker healthcheck measured shell-process
+  liveness, while the shell intentionally stayed alive across every dbt failure.
+  It held no last-success state and could not report the failing refresh step to
+  Sentry, so refresh failure and container health were independent.
+- **Fix / mitigation:** Replaced the shell retry loop with a TypeScript
+  analytics worker that records the active step, model-level failure message,
+  last failure, and last successful complete build-plus-cache cycle. It reports
+  failed cycles to Sentry, retains the bounded retry delay, and serves a
+  loopback `/readyz` endpoint. Swarm now probes that endpoint; a failed first
+  cycle returns HTTP 503 immediately, a prior success returns 503 once its age
+  exceeds the configured cadence plus retry budget, and a later successful
+  cycle restores HTTP 200. Docker healthchecks use command exit status to mark
+  containers healthy or unhealthy:
+  <https://docs.docker.com/reference/dockerfile/#healthcheck>.
+- **Validation:** Deterministic unit tests reproduce an
+  `activity_power_curve: TIMEOUT_EXCEEDED` dbt failure, preserve the original
+  model/error in telemetry and readiness state, assert HTTP 503, exercise the
+  retry delay, and confirm a later successful cycle updates last-success time
+  and restores HTTP 200. Focused analytics-worker, entrypoint, dbt runner, and
+  read-model tests pass, as do root TypeScript validation and Biome checks.
+- **Remaining risk / follow-up:** Deploy the change and confirm the next
+  production failure produces a Sentry event and an unhealthy Swarm task, then
+  confirm a clean cycle restores health. The existing retry delay remains
+  justified only as secondary recovery for transient ClickHouse failures; it no
+  longer determines whether the service appears healthy.
+
 ## 2026-07-24 — CDC Failures Did Not Affect Service Health
 
 - **Status:** Fixed and validated locally; hosted CI is a merge gate.
@@ -16245,6 +16290,82 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   CI project name across dependency startup, migrations, analytics, logs, and
   teardown before merging the fix.
 
+## 2026-07-24 — Malformed Metric-stream Events Had No Durable Quarantine
+
+- **Status:** Fixed and validated locally; hosted CI remains the merge gate.
+- **Symptoms:** A malformed JSON or schema-incompatible Redpanda event could
+  not reach ClickHouse. The current consumer correctly stopped before resolving
+  its batch, but the poison record then blocked that partition indefinitely
+  because there was no durable failure path.
+- **User impact:** Earlier consumer behavior could permanently discard malformed
+  sensor events by committing their offsets. The intermediate fail-closed
+  behavior prevented new loss but could indefinitely stall later valid sensor
+  events in the same partition.
+- **Evidence:** The regression batch contains malformed offset `0` followed by
+  valid offset `1`. When quarantine returns `quarantine unavailable`, the real
+  Redpanda group remains at offset `0`, the ClickHouse handler is not called,
+  and a restarted consumer sees offset `0` again. The first integration-harness
+  fatal line was `REDPANDA_BROKERS is required for metric-stream integration
+  tests`: `pnpm test:integration` generated the workspace broker URL but
+  stripped it before Vitest and did not start Redpanda.
+- **Root cause:** The ClickHouse consumer had only success or retry states; it
+  had no bounded durable quarantine outcome that could safely satisfy a poison
+  record before advancing the source offset. The integration tier also omitted
+  its existing Redpanda prerequisite.
+- **Fix / mitigation:** Added a Kafka-backed quarantine topic with enforced
+  delete cleanup, seven-day and 1-GiB-per-partition retention bounds, exact raw
+  payload bytes, source/error headers, and all-in-sync-replica acknowledgement.
+  The consumer now resolves a batch only after quarantine and ClickHouse both
+  succeed. The integration wrapper starts the workspace Redpanda service and
+  passes its generated broker address through the validated test environment.
+  No retry, timeout, skipped check, or warn-and-continue behavior was added.
+- **Validation:** Unit regressions cover quarantine failure, successful
+  quarantine-before-sink ordering, full replay context, tombstones, and a later
+  valid event behind an unhandled poison record. A real Redpanda integration
+  test proves offset `0` remains replayable after quarantine failure, then
+  verifies the restarted group commits offset `2` only after the quarantine
+  record is readable and the valid event is handled. It also reads back the
+  enforced topic retention configuration.
+- **Remaining risk / follow-up:** Quarantine is intentionally bounded, so
+  operators must monitor and repair records within seven days or before a
+  partition exceeds 1 GiB. Add quarantine topic volume/age alerting if
+  malformed-event frequency becomes operationally significant.
+
+## 2026-07-24 — Local Unsharded Integration Validation Exhausted Dependencies
+
+- **Status:** Local validation environment diagnosed; affected suites are being
+  rerun in bounded groups and hosted sharded CI remains the merge gate.
+- **Symptoms:** The full unsharded integration command reported FIT provider
+  failures, ClickHouse memory-limit errors, and later Postgres recovery errors.
+- **User impact:** No production impact. Local validation for issue #1775 was
+  interrupted after 103 integration files and 989 tests passed.
+- **Evidence:** The first independent fatal lines were `Unable to start the
+  native FIT decoder` and ClickHouse
+  `MEMORY_LIMIT_EXCEEDED`. The workspace ClickHouse container had restarted by
+  the post-run inspection; Postgres then reported `database system is in
+  recovery mode` during the same resource-heavy sequential run.
+- **Root cause:** The host did not have the repository's CMake, Ninja, vcpkg,
+  and native decoder prerequisites installed. Separately, the unsharded run
+  exceeded the workspace ClickHouse memory limit and interrupted dependent
+  database work; the activity power-curve suite reproduced the container exit
+  `137` even in a four-file bounded rerun. The
+  repository documents both the native decoder prerequisites and explicit
+  integration tiers in the [testing guide](testing.md#integration-dependencies).
+- **Fix / mitigation:** Installed the documented native toolchain and built the
+  decoder. Recreated only this workspace's affected services through the
+  Compose wrapper and reran the failed suites in bounded groups. No memory
+  limit, timeout, retry, skipped check, or warn-and-continue behavior changed.
+- **Validation:** The metric-stream Redpanda integration test passed against
+  the real broker. All 22 affected Wahoo, Coros, and Suunto FIT tests passed
+  after the native build. Another bounded group covering processing
+  reconciliation, Decathlon, and cycling analytics passed all 13 tests. The
+  activity power-curve rerun captured the remaining local ClickHouse exit
+  before dependent router fixtures could finish; hosted CI supplies the final
+  isolated integration validation.
+- **Remaining risk / follow-up:** Local all-at-once integration execution can
+  still exceed the Docker VM's per-service resources. Prefer the documented
+  changed or bounded integration commands locally and treat the hosted shards
+  as the complete merge gate.
 ## 2026-07-24 — watchOS CI Runner Failed Repository Checkout
 
 - **Status:** Root cause identified; replacement CI pending.
@@ -16346,3 +16467,103 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   can still cancel a healthy deploy when a newer CI completion creates a deploy
   workflow that is subsequently skipped; address that concurrency policy in a
   separate change rather than coupling it to disk reclamation.
+## 2026-07-24 — Image Vulnerability Scan Could Not Reach Docker Hub
+
+- **Status:** External registry failure identified; replacement CI pending on
+  PR #1940.
+- **Symptoms:** `Test / Image Vulnerability Scan` failed, which also failed the
+  aggregate `Test / Security & Dependencies` gate.
+- **User impact:** No production users were affected. PR #1940 was blocked from
+  merging even though no vulnerability result was produced.
+- **Evidence:** The exact failing command was
+  `docker pull "$GRYPE_IMAGE"`. The first fatal line was
+  `Error response from daemon: Get "https://registry-1.docker.io/v2/":
+  net/http: request canceled while waiting for connection`; all five attempts
+  timed out before the final explicit pull failure.
+- **Root cause:** The hosted runner could not establish a timely connection to
+  Docker Hub. The application image built successfully, and Grype never ran, so
+  this was not a detected application-image vulnerability.
+- **Fix / mitigation:** Scheduled replacement CI on a fresh hosted runner. No
+  scan threshold, timeout, retry count, or vulnerability policy was changed.
+- **Validation:** The replacement run must pull the pinned Grype image and
+  complete the critical-vulnerability scan before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly cannot pull
+  the pinned scanner image, investigate an approved registry mirror using the
+  captured Docker Hub evidence before changing workflow behavior.
+
+## 2026-07-24 — Provider Webhook Processing Failures Were Acknowledged
+
+- **Status:** Fixed locally; hosted CI pending.
+- **Symptoms:** The provider webhook route returned `200 OK` after database
+  lookup, targeted processing, queue-enqueue, and unexpected request failures.
+- **User impact:** Providers treated failed deliveries as accepted, so events
+  could be permanently lost instead of retried.
+- **Evidence:** The regression tests first failed with
+  `expected 200 to be 503` for database, BullMQ enqueue, and top-level request
+  failures.
+- **Root cause:** Per-event and top-level exception handlers logged failures
+  but unconditionally fell through to, or directly sent, a successful
+  response.
+- **Fix / mitigation:** Return `503 Service Unavailable` when any actionable
+  event is neither processed nor durably queued, continue attempting the rest
+  of a batch, and report unexpected failures to Sentry with provider and event
+  context. Invalid signatures and payloads remain non-retryable `4xx`
+  responses. RFC 9110 defines `503` for a temporarily unavailable service:
+  <https://www.rfc-editor.org/rfc/rfc9110.html#name-503-service-unavailable>.
+- **Validation:** All 37 webhook route tests pass, including executable
+  regressions for database failure, enqueue failure, continued batch
+  processing, Sentry context, and top-level failure.
+- **Remaining risk / follow-up:** Hosted CI must confirm the full server test,
+  typecheck, lint, and mutation suites before merge.
+## 2026-07-24 — Quarantine PR Failed Spell Check on KafkaJS API Name
+
+- **Status:** Fixed on PR #1933; replacement CI pending.
+- **Symptoms:** `Test / Spell Check` failed while the durable metric-stream
+  quarantine PR's remaining checks continued.
+- **User impact:** No production impact. PR #1933 was blocked from merging.
+- **Evidence:** The exact failing command was
+  `pnpm exec cspell --no-progress`; its first fatal finding was
+  `src/metric-stream/redpanda-consumer.integration.test.ts:188:7 - Unknown word
+  (acks)`, followed by four occurrences of the same KafkaJS producer option.
+- **Root cause:** The repository dictionary did not contain KafkaJS's canonical
+  `acks` producer field, newly used to require all in-sync replica
+  acknowledgements.
+- **Fix / mitigation:** Added the exact API identifier to the shared spelling
+  dictionary. KafkaJS documents `acks: -1` as the all-replica acknowledgement
+  mode in its [producing guide](https://kafka.js.org/docs/producing).
+- **Validation:** The unchanged source API remains typechecked and covered by
+  unit plus real-broker tests; `pnpm exec cspell --no-progress` passes locally.
+  No source rename, spelling ignore, skipped check, or warning fallback was
+  introduced.
+- **Remaining risk / follow-up:** Require the replacement hosted spell job and
+  the rest of PR #1933's checks to pass before merge.
+
+## 2026-07-24 — Integration Shards Omitted the New Redpanda Prerequisite
+
+- **Status:** Fixed on PR #1933; replacement CI pending.
+- **Symptoms:** `Test / Integration Tests (4/4)` failed while the new durable
+  quarantine regression initialized.
+- **User impact:** No production impact. PR #1933 remained blocked from merge.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=4/4`; its
+  first fatal line was `REDPANDA_BROKERS is required for metric-stream
+  integration tests`. The CI integration job provided Postgres, ClickHouse,
+  and Redis services but no Redpanda service or broker address.
+- **Root cause:** Local integration runs use the Compose environment wrapper,
+  which was updated to start/pass Redpanda. Hosted shards invoke Vitest
+  directly and therefore require their own explicit service and environment
+  wiring.
+- **Fix / mitigation:** Added the repository-pinned Redpanda image as a healthy
+  integration service and passed `REDPANDA_BROKERS=localhost:9092` to all
+  shards. Redpanda documents the single-node container workflow in its
+  [Docker quickstart](https://docs.redpanda.com/current/get-started/quick-start/).
+  No test skip, conditional fallback, retry loop, or warning continuation was
+  added.
+- **Validation:** Actionlint and YAML validation pass locally. A standalone
+  container from the exact service image reached `Healthy: true` with the
+  configured health command, and its node config advertises
+  `127.0.0.1:9092`, matching the hosted port mapping. The same real-broker
+  regression passed through the local integration wrapper; the replacement
+  hosted shard is the final service-wiring proof.
+- **Remaining risk / follow-up:** Require all replacement integration shards
+  and their coverage artifact upload to finish before merge.

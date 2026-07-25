@@ -26,6 +26,8 @@ import { createLocationAdapter } from "../lib/location-service";
 import { combineRecordingSensorServices } from "../lib/recording-sensor-service";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
+import { syncWatchAltitudeFiles } from "../lib/watch-altitude-file-sync";
+import { syncWatchAccelerometerFiles } from "../lib/watch-file-sync";
 import {
   addConnectionStateListener as addHeartRateConnectionListener,
   addHeartRateListener,
@@ -41,13 +43,7 @@ import {
   queryRecordedData,
   startRecording,
 } from "../modules/core-motion";
-import {
-  acknowledgeWatchSamples,
-  getPendingWatchSamples,
-  isWatchAppInstalled,
-  isWatchPaired,
-  requestWatchSync,
-} from "../modules/watch-motion";
+import { isWatchAppInstalled, isWatchPaired, requestWatchSync } from "../modules/watch-motion";
 import {
   confirmSamplesDrain as confirmWhoopSamplesDrain,
   findWhoop,
@@ -129,8 +125,10 @@ export default function RecordScreen() {
         watch: {
           isAvailable: () => isWatchPaired() && isWatchAppInstalled(),
           requestSync: requestWatchSync,
-          getPendingSamples: getPendingWatchSamples,
-          acknowledgeSamples: acknowledgeWatchSamples,
+          syncPendingFiles: async () => {
+            await syncWatchAccelerometerFiles(trpcClient);
+            await syncWatchAltitudeFiles(trpcClient);
+          },
         },
         whoopBle: {
           isAvailable: isBluetoothAvailable,

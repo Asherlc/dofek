@@ -1,15 +1,31 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { getTabIconName, selectedTabBackgroundColor } from "../../lib/tab-selection";
 import { colors } from "../../theme";
-import { tabsScreenOptions } from "./_layout";
+import TabsLayout, { tabsScreenOptions } from "./_layout";
+
+const { mockPush } = vi.hoisted(() => ({ mockPush: vi.fn() }));
 
 vi.mock("@expo/vector-icons", () => ({
   Ionicons: () => null,
 }));
 
 vi.mock("expo-router", () => ({
-  Tabs: { Screen: () => null },
-  useRouter: () => ({ push: vi.fn() }),
+  Tabs: Object.assign(
+    ({ screenOptions }: { screenOptions: { headerRight?: () => ReactNode } }) =>
+      screenOptions.headerRight?.(),
+    { Screen: () => null },
+  ),
+  useRouter: () => ({ push: mockPush }),
+}));
+
+vi.mock("../../lib/useProcessingAlerts", () => ({
+  useProcessingAlerts: () => ({
+    data: {
+      alerts: [{ id: "operation-1:providers" }],
+    },
+  }),
 }));
 
 describe("tab layout selected state", () => {
@@ -35,5 +51,13 @@ describe("tab layout selected state", () => {
       position: "relative",
       zIndex: 1,
     });
+  });
+
+  it("opens the alerts screen from the global header bell", () => {
+    render(<TabsLayout />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Alerts, 1 active" }));
+
+    expect(mockPush).toHaveBeenCalledWith("/alerts");
   });
 });

@@ -279,6 +279,15 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
     const res = await request(createTestApp(), "get", "/api/webhooks/test-provider");
     expect(res.status).toBe(500);
     expect(res.body).toBe("Internal error");
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "boom" }),
+      {
+        tags: {
+          provider: "test-provider",
+          webhookPhase: "validation-challenge",
+        },
+      },
+    );
   });
 });
 
@@ -474,6 +483,18 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
       sinceDays: 1,
       userId: "user-1",
     });
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "targeted sync failed" }),
+      {
+        extra: { ownerExternalId: "ext-1" },
+        tags: {
+          provider: "test-provider",
+          webhookEventType: "create",
+          webhookObjectType: "activity",
+          webhookPhase: "targeted-sync",
+        },
+      },
+    );
   });
 
   it("skips events when no user found for external ID", async () => {
@@ -499,7 +520,7 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
   });
 
-  it("continues processing remaining events when one fails", async () => {
+  it("returns 503 after a database failure while still processing remaining events", async () => {
     const events: WebhookEvent[] = [
       { ownerExternalId: "ext-1", eventType: "create", objectType: "activity" },
       { ownerExternalId: "ext-2", eventType: "create", objectType: "activity" },
@@ -522,7 +543,8 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     });
 
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
+    expect(res.body).toBe("Retry later");
     // Second event should still have been processed
     expect(mockEnqueueSyncJob).toHaveBeenCalledTimes(1);
     expect(mockEnqueueSyncJob).toHaveBeenCalledWith("prov-2", {
@@ -530,16 +552,74 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
       sinceDays: 1,
       userId: "user-2",
     });
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "DB error on first event" }),
+      {
+        extra: { ownerExternalId: "ext-1" },
+        tags: {
+          provider: "test-provider",
+          webhookEventType: "create",
+          webhookObjectType: "activity",
+          webhookPhase: "event-processing",
+        },
+      },
+    );
   });
 
-  it("returns 200 even on unexpected top-level error to prevent retries", async () => {
+  it("returns 503 and reports an unexpected top-level error", async () => {
     // Force ensureProvidersRegistered to throw
     const { ensureProvidersRegistered } = await import("../routers/sync-helpers.ts");
     vi.mocked(ensureProvidersRegistered).mockRejectedValueOnce(new Error("boom"));
 
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", "{}");
-    expect(res.status).toBe(200);
-    expect(res.body).toBe("OK");
+    expect(res.status).toBe(503);
+    expect(res.body).toBe("Retry later");
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "boom" }),
+      {
+        tags: {
+          provider: "test-provider",
+          webhookPhase: "request-processing",
+        },
+      },
+    );
+  });
+
+  it("returns 503 and reports event context when enqueueing fails", async () => {
+    const events: WebhookEvent[] = [
+      { ownerExternalId: "ext-1", eventType: "create", objectType: "activity" },
+    ];
+    const provider = createMockWebhookProvider({
+      parseWebhookPayload: vi.fn(() => events),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+
+    let callCount = 0;
+    mockExecuteWithSchema.mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return [{ id: "sub-1", provider_id: "prov-1", verify_token: "tok", signing_secret: null }];
+      }
+      return [{ provider_id: "prov-1", user_id: "user-1" }];
+    });
+    mockEnqueueSyncJob.mockRejectedValueOnce(new Error("Redis unavailable"));
+
+    const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toBe("Retry later");
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Redis unavailable" }),
+      {
+        extra: { ownerExternalId: "ext-1" },
+        tags: {
+          provider: "test-provider",
+          webhookEventType: "create",
+          webhookObjectType: "activity",
+          webhookPhase: "event-processing",
+        },
+      },
+    );
   });
 
   it("enqueues sync job with exact shape (providerId, sinceDays, userId)", async () => {

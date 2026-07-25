@@ -58,7 +58,13 @@ export async function runAnalyticsBuild({
   });
 
   if (exitCode !== 0) {
-    throw new Error(`dbt build failed with exit code ${exitCode}`);
+    const failureDetails = artifacts.models
+      .filter((model) => model.status !== "succeeded")
+      .map((model) => `${model.name}: ${model.message ?? model.errorCode ?? model.status}`)
+      .join("; ");
+    throw new Error(
+      `dbt build failed with exit code ${exitCode}${failureDetails ? `: ${failureDetails}` : ""}`,
+    );
   }
   if (!artifacts.succeeded || processingResult.failed > 0) {
     throw new Error("dbt build did not complete every required analytics model");
@@ -74,7 +80,7 @@ function runDbtProcess(argumentsList: readonly string[]): Promise<number> {
   });
 }
 
-async function main(): Promise<void> {
+export async function runAnalyticsBuildFromEnvironment(): Promise<void> {
   const { mkdtemp } = await import("node:fs/promises");
   const artifactDirectory = await mkdtemp(join(tmpdir(), "dofek-dbt-artifacts-"));
   const database = createDatabaseFromEnv();
@@ -94,11 +100,14 @@ async function main(): Promise<void> {
       `[analytics-processing] recorded ${result.datasets} datasets; ${result.failed} failed`,
     );
   } finally {
-    await rm(artifactDirectory, { recursive: true, force: true });
+    await Promise.all([
+      database.$client.end(),
+      rm(artifactDirectory, { recursive: true, force: true }),
+    ]);
   }
 }
 
 const scriptPath = process.argv[1];
 if (scriptPath && import.meta.url === pathToFileURL(scriptPath).href) {
-  await main();
+  await runAnalyticsBuildFromEnvironment();
 }

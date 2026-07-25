@@ -616,8 +616,9 @@ vi.mock("./modules/watch-motion", () => ({
   })),
   requestWatchSync: vi.fn(() => Promise.resolve(false)),
   requestWatchRecording: vi.fn(() => Promise.resolve(false)),
-  getPendingWatchSamples: vi.fn(() => Promise.resolve([])),
-  acknowledgeWatchSamples: vi.fn(),
-  getLastWatchSyncTimestamp: vi.fn(() => null),
-  setLastWatchSyncTimestamp: vi.fn(),
+  getPendingWatchFileNames: vi.fn(() => []),
+  getPendingWatchAltitudeFileNames: vi.fn(() => []),
+  readWatchFile: vi.fn(() => Promise.resolve([])),
+  readWatchAltitudeFile: vi.fn(() => Promise.resolve([])),
+  deleteWatchFile: vi.fn(),
 }));

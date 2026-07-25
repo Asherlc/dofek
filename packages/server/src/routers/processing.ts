@@ -1,3 +1,4 @@
+import { PROCESSING_ALERT_ACTIONS } from "@dofek/providers/processing-alerts";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import {
   PROCESSING_DATASET_KEYS,
@@ -66,6 +67,22 @@ const statusOutputSchema = z.object({
     }),
   ),
 });
+const alertsOutputSchema = z.object({
+  generatedAt: z.string().datetime(),
+  alerts: z.array(
+    z.object({
+      id: z.string().min(1),
+      providerId: z.string().nullable(),
+      providerLabel: z.string().nullable(),
+      datasetKey: datasetKeySchema,
+      occurredAt: z.string().datetime(),
+      title: z.string().min(1),
+      message: z.string().min(1),
+      action: z.enum(PROCESSING_ALERT_ACTIONS),
+      actionLabel: z.string().min(1),
+    }),
+  ),
+});
 const historyOutputSchema = z.object({
   operations: z.array(
     z.object({
@@ -82,6 +99,9 @@ const historyOutputSchema = z.object({
 });
 
 export const processingRouter = router({
+  alerts: cachedProtectedQuery({ maxAge: processingPollInterval("failed") })
+    .output(alertsOutputSchema)
+    .query(({ ctx }) => new ProcessingRepository(ctx.db, ctx.userId).alerts()),
   status: cachedProtectedQuery({ maxAge: processingPollInterval("active") })
     .input(statusInputSchema)
     .output(statusOutputSchema)
