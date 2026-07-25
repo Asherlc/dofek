@@ -120,6 +120,7 @@ describe("DailyOverview", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       Object.values(errorProps)[0]?.message ?? "",
     );
+    expect(screen.getByTestId("query-state-error")).toBeTruthy();
   });
 
   it("shows all core query failures together", () => {

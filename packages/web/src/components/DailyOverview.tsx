@@ -24,7 +24,7 @@ import type {
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
-import { getQueryErrorMessage } from "./QueryStatePanel.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface DailyOverviewProps {
   endDate?: string;
@@ -525,12 +525,8 @@ function RingSkeleton() {
 
 function RingQueryError({ label, error }: { label: string; error: unknown }) {
   return (
-    <div
-      role="alert"
-      aria-label={`${label} error`}
-      className="query-error-panel max-w-[180px] p-3 text-center text-xs"
-    >
-      <p>{getQueryErrorMessage(error)}</p>
+    <div role="alert" aria-label={`${label} error`} className="max-w-[180px] text-center text-xs">
+      <QueryStatePanel error={error} height={72} />
     </div>
   );
 }

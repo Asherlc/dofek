@@ -189,6 +189,11 @@ export function Dashboard() {
       sleepPerformance.data !== undefined ||
       (sleepPerformance.isFetched && sleepPerformance.error == null),
   });
+  const coreDashboardLoading =
+    readinessData.isLoading ||
+    workloadRatio.isLoading ||
+    strainTarget.isLoading ||
+    sleepPerformance.isLoading;
   const insightsQuery = trpc.insights.compute.useQuery(
     { days, endDate },
     { enabled: coreDashboardReady },
@@ -229,13 +234,24 @@ export function Dashboard() {
   ) : (
     <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
   );
-  const insightStatePanel = insightsQuery.isLoading ? (
-    <QueryStatePanel variant="loading" height={160} />
-  ) : insightsQuery.error ? (
-    <QueryStatePanel error={insightsQuery.error} height={160} />
-  ) : !topInsight ? (
-    <QueryStatePanel variant="empty" message="No insights yet." height={160} />
-  ) : null;
+  const insightStatePanel =
+    !coreDashboardReady && coreDashboardLoading ? (
+      <QueryStatePanel variant="loading" height={160} />
+    ) : !coreDashboardReady ? (
+      <QueryStatePanel
+        variant="empty"
+        message="Insights unavailable until dashboard data loads."
+        height={160}
+      />
+    ) : insightsQuery.isLoading ? (
+      <QueryStatePanel variant="loading" height={160} />
+    ) : insightsQuery.error ? (
+      <QueryStatePanel error={insightsQuery.error} height={160} />
+    ) : !insightsQuery.isFetched ? (
+      <QueryStatePanel variant="loading" height={160} />
+    ) : !topInsight ? (
+      <QueryStatePanel variant="empty" message="No insights yet." height={160} />
+    ) : null;
 
   return (
     <PageLayout headerChildren={undefined}>

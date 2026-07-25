@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 type MockInsightsQueryResult = {
   data: unknown[] | undefined;
   isLoading: boolean;
+  isFetched: boolean;
   error: Error | null;
 };
 
@@ -62,7 +63,12 @@ const mockHeartRateBaselineQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
 const mockInsightsQuery = vi.hoisted(() =>
-  vi.fn<() => MockInsightsQueryResult>(() => ({ data: [], isLoading: false, error: null })),
+  vi.fn<() => MockInsightsQueryResult>(() => ({
+    data: [],
+    isLoading: false,
+    isFetched: true,
+    error: null,
+  })),
 );
 const mockDataHealthQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
@@ -196,7 +202,12 @@ describe("Dashboard", () => {
     });
     mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockHeartRateBaselineQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
-    mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockInsightsQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isFetched: true,
+      error: null,
+    });
     mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockDashboardEvidenceOverview.mockClear();
     mockDailyOverview.mockClear();
@@ -283,6 +294,8 @@ describe("Dashboard", () => {
       expect.anything(),
       expect.objectContaining({ enabled: false }),
     );
+    expect(screen.queryByText("No insights yet.")).toBeNull();
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
   });
 
   it("enables insights after core dashboard queries settle successfully", () => {
@@ -308,6 +321,8 @@ describe("Dashboard", () => {
       expect.anything(),
       expect.objectContaining({ enabled: false }),
     );
+    expect(screen.queryByText("No insights yet.")).toBeNull();
+    expect(screen.getByText("Insights unavailable until dashboard data loads.")).toBeTruthy();
   });
 
   it("enables insights when a failed background refresh retains prerequisite data", () => {
@@ -369,7 +384,12 @@ describe("Dashboard", () => {
   });
 
   it("uses a loading panel while insights are loading", () => {
-    mockInsightsQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    mockInsightsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetched: false,
+      error: null,
+    });
 
     render(<Dashboard />);
 
