@@ -223,7 +223,8 @@ function startPeriodicDrainTimer(
  *
  * Exported so that the background refresh handler can call this directly
  * (every ~15-30 min) without waiting for the user to open the app.
- * Errors are caught and reported to telemetry — never throws.
+ * Errors are reported to telemetry and rethrown so the native background task
+ * can record an unsuccessful refresh.
  */
 export async function syncWhoopBle(
   trpcClient: InertialMeasurementUnitUploadClient,
@@ -237,6 +238,7 @@ export async function syncWhoopBle(
   } catch (error: unknown) {
     logger.error(LOG_CATEGORY, `background refresh sync error: ${error}`);
     captureException(error, { source: "whoop-ble-background-refresh" });
+    throw error;
   }
 }
 
