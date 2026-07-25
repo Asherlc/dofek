@@ -10,11 +10,6 @@ const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
 const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
 const mockRequestPermissions = vi.fn().mockResolvedValue(true);
 const mockSyncHealthKit = vi.fn();
-const mockCaptureException = vi.fn();
-
-vi.mock("../../lib/telemetry", () => ({
-  captureException: (...args: unknown[]) => mockCaptureException(...args),
-}));
 
 vi.mock("react-native", () => ({
   AppState: {
