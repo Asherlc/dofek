@@ -600,6 +600,8 @@ describe("settingsRouter", () => {
     it("invalidates server-side settings cache after upsert", async () => {
       const rows = [{ key: "unitSystem", value: "imperial" }];
       const execute = vi.fn().mockResolvedValue(rows);
+      const invalidateByPrefix = vi.mocked(queryCache.invalidateByPrefix);
+      invalidateByPrefix.mockClear();
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -607,7 +609,8 @@ describe("settingsRouter", () => {
         sensorStore: makeMockSensorStore([]),
       });
       await caller.set({ key: "unitSystem", value: "imperial" });
-      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
+      expect(invalidateByPrefix).toHaveBeenCalledOnce();
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
     });
 
     it("throws when upsert fails", async () => {

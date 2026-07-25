@@ -386,6 +386,73 @@ describe("FoodRepository", () => {
     });
   });
 
+  describe("nutritionSummaryByDate", () => {
+    it("returns server-computed daily, meal, goal, and macro metrics", async () => {
+      const { repo } = makeRepository([
+        {
+          calories: "1000",
+          protein_g: "55",
+          carbs_g: "105",
+          fat_g: "40",
+          breakfast_calories: "400",
+          lunch_calories: "500",
+          dinner_calories: "0",
+          snack_calories: "0",
+          other_calories: "100",
+        },
+      ]);
+
+      const result = await repo.nutritionSummaryByDate("2024-06-15", 1600);
+
+      expect(result).toEqual({
+        calories: 1000,
+        mealCalories: {
+          breakfast: 400,
+          lunch: 500,
+          dinner: 0,
+          snack: 0,
+          other: 100,
+        },
+        calorieGoal: {
+          target: 1600,
+          remaining: 600,
+          over: 0,
+          progressPercentage: 62.5,
+        },
+        macros: {
+          protein: { grams: 55, calories: 220, percentage: 22 },
+          carbs: { grams: 105, calories: 420, percentage: 42 },
+          fat: { grams: 40, calories: 360, percentage: 36 },
+        },
+      });
+    });
+
+    it("caps goal progress and reports calories over the target", async () => {
+      const { repo } = makeRepository([
+        {
+          calories: 1000,
+          protein_g: 0,
+          carbs_g: 0,
+          fat_g: 0,
+          breakfast_calories: 0,
+          lunch_calories: 0,
+          dinner_calories: 0,
+          snack_calories: 0,
+          other_calories: 0,
+        },
+      ]);
+
+      const result = await repo.nutritionSummaryByDate("2024-06-15", 800);
+
+      expect(result.calorieGoal).toEqual({
+        target: 800,
+        remaining: 0,
+        over: 200,
+        progressPercentage: 100,
+      });
+    });
+  });
+
   describe("dailyTotals", () => {
     it("returns DailyTotals instances", async () => {
       const { repo } = makeRepository([makeDailyTotalsRow()]);
