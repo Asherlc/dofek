@@ -188,6 +188,93 @@ metric-stream detail can still time out or fail under ClickHouse memory
 pressure. The 24-hour window contained no samples for several historical
 loading suspects, so their current behavior remains unclassified.
 
+## 2026-07-25: Fresh integration stack started tests during Postgres initialization
+
+### Symptoms
+
+The focused settings integration suite skipped all tests after setup failed with
+`Error: Connection terminated unexpectedly`.
+
+### User Impact
+
+There was no production or end-user impact. The failure affected local
+integration validation in a newly created workspace Compose project.
+
+### Evidence
+
+`pnpm test:integration -- packages/server/src/routers/settings.integration.test.ts`
+started Vitest while the new database container still reported
+`health: starting`. The database log then recorded its initialization-time
+`received fast shutdown request` at `2026-07-25 21:52:54 UTC`, at the same time
+the test connection terminated. After the container reported healthy, the same
+test file passed all 11 tests with the generated `.env.local` loaded.
+
+### Root Cause
+
+The local integration wrapper launched Vitest before the fresh Timescale image
+completed initialization and its expected final Postgres restart.
+
+### Fix or Mitigation
+
+No product code or resilience delay was added. Validation resumed only after the
+existing database healthcheck passed, consistent with Docker Compose's
+documented health-based startup controls:
+<https://docs.docker.com/compose/how-tos/startup-order/>.
+
+### Remaining Risk
+
+A brand-new workspace can reproduce this local validation race because the
+wrapper does not currently wait for all generated Compose services to become
+healthy before launching Vitest. A dedicated testing-infrastructure change
+should make health readiness part of the wrapper rather than relying on a
+manual rerun.
+
+## 2026-07-25: Concurrent local stacks exhausted ClickHouse headroom
+
+### Symptoms
+
+The broader `router-data.integration.test.ts` setup failed while rebuilding the
+ClickHouse `v_sleep` fixture with `Error: socket hang up`, and all 51 tests were
+skipped.
+
+### User Impact
+
+There was no production or end-user impact. The failure affected proportional
+local validation in a Docker Desktop environment shared by many active
+workspace stacks.
+
+### Evidence
+
+At the failure timestamp, the ClickHouse container restarted once and its
+healthcheck exited with code 137. Before the restart, ClickHouse reduced its
+reported available-memory hard limit repeatedly until only 95.80 MiB remained.
+`docker stats` showed several other workspace ClickHouse, Postgres, Redpanda,
+and Kubernetes containers concurrently sharing the 7.653 GiB Docker VM. The
+issue-specific settings integration file did not rebuild the full analytics
+fixture and passed all 11 tests.
+
+### Root Cause
+
+The shared Docker VM ran out of practical memory headroom while the broad router
+fixture rebuilt ClickHouse analytics tables, causing the workspace ClickHouse
+process to restart and terminate the client connection.
+
+### Fix or Mitigation
+
+No application change, retry, or timeout was added. The focused real-database
+suite remained the local validation for this settings-only change; the broad
+suite remains a CI gate in an isolated runner. Docker documents that container
+resource demand is constrained by Docker Desktop's VM resource allocation:
+<https://docs.docker.com/desktop/settings-and-maintenance/settings/#resources>.
+
+### Remaining Risk
+
+Running heavyweight integration suites while many workspace stacks and local
+Kubernetes clusters are active can reproduce this local ClickHouse restart.
+Future local validation should stop disposable services owned by the current
+workspace and avoid overlapping broad ClickHouse suites; it must not remove
+other workspaces' resources.
+
 ## 2026-07-08: Migration hardening PR CI follow-up
 
 ### Symptoms
@@ -17190,3 +17277,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   through an OTA JavaScript update. Verify it on physical hardware after the
   next native iOS build, then confirm the Sentry issue does not recur while
   unexpected observer failures retain their new diagnostic tags.
+
+## 2026-07-25 — Story Fixtures Lagged the Canonical Polarization DTO
+
+- **Status:** Direct fix validated locally; replacement CI pending on PR #1958.
+- **Symptoms:** `Test / Typecheck (dofek-web)` failed, which also failed the
+  aggregate `Test / Lint & Static Analysis` gate.
+- **User impact:** No production users were affected. PR #1958 was blocked from
+  merge.
+- **Evidence:** The exact failing command in [CI run
+  30174882951](https://github.com/Asherlc/dofek/actions/runs/30174882951) was
+  `pnpm run typecheck` in `packages/web`. Its first fatal line reported
+  `PolarizationTrendChart.stories.tsx(6,3): error TS2739`, because the fixture
+  omitted `totalSeconds`, `zonePercentages`, `status`, `statusLabel`, and
+  `explanation`.
+- **Root cause:** PR #1958 added visual fixtures for the earlier
+  `PolarizationWeek` shape, then current `main` made those server-computed
+  fields required in the canonical DTO. The PR merge ref therefore exposed a
+  real stale-fixture type error that the branch's earlier local run could not
+  see.
+- **Fix / mitigation:** Merge current `origin/main` and update every
+  polarization story fixture to provide the complete canonical server DTO. No
+  CI timeout, retry, skip, or type suppression was added.
+- **Validation:** `pnpm --filter dofek-web typecheck` and targeted Biome
+  validation pass without ad-hoc waits. Replacement CI must pass before merge.
+- **Remaining risk / follow-up:** None beyond completing replacement CI; the
+  compiler now enforces future fixture parity with the canonical DTO.

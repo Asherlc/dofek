@@ -9,7 +9,20 @@ import { AddFoodModal } from "./AddFoodModal.tsx";
 function createMockLink(): TRPCLink<AppRouter> {
   return () =>
     ({ op }) =>
-      createMockObservable(op.path === "food.search" ? [] : null);
+      createMockObservable(
+        op.path === "food.analyzeWithAi"
+          ? {
+              nutrition: {
+                foodName: "Greek yogurt with berries",
+                foodDescription: "1 bowl",
+                calories: 260,
+                proteinG: 22,
+                carbsG: 31,
+                fatG: 6,
+              },
+            }
+          : [],
+      );
 }
 
 function createMockObservable(data: unknown): OperationResultObservable<AppRouter, unknown> {
@@ -26,14 +39,14 @@ function createMockObservable(data: unknown): OperationResultObservable<AppRoute
   return result;
 }
 
-function StoryFrame({ submitting = false }: { submitting?: boolean }) {
+function AddFoodModalStory(props: React.ComponentProps<typeof AddFoodModal>) {
   const queryClient = useMemo(() => new QueryClient(), []);
   const trpcClient = useMemo(() => trpc.createClient({ links: [createMockLink()] }), []);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <AddFoodModal isOpen onClose={() => {}} onSubmit={() => {}} submitting={submitting} />
+        <AddFoodModal {...props} />
       </QueryClientProvider>
     </trpc.Provider>
   );
@@ -42,19 +55,32 @@ function StoryFrame({ submitting = false }: { submitting?: boolean }) {
 const meta = {
   title: "Nutrition/AddFoodModal",
   component: AddFoodModal,
-  parameters: { layout: "fullscreen" },
+  tags: ["autodocs"],
+  parameters: {
+    layout: "fullscreen",
+  },
+  args: {
+    isOpen: true,
+    onClose: () => {},
+    onSubmit: () => {},
+  },
+  render: (args) => <AddFoodModalStory {...args} />,
 } satisfies Meta<typeof AddFoodModal>;
 
 export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {
-  args: { isOpen: true, onClose: () => {}, onSubmit: () => {} },
-  render: () => <StoryFrame />,
+export const Default: Story = {};
+
+export const Lunch: Story = {
+  args: {
+    defaultMealType: "lunch",
+  },
 };
 
 export const Submitting: Story = {
-  args: { isOpen: true, onClose: () => {}, onSubmit: () => {} },
-  render: () => <StoryFrame submitting />,
+  args: {
+    submitting: true,
+  },
 };

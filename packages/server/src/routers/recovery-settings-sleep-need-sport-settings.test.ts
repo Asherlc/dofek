@@ -583,7 +583,7 @@ describe("settingsRouter", () => {
 
   describe("set", () => {
     it("upserts a setting", async () => {
-      const rows = [{ key: "theme", value: "light" }];
+      const rows = [{ key: "unitSystem", value: "metric" }];
       const execute = vi.fn().mockResolvedValue(rows);
       const caller = createCaller({
         db: { execute },
@@ -592,8 +592,8 @@ describe("settingsRouter", () => {
         timezone: "UTC",
         sensorStore: makeMockSensorStore([]),
       });
-      const result = await caller.set({ key: "theme", value: "light" });
-      expect(result).toEqual({ key: "theme", value: "light" });
+      const result = await caller.set({ key: "unitSystem", value: "metric" });
+      expect(result).toEqual({ key: "unitSystem", value: "metric" });
       expectCallsUseNonEmptySql(execute);
     });
 
@@ -617,7 +617,7 @@ describe("settingsRouter", () => {
         timezone: "UTC",
         sensorStore: makeMockSensorStore([]),
       });
-      await expect(caller.set({ key: "theme", value: "dark" })).rejects.toThrow(
+      await expect(caller.set({ key: "unitSystem", value: "metric" })).rejects.toThrow(
         "Failed to upsert setting",
       );
     });

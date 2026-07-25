@@ -28,6 +28,12 @@ import type { StressResult } from "../repositories/stress-repository.ts";
 import { buildHealthspanResult, type HealthspanResult } from "../routers/healthspan.ts";
 import { fetchHealthspanRawData } from "../routers/healthspan-query.ts";
 import type { HrvVariabilityRow, ReadinessRow } from "../routers/recovery.ts";
+import {
+  buildHealthStatusFromValues,
+  buildWeightHealthStatus,
+  type HealthStatusMetric,
+  healthStatusMetricSchema,
+} from "./health-status.ts";
 
 const recoveryRowSchema = z.object({
   date: dateStringSchema,
@@ -63,6 +69,7 @@ export interface MobileRecoveryTabResult {
   dailyMetrics: DailyMetricsViewRow[];
   weight: Awaited<ReturnType<BodyAnalyticsRepository["getSmoothedWeight"]>>;
   weightPrediction: Awaited<ReturnType<BodyAnalyticsRepository["getWeightPrediction"]>>;
+  healthStatus: HealthStatusMetric[];
   healthspan: HealthspanResult;
 }
 
@@ -367,6 +374,43 @@ export async function loadMobileRecoveryTab(
     ),
   ]);
 
+  const healthStatus = [
+    buildHealthStatusFromValues({
+      metric: "hrv",
+      label: "Heart Rate Variability (HRV)",
+      values: hrvBaseline.flatMap((row) => (row.hrv == null ? [] : [row.hrv])),
+      intent: "higher",
+    }),
+    buildHealthStatusFromValues({
+      metric: "resting_heart_rate",
+      label: "Resting Heart Rate",
+      values: hrvBaseline.flatMap((row) => (row.resting_hr == null ? [] : [row.resting_hr])),
+      intent: "lower",
+    }),
+    buildHealthStatusFromValues({
+      metric: "spo2",
+      label: "SpO2",
+      values: dailyMetrics.flatMap((row) => (row.spo2_avg == null ? [] : [row.spo2_avg])),
+      intent: "neutral",
+    }),
+    buildHealthStatusFromValues({
+      metric: "steps",
+      label: "Steps",
+      values: dailyMetrics.flatMap((row) => (row.steps == null ? [] : [row.steps])),
+      intent: "neutral",
+    }),
+    buildHealthStatusFromValues({
+      metric: "skin_temperature",
+      label: "Skin Temperature",
+      values: dailyMetrics.flatMap((row) => (row.skin_temp_c == null ? [] : [row.skin_temp_c])),
+      intent: "neutral",
+    }),
+    buildWeightHealthStatus(
+      weight.map((row) => row.smoothedWeight),
+      goalWeightKg,
+    ),
+  ];
+
   return {
     hrvVariability: computeHrvVariability(dailyMetricsRows, days, endDate),
     hrvBaseline,
@@ -376,6 +420,7 @@ export async function loadMobileRecoveryTab(
     dailyMetrics,
     weight,
     weightPrediction,
+    healthStatus,
     healthspan: buildHealthspanResult(healthspanRaw),
   };
 }
@@ -499,6 +544,7 @@ export const mobileRecoveryTabOutputSchema = z.object({
       }),
     ),
   }),
+  healthStatus: z.array(healthStatusMetricSchema),
   healthspan: z.object({
     healthspanScore: z.number().nullable(),
     yearsDelta: z.number().nullable(),
