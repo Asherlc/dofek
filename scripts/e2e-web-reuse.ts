@@ -15,11 +15,11 @@ function output(command: string, args: string[]): string {
 }
 
 function dockerCompose(args: string[]): void {
-  run("pnpm", ["compose", "--", "-f", composeFile, ...args]);
+  run("pnpm", ["compose", "--", "--project-suffix", "e2e", "-f", composeFile, ...args]);
 }
 
 function dockerComposeOutput(args: string[]): string {
-  return output("pnpm", ["compose", "--", "-f", composeFile, ...args]);
+  return output("pnpm", ["compose", "--", "--project-suffix", "e2e", "-f", composeFile, ...args]);
 }
 
 function runOneShotService(service: string): void {
