@@ -71,6 +71,27 @@ describe("processing status presentation", () => {
     ).toEqual({ action: "sync", label: "WHOOP (Cloud)" });
   });
 
+  it("uses import copy for provider file imports", () => {
+    const target = processingTarget({
+      providerId: "apple_health",
+      operationKind: "file_import",
+      datasets: [{ key: "sleep", label: "Sleep", status: "active" }],
+    });
+
+    expect(target).toEqual({ action: "import", label: "Apple Health" });
+    expect(processingHeading("active", target)).toBe("Importing Apple Health");
+  });
+
+  it.each([
+    ["blocked", "Sleep recompute didn’t finish"],
+    ["delayed", "Recomputing sleep is taking longer than expected"],
+    ["waiting", "Preparing to recompute sleep"],
+    ["cancelled", "Sleep recompute was cancelled"],
+    ["ready", "Sleep recompute complete"],
+  ] as const)("uses area-specific recomputation copy for %s", (status, heading) => {
+    expect(processingHeading(status, { action: "recompute", label: "sleep" })).toBe(heading);
+  });
+
   it("names every affected area when the update is not provider-scoped", () => {
     expect(
       processingTarget({
@@ -82,6 +103,38 @@ describe("processing status presentation", () => {
         ],
       }),
     ).toEqual({ action: "recompute", label: "sleep and training" });
+  });
+
+  it("formats empty, single, and three-area recomputation targets", () => {
+    expect(processingTarget({ providerId: null, datasets: [] })).toEqual({
+      action: "recompute",
+      label: "your data",
+    });
+    expect(
+      processingTarget({
+        providerId: null,
+        datasets: [{ key: "sleep", label: "Sleep", status: "ready" }],
+      }),
+    ).toEqual({ action: "recompute", label: "sleep" });
+    expect(
+      processingTarget({
+        providerId: null,
+        datasets: [
+          { key: "sleep", label: "Sleep", status: "active" },
+          { key: "recovery", label: "Recovery", status: "waiting" },
+          { key: "training", label: "Training", status: "waiting" },
+        ],
+      }),
+    ).toEqual({ action: "recompute", label: "sleep, recovery, and training" });
+  });
+
+  it("uses customer-facing copy for provider summary recomputation", () => {
+    expect(
+      processingTarget({
+        providerId: null,
+        datasets: [{ key: "providers", label: "Providers", status: "active" }],
+      }),
+    ).toEqual({ action: "recompute", label: "provider summaries" });
   });
 
   it("polls active work frequently and recoverable snapshots at a lower frequency", () => {
@@ -96,6 +149,7 @@ describe("processing status presentation", () => {
   });
 
   it("keeps aggregate progress unknown until every non-ready dataset reports progress", () => {
+    expect(processingAggregateProgress([])).toBeNull();
     expect(
       processingAggregateProgress([
         { status: "active", progressPercentage: 80 },

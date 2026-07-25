@@ -91,9 +91,9 @@ function formatList(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
 }
 
-function datasetTarget(dataset: ProcessingTargetDataset, providerScoped: boolean): string {
+function datasetTarget(dataset: ProcessingTargetDataset): string {
   if (dataset.key === "providers") {
-    return providerScoped ? "summary" : "provider summaries";
+    return "provider summaries";
   }
   return dataset.label.toLowerCase();
 }
@@ -103,20 +103,17 @@ export function processingTarget(input: {
   datasets: readonly ProcessingTargetDataset[];
   operationKind?: string | null;
 }): ProcessingTarget {
-  const unfinishedDatasets = input.datasets.filter((dataset) => dataset.status !== "ready");
-  const relevantDatasets = unfinishedDatasets.length > 0 ? unfinishedDatasets : input.datasets;
-  const targets = [
-    ...new Set(
-      relevantDatasets.map((dataset) => datasetTarget(dataset, input.providerId !== null)),
-    ),
-  ];
-
   if (input.providerId) {
     return {
       action: input.operationKind === "file_import" ? "import" : "sync",
       label: providerLabel(input.providerId),
     };
   }
+
+  const unfinishedDatasets = input.datasets.filter((dataset) => dataset.status !== "ready");
+  const relevantDatasets = unfinishedDatasets.length > 0 ? unfinishedDatasets : input.datasets;
+  const targets = [...new Set(relevantDatasets.map(datasetTarget))];
+
   return { action: "recompute", label: formatList(targets) };
 }
 
