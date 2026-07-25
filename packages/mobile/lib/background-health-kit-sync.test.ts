@@ -236,6 +236,12 @@ describe("initBackgroundHealthKitSync", () => {
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);
     await vi.runAllTimersAsync();
+    await vi.waitFor(() => {
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "bg-healthkit-sync",
+        expect.stringContaining("Sync complete:"),
+      );
+    });
     mockCaptureException.mockClear();
     mockCompleteObserverUpdates.mockClear();
     vi.mocked(queryWorkouts).mockRejectedValueOnce(

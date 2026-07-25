@@ -10,6 +10,11 @@ const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
 const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
 const mockRequestPermissions = vi.fn().mockResolvedValue(true);
 const mockSyncHealthKit = vi.fn();
+const mockCaptureException = vi.fn();
+
+vi.mock("../../lib/telemetry", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
 
 vi.mock("react-native", () => ({
   AppState: {
@@ -426,6 +431,7 @@ describe("ProviderDetailScreen", () => {
     mockRequestPermissions.mockReset();
     mockRequestPermissions.mockResolvedValue(true);
     mockSyncHealthKit.mockReset();
+    mockCaptureException.mockReset();
     mockAlertFn.mockReset();
     mockUseRefresh.mockClear();
     setupDefaultMocks();
@@ -721,6 +727,31 @@ describe("ProviderDetailScreen", () => {
           expect.objectContaining({ syncRangeDays: 7 }),
         );
       });
+    });
+
+    it("shows an actionable message without reporting when Apple Health becomes locked", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+      mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
+      mockSyncHealthKit.mockRejectedValueOnce(
+        Object.assign(new Error("HealthKit data is unavailable while the device is locked"), {
+          code: "HEALTHKIT_DATABASE_INACCESSIBLE",
+        }),
+      );
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Sync")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Sync"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Device locked — unlock to sync Apple Health data")).toBeTruthy();
+      });
+      expect(mockCaptureException).not.toHaveBeenCalled();
     });
 
     it("triggers Apple Health full sync with syncRangeDays: null when Full sync is clicked", async () => {
