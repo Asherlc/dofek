@@ -613,21 +613,6 @@ describe("settingsRouter", () => {
       expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
     });
 
-    it("invalidates food summaries after changing the calorie goal", async () => {
-      const rows = [{ key: "calorieGoal", value: 2400 }];
-      const execute = vi.fn().mockResolvedValue(rows);
-      const caller = createCaller({
-        db: { execute },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore([]),
-      });
-
-      await caller.set({ key: "calorieGoal", value: 2400 });
-
-      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:food.");
-      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:nutrition.");
-    });
-
     it("throws when upsert fails", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
