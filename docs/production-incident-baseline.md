@@ -17156,3 +17156,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If independent publishes repeatedly return
   `InternalError`, correlate the OTA service and object-storage logs before
   changing workflow behavior.
+
+## 2026-07-25 — Expected HealthKit Authorization State Reported as an Error
+
+- **Status:** Fixed in source; pending a native iOS release.
+- **Symptoms:** Sentry issue
+  [DOFEK-MOBILE-1B](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1B)
+  reported three `com.apple.healthkit: Code: 5` events for one production user
+  immediately after background HealthKit observer registration.
+- **User impact:** No crash occurred. The native module manually captured the
+  observer callback errors, producing a false-positive production alert.
+- **Evidence:** The failing operation was the `HKObserverQuery` callback created
+  by `setupBackgroundObservers`. Its complete native error was
+  `com.apple.healthkit: Code: 5`. The production build followed commit
+  `d94b8f38e`, which added unconditional `SentrySDK.capture(error:)` for that
+  callback. The installed HealthKit SDK identifies raw code 5 as
+  `errorAuthorizationNotDetermined`; Apple documents that this occurs when an
+  app has not yet requested the authorization required for an operation:
+  <https://developer.apple.com/documentation/healthkit/hkerror/code/errorauthorizationnotdetermined>.
+- **Root cause:** Observer registration treated HealthKit's expected
+  authorization-not-determined state as an unexpected native exception, even
+  though the query and background-delivery paths already handled that state as
+  permission drift.
+- **Fix / mitigation:** Centralize HealthKit error classification, complete
+  authorization-not-determined observer callbacks without reporting them, and
+  continue capturing every unexpected observer error with operation and sample
+  type tags. No timeout, retry, fallback, or authorization gate was added.
+- **Validation:** The new Swift regression test first failed because the
+  observer reporting policy did not exist. After the fix, all 74 HealthKit
+  Swift tests, strict SwiftLint, and all 965 mobile tests passed without
+  ad-hoc waits.
+- **Remaining risk / follow-up:** The fix changes native Swift and cannot ship
+  through an OTA JavaScript update. Verify it on physical hardware after the
+  next native iOS build, then confirm the Sentry issue does not recur while
+  unexpected observer failures retain their new diagnostic tags.

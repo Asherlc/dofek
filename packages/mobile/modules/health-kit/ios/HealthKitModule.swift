@@ -66,13 +66,6 @@ public class HealthKitModule: Module {
         return observerUpdateCoordinator.completeAll()
     }
 
-    private func isAuthorizationNotDetermined(_ error: Error) -> Bool {
-        guard let healthKitError = error as? HKError else {
-            return false
-        }
-        return healthKitError.code == .errorAuthorizationNotDetermined
-    }
-
     private func rejectPromise(_ promise: Promise, code: String, reason: String) {
         promise.reject(HealthKitModuleException(code: code, reason: reason))
     }
@@ -212,7 +205,7 @@ public class HealthKitModule: Module {
                 limit: queryLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
-                    if self.isAuthorizationNotDetermined(error) {
+                    if HealthKitErrorDetails.isAuthorizationNotDetermined(error) {
                         promise.resolve([[String: Any]]())
                         return
                     }
@@ -261,7 +254,7 @@ public class HealthKitModule: Module {
                 limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
-                    if self.isAuthorizationNotDetermined(error) {
+                    if HealthKitErrorDetails.isAuthorizationNotDetermined(error) {
                         promise.resolve([[String: Any]]())
                         return
                     }
@@ -370,7 +363,7 @@ public class HealthKitModule: Module {
                 limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
-                    if self.isAuthorizationNotDetermined(error) {
+                    if HealthKitErrorDetails.isAuthorizationNotDetermined(error) {
                         promise.resolve([[String: Any]]())
                         return
                     }
@@ -695,7 +688,7 @@ public class HealthKitModule: Module {
 
             query.initialResultsHandler = { _, results, error in
                 if let error = error {
-                    if self.isAuthorizationNotDetermined(error) {
+                    if HealthKitErrorDetails.isAuthorizationNotDetermined(error) {
                         self.rejectHealthKitError(
                             promise,
                             operation: "queryDailyStatistics(\(typeIdentifier))",
@@ -788,7 +781,17 @@ public class HealthKitModule: Module {
                         return
                     }
                     if let error {
-                        SentrySDK.capture(error: error)
+                        if !HealthKitErrorDetails.shouldReportObserverError(error) {
+                            completionHandler()
+                            return
+                        }
+                        SentrySDK.capture(error: error) { scope in
+                            scope.setTag(value: "observerQuery", key: "healthkit.operation")
+                            scope.setTag(
+                                value: sampleType.identifier,
+                                key: "healthkit.sample_type"
+                            )
+                        }
                         completionHandler()
                         return
                     }
@@ -820,7 +823,7 @@ public class HealthKitModule: Module {
                     if let error = error {
                         // Skip types that haven't been authorized yet — they'll be
                         // registered after the user grants permission via requestPermissions().
-                        if !self.isAuthorizationNotDetermined(error) {
+                        if !HealthKitErrorDetails.isAuthorizationNotDetermined(error) {
                             errorLock.lock()
                             let nativeError = error as NSError
                             backgroundDeliveryErrors.append(
