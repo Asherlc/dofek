@@ -132,6 +132,23 @@ describe("createActivityRecorder", () => {
     expect(snap.error).toContain("permissions");
   });
 
+  it("transitions to error and cleans up when location updates fail to start", async () => {
+    const locationError = new Error("Core Location unavailable");
+    vi.mocked(location.startUpdates).mockRejectedValueOnce(locationError);
+
+    await expect(recorder.start("running")).rejects.toThrow("Core Location unavailable");
+
+    const snap = recorder.getSnapshot();
+    expect(snap.state).toBe("error");
+    expect(snap.error).toBe("Core Location unavailable");
+    expect(snap.elapsedMs).toBe(0);
+    expect(location.stopUpdates).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(locationError, {
+      source: "activity-recording.startUpdates",
+      phase: "start",
+    });
+  });
+
   it("collects GPS samples during recording", async () => {
     await recorder.start("cycling");
 
@@ -158,6 +175,46 @@ describe("createActivityRecorder", () => {
     await recorder.resume();
     expect(recorder.getSnapshot().state).toBe("recording");
     expect(location.startUpdates).toHaveBeenCalledTimes(2);
+  });
+
+  it("stays paused and excludes failed resume time when location updates fail", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2024-06-15T08:00:00.000Z");
+    await recorder.start("running");
+
+    vi.setSystemTime("2024-06-15T08:01:00.000Z");
+    recorder.pause();
+
+    const locationError = new Error("Location service interrupted");
+    vi.mocked(location.startUpdates).mockRejectedValueOnce(locationError);
+    vi.setSystemTime("2024-06-15T08:03:00.000Z");
+
+    await expect(recorder.resume()).rejects.toThrow("Location service interrupted");
+
+    expect(recorder.getSnapshot()).toEqual(
+      expect.objectContaining({
+        state: "paused",
+        error: "Location service interrupted",
+        elapsedMs: 60 * 1000,
+      }),
+    );
+    expect(location.stopUpdates).toHaveBeenCalledTimes(2);
+    expect(mockCaptureException).toHaveBeenCalledWith(locationError, {
+      source: "activity-recording.startUpdates",
+      phase: "resume",
+    });
+
+    vi.setSystemTime("2024-06-15T08:08:00.000Z");
+    expect(recorder.getSnapshot().elapsedMs).toBe(60 * 1000);
+
+    await recorder.resume();
+    expect(recorder.getSnapshot()).toEqual(
+      expect.objectContaining({
+        state: "recording",
+        error: null,
+        elapsedMs: 60 * 1000,
+      }),
+    );
   });
 
   it("stops recording and transitions to saving", async () => {
