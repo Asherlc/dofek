@@ -1,5 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { collectSqlText, createTestCallerFactory } from "./test-helpers.ts";
+
+const { mockInvalidateAllQueries, mockInvalidateUserQueryDomains } = vi.hoisted(() => ({
+  mockInvalidateAllQueries: vi.fn().mockResolvedValue(undefined),
+  mockInvalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("dofek/lib/cache", () => ({
+  invalidateAllQueries: mockInvalidateAllQueries,
+  invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -38,6 +48,11 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
 }
 
 describe("journalRouter", () => {
+  beforeEach(() => {
+    mockInvalidateAllQueries.mockClear();
+    mockInvalidateUserQueryDomains.mockClear();
+  });
+
   describe("questions", () => {
     it("returns available questions", async () => {
       const questions = [
@@ -151,6 +166,7 @@ describe("journalRouter", () => {
         answerNumeric: 3,
       });
       expect(result).toBeDefined();
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["journalEntries"]);
     });
 
     it("rejects invalid date format", async () => {
@@ -169,6 +185,7 @@ describe("journalRouter", () => {
         questionSlug: "caffeine",
       });
       expect(result).toBeDefined();
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["journalEntries"]);
     });
   });
 
@@ -181,6 +198,17 @@ describe("journalRouter", () => {
         answerNumeric: 5,
       });
       expect(result).toBeDefined();
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["journalEntries"]);
+    });
+
+    it("does not invalidate when no journal entry is updated", async () => {
+      const caller = makeCaller([]);
+      const result = await caller.update({
+        id: "00000000-0000-0000-0000-000000000001",
+      });
+
+      expect(result).toBeNull();
+      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
     });
   });
 
@@ -191,6 +219,7 @@ describe("journalRouter", () => {
         id: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toBeDefined();
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["journalEntries"]);
     });
   });
 
@@ -205,6 +234,7 @@ describe("journalRouter", () => {
         dataType: "numeric",
       });
       expect(result).toBeDefined();
+      expect(mockInvalidateAllQueries).toHaveBeenCalledOnce();
     });
 
     it("rejects invalid slug format", async () => {

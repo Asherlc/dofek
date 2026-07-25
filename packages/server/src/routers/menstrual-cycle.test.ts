@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
+
+const mockInvalidateUserQueryDomains = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
+vi.mock("dofek/lib/cache", () => ({
+  invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -31,6 +37,10 @@ import { menstrualCycleRouter } from "./menstrual-cycle.ts";
 const createCaller = createTestCallerFactory(menstrualCycleRouter);
 
 describe("menstrualCycleRouter", () => {
+  beforeEach(() => {
+    mockInvalidateUserQueryDomains.mockClear();
+  });
+
   describe("currentPhase", () => {
     it("returns null phase when no periods logged", async () => {
       const caller = createCaller({
@@ -170,6 +180,7 @@ describe("menstrualCycleRouter", () => {
 
       expect(result?.durationDays).toBe(1);
       expect(result?.durationLabel).toBe("1 day");
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["menstrualCycle"]);
     });
 
     it("logs a new period start", async () => {
@@ -191,6 +202,19 @@ describe("menstrualCycleRouter", () => {
       expect(result?.startDate).toBe("2026-03-01");
       expect(result?.durationDays).toBeNull();
       expect(result?.durationLabel).toBeNull();
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["menstrualCycle"]);
+    });
+
+    it("does not invalidate when no period is written", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.logPeriod({ startDate: "2026-03-01" });
+
+      expect(result).toBeNull();
+      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
     });
   });
 });

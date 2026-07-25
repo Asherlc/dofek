@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import { sleepSession, sleepStage } from "dofek/db/schema/activity";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import express, { Router } from "express";
 import { z } from "zod";
@@ -483,6 +484,7 @@ export function createIngestZosHealthRouter(deps: {
         await writeMetricStreamRows({ database: deps.db, publisher, rows });
       }
 
+      await invalidateAllUserQueries(userId);
       sendJson(res, 200, { status: "ok" });
     } catch (error) {
       Sentry.captureException(error);

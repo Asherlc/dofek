@@ -1,3 +1,4 @@
+import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { z } from "zod";
 import { SportSettingsRepository } from "../repositories/sport-settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -64,7 +65,9 @@ export const sportSettingsRouter = router({
    */
   upsert: protectedProcedure.input(sportSettingsInput).mutation(async ({ ctx, input }) => {
     const repository = new SportSettingsRepository(ctx.db, ctx.userId);
-    return repository.upsert(input);
+    const settings = await repository.upsert(input);
+    await invalidateUserQueryDomains(ctx.userId, ["sportSettings"]);
+    return settings;
   }),
 
   /**
@@ -72,6 +75,8 @@ export const sportSettingsRouter = router({
    */
   delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
     const repository = new SportSettingsRepository(ctx.db, ctx.userId);
-    return repository.delete(input.id);
+    const result = await repository.delete(input.id);
+    await invalidateUserQueryDomains(ctx.userId, ["sportSettings"]);
+    return result;
   }),
 });
