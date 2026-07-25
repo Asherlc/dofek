@@ -2,48 +2,47 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
-import { type ComponentProps, useMemo } from "react";
+import { useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
-import { AddJournalEntryModal } from "./AddJournalEntryModal.tsx";
+import { SupplementStackPanel } from "./SupplementStackPanel.tsx";
 
-interface JournalModalScenario {
-  questions: unknown[];
+interface SupplementScenario {
+  supplements: unknown[];
   loading?: boolean;
 }
 
-const questions = [
+const supplements = [
   {
-    slug: "energy",
-    display_name: "Energy",
-    category: "wellness",
-    data_type: "numeric",
-    unit: "/10",
-    sort_order: 1,
+    name: "Creatine monohydrate",
+    amount: 5,
+    unit: "g",
+    form: "powder",
+    meal: "breakfast",
   },
   {
-    slug: "alcohol",
-    display_name: "Drank alcohol",
-    category: "substance",
-    data_type: "boolean",
-    unit: null,
-    sort_order: 2,
+    name: "Vitamin D3",
+    amount: 50,
+    unit: "mcg",
+    form: "softgel",
+    meal: "breakfast",
+    vitaminDMcg: 50,
   },
   {
-    slug: "notes",
-    display_name: "Daily notes",
-    category: "custom",
-    data_type: "text",
-    unit: null,
-    sort_order: 3,
+    name: "Magnesium glycinate",
+    amount: 300,
+    unit: "mg",
+    form: "capsule",
+    meal: "dinner",
+    magnesiumMg: 300,
   },
 ];
 
-function createMockLink(scenario: JournalModalScenario): TRPCLink<AppRouter> {
+function createMockLink(scenario: SupplementScenario): TRPCLink<AppRouter> {
   return () =>
     ({ op }) => {
-      if (op.path === "journal.questions" && scenario.loading) return createLoadingObservable();
+      if (op.path === "supplements.list" && scenario.loading) return createLoadingObservable();
       return createMockObservable(
-        op.path === "journal.questions" ? scenario.questions : { ok: true },
+        op.path === "supplements.list" ? scenario.supplements : { ok: true },
       );
     };
 }
@@ -74,10 +73,7 @@ function createLoadingObservable(): OperationResultObservable<AppRouter, unknown
   return result;
 }
 
-function AddJournalEntryModalStory({
-  scenario,
-  ...modalProps
-}: { scenario: JournalModalScenario } & ComponentProps<typeof AddJournalEntryModal>) {
+function SupplementStory({ scenario }: { scenario: SupplementScenario }) {
   const queryClient = useMemo(() => new QueryClient(), []);
   const trpcClient = useMemo(
     () => trpc.createClient({ links: [createMockLink(scenario)] }),
@@ -87,40 +83,32 @@ function AddJournalEntryModalStory({
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <AddJournalEntryModal {...modalProps} />
+        <div className="w-[720px] rounded-xl border border-border bg-surface p-5">
+          <SupplementStackPanel />
+        </div>
       </QueryClientProvider>
     </trpc.Provider>
   );
 }
 
 const meta = {
-  title: "Tracking/AddJournalEntryModal",
-  component: AddJournalEntryModal,
+  title: "Nutrition/SupplementStackPanel",
+  component: SupplementStackPanel,
   tags: ["autodocs"],
-  parameters: {
-    layout: "fullscreen",
-  },
-  args: {
-    isOpen: true,
-    onClose: () => {},
-    onSuccess: () => {},
-  },
-} satisfies Meta<typeof AddJournalEntryModal>;
+} satisfies Meta<typeof SupplementStackPanel>;
 
 export default meta;
 
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
-  render: (args) => <AddJournalEntryModalStory scenario={{ questions }} {...args} />,
+  render: () => <SupplementStory scenario={{ supplements }} />,
 };
 
 export const Loading: Story = {
-  render: (args) => (
-    <AddJournalEntryModalStory scenario={{ questions: [], loading: true }} {...args} />
-  ),
+  render: () => <SupplementStory scenario={{ supplements: [], loading: true }} />,
 };
 
 export const Empty: Story = {
-  render: (args) => <AddJournalEntryModalStory scenario={{ questions: [] }} {...args} />,
+  render: () => <SupplementStory scenario={{ supplements: [] }} />,
 };

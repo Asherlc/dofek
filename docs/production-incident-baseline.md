@@ -17156,3 +17156,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If independent publishes repeatedly return
   `InternalError`, correlate the OTA service and object-storage logs before
   changing workflow behavior.
+
+## 2026-07-25 — Story Fixtures Lagged the Canonical Polarization DTO
+
+- **Status:** Direct fix validated locally; replacement CI pending on PR #1958.
+- **Symptoms:** `Test / Typecheck (dofek-web)` failed, which also failed the
+  aggregate `Test / Lint & Static Analysis` gate.
+- **User impact:** No production users were affected. PR #1958 was blocked from
+  merge.
+- **Evidence:** The exact failing command in [CI run
+  30174882951](https://github.com/Asherlc/dofek/actions/runs/30174882951) was
+  `pnpm run typecheck` in `packages/web`. Its first fatal line reported
+  `PolarizationTrendChart.stories.tsx(6,3): error TS2739`, because the fixture
+  omitted `totalSeconds`, `zonePercentages`, `status`, `statusLabel`, and
+  `explanation`.
+- **Root cause:** PR #1958 added visual fixtures for the earlier
+  `PolarizationWeek` shape, then current `main` made those server-computed
+  fields required in the canonical DTO. The PR merge ref therefore exposed a
+  real stale-fixture type error that the branch's earlier local run could not
+  see.
+- **Fix / mitigation:** Merge current `origin/main` and update every
+  polarization story fixture to provide the complete canonical server DTO. No
+  CI timeout, retry, skip, or type suppression was added.
+- **Validation:** `pnpm --filter dofek-web typecheck` and targeted Biome
+  validation pass without ad-hoc waits. Replacement CI must pass before merge.
+- **Remaining risk / follow-up:** None beyond completing replacement CI; the
+  compiler now enforces future fixture parity with the canonical DTO.
