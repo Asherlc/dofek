@@ -9,6 +9,8 @@ import {
 } from "./inertial-measurement-unit-service.ts";
 import { captureException } from "./telemetry";
 
+const mockSyncPendingWatchFiles = vi.fn().mockResolvedValue(undefined);
+
 function makeMockWhoopBle() {
   return {
     isAvailable: vi.fn().mockReturnValue(true),
@@ -21,18 +23,19 @@ function makeMockWhoopBle() {
 }
 
 function makeMockDeps(): InertialMeasurementUnitServiceDeps {
+  const watch = {
+    isAvailable: vi.fn().mockReturnValue(true),
+    requestSync: vi.fn().mockResolvedValue(true),
+    syncPendingFiles: mockSyncPendingWatchFiles,
+  };
+
   return {
     coreMotion: {
       isAccelerometerRecordingAvailable: vi.fn().mockReturnValue(true),
       startRecording: vi.fn().mockResolvedValue(true),
       queryRecordedData: vi.fn().mockResolvedValue([]),
     },
-    watch: {
-      isAvailable: vi.fn().mockReturnValue(true),
-      requestSync: vi.fn().mockResolvedValue(true),
-      getPendingSamples: vi.fn().mockResolvedValue([]),
-      acknowledgeSamples: vi.fn(),
-    },
+    watch,
     whoopBle: makeMockWhoopBle(),
     trpcClient: {
       inertialMeasurementUnitSync: {
@@ -51,6 +54,7 @@ describe("InertialMeasurementUnitService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSyncPendingWatchFiles.mockResolvedValue(undefined);
     deps = makeMockDeps();
     service = createInertialMeasurementUnitService(deps);
   });
@@ -122,23 +126,14 @@ describe("InertialMeasurementUnitService", () => {
       });
     });
 
-    it("uploads Watch pending samples", async () => {
-      const watchSamples = [{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.1, y: -0.9, z: 0.0 }];
-      vi.mocked(deps.watch.getPendingSamples).mockResolvedValue(watchSamples);
-
+    it("syncs pending Watch files through the per-file pipeline", async () => {
       await service.syncForTimeRange(startedAt, endedAt);
 
-      expect(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
-        deviceId: "Apple Watch",
-        deviceType: "apple_watch",
-        samples: watchSamples,
-      });
-      expect(deps.watch.acknowledgeSamples).toHaveBeenCalled();
+      expect(mockSyncPendingWatchFiles).toHaveBeenCalledTimes(1);
     });
 
     it("does not upload when CoreMotion returns no samples", async () => {
       vi.mocked(deps.coreMotion.queryRecordedData).mockResolvedValue([]);
-      vi.mocked(deps.watch.getPendingSamples).mockResolvedValue([]);
 
       await service.syncForTimeRange(startedAt, endedAt);
 
@@ -153,12 +148,12 @@ describe("InertialMeasurementUnitService", () => {
       expect(deps.coreMotion.queryRecordedData).not.toHaveBeenCalled();
     });
 
-    it("skips Watch query when unavailable", async () => {
+    it("skips Watch file sync when unavailable", async () => {
       vi.mocked(deps.watch.isAvailable).mockReturnValue(false);
 
       await service.syncForTimeRange(startedAt, endedAt);
 
-      expect(deps.watch.getPendingSamples).not.toHaveBeenCalled();
+      expect(mockSyncPendingWatchFiles).not.toHaveBeenCalled();
     });
 
     it("does not throw when CoreMotion query fails", async () => {
@@ -181,16 +176,15 @@ describe("InertialMeasurementUnitService", () => {
       await expect(service.syncForTimeRange(startedAt, endedAt)).resolves.toBeUndefined();
     });
 
-    it("does not acknowledge Watch samples when upload fails", async () => {
-      const watchSamples = [{ timestamp: "2026-03-25T08:00:00.100Z", x: 0.1, y: -0.9, z: 0.0 }];
-      vi.mocked(deps.watch.getPendingSamples).mockResolvedValue(watchSamples);
-      vi.mocked(deps.trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockRejectedValue(
-        new Error("Upload failed"),
-      );
+    it("reports a Watch file sync failure without failing activity save", async () => {
+      const syncError = new Error("Watch file sync failed");
+      mockSyncPendingWatchFiles.mockRejectedValue(syncError);
 
-      await service.syncForTimeRange(startedAt, endedAt);
+      await expect(service.syncForTimeRange(startedAt, endedAt)).resolves.toBeUndefined();
 
-      expect(deps.watch.acknowledgeSamples).not.toHaveBeenCalled();
+      expect(captureException).toHaveBeenCalledWith(syncError, {
+        source: "activity-save-watch-sync",
+      });
     });
 
     it("batches large sample sets", async () => {
