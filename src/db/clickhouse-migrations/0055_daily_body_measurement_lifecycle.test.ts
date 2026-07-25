@@ -41,6 +41,10 @@ describe("0055_daily_body_measurement_lifecycle", () => {
         `ALTER TABLE analytics.daily_body_measurement
         ADD COLUMN IF NOT EXISTS source_synced_at DateTime64(9, 'UTC')
         DEFAULT toDateTime64('1970-01-01 00:00:00', 9, 'UTC') AFTER is_deleted`,
+        `ALTER TABLE analytics.daily_body_measurement
+        ADD INDEX IF NOT EXISTS refreshed_at_minmax refreshed_at TYPE minmax GRANULARITY 1`,
+        `ALTER TABLE analytics.daily_body_measurement
+        MATERIALIZE INDEX refreshed_at_minmax SETTINGS mutations_sync = 2`,
       ],
     });
   });
@@ -64,7 +68,7 @@ describe("0055_daily_body_measurement_lifecycle", () => {
 
     await migration.run?.(client, "postgres://test");
 
-    expect(mockRunClickHouseMigrationStatement).toHaveBeenCalledTimes(2);
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenCalledTimes(4);
     expect(mockRunClickHouseMigrationStatement).toHaveBeenNthCalledWith(
       1,
       client,

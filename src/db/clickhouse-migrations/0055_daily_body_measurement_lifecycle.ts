@@ -11,6 +11,10 @@ export function createMigration(): ClickHouseMigration {
     `ALTER TABLE analytics.daily_body_measurement
         ADD COLUMN IF NOT EXISTS source_synced_at DateTime64(9, 'UTC')
         DEFAULT toDateTime64('1970-01-01 00:00:00', 9, 'UTC') AFTER is_deleted`,
+    `ALTER TABLE analytics.daily_body_measurement
+        ADD INDEX IF NOT EXISTS refreshed_at_minmax refreshed_at TYPE minmax GRANULARITY 1`,
+    `ALTER TABLE analytics.daily_body_measurement
+        MATERIALIZE INDEX refreshed_at_minmax SETTINGS mutations_sync = 2`,
   ];
 
   return {

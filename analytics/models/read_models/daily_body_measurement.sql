@@ -3,6 +3,10 @@
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, measurement_id)',
+    indexes=[{
+        'name': 'refreshed_at_minmax',
+        'definition': 'refreshed_at TYPE minmax GRANULARITY 1'
+    }],
     query_settings={
         'max_threads': 1,
         'join_use_nulls': 1
