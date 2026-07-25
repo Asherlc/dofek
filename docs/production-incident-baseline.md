@@ -16122,6 +16122,51 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   own Compose volumes so concurrent workspaces do not accumulate disposable
   database state.
 
+## 2026-07-24 — HealthKit Background Upload Outlived Its Delivery
+
+- **Status:** Fixed and validated locally; awaiting review and a new mobile
+  release.
+- **Symptoms:** Sentry issue
+  [`DOFEK-MOBILE-19`](https://east-bay-software.sentry.io/issues/7631866062/)
+  recorded 11 handled `TRPCClientError` events with
+  `fetch failed: UnexpectedException: The request timed out`. The supplied
+  latest event occurred at `2026-07-25T00:04:14.237Z` while the app was in the
+  background on an iPhone 16 Pro running iOS 26.5.2.
+- **User impact:** A one-day background HealthKit sync stopped while uploading
+  a 154,105-byte `healthKitSync.pushQuantitySamples` batch. The normal later
+  sync path remained able to retry the idempotent samples.
+- **Evidence:** The failed request began at `00:04:08.343Z` and timed out about
+  5.6 seconds later. No matching completed request exists in the retained
+  production web logs, while subsequent `pushQuantitySamples` requests at
+  `00:08:25Z` through `00:11:14Z` returned HTTP 200 in 48–138 ms. The server
+  logs requests on the response `finish` event. In the mobile native bridge,
+  every `HKObserverQuery` calls its delivery completion handler immediately
+  after emitting `onHealthKitSampleUpdate`; JavaScript then waits for a
+  five-second debounce before starting the HealthKit query-and-upload cycle.
+  Apple requires the observer completion handler to be called only after the
+  app finishes processing the new data
+  ([Executing Observer Queries](https://developer.apple.com/documentation/healthkit/executing-observer-queries)).
+- **Root cause:** The native HealthKit observer acknowledged successful
+  background delivery before JavaScript processed or uploaded the data,
+  relinquishing the HealthKit background execution lifecycle before the
+  delayed network request ran.
+- **Fix / mitigation:** The native bridge now retains each observer completion
+  handler under a delivery identifier carried into JavaScript. JavaScript
+  acknowledges that exact delivery only after its sync attempt finishes,
+  queues deliveries received during an active sync for a follow-up attempt,
+  and releases outstanding handlers during observer teardown.
+- **Validation:** Production services were healthy (`dofek_web` 2/2,
+  `dofek_worker` 1/1) on release `sha-17748f8`. Later HealthKit requests
+  completed normally without a timeout or server change. Test-first coverage
+  reproduced the early acknowledgement and stale-debounce failures before the
+  fix; all 16 focused TypeScript tests and all 65 Swift package tests pass
+  afterward. A Release configuration build also compiled, installed, and
+  launched successfully in iOS Simulator.
+- **Remaining risk / follow-up:** This path cannot be validated in Simulator
+  because HealthKit background delivery is device-only. A physical-device
+  background-delivery test and a corrected binary are still required;
+  foreground catch-up limits data loss on older builds but does not provide
+  timely background sync.
 ## 2026-07-24 — Analytics Refresh Failures Remained Docker-Healthy
 
 - **Status:** Root-cause fix validated locally; production deployment pending.
