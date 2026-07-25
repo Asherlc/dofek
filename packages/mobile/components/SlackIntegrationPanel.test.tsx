@@ -2,8 +2,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as WebBrowser from "expo-web-browser";
 import { describe, expect, it, vi } from "vitest";
 
-const mockSlackStatus = {
+const mockSlackStatus: {
+  data: { configured: boolean; connected: boolean } | undefined;
+  error: Error | null;
+  isLoading: boolean;
+  refetch: ReturnType<typeof vi.fn>;
+} = {
   data: undefined satisfies { configured: boolean; connected: boolean } | undefined,
+  error: null,
   isLoading: true,
   refetch: vi.fn(),
 };
@@ -28,6 +34,7 @@ import { SlackIntegrationPanel } from "./SlackIntegrationPanel";
 
 describe("SlackIntegrationPanel", () => {
   beforeEach(() => {
+    mockSlackStatus.error = null;
     vi.stubGlobal(
       "fetch",
       vi
@@ -52,6 +59,29 @@ describe("SlackIntegrationPanel", () => {
 
     render(<SlackIntegrationPanel />);
     expect(screen.getByText("Slack integration is not configured on this server.")).toBeTruthy();
+  });
+
+  it("shows the initial status error without claiming Slack is unconfigured", () => {
+    mockSlackStatus.data = undefined;
+    mockSlackStatus.error = new Error("Slack status is temporarily unavailable");
+    mockSlackStatus.isLoading = false;
+
+    render(<SlackIntegrationPanel />);
+
+    expect(screen.getByText("Slack status is temporarily unavailable")).toBeTruthy();
+    expect(screen.queryByText("Slack integration is not configured on this server.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add to Slack" })).toBeNull();
+  });
+
+  it("keeps cached connected status visible after a background refresh failure", () => {
+    mockSlackStatus.data = { configured: true, connected: true };
+    mockSlackStatus.error = new Error("Slack status refresh failed");
+    mockSlackStatus.isLoading = false;
+
+    render(<SlackIntegrationPanel />);
+
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByText("Slack status refresh failed")).toBeTruthy();
   });
 
   it("shows connected state with green dot", () => {

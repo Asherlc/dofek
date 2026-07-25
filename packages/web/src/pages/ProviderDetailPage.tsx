@@ -242,6 +242,22 @@ export function ProviderDetailPage() {
     );
   }
 
+  if (!provider && !hasFileImportConfig) {
+    return (
+      <PageLayout>
+        <section className="space-y-2">
+          <h1 className="text-xl font-semibold">Provider not found</h1>
+          <p className="text-sm text-subtle">
+            This provider is unavailable. Return to Data Sources to choose another.
+          </p>
+          <Link to="/providers" className="text-sm text-accent hover:underline">
+            Back to Data Sources
+          </Link>
+        </section>
+      </PageLayout>
+    );
+  }
+
   return (
     <PageLayout>
       {/* Breadcrumb */}
@@ -259,6 +275,8 @@ export function ProviderDetailPage() {
           <QueryStatePanel error={providers.error} height={96} />
         </section>
       ) : null}
+
+      {stats.error ? <QueryStatePanel error={stats.error} height={96} /> : null}
 
       {/* Provider header */}
       <div className="flex items-center justify-between">
@@ -508,7 +526,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
     filters: activeFilters,
   });
 
-  const rows = logs.isError ? [] : (logs.data ?? []);
+  const rows = logs.data ?? [];
 
   const handleFilterChange = useCallback((key: string, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -524,11 +542,12 @@ function SyncHistory({ providerId }: { providerId: string }) {
     <section>
       <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Sync History</h2>
 
-      {logs.isLoading ? (
+      {logs.isError ? <QueryStatePanel error={logs.error} height={80} /> : null}
+
+      {logs.isLoading && logs.data === undefined ? (
         <QueryStatePanel variant="loading" height={80} />
-      ) : logs.isError ? (
-        <QueryStatePanel error={logs.error} height={80} />
-      ) : rows.length === 0 && Object.keys(activeFilters).length === 0 ? (
+      ) : logs.isError && logs.data === undefined ? null : rows.length === 0 &&
+        Object.keys(activeFilters).length === 0 ? (
         <div className="text-xs text-subtle">No sync history yet.</div>
       ) : (
         <>

@@ -375,8 +375,12 @@ const appleHealthStats = {
 };
 
 function setupDefaultMocks() {
-  mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
-  mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false });
+  mockProvidersQuery.mockReturnValue({
+    data: [authorizedProvider],
+    error: null,
+    isLoading: false,
+  });
+  mockProviderStatsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
   mockDataHealthQuery.mockReturnValue({ data: null, isLoading: false, error: null });
   mockAvailableDataTypesQuery.mockReturnValue({
     data: ["activities"],
@@ -473,6 +477,21 @@ describe("ProviderDetailScreen", () => {
       expect(mockRecordsQuery).not.toHaveBeenCalled();
       expect(mockLogsQuery).not.toHaveBeenCalled();
       expect(mockDeletionStatusQuery).not.toHaveBeenCalled();
+    });
+
+    it("keeps cached provider details visible after an inventory refresh failure", async () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [authorizedProvider],
+        isLoading: false,
+        error: new Error("Provider inventory refresh failed"),
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Wahoo")).toBeTruthy();
+      expect(screen.getByText("Provider inventory refresh failed")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Sync" })).toBeTruthy();
     });
   });
 
@@ -932,6 +951,21 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Activity records", () => {
+    it("shows provider statistics failures while retaining known provider details", async () => {
+      mockProviderStatsQuery.mockReturnValue({
+        data: undefined,
+        error: new Error("Provider statistics are temporarily unavailable"),
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Wahoo")).toBeTruthy();
+      expect(screen.getByText("Provider statistics are temporarily unavailable")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Sync" })).toBeTruthy();
+    });
+
     it("exposes record detail disclosure state", async () => {
       mockRecordsQuery.mockReturnValue({
         data: {
