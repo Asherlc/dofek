@@ -40,7 +40,10 @@ vi.mock("bullmq", () => ({
 import {
   closeAllQueueResources,
   createProviderDataDeletionQueue,
+  EXPORT_QUEUE,
+  enqueueDataExport,
   enqueueProviderDataDeletion,
+  getDataExportQueue,
   getProviderDataDeletionQueue,
   PROVIDER_DATA_DELETION_QUEUE,
   providerDataDeletionJobDataSchema,
@@ -519,6 +522,49 @@ describe("queues", () => {
       expect(MockQueue).toHaveBeenCalledWith(EXPORT_QUEUE, {
         connection: expect.objectContaining({ host: "localhost", port: 6379 }),
       });
+    });
+
+    it("uses the export id as the BullMQ idempotency key", async () => {
+      const { createExportQueue } = await import("./queues.ts");
+      const queue = createExportQueue({ host: "test", port: 1111 });
+
+      await enqueueDataExport(
+        {
+          exportId: "10000000-0000-4000-8000-000000000025",
+          userId: "20000000-0000-4000-8000-000000000025",
+        },
+        queue,
+      );
+
+      expect(mockQueueAdd).toHaveBeenCalledWith(
+        "export",
+        {
+          exportId: "10000000-0000-4000-8000-000000000025",
+          userId: "20000000-0000-4000-8000-000000000025",
+        },
+        {
+          jobId: "10000000-0000-4000-8000-000000000025",
+          removeOnComplete: true,
+          removeOnFail: true,
+        },
+      );
+    });
+
+    it("creates and closes one cached export queue", async () => {
+      await closeAllQueueResources();
+      vi.clearAllMocks();
+
+      const firstQueue = getDataExportQueue();
+      const secondQueue = getDataExportQueue();
+
+      expect(firstQueue).toBe(secondQueue);
+      expect(MockQueue).toHaveBeenCalledOnce();
+      expect(MockQueue).toHaveBeenCalledWith(EXPORT_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+
+      await closeAllQueueResources();
+      expect(mockQueueClose).toHaveBeenCalledOnce();
     });
   });
 
