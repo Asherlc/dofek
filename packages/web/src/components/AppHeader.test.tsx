@@ -85,4 +85,11 @@ describe("AppHeader", () => {
     expect(settingsLink.getAttribute("href")).toBe("/settings");
     expect(settingsLink.textContent).toContain("Ada Lovelace");
   });
+
+  it("shows active alerts in the desktop sidebar and mobile header", () => {
+    render(<AppHeader activeAlertCount={1} />);
+
+    expect(screen.getAllByLabelText("Alerts, 1 active")).toHaveLength(2);
+    expect(screen.getAllByText("1")).toHaveLength(2);
+  });
 });

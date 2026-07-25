@@ -16421,6 +16421,55 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   with focused unit assertions for each cleanup fallback and failure-state
   distinction.
 
+## 2026-07-24 — Image Vulnerability Scan Could Not Reach Docker Hub
+
+- **Status:** External registry failure identified; replacement CI pending on
+  PR #1940.
+- **Symptoms:** `Test / Image Vulnerability Scan` failed, which also failed the
+  aggregate `Test / Security & Dependencies` gate.
+- **User impact:** No production users were affected. PR #1940 was blocked from
+  merging even though no vulnerability result was produced.
+- **Evidence:** The exact failing command was
+  `docker pull "$GRYPE_IMAGE"`. The first fatal line was
+  `Error response from daemon: Get "https://registry-1.docker.io/v2/":
+  net/http: request canceled while waiting for connection`; all five attempts
+  timed out before the final explicit pull failure.
+- **Root cause:** The hosted runner could not establish a timely connection to
+  Docker Hub. The application image built successfully, and Grype never ran, so
+  this was not a detected application-image vulnerability.
+- **Fix / mitigation:** Scheduled replacement CI on a fresh hosted runner. No
+  scan threshold, timeout, retry count, or vulnerability policy was changed.
+- **Validation:** The replacement run must pull the pinned Grype image and
+  complete the critical-vulnerability scan before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly cannot pull
+  the pinned scanner image, investigate an approved registry mirror using the
+  captured Docker Hub evidence before changing workflow behavior.
+
+## 2026-07-24 — Provider Webhook Processing Failures Were Acknowledged
+
+- **Status:** Fixed locally; hosted CI pending.
+- **Symptoms:** The provider webhook route returned `200 OK` after database
+  lookup, targeted processing, queue-enqueue, and unexpected request failures.
+- **User impact:** Providers treated failed deliveries as accepted, so events
+  could be permanently lost instead of retried.
+- **Evidence:** The regression tests first failed with
+  `expected 200 to be 503` for database, BullMQ enqueue, and top-level request
+  failures.
+- **Root cause:** Per-event and top-level exception handlers logged failures
+  but unconditionally fell through to, or directly sent, a successful
+  response.
+- **Fix / mitigation:** Return `503 Service Unavailable` when any actionable
+  event is neither processed nor durably queued, continue attempting the rest
+  of a batch, and report unexpected failures to Sentry with provider and event
+  context. Invalid signatures and payloads remain non-retryable `4xx`
+  responses. RFC 9110 defines `503` for a temporarily unavailable service:
+  <https://www.rfc-editor.org/rfc/rfc9110.html#name-503-service-unavailable>.
+- **Validation:** All 37 webhook route tests pass, including executable
+  regressions for database failure, enqueue failure, continued batch
+  processing, Sentry context, and top-level failure.
+- **Remaining risk / follow-up:** Hosted CI must confirm the full server test,
+  typecheck, lint, and mutation suites before merge.
+
 ## 2026-07-24 — Quarantine PR Failed Spell Check on KafkaJS API Name
 
 - **Status:** Fixed on PR #1933; replacement CI pending.

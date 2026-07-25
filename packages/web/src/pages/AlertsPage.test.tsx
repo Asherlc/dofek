@@ -1,0 +1,124 @@
+/** @vitest-environment jsdom */
+import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AlertsPage } from "./AlertsPage.tsx";
+
+const { mockAlertsQuery, mockInvalidateAlerts, mockRetrySync } = vi.hoisted(() => ({
+  mockAlertsQuery: vi.fn(),
+  mockInvalidateAlerts: vi.fn(),
+  mockRetrySync: vi.fn(),
+}));
+
+vi.mock("../lib/trpc.ts", () => ({
+  trpc: {
+    processing: {
+      alerts: {
+        useQuery: () => mockAlertsQuery(),
+      },
+    },
+    sync: {
+      triggerSync: {
+        useMutation: (options: { onSuccess: (data: undefined, input: unknown) => void }) => ({
+          error: null,
+          isPending: false,
+          mutate: (input: unknown) => {
+            mockRetrySync(input);
+            options.onSuccess(undefined, input);
+          },
+        }),
+      },
+    },
+    useUtils: () => ({
+      processing: { alerts: { invalidate: mockInvalidateAlerts } },
+    }),
+  },
+}));
+
+vi.mock("../components/PageLayout.tsx", () => ({
+  PageLayout: ({ children, title }: { children: ReactNode; title: string }) => (
+    <main>
+      <h1>{title}</h1>
+      {children}
+    </main>
+  ),
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+}));
+
+describe("AlertsPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAlertsQuery.mockReturnValue({
+      data: {
+        generatedAt: "2026-07-24T12:00:00.000Z",
+        alerts: [
+          {
+            id: "operation-1:providers",
+            providerId: "garmin",
+            providerLabel: "Garmin",
+            datasetKey: "providers",
+            occurredAt: "2026-07-24T11:59:00.000Z",
+            title: "Garmin summary wasn’t updated",
+            message:
+              "Your Garmin data synced, but its totals couldn’t be refreshed. Your previously synced data is still available.",
+            action: "retry_sync",
+            actionLabel: "Retry Garmin sync",
+          },
+          {
+            id: "operation-2:activity",
+            providerId: "whoop",
+            providerLabel: "WHOOP (Cloud)",
+            datasetKey: "activity",
+            occurredAt: "2026-07-24T11:58:00.000Z",
+            title: "WHOOP (Cloud) couldn’t sync",
+            message: "Reconnect WHOOP (Cloud), then start the sync again.",
+            action: "reconnect",
+            actionLabel: "Reconnect WHOOP (Cloud)",
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("names each affected source and presents its server-selected action", () => {
+    render(<AlertsPage />);
+
+    expect(screen.getByText("Garmin summary wasn’t updated")).toBeTruthy();
+    expect(screen.getByText("WHOOP (Cloud) couldn’t sync")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry Garmin sync" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Reconnect WHOOP (Cloud)" }).getAttribute("href")).toBe(
+      "/providers/$id",
+    );
+  });
+
+  it("starts the named provider sync and refreshes active alerts", () => {
+    render(<AlertsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry Garmin sync" }));
+
+    expect(mockRetrySync).toHaveBeenCalledWith({ providerId: "garmin", sinceDays: 7 });
+    expect(mockInvalidateAlerts).toHaveBeenCalledOnce();
+    expect(screen.getByText("Garmin sync started.")).toBeTruthy();
+  });
+
+  it("shows a calm empty state when nothing needs attention", () => {
+    mockAlertsQuery.mockReturnValue({
+      data: { generatedAt: "2026-07-24T12:00:00.000Z", alerts: [] },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<AlertsPage />);
+
+    expect(screen.getByText("Nothing needs your attention")).toBeTruthy();
+  });
+});

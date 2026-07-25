@@ -47,6 +47,11 @@ vi.mock("../lib/auth-context.tsx", () => ({
   useAuth: mockUseAuth,
 }));
 
+vi.mock("../lib/processing-alerts-context.tsx", () => ({
+  ProcessingAlertsProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useActiveProcessingAlertCount: () => 0,
+}));
+
 // Import triggers createRootRoute, which captures the component.
 import "./__root.tsx";
 
@@ -164,6 +169,44 @@ describe("AuthGate", () => {
     renderAuthGate();
 
     expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({ to: "/login" }));
+  });
+
+  it("allows an unauthenticated tokenized health report link", () => {
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({
+      pathname: "/health-report",
+      href: "/health-report?token=shared-token",
+    });
+
+    const { getByTestId } = renderAuthGate();
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(getByTestId("outlet")).toBeTruthy();
+  });
+
+  it("keeps an unauthenticated health report management route protected", () => {
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({
+      pathname: "/health-report",
+      href: "/health-report",
+    });
+
+    renderAuthGate();
+
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: "/login",
+      search: { returnTo: "/health-report" },
+    });
   });
 
   it("preserves protected route path as login returnTo", () => {
