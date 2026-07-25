@@ -743,6 +743,15 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
+      redpanda:
+        image: mirror.gcr.io/redpandadata/redpanda:v26.1.12
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "rpk cluster health | grep -q 'Healthy:.*true'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
       clickhouse:
         image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine
         env:
@@ -761,6 +770,7 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
       CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
+      REDPANDA_BROKERS: localhost:9092
       REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

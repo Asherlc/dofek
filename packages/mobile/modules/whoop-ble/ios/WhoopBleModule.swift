@@ -60,24 +60,8 @@ public class WhoopBleModule: Module {
                 case .success(let value):
                     promise.resolve(value)
                 case .failure(let error):
-                    switch error {
-                    case .invalidPeripheralId(let identifier):
-                        promise.reject("INVALID_ID", "Invalid peripheral ID: \(identifier)")
-                    case .peripheralNotFound(let identifier):
-                        promise.reject("NOT_FOUND", "Peripheral not found: \(identifier)")
-                    case .timeout:
-                        promise.reject("TIMEOUT", "Connection timed out")
-                    case .serviceDiscoveryFailed(let message):
-                        promise.reject("SERVICE_DISCOVERY_FAILED", message)
-                    case .characteristicDiscoveryFailed(let message):
-                        promise.reject("CHARACTERISTIC_DISCOVERY_FAILED", message)
-                    case .serviceNotFound:
-                        promise.reject("NO_SERVICE", "WHOOP service not found")
-                    case .characteristicsNotFound:
-                        promise.reject("NO_CHARACTERISTICS", "Required characteristics not found")
-                    case .disconnected(let message):
-                        promise.reject("DISCONNECTED", message ?? "Disconnected")
-                    }
+                    let rejection = error.rejection
+                    promise.reject(rejection.code, rejection.message)
                 }
             }
         }
