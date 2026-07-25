@@ -254,7 +254,7 @@ export function buildDailyMetricHealthStatuses(trends: TrendsRow): HealthStatusM
       label: "Steps",
       value: trends.latest_steps,
       baseline: trends.avg_steps,
-      sampleDeviation: null,
+      sampleDeviation: trends.stddev_steps,
       intent: "neutral",
     }),
     buildHealthStatusFromSummary({

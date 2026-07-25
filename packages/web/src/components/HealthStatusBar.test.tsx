@@ -89,4 +89,10 @@ describe("HealthStatusBar", () => {
 
     expect(screen.getByText(/Not enough data/)).toBeDefined();
   });
+
+  it("renders a distinct empty state when no metrics are available", () => {
+    render(<HealthStatusBar metrics={[]} />);
+
+    expect(screen.getByText("No health status data for this period.")).toBeDefined();
+  });
 });

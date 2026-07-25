@@ -26,6 +26,7 @@ const trendRowSchema = z.object({
   stddev_hrv: z.number().nullable(),
   stddev_resting_hr: z.number().nullable(),
   stddev_spo2: z.number().nullable(),
+  stddev_steps: z.number().nullable(),
   stddev_skin_temp: z.number().nullable(),
   latest_hrv: z.number().nullable(),
   latest_resting_hr: z.number().nullable(),
@@ -168,20 +169,24 @@ export function Dashboard() {
     [restingHeartRateRows],
   );
 
-  const healthMonitor = trends.error ? (
-    <QueryStatePanel error={trends.error} height={160} />
-  ) : (
-    <HealthStatusBar
-      metrics={healthMetrics}
-      loading={trends.isLoading}
-      formatters={{
-        hrv: formatHRVMeasurement,
-        spo2: formatSpO2Measurement,
-        skin_temperature: (value) => units.formatTemperature(value),
-      }}
-      units={{ resting_heart_rate: "bpm" }}
-    />
-  );
+  const healthMonitor =
+    trends.error && trends.data == null ? (
+      <QueryStatePanel error={trends.error} height={160} />
+    ) : (
+      <>
+        <HealthStatusBar
+          metrics={healthMetrics}
+          loading={trends.isLoading}
+          formatters={{
+            hrv: formatHRVMeasurement,
+            spo2: formatSpO2Measurement,
+            skin_temperature: (value) => units.formatTemperature(value),
+          }}
+          units={{ resting_heart_rate: "bpm" }}
+        />
+        {trends.error ? <QueryStatePanel error={trends.error} height={72} /> : null}
+      </>
+    );
   const insightStatePanel = insightsQuery.isLoading ? (
     <QueryStatePanel variant="loading" height={160} />
   ) : insightsQuery.error ? (

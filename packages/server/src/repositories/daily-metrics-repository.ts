@@ -61,6 +61,7 @@ export const trendsRowSchema = z.object({
   stddev_hrv: z.coerce.number().nullable(),
   stddev_resting_hr: z.coerce.number().nullable(),
   stddev_spo2: z.coerce.number().nullable(),
+  stddev_steps: z.coerce.number().nullable(),
   stddev_skin_temp: z.coerce.number().nullable(),
   latest_hrv: z.coerce.number().nullable(),
   latest_resting_hr: z.coerce.number().nullable(),
@@ -242,6 +243,7 @@ export class DailyMetricsRepository extends BaseRepository {
               STDDEV(hrv) AS stddev_hrv,
               STDDEV(resting_hr) AS stddev_resting_hr,
               STDDEV(spo2_avg) AS stddev_spo2,
+              STDDEV(steps) AS stddev_steps,
               STDDEV(skin_temp_c) AS stddev_skin_temp
             FROM current
           ),

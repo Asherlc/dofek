@@ -63,9 +63,18 @@ function buildSkinTempSeries(
   };
 }
 
-function getQueryError(...queries: Array<{ isError: boolean; error: unknown }>): unknown {
+type QueryResultWithData = { data?: unknown; isError: boolean; error: unknown };
+
+function getQueryError(...queries: QueryResultWithData[]): unknown {
   for (const query of queries) {
-    if (query.isError) return query.error;
+    if (query.isError && query.data == null) return query.error;
+  }
+  return null;
+}
+
+function getBackgroundQueryError(...queries: QueryResultWithData[]): unknown {
+  for (const query of queries) {
+    if (query.isError && query.data != null) return query.error;
   }
   return null;
 }
@@ -115,9 +124,7 @@ export function BodyPage() {
 
   const smoothedWeightData = weightOverview.data?.smoothedWeight ?? [];
 
-  const healthStatusError =
-    (trends.isError && trends.data == null ? trends.error : null) ??
-    (weightOverview.isError && weightOverview.data == null ? weightOverview.error : null);
+  const healthStatusError = getQueryError(trends, weightOverview);
 
   const healthMetrics = useMemo(() => {
     if (healthStatusError) return [];
@@ -150,6 +157,14 @@ export function BodyPage() {
   const spo2SectionError = getQueryError(dailyMetrics);
   const bodyRecompSectionError = getQueryError(weightOverview);
   const insightsSectionError = getQueryError(insightsQuery);
+  const backgroundQueryError = getBackgroundQueryError(
+    trends,
+    dailyMetrics,
+    hrvBaseline,
+    stressData,
+    weightOverview,
+    insightsQuery,
+  );
 
   // SpO2/temp chart config
   const spo2TempTitle =
@@ -171,6 +186,8 @@ export function BodyPage() {
       <div className="flex justify-end">
         <TimeRangeSelector days={days} onChange={setDays} />
       </div>
+
+      {backgroundQueryError ? <QueryStatePanel error={backgroundQueryError} height={72} /> : null}
 
       {/* Health Status Bar */}
       {healthStatusError ? (
@@ -232,7 +249,7 @@ export function BodyPage() {
           </div>
           {weightOverview.isPending ? (
             <ChartLoadingSkeleton height={48} />
-          ) : weightOverview.isError ? (
+          ) : weightOverview.isError && weightOverview.data == null ? (
             <QueryStatePanel error={weightOverview.error} height={48} />
           ) : predictionSectionError ? (
             <QueryStatePanel error={predictionSectionError} height={48} />
@@ -251,7 +268,7 @@ export function BodyPage() {
             </div>
             {weightOverview.isPending ? (
               <SmoothedWeightChart data={[]} loading />
-            ) : weightOverview.isError ? (
+            ) : weightOverview.isError && weightOverview.data == null ? (
               <QueryStatePanel error={weightOverview.error} height={250} />
             ) : (
               <SmoothedWeightChart data={smoothedWeightData} prediction={weightPredictionDisplay} />

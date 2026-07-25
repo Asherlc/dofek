@@ -109,6 +109,14 @@ export function HealthStatusBar({
     );
   }
 
+  if (metrics.length === 0) {
+    return (
+      <output className="card block p-4 text-sm text-muted">
+        No health status data for this period.
+      </output>
+    );
+  }
+
   return (
     <div className="flex gap-3 overflow-x-auto">
       {metrics.map((metric, index) => {

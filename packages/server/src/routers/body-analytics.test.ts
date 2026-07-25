@@ -334,6 +334,22 @@ describe("bodyAnalyticsRouter", () => {
       expect(result.prediction).toBeNull();
       expect(captureException).toHaveBeenCalledWith(predictionError);
     });
+
+    it("returns a semantic API error when recomposition cannot be loaded", async () => {
+      const recompositionError = new Error("relation analytics.body_composition does not exist");
+      vi.spyOn(BodyAnalyticsRepository.prototype, "getRecomposition").mockRejectedValueOnce(
+        recompositionError,
+      );
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.weightOverview({ days: 90, endDate: "2024-01-20" }),
+      ).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Body composition data is temporarily unavailable. Please try again.",
+      });
+      expect(captureException).toHaveBeenCalledWith(recompositionError);
+    });
   });
 
   describe("weightPrediction", () => {

@@ -1,4 +1,5 @@
 import { captureException } from "@sentry/node";
+import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
@@ -121,7 +122,12 @@ export const bodyAnalyticsRouter = router({
         captureException(predictionResult.reason);
       }
       if (recompositionResult.status === "rejected") {
-        throw recompositionResult.reason;
+        captureException(recompositionResult.reason);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Body composition data is temporarily unavailable. Please try again.",
+          cause: recompositionResult.reason,
+        });
       }
 
       const smoothedWeight = smoothedWeightResult.value;
