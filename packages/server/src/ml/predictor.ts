@@ -279,6 +279,17 @@ function fitLinearSafely(
       predictionTarget,
       sampleCount: X.length,
     };
+    const errorContext =
+      error instanceof Error
+        ? {
+            errorMessage: error.message,
+            errorName: error.name,
+            errorStack: error.stack,
+          }
+        : {
+            errorMessage: String(error),
+            errorName: "UnknownError",
+          };
     Sentry.captureException(error, {
       tags: {
         component: "predictor",
@@ -290,7 +301,13 @@ function fitLinearSafely(
         sampleCount: context.sampleCount,
       },
     });
-    logger.error("predictor.linear_fit_fallback", context);
+    logger.error(
+      JSON.stringify({
+        event: "predictor.linear_fit_fallback",
+        ...context,
+        ...errorContext,
+      }),
+    );
     predictorLinearFitFallbacksTotal.inc({ prediction_target: predictionTarget });
   }
   return null;

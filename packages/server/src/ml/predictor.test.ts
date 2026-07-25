@@ -417,11 +417,19 @@ describe("trainFromDataset", () => {
         sampleCount: 24,
       },
     });
-    expect(telemetryMocks.logError).toHaveBeenCalledWith("predictor.linear_fit_fallback", {
-      featureCount: 3,
-      predictionTarget: "cardio_power",
-      sampleCount: 24,
-    });
+    const capturedError = telemetryMocks.captureException.mock.calls[0]?.[0];
+    expect(capturedError).toBeInstanceOf(Error);
+    expect(telemetryMocks.logError).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: "predictor.linear_fit_fallback",
+        featureCount: 3,
+        predictionTarget: "cardio_power",
+        sampleCount: 24,
+        errorMessage: capturedError instanceof Error ? capturedError.message : "",
+        errorName: capturedError instanceof Error ? capturedError.name : "",
+        errorStack: capturedError instanceof Error ? capturedError.stack : undefined,
+      }),
+    );
     expect(telemetryMocks.incrementLinearFitFallback).toHaveBeenCalledWith({
       prediction_target: "cardio_power",
     });
