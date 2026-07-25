@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AddJournalEntryModal } from "./AddJournalEntryModal.tsx";
 
@@ -45,6 +45,20 @@ describe("AddJournalEntryModal", () => {
     mocks.questionsQuery.mockReturnValue({ data: [question], error: null, isLoading: false });
     mocks.createMutation.mockReset();
     mocks.createMutation.mockReturnValue({ error: null, isPending: false, mutate: vi.fn() });
+  });
+
+  it("opens as a named dialog, focuses the date, and closes with Escape", async () => {
+    const onClose = vi.fn();
+    render(<AddJournalEntryModal isOpen onClose={onClose} onSuccess={vi.fn()} />);
+
+    const dateInput = screen.getByLabelText("Date");
+    expect(
+      screen.getByRole("dialog", { name: "Add Journal Entry" }).getAttribute("aria-modal"),
+    ).toBe("true");
+    await waitFor(() => expect(document.activeElement).toBe(dateInput));
+
+    fireEvent.keyDown(dateInput, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("shows a questions failure instead of an empty selector", () => {
