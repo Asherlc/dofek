@@ -18,7 +18,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 let observerSyncReady: true | undefined;
 let pendingCatchUp:
   | {
-      onSyncComplete?: () => void;
+      onSyncComplete?: () => void | Promise<void>;
       trpcClient: SyncTrpcClient;
     }
   | undefined;
@@ -36,16 +36,14 @@ function isHealthKitDatabaseInaccessible(error: unknown): boolean {
 
 async function performHealthKitSync(
   trpcClient: SyncTrpcClient,
-  onSyncComplete?: () => void,
+  onSyncComplete?: () => void | Promise<void>,
 ): Promise<boolean> {
   logger.info(TAG, "Starting sync");
+  let result: Awaited<ReturnType<AppleHealthSyncService["sync"]>>;
   try {
-    const result = await new AppleHealthSyncService({ trpcClient }).sync({
+    result = await new AppleHealthSyncService({ trpcClient }).sync({
       syncRangeDays: 1,
     });
-    logger.info(TAG, `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`);
-    onSyncComplete?.();
-    return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // HealthKit encrypts data at rest while the device is locked. This is a
@@ -59,6 +57,16 @@ async function performHealthKitSync(
     captureException(error, { source: TAG });
     return false;
   }
+
+  logger.info(TAG, `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`);
+  try {
+    await onSyncComplete?.();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(TAG, `Sync completion callback failed: ${message}`);
+    captureException(error, { source: TAG });
+  }
+  return true;
 }
 
 function acknowledgeObserverUpdates(updateIds: string[], succeeded: boolean): void {
@@ -75,7 +83,7 @@ function acknowledgeObserverUpdates(updateIds: string[], succeeded: boolean): vo
 
 async function drainSyncQueue(
   trpcClient: SyncTrpcClient,
-  onSyncComplete?: () => void,
+  onSyncComplete?: () => void | Promise<void>,
 ): Promise<void> {
   if (syncing) {
     return;
@@ -107,7 +115,10 @@ async function drainSyncQueue(
   await drainSyncQueue(trpcClient, onSyncComplete);
 }
 
-function scheduleObserverSync(trpcClient: SyncTrpcClient, onSyncComplete?: () => void): void {
+function scheduleObserverSync(
+  trpcClient: SyncTrpcClient,
+  onSyncComplete?: () => void | Promise<void>,
+): void {
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     debounceTimer = undefined;
@@ -125,7 +136,7 @@ function scheduleObserverSync(trpcClient: SyncTrpcClient, onSyncComplete?: () =>
  */
 export async function initBackgroundHealthKitSync(
   trpcClient: SyncTrpcClient,
-  onSyncComplete?: () => void,
+  onSyncComplete?: () => void | Promise<void>,
 ) {
   const authorizationState = await new AppleHealthAuthorizationService().resolve();
   if (!authorizationState.canAttemptSync()) {

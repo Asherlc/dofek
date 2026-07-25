@@ -8,6 +8,7 @@ const mockSplitLink = vi.fn((options: unknown) => ({ type: "split", options }));
 const mockCreateClient = vi.fn();
 const mockInitBackgroundHealthKitSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundHealthKitSync = vi.fn();
+const mockInvalidateSyncedHealthData = vi.fn().mockResolvedValue(undefined);
 const mockInitBackgroundAccelerometerSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundAccelerometerSync = vi.fn();
 const mockInitBackgroundWatchSync = vi.fn().mockResolvedValue(undefined);
@@ -88,6 +89,10 @@ vi.mock("../lib/background-health-kit-sync", () => ({
   initBackgroundHealthKitSync: (...args: unknown[]) => mockInitBackgroundHealthKitSync(...args),
   teardownBackgroundHealthKitSync: (...args: unknown[]) =>
     mockTeardownBackgroundHealthKitSync(...args),
+}));
+
+vi.mock("../lib/invalidate-synced-health-data", () => ({
+  invalidateSyncedHealthData: (...args: unknown[]) => mockInvalidateSyncedHealthData(...args),
 }));
 
 vi.mock("../lib/background-accelerometer-sync", () => ({
@@ -322,6 +327,24 @@ describe("RootLayout background cleanup", () => {
       expect(mockInitBackgroundWatchSync).toHaveBeenCalledOnce();
       expect(mockUseWhoopBleSync).toHaveBeenCalledOnce();
     });
+  });
+
+  it("uses targeted invalidation after the canonical HealthKit sync completes", async () => {
+    const RootLayout = await importRootLayout();
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce();
+    });
+    const onSyncComplete = mockInitBackgroundHealthKitSync.mock.calls[0]?.[1];
+    if (typeof onSyncComplete !== "function") {
+      throw new Error("Expected a HealthKit sync completion callback");
+    }
+
+    await onSyncComplete();
+
+    expect(mockInvalidateSyncedHealthData).toHaveBeenCalledOnce();
   });
 
   it("does not automatically request HealthKit permissions when new types need authorization", async () => {

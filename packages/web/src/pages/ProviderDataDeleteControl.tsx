@@ -4,6 +4,7 @@ import {
   OperationProgressBars,
   type OperationProgressItem,
 } from "../components/OperationProgressBar.tsx";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -15,7 +16,9 @@ export function ProviderDataDeleteControl({
   providerId: string;
 }) {
   const trpcUtils = trpc.useUtils();
-  const deleteAllDataMutation = trpc.providerDetail.deleteAllData.useMutation();
+  const deleteAllDataMutation = trpc.providerDetail.deleteAllData.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -29,6 +32,7 @@ export function ProviderDataDeleteControl({
       enabled: operationId !== null,
       refetchInterval: operationId === null ? false : 1000,
       staleTime: 0,
+      meta: locallyReportedErrorMeta,
     },
   );
 

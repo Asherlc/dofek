@@ -1,5 +1,7 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ModalDialog, ModalDialogTitle } from "./ModalDialog.tsx";
 
@@ -24,7 +26,9 @@ export function CredentialAuthModal({
   const [loading, setLoading] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
 
-  const signInMutation = trpc.credentialAuth.signIn.useMutation();
+  const signInMutation = trpc.credentialAuth.signIn.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
 
   const handleSignIn = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -35,6 +39,10 @@ export function CredentialAuthModal({
         await signInMutation.mutateAsync({ providerId, username, password });
         onSuccess();
       } catch (err: unknown) {
+        captureException(err, {
+          operation: "credentialAuth.signIn",
+          providerId,
+        });
         setError(err instanceof Error ? err.message : "Sign in failed");
       } finally {
         setLoading(false);
@@ -130,7 +138,9 @@ export function GarminAuthModal({
   const [loading, setLoading] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
 
-  const signInMutation = trpc.garminAuth.signIn.useMutation();
+  const signInMutation = trpc.garminAuth.signIn.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
 
   const handleSignIn = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -141,6 +151,10 @@ export function GarminAuthModal({
         await signInMutation.mutateAsync({ username, password });
         onSuccess();
       } catch (err: unknown) {
+        captureException(err, {
+          operation: "garminAuth.signIn",
+          providerId: "garmin",
+        });
         setError(err instanceof Error ? err.message : "Sign in failed");
       } finally {
         setLoading(false);
@@ -240,15 +254,22 @@ export function WhoopAuthModal({
     if (step === "verify") codeRef.current?.focus();
   }, [step]);
 
-  const signInMutation = trpc.whoopAuth.signIn.useMutation();
-  const verifyMutation = trpc.whoopAuth.verifyCode.useMutation();
-  const saveTokensMutation = trpc.whoopAuth.saveTokens.useMutation();
+  const signInMutation = trpc.whoopAuth.signIn.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const verifyMutation = trpc.whoopAuth.verifyCode.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const saveTokensMutation = trpc.whoopAuth.saveTokens.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
 
   const handleSignIn = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       setError("");
       setLoading(true);
+      let operation = "whoopAuth.signIn";
       try {
         const result = await signInMutation.mutateAsync({ username, password });
         if (result.status === "verification_required") {
@@ -256,10 +277,12 @@ export function WhoopAuthModal({
           setStep("verify");
         } else if (result.status === "success" && result.token) {
           setStep("saving");
+          operation = "whoopAuth.saveTokens";
           await saveTokensMutation.mutateAsync(result.token);
           onSuccess();
         }
       } catch (err: unknown) {
+        captureException(err, { operation, providerId: "whoop" });
         setError(err instanceof Error ? err.message : "Sign in failed");
       } finally {
         setLoading(false);
@@ -273,14 +296,17 @@ export function WhoopAuthModal({
       e.preventDefault();
       setError("");
       setLoading(true);
+      let operation = "whoopAuth.verifyCode";
       try {
         const result = await verifyMutation.mutateAsync({ challengeId, code });
         if (result.status === "success") {
           setStep("saving");
+          operation = "whoopAuth.saveTokens";
           await saveTokensMutation.mutateAsync(result.token);
           onSuccess();
         }
       } catch (err: unknown) {
+        captureException(err, { operation, providerId: "whoop" });
         setError(err instanceof Error ? err.message : "Verification failed");
       } finally {
         setLoading(false);
