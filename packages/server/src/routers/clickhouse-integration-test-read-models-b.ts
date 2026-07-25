@@ -76,6 +76,7 @@ SELECT
   activity_load.started_at AS started_at,
   activity_load.ended_at AS ended_at,
   activity_load.daily_load AS daily_load,
+  toUInt8(0) AS is_deleted,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
 FROM activity_load
@@ -404,7 +405,8 @@ export function buildTestStrainReadModelSelectSql(databases: IsolatedClickHouseD
     user_id,
     toDate(started_at) AS date,
     coalesce(sum(daily_load), 0) AS daily_load
-  FROM ${databases.analytics}.daily_activity_load
+  FROM ${databases.analytics}.daily_activity_load FINAL
+  WHERE is_deleted = 0
   GROUP BY user_id, toDate(started_at)
 ),
 date_bounds AS (
@@ -455,6 +457,7 @@ SELECT
   acute_load_7d,
   chronic_load_28d,
   if(chronic_load_28d > 0 AND chronic_count = 28, acute_load_7d / chronic_load_28d, NULL) AS workload_ratio,
+  toUInt8(0) AS is_deleted,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
 FROM with_windows

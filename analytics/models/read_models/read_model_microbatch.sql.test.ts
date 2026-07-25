@@ -666,11 +666,20 @@ describe("production analytics read-model build", () => {
 
   it("materializes daily activity load from activity summary rows", () => {
     const sql = readModel("daily_activity_load");
+    const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("ref('activity_summary_rows')");
+    expect(sql).toContain("FROM {{ ref('activity_summary_rows') }} AS activity_summary FINAL");
+    expect(sql).toContain("WHERE activity_summary.is_deleted = 0");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("query_settings={");
     expect(sql).toContain("'max_threads': 1");
+    expect(sql).toContain("changed_activity_keys AS");
+    expect(sql).toContain("existing_activities AS");
+    expect(sql).toContain("if(activity_load.activity_id IS NULL, 1, 0) AS is_deleted");
+    expect(normalizedSql).toContain(
+      "refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+    );
     expect(sql).not.toContain("ref('activity_sensor_sample')");
     expect(sql).not.toContain("ref('deduped_sensor')");
   });
@@ -798,11 +807,15 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(sql).toContain("{% if is_incremental() %}");
-    expect(sql).toContain("existing_dates AS");
-    expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 54 DAY");
-    expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 27 DAY");
+    expect(sql).toContain("changed_users AS");
+    expect(sql).toContain("existing_keys AS");
     expect(sql).toContain("output_min_date");
     expect(sql).toContain("ref('daily_activity_load')");
+    expect(sql).toContain("WHERE is_deleted = 0");
+    expect(sql).toContain("if(current_rows.user_id IS NULL, 1, 0) AS is_deleted");
+    expect(normalizedSql).toContain(
+      "refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+    );
     expect(sql).toContain("acute_load_7d");
     expect(sql).toContain("chronic_load_28d");
     expect(sql).toContain("workload_ratio");
