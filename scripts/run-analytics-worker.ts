@@ -13,13 +13,20 @@ function errorMessage(error: unknown): string {
 const durationSecondsSchema = z
   .string()
   .regex(/^\d+$/)
-  .transform((value) => Number.parseInt(value, 10));
+  .transform((value) => Number.parseInt(value, 10))
+  .refine((value) => Number.isSafeInteger(value) && value <= 2_147_483);
 
-function durationMillisecondsFromEnvironment(name: string, fallbackSeconds: number): number {
-  const rawValue = process.env[name] ?? String(fallbackSeconds);
+function durationMillisecondsFromEnvironment(
+  environment: NodeJS.ProcessEnv,
+  name: string,
+  fallbackSeconds: number,
+): number {
+  const rawValue = environment[name] ?? String(fallbackSeconds);
   const parsed = durationSecondsSchema.safeParse(rawValue);
   if (!parsed.success) {
-    throw new Error(`${name} must be a non-negative integer, got ${JSON.stringify(rawValue)}`);
+    throw new Error(
+      `${name} must be an integer from 0 through 2147483 seconds, got ${JSON.stringify(rawValue)}`,
+    );
   }
   return parsed.data * 1_000;
 }
@@ -48,23 +55,50 @@ async function closeServer(server: Server): Promise<void> {
   });
 }
 
-export async function runAnalyticsWorker(): Promise<void> {
-  const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
-  initProductionSentry(sentryDsn);
+interface AnalyticsWorkerDependencies {
+  now(): Date;
+  reportFailure(
+    error: unknown,
+    tags: { analyticsRefreshStep: "analytics-build" | "query-cache-warm" },
+  ): void;
+  runAnalyticsBuildFromEnvironment(): Promise<void>;
+  sleep(milliseconds: number, signal: AbortSignal): Promise<void>;
+  warmQueryCacheFromEnvironment(): Promise<void>;
+}
 
-  const worker = new AnalyticsWorker({
+export function createAnalyticsWorkerFromEnvironment(
+  environment: NodeJS.ProcessEnv,
+  dependencies: AnalyticsWorkerDependencies,
+): AnalyticsWorker {
+  return new AnalyticsWorker({
     intervalMilliseconds: durationMillisecondsFromEnvironment(
+      environment,
       "ANALYTICS_BUILD_INTERVAL_SECONDS",
       900,
     ),
     retryDelayMilliseconds: durationMillisecondsFromEnvironment(
+      environment,
       "ANALYTICS_BUILD_RETRY_DELAY_SECONDS",
       300,
     ),
     startupDelayMilliseconds: durationMillisecondsFromEnvironment(
+      environment,
       "ANALYTICS_BUILD_STARTUP_DELAY_SECONDS",
       120,
     ),
+    now: dependencies.now,
+    reportFailure: dependencies.reportFailure,
+    runAnalyticsBuild: dependencies.runAnalyticsBuildFromEnvironment,
+    sleep: dependencies.sleep,
+    warmQueryCache: dependencies.warmQueryCacheFromEnvironment,
+  });
+}
+
+export async function runAnalyticsWorker(): Promise<void> {
+  const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
+  initProductionSentry(sentryDsn);
+
+  const worker = createAnalyticsWorkerFromEnvironment(process.env, {
     now: () => new Date(),
     reportFailure: (error, tags) => {
       Sentry.captureException(error, { tags });
@@ -72,12 +106,12 @@ export async function runAnalyticsWorker(): Promise<void> {
         `[analytics-worker] ${tags.analyticsRefreshStep} failed: ${errorMessage(error)}`,
       );
     },
-    runAnalyticsBuild: async () => {
+    runAnalyticsBuildFromEnvironment: async () => {
       const { runAnalyticsBuildFromEnvironment } = await import("./run-analytics-build.ts");
       await runAnalyticsBuildFromEnvironment();
     },
     sleep,
-    warmQueryCache: async () => {
+    warmQueryCacheFromEnvironment: async () => {
       const { warmQueryCacheFromEnvironment } = await import("./warm-query-cache.ts");
       await warmQueryCacheFromEnvironment();
     },
