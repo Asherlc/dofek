@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { formatDateTime } from "@dofek/format/format";
+import { formatDateTime, formatTimeOnly } from "@dofek/format/format";
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -290,6 +290,15 @@ function findOptionByYAxisArrayName(name: string): Record<string, unknown> | und
       (y: Record<string, unknown>) => typeof y.name === "string" && y.name.includes(name),
     );
   });
+}
+
+function getSliderDataZoom(opt: Record<string, unknown>): Record<string, unknown> | undefined {
+  const dataZoom = opt.dataZoom;
+  if (!Array.isArray(dataZoom)) return undefined;
+  return dataZoom.find(
+    (zoom): zoom is Record<string, unknown> =>
+      typeof zoom === "object" && zoom !== null && Reflect.get(zoom, "type") === "slider",
+  );
 }
 
 function getQueryEnabledFlag(value: unknown): boolean | undefined {
@@ -665,6 +674,36 @@ describe("ActivityDetailPage", () => {
       );
       expect(speedAxis).toBeDefined();
       expect(String(speedAxis?.name)).toContain(new UnitConverter("imperial").speedLabel);
+    });
+  });
+
+  describe("MetricsChart timeline zoom", () => {
+    it("presents the navigator as a labeled control instead of a miniature chart", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("Zoom timeline")).toBeDefined();
+      expect(screen.getByText("Drag the handles to focus on part of the activity.")).toBeDefined();
+
+      const metricsOption = findOptionByYAxisArrayName("Heart Rate");
+      expect(metricsOption).toBeDefined();
+      if (!metricsOption) return;
+
+      const slider = getSliderDataZoom(metricsOption);
+      expect(slider).toMatchObject({
+        showDataShadow: false,
+        showDetail: true,
+        height: 32,
+        handleSize: "100%",
+      });
+
+      const labelFormatter = slider?.labelFormatter;
+      expect(typeof labelFormatter).toBe("function");
+      if (typeof labelFormatter === "function") {
+        expect(labelFormatter(0, mockStreamPoints[0]?.recordedAt)).toBe(
+          formatTimeOnly(mockStreamPoints[0]?.recordedAt ?? ""),
+        );
+      }
     });
   });
 

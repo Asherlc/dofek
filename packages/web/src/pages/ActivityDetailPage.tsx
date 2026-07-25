@@ -666,7 +666,7 @@ function MetricsChart({
     grid: {
       top: 40,
       right: 60 + Math.max(0, visibleRightAxisCount - 1) * 60,
-      bottom: 60,
+      bottom: 86,
       left: 60,
     },
     tooltip: dofekTooltip(),
@@ -678,12 +678,24 @@ function MetricsChart({
         xAxisIndex: 0,
         start: 0,
         end: 100,
-        height: 20,
-        bottom: 10,
+        height: 32,
+        bottom: 16,
+        showDataShadow: false,
+        showDetail: true,
+        labelFormatter: (_value: number, valueText: string) => formatTimeOnly(valueText),
+        handleSize: "100%",
+        moveHandleSize: 8,
+        brushSelect: false,
+        borderRadius: 4,
         borderColor: chartThemeColors.tooltipBorder,
         backgroundColor: chartThemeColors.tooltipBackground,
         fillerColor: `${statusColors.positive}26`,
-        handleStyle: { color: statusColors.positive },
+        handleStyle: {
+          color: statusColors.positive,
+          borderColor: chartThemeColors.tooltipBackground,
+          borderWidth: 2,
+        },
+        moveHandleStyle: { color: statusColors.positive },
         textStyle: { color: chartThemeColors.axisLabel },
       },
     ],
@@ -697,7 +709,15 @@ function MetricsChart({
     series,
   };
 
-  return <DofekChart option={option} height={350} onEvents={chartEvents} />;
+  return (
+    <figure className="m-0">
+      <DofekChart option={option} height={380} onEvents={chartEvents} />
+      <figcaption className="mt-1 flex flex-wrap items-baseline gap-x-2 px-[60px] text-xs text-dim">
+        <span className="font-medium text-muted">Zoom timeline</span>
+        <span>Drag the handles to focus on part of the activity.</span>
+      </figcaption>
+    </figure>
+  );
 }
 
 function ElevationChart({
