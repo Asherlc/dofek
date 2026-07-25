@@ -16617,6 +16617,59 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Require all replacement integration shards
   and their coverage artifact upload to finish before merge.
 
+## 2026-07-24 — Analytics Integration Test Lacked uv in Hosted CI
+
+- **Status:** Fixed on PR #1945; replacement CI pending.
+- **Symptoms:** `Test / Integration Tests (4/4)` failed when the fresh
+  ClickHouse/dbt microbatch regression tried to start dbt.
+- **User impact:** No production impact. PR #1945 remained blocked from merge.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=4/4`; its
+  first fatal line was `Error: spawn uv ENOENT`. The same job's earlier
+  ClickHouse connection-reset warnings came from container readiness polling
+  and were not fatal.
+- **Root cause:** The new executable dbt regression invokes the analytics
+  project's pinned Python environment through `uv`, but hosted integration
+  shards installed only Node and pnpm. The lint job already installed uv, so
+  local and lint validation did not expose the missing integration-job
+  prerequisite.
+- **Fix / mitigation:** Added the repository-pinned `astral-sh/setup-uv` action
+  to the integration job before Vitest. Astral documents this action as the
+  supported way to make uv available in GitHub Actions:
+  <https://docs.astral.sh/uv/guides/integration/github/#using-uv-in-github-actions>.
+  No retry, timeout, skipped test, fallback, or warning continuation was added.
+- **Validation:** The focused regression passes locally against a real isolated
+  ClickHouse container and the workflow passes local action/YAML validation.
+  The replacement hosted shard is the final proof that its uv/dbt prerequisite
+  is available.
+- **Remaining risk / follow-up:** Require the replacement shard and all
+  remaining PR checks to pass before merge.
+
+## 2026-07-24 — Knip Did Not Recognize the External uv Binary
+
+- **Status:** Fixed on PR #1945; replacement CI pending.
+- **Symptoms:** `Test / Knip` failed after the analytics build runner began
+  invoking uv.
+- **User impact:** No production impact. PR #1945 remained blocked from merge.
+- **Evidence:** The exact failing command was `pnpm knip`; the first new fatal
+  finding was `Unlisted binaries (1)`, followed by
+  `uv  scripts/run-local-analytics-build.ts`. The earlier mobile Sentry config
+  loader message also appears in successful Knip jobs and did not cause this
+  regression.
+- **Root cause:** uv is an intentionally external repository-tool prerequisite,
+  not an npm dependency, but the root Knip workspace had not declared it among
+  the externally provided binaries.
+- **Fix / mitigation:** Added `uv` to the existing root `ignoreBinaries` list
+  alongside `dbt`, `cmake`, and other externally installed tools. Knip
+  documents `ignoreBinaries` specifically for used binaries that are not
+  provided by a package dependency:
+  <https://knip.dev/reference/configuration#ignorebinaries>.
+  No file, dependency, or issue category was excluded.
+- **Validation:** `pnpm knip` passes locally with the uv invocation still
+  analyzed, and the replacement hosted Knip job remains the merge gate.
+- **Remaining risk / follow-up:** Require the replacement Knip job and all
+  remaining PR checks to pass before merge.
+
 ## 2026-07-24 — HealthKit Swift Mutation Run Timed Out
 
 - **Status:** Root cause fixed locally; replacement hosted mutation validation
@@ -16654,3 +16707,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   be uploaded by GitHub's artifact action when a run fails. Fix artifact
   sanitization separately only if a future failing run needs those logs; it did
   not cause this mutation timeout.
+
+## 2026-07-24 — Metro Secret Load Could Not Reach Infisical
+
+- **Status:** External network failure identified on PR #1945; replacement CI
+  pending.
+- **Symptoms:** `Build Mobile / Metro Bundle` failed before the Metro build
+  command ran.
+- **User impact:** No production impact. PR #1945 remained blocked from merge.
+- **Evidence:** The failing secret-load step ran
+  `infisical login --method=oidc-auth`; its first fatal line was
+  `error: unable to authenticate with oidc auth`, caused by
+  `dial tcp 3.212.82.44:443: i/o timeout` while posting to
+  `https://app.infisical.com/api/v1/auth/oidc-auth/login`.
+- **Root cause:** The hosted runner could not establish a connection to the
+  Infisical OIDC endpoint. Dependency installation and GitHub token minting had
+  already succeeded, and the Metro command never started, so this was not an
+  application bundle failure. Infisical documents that GitHub's OIDC token is
+  exchanged at that endpoint for a short-lived access token:
+  <https://infisical.com/docs/documentation/platform/identities/oidc-auth/github>.
+- **Fix / mitigation:** Schedule replacement CI on a fresh hosted runner. No
+  authentication fallback, retry, timeout, cached secret, or bundle behavior
+  was changed.
+- **Validation:** The preceding hosted run passed the Metro bundle on the same
+  PR changes, and the replacement job must complete the Infisical exchange and
+  bundle before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly time out
+  against Infisical, investigate provider availability and runner egress with
+  the captured endpoint evidence before changing workflow behavior.
