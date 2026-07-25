@@ -12,6 +12,11 @@ export type {
   ClimbingSessionSummaryRow,
   ClimbingVolumeByGradeRow,
 } from "./repositories/climbing-repository.ts";
+// Training router types
+export type {
+  HrZoneRow,
+  TrainingHrZonesResult,
+} from "./repositories/training-repository.ts";
 // Calendar router types
 export type { CalendarDay } from "./routers/calendar.ts";
 // Cycling advanced router types

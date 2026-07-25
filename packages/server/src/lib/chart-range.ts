@@ -150,11 +150,12 @@ export function selectedChartRangeQuery<TResult>(
   endpoint: SelectedChartRangeEndpoint,
   ttlMs: number,
   resolve: (args: SelectedChartRangeResolveArgs<{ days: RangeDays }>) => MaybePromise<TResult>,
-  options: { min?: number; max?: number } = {},
+  options: { min?: number; max?: number; outputSchema?: z.ZodType<TResult> } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "days");
   return cachedProtectedQuery({ maxAge: ttlMs })
     .input(selectedChartRangeInput(endpoint, options))
+    .output(options.outputSchema ?? z.custom<TResult>())
     .query(({ ctx, input }) =>
       resolve({
         ctx,
