@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
+
+const mockInvalidateUserQueryDomains = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
+vi.mock("dofek/lib/cache", () => ({
+  invalidateUserQueryDomains: mockInvalidateUserQueryDomains,
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -31,6 +37,10 @@ import { breathworkRouter } from "./breathwork.ts";
 const createCaller = createTestCallerFactory(breathworkRouter);
 
 describe("breathworkRouter", () => {
+  beforeEach(() => {
+    mockInvalidateUserQueryDomains.mockClear();
+  });
+
   describe("techniques", () => {
     it("returns all available techniques", async () => {
       const caller = createCaller({
@@ -75,6 +85,24 @@ describe("breathworkRouter", () => {
       expect(result?.techniqueId).toBe("box-breathing");
       expect(result?.rounds).toBe(4);
       expect(result?.durationSeconds).toBe(64);
+      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["breathwork"]);
+    });
+
+    it("does not invalidate when no session is written", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.logSession({
+        techniqueId: "box-breathing",
+        rounds: 4,
+        durationSeconds: 64,
+        startedAt: "2026-03-22T10:00:00.000Z",
+      });
+
+      expect(result).toBeNull();
+      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
     });
   });
 

@@ -41,7 +41,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries, invalidateUserQueryDomains, queryCache } from "dofek/lib/cache";
 import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
 import { recoveryRouter } from "./recovery.ts";
 import { settingsRouter } from "./settings.ts";
@@ -1016,18 +1016,22 @@ describe("sportSettingsRouter", () => {
     it("creates sport settings", async () => {
       const created = { sport: "cycling", ftp: 250 };
       const caller = makeCaller([created]);
+      vi.mocked(invalidateUserQueryDomains).mockClear();
       const result = await caller.upsert({ sport: "cycling", ftp: 250 });
       expect(result).toEqual(created);
+      expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["sportSettings"]);
     });
   });
 
   describe("delete", () => {
     it("deletes sport settings", async () => {
       const caller = makeCaller([]);
+      vi.mocked(invalidateUserQueryDomains).mockClear();
       const result = await caller.delete({
         id: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toEqual({ success: true });
+      expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["sportSettings"]);
     });
   });
 });
