@@ -154,7 +154,7 @@ extension WhoopBleConnectionManager {
             dataCharacteristic: service.characteristics?.first { $0.uuid == dataUUID }
         )
 
-        guard let cmdChar = cmdCharacteristic, let dataChar = dataCharacteristic else {
+        guard cmdCharacteristic != nil, let dataChar = dataCharacteristic else {
             NSLog("[WhoopBLE] missing characteristics: cmd=%@, data=%@",
                   cmdCharacteristic == nil ? "MISSING" : "found",
                   dataCharacteristic == nil ? "MISSING" : "found")
@@ -163,16 +163,57 @@ extension WhoopBleConnectionManager {
         }
 
         NSLog("[WhoopBLE] subscribing to DATA_FROM_STRAP + CMD_FROM_STRAP notifications")
+        notificationSubscriptionTracker = WhoopBleNotificationSubscriptionTracker(
+            peripheral: peripheral,
+            dataCharacteristic: dataChar,
+            commandResponseCharacteristic: cmdResponseCharacteristic
+        )
+        setState(.subscribing)
         peripheral.setNotifyValue(true, for: dataChar)
         if let cmdRespChar = cmdResponseCharacteristic {
             peripheral.setNotifyValue(true, for: cmdRespChar)
         }
+    }
 
-        setState(.ready)
-        let previouslyStreaming = wasStreaming
-        wasStreaming = false
+    func handleNotificationStateUpdated(
+        _ peripheral: CBPeripheral,
+        characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        guard state == .subscribing, var tracker = notificationSubscriptionTracker else {
+            return
+        }
 
-        finishConnect(.success(true))
+        let update = tracker.recordNotificationState(
+            peripheral: peripheral,
+            characteristic: characteristic,
+            isNotifying: characteristic.isNotifying,
+            hasError: error != nil
+        )
+        notificationSubscriptionTracker = tracker
+
+        let detail = error?.localizedDescription
+            ?? "Notifications are not active for \(characteristic.uuid.uuidString)"
+        let previouslyStreaming = settleNotificationSubscriptionUpdate(
+            update,
+            failureDetail: detail,
+            cancelPeripheral: { [weak self, weak peripheral] in
+                guard let peripheral else { return }
+                self?.centralManager?.cancelPeripheralConnection(peripheral)
+            }
+        )
+
+        if update == .failed {
+            NSLog("[WhoopBLE] notification subscription failed on %@: %@",
+                  characteristic.uuid.uuidString, detail)
+        }
+
+        guard
+            let previouslyStreaming,
+            let cmdChar = cmdCharacteristic
+        else {
+            return
+        }
 
         delegate?.connectionManagerDidBecomeReady(
             self, peripheral: peripheral, cmdCharacteristic: cmdChar,
