@@ -12,4 +12,23 @@ describe("RecomputeStatusIndicator", () => {
     expect(screen.getByText("Recomputing sleep", { selector: "span" })).toBeTruthy();
     expect(screen.queryByRole("heading")).toBeNull();
   });
+
+  it("keeps an indeterminate off-the-shelf spinner beside its wrapping label", () => {
+    render(
+      <RecomputeStatusIndicator
+        label="Recomputing activities, sleep, recovery, training, and body"
+        progress={null}
+        status="delayed"
+      />,
+    );
+
+    const progress = screen.getByRole("progressbar", {
+      name: "Recomputing activities, sleep, recovery, training, and body",
+    });
+    expect(progress.getAttribute("data-testid")).toBe("recompute-spinner");
+    expect(progress.parentElement?.className).toContain("w-full");
+    expect(progress.nextElementSibling?.textContent).toBe(
+      "Recomputing activities, sleep, recovery, training, and body",
+    );
+  });
 });

@@ -187,6 +187,19 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
+  it("reports asynchronous completion callback failures to Sentry", async () => {
+    const client = createMockClient();
+    const invalidationError = new Error("cache invalidation failed");
+
+    await initBackgroundHealthKitSync(client, () => Promise.reject(invalidationError));
+
+    await vi.waitFor(() => {
+      expect(mockCaptureException).toHaveBeenCalledWith(invalidationError, {
+        source: "bg-healthkit-sync",
+      });
+    });
+  });
+
   it("reports sync failures to Sentry", async () => {
     vi.useFakeTimers();
     vi.mocked(queryWorkouts).mockResolvedValueOnce([

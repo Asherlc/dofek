@@ -7,9 +7,10 @@ import { SERVER_URL } from "../lib/server";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
+import { getQueryErrorMessage, QueryStatePanel } from "./QueryStatePanel";
 
 export function SlackIntegrationPanel() {
-  const { data, isLoading, refetch } = trpc.settings.slackStatus.useQuery();
+  const { data, error, isLoading, refetch } = trpc.settings.slackStatus.useQuery();
   const { sessionToken } = useAuth();
   const [isConnecting, setIsConnecting] = useState(false);
 
@@ -44,9 +45,30 @@ export function SlackIntegrationPanel() {
     );
   }
 
-  if (!data?.configured) {
+  if (data === undefined) {
+    return (
+      <QueryStatePanel
+        variant="error"
+        title="Could not load Slack status"
+        message={getQueryErrorMessage(error)}
+        minHeight={96}
+      />
+    );
+  }
+
+  const refreshWarning = error ? (
+    <QueryStatePanel
+      variant="error"
+      title="Could not refresh Slack status"
+      message={getQueryErrorMessage(error)}
+      minHeight={72}
+    />
+  ) : null;
+
+  if (!data.configured) {
     return (
       <View style={styles.container}>
+        {refreshWarning}
         <Text style={styles.dimText}>Slack integration is not configured on this server.</Text>
       </View>
     );
@@ -55,6 +77,7 @@ export function SlackIntegrationPanel() {
   if (data.connected) {
     return (
       <View style={styles.container}>
+        {refreshWarning}
         <View style={styles.row}>
           <View style={styles.connectedDot} />
           <View>
@@ -68,6 +91,7 @@ export function SlackIntegrationPanel() {
 
   return (
     <View style={styles.container}>
+      {refreshWarning}
       <View style={styles.connectRow}>
         <View style={styles.connectInfo}>
           <Text style={styles.label}>Log food via Slack</Text>

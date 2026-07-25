@@ -1,4 +1,8 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
+import {
+  buildTreffPolarizationWeek,
+  type TreffPolarizationWeek,
+} from "@dofek/training/training-distribution";
 import { computePolarizationIndex, HEART_RATE_ZONES, POLARIZATION_ZONES } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
@@ -62,18 +66,24 @@ export interface AerobicDecouplingActivity {
   totalSamples: number;
 }
 
-export interface PolarizationWeek {
-  week: string;
-  z1Seconds: number;
-  z2Seconds: number;
-  z3Seconds: number;
-  polarizationIndex: number | null;
-}
+export type PolarizationWeek = TreffPolarizationWeek;
 
 export interface PolarizationTrendResult {
+  model: "treff-three-zone";
+  activityScope: "cycling";
+  threshold: 2;
   maxHr: number | null;
   weeks: PolarizationWeek[];
+  explanation: string;
 }
+
+const POLARIZATION_RESULT_METADATA = {
+  model: "treff-three-zone" as const,
+  activityScope: "cycling" as const,
+  threshold: 2 as const,
+  explanation:
+    "The Treff three-zone polarization index describes cycling training only. An index above 2.00 is polarized.",
+};
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -579,15 +589,15 @@ export class EfficiencyRepository extends BaseRepository {
         const z1 = Number(row.z1_seconds);
         const z2 = Number(row.z2_seconds);
         const z3 = Number(row.z3_seconds);
-        return {
+        return buildTreffPolarizationWeek({
           week: String(row.week),
           z1Seconds: z1,
           z2Seconds: z2,
           z3Seconds: z3,
           polarizationIndex: computePolarizationIndex(z1, z2, z3),
-        };
+        });
       });
-      return { maxHr, weeks };
+      return { ...POLARIZATION_RESULT_METADATA, maxHr, weeks };
     }
 
     // Fall back to live deduped_sensor computation
@@ -648,15 +658,15 @@ export class EfficiencyRepository extends BaseRepository {
       const z2 = Number(row.z2_seconds);
       const z3 = Number(row.z3_seconds);
 
-      return {
+      return buildTreffPolarizationWeek({
         week: String(row.week),
         z1Seconds: z1,
         z2Seconds: z2,
         z3Seconds: z3,
         polarizationIndex: computePolarizationIndex(z1, z2, z3),
-      };
+      });
     });
 
-    return { maxHr, weeks };
+    return { ...POLARIZATION_RESULT_METADATA, maxHr, weeks };
   }
 }

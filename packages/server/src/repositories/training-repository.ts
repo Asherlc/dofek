@@ -1,4 +1,8 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import {
+  buildKarvonenIntensityDistribution,
+  type IntensityDistribution,
+} from "@dofek/training/training-distribution";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -47,6 +51,12 @@ const hrZoneRowSchema = z.object({
 });
 
 export type HrZoneRow = z.infer<typeof hrZoneRowSchema>;
+
+export interface TrainingHrZonesResult {
+  maxHr: number | null;
+  weeks: HrZoneRow[];
+  intensityDistribution: IntensityDistribution;
+}
 
 const activityStatsRowSchema = z.object({
   id: z.string(),
@@ -104,10 +114,14 @@ export class TrainingRepository extends BaseRepository {
   }
 
   /** HR zone distribution per week using the canonical Karvonen model. */
-  async getHrZones(days: RangeDays): Promise<{ maxHr: number | null; weeks: HrZoneRow[] }> {
+  async getHrZones(days: RangeDays): Promise<TrainingHrZonesResult> {
     const rawActivityCount = await this.#loadRawActivityCount(days, ENDURANCE_TYPES, true);
     if (rawActivityCount === 0) {
-      return { maxHr: null, weeks: [] };
+      return {
+        maxHr: null,
+        weeks: [],
+        intensityDistribution: buildKarvonenIntensityDistribution([]),
+      };
     }
 
     const today = new Date().toISOString().slice(0, 10);
@@ -173,8 +187,18 @@ export class TrainingRepository extends BaseRepository {
     );
     const rawMaxHr = rows[0]?.max_hr;
     const maxHr = typeof rawMaxHr === "number" ? rawMaxHr : null;
-    if (!maxHr) return { maxHr: null, weeks: [] };
-    return { maxHr, weeks: rows };
+    if (!maxHr) {
+      return {
+        maxHr: null,
+        weeks: [],
+        intensityDistribution: buildKarvonenIntensityDistribution([]),
+      };
+    }
+    return {
+      maxHr,
+      weeks: rows,
+      intensityDistribution: buildKarvonenIntensityDistribution(rows),
+    };
   }
 
   /** Per-activity summary with HR and power stats. */

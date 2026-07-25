@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
 const mockTrainingInvalidate = vi.fn();
+const mockHrZonesInvalidate = vi.fn();
+const mockPolarizationInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 
@@ -18,6 +20,22 @@ type MockTrainingState = {
 };
 
 const mockTrainingState: MockTrainingState = {
+  data: undefined,
+  isLoading: false,
+  isFetching: false,
+  isError: false,
+  error: null,
+};
+
+const mockHrZonesState: MockTrainingState = {
+  data: undefined,
+  isLoading: false,
+  isFetching: false,
+  isError: false,
+  error: null,
+};
+
+const mockPolarizationState: MockTrainingState = {
   data: undefined,
   isLoading: false,
   isFetching: false,
@@ -58,6 +76,13 @@ function resetMockTrainingState() {
   mockTrainingState.isFetching = false;
   mockTrainingState.isError = false;
   mockTrainingState.error = null;
+  for (const state of [mockHrZonesState, mockPolarizationState]) {
+    state.data = undefined;
+    state.isLoading = false;
+    state.isFetching = false;
+    state.isError = false;
+    state.error = null;
+  }
 }
 
 vi.mock("expo-router", () => ({
@@ -77,6 +102,16 @@ vi.mock("../../lib/trpc", () => ({
         }),
       },
     },
+    training: {
+      hrZones: {
+        useQuery: () => ({ ...mockHrZonesState }),
+      },
+    },
+    efficiency: {
+      polarizationTrend: {
+        useQuery: () => ({ ...mockPolarizationState }),
+      },
+    },
     processing: {
       status: {
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
@@ -85,6 +120,12 @@ vi.mock("../../lib/trpc", () => ({
     useUtils: () => ({
       mobileDashboard: {
         training: { invalidate: mockTrainingInvalidate },
+      },
+      training: {
+        hrZones: { invalidate: mockHrZonesInvalidate },
+      },
+      efficiency: {
+        polarizationTrend: { invalidate: mockPolarizationInvalidate },
       },
       processing: {
         status: { invalidate: mockProcessingStatusInvalidate },
@@ -125,13 +166,17 @@ describe("StrainScreen recent activity navigation", () => {
     vi.mocked(captureException).mockReset();
     mockTrainingInvalidate.mockReset();
     mockProcessingStatusInvalidate.mockReset();
+    mockHrZonesInvalidate.mockReset();
+    mockPolarizationInvalidate.mockReset();
     mockTrainingInvalidate.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
+    mockHrZonesInvalidate.mockResolvedValue(undefined);
+    mockPolarizationInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
     resetMockTrainingState();
   });
 
-  it("refreshes training data and processing status together", async () => {
+  it("refreshes training, intensity, polarization, and processing status together", async () => {
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
@@ -139,7 +184,101 @@ describe("StrainScreen recent activity navigation", () => {
     await mockRefreshInvalidate?.();
 
     expect(mockTrainingInvalidate).toHaveBeenCalledOnce();
+    expect(mockHrZonesInvalidate).toHaveBeenCalledOnce();
+    expect(mockPolarizationInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
+  });
+
+  it("renders server-owned intensity and polarization models", async () => {
+    mockHrZonesState.data = {
+      maxHr: 190,
+      weeks: [],
+      intensityDistribution: {
+        model: "karvonen-five-zone",
+        activityScope: "endurance",
+        totalSeconds: 3600,
+        zones: [{ zone: 2, label: "Aerobic", seconds: 3600, percent: 100 }],
+        explanation: "Mobile descriptive intensity explanation.",
+      },
+    };
+    mockPolarizationState.data = {
+      model: "treff-three-zone",
+      activityScope: "cycling",
+      threshold: 2,
+      maxHr: 190,
+      explanation: "Mobile cycling polarization explanation.",
+      weeks: [
+        {
+          week: "2026-07-20",
+          z1Seconds: 4800,
+          z2Seconds: 600,
+          z3Seconds: 600,
+          polarizationIndex: 2,
+          totalSeconds: 6000,
+          zonePercentages: { z1: 80, z2: 10, z3: 10 },
+          status: "not_polarized",
+          statusLabel: "Not polarized",
+          explanation: "Server says exactly 2.00 is not polarized.",
+        },
+      ],
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Karvonen Intensity Distribution")).toBeTruthy();
+    expect(screen.getByText("Mobile descriptive intensity explanation.")).toBeTruthy();
+    expect(screen.getByText("Not polarized")).toBeTruthy();
+    expect(screen.getByText("Server says exactly 2.00 is not polarized.")).toBeTruthy();
+  });
+
+  it("renders intensity and polarization query failures separately", async () => {
+    mockHrZonesState.isError = true;
+    mockHrZonesState.error = new Error("Intensity distribution failed");
+    mockPolarizationState.isError = true;
+    mockPolarizationState.error = new Error("Cycling polarization failed");
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Intensity distribution failed")).toBeTruthy();
+    expect(screen.getByText("Cycling polarization failed")).toBeTruthy();
+    expect(captureException).toHaveBeenCalledWith(mockHrZonesState.error);
+    expect(captureException).toHaveBeenCalledWith(mockPolarizationState.error);
+  });
+
+  it("keeps cached server models visible with background query failures", async () => {
+    mockHrZonesState.data = {
+      maxHr: 190,
+      weeks: [],
+      intensityDistribution: {
+        model: "karvonen-five-zone",
+        activityScope: "endurance",
+        totalSeconds: 3600,
+        zones: [{ zone: 2, label: "Aerobic", seconds: 3600, percent: 100 }],
+        explanation: "Cached mobile intensity distribution.",
+      },
+    };
+    mockHrZonesState.isError = true;
+    mockHrZonesState.error = new Error("Intensity refresh failed");
+    mockPolarizationState.data = {
+      model: "treff-three-zone",
+      activityScope: "cycling",
+      threshold: 2,
+      maxHr: 190,
+      explanation: "Cached mobile polarization.",
+      weeks: [],
+    };
+    mockPolarizationState.isError = true;
+    mockPolarizationState.error = new Error("Polarization refresh failed");
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Intensity refresh failed")).toBeTruthy();
+    expect(screen.getByText("Polarization refresh failed")).toBeTruthy();
+    expect(screen.getByText("Cached mobile intensity distribution.")).toBeTruthy();
+    expect(screen.getByText("No cycling polarization data in this period")).toBeTruthy();
   });
 
   it("keeps day selector visible while training data is loading", async () => {

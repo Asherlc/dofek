@@ -85,6 +85,30 @@ describe("trainingRouter access window gating", () => {
     );
   });
 
+  it("hrZones returns the canonical empty server distribution", async () => {
+    const execute = vi.fn().mockResolvedValue([{ activity_count: 0 }]);
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeMockSensorStore(),
+    });
+
+    const result = await caller.hrZones({ days: 90 });
+
+    expect(result).toMatchObject({
+      maxHr: null,
+      weeks: [],
+      intensityDistribution: {
+        model: "karvonen-five-zone",
+        activityScope: "endurance",
+        totalSeconds: 0,
+      },
+    });
+    expect(result.intensityDistribution.zones).toHaveLength(6);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it("activityStats returns per-activity rows from the analytics store", async () => {
     const sensorStore = makeMockSensorStore([
       [

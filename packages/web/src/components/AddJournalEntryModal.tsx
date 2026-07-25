@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
+import { ModalDialog, ModalDialogTitle } from "./ModalDialog.tsx";
 
 interface AddJournalEntryModalProps {
   isOpen: boolean;
@@ -39,6 +40,7 @@ export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalE
   const [answerNumeric, setAnswerNumeric] = useState<string>("");
   const [answerText, setAnswerText] = useState("");
   const [booleanValue, setBooleanValue] = useState(false);
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const selectedQuestion = useMemo(
     () => questions.find((q) => q.slug === selectedSlug),
@@ -68,129 +70,125 @@ export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalE
     });
   }
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <button
-        type="button"
-        tabIndex={-1}
-        className="absolute inset-0 bg-black/60"
-        onClick={onClose}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onClose();
-        }}
-        aria-label="Close modal overlay"
-      />
-      <div className="relative bg-surface-solid rounded-xl p-6 w-full max-w-md shadow-xl">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Add Journal Entry</h3>
+    <ModalDialog
+      open={isOpen}
+      onClose={onClose}
+      closeOnInteractOutside
+      initialFocusRef={dateInputRef}
+      overlayClassName="bg-black/60"
+      contentClassName="bg-surface-solid rounded-xl p-6 w-[calc(100%-2rem)] max-w-md shadow-xl"
+    >
+      <ModalDialogTitle className="text-lg font-semibold text-foreground mb-4">
+        Add Journal Entry
+      </ModalDialogTitle>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label htmlFor="journal-date" className="block text-sm font-medium text-muted mb-1">
+            Date
+          </label>
+          <input
+            ref={dateInputRef}
+            id="journal-date"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="journal-question" className="block text-sm font-medium text-muted mb-1">
+            Question
+          </label>
+          <select
+            id="journal-question"
+            value={selectedSlug}
+            onChange={(e) => {
+              setSelectedSlug(e.target.value);
+              setAnswerNumeric("");
+              setAnswerText("");
+              setBooleanValue(false);
+            }}
+            className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
+          >
+            <option value="">Select a question...</option>
+            {questions.map((q) => (
+              <option key={q.slug} value={q.slug}>
+                {q.display_name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {selectedQuestion && (
           <div>
-            <label htmlFor="journal-date" className="block text-sm font-medium text-muted mb-1">
-              Date
+            <label htmlFor="journal-answer" className="block text-sm font-medium text-muted mb-1">
+              Answer
             </label>
-            <input
-              id="journal-date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
-            />
+
+            {selectedQuestion.data_type === "boolean" && (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className={`px-4 py-2 rounded-lg text-sm font-medium ${!booleanValue ? "bg-accent/15 text-accent" : "bg-surface-hover text-muted"}`}
+                  onClick={() => setBooleanValue(false)}
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  className={`px-4 py-2 rounded-lg text-sm font-medium ${booleanValue ? "bg-accent/15 text-accent" : "bg-surface-hover text-muted"}`}
+                  onClick={() => setBooleanValue(true)}
+                >
+                  Yes
+                </button>
+              </div>
+            )}
+
+            {selectedQuestion.data_type === "numeric" && (
+              <input
+                id="journal-answer"
+                type="number"
+                step="any"
+                value={answerNumeric}
+                onChange={(e) => setAnswerNumeric(e.target.value)}
+                placeholder={selectedQuestion.unit ? `Value (${selectedQuestion.unit})` : "Value"}
+                className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
+              />
+            )}
+
+            {selectedQuestion.data_type === "text" && (
+              <textarea
+                id="journal-answer"
+                value={answerText}
+                onChange={(e) => setAnswerText(e.target.value)}
+                placeholder="Your answer..."
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm resize-none"
+              />
+            )}
           </div>
+        )}
 
-          <div>
-            <label htmlFor="journal-question" className="block text-sm font-medium text-muted mb-1">
-              Question
-            </label>
-            <select
-              id="journal-question"
-              value={selectedSlug}
-              onChange={(e) => {
-                setSelectedSlug(e.target.value);
-                setAnswerNumeric("");
-                setAnswerText("");
-                setBooleanValue(false);
-              }}
-              className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
-            >
-              <option value="">Select a question...</option>
-              {questions.map((q) => (
-                <option key={q.slug} value={q.slug}>
-                  {q.display_name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {selectedQuestion && (
-            <div>
-              <label htmlFor="journal-answer" className="block text-sm font-medium text-muted mb-1">
-                Answer
-              </label>
-
-              {selectedQuestion.data_type === "boolean" && (
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    className={`px-4 py-2 rounded-lg text-sm font-medium ${!booleanValue ? "bg-accent/15 text-accent" : "bg-surface-hover text-muted"}`}
-                    onClick={() => setBooleanValue(false)}
-                  >
-                    No
-                  </button>
-                  <button
-                    type="button"
-                    className={`px-4 py-2 rounded-lg text-sm font-medium ${booleanValue ? "bg-accent/15 text-accent" : "bg-surface-hover text-muted"}`}
-                    onClick={() => setBooleanValue(true)}
-                  >
-                    Yes
-                  </button>
-                </div>
-              )}
-
-              {selectedQuestion.data_type === "numeric" && (
-                <input
-                  id="journal-answer"
-                  type="number"
-                  step="any"
-                  value={answerNumeric}
-                  onChange={(e) => setAnswerNumeric(e.target.value)}
-                  placeholder={selectedQuestion.unit ? `Value (${selectedQuestion.unit})` : "Value"}
-                  className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm"
-                />
-              )}
-
-              {selectedQuestion.data_type === "text" && (
-                <textarea
-                  id="journal-answer"
-                  value={answerText}
-                  onChange={(e) => setAnswerText(e.target.value)}
-                  placeholder="Your answer..."
-                  rows={3}
-                  className="w-full px-3 py-2 rounded-lg bg-surface-hover border border-border text-foreground text-sm resize-none"
-                />
-              )}
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg text-sm text-muted hover:text-foreground"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!selectedSlug || createMutation.isPending}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white disabled:opacity-50"
-            >
-              {createMutation.isPending ? "Saving..." : "Save"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg text-sm text-muted hover:text-foreground"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!selectedSlug || createMutation.isPending}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white disabled:opacity-50"
+          >
+            {createMutation.isPending ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </form>
+    </ModalDialog>
   );
 }

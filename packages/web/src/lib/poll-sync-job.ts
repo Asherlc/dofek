@@ -19,11 +19,20 @@ export interface PollSyncJobOptions {
     state: { status: "syncing" | "done" | "error"; message?: string; percentage?: number },
   ) => void;
   onComplete: () => void;
+  onError?: (error: unknown) => void;
   pollIntervalMs?: number;
 }
 
 export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
-  const { jobId, providerIds, fetchStatus, updateState, onComplete, pollIntervalMs = 1000 } = opts;
+  const {
+    jobId,
+    providerIds,
+    fetchStatus,
+    updateState,
+    onComplete,
+    onError,
+    pollIntervalMs = 1000,
+  } = opts;
 
   const resetSyncing = () => {
     for (const pid of providerIds) {
@@ -35,7 +44,8 @@ export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
     let job: SyncJobStatus | null;
     try {
       job = await fetchStatus(jobId);
-    } catch {
+    } catch (error: unknown) {
+      onError?.(error);
       resetSyncing();
       return;
     }

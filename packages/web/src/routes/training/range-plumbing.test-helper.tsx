@@ -10,10 +10,36 @@ const state = vi.hoisted<{
   days: TimeRangeDays;
   queryCalls: Array<{ name: string; input: unknown; options?: unknown }>;
   routeComponents: Record<string, ComponentType>;
+  trainingVolumeQuery: {
+    data: unknown;
+    isLoading: boolean;
+    error: Error | null;
+  };
+  trainingHrZonesQuery: {
+    data: unknown;
+    isLoading: boolean;
+    error: Error | null;
+  };
 }>(() => ({
   days: 90,
   queryCalls: [],
   routeComponents: {},
+  trainingVolumeQuery: { data: [], isLoading: false, error: null },
+  trainingHrZonesQuery: {
+    data: {
+      maxHr: null,
+      weeks: [],
+      intensityDistribution: {
+        model: "karvonen-five-zone",
+        activityScope: "endurance",
+        totalSeconds: 0,
+        zones: [],
+        explanation: "Server intensity explanation",
+      },
+    },
+    isLoading: false,
+    error: null,
+  },
 }));
 
 export { state };
@@ -53,7 +79,9 @@ vi.mock("../../components/PolarizationTrendChart.tsx", () => ({
 vi.mock("../../components/ProgressiveOverloadCards.tsx", () => ({
   ProgressiveOverloadCards: () => <div />,
 }));
-vi.mock("../../components/QueryStatePanel.tsx", () => ({ QueryStatePanel: () => <div /> }));
+vi.mock("../../components/QueryStatePanel.tsx", () => ({
+  QueryStatePanel: ({ error }: { error?: Error }) => <div>{error?.message}</div>,
+}));
 vi.mock("../../components/RampRateChart.tsx", () => ({ RampRateChart: () => <div /> }));
 vi.mock("../../components/ReadinessScoreCard.tsx", () => ({ ReadinessScoreCard: () => <div /> }));
 vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
@@ -102,10 +130,15 @@ vi.mock("../../lib/trpc.ts", () => ({
       hrZones: {
         useQuery: (input: unknown, options?: unknown) => {
           state.queryCalls.push({ name: "training.hrZones", input, options });
-          return { data: { maxHr: null, weeks: [] }, isLoading: false, error: null };
+          return state.trainingHrZonesQuery;
         },
       },
-      weeklyVolume: { useQuery: recordQuery("training.weeklyVolume") },
+      weeklyVolume: {
+        useQuery: (input: unknown, options?: unknown) => {
+          state.queryCalls.push({ name: "training.weeklyVolume", input, options });
+          return state.trainingVolumeQuery;
+        },
+      },
     },
   },
 }));
@@ -134,4 +167,20 @@ export function expectRegistryInputs(
 export function resetRangePlumbingState() {
   state.days = 90;
   state.queryCalls.length = 0;
+  state.trainingVolumeQuery = { data: [], isLoading: false, error: null };
+  state.trainingHrZonesQuery = {
+    data: {
+      maxHr: null,
+      weeks: [],
+      intensityDistribution: {
+        model: "karvonen-five-zone",
+        activityScope: "endurance",
+        totalSeconds: 0,
+        zones: [],
+        explanation: "Server intensity explanation",
+      },
+    },
+    isLoading: false,
+    error: null,
+  };
 }

@@ -16434,6 +16434,57 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   replacement runner. If runner I/O failures recur, escalate with the failing
   runner evidence rather than adding repository-level retry behavior.
 
+## 2026-07-24 — Duplicate HealthKit Refreshes Exhausted a Web Pool
+
+- **Status:** Root cause fixed and validated locally; production deployment and
+  post-deploy observation pending.
+- **Symptoms:** A production `mobileDashboard.recovery` request failed once at
+  `2026-07-25T02:34:59.787Z` with the first fatal line
+  `timeout exceeded when trying to connect`. The originating
+  [Sentry issue](https://east-bay-software.sentry.io/issues/7632025587/) showed
+  that the inner `pg-pool` acquisition exceeded the configured 10-second
+  connection timeout before the HRV SQL reached PostgreSQL.
+- **User impact:** One observed mobile recovery refresh returned a server error.
+  The next recovery request succeeded, and no PostgreSQL restart, recovery-mode
+  transition, or server-wide connection-limit failure occurred.
+- **Evidence:** Swarm logs from the same `dofek_web.2` replica showed two
+  HealthKit ingestion waves about 12 seconds apart, followed by duplicate
+  `mobileDashboard.training` requests lasting 38.7 and 29.4 seconds while the
+  recovery request waited for a five-connection process pool. PostgreSQL
+  `pg_stat_statements` showed the three climbing queries used by the training
+  route averaging about 4.7–7.6 seconds. Code inspection confirmed that both
+  the root background HealthKit initializer and overview `useAutoSync` imported
+  HealthKit data, after which the root path invalidated every cached query.
+  The database was healthy during and after the event, so increasing the pool
+  or its timeout would only have hidden the duplicate client workload.
+- **Root cause:** Two independent mobile startup owners imported the same
+  HealthKit data and triggered overlapping dashboard refetches; the duplicate
+  long-running training reads occupied the replica's five PostgreSQL
+  connections long enough for recovery's pool acquisition to time out.
+- **Fix / mitigation:** Made the root background HealthKit service the single
+  ingestion owner, retained overview auto-sync only for API-provider sync and
+  outbound Dofek food writeback, and replaced the root-wide cache invalidation
+  with one shared allowlist of health-derived query families. Added observable
+  OpenTelemetry gauges for total, idle, and waiting `pg-pool` state so future
+  contention is directly distinguishable from PostgreSQL execution time.
+  Node-postgres recommends measuring application instance and pool behavior
+  before changing pool size in horizontally scaled systems
+  ([pool-sizing guide](https://node-postgres.com/guides/pool-sizing)), and
+  TanStack Query supports predicate-scoped invalidation for selecting the
+  affected cached queries
+  ([QueryClient reference](https://tanstack.com/query/latest/docs/reference/QueryClient#queryclientinvalidatequeries)).
+- **Validation:** The six focused suites pass 55 tests, including async
+  completion-error reporting and observable gauge values. `pnpm test:changed`
+  passes 485 unit/mobile tests, root and mobile package typechecks pass, and the
+  complete `pnpm lint` chain passes after starting this workspace's isolated
+  ClickHouse service and generating its local port environment. No retry,
+  timeout, or pool-size resilience knob changed.
+- **Remaining risk / follow-up:** Deploy the mobile and server changes together,
+  then verify that only one HealthKit ingestion wave occurs per startup and
+  that `postgres.pool.requests.waiting` remains zero during dashboard refreshes.
+  The slow climbing reads remain legitimate optimization candidates, but they
+  did not independently cause this incident and should be profiled separately
+  before changing their query design.
 ## 2026-07-24 — Production Deploy Exhausted the Docker Root Disk
 
 - **Status:** Production disk pressure remediated and all enabled services
@@ -16864,6 +16915,51 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   sanitization separately only if a future failing run needs those logs; it did
   not cause this mutation timeout.
 
+## 2026-07-25 — Local ClickHouse Integration Rebuild Exhausted Shared VM Memory
+
+- **Status:** Root cause identified and broad local validation passed after
+  completed workspaces naturally released shared Docker VM memory.
+- **Symptoms:** A broad router integration run failed during ClickHouse fixture
+  construction, and subsequent scoped Compose and Docker status commands did
+  not receive a daemon response.
+- **User impact:** No production users were affected. Local validation for
+  issue #1750 could not complete the broad `router-data` suite.
+- **Evidence:** The initial exact failing command was
+  `pnpm test:integration -- packages/server/src/routers/router-data.integration.test.ts`.
+  Its first fatal line was `Error: socket hang up` while executing the fixture
+  `INSERT INTO ... v_activity`. The scoped
+  `pnpm compose -- down --remove-orphans --volumes`, `pnpm compose -- ps -a`,
+  and `docker info` commands subsequently received no daemon response and were
+  manually terminated. After the daemon recovered normally, only the
+  `issue-1750` Compose project was removed and recreated. The unchanged command
+  then failed before any assertion with ClickHouse error 241:
+  `(total) memory limit exceeded`, at 954.95 MiB RSS against an 882.57 MiB
+  limit. ClickHouse reported only 300–500 MiB of OS memory available in the
+  7.65 GiB Docker VM. `MemoryWorker` logs showed it repeatedly lowering the
+  server hard limit from the configured 3 GiB ceiling to roughly 600–800 MiB
+  based on available memory. Concurrent isolated workspaces each had
+  ClickHouse processes using roughly 600–680 MiB. ClickHouse documents that
+  memory overcommit terminates an overcommitted query when the server reaches
+  its memory limit:
+  <https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#memory-limit-exceeded-for-query>.
+- **Root cause:** Concurrent workspace databases exhausted the shared Docker
+  VM's available memory, so ClickHouse dynamically lowered its server memory
+  limit below the fixture rebuild's measured peak and terminated the query; no
+  product assertion failed.
+- **Fix / mitigation:** No product test, timeout, retry, memory limit, or
+  application behavior was changed. Cleanup and fresh startup were restricted
+  to the `issue-1750` Compose project, preserving every other workspace.
+- **Validation:** The focused serial
+  `efficiency.polarizationTrend` integration suite passed all seven tests,
+  including exact 80% and 90% zone boundaries, insufficient-data status,
+  server-computed totals, and the serialized polarization classification.
+  After available memory rose to 2.22 GiB and ClickHouse's dynamic server limit
+  rose to 2.36 GiB, the unchanged broad `router-data` integration command
+  passed all 51 tests without an ad-hoc wait, retry, timeout, or memory-setting
+  change.
+- **Remaining risk / follow-up:** Concurrent local ClickHouse stacks can still
+  exhaust the fixed-size shared Docker VM. Keep workspace-scoped cleanup as
+  part of completed work and rely on hosted CI as the full integration gate.
 ## 2026-07-24 — Metro Secret Load Could Not Reach Infisical
 
 - **Status:** External network failure identified on PR #1945; replacement CI
@@ -16979,3 +17075,144 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   view migration completes, observe at least one full analytics cycle, compare
   model read rows/bytes and duration in `system.query_log`, and confirm the
   analytics-worker remains healthy without changing the four-minute ceiling.
+
+## 2026-07-25 — Failed Deploy Left ClickHouse Consumers Quiesced
+
+- **Status:** Unresolved; the affected [Deploy Web
+  run](https://github.com/Asherlc/dofek/actions/runs/30147912915) left both
+  ClickHouse consumer services scaled to zero.
+- **Symptoms:** Processing status reported that recomputing activities, sleep,
+  recovery, training, and body was taking longer than expected. The production
+  `analytics-worker` and `metric-stream-clickhouse-sink` services both showed
+  `0/0` replicas after the deployment; their responsibilities are documented in
+  the [metric-stream
+  runbook](metric-stream-redpanda-r2-runbook.md#required-services).
+- **User impact:** Provider processing operations cannot advance through
+  metric-stream CDC and analytics. Five operations had pending reconciliation
+  work during diagnosis, including the activity, sleep, recovery, training,
+  and body dataset set shown in the UI. The [processing-status
+  runbook](processing-status-runbook.md#monitoring-and-retention) defines
+  non-completed reconciliation work as an alert condition.
+- **Evidence:** The exact failing step was `Deploy stack without ClickHouse
+  consumers` in [Deploy Web run
+  30147912915](https://github.com/Asherlc/dofek/actions/runs/30147912915).
+  Its first fatal line was `failed to update service dofek_cdc-health: Error
+  response from daemon: rpc error: code = Unknown desc = update out of
+  sequence`. Every subsequent workflow step, including `Deploy ClickHouse
+  consumer services`, was skipped. The reconciliation monitor repeatedly
+  reported `checked 5, completed 0, waiting 5`, matching the monitor format
+  implemented by
+  [`check-clickhouse-cdc.ts`](../scripts/check-clickhouse-cdc.ts).
+- **Suspected root cause:** The reviewed [deployment
+  workflow](../.github/workflows/deploy-web-stack.yml) first applies the
+  consumer-quiesce override, then restores the consumers only after the
+  quiesced stack deploy and CDC setup succeed. Docker Swarm returned `update
+  out of sequence` while updating `dofek_cdc-health`, so the first step exited
+  and the guarded restoration step did not run. The underlying reason Swarm
+  rejected that service update was not verified; Docker documents that service
+  updates can stop when an update fails in its [Swarm service update
+  guidance](https://docs.docker.com/engine/swarm/services/#configure-a-services-update-behavior).
+- **Mitigation performed:** None. Diagnosis was read-only, so no production
+  mutation or consumer restoration was attempted.
+- **Recovery plan:** Re-run the reviewed [Deploy Web
+  workflow](../.github/workflows/deploy-web-stack.yml) so its full-stack step
+  restores `analytics-worker` and `metric-stream-clickhouse-sink`. Then use the
+  [freshness checks](metric-stream-redpanda-r2-runbook.md#freshness-checks) and
+  [processing reconciliation
+  checks](processing-status-runbook.md#diagnosis) to verify
+  that the sink acknowledges queued batches, reconciliation advances, the
+  analytics build succeeds, and query caches refresh.
+- **Remaining risk / follow-up:** The affected operations have accumulated
+  pending work and have no finite completion ETA while the consumers remain at
+  zero replicas. Add a failure cleanup or recovery path that restores
+  deliberately quiesced services without hiding the original deployment
+  failure, and make processing status distinguish unavailable infrastructure
+  from an ordinarily delayed operation.
+
+## 2026-07-25 — Integration Shard Failed Fetching the setup-uv Manifest
+
+- **Status:** Resolved on rerun without a repository change.
+- **Symptoms:** `Test / Integration Tests (2/4)` stopped during
+  `astral-sh/setup-uv` before any integration test command ran.
+- **User impact:** PR #1953 was temporarily blocked by the failed test gate.
+- **Evidence:** [Attempt 1 of CI run
+  30161182548](https://github.com/Asherlc/dofek/actions/runs/30161182548/attempts/1)
+  fell back to resolving the latest uv release from
+  `https://raw.githubusercontent.com/astral-sh/versions/main/v1/uv.ndjson`,
+  then emitted the first fatal line `fetch failed`. The other three integration
+  shards completed the same setup action successfully.
+- **Root cause:** The setup action's external manifest request failed. No
+  repository test or application code had executed, and the available runner
+  log did not identify the underlying network cause. The action's documented
+  [version resolution](https://github.com/astral-sh/setup-uv#version) uses the
+  latest release when no version is specified.
+- **Fix / mitigation:** No code or timeout change was made. The failed jobs
+  were rerun after the external request failure was identified.
+- **Validation:** [Attempt 2 of CI run
+  30161182548](https://github.com/Asherlc/dofek/actions/runs/30161182548/attempts/2)
+  completed integration shard 2, the unit-and-integration gate, the test gate,
+  and the overall CI gate successfully.
+- **Remaining risk / follow-up:** External release-metadata availability can
+  still block CI setup. If this recurs, evaluate pinning the uv tool version in
+  the reviewed workflow using setup-uv's documented `version` input rather than
+  adding retries or broader timeouts.
+
+## 2026-07-25 — Mobile Preview Secret Load Timed Out
+
+- **Status:** External runner-egress failure identified on PR #1949;
+  replacement CI pending.
+- **Symptoms:** `Publish Mobile Preview OTA` failed before the Expo update
+  command ran.
+- **User impact:** No production users were affected. PR #1949 remained blocked
+  from merge.
+- **Evidence:** The exact failed step was
+  `Load mobile preview secrets from Infisical`, which ran
+  `infisical login --method=oidc-auth`. Its first causal fatal line was
+  `Post "https://app.infisical.com/api/v1/auth/oidc-auth/login": dial tcp
+  3.212.82.44:443: i/o timeout`; the subsequent authentication error and exit
+  code 1 followed from that connection failure.
+- **Root cause:** The hosted runner could not establish an HTTPS connection to
+  Infisical's OIDC endpoint after successfully checking out the repository,
+  installing dependencies, and minting the GitHub OIDC token. Infisical
+  documents that the GitHub token is exchanged at that endpoint for a
+  short-lived access token:
+  <https://infisical.com/docs/documentation/platform/identities/oidc-auth/github>.
+- **Fix / mitigation:** Trigger replacement CI on a fresh hosted runner. No
+  authentication fallback, retry, timeout, cached secret, or application
+  behavior changed.
+- **Validation:** The preceding PR run passed the same mobile-preview workflow,
+  and local lint, typechecks, focused tests, and the 13,453-test unit/mobile
+  suite pass on the current source. The replacement run must complete the
+  Infisical exchange and publish step before merge.
+- **Remaining risk / follow-up:** If independent runners repeatedly time out
+  against Infisical, investigate provider availability and runner egress using
+  the captured endpoint evidence before changing workflow behavior.
+
+## 2026-07-25 — Mobile Preview Object Upload Returned InternalError
+
+- **Status:** Resolved after the external upload service recovered; replacement
+  CI passed.
+- **Symptoms:** PR #1956's `Publish Mobile Preview OTA` check failed after the
+  iOS bundle and OTA export completed successfully.
+- **User impact:** No production users were affected. The PR remained blocked
+  until an independently scheduled replacement publish passed.
+- **Evidence:** The exact failed step was `Publish OTA to PR branch`. The first
+  fatal line was
+  `File upload failed ... <Code>InternalError</Code><Message>We encountered an internal error. Please try again.</Message>`.
+  The export had already produced the iOS bundle and loaded one platform, so
+  the failure occurred at the object upload boundary rather than during
+  application compilation. The OTA health endpoint subsequently returned HTTP
+  200. The S3 API defines `InternalError` as an HTTP 500 server error:
+  <https://docs.aws.amazon.com/AmazonS3/latest/API/API_Error.html>.
+- **Root cause:** The S3-compatible OTA object-upload service returned its
+  server-side `InternalError` response for the generated bundle. There was no
+  application build, credential, or repository test failure.
+- **Fix / mitigation:** Schedule the failed workflow on a replacement hosted
+  runner after the OTA health endpoint recovered. No retry, timeout, fallback,
+  workflow behavior, or application code changed.
+- **Validation:** The replacement `Publish Mobile Preview OTA` job completed
+  checkout, dependency setup, secret loading, export, upload, and PR-comment
+  publication successfully in 2m18s on the same source revision.
+- **Remaining risk / follow-up:** If independent publishes repeatedly return
+  `InternalError`, correlate the OTA service and object-storage logs before
+  changing workflow behavior.

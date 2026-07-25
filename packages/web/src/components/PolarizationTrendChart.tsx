@@ -25,26 +25,10 @@ function formatMinutes(seconds: number): string {
   return `${mins}m`;
 }
 
-interface PolarizationWeekData {
-  week: string;
-  polarizationIndex: number | null;
-  z1Seconds: number;
-  z2Seconds: number;
-  z3Seconds: number;
-}
-
-function missingZonesForWeek(week: PolarizationWeekData): string[] {
-  const missing: string[] = [];
-  if (week.z1Seconds <= 0) missing.push("Zone 1");
-  if (week.z2Seconds <= 0) missing.push("Zone 2");
-  if (week.z3Seconds <= 0) missing.push("Zone 3");
-  return missing;
-}
-
 function findWeekForAxisValue(
-  weeks: PolarizationWeekData[],
+  weeks: PolarizationWeek[],
   axisValue: string,
-): PolarizationWeekData | null {
+): PolarizationWeek | null {
   const axisDate = new Date(axisValue);
   if (Number.isNaN(axisDate.getTime())) return null;
   const axisDateOnly = formatDateYmd(axisDate);
@@ -56,7 +40,13 @@ function findWeekForAxisValue(
   return null;
 }
 
-export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
+function polarizationStatusColor(status: PolarizationWeek["status"]): string {
+  if (status === "polarized") return statusColors.positive;
+  if (status === "not_polarized") return statusColors.danger;
+  return statusColors.warning;
+}
+
+export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
   const piValues = weeks
     .map((w) => w.polarizationIndex)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
@@ -97,24 +87,14 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         const pi = weekData.polarizationIndex;
         const piStr = pi !== null ? formatNumber(pi, 3) : "N/A";
         const dateLabel = formatDateMedium(weekData.week);
-        const missingZones = missingZonesForWeek(weekData);
-        const status =
-          pi === null
-            ? `<span style="color:${statusColors.warning}">Insufficient zone coverage</span>`
-            : pi >= 2.0
-              ? `<span style="color:${statusColors.positive}">Polarized</span>`
-              : `<span style="color:${statusColors.danger}">Not polarized</span>`;
-        const missingZonesText =
-          pi === null && missingZones.length > 0
-            ? `Missing zones this week: ${missingZones.join(", ")}`
-            : null;
+        const status = `<span style="color:${polarizationStatusColor(weekData.status)}">${escapeTooltipHtml(weekData.statusLabel)}</span>`;
         return [
           `<strong>Week of ${escapeTooltipHtml(dateLabel)}</strong>`,
           `Polarization Index: ${piStr} ${status}`,
           `Zone 1 (easy, <80% max HR): ${formatMinutes(weekData.z1Seconds)}`,
           `Zone 2 (threshold, 80-90% max HR): ${formatMinutes(weekData.z2Seconds)}`,
           `Zone 3 (high, ≥90% max HR): ${formatMinutes(weekData.z3Seconds)}`,
-          missingZonesText,
+          escapeTooltipHtml(weekData.explanation),
         ]
           .filter((line): line is string => typeof line === "string")
           .join("<br/>");
@@ -174,9 +154,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         data: weeks.map((w) => ({
           value: [w.week, w.polarizationIndex],
           itemStyle:
-            w.polarizationIndex !== null
-              ? { color: w.polarizationIndex >= 2.0 ? statusColors.positive : statusColors.danger }
-              : undefined,
+            w.polarizationIndex !== null ? { color: polarizationStatusColor(w.status) } : undefined,
         })),
         connectNulls: false,
         smooth: true,
@@ -224,8 +202,8 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
         emptyMessage="Not enough HR data to compute polarization index"
       />
       <p className="text-xs text-dim mt-1">
-        Index above 2.0 = well-polarized training. Zone 1 = easy (&lt;80% max HR), Zone 2 =
-        threshold (80-90% max HR), Zone 3 = high intensity (&ge;90% max HR).
+        Index above 2.00 = polarized training. Zone 1 = easy (&lt;80% max HR), Zone 2 = threshold
+        (80-90% max HR), Zone 3 = high intensity (&ge;90% max HR).
       </p>
     </div>
   );

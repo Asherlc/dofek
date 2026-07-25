@@ -82,8 +82,13 @@ const mockProviders: {
   isLoading: false,
 };
 
-const mockStats: { data: MockProviderStats[]; isLoading: boolean } = {
+const mockStats: {
+  data: MockProviderStats[] | undefined;
+  error: Error | null;
+  isLoading: boolean;
+} = {
   data: [],
+  error: null,
   isLoading: false,
 };
 const mockRecords: {
@@ -93,6 +98,28 @@ const mockRecords: {
   error: null;
 } = {
   data: { rows: [], columns: [] },
+  isLoading: false,
+  isError: false,
+  error: null,
+};
+const mockDetailLogs: {
+  data:
+    | Array<{
+        id: string;
+        syncedAt: string;
+        dataType: string;
+        status: string;
+        recordCount: number | null;
+        durationMs: number | null;
+        errorMessage: string | null;
+        authFailureReason: string | null;
+      }>
+    | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+} = {
+  data: [],
   isLoading: false,
   isError: false,
   error: null,
@@ -128,6 +155,7 @@ const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 const mockPollSyncJob = vi.fn();
+const mockSyncStatusFetch = vi.fn();
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -145,7 +173,7 @@ vi.mock("../lib/trpc.ts", () => ({
       disconnect: { useMutation: () => mockDisconnectMutation },
       deleteAllData: { useMutation: () => mockDeleteAllDataMutation },
       deletionStatus: { useQuery: () => ({ data: undefined, error: null }) },
-      logs: { useQuery: () => ({ data: [], isLoading: false }) },
+      logs: { useQuery: () => mockDetailLogs },
       logFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
       availableDataTypes: { useQuery: () => mockAvailableDataTypes },
       records: { useQuery: () => mockRecords },
@@ -162,7 +190,7 @@ vi.mock("../lib/trpc.ts", () => ({
       sync: {
         providers: { invalidate: vi.fn() },
         providerStats: { invalidate: vi.fn() },
-        syncStatus: { fetch: vi.fn() },
+        syncStatus: { fetch: mockSyncStatusFetch },
       },
       providerDetail: {
         availableDataTypes: { invalidate: vi.fn() },
@@ -195,10 +223,15 @@ beforeEach(() => {
   mockDataHealth.error = null;
   mockActiveImports.data = [];
   mockStats.data = [];
+  mockStats.error = null;
   mockRecords.data = { rows: [], columns: [] };
   mockRecords.isLoading = false;
   mockRecords.isError = false;
   mockRecords.error = null;
+  mockDetailLogs.data = [];
+  mockDetailLogs.isLoading = false;
+  mockDetailLogs.isError = false;
+  mockDetailLogs.error = null;
 });
 
 afterEach(() => {
@@ -281,6 +314,79 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(
       screen.getByText("Analytics data is temporarily unavailable. Please retry in a minute."),
     ).toBeTruthy();
+  });
+
+  it("renders a not-found state without exposing generic sync controls", async () => {
+    mockUseParams.mockReturnValue({ id: "does-not-exist" });
+    mockProviders.data = [];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Provider not found")).toBeTruthy();
+    expect(
+      screen.getByText("This provider is unavailable. Return to Data Sources to choose another."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Sync Controls")).toBeNull();
+    expect(screen.queryByText("Sync Last 7 Days")).toBeNull();
+  });
+
+  it("shows provider statistics failures while retaining known provider details", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockStats.data = undefined;
+    mockStats.error = new Error("Provider statistics are temporarily unavailable");
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByRole("heading", { name: "Wahoo" })).toBeTruthy();
+    expect(screen.getByText("Provider statistics are temporarily unavailable")).toBeTruthy();
+    expect(screen.getByText("Sync Controls")).toBeTruthy();
+  });
+
+  it("keeps cached sync history visible when its background refresh fails", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockDetailLogs.data = [
+      {
+        id: "log-1",
+        syncedAt: "2026-07-24T12:00:00.000Z",
+        dataType: "activities",
+        status: "success",
+        recordCount: 12,
+        durationMs: 100,
+        errorMessage: null,
+        authFailureReason: null,
+      },
+    ];
+    mockDetailLogs.isError = true;
+    mockDetailLogs.error = new Error("Sync history refresh failed");
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Sync history refresh failed")).toBeTruthy();
+    expect(screen.getByText("activities")).toBeTruthy();
+    expect(screen.getByText("12")).toBeTruthy();
   });
 
   it("shows 'Import only' instead of 'Connected' for import-only providers", async () => {
@@ -517,8 +623,62 @@ describe("ProviderDetailPage import-only providers", () => {
       fireEvent.click(screen.getByText("Sync Last 7 Days"));
     });
 
-    expect(mockCaptureException).toHaveBeenCalledWith(syncError, { context: "sync-provider" });
+    expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+      operation: "sync.triggerSync",
+      providerId: "wahoo",
+    });
     expect(screen.getByText("Queue unavailable")).toBeTruthy();
+  });
+
+  it("reports provider polling failures without the job id", async () => {
+    const jobId = "secret-provider-job-id";
+    const pollError = new Error("Sync status unavailable");
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      jobId,
+      jobIds: [jobId],
+      providerJobs: [{ providerId: "wahoo", jobId, queueName: "sync-wahoo" }],
+      providerResults: [{ providerId: "wahoo", status: "started", jobId }],
+    });
+    mockPollSyncJob.mockImplementationOnce(
+      async ({
+        fetchStatus,
+        onError,
+      }: {
+        fetchStatus: (id: string) => Promise<unknown>;
+        onError: (error: unknown) => void;
+      }) => {
+        await fetchStatus(jobId);
+        onError(pollError);
+      },
+    );
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+
+    expect(mockSyncStatusFetch).toHaveBeenCalledWith(
+      { jobId },
+      { staleTime: 0, meta: { errorReportedLocally: true } },
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(pollError, {
+      operation: "sync.syncStatus",
+      providerId: "wahoo",
+    });
+    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(jobId);
   });
 
   it("does not trigger sync for an inverted date range", async () => {

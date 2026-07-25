@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -63,6 +64,7 @@ function BreathworkPage() {
   const [pendingSession, setPendingSession] = useState<CompletedSessionInput | null>(null);
 
   const logMutation = trpc.breathwork.logSession.useMutation({
+    meta: locallyReportedErrorMeta,
     onSuccess: () => {
       setPendingSession(null);
       utils.breathwork.history.invalidate();
