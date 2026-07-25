@@ -17,6 +17,7 @@ import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -98,8 +99,12 @@ export function NutritionPage() {
       foodQuery.refetch();
     },
   });
-  const analyzeItemsMutation = trpc.food.analyzeItemsWithAi.useMutation();
-  const createAiEntryMutation = trpc.food.create.useMutation();
+  const analyzeItemsMutation = trpc.food.analyzeItemsWithAi.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const createAiEntryMutation = trpc.food.create.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   type AiMealItems = Awaited<ReturnType<typeof analyzeItemsMutation.mutateAsync>>["items"];
   const [pendingAiMealItems, setPendingAiMealItems] = useState<AiMealItems>([]);
 
