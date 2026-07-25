@@ -991,9 +991,14 @@ jobs:
           persist-credentials: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: packages/mobile/modules/health-kit/.build
-          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
+          path: |
+            packages/mobile/modules/core-motion/.build
+            packages/mobile/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/core-motion/Package.swift', 'packages/mobile/modules/health-kit/Package.swift') }}
           restore-keys: swift-build-v1-
+      - name: Run Core Motion Swift tests
+        working-directory: packages/mobile/modules/core-motion
+        run: swift test
       - name: Run Swift tests with coverage
         run: |
           cd packages/mobile/modules/health-kit
