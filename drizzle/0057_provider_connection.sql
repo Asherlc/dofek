@@ -1,5 +1,6 @@
-ALTER TABLE fitness.provider
-ALTER COLUMN user_id DROP NOT NULL;
+-- Provider catalog rows no longer have an owner; connection ownership is backfilled separately.
+-- squawk-ignore ban-drop-not-null
+ALTER TABLE fitness.provider ALTER COLUMN user_id DROP NOT NULL;
 --> statement-breakpoint
 
 CREATE TABLE fitness.provider_connection (
@@ -11,7 +12,8 @@ CREATE TABLE fitness.provider_connection (
 );
 --> statement-breakpoint
 
-CREATE INDEX provider_connection_provider_idx
+-- The table is created empty above, so a direct index build cannot block existing writes.
+CREATE INDEX provider_connection_provider_idx -- noqa: PG01
 ON fitness.provider_connection (provider_id);
 --> statement-breakpoint
 
