@@ -59,10 +59,10 @@ describe("clickHouseMigrations", () => {
       ]),
     });
     expect(migrations.at(-1)).toMatchObject({
-      id: "0054_activity_load_lifecycle",
+      id: "0056_daily_recovery_lifecycle",
       statements: expect.arrayContaining([
-        expect.stringContaining("ALTER TABLE analytics.daily_activity_load"),
-        expect.stringContaining("ALTER TABLE analytics.daily_strain"),
+        expect.stringContaining("ALTER TABLE analytics.daily_recovery_inputs"),
+        expect.stringContaining("ALTER TABLE analytics.daily_recovery"),
       ]),
     });
   });

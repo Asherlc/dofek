@@ -4,11 +4,22 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, date)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
-WITH daily_metrics AS (
+WITH {% if is_incremental() %}
+existing_keys AS (
+    SELECT
+        user_id,
+        date
+    FROM {{ this }} FINAL
+    WHERE is_deleted = 0
+),
+{% endif %}
+
+daily_metrics AS (
     SELECT
         user_id,
         date,
@@ -117,15 +128,29 @@ inputs_with_baselines AS (
     FROM daily_inputs
 ),
 
+result_keys AS (
+    SELECT
+        user_id,
+        date
+    FROM inputs_with_baselines
+    {% if is_incremental() %}
+    UNION DISTINCT
+    SELECT
+        user_id,
+        date
+    FROM existing_keys
+    {% endif %}
+),
+
 refresh_clock AS (
     SELECT
         toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-        now64(9) AS refreshed_at
+        now64(9, 'UTC') AS refreshed_at
 )
 
 SELECT
-    CAST(inputs_with_baselines.user_id, 'UUID') AS user_id,
-    CAST(inputs_with_baselines.date, 'Date') AS date,
+    CAST(result_keys.user_id, 'UUID') AS user_id,
+    CAST(result_keys.date, 'Date') AS date,
     inputs_with_baselines.hrv AS hrv,
     inputs_with_baselines.resting_hr AS resting_hr,
     inputs_with_baselines.respiratory_rate AS respiratory_rate,
@@ -140,7 +165,11 @@ SELECT
     inputs_with_baselines.hrv_sd_60d AS hrv_sd_60d,
     inputs_with_baselines.rhr_mean_60d AS rhr_mean_60d,
     inputs_with_baselines.rhr_sd_60d AS rhr_sd_60d,
+    if(inputs_with_baselines.user_id IS NULL, 1, 0) AS is_deleted,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
-FROM inputs_with_baselines
+FROM result_keys
+LEFT JOIN inputs_with_baselines
+    ON inputs_with_baselines.user_id = result_keys.user_id
+    AND inputs_with_baselines.date = result_keys.date
 CROSS JOIN refresh_clock
