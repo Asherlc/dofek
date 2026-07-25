@@ -59,6 +59,10 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error = error {
             NSLog("[WhoopBLE] service discovery error: %@", error.localizedDescription)
+            connectionManager?.abortHandshake(
+                for: peripheral,
+                with: .serviceDiscoveryFailed(error.localizedDescription)
+            )
             return
         }
         connectionManager?.handleServicesDiscovered(peripheral)
@@ -71,6 +75,10 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     ) {
         if let error = error {
             NSLog("[WhoopBLE] characteristic discovery error: %@", error.localizedDescription)
+            connectionManager?.abortHandshake(
+                for: peripheral,
+                with: .characteristicDiscoveryFailed(error.localizedDescription)
+            )
             return
         }
         connectionManager?.handleCharacteristicsDiscovered(peripheral, service: service)
