@@ -867,6 +867,8 @@ jobs:
     name: E2E Tests (Web)
     if: inputs.run_e2e_web
     runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: dofek-ci-e2e
     permissions:
       contents: read
       packages: read

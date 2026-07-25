@@ -16134,3 +16134,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   background-delivery test and a corrected binary are still required;
   foreground catch-up limits data loss on older builds but does not provide
   timely background sync.
+## 2026-07-20 — Local E2E Replaced the Developer Compose Stack
+
+- **Status:** Fixed and validated locally; hosted CI is a merge gate.
+- **Symptoms:** Running `pnpm e2e:web` in the `bismarck` workspace recreated
+  the normal database, ClickHouse, and Redis containers, reported Redpanda as
+  an orphan, then removed the recreated services during failure teardown.
+- **User impact:** The workspace's development and integration-test services
+  were interrupted. Named volumes remained intact, so no persistent data loss
+  was observed.
+- **Evidence:** The failing E2E startup reported
+  `Container bismarck-redis-1 Recreate`,
+  `Container bismarck-clickhouse-1 Recreate`, and
+  `Container bismarck-db-1 Recreate`. After teardown,
+  `docker inspect bismarck-db-1` returned `no such object`.
+- **Root cause:** The shared Compose wrapper forced both
+  `docker-compose.yml` and `docker-compose.e2e.yml` to use the physical
+  workspace basename as their project name, so Compose treated the two stacks
+  as one project.
+- **Fix / mitigation:** Added an explicit wrapper-level project suffix and
+  routed all local E2E startup, reuse, inspection, log, and teardown commands
+  through `<workspace>-e2e`. CI uses the explicit `dofek-ci-e2e` project, and
+  Conductor archive cleanup now removes the default and isolated E2E projects
+  separately.
+- **Validation:** Wrapper regressions verify that `--project-suffix e2e` is
+  consumed rather than forwarded and resolves to `<workspace>-e2e`; archive
+  regressions verify independent teardown and orphan cleanup for both project
+  names. Docker Compose documents that custom project names isolate multiple
+  instances on the same host:
+  <https://docs.docker.com/compose/how-tos/project-name/>.
+- **Remaining risk / follow-up:** Require hosted E2E CI to confirm the explicit
+  CI project name across dependency startup, migrations, analytics, logs, and
+  teardown before merging the fix.
