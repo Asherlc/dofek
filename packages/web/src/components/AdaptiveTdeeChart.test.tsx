@@ -6,15 +6,31 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 let chartProps: {
   option: {
     series?: Array<{ name?: string }>;
+    yAxis?: Array<{ name?: string }>;
   };
   emptyMessage?: string;
 } | null = null;
 
 vi.mock("./DofekChart.tsx", () => ({
-  DofekChart: (props: { option: { series?: Array<{ name?: string }> }; emptyMessage?: string }) => {
+  DofekChart: (props: {
+    option: {
+      series?: Array<{ name?: string }>;
+      yAxis?: Array<{ name?: string }>;
+    };
+    emptyMessage?: string;
+  }) => {
     chartProps = props;
     return <div>{props.emptyMessage}</div>;
   },
+}));
+
+vi.mock("../lib/unitContext.ts", () => ({
+  useUnitConverter: () => ({
+    calorieLabel: "central-calorie-unit",
+    caloriesPerDayLabel: "central-calorie-rate-unit",
+    convertWeight: (value: number) => value,
+    weightLabel: "kg",
+  }),
 }));
 
 import { AdaptiveTdeeChart } from "./AdaptiveTdeeChart.tsx";
@@ -55,8 +71,9 @@ describe("AdaptiveTdeeChart", () => {
     );
 
     expect(
-      screen.getByText("kcal/day estimated total daily energy expenditure (TDEE)"),
+      screen.getByText("central-calorie-rate-unit estimated total daily energy expenditure (TDEE)"),
     ).toBeTruthy();
+    expect(chartProps?.option.yAxis?.[0]?.name).toBe("central-calorie-unit");
     expect(chartProps?.option.series?.map((series) => series.name)).toContain(
       "Estimated Total Daily Energy Expenditure (TDEE)",
     );

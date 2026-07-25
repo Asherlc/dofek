@@ -46,7 +46,7 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
     legend: dofekLegend(true),
     xAxis: dofekAxis.time(),
     yAxis: [
-      dofekAxis.value({ name: "kcal" }),
+      dofekAxis.value({ name: units.calorieLabel }),
       dofekAxis.value({
         name: units.weightLabel,
         position: "right",
@@ -86,10 +86,11 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
         <div className="flex items-baseline gap-3">
           <span className="text-2xl font-bold text-foreground">{data.estimatedTdee}</span>
           <span className="text-sm text-muted">
-            kcal/day estimated total daily energy expenditure (TDEE)
+            {units.caloriesPerDayLabel} estimated total daily energy expenditure (TDEE)
           </span>
           <span className="text-xs text-dim">
-            ({Math.round(data.confidence * 100)}% confidence, {data.dataPoints} data points)
+            ({Math.round(data.confidence * 100)}
+            {units.percentageLabel} confidence, {data.dataPoints} data points)
           </span>
         </div>
       )}

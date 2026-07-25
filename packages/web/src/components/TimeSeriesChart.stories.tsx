@@ -1,3 +1,4 @@
+import { UnitConverter } from "@dofek/format/units";
 import { chartColors } from "@dofek/scoring/colors";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { TimeSeriesChart } from "./TimeSeriesChart";
@@ -23,6 +24,7 @@ const spo2Data = generateDailyData(30, (index) => 96 + Math.round(Math.sin(index
 const skinTempData = generateDailyData(30, (index) =>
   index % 5 === 0 ? null : 33 + Math.round(Math.cos(index * 0.2) * 10) / 10,
 );
+const metricUnits = new UnitConverter("metric");
 
 const meta = {
   title: "Charts/TimeSeriesChart",
@@ -66,7 +68,10 @@ export const DualAxis: Story = {
       },
       { name: "Skin Temp", data: skinTempData, color: chartColors.amber, yAxisIndex: 1 },
     ],
-    yAxis: [{ name: "Blood Oxygen Saturation (%)", min: 90 }, { name: "°C" }],
+    yAxis: [
+      { name: `Blood Oxygen Saturation (${metricUnits.percentageLabel})`, min: 90 },
+      { name: metricUnits.temperatureLabel },
+    ],
   },
 };
 
