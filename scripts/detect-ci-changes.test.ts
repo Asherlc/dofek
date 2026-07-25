@@ -38,7 +38,10 @@ describe("CI change detector", () => {
       expect.objectContaining({
         docker_server: true,
         e2e_web: true,
+        ml: false,
         mobile: true,
+        web: true,
+        zepp: false,
       }),
     );
   });
@@ -48,7 +51,10 @@ describe("CI change detector", () => {
       expect.objectContaining({
         docker_server: true,
         e2e_web: true,
+        ml: false,
+        mobile: true,
         web: true,
+        zepp: false,
       }),
     );
   });
@@ -66,6 +72,10 @@ describe("CI change detector", () => {
       expect.objectContaining({
         docker_server: true,
         e2e_web: true,
+        ml: false,
+        mobile: true,
+        web: true,
+        zepp: packageDirectory === "zepp-client",
       }),
     );
   });

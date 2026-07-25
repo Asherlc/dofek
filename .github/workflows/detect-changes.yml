@@ -48,7 +48,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: ./.github/actions/setup-node-pnpm
+      - name: Set up Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Detect changed areas
         id: detect
