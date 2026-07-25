@@ -17046,3 +17046,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** If independent runners repeatedly time out
   against Infisical, investigate provider availability and runner egress using
   the captured endpoint evidence before changing workflow behavior.
+
+## 2026-07-25 — Mobile Preview Object Upload Returned InternalError
+
+- **Status:** Resolved after the external upload service recovered; replacement
+  CI passed.
+- **Symptoms:** PR #1956's `Publish Mobile Preview OTA` check failed after the
+  iOS bundle and OTA export completed successfully.
+- **User impact:** No production users were affected. The PR remained blocked
+  until an independently scheduled replacement publish passed.
+- **Evidence:** The exact failed step was `Publish OTA to PR branch`. The first
+  fatal line was
+  `File upload failed ... <Code>InternalError</Code><Message>We encountered an internal error. Please try again.</Message>`.
+  The export had already produced the iOS bundle and loaded one platform, so
+  the failure occurred at the object upload boundary rather than during
+  application compilation. The OTA health endpoint subsequently returned HTTP
+  200. The S3 API defines `InternalError` as an HTTP 500 server error:
+  <https://docs.aws.amazon.com/AmazonS3/latest/API/API_Error.html>.
+- **Root cause:** The S3-compatible OTA object-upload service returned its
+  server-side `InternalError` response for the generated bundle. There was no
+  application build, credential, or repository test failure.
+- **Fix / mitigation:** Schedule the failed workflow on a replacement hosted
+  runner after the OTA health endpoint recovered. No retry, timeout, fallback,
+  workflow behavior, or application code changed.
+- **Validation:** The replacement `Publish Mobile Preview OTA` job completed
+  checkout, dependency setup, secret loading, export, upload, and PR-comment
+  publication successfully in 2m18s on the same source revision.
+- **Remaining risk / follow-up:** If independent publishes repeatedly return
+  `InternalError`, correlate the OTA service and object-storage logs before
+  changing workflow behavior.
