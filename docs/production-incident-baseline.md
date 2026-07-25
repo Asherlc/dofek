@@ -16478,3 +16478,41 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   hosted shard is the final service-wiring proof.
 - **Remaining risk / follow-up:** Require all replacement integration shards
   and their coverage artifact upload to finish before merge.
+
+## 2026-07-24 — HealthKit Swift Mutation Run Timed Out
+
+- **Status:** Root cause fixed locally; replacement hosted mutation validation
+  pending.
+- **Symptoms:** `Test / Swift Mutation Testing` on PR #1937 ran until the
+  step-level 30-minute limit, then the aggregate test and CI gates failed.
+- **User impact:** No production users were affected. The HealthKit observer
+  completion fix was blocked from merging.
+- **Evidence:** The exact command was
+  `muter --files-to-mutate
+  "ios/HealthKitObserverUpdateCoordinator.swift,ios/MainThreadEventEmitter.swift"`.
+  Its first fatal line was `The action 'Run Muter' has timed out after 30
+  minutes.` Isolating the files locally showed the emitter's sole mutant was
+  killed in 19 seconds. The coordinator's first `RemoveSideEffects` mutant
+  removed `lock.lock()` while retaining `lock.unlock()`; all 72 tests printed
+  as passed, but the mutated XCTest process remained alive indefinitely.
+- **Root cause:** Separate manual lock and unlock calls let the mutation
+  operator create an invalid half-lock critical section. That corrupted the
+  lock lifecycle after assertions completed, so Muter waited forever for the
+  test process instead of reporting a surviving mutant.
+- **Fix / mitigation:** Replaced every manual lock/unlock pair in the
+  coordinator with Foundation's scoped `NSLock.withLock` operation. Scoped
+  locking keeps acquisition and release indivisible and guarantees release
+  when the operation exits; Foundation documents `NSLock` as the mutual
+  exclusion primitive:
+  <https://developer.apple.com/documentation/foundation/nslock>. No timeout,
+  retry, mutation exclusion, or skipped check was added.
+- **Validation:** The unchanged 72-test Swift package suite passes on the
+  refactored coordinator. The isolated coordinator mutation run completed in
+  20 seconds and killed all four mutants; the isolated emitter run completed
+  in 19 seconds and killed its sole mutant. The combined exact hosted command
+  completed in 25 seconds and killed all five mutants at a 100% mutation
+  score. Replacement hosted CI remains the merge gate.
+- **Remaining risk / follow-up:** Muter log filenames contain colons and cannot
+  be uploaded by GitHub's artifact action when a run fails. Fix artifact
+  sanitization separately only if a future failing run needs those logs; it did
+  not cause this mutation timeout.

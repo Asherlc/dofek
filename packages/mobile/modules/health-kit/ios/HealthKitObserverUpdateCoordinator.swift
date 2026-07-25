@@ -30,12 +30,12 @@ final class HealthKitObserverUpdateCoordinator {
             self?.expire(updateId: updateId)
         }
 
-        lock.lock()
-        pendingUpdates[updateId] = PendingUpdate(
-            completion: completion,
-            expiration: expiration
-        )
-        lock.unlock()
+        lock.withLock {
+            pendingUpdates[updateId] = PendingUpdate(
+                completion: completion,
+                expiration: expiration
+            )
+        }
 
         expirationQueue.asyncAfter(deadline: .now() + timeout, execute: expiration)
         return updateId
@@ -52,10 +52,11 @@ final class HealthKitObserverUpdateCoordinator {
 
     @discardableResult
     func completeAll() -> Int {
-        lock.lock()
-        let updates = Array(pendingUpdates.values)
-        pendingUpdates.removeAll()
-        lock.unlock()
+        let updates = lock.withLock {
+            let updates = Array(pendingUpdates.values)
+            pendingUpdates.removeAll()
+            return updates
+        }
 
         for update in updates {
             update.expiration.cancel()
@@ -65,9 +66,9 @@ final class HealthKitObserverUpdateCoordinator {
     }
 
     private func expire(updateId: String) {
-        lock.lock()
-        let update = pendingUpdates.removeValue(forKey: updateId)
-        lock.unlock()
+        let update = lock.withLock {
+            pendingUpdates.removeValue(forKey: updateId)
+        }
 
         guard let update else {
             return
@@ -77,9 +78,9 @@ final class HealthKitObserverUpdateCoordinator {
     }
 
     private func take(updateIds: [String]) -> [PendingUpdate] {
-        lock.lock()
-        let updates = updateIds.compactMap { pendingUpdates.removeValue(forKey: $0) }
-        lock.unlock()
+        let updates = lock.withLock {
+            updateIds.compactMap { pendingUpdates.removeValue(forKey: $0) }
+        }
 
         for update in updates {
             update.expiration.cancel()
