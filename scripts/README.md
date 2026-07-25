@@ -63,6 +63,8 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   are lost, inactive, or retaining dangerous WAL, and when active ClickHouse
   mirrors have stale `_peerdb_synced_at` values.
   - Usage: `pnpm check:clickhouse-cdc`
+- `cdc-health-state.ts`: Atomically records CDC monitor outcomes and implements
+  the bounded-age/failure probe used by the production `cdc-health` service.
 - `check-ota-manifest.ts`: Sends the production iOS [Expo Updates protocol
   request](https://docs.expo.dev/technical-specs/expo-updates-1/) and prints
   the deployed update metadata, or reports that no update is available.
