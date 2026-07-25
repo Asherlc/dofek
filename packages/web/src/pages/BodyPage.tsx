@@ -249,8 +249,8 @@ export function BodyPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card p-2 sm:p-4">
             <div className="mb-2 flex items-center gap-2">
-              <h4 className="text-xs font-medium text-subtle uppercase">Weight Trend</h4>
-              <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time, with goal weight and forward projection when set." />
+              <h4 className="text-xs font-medium text-subtle uppercase">Trend Weight</h4>
+              <ChartDescriptionTooltip description="Trend Weight starts from your first accessible scale reading, then moves 10% toward each day's weight. Missing days between readings are linearly interpolated. The chart also shows goal weight and a forward projection when set." />
             </div>
             {weightOverview.isPending ? (
               <SmoothedWeightChart data={[]} loading />

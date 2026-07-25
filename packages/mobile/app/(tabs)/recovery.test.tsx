@@ -283,6 +283,44 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(screen.queryByText("Skin Temperature")).toBeNull();
   });
 
+  it("labels smoothed body weight as Trend Weight and shows the latest scale reading", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [
+        {
+          date: "2026-04-05",
+          rawWeight: 80.2,
+          smoothedWeight: 79.8,
+          weeklyChange: null,
+          interpolated: false,
+        },
+        {
+          date: "2026-04-06",
+          rawWeight: 80,
+          smoothedWeight: 79.8,
+          weeklyChange: null,
+          interpolated: false,
+        },
+      ],
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("TREND WEIGHT")).toBeTruthy();
+    expect(screen.getByText("79.8 kg")).toBeTruthy();
+    expect(screen.getByText("Scale: 80.0 kg")).toBeTruthy();
+    expect(
+      screen.getByText("Moves 10% toward each day's scale weight; gaps are interpolated."),
+    ).toBeTruthy();
+  });
+
   it("expands recovery breakdown when recovery card is tapped", async () => {
     mockRecoveryData = {
       hrvVariability: [],

@@ -494,13 +494,21 @@ export default function RecoveryScreen() {
               </Card>
             )}
 
-          {/* Body Weight */}
+          {/* Trend Weight */}
           {latestWeight != null && (
-            <Card title="Body Weight">
+            <Card title="Trend Weight">
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
                     {formatMeasurementText(units.formatWeight(latestWeight.smoothedWeight))}
+                  </Text>
+                  {latestWeight.rawWeight != null && (
+                    <Text style={styles.weightScale}>
+                      Scale: {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
+                    </Text>
+                  )}
+                  <Text style={styles.weightExplanation}>
+                    Moves 10% toward each day's scale weight; gaps are interpolated.
                   </Text>
                   {weightPrediction?.ratePerWeek != null && (
                     <Text
@@ -696,6 +704,16 @@ const styles = StyleSheet.create({
   weightRate: {
     fontSize: 13,
     fontWeight: "600",
+    marginTop: 2,
+  },
+  weightScale: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  weightExplanation: {
+    fontSize: 11,
+    color: colors.textTertiary,
     marginTop: 2,
   },
   weightGoal: {
