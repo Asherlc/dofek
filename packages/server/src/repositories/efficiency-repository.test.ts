@@ -606,7 +606,14 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
   it("returns null maxHr and empty weeks when no data", async () => {
     const { repo } = makeRepository([]);
     const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
-    expect(result).toEqual({ maxHr: null, weeks: [] });
+    expect(result).toEqual({
+      model: "treff-three-zone",
+      activityScope: "cycling",
+      threshold: 2,
+      maxHr: null,
+      weeks: [],
+      explanation: expect.stringContaining("cycling"),
+    });
   });
 
   it("issues a read-model attempt plus a fallback CH query", async () => {
@@ -708,6 +715,12 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expect(week?.z3Seconds).toBe(500);
     // Verify polarization index matches the shared function
     expect(week?.polarizationIndex).toBe(computePolarizationIndex(5000, 1000, 500));
+    expect(week).toMatchObject({
+      totalSeconds: 6500,
+      zonePercentages: { z1: 76.9, z2: 15.4, z3: 7.7 },
+      statusLabel: expect.any(String),
+      explanation: expect.any(String),
+    });
   });
 
   it("computes polarization index as null when zone fractions are zero", async () => {
@@ -1003,13 +1016,20 @@ describe("EfficiencyRepository.getAerobicDecoupling (object shape)", () => {
 });
 
 describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
-  it("returns result with exactly maxHr and weeks keys", async () => {
+  it("returns the complete Treff result model", async () => {
     const { repo } = makeRepository([]);
     const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
-    expect(Object.keys(result).sort()).toStrictEqual(["maxHr", "weeks"]);
+    expect(Object.keys(result).sort()).toStrictEqual([
+      "activityScope",
+      "explanation",
+      "maxHr",
+      "model",
+      "threshold",
+      "weeks",
+    ]);
   });
 
-  it("each week has all 5 required properties", async () => {
+  it("each week includes the server-owned classification and percentages", async () => {
     const { repo } = makeRepository([
       {
         max_hr: "190",
@@ -1021,11 +1041,16 @@ describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
     ]);
     const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     expect(Object.keys(result.weeks[0] ?? {}).sort()).toStrictEqual([
+      "explanation",
       "polarizationIndex",
+      "status",
+      "statusLabel",
+      "totalSeconds",
       "week",
       "z1Seconds",
       "z2Seconds",
       "z3Seconds",
+      "zonePercentages",
     ]);
   });
 

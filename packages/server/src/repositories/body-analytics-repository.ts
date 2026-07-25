@@ -1,8 +1,9 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { captureException } from "@sentry/node";
 import type { Database } from "dofek/db";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import type { RangeDays } from "../lib/date-window.ts";
+import { dateWindowStartString, type RangeDays } from "../lib/date-window.ts";
 import { type BodyClickHouseStore, fetchBodyWeightRows } from "./body-clickhouse.ts";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -237,12 +238,11 @@ export class BodyAnalyticsRepository extends BaseRepository {
   }
 
   /**
-   * Smoothed weight trend using exponentially-weighted moving average.
-   * Filters out daily fluctuations (water, food timing) to show the
-   * real trend. Similar to MacroFactor / Happy Scale approach.
+   * TrendWeight-compatible body-weight trend: interpolate missing calendar
+   * days, then move 10% from the prior trend toward each day's weight.
    */
   async getSmoothedWeight(days: RangeDays, endDate: string): Promise<SmoothedWeightRow[]> {
-    const rows = await this.#fetchBodyWeightRows(days, endDate, false);
+    const rows = await this.#fetchBodyWeightRows(null, endDate, false);
 
     const data = rows
       .map((row) => ({
@@ -251,7 +251,13 @@ export class BodyAnalyticsRepository extends BaseRepository {
       }))
       .filter((row) => isPositiveWeight(row.rawWeight));
 
-    return this.#computeSmoothedWeight(data);
+    const smoothedWeight = this.#computeSmoothedWeight(data);
+    if (days === null) return smoothedWeight;
+
+    const resolvedEndDate =
+      endDate === "now" ? formatDateYmdInTimeZone(new Date(), this.timezone) : endDate;
+    const windowStart = dateWindowStartString(resolvedEndDate, days);
+    return smoothedWeight.filter((row) => row.date > windowStart);
   }
 
   /**
@@ -289,11 +295,11 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * and a forward projection line for charting.
    */
   async getWeightPrediction(
-    days: RangeDays,
+    _days: RangeDays,
     endDate: string,
     goalWeightKg: number | null,
   ): Promise<WeightPrediction> {
-    const rows = await this.#fetchBodyWeightRows(days, endDate, false);
+    const rows = await this.#fetchBodyWeightRows(null, endDate, false);
 
     const data = rows
       .map((row) => ({

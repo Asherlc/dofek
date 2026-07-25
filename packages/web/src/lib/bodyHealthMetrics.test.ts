@@ -33,7 +33,7 @@ describe("buildBodyHealthMetrics", () => {
     const metrics = buildMetrics();
 
     expect(metrics.map((metric) => metric.label)).toEqual([
-      "Body Weight",
+      "Trend Weight",
       "Body Fat %",
       "Resting Heart Rate",
     ]);

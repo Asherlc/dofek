@@ -41,6 +41,15 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
   }
 
   const ratePerWeekKg = prediction?.ratePerWeek ?? null;
+  const latest = data.at(-1);
+  let latestScaleWeight: number | null = null;
+  for (let index = data.length - 1; index >= 0; index--) {
+    const rawWeight = data[index]?.rawWeight;
+    if (rawWeight != null) {
+      latestScaleWeight = rawWeight;
+      break;
+    }
+  }
   const goalWeightKg = prediction?.goal?.goalWeightKg ?? null;
   const goalBandKg = 1.1; // ±1.1 kg band around goal
 
@@ -95,7 +104,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
     // Smoothed trend line with optional goal markLine/markArea
     {
       ...dofekSeries.line(
-        "Trend",
+        "Trend Weight",
         data.map((d) => [d.date, roundWeight(units.convertWeight(d.smoothedWeight))]),
         {
           color: chartColors.teal,
@@ -189,8 +198,19 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
 
   return (
     <div className="space-y-2">
-      {ratePerWeekKg != null && (
-        <div className="flex items-baseline gap-2">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-subtle">Trend Weight</div>
+          <div className="text-lg font-semibold font-mono tabular-nums">
+            {latest ? formatMeasurementText(units.formatWeight(latest.smoothedWeight)) : "—"}
+          </div>
+          {latestScaleWeight != null && (
+            <div className="text-xs text-subtle">
+              Scale: {formatMeasurementText(units.formatWeight(latestScaleWeight))}
+            </div>
+          )}
+        </div>
+        {ratePerWeekKg != null && (
           <span
             className={`text-lg font-semibold ${ratePerWeekKg > 0 ? "text-green-400" : ratePerWeekKg < 0 ? "text-red-400" : "text-muted"}`}
           >
@@ -198,8 +218,8 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
             {formatMeasurementText(units.formatWeight(ratePerWeekKg))}
             /week
           </span>
-        </div>
-      )}
+        )}
+      </div>
       <DofekChart option={option} height={250} />
     </div>
   );
