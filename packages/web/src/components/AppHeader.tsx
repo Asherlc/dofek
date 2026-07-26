@@ -80,7 +80,7 @@ export function AppHeader({
               <button
                 type="button"
                 onClick={logout}
-                className="text-xs font-medium text-subtle hover:text-foreground transition-colors cursor-pointer"
+                className="text-xs font-medium text-muted hover:text-foreground transition-colors cursor-pointer"
               >
                 Sign out
               </button>
@@ -163,7 +163,7 @@ export function AppHeader({
               <button
                 type="button"
                 onClick={logout}
-                className="mt-1 text-xs text-subtle hover:text-foreground transition-colors cursor-pointer"
+                className="mt-1 text-xs text-muted hover:text-foreground transition-colors cursor-pointer"
               >
                 Sign out
               </button>

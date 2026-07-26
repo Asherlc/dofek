@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
 
 export const tabsScreenOptions = {
   tabBarActiveTintColor: colors.accent,
-  tabBarInactiveTintColor: colors.textTertiary,
+  tabBarInactiveTintColor: colors.textSecondary,
   tabBarStyle: styles.tabBar,
   tabBarItemStyle: styles.tabBarItem,
   tabBarLabelStyle: styles.tabBarLabel,
