@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { authFailureReasonFromError } from "./auth-errors.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { createMockDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -116,7 +118,7 @@ describe("UltrahumanClient", () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response("Unauthorized", { status: 401 }));
     const client = new UltrahumanClient("token", "test@test.com", mockFetch);
     await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
-      "Ultrahuman API error (401)",
+      "Ultrahuman rejected this token.",
     );
   });
 
@@ -203,5 +205,39 @@ describe("UltrahumanProvider", () => {
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    401, 403, 404,
+  ])("marks a rejected personal token response (%s) as requiring authentication", async (status) => {
+    const { db, spies } = createMockDatabase({
+      tokensResult: [
+        {
+          accessToken: "revoked-personal-token",
+          refreshToken: null,
+          expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+          scopes: "self",
+        },
+      ],
+    });
+    const mockFetch: typeof globalThis.fetch = async () =>
+      new Response("token rejected", { status });
+
+    const result = await new UltrahumanProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
+    expect(spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({ authFailureReason: "authentication_failed" }),
+    );
   });
 });

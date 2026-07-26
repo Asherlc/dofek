@@ -1,25 +1,25 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import type { TRPCError } from "@trpc/server";
 import { ProviderAuthenticationFailedError } from "dofek/providers/auth-errors";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
-  mockEnsureProvider,
-  mockSaveTokens,
+  mockConnectProviderWithTokens,
   mockInvalidateByPrefix,
   mockGetAllProviders,
   mockEnsureProvidersRegistered,
 } = vi.hoisted(() => ({
-  mockEnsureProvider: vi.fn(),
-  mockSaveTokens: vi.fn(),
+  mockConnectProviderWithTokens: vi.fn(),
   mockInvalidateByPrefix: vi.fn(),
   mockGetAllProviders: vi.fn(),
   mockEnsureProvidersRegistered: vi.fn(),
 }));
 
 vi.mock("dofek/db/tokens", () => ({
-  ensureProvider: mockEnsureProvider,
-  saveTokens: mockSaveTokens,
+  connectProviderWithTokens: mockConnectProviderWithTokens,
 }));
 
 vi.mock("dofek/providers/registry", () => ({
@@ -60,6 +60,10 @@ function stubProvider(overrides: Partial<Provider> = {}): Provider {
 describe("tokenAuthRouter", () => {
   const createCaller = createTestCallerFactory(tokenAuthRouter);
 
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("exchanges and saves a personal token for the authenticated user", async () => {
     const tokens = {
       accessToken: "access-123",
@@ -82,8 +86,7 @@ describe("tokenAuthRouter", () => {
     });
     mockGetAllProviders.mockReturnValue([provider]);
     mockEnsureProvidersRegistered.mockResolvedValue(undefined);
-    mockEnsureProvider.mockResolvedValue(undefined);
-    mockSaveTokens.mockResolvedValue(undefined);
+    mockConnectProviderWithTokens.mockResolvedValue(undefined);
     mockInvalidateByPrefix.mockResolvedValue(undefined);
     const db = { execute: vi.fn() };
     const caller = createCaller({ db, userId: "user-123", timezone: "UTC" });
@@ -92,15 +95,59 @@ describe("tokenAuthRouter", () => {
 
     expect(result).toEqual({ success: true });
     expect(exchangeToken).toHaveBeenCalledWith("refresh-input");
-    expect(mockEnsureProvider).toHaveBeenCalledWith(
+    expect(mockConnectProviderWithTokens).toHaveBeenCalledWith(
       db,
-      "wger",
-      "Wger",
-      "https://wger.de/api/v2",
+      {
+        id: "wger",
+        name: "Wger",
+        apiBaseUrl: "https://wger.de/api/v2",
+      },
+      tokens,
       "user-123",
     );
-    expect(mockSaveTokens).toHaveBeenCalledWith(db, "wger", tokens, "user-123");
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-123:sync.providers");
+  });
+
+  it("does not invalidate the authorized state when atomic token persistence fails", async () => {
+    const tokens = {
+      accessToken: "access-123",
+      refreshToken: "refresh-456",
+      expiresAt: new Date("2026-08-01T00:00:00Z"),
+      scopes: "read",
+    };
+    const provider = stubProvider({
+      id: "wger",
+      name: "Wger",
+      authSetup: () => ({
+        manualToken: {
+          label: "Refresh token",
+          instructionsUrl: "https://wger.de/en/software/api",
+          exchangeToken: vi.fn().mockResolvedValue(tokens),
+        },
+      }),
+    });
+    const db = { execute: vi.fn() };
+    const persistenceError = new Error("token persistence failed");
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+    mockConnectProviderWithTokens.mockRejectedValueOnce(persistenceError);
+
+    const caller = createCaller({ db, userId: "user-123", timezone: "UTC" });
+
+    await expect(caller.connect({ providerId: "wger", token: "refresh-input" })).rejects.toThrow(
+      "token persistence failed",
+    );
+    expect(mockConnectProviderWithTokens).toHaveBeenCalledWith(
+      db,
+      {
+        id: "wger",
+        name: "Wger",
+        apiBaseUrl: undefined,
+      },
+      tokens,
+      "user-123",
+    );
+    expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
   });
 
   it("rejects unknown providers", async () => {
@@ -191,6 +238,40 @@ describe("tokenAuthRouter", () => {
     await expect(caller.connect({ providerId: "wger", token: "token" })).rejects.toMatchObject({
       code: "TOO_MANY_REQUESTS",
       message: "Wger API rate limit exceeded",
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("surfaces provider outages without exposing the provider response body", async () => {
+    const outage = new ProviderServiceUnavailableError({
+      message: "ultrahuman API service unavailable (503): upstream-secret-response",
+      providerId: "ultrahuman",
+      statusCode: 503,
+      responseBody: "upstream-secret-response",
+    });
+    const provider = stubProvider({
+      id: "ultrahuman",
+      name: "Ultrahuman",
+      authSetup: () => ({
+        manualToken: {
+          label: "Personal API token",
+          instructionsUrl: "https://vision.ultrahuman.com/developer-docs",
+          exchangeToken: vi.fn().mockRejectedValue(outage),
+        },
+      }),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-123",
+      timezone: "UTC",
+    });
+
+    await expect(
+      caller.connect({ providerId: "ultrahuman", token: "personal-secret-token" }),
+    ).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      message: "Ultrahuman is temporarily unavailable. Try again shortly.",
     } satisfies Partial<TRPCError>);
   });
 });

@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
-import { ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
+import { connectProviderWithTokens, ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
 
 describe("Token storage (integration)", () => {
   let ctx: TestContext;
@@ -168,5 +168,34 @@ describe("Token storage (integration)", () => {
     );
     expect(catalogRows).toEqual([{ id: "shared-oauth-provider", name: "Shared OAuth" }]);
     expect(connectionRows).toEqual([{ user_id: firstUserId }, { user_id: secondUserId }]);
+  });
+
+  it("rolls back a new provider connection when token persistence fails", async () => {
+    const providerId = "failed-token-persistence";
+
+    await expect(
+      connectProviderWithTokens(
+        ctx.db,
+        {
+          id: providerId,
+          name: "Failed Token Persistence",
+        },
+        {
+          accessToken: "access-token",
+          refreshToken: null,
+          expiresAt: new Date(Number.NaN),
+          scopes: "read",
+        },
+        TEST_USER_ID,
+      ),
+    ).rejects.toThrow();
+
+    const connections = await ctx.db.execute<{ provider_id: string }>(
+      sql`SELECT provider_id
+          FROM fitness.provider_connection
+          WHERE user_id = ${TEST_USER_ID}
+            AND provider_id = ${providerId}`,
+    );
+    expect(connections).toEqual([]);
   });
 });

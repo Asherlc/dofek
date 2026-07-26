@@ -72,7 +72,7 @@ vi.mock("../db/metric-stream-writer.ts", () => ({
 }));
 
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { loadTokens, saveTokens } from "../db/tokens.ts";
+import { deleteTokens, loadTokens, saveTokens } from "../db/tokens.ts";
 import { createMockDatabase } from "./test-helpers.ts";
 import { parseWgerWeightEntry, parseWgerWorkoutSession, WgerProvider } from "./wger.ts";
 
@@ -258,6 +258,39 @@ describe("WgerProvider", () => {
         refreshToken: "rotated-refresh",
       }),
     );
+  });
+
+  it("reports a rotation persistence failure without deleting the stale token row", async () => {
+    const expiresAtSeconds = Math.floor(Date.now() / 1000) + 600;
+    const access = fakeJwt(expiresAtSeconds);
+    const persistenceError = new Error("database unavailable while saving rotated token");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "expired-access",
+      refreshToken: "stored-refresh",
+      expiresAt: new Date("2020-01-01T00:00:00Z"),
+      scopes: "read",
+    });
+    vi.mocked(saveTokens).mockRejectedValueOnce(persistenceError);
+    vi.mocked(deleteTokens).mockClear();
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      expect(String(input)).toBe("https://wger.de/api/v2/token/refresh");
+      return Response.json({ access, refresh: "rotated-refresh" });
+    });
+    const { db } = createMockDatabase();
+
+    const result = await new WgerProvider(mockFetch).sync(
+      new SyncRun({ db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toEqual([
+      {
+        message: persistenceError.message,
+        cause: persistenceError,
+      },
+    ]);
+    expect(deleteTokens).not.toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledOnce();
   });
 
   it("skips workout sessions after the sync window end", async () => {

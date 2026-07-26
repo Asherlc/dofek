@@ -3,7 +3,7 @@ import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
-import { ProviderTokenRejectedError } from "./auth-errors.ts";
+import { authFailureReasonFromError, ProviderTokenRejectedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -137,6 +137,12 @@ export class UltrahumanClient {
     });
 
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403 || response.status === 404) {
+        throw new ProviderTokenRejectedError(
+          "Ultrahuman",
+          "Create a new personal API token in Ultrahuman Vision and reconnect.",
+        );
+      }
       const text = await response.text();
       throw new Error(`Ultrahuman API error (${response.status}): ${text}`);
     }
@@ -314,6 +320,9 @@ export class UltrahumanProvider implements SyncProvider {
               // Stop the day-by-day loop on a rate limit and let it propagate so
               // the sync job can schedule a cooldown instead of hammering the API.
               if (err instanceof ProviderRateLimitError) throw err;
+              // Authentication failures must reach withSyncLog so the clients can
+              // replace the Sync action with Reconnect.
+              if (authFailureReasonFromError(err)) throw err;
               errors.push({
                 message: `${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
                 cause: err,

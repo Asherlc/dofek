@@ -194,6 +194,10 @@ export class WgerProvider implements SyncProvider {
 
     try {
       const refreshed = await exchangeWgerRefreshToken(tokens.refreshToken, this.#fetchFn);
+      // Persist before using the rotated access token. If this write fails, the
+      // provider may already have blacklisted the prior refresh token; surface
+      // the failure and leave the stale row intact so a later rejected refresh
+      // records the normal reconnect-required state.
       await saveTokens(db, this.id, refreshed);
       return refreshed;
     } catch (error: unknown) {

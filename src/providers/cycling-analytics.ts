@@ -245,6 +245,12 @@ export class CyclingAnalyticsProvider implements SyncProvider {
                   },
                 });
 
+                if (response.status === 401 || response.status === 403) {
+                  throw new ProviderTokenRejectedError(
+                    this.name,
+                    "Create a personal token with read_rides permission and reconnect.",
+                  );
+                }
                 if (!response.ok) {
                   const text = await response.text();
                   throw new Error(`Cycling Analytics API error (${response.status}): ${text}`);

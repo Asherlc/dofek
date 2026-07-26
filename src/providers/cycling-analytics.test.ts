@@ -1,6 +1,7 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadTokens } from "../db/tokens.ts";
+import { authFailureReasonFromError } from "./auth-errors.ts";
 import {
   CyclingAnalyticsProvider,
   cyclingAnalyticsOAuthConfig,
@@ -317,6 +318,23 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
     expect(result.errors[0]?.message).toContain(
       "cycling_analytics API service unavailable (502): service down",
     );
+  });
+
+  it("marks a rejected personal token as requiring authentication", async () => {
+    const mockFetch: typeof globalThis.fetch = async () =>
+      new Response("Unauthorized", { status: 401 });
+    const { db } = createMockDatabase();
+
+    const result = await new CyclingAnalyticsProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
   });
 
   it("returns elapsed sync duration", async () => {

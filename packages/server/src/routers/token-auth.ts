@@ -1,6 +1,9 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { TRPCError } from "@trpc/server";
-import { ensureProvider, saveTokens } from "dofek/db/tokens";
+import { connectProviderWithTokens } from "dofek/db/tokens";
 import { queryCache } from "dofek/lib/cache";
 import { authFailureReasonFromError } from "dofek/providers/auth-errors";
 import { getAllProviders } from "dofek/providers/registry";
@@ -40,6 +43,13 @@ export const tokenAuthRouter = router({
       try {
         tokens = await setup.manualToken.exchangeToken(input.token);
       } catch (error: unknown) {
+        if (error instanceof ProviderServiceUnavailableError) {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message: `${provider.name} is temporarily unavailable. Try again shortly.`,
+            cause: error,
+          });
+        }
         if (error instanceof ProviderRateLimitError) {
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",
@@ -57,8 +67,16 @@ export const tokenAuthRouter = router({
         throw error;
       }
 
-      await ensureProvider(ctx.db, provider.id, provider.name, setup.apiBaseUrl, ctx.userId);
-      await saveTokens(ctx.db, provider.id, tokens, ctx.userId);
+      await connectProviderWithTokens(
+        ctx.db,
+        {
+          id: provider.id,
+          name: provider.name,
+          apiBaseUrl: setup.apiBaseUrl,
+        },
+        tokens,
+        ctx.userId,
+      );
       await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
 
       return { success: true };
