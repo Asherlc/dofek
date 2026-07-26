@@ -5,7 +5,7 @@ declare module "@zos/fs" {
     options?: { encoding?: string };
   }): ArrayBuffer | string;
   export function openSync(options: { path: string; flag: number }): number;
-  export function writeSync(options: { fd: number; data: ArrayBuffer }): void;
+  export function writeSync(options: { fd: number; buffer: ArrayBuffer }): number;
   export function closeSync(options: { fd: number }): void;
   export const O_WRONLY: number;
   export const O_RDWR: number;

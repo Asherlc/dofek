@@ -17867,3 +17867,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Treat a future identical pre-container pull
   failure as external registry availability after confirming the digest and
   command are unchanged; investigate separately if pulls fail persistently.
+
+## 2026-07-25 — Metric-Stream Sink Failed on a CommonJS Named Import
+
+- **Status:** Direct fix validated locally; production deployment pending.
+- **Symptoms:** The production `metric-stream-clickhouse-sink` service
+  repeatedly started and exited with code 1 after deployment
+  `6a96a154ec2103dbe68f70c72a96498529872b1f`.
+- **User impact:** New metric-stream events could not reach ClickHouse through
+  the sink while the service was restart-looping.
+- **Evidence:** The exact local reproduction was
+  `node --enable-source-maps src/metric-stream/redpanda-quarantine.ts` on Node
+  26.5.0. Its first fatal line was
+  `SyntaxError: The requested module 'kafkajs' does not provide an export named
+  'ConfigResourceTypes'`, matching the recurring production task logs.
+  Inspecting the installed KafkaJS 2.2.4 package showed the value on its
+  CommonJS `module.exports` object but not on Node's ESM module namespace.
+- **Root cause:** The sink used a runtime named ESM import for a property that
+  KafkaJS assigns through a CommonJS object literal. Node guarantees the
+  CommonJS `module.exports` value as the default ESM export, while synthetic
+  named exports are a static-analysis convenience that may not be detected.
+  Vitest's transformed module loading did not reproduce the native runtime
+  boundary. See [Node's CommonJS interoperability
+  documentation](https://nodejs.org/api/esm.html#interoperability-with-commonjs).
+- **Fix / mitigation:** Import the KafkaJS runtime through its CommonJS default
+  export and keep `ConfigResourceTypes` as a type-only named import. No retry,
+  timeout, or fallback behavior was added.
+- **Validation:** A child-process regression test first reproduced the exact
+  native Node 26 ESM failure, then passed after the import change. The focused
+  metric-stream tests, full lint, root/server/web TypeScript typechecks, and
+  all 13,719 Docker-free unit and mobile tests also pass.
+- **Remaining risk / follow-up:** Deploy the fixed image, confirm the sink task
+  remains stable, and verify the accumulated Redpanda events flow into
+  ClickHouse.
