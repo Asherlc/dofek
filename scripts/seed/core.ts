@@ -7,7 +7,7 @@ import {
   USER_ID,
 } from "./helpers.ts";
 
-const REVIEW_SEED_USER_IDS = [USER_ID, "00000000-0000-0000-0000-000000000001"] as const;
+const REVIEW_SEED_USER_IDS = [USER_ID, "00000000-0000-0000-0000-000000000001"];
 
 export async function clearSeedData(sql: Sql): Promise<void> {
   for (const userId of REVIEW_SEED_USER_IDS) {
