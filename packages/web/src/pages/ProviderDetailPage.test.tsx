@@ -750,7 +750,7 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(mockSyncMutation.mutateAsync).not.toHaveBeenCalled();
   });
 
-  it("does not render disconnect for providers that are not connected", async () => {
+  it("does not render sync controls for providers that are not connected", async () => {
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
       {
@@ -766,8 +766,12 @@ describe("ProviderDetailPage import-only providers", () => {
     const { ProviderDetailPage } = await import("./ProviderDetailPage");
     render(<ProviderDetailPage />);
 
-    expect(screen.getByText("Sync Controls")).toBeTruthy();
     expect(screen.getByText("Not connected")).toBeTruthy();
+    expect(screen.queryByText("Sync Controls")).toBeNull();
+    expect(screen.queryByText("Sync Last 7 Days")).toBeNull();
+    expect(screen.queryByText("Full Sync")).toBeNull();
+    expect(screen.queryByText("Sync Range")).toBeNull();
+    expect(screen.queryByText("Sync Dates")).toBeNull();
     expect(screen.queryByText("Disconnect")).toBeNull();
   });
 });
