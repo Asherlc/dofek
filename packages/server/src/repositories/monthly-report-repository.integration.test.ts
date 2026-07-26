@@ -54,9 +54,36 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         toDate(toStartOfMonth(today()) + INTERVAL 5 DAY),
         'test-provider',
         toDateTime64(toStartOfMonth(today()) + INTERVAL 5 DAY, 6, 'UTC'),
-        480,
+        300,
         1,
         0,
+        now64(9)
+      ), (
+        toUUID('${userId}'),
+        toDate(toStartOfMonth(today()) + INTERVAL 5 DAY),
+        'test-provider',
+        toDateTime64(toStartOfMonth(today()) + INTERVAL 5 DAY, 6, 'UTC'),
+        480,
+        2,
+        0,
+        now64(9)
+      ), (
+        toUUID('${userId}'),
+        toDate(toStartOfMonth(today()) + INTERVAL 6 DAY),
+        'test-provider',
+        toDateTime64(toStartOfMonth(today()) + INTERVAL 6 DAY, 6, 'UTC'),
+        600,
+        1,
+        0,
+        now64(9)
+      ), (
+        toUUID('${userId}'),
+        toDate(toStartOfMonth(today()) + INTERVAL 6 DAY),
+        'test-provider',
+        toDateTime64(toStartOfMonth(today()) + INTERVAL 6 DAY, 6, 'UTC'),
+        600,
+        2,
+        1,
         now64(9)
       )`,
     );
@@ -73,10 +100,34 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
       ) VALUES (
         toUUID('${userId}'),
         toDate(toStartOfMonth(today()) + INTERVAL 5 DAY),
+        40,
+        60,
+        0,
+        1,
+        now64(9)
+      ), (
+        toUUID('${userId}'),
+        toDate(toStartOfMonth(today()) + INTERVAL 5 DAY),
         60,
         50,
         0,
+        2,
+        now64(9)
+      ), (
+        toUUID('${userId}'),
+        toDate(toStartOfMonth(today()) + INTERVAL 6 DAY),
+        80,
+        45,
+        0,
         1,
+        now64(9)
+      ), (
+        toUUID('${userId}'),
+        toDate(toStartOfMonth(today()) + INTERVAL 6 DAY),
+        80,
+        45,
+        1,
+        2,
         now64(9)
       )`,
     );

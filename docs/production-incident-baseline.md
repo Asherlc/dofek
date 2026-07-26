@@ -17962,7 +17962,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   parser, observe a complete analytics cycle, then resolve
   `DOFEK-SERVER-5D` if it does not recur on the fixed release.
 
-## 2026-07-26 — Monthly Report Recomputed Recursive Analytics Views
+## 2026-07-26 — Monthly Report Timed Out on Recursive Analytics Views
 
 - **Status:** Direct fix validated locally and against production data; merge
   and production deployment pending.
