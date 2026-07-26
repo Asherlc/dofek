@@ -198,6 +198,7 @@ describe("loadMobileRecoveryTab", () => {
       String(call[1]).includes("analytics.daily_recovery"),
     );
     expect(recoveryQueries).toHaveLength(1);
+    expect(String(recoveryQueries[0]?.[1])).toContain("recovery_inputs.is_deleted = 0");
     expect(result.readinessScore).toHaveLength(1);
     expect(result.stress.daily).toHaveLength(1);
 

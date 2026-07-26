@@ -41,7 +41,6 @@ import { createMigration as createMigration0040 } from "./0040_create_weekly_end
 import { createMigration as createMigration0041 } from "./0041_drop_daily_metrics_cycling_distance.ts";
 import { createMigration as createMigration0042 } from "./0042_recreate_activity_sensor_summary_column_order.ts";
 import { createMigration as createMigration0043 } from "./0043_activity_stream_lifecycle_columns.ts";
-import { createMigration as createMigration0044 } from "./0044_materialize_body_measurement_view.ts";
 import { createMigration as createMigration0045 } from "./0045_metric_stream_delete_acknowledgement.ts";
 import { createMigration as createMigration0046 } from "./0046_provider_data_generation.ts";
 import { createMigration as createMigration0047 } from "./0047_cover_provider_generation_projection.ts";
@@ -53,6 +52,9 @@ import { createMigration as createMigration0052 } from "./0052_processing_flow_m
 import { createMigration as createMigration0053 } from "./0053_daily_sleep_lifecycle.ts";
 import { createMigration as createMigration0054 } from "./0054_activity_load_lifecycle.ts";
 import { createMigration as createMigration0055 } from "./0055_provider_connection_catalog.ts";
+import { createMigration as createMigration0056 } from "./0056_daily_body_measurement_lifecycle.ts";
+import { createMigration as createMigration0057 } from "./0057_daily_recovery_lifecycle.ts";
+import { createMigration as createMigration0058 } from "./0058_migrate_body_measurement_to_dbt.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -99,7 +101,6 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0041,
   createMigration0042,
   createMigration0043,
-  createMigration0044,
   createMigration0045,
   createMigration0046,
   createMigration0047,
@@ -111,6 +112,9 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0053,
   createMigration0054,
   createMigration0055,
+  createMigration0056,
+  createMigration0057,
+  createMigration0058,
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

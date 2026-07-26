@@ -133,6 +133,7 @@ export class StressRepository extends BaseRepository {
         efficiency_pct
       FROM analytics.daily_recovery AS recovery_inputs FINAL
       WHERE recovery_inputs.user_id = {userId:UUID}
+        AND recovery_inputs.is_deleted = 0
         ${clickHouseWindowStartPredicate({
           expression: "recovery_inputs.date",
           days,

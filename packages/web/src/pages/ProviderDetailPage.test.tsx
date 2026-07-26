@@ -606,6 +606,45 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
+  it("cancels sync polling when the provider page unmounts", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      jobId: "job-1",
+      jobIds: ["job-1"],
+      providerJobs: [{ providerId: "wahoo", jobId: "job-1", queueName: "sync-wahoo" }],
+      providerResults: [{ providerId: "wahoo", status: "started", jobId: "job-1" }],
+    });
+    let pollingSignal: AbortSignal | undefined;
+    mockPollSyncJob.mockImplementationOnce((options: { signal?: AbortSignal }) => {
+      pollingSignal = options.signal;
+      return new Promise<void>((resolve) => {
+        options.signal?.addEventListener("abort", () => resolve(), { once: true });
+      });
+    });
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    const { unmount } = render(<ProviderDetailPage />);
+
+    act(() => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+    await act(async () => Promise.resolve());
+
+    expect(pollingSignal?.aborted).toBe(false);
+    unmount();
+    expect(pollingSignal?.aborted).toBe(true);
+  });
+
   it("reports unexpected provider sync failures", async () => {
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [

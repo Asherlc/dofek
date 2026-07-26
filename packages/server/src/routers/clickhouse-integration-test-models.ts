@@ -20,7 +20,6 @@ export const clickHouseMigrationAnalyticsViewNames = [
   "analytics.v_activity",
   "analytics.v_activity_members",
   "analytics.v_sleep",
-  "analytics.v_body_measurement",
   "analytics.v_daily_metrics",
   "analytics.provider_stats",
   "analytics.deduped_sensor",
@@ -150,6 +149,7 @@ hrv_mean_60d Nullable(Float64),
 hrv_sd_60d Nullable(Float64),
 rhr_mean_60d Nullable(Float64),
 rhr_sd_60d Nullable(Float64),
+is_deleted UInt8 DEFAULT 0,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
     daily_recovery: `user_id UUID,
@@ -172,6 +172,7 @@ hrv_score Nullable(Float64),
 resting_hr_score Nullable(Float64),
 sleep_score Nullable(Float64),
 respiratory_rate_score Nullable(Float64),
+is_deleted UInt8 DEFAULT 0,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
     daily_body_measurement: `measurement_id UUID,
@@ -180,6 +181,8 @@ date Date,
 recorded_at DateTime64(6, 'UTC'),
 weight_kg Float64,
 body_fat_pct Nullable(Float64),
+is_deleted UInt8,
+source_synced_at DateTime64(9, 'UTC'),
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
     v_body_measurement: `id UUID,
@@ -553,7 +556,7 @@ refreshed_at DateTime64(9)`,
               : shortViewName === "daily_recovery"
                 ? "(user_id, date)"
                 : shortViewName === "daily_body_measurement"
-                  ? "(user_id, recorded_at, measurement_id)"
+                  ? "(user_id, measurement_id)"
                   : shortViewName === "daily_endurance_load" ||
                       shortViewName === "daily_activity_load" ||
                       shortViewName === "healthspan_activity_zone_minutes"

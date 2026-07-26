@@ -13,6 +13,7 @@ import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { PaginationControls } from "./PaginationControls.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 const lifeEventSchema = z.object({
@@ -52,11 +53,13 @@ const eventAnalysisDataSchema = z.object({
 type EventAnalysisData = z.infer<typeof eventAnalysisDataSchema>;
 
 const CATEGORIES = ["diet", "supplement", "injury", "lifestyle", "training", "other"] as const;
+const PAGE_SIZE = 20;
 
 export function LifeEventsPanel() {
   const [showForm, setShowForm] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
   const [windowDays, setWindowDays] = useState(30);
+  const [page, setPage] = useState(0);
 
   const utils = trpc.useUtils();
   const events = trpc.lifeEvents.list.useQuery();
@@ -87,6 +90,9 @@ export function LifeEventsPanel() {
 
   const eventList =
     events.data === undefined ? undefined : z.array(lifeEventSchema).parse(events.data);
+  const totalPages = Math.ceil((eventList?.length ?? 0) / PAGE_SIZE);
+  const currentPage = Math.min(page, Math.max(totalPages - 1, 0));
+  const visibleEvents = eventList?.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   return (
     <div className="space-y-4">
@@ -106,7 +112,7 @@ export function LifeEventsPanel() {
       {/* Event list + add button */}
       <div className="flex items-center justify-between">
         <div className="flex flex-wrap gap-2">
-          {eventList?.map((e) => (
+          {visibleEvents?.map((e) => (
             <button
               key={e.id}
               type="button"
@@ -134,6 +140,17 @@ export function LifeEventsPanel() {
           + Add event
         </button>
       </div>
+
+      <PaginationControls
+        page={currentPage}
+        pageSize={PAGE_SIZE}
+        totalItems={eventList?.length ?? 0}
+        itemLabel="life events"
+        onPageChange={(nextPage) => {
+          setPage(nextPage);
+          setSelectedEvent(null);
+        }}
+      />
 
       {eventList?.length === 0 ? (
         <p className="text-dim text-sm text-center py-6">No life events yet.</p>

@@ -151,8 +151,8 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
     await executeClickHouseTestCommand(
       testContext,
       `INSERT INTO analytics.daily_body_measurement VALUES
-        (generateUUIDv4(), toUUID('${TEST_USER_ID}'), today() - INTERVAL 10 DAY, now64(6, 'UTC') - INTERVAL 10 DAY, 90, NULL, 1, now64(9, 'UTC')),
-        (generateUUIDv4(), toUUID('${TEST_USER_ID}'), today() - INTERVAL 1 DAY, now64(6, 'UTC') - INTERVAL 1 DAY, 80, NULL, 1, now64(9, 'UTC'))`,
+        (generateUUIDv4(), toUUID('${TEST_USER_ID}'), today() - INTERVAL 10 DAY, now64(6, 'UTC') - INTERVAL 10 DAY, 90, NULL, 0, now64(9, 'UTC'), 1, now64(9, 'UTC')),
+        (generateUUIDv4(), toUUID('${TEST_USER_ID}'), today() - INTERVAL 1 DAY, now64(6, 'UTC') - INTERVAL 1 DAY, 80, NULL, 0, now64(9, 'UTC'), 1, now64(9, 'UTC'))`,
     );
     const repository = new CyclingAnalyticsRepository(
       testContext.db,

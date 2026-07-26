@@ -3,6 +3,7 @@ import { totalSessionSeconds } from "@dofek/scoring/breathwork";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { PaginationControls } from "../components/PaginationControls.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
@@ -27,6 +28,7 @@ const PHASE_LABELS: Record<SessionPhase, string> = {
   exhale: "Breathe Out",
   "hold-out": "Hold",
 };
+const HISTORY_PAGE_SIZE = 20;
 
 function BreathingCircle({ phase, progress }: { phase: SessionPhase; progress: number }) {
   // Circle scales between 0.6 (exhale) and 1.0 (inhale)
@@ -62,11 +64,13 @@ function BreathworkPage() {
   const [currentPhase, setCurrentPhase] = useState<SessionPhase>("inhale");
   const [phaseProgress, setPhaseProgress] = useState(0);
   const [pendingSession, setPendingSession] = useState<CompletedSessionInput | null>(null);
+  const [historyPage, setHistoryPage] = useState(0);
 
   const logMutation = trpc.breathwork.logSession.useMutation({
     meta: locallyReportedErrorMeta,
     onSuccess: () => {
       setPendingSession(null);
+      setHistoryPage(0);
       utils.breathwork.history.invalidate();
     },
     onError: (error) => {
@@ -78,6 +82,13 @@ function BreathworkPage() {
   const startTimeRef = useRef<string | null>(null);
 
   const selectedTechnique = techniques.data?.find((t) => t.id === selectedTechniqueId);
+  const historyItems = history.data ?? [];
+  const historyPageCount = Math.ceil(historyItems.length / HISTORY_PAGE_SIZE);
+  const currentHistoryPage = Math.min(historyPage, Math.max(historyPageCount - 1, 0));
+  const visibleHistory = historyItems.slice(
+    currentHistoryPage * HISTORY_PAGE_SIZE,
+    (currentHistoryPage + 1) * HISTORY_PAGE_SIZE,
+  );
 
   const stopSession = useCallback(() => {
     if (timerRef.current) {
@@ -288,7 +299,7 @@ function BreathworkPage() {
           {history.data !== undefined ? (
             history.data.length > 0 ? (
               <div className="space-y-2">
-                {history.data.map((session) => {
+                {visibleHistory.map((session) => {
                   const technique = techniques.data?.find((t) => t.id === session.techniqueId);
                   return (
                     <div
@@ -311,6 +322,13 @@ function BreathworkPage() {
                     </div>
                   );
                 })}
+                <PaginationControls
+                  page={currentHistoryPage}
+                  pageSize={HISTORY_PAGE_SIZE}
+                  totalItems={historyItems.length}
+                  itemLabel="sessions"
+                  onPageChange={setHistoryPage}
+                />
               </div>
             ) : (
               <QueryStatePanel

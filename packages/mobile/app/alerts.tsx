@@ -3,16 +3,20 @@ import type { ProcessingAlert } from "@dofek/providers/processing-alerts";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { PaginationControls } from "../components/PaginationControls";
 import { QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
 import { useProcessingAlerts } from "../lib/useProcessingAlerts";
 import { colors, radius, spacing } from "../theme";
+
+const PAGE_SIZE = 20;
 
 export default function AlertsScreen() {
   const alertsQuery = useProcessingAlerts();
   const router = useRouter();
   const trpcUtils = trpc.useUtils();
   const [startedProviderId, setStartedProviderId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
   const syncMutation = trpc.sync.triggerSync.useMutation({
     onSuccess: async (_result, variables) => {
       setStartedProviderId(variables.providerId ?? null);
@@ -36,6 +40,11 @@ export default function AlertsScreen() {
     router.push("/support");
   }
 
+  const alerts = alertsQuery.data?.alerts ?? [];
+  const totalPages = Math.ceil(alerts.length / PAGE_SIZE);
+  const currentPage = Math.min(page, Math.max(totalPages - 1, 0));
+  const visibleAlerts = alerts.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <Text style={styles.intro}>
@@ -57,7 +66,7 @@ export default function AlertsScreen() {
         />
       ) : (
         <View style={styles.list}>
-          {alertsQuery.data?.alerts.map((alert) => (
+          {visibleAlerts.map((alert) => (
             <View key={alert.id} style={styles.card}>
               <Text style={styles.title}>{alert.title}</Text>
               <Text style={styles.message}>{alert.message}</Text>
@@ -87,6 +96,13 @@ export default function AlertsScreen() {
               ) : null}
             </View>
           ))}
+          <PaginationControls
+            page={currentPage}
+            pageSize={PAGE_SIZE}
+            totalItems={alerts.length}
+            itemLabel="alerts"
+            onPageChange={setPage}
+          />
         </View>
       )}
     </ScrollView>

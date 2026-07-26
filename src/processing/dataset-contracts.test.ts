@@ -12,7 +12,7 @@ import {
 
 describe("dataset contracts", () => {
   it("assigns every production dbt model exactly once", () => {
-    expect(PRODUCTION_DBT_MODELS).toHaveLength(35);
+    expect(PRODUCTION_DBT_MODELS).toHaveLength(36);
     expect(() => validateDatasetContracts(DATASET_CONTRACTS, PRODUCTION_DBT_MODELS)).not.toThrow();
 
     const assignedModels = DATASET_CONTRACTS.flatMap((contract) => contract.analyticsModels);

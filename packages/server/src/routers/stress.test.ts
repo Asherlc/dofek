@@ -103,6 +103,7 @@ describe("Router transformation logic", () => {
       ([, sqlText]) => typeof sqlText === "string" && sqlText.includes("analytics.daily_recovery"),
     )?.[1];
     expect(queryText).toEqual(expect.any(String));
+    expect(queryText).toContain("recovery_inputs.is_deleted = 0");
     expect(queryText).not.toContain("fitness.v_daily_metrics");
     expect(queryText).not.toContain("analytics.v_sleep");
   });

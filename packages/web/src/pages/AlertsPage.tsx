@@ -3,13 +3,17 @@ import type { ProcessingAlert } from "@dofek/providers/processing-alerts";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { PaginationControls } from "../components/PaginationControls.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
+
+const PAGE_SIZE = 20;
 
 export function AlertsPage() {
   const alertsQuery = trpc.processing.alerts.useQuery();
   const trpcUtils = trpc.useUtils();
   const [startedProviderId, setStartedProviderId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
   const syncMutation = trpc.sync.triggerSync.useMutation({
     onSuccess: async (_result, variables) => {
       setStartedProviderId(variables.providerId ?? null);
@@ -21,6 +25,11 @@ export function AlertsPage() {
     if (!alert.providerId) return;
     syncMutation.mutate({ providerId: alert.providerId, sinceDays: 7 });
   }
+
+  const alerts = alertsQuery.data?.alerts ?? [];
+  const totalPages = Math.ceil(alerts.length / PAGE_SIZE);
+  const currentPage = Math.min(page, Math.max(totalPages - 1, 0));
+  const visibleAlerts = alerts.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   return (
     <PageLayout
@@ -43,7 +52,7 @@ export function AlertsPage() {
         </section>
       ) : (
         <div className="space-y-3">
-          {alertsQuery.data?.alerts.map((alert) => (
+          {visibleAlerts.map((alert) => (
             <article
               key={alert.id}
               className="rounded-lg border border-l-4 border-border border-l-red-500 bg-surface px-4 py-4"
@@ -72,6 +81,13 @@ export function AlertsPage() {
               ) : null}
             </article>
           ))}
+          <PaginationControls
+            page={currentPage}
+            pageSize={PAGE_SIZE}
+            totalItems={alerts.length}
+            itemLabel="alerts"
+            onPageChange={setPage}
+          />
         </div>
       )}
     </PageLayout>

@@ -168,6 +168,7 @@ export async function loadDashboardOverview({
             respiratory_rate_score
           FROM analytics.daily_recovery AS recovery FINAL
           WHERE recovery.user_id = {userId:UUID}
+            AND recovery.is_deleted = 0
             AND recovery.date > toDate({endDate:String}) - {days:UInt32}
             AND recovery.date <= toDate({endDate:String})
             ${accessWindowDateClause(accessWindow, "recovery.date")}

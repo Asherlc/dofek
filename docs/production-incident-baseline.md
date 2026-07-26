@@ -16071,6 +16071,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   compatibility-view projections after the application change has been
   deployed everywhere.
 
+## 2026-07-24 — Sync Polling Cancellation Mutation Gate Failed
+
+- **Status:** Fixed and verified in CI.
+- **Symptoms:** The `Test / Stryker (0)` GitHub Actions shard failed with a
+  56.60% mutation score against a 75% breaking threshold, which caused the
+  aggregate `Test / Mutation Testing` check to fail.
+- **User impact:** PR #1905 could not pass its required checks or be merged.
+- **Evidence:** The [failing Stryker job](https://github.com/Asherlc/dofek/actions/runs/30116363900/job/89558126067)
+  reported 19 surviving and four uncovered mutants in
+  `packages/web/src/lib/poll-sync-job.ts`, concentrated in cancellation,
+  retry-delay, and callback-boundary guards.
+- **Root cause:** The polling helper's ordinary tests covered its main success,
+  retry, and unmount flows but did not exercise the timing boundaries introduced
+  by its `AbortSignal` guards, so behavior-changing mutations survived.
+- **Fix / mitigation:** Added behavioral tests for pre-aborted signals, aborts
+  during resolved and rejected fetches, callback-triggered cancellation,
+  positive and zero retry delays, abort-listener lifecycle, and the listener
+  registration race. No mutation threshold, ignore, or production behavior was
+  changed.
+- **Validation:** The exact local CI Stryker command reports a 96.77% mutation
+  score: 88 mutants killed, two timeout-detected, three equivalent survivors,
+  and zero uncovered mutants. The focused suite passes 28 tests. The
+  [GitHub Actions rerun](https://github.com/Asherlc/dofek/actions/runs/30117481482)
+  passed all three Stryker shards, the aggregate mutation gate, and every other
+  required check.
+- **Remaining risk / follow-up:** No incident-specific risk remains. Include
+  cancellation boundary cases in future polling test plans so mutation coverage
+  is established before CI.
+
 ## 2026-07-24 — OTA Manifest Endpoint Transiently Timed Out
 
 - **Status:** Recovered without a behavior change; root cause unresolved.
@@ -17168,6 +17197,70 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   fetch the Alpine index, investigate mirror availability and hosted-runner
   network evidence before changing the build.
 
+## 2026-07-25 — Analytics Builds Exceeded the ClickHouse Query Ceiling
+
+- **Status:** Root cause fixed in code; production deployment and full-cycle
+  validation pending.
+- **Symptoms:** Sentry issue
+  [`DOFEK-SERVER-5A`](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5A)
+  recorded a failed production analytics-worker cycle at
+  `2026-07-25T15:08:03.447Z`. Swarm subsequently replaced two unhealthy
+  analytics-worker tasks while later retries continued failing.
+- **User impact:** Downstream activity, cycling, sleep, recovery, training,
+  body, and healthspan models were skipped in failed cycles and can remain
+  stale. The background event had no directly affected Sentry user.
+- **Evidence:** The exact failing path was
+  `scripts/run-analytics-worker.ts` → `scripts/run-analytics-build.ts` → the
+  production 36-model dbt build. The first fatal model line was
+  `sleep_heart_rate_sample ... Timeout exceeded: elapsed 240019.146628 ms,
+  maximum: 240000 ms`; `activity_power_curve` then failed at
+  `240001.790284 ms`. ClickHouse `system.query_log` showed the failed sleep
+  insert reading 53,806,563 rows / 1.62 GiB and the failed power-curve insert
+  reading 130,111,265 rows / 827.67 MiB. Later retries also timed out
+  `provider_stats`, whose successful cycle already read 275,256,146 rows /
+  21.50 GiB in 216 seconds. The separate
+  `analytics.v_body_measurement` refreshable materialized view runs every 15
+  minutes; its recursive full refresh read 10.4–15.7 million intermediate rows
+  / 2.58–4.28 GiB per attempt, occupied the ClickHouse service's single CPU,
+  and also began timing out. `system.query_log` history showed power-curve
+  timeouts since at least July 20 and sleep-heart-rate timeouts since July 23,
+  before the release that added Sentry-backed analytics health reporting.
+  ClickHouse documents that refreshable materialized views periodically execute
+  their query over the full dataset and that incremental materialization
+  typically scales better:
+  <https://clickhouse.com/docs/concepts/features/materialized-views/refreshable-materialized-view>.
+- **Root cause:** Several scheduled analytics workloads expand or rescan
+  production-scale history on the same single-CPU ClickHouse service. Their
+  required inserts exceed the configured four-minute `max_execution_time`;
+  failed cycles do not advance their incremental state, so retries repeat the
+  same backlog. The new health worker correctly surfaced and restarted the
+  previously hidden failure loop; it did not create the expensive queries.
+- **Fix / mitigation:** The code fix moves body-measurement transformation into
+  a dbt-owned incremental model that rebuilds only dirty users, uses per-user
+  ordered five-minute gap clustering, and preserves deletions with lifecycle
+  tombstones; `analytics.v_body_measurement` is now only the active-row serving
+  projection over that canonical table. It also recomputes provider counts only
+  for dirty provider keys through the covering metric-stream projection, limits
+  incremental sleep builds to 32 dirty keys while leaving operator-requested
+  full refreshes complete, and schedules power-curve work only for activities
+  with current valid power samples read from the replacing table with `FINAL`.
+  No timeout, retry, or resource-limit setting changed.
+- **Validation:** Sentry, Swarm logs, `system.view_refreshes`,
+  `system.query_log`, and a live `docker stats` sample all agreed on the
+  240-second failures and CPU saturation. Focused ClickHouse integration tests
+  now execute the replacement body grouping, projected provider count, bounded
+  sleep lifecycle, and power eligibility queries successfully. A fresh
+  ClickHouse migration run, full-refresh and incremental body dbt builds, dbt
+  compilation, analytics policy lint, and TypeScript typechecking also pass.
+  Production validation still must show a complete 36-model cycle below the
+  existing query ceiling, followed by cache warming and a stable healthy
+  analytics-worker task.
+- **Remaining risk / follow-up:** Production continues running the prior model
+  definitions until this change is deployed. After deployment, verify the body
+  model migration completes, observe at least one full analytics cycle, compare
+  model read rows/bytes and duration in `system.query_log`, and confirm the
+  analytics-worker remains healthy without changing the four-minute ceiling.
+
 ## 2026-07-25 — Failed Deploy Left ClickHouse Consumers Quiesced
 
 - **Status:** Unresolved; the affected [Deploy Web
@@ -17388,7 +17481,40 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   or redundant work from the observer completion critical path, then validate
   that every callback completes before expiration without increasing the
   deadline.
+## 2026-07-25 — Expected HealthKit Authorization State Reported as an Error
 
+- **Status:** Fixed in source; pending a native iOS release.
+- **Symptoms:** Sentry issue
+  [DOFEK-MOBILE-1B](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1B)
+  reported three `com.apple.healthkit: Code: 5` events for one production user
+  immediately after background HealthKit observer registration.
+- **User impact:** No crash occurred. The native module manually captured the
+  observer callback errors, producing a false-positive production alert.
+- **Evidence:** The failing operation was the `HKObserverQuery` callback created
+  by `setupBackgroundObservers`. Its complete native error was
+  `com.apple.healthkit: Code: 5`. The production build followed commit
+  `d94b8f38e`, which added unconditional `SentrySDK.capture(error:)` for that
+  callback. The installed HealthKit SDK identifies raw code 5 as
+  `errorAuthorizationNotDetermined`; Apple documents that this occurs when an
+  app has not yet requested the authorization required for an operation:
+  <https://developer.apple.com/documentation/healthkit/hkerror/code/errorauthorizationnotdetermined>.
+- **Root cause:** Observer registration treated HealthKit's expected
+  authorization-not-determined state as an unexpected native exception, even
+  though the query and background-delivery paths already handled that state as
+  permission drift.
+- **Fix / mitigation:** Centralize HealthKit error classification, complete
+  authorization-not-determined observer callbacks with an informational Sentry
+  breadcrumb instead of an error event, and continue capturing every unexpected
+  observer error with operation and sample type tags. No timeout, retry,
+  fallback, or authorization gate was added.
+- **Validation:** The new Swift regression test first failed because the
+  observer reporting policy did not exist. After the fix, all 74 HealthKit
+  Swift tests, strict SwiftLint, and all 965 mobile tests passed without
+  ad-hoc waits.
+- **Remaining risk / follow-up:** The fix changes native Swift and cannot ship
+  through an OTA JavaScript update. Verify it on physical hardware after the
+  next native iOS build, then confirm the Sentry issue does not recur while
+  unexpected observer failures retain their new diagnostic tags.
 ## 2026-07-25 — Story Fixtures Lagged the Canonical Polarization DTO
 
 - **Status:** Direct fix validated locally; replacement CI pending on PR #1958.
@@ -17415,6 +17541,85 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** None beyond completing replacement CI; the
   compiler now enforces future fixture parity with the canonical DTO.
 
+## 2026-07-25 — Concurrent Local ClickHouse Stack Restarted During Validation
+
+- **Status:** Reproduced local Docker capacity incident; focused validation
+  passed after completed issue stacks were stopped, while CI remains the
+  independent broad validation gate.
+- **Symptoms:** The broad cycling repository integration fixture lost its
+  ClickHouse HTTP connection while rebuilding `analytics.v_activity`.
+- **User impact:** No production users were affected. One local validation
+  suite stopped before executing its four tests.
+- **Evidence:** The exact failed command was
+  `pnpm test:integration -- src/db/daily-body-measurement-read-model.integration.test.ts packages/server/src/repositories/cycling-analytics-repository.integration.test.ts`.
+  Its first fatal line was `socket hang up` during the fixture's
+  `INSERT INTO ... v_activity`. Docker then reported restart count 1 for
+  `issue-1769-clickhouse-1`, with the prior process ending at
+  `2026-07-25T22:12:18Z` and the replacement starting four seconds later.
+  The container log ended without a ClickHouse query exception. The same
+  restart recurred twice during the later focused lifecycle run: the first
+  fatal line was again `socket hang up`, restart count advanced to 1, and
+  Docker again retained `OOMKilled=false`. At the time, four other workspace
+  ClickHouse containers and two k3d servers were also running in the Docker
+  VM's 7.653 GiB memory allocation. On recurrence, the persisted ClickHouse
+  error log recorded `MEMORY_LIMIT_EXCEEDED` while flushing
+  `system.metric_log`: current RSS was 2.40 GiB against a 2.44 GiB process
+  limit immediately before exit 137.
+- **Root cause:** The reused issue-1769 ClickHouse test volume consumed the
+  process memory limit during system-log maintenance while the Docker VM was
+  already running four other ClickHouse instances. The process exited and
+  Compose restarted it; Docker did not attribute that inner-process exit as
+  `OOMKilled=true`.
+- **Fix / mitigation:** No retry, timeout, memory-limit, or application
+  workaround was added. Completed issue stacks were stopped through the
+  workspace Compose wrapper, and the issue-1769 Postgres, Redis, and Redpanda
+  services were stopped while the focused ClickHouse-only validation ran.
+  When the persisted test volume reproduced the failure, only issue-1769's
+  disposable Compose volumes were removed and a fresh ClickHouse volume was
+  created.
+- **Validation:** The lifecycle integration test passed update, deletion,
+  tombstone, downstream-exclusion, and refresh-snapshot watermark assertions
+  on the stable real ClickHouse process. The focused 39-test unit suite,
+  analytics policy, targeted SQLFluff, root typecheck, and Biome also passed.
+  The fresh-volume lifecycle run also passed the production
+  `weekly_healthspan` update and deletion propagation assertions. After the
+  body model moved to dbt ownership, the same lifecycle test uses the
+  canonical body table's per-user `refreshed_at` watermark instead of
+  `system.view_refreshes`. The broad cycling fixture and CI remain the
+  independent validation gates.
+- **Remaining risk / follow-up:** Capture Docker daemon or VM-level kill events
+  if this recurs, and reduce concurrent disposable workspace stacks before
+  repeating broad local ClickHouse validation. Docker documents container
+  memory constraints and out-of-memory behavior at
+  <https://docs.docker.com/engine/containers/resource_constraints/#understand-the-risks-of-running-out-of-memory>.
+
+## 2026-07-25 — Fresh E2E Migration Assumed a dbt-Owned Table Existed
+
+- **Status:** Root cause fixed and validated locally; replacement CI pending on
+  PR #1966.
+- **Symptoms:** The fresh E2E migration job failed while applying ClickHouse
+  migration `0056_daily_body_measurement_lifecycle`.
+- **User impact:** No production users were affected. PR #1966 was blocked from
+  merge.
+- **Evidence:** The exact failing step ran the E2E migration service. Its first
+  fatal line was `Could not find table: daily_body_measurement`. The migration
+  ran before dbt had created `analytics.daily_body_measurement`, while the same
+  table can exist in upgraded environments.
+- **Root cause:** Migration 0055 unconditionally altered a dbt-owned serving
+  table, but a fresh environment applies tracked migrations before dbt creates
+  that table.
+- **Fix / mitigation:** Query `system.tables` and run both lifecycle-column
+  alterations only when the existing serving table is present. Fresh
+  environments skip the upgrade and let dbt create the final schema; upgraded
+  environments retain the required alteration path.
+- **Validation:** Focused migration tests cover both absent and present table
+  states, root typecheck and Biome pass, and a fresh E2E migration run applied
+  all 46 migrations through 0055 successfully without an ad-hoc wait.
+- **Remaining risk / follow-up:** The first local rerun experienced a separate
+  ClickHouse exit 137 while several workspace stacks shared Docker memory.
+  After stopping only completed issue stacks, the same fresh migration run
+  passed. Continue capturing Docker VM-level kill evidence if that capacity
+  failure recurs.
 ## 2026-07-25 — Local ClickHouse OOM During Concurrent Validation
 
 - **Status:** Resolved by ending the concurrent full-suite workload; no
@@ -17445,3 +17650,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   shared Docker VM. Schedule ClickHouse-heavy local validation serially when
   several workspaces are active; do not stop or prune another workspace's
   resources.
+
+## 2026-07-25 — iOS Deploy Classifier Missed Native Build Inputs
+
+- **Status:** Direct fix validated locally; replacement CI pending.
+- **Symptoms:** The TestFlight deploy workflow could report
+  `should_deploy=false` after changes to the mobile dependency manifest, root
+  lockfile, app config, config plugins, or local Expo-module metadata.
+- **User impact:** A JavaScript OTA could reference native code that had not
+  been uploaded in a new iOS binary, leaving production devices without the
+  required native implementation.
+- **Evidence:** The exact faulty command was the `grep -qE` classifier in the
+  `Detect iOS native changes` step. Its pattern only matched `app.json`, a
+  nonexistent `app.config.ts` path, build/target files, and local-module `ios`
+  directories. It omitted the repository's actual `app.config.js`,
+  `packages/mobile/package.json`, `pnpm-lock.yaml`, config plugins, and
+  `expo-module.config.json`. Expo documents that Prebuild regenerates native
+  projects from app configuration and package dependencies, while Expo
+  Autolinking uses `expo-module.config.json` to recognize local native modules:
+  <https://docs.expo.dev/workflow/continuous-native-generation/> and
+  <https://docs.expo.dev/modules/autolinking/>.
+- **Root cause:** Native-input knowledge was embedded in an incomplete,
+  untested inline regex that no longer represented all inputs to the
+  repository's `expo prebuild --clean` and CocoaPods build.
+- **Fix / mitigation:** Define one named workflow classifier covering the
+  mobile manifest, root lockfile, app config, config plugins, build and target
+  inputs, local-module metadata, and local-module iOS sources. Exercise that
+  exact classifier from the workflow unit test, including an OTA-only
+  TypeScript route case.
+- **Validation:** All 41 mobile deploy workflow tests, full lint, root/server/web
+  typechecks, and 13,648 Docker-free unit/mobile tests pass without retries,
+  timeouts, or fallback release behavior. CI remains pending.
+- **Remaining risk / follow-up:** Future native input categories must be added
+  to the single named classifier with a regression case in the same change.

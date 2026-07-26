@@ -11,6 +11,7 @@ import type { ActivityMapPreview } from "./ActivityMapTile.tsx";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
 import { ActivityTypeIcon } from "./ActivityTypeIcon.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { PaginationControls } from "./PaginationControls.tsx";
 
 export interface Activity {
   id: string;
@@ -88,8 +89,6 @@ export function ActivityList({
     return <div className="text-subtle text-sm py-4">No recent activities</div>;
   }
 
-  const totalPages =
-    totalCount != null && pageSize != null ? Math.ceil(totalCount / pageSize) : undefined;
   const currentPage = page ?? 0;
   const selectedCount = selectedActivityIds.size;
   const selectedIds = [...selectedActivityIds];
@@ -239,31 +238,15 @@ export function ActivityList({
   const activityColumns = [...baseColumns, ...additionalColumns];
   const columns = selectMode ? [selectionColumn, ...activityColumns] : activityColumns;
   const footer =
-    totalPages != null && totalPages > 1 && onPageChange ? (
-      <div className="flex items-center justify-between pt-3 border-t border-border/50 mt-2">
-        <span className="text-xs text-subtle tabular-nums">{totalCount} activities</span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onPageChange(currentPage - 1)}
-            disabled={currentPage <= 0}
-            className="px-2 py-1 text-xs text-muted hover:text-foreground disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
-          >
-            Previous
-          </button>
-          <span className="text-xs text-subtle tabular-nums">
-            {currentPage + 1} / {totalPages}
-          </span>
-          <button
-            type="button"
-            onClick={() => onPageChange(currentPage + 1)}
-            disabled={currentPage >= totalPages - 1}
-            className="px-2 py-1 text-xs text-muted hover:text-foreground disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
-          >
-            Next
-          </button>
-        </div>
-      </div>
+    totalCount != null && pageSize != null && onPageChange ? (
+      <PaginationControls
+        page={currentPage}
+        pageSize={pageSize}
+        totalItems={totalCount}
+        itemLabel="activities"
+        onPageChange={onPageChange}
+        className="mt-2"
+      />
     ) : null;
 
   return (

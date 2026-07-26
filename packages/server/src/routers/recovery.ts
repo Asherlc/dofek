@@ -502,6 +502,7 @@ export const recoveryRouter = router({
           efficiency_pct
         FROM analytics.daily_recovery AS recovery_inputs FINAL
         WHERE recovery_inputs.user_id = {userId:UUID}
+          AND recovery_inputs.is_deleted = 0
           ${clickHouseWindowStartPredicate({
             expression: "recovery_inputs.date",
             days: queryRange.days,
@@ -621,6 +622,7 @@ export const recoveryRouter = router({
           recovery.respiratory_rate_score AS respiratory_rate_score
         FROM analytics.daily_recovery AS recovery FINAL
         WHERE recovery.user_id = {userId:UUID}
+          AND recovery.is_deleted = 0
           AND recovery.date > toDate({windowStart:String})
           AND recovery.date <= toDate({endDate:String})
           ${recoveryAccessWindowClause}

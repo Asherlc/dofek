@@ -118,10 +118,18 @@ export function useAutoSync(latestDate: string | null | undefined) {
     if (!latestDate) return;
     if (hasAttemptedAutoSyncForLatestDate(latestDate)) return;
     if (activeSyncs.isLoading) return;
+    if (activeSyncs.error) return;
     if ((activeSyncs.data?.length ?? 0) > 0) return; // sync already in progress
 
     triggered.current = true;
     markAutoSyncAttemptedForLatestDate(latestDate);
     triggerSync.mutate({ sinceDays: 1 });
-  }, [latestDate, dataIsStale, activeSyncs.isLoading, activeSyncs.data, triggerSync]);
+  }, [
+    latestDate,
+    dataIsStale,
+    activeSyncs.isLoading,
+    activeSyncs.error,
+    activeSyncs.data,
+    triggerSync,
+  ]);
 }

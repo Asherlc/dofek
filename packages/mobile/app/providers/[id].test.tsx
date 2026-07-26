@@ -671,6 +671,68 @@ describe("ProviderDetailScreen", () => {
       expect(mockSyncStatusFetch).not.toHaveBeenCalled();
     });
 
+    it("keeps sync active and recovers from a transient server error", async () => {
+      vi.useFakeTimers();
+      try {
+        mockSyncMutateAsync.mockResolvedValue({ jobId: "job-1" });
+        mockSyncStatusFetch
+          .mockRejectedValueOnce(
+            new Error("Sync status is temporarily unavailable. Please try again."),
+          )
+          .mockResolvedValueOnce({
+            status: "completed",
+            percentage: 100,
+            providers: { wahoo: { status: "done", message: "Done" } },
+          });
+
+        const { default: ProviderDetailScreen } = await import("./[id]");
+        render(<ProviderDetailScreen />);
+        fireEvent.click(screen.getByText("Sync"));
+        await act(async () => Promise.resolve());
+
+        expect(
+          screen.getByText("Sync status is temporarily unavailable. Please try again."),
+        ).toBeTruthy();
+        expect(screen.getByRole("button", { name: "Sync" }).getAttribute("aria-busy")).toBe("true");
+
+        await act(() => vi.advanceTimersByTimeAsync(1000));
+
+        expect(screen.getByText("Sync complete")).toBeTruthy();
+        expect(mockSyncStatusFetch).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("stops retrying sync status when unmounted during the retry delay", async () => {
+      vi.useFakeTimers();
+      try {
+        mockSyncMutateAsync.mockResolvedValue({ jobId: "job-1" });
+        mockSyncStatusFetch
+          .mockRejectedValueOnce(
+            new Error("Sync status is temporarily unavailable. Please try again."),
+          )
+          .mockResolvedValueOnce({
+            status: "completed",
+            percentage: 100,
+            providers: { wahoo: { status: "done", message: "Done" } },
+          });
+
+        const { default: ProviderDetailScreen } = await import("./[id]");
+        const rendered = render(<ProviderDetailScreen />);
+        fireEvent.click(screen.getByText("Sync"));
+        await act(async () => Promise.resolve());
+        expect(mockSyncStatusFetch).toHaveBeenCalledTimes(1);
+
+        rendered.unmount();
+        await act(() => vi.advanceTimersByTimeAsync(1000));
+
+        expect(mockSyncStatusFetch).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("triggers generic provider full sync when Full sync is clicked", async () => {
       mockSyncMutateAsync.mockResolvedValue({ jobId: "job-2" });
       mockSyncStatusFetch.mockResolvedValue({

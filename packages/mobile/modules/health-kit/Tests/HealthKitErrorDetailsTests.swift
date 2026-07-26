@@ -4,6 +4,39 @@ import XCTest
 @testable import HealthKitLib
 
 final class HealthKitErrorDetailsTests: XCTestCase {
+    func testAuthorizationNotDeterminedMatchesOnlyHealthKitCode() {
+        let authorizationError = NSError(
+            domain: HKErrorDomain,
+            code: HKError.Code.errorAuthorizationNotDetermined.rawValue
+        )
+        let unrelatedHealthKitError = NSError(
+            domain: HKErrorDomain,
+            code: HKError.Code.errorInvalidArgument.rawValue
+        )
+        let sameCodeFromAnotherDomain = NSError(
+            domain: "HealthKitTest",
+            code: HKError.Code.errorAuthorizationNotDetermined.rawValue
+        )
+
+        XCTAssertTrue(HealthKitErrorDetails.isAuthorizationNotDetermined(authorizationError))
+        XCTAssertFalse(HealthKitErrorDetails.isAuthorizationNotDetermined(unrelatedHealthKitError))
+        XCTAssertFalse(HealthKitErrorDetails.isAuthorizationNotDetermined(sameCodeFromAnotherDomain))
+    }
+
+    func testObserverReportingSkipsExpectedAuthorizationStateOnly() {
+        let authorizationError = NSError(
+            domain: HKErrorDomain,
+            code: HKError.Code.errorAuthorizationNotDetermined.rawValue
+        )
+        let unexpectedError = NSError(
+            domain: HKErrorDomain,
+            code: HKError.Code.errorInvalidArgument.rawValue
+        )
+
+        XCTAssertFalse(HealthKitErrorDetails.shouldReportObserverError(authorizationError))
+        XCTAssertTrue(HealthKitErrorDetails.shouldReportObserverError(unexpectedError))
+    }
+
     func testDatabaseInaccessibleUsesStableCodeAndNativeContext() {
         let nativeError = NSError(
             domain: HKErrorDomain,
