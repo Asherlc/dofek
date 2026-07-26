@@ -120,8 +120,8 @@ describe("background-whoop-ble-sync", () => {
 
     await vi.waitFor(() => {
       expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
+      expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
     });
-    expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
   });
 
   it("prevents a foreground transition from overlapping the initial sync", async () => {
