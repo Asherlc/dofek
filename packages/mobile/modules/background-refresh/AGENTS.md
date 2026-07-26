@@ -16,7 +16,9 @@ native configuration, and authoritative platform references.
 - Keep `com.dofek.accelerometer-refresh` synchronized with
   `BGTaskSchedulerPermittedIdentifiers` in `packages/mobile/app.json`.
 - Do not describe the 15-minute earliest date as a guaranteed refresh
-  interval. Scheduling remains system-controlled, as cited in the README.
+  interval. Apple documents
+  [`earliestBeginDate`](https://developer.apple.com/documentation/backgroundtasks/bgtaskrequest/earliestbegindate)
+  as the earliest requested start time; scheduling remains system-controlled.
 
 ## JavaScript completion
 
