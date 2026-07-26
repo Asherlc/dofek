@@ -57,6 +57,17 @@ ${peerDbMetadataColumnDefinitions}
 ${replacingMergeTreeTable("(id)")}`;
 }
 
+export function buildPostgresFitnessProviderConnectionRawTableStatement(): string {
+  return `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection (
+  user_id UUID,
+  provider_id String,
+  created_at DateTime64(6, 'UTC'),
+  updated_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(user_id, provider_id)")}`;
+}
+
 export function buildPostgresFitnessRawTableStatements(): string[] {
   return [
     buildPostgresFitnessActivityRawTableStatement(),
@@ -220,14 +231,7 @@ ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
     buildPostgresFitnessProviderRawTableStatement(),
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection (
-  user_id UUID,
-  provider_id String,
-  created_at DateTime64(6, 'UTC'),
-  updated_at DateTime64(6, 'UTC'),
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, provider_id)")}`,
+    buildPostgresFitnessProviderConnectionRawTableStatement(),
     `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_priority (
   provider_id String,
   priority Int32,

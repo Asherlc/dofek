@@ -11,6 +11,7 @@ describe("0055_provider_connection_catalog", () => {
       expect.stringContaining("user_id Nullable(UUID)"),
       expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection"),
     ]);
+    expect(migration.statements[1]).toContain("SETTINGS allow_nullable_key = 1");
     expect(migration.run).toEqual(expect.any(Function));
   });
 
@@ -31,7 +32,9 @@ describe("0055_provider_connection_catalog", () => {
       "RENAME TABLE postgres_fitness.provider TO postgres_fitness.provider_before_catalog_migration",
     );
     expect(commands[5]).toContain("SELECT id, name, api_base_url, user_id, created_at");
-    expect(commands[6]).toBe("DROP TABLE postgres_fitness.provider_before_catalog_migration");
+    expect(commands[6]).toBe(
+      "DROP TABLE IF EXISTS postgres_fitness.provider_before_catalog_migration",
+    );
     expect(commands[7]).toContain(
       "CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection",
     );
@@ -92,7 +95,9 @@ describe("0055_provider_connection_catalog", () => {
     expect(commands[0]).toContain(
       "INSERT INTO postgres_fitness.provider (id, name, api_base_url, user_id",
     );
-    expect(commands[1]).toBe("DROP TABLE postgres_fitness.provider_before_catalog_migration");
+    expect(commands[1]).toBe(
+      "DROP TABLE IF EXISTS postgres_fitness.provider_before_catalog_migration",
+    );
     expect(commands[2]).toContain(
       "CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection",
     );

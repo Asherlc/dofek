@@ -1,6 +1,9 @@
 import { z } from "zod";
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
-import { buildPostgresFitnessProviderRawTableStatement } from "../clickhouse-raw-tables.ts";
+import {
+  buildPostgresFitnessProviderConnectionRawTableStatement,
+  buildPostgresFitnessProviderRawTableStatement,
+} from "../clickhouse-raw-tables.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 import type { ClickHouseMigration } from "./types.ts";
 
@@ -27,17 +30,7 @@ const providerColumns = [
   "_peerdb_version",
 ].join(", ");
 
-const providerConnectionStatement = `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection (
-  user_id UUID,
-  provider_id String,
-  created_at DateTime64(6, 'UTC'),
-  updated_at DateTime64(6, 'UTC'),
-  _peerdb_synced_at DateTime64(9) DEFAULT now(),
-  _peerdb_is_deleted Int8 DEFAULT 0,
-  _peerdb_version Int64 DEFAULT 0
-)
-ENGINE = ReplacingMergeTree(_peerdb_version)
-ORDER BY (user_id, provider_id)`;
+const providerConnectionStatement = buildPostgresFitnessProviderConnectionRawTableStatement();
 
 export function createMigration(): ClickHouseMigration {
   return {
@@ -79,7 +72,7 @@ async function recoverInterruptedProviderRebuild(client: ClickHouseCommandClient
     `INSERT INTO ${providerTable} (${providerColumns})
      SELECT ${providerColumns} FROM ${backupTable}`,
   );
-  await runClickHouseMigrationStatement(client, `DROP TABLE ${backupTable}`);
+  await runClickHouseMigrationStatement(client, `DROP TABLE IF EXISTS ${backupTable}`);
 }
 
 async function providerRequiresRebuild(client: ClickHouseCommandClient): Promise<boolean> {
@@ -115,7 +108,7 @@ async function rebuildProviderTable(client: ClickHouseCommandClient): Promise<vo
     `RENAME TABLE ${providerTable} TO ${backupTable}, ${replacementTable} TO ${providerTable}`,
     `INSERT INTO ${providerTable} (${providerColumns})
      SELECT ${providerColumns} FROM ${backupTable}`,
-    `DROP TABLE ${backupTable}`,
+    `DROP TABLE IF EXISTS ${backupTable}`,
   ];
   for (const statement of statements) {
     await runClickHouseMigrationStatement(client, statement);

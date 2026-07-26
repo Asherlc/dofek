@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPostgresFitnessProviderConnectionRawTableStatement,
   buildPostgresFitnessProviderRawTableStatement,
   buildPostgresFitnessRawTableStatements,
 } from "./clickhouse-raw-tables.ts";
+
+describe("buildPostgresFitnessProviderConnectionRawTableStatement", () => {
+  it("builds the canonical provider connection mirror", () => {
+    const statement = buildPostgresFitnessProviderConnectionRawTableStatement();
+
+    expect(statement).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection");
+    expect(statement).toContain("ORDER BY (user_id, provider_id)");
+    expect(statement).toContain("SETTINGS allow_nullable_key = 1");
+  });
+});
 
 describe("buildPostgresFitnessProviderRawTableStatement", () => {
   it("builds the canonical provider table by default", () => {
