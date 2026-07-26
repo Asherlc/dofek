@@ -2,7 +2,7 @@ import { pagePlugin } from "@zeppos/zml/3.0/module/messaging/plugin/page";
 import { BasePage } from "@zeppos/zml/base-page";
 import { queryPermission, requestPermission } from "@zos/app";
 import * as appService from "@zos/app-service";
-import { getDeviceInfo } from "@zos/device";
+import { getDeviceInfo, SCREEN_SHAPE_ROUND } from "@zos/device";
 import { setWakeUpRelaunch } from "@zos/display";
 import { showToast } from "@zos/interaction";
 import {
@@ -40,6 +40,7 @@ import {
 import { collectHealthData } from "../src/health-collector.ts";
 import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
+import { createRoundLoginLayout } from "../src/round-layout.ts";
 import {
   appendSamples,
   finalizeSessionFile,
@@ -80,11 +81,13 @@ function initialActiveFile(): ActiveFileSlot {
 BasePage.use(pagePlugin);
 
 const logger = Logger.getLogger("imu-page");
-const { width: DEVICE_WIDTH } = getDeviceInfo();
+const { width: DEVICE_WIDTH, screenShape } = getDeviceInfo();
 const BG_PERMISSION = "device:os.bg_service";
 const IS_COMPACT_SQUARE_DISPLAY = DEVICE_WIDTH <= 320;
 const CONTENT_INSET = px(IS_COMPACT_SQUARE_DISPLAY ? 20 : 40);
 const CONTENT_WIDTH = DEVICE_WIDTH - CONTENT_INSET * 2;
+const ROUND_LOGIN_LAYOUT =
+  screenShape === SCREEN_SHAPE_ROUND ? createRoundLoginLayout(px, DEVICE_WIDTH) : null;
 const TITLE_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 24 : 36);
 const TITLE_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 44 : 52);
 const TITLE_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 32 : 40);
@@ -97,9 +100,18 @@ const SENSOR_INFO_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 18 : 20);
 const SAMPLE_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 208 : 214);
 const SAMPLE_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 72 : 80);
 const SAMPLE_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 22 : 24);
-const HINT_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 294 : 310);
-const HINT_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 56 : 72);
+const HINT_X = ROUND_LOGIN_LAYOUT?.hint.x ?? CONTENT_INSET;
+const HINT_Y = ROUND_LOGIN_LAYOUT?.hint.y ?? px(IS_COMPACT_SQUARE_DISPLAY ? 294 : 310);
+const HINT_WIDTH = ROUND_LOGIN_LAYOUT?.hint.w ?? CONTENT_WIDTH;
+const HINT_HEIGHT = ROUND_LOGIN_LAYOUT?.hint.h ?? px(IS_COMPACT_SQUARE_DISPLAY ? 56 : 72);
 const HINT_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 18 : 20);
+const LOGIN_BUTTON_LAYOUT = ROUND_LOGIN_LAYOUT?.button ?? {
+  x: px(40),
+  y: DEVICE_WIDTH <= 360 ? px(338) : px(438),
+  w: DEVICE_WIDTH - px(80),
+  h: px(44),
+  radius: px(10),
+};
 
 let statusText: ReturnType<typeof createWidget> | null = null;
 let sensorInfoText: ReturnType<typeof createWidget> | null = null;
@@ -230,9 +242,9 @@ Page(
       });
 
       hintText = createWidget(widget.TEXT, {
-        x: CONTENT_INSET,
+        x: HINT_X,
         y: HINT_Y,
-        w: CONTENT_WIDTH,
+        w: HINT_WIDTH,
         h: HINT_HEIGHT,
         color: 0xe67e22,
         text_size: HINT_TEXT_SIZE,
@@ -242,16 +254,12 @@ Page(
       });
 
       createWidget(widget.BUTTON, {
-        x: px(40),
-        y: DEVICE_WIDTH <= 360 ? px(338) : px(438),
-        w: DEVICE_WIDTH - px(80),
-        h: px(44),
+        ...LOGIN_BUTTON_LAYOUT,
         text: "Login on watch",
         color: 0xffffff,
         text_size: px(22),
         normal_color: 0x1976d2,
         press_color: 0x64a8f0,
-        radius: px(10),
         click_func: () => {
           this.loginFromWatch();
         },
