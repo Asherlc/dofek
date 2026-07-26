@@ -12,30 +12,42 @@ describe("activity_power_curve model", () => {
   });
 
   it("limits incremental power work to changed activities with valid power samples", () => {
-    const currentPowerStateSql = extractCteSql(modelSql, "current_power_state");
     const currentPowerActivitySql = extractCteSql(modelSql, "current_power_activity");
+    const existingActivityStateSql = extractCteSql(modelSql, "existing_activity_state");
     const dirtyKeysSql = extractCteSql(modelSql, "source_dirty_activity_keys");
     const powerSampleGroupsSql = extractCteSql(modelSql, "power_sample_groups");
 
-    expect(currentPowerStateSql).toContain("channel = 'power'");
-    expect(currentPowerStateSql).toContain("scalar > 0");
-    expect(currentPowerStateSql).toContain("is_deleted = 0");
-    expect(currentPowerActivitySql).toContain("INNER JOIN current_power_state");
+    expect(currentPowerActivitySql).toContain("current_activity.power_sample_count > 1");
+    expect(currentPowerActivitySql).toContain(
+      "current_activity.refreshed_at AS source_refreshed_at",
+    );
+    expect(modelSql).not.toContain("current_power_state AS (");
     expect(modelSql).toContain("'join_use_nulls': 1");
     expect(modelSql).toContain("max(refreshed_at) AS refreshed_at");
+    expect(existingActivityStateSql).toContain("WHERE is_deleted = 0");
     expect(dirtyKeysSql).toContain(
       "source_refreshed_at > existing_activity_state.refreshed_at",
     );
+    expect(modelSql).toContain(
+      "power_curve_dirty_key_batch_size = var('power_curve_dirty_key_batch_size', 32)",
+    );
+    expect(modelSql).toContain("activity_keys AS materialized (");
+    expect(modelSql).toContain("LIMIT {{ power_curve_dirty_key_batch_size }}");
     expect(powerSampleGroupsSql).toContain("WHERE (sensor.user_id, sensor.activity_id) IN (");
     expect(powerSampleGroupsSql).toContain("FROM activity_bounds");
+    expect(powerSampleGroupsSql).toContain(
+      "INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor FINAL",
+    );
   });
 
-  it("computes duration candidates from per-activity arrays instead of quadratic sample joins", () => {
+  it("computes duration candidates from materialized endpoints and cumulative state", () => {
     expect(modelSql).toContain("power_sample_groups AS (");
-    expect(modelSql).toContain("arrayEnumerate(");
-    expect(modelSql).toContain("arraySlice(");
-    expect(modelSql).not.toContain("INNER JOIN power_samples AS window_sample");
-    expect(modelSql).not.toContain("INNER JOIN power_segments AS segment");
+    expect(modelSql).toContain("power_sample_endpoints AS materialized (");
+    expect(modelSql).toContain("cumulative_discontinuities");
+    expect(modelSql).toContain("INNER JOIN power_sample_endpoints AS end_sample");
+    expect(modelSql).not.toContain("ANY INNER JOIN power_sample_endpoints AS end_sample");
+    expect(modelSql).not.toContain("arrayFirstIndex(");
+    expect(modelSql).not.toContain("arraySlice(");
   });
 
   it("emits per-duration tombstones for deleted activities", () => {

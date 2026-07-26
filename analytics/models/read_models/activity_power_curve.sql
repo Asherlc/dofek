@@ -9,6 +9,8 @@
     }
 ) }}
 
+{% set power_curve_dirty_key_batch_size = var('power_curve_dirty_key_batch_size', 32) %}
+
 WITH current_activity AS (
     SELECT
         activity_id,
@@ -17,38 +19,20 @@ WITH current_activity AS (
         started_at,
         ended_at,
         is_deleted,
+        power_sample_count,
         refreshed_at
     FROM {{ ref('activity_summary_rows') }} FINAL
-),
-
-current_power_state AS (
-    SELECT
-        activity_id,
-        user_id,
-        max(refreshed_at) AS refreshed_at
-    FROM {{ ref('activity_sensor_sample') }} FINAL
-    WHERE channel = 'power'
-        AND scalar > 0
-        AND is_deleted = 0
-    GROUP BY
-        activity_id,
-        user_id
 ),
 
 current_power_activity AS (
     SELECT
         current_activity.activity_id,
         current_activity.user_id,
-        greatest(
-            current_activity.refreshed_at,
-            current_power_state.refreshed_at
-        ) AS source_refreshed_at
+        current_activity.refreshed_at AS source_refreshed_at
     FROM current_activity
-    INNER JOIN current_power_state
-        ON current_power_state.activity_id = current_activity.activity_id
-        AND current_power_state.user_id = current_activity.user_id
     WHERE current_activity.is_deleted = 0
         AND current_activity.ended_at IS NOT NULL
+        AND current_activity.power_sample_count > 1
         AND current_activity.activity_type IN ('cycling', 'road_cycling', 'mountain_biking', 'gravel_cycling', 'indoor_cycling', 'virtual_cycling', 'e_bike_cycling', 'cyclocross', 'track_cycling', 'bmx', 'hand_cycling', 'running', 'swimming', 'walking', 'hiking')
 ),
 
@@ -59,6 +43,7 @@ existing_activity_state AS (
         user_id,
         max(refreshed_at) AS refreshed_at
     FROM {{ this }} FINAL
+    WHERE is_deleted = 0
     GROUP BY
         activity_id,
         user_id
@@ -88,22 +73,33 @@ stale_activity_keys AS (
 ),
 {% endif %}
 
-activity_keys AS (
+activity_keys AS materialized (
+    SELECT
+        activity_id,
+        user_id
+    FROM (
     {% if is_incremental() %}
-    SELECT
-        activity_id,
-        user_id
-    FROM source_dirty_activity_keys
-    UNION DISTINCT
-    SELECT
-        activity_id,
-        user_id
-    FROM stale_activity_keys
+        SELECT
+            activity_id,
+            user_id
+        FROM source_dirty_activity_keys
+        UNION DISTINCT
+        SELECT
+            activity_id,
+            user_id
+        FROM stale_activity_keys
     {% else %}
-    SELECT
-        activity_id,
-        user_id
-    FROM current_power_activity
+        SELECT
+            activity_id,
+            user_id
+        FROM current_power_activity
+    {% endif %}
+    )
+    ORDER BY
+        user_id,
+        activity_id
+    {% if is_incremental() %}
+        LIMIT {{ power_curve_dirty_key_batch_size }}
     {% endif %}
 ),
 
@@ -148,9 +144,9 @@ power_sample_groups AS (
         arraySort(
             sample -> sample.1,
             groupArray((sensor.recorded_at, toFloat64(assumeNotNull(sensor.scalar))))
-        ) AS samples
+    ) AS samples
     FROM activity_bounds AS am
-    INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor
+    INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor FINAL
         ON sensor.activity_id = am.activity_id
         AND sensor.user_id = am.user_id
         AND sensor.channel = 'power'
@@ -221,15 +217,40 @@ power_sample_energy AS (
     FROM power_sample_segments
 ),
 
-power_sample_endpoints AS (
+power_sample_state AS (
     SELECT
         activity_id,
         user_id,
-        sample_index,
-        recorded_times[sample_index] AS recorded_at,
-        cumulative_energy[sample_index] AS cumulative_energy
+        started_at,
+        recorded_times,
+        cumulative_energy,
+        arrayCumSum(
+            arrayConcat(
+                [toUInt64(0)],
+                arrayMap(
+                    segment_seconds -> toUInt64(
+                        segment_seconds > max_continuous_gap_seconds
+                    ),
+                    segment_seconds
+                )
+            )
+        ) AS cumulative_discontinuities
     FROM power_sample_energy
-    ARRAY JOIN arrayEnumerate(recorded_times) AS sample_index
+),
+
+power_sample_endpoints AS materialized (
+    SELECT
+        activity_id,
+        user_id,
+        started_at,
+        endpoint_recorded_at AS recorded_at,
+        endpoint_cumulative_energy AS cumulative_energy,
+        endpoint_cumulative_discontinuities AS cumulative_discontinuities
+    FROM power_sample_state
+    ARRAY JOIN
+        recorded_times AS endpoint_recorded_at,
+        cumulative_energy AS endpoint_cumulative_energy,
+        cumulative_discontinuities AS endpoint_cumulative_discontinuities
 ),
 
 duration_values AS (
@@ -239,26 +260,17 @@ duration_values AS (
     )
 ),
 
-candidate_duration_windows AS (
+duration_windows AS (
     SELECT
         start_sample.activity_id AS activity_id,
         start_sample.user_id AS user_id,
-        sample_group.started_at AS started_at,
+        start_sample.started_at AS started_at,
         duration_values.duration_seconds AS duration_seconds,
-        start_sample.recorded_at AS window_started_at,
-        end_sample.recorded_at AS window_ended_at,
-        dateDiff('millisecond', start_sample.recorded_at, end_sample.recorded_at) / 1000.0 AS elapsed_seconds,
-        arrayMax(
-            arraySlice(
-                sample_group.segment_seconds,
-                start_sample.sample_index,
-                end_sample.sample_index - start_sample.sample_index
-            )
-        ) AS max_gap_seconds,
         (
             end_sample.cumulative_energy - start_sample.cumulative_energy
         ) / duration_values.duration_seconds AS avg_power,
-        sample_group.max_continuous_gap_seconds AS max_continuous_gap_seconds
+        end_sample.cumulative_discontinuities
+            - start_sample.cumulative_discontinuities AS discontinuity_count
     FROM power_sample_endpoints AS start_sample
     CROSS JOIN duration_values
     INNER JOIN power_sample_endpoints AS end_sample
@@ -268,24 +280,6 @@ candidate_duration_windows AS (
             start_sample.recorded_at,
             duration_values.duration_seconds
         )
-    INNER JOIN power_sample_energy AS sample_group
-        ON sample_group.activity_id = start_sample.activity_id
-        AND sample_group.user_id = start_sample.user_id
-),
-
-duration_windows AS (
-    SELECT
-        candidate_duration_windows.activity_id AS activity_id,
-        candidate_duration_windows.user_id AS user_id,
-        candidate_duration_windows.started_at AS started_at,
-        candidate_duration_windows.duration_seconds AS duration_seconds,
-        candidate_duration_windows.window_started_at AS window_started_at,
-        candidate_duration_windows.window_ended_at AS window_ended_at,
-        candidate_duration_windows.elapsed_seconds AS covered_seconds,
-        candidate_duration_windows.avg_power AS avg_power
-    FROM candidate_duration_windows
-    WHERE candidate_duration_windows.elapsed_seconds >= toFloat64(candidate_duration_windows.duration_seconds)
-        AND candidate_duration_windows.max_gap_seconds <= candidate_duration_windows.max_continuous_gap_seconds
 ),
 
 best_powers AS (
@@ -296,7 +290,8 @@ best_powers AS (
         duration_seconds,
         toInt32(round(max(avg_power))) AS best_power
     FROM duration_windows
-    WHERE avg_power > 0
+    WHERE discontinuity_count = 0
+        AND avg_power > 0
     GROUP BY
         activity_id,
         user_id,
@@ -305,10 +300,10 @@ best_powers AS (
 
 activity_dates AS (
     SELECT
-        power_sample_groups.activity_id,
-        toString(toDate(toTimeZone(power_sample_groups.started_at, 'UTC'))) AS activity_date
-    FROM power_sample_groups
-    GROUP BY power_sample_groups.activity_id, power_sample_groups.started_at
+        activity_bounds.activity_id,
+        toString(toDate(toTimeZone(activity_bounds.started_at, 'UTC'))) AS activity_date
+    FROM activity_bounds
+    GROUP BY activity_bounds.activity_id, activity_bounds.started_at
 ),
 
 refresh_clock AS (

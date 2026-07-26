@@ -542,61 +542,32 @@ export function parseTrainingImpulseRows(rows: Record<string, unknown>[]): Train
 }
 
 async function fitTrimpFromDb(sensorStore: RefitSensorStore, userId: string) {
-  // Reads NP from analytics.deduped_sensor and TRIMP inputs from
-  // analytics.activity_summary (joining user_profile via the
-  // native ClickHouse read models for max_hr / resting_hr).
+  // Reads precomputed normalized power and TRIMP inputs from the activity
+  // summary read model, joining user_profile for max_hr / resting_hr.
   const rows = await sensorStore.query(
     trainingImpulseActivityRowSchema,
-    `WITH rolling_power AS (
-      SELECT
-        a.id AS activity_id,
-        avg(ds.scalar) OVER (
-          PARTITION BY a.id
-          ORDER BY toUnixTimestamp(ds.recorded_at)
-          RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
-        ) AS rolling_30s_power
-      FROM analytics.deduped_sensor ds
-      INNER JOIN analytics.v_activity a
-        ON a.user_id = ds.user_id
-       AND ds.recorded_at >= a.started_at
-       AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
-      WHERE a.user_id = {userId:UUID}
-        AND a.started_at > now() - INTERVAL 365 DAY
-        AND ds.channel = 'power'
-        AND ds.scalar > 0
-        AND ds.is_deleted = 0
-    ),
-    np_data AS (
-      SELECT
-        activity_id,
-        round(pow(avg(pow(rolling_30s_power, 4)), 0.25), 1) AS np
-      FROM rolling_power
-      GROUP BY activity_id
-      HAVING count() >= 60
-    ),
-    np_long_activities AS (
-      SELECT n.np AS np
-      FROM np_data n
-      INNER JOIN analytics.activity_summary a2 ON a2.activity_id = n.activity_id
-      WHERE dateDiff('second', a2.started_at, a2.ended_at) / 60 >= 20
-    ),
-    ftp_estimate AS (
-      SELECT max(np) * 0.95 AS ftp FROM np_long_activities
+    `WITH ftp_estimate AS (
+      SELECT max(normalized_power) * 0.95 AS ftp
+      FROM analytics.activity_summary
+      WHERE user_id = {userId:UUID}
+        AND started_at > now() - INTERVAL 365 DAY
+        AND dateDiff('second', started_at, ended_at) / 60 >= 20
+        AND normalized_power IS NOT NULL
     )
     SELECT
       dateDiff('second', asum.started_at, asum.ended_at) / 60 AS duration_min,
       asum.avg_hr AS avg_hr,
       greatest(asum.max_hr, up.max_hr) AS max_hr,
       coalesce(up.resting_hr, 60) AS resting_hr,
-      pow(n.np / nullIf((SELECT ftp FROM ftp_estimate), 0), 2)
+      pow(asum.normalized_power / nullIf((SELECT ftp FROM ftp_estimate), 0), 2)
         * (dateDiff('second', asum.started_at, asum.ended_at) / 3600.0)
         * 100 AS power_tss
     FROM analytics.activity_summary asum
     INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-    INNER JOIN np_data n ON n.activity_id = asum.activity_id
     WHERE asum.user_id = {userId:UUID}
       AND asum.hr_sample_count > 0
-      AND asum.avg_hr > 0`,
+      AND asum.avg_hr > 0
+      AND asum.normalized_power IS NOT NULL`,
     { userId },
   );
 
