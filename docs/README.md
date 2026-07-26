@@ -109,8 +109,8 @@ instructions:
 - `superpowers/plans/` and `superpowers/specs/`: dated implementation plans and
   design snapshots. Checklist state records work at the time; verify the code
   before relying on it.
-- `incidents/`, `production-incident-baseline.md`, and dated performance
-  baselines: evidence captured during specific investigations.
+- `incidents/` and dated performance baselines: evidence captured during
+  specific investigations.
 - [oracle-migration.md](oracle-migration.md),
   [handoff-clickhouse-view-migration-2026-05-06.md](handoff-clickhouse-view-migration-2026-05-06.md),
   and other dated migration/handoff files: completed transition records.

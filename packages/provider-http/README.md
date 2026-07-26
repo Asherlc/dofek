@@ -65,7 +65,7 @@ coordination appropriate to their runtime.
   wins; caller cancellation remains the caller's error.
 - HTTP errors expose the provider, status, response body, scope, optional user,
   and parsed `retryAfterSeconds`. Timeout errors expose the provider, scope,
-  optional user, deadline, and original cause.
+  optional user, `timeoutMs`, and original cause.
 - Other HTTP error responses are returned unchanged, so callers must check
   `response.ok`.
 - These helpers do not retry automatically. The caller decides whether and when

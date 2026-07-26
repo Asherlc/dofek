@@ -12,7 +12,7 @@ native configuration, and authoritative platform references.
   point.
 - Keep task lifecycle state in `BackgroundRefreshTaskCoordinator.swift`.
   Expiration, JavaScript completion, and listener teardown may race, but each
-  task must complete exactly once.
+  stored native completion may run at most once.
 - Keep `com.dofek.accelerometer-refresh` synchronized with
   `BGTaskSchedulerPermittedIdentifiers` in `packages/mobile/app.json`.
 - Do not describe the 15-minute earliest date as a guaranteed refresh

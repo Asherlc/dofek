@@ -20,9 +20,10 @@ as `BackgroundRefresh`; `index.ts` is the public TypeScript entry point.
    task ID through the native module's `onBackgroundRefresh` event.
 4. The TypeScript listener waits for its handler to settle, then completes the
    matching native task as successful or failed. Expiration, listener removal,
-   and a missing listener fail the task; the coordinator ensures completion
-   happens at most once. Apple requires apps to report task completion before
-   the allotted time expires; see
+   and a missing listener fail the task. The coordinator removes the stored
+   completion before calling it, so racing paths can invoke the native
+   completion at most once. Apple requires apps to report task completion
+   before the allotted time expires; see
    [`setTaskCompleted(success:)`](https://developer.apple.com/documentation/backgroundtasks/bgtask/settaskcompleted(success:)).
 
 ## Public API

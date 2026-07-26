@@ -16,8 +16,8 @@ The current archive path is:
 ```text
 provider/mobile import
   -> Redpanda topic metric-stream-v1
-  -> ClickHouse sink -> ingest.metric_stream
-  -> Redpanda Connect archive -> Cloudflare R2
+     |-> ClickHouse sink -> ingest.metric_stream
+     `-> Redpanda Connect archive -> Cloudflare R2
 ```
 
 R2 is the long-term archive for metric-stream events, and ClickHouse is the

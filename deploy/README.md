@@ -54,6 +54,7 @@ infrastructure has been retired.
 ## Implementation Details
 
 ### Terraform (`*.tf`)
+
 - `oracle-free/`: Separate Terraform root for the OCI production host. The reserved public IP is copied into the `ORACLE_SERVER_HOST` GitHub Actions variable and into the main `deploy/` root as `var.oracle_server_host`.
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`,
   `dofek.live`) are proxied (CDN enabled). DNS records for management
@@ -73,9 +74,11 @@ infrastructure has been retired.
   (`Domain already in use`).
 
 ### Server Configuration (`server/`)
+
 - `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), and idempotently runs `docker swarm init`. No deploy helpers, no Infisical CLI.
 
 ### Swarm Stack (`stack.yml` + `stack.oracle.yml`)
+
 - `stack.yml` defines the complete application, storage, ingest, PeerDB,
   Temporal, observability, OTA, and optional management-service topology.
   Production always applies `stack.oracle.yml` on top of it.
@@ -105,6 +108,7 @@ infrastructure has been retired.
   schedule; its base-stack route is active for backup operations.
 
 ### Monitoring (`otel-collector-config.yaml`)
+
 - Uses `filelog` receiver to tail Docker logs from `/var/lib/docker/containers/*/*.log`.
 - Parsed with `json_parser` and `regex_parser` (to extract container IDs).
 - Filters out noisy Postgres `NOTICE` lines to reduce volume.
@@ -154,7 +158,10 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
   - `ghcr.io/asherlc/dofek-ml:<tag>` (local ML tooling; not deployed to the stack)
 - `docker stack deploy` is the only production rollout command for web deploys. It updates `web` and `worker` together from `deploy/stack.yml`.
 - Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
-- Because migrations run before `docker stack deploy`, every production schema change must remain compatible with both the old app version and the new app version during rollout.
+- Migrations run after the non-pruning pre-migration stack apply and before the
+  pruning rollout of the requested app image. Every production schema change
+  must therefore remain compatible with both the old and new app versions
+  during rollout.
 
 ### Production Secrets
 
@@ -178,13 +185,17 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
          -> deploy-web production check (dofek app image tag must exist)
          -> deploy-terraform (shared prerequisite)
          -> deploy-web-stack
-              -> fetch env via Infisical Secrets Action
-              -> pre-migration stack apply without pruning
-              -> wait for postgres writable
-              -> migrate (one-shot container on <stack>_default)
-              -> prune deploy <stack> with requested app image tag
-              -> backfill and validate provider connections
-              -> configure CDC and restore consumers
+              -> export and validate Infisical dotenv
+              -> upload immutable web assets
+              -> validate host bind sources
+              -> non-pruning stack apply with consumers quiesced
+              -> wait for Postgres and ClickHouse
+              -> migrate requested image on <stack>_default
+              -> prune deploy requested image with consumers quiesced
+              -> wait for app convergence and Postgres; run cutover
+              -> wait for ClickHouse, PeerDB, and Temporal; configure CDC
+              -> final deploy restores consumers
+              -> verify backup freshness and record Sentry release
 ```
 
 1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`), because `Deploy Web` is triggered by the successful `CI` `workflow_run` for `main` and deploys that tag. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
@@ -249,9 +260,11 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       Cloudflare documents R2 lifecycle object expiration rules here:
       https://developers.cloudflare.com/r2/buckets/object-lifecycles/.
    6. Validate required host bind-mount directories before the first stack
-      apply. This fails before `docker stack deploy` if paths such as
-      `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with
-      missing bind sources.
+      apply. Bind sources resolve on the Docker daemon host, not the CI client,
+      and Docker's explicit bind-mount syntax errors when a source path is
+      absent. The workflow therefore fails before `docker stack deploy` if a
+      path such as `/mnt/dofek-data/redis` is missing. See
+      [Docker's bind-mount constraints and syntax](https://docs.docker.com/engine/storage/bind-mounts/#syntax).
    7. Apply the stack configuration before migrations with a non-prune,
       detached `docker stack deploy` and the temporary ClickHouse-consumer
       quiesce overlay. On existing stacks this uses the currently deployed app
@@ -265,15 +278,16 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       overlay still applied. The deploy workflow waits explicitly for Postgres
       and ClickHouse instead of keeping a long-lived Docker-over-SSH stack-deploy
       wait open while the single-node host restarts services.
-   8. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
-   9. Run **schema migrations** as a one-shot container attached to the swarm overlay network:
-      `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.
-      When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
-      analytics migrations before the stack update.
+   8. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`) and
+      ClickHouse answers `/ping`.
+   9. Run the requested image's tracked Postgres and ClickHouse migrations in a
+      detached one-shot container on `<stack>_default`. CI polls its status and
+      logs, removes it on exit, and fails if it exceeds four hours.
    10. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this initial wait at 35 minutes so the worker's 30-minute graceful-drain contract can complete while a wedged Swarm rollback still fails CI. The final ClickHouse-consumer-only rollout remains bounded at 20 minutes.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
-   11. Run the resumable `provider-connection-cutover` one-shot command after
-       every requested app service has converged. It backfills
+   11. After every requested app service converges, wait for Postgres to be
+       writable and run the resumable `provider-connection-cutover` one-shot
+       command. It backfills
        `fitness.provider_connection` from legacy provider owners, OAuth tokens,
        and child-table ownership, then validates the OAuth/webhook composite
        foreign keys and removes the obsolete application-wide webhook index.
@@ -282,7 +296,12 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
        rows. PostgreSQL documents the staged `NOT VALID` and `VALIDATE
        CONSTRAINT` operations used by this cutover:
        <https://www.postgresql.org/docs/current/sql-altertable.html>.
-   12. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the fitness-raw, provider-inventory, and sensor-priority mirrors.
+   12. Wait for ClickHouse, PeerDB, and Temporal; create the PeerDB Temporal
+       `MirrorName` search attribute if absent; then run the one-shot ClickHouse
+       CDC setup command. The command loads
+       `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection
+       values, creates the Postgres and ClickHouse peers if missing, and applies
+       the fitness-raw, provider-inventory, and sensor-priority mirrors.
    13. Run the final `docker stack deploy -c deploy/stack.yml ...` to restore
        `analytics-worker` and `metric-stream-clickhouse-sink` only when every
        post-quiesce readiness step and ClickHouse CDC setup succeeds. If a
@@ -291,7 +310,9 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
        deployment. GitHub applies `success()` to successful prior steps, while
        `always()` runs even after failures, so critical deploy steps must not use
        `always()` as their status gate ([GitHub Actions status check functions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)).
-   14. After the final production stack converges, record the image's full
+   14. After the final production stack converges, verify that Databasus reports
+       a successful PostgreSQL backup within the configured freshness window.
+       Then record the image's full
        `SENTRY_RELEASE` commit SHA as deployed to `production` for
        `dofek-web` and `dofek-server`. Failed, rolled-back, or quiesced
        rollouts never reach this step. The official action requires its
@@ -413,8 +434,9 @@ before migrations:
   on the old release.
 - On clean-slate hosts, the pre-migration deploy uses the requested deploy tag
   because there is no old release to preserve.
-- After the pre-migration stack apply, the workflow runs DB readiness,
-  migrations, and then the normal prune deploy with the requested app image tag.
+- After the pre-migration stack apply, the workflow waits for Postgres and
+  ClickHouse, runs migrations, and then performs the pruned deploy with the
+  requested image tag while the ClickHouse consumers remain quiesced.
 
 This preserves migration gating while remaining safe for both warm updates and scratch deployments.
 

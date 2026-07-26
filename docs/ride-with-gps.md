@@ -2,7 +2,9 @@
 
 ## Authentication
 
-Dofek configures Ride with GPS as a confidential OAuth client:
+Dofek's current integration behavior is defined by the
+[provider configuration](../src/providers/ride-with-gps.ts) and
+[shared OAuth helper](../src/auth/oauth.ts):
 
 - `RWGPS_CLIENT_ID` and `RWGPS_CLIENT_SECRET` are required.
 - Authorization uses `https://ridewithgps.com/oauth/authorize`.
@@ -10,11 +12,15 @@ Dofek configures Ride with GPS as a confidential OAuth client:
   client secret in the request body, and requests the `user` scope.
 - PKCE is not enabled for this integration.
 
-This describes Dofek's tested client configuration; it does not claim Ride with
-GPS cannot support other client types. Historical token responses omitted
-`expires_in` and `refresh_token`. Dofek assigns a one-year local expiry when
-`expires_in` is absent; if the token then expires without a refresh token, the
-user must reconnect.
+These are repository-observed integration choices, not claims about every
+client type Ride with GPS supports. Historical production evidence in
+[PR #219](https://github.com/Asherlc/dofek/pull/219),
+[PR #231](https://github.com/Asherlc/dofek/pull/231), and
+[PR #245](https://github.com/Asherlc/dofek/pull/245) shows token responses that
+omitted `expires_in` and `refresh_token`. The shared OAuth helper assigns a
+one-year local expiry when `expires_in` is absent; after that, the
+[token resolver](../src/auth/resolve-tokens.ts) fails explicitly when no refresh
+token is available, so the user must reconnect.
 
 ## Sync
 

@@ -45,24 +45,25 @@ development-build workflow:
 <https://docs.expo.dev/workflow/ios-simulator/> and
 <https://docs.expo.dev/build-reference/simulators/>.
 
-1. Generate a fresh native project:
+1. Load the required `EXPO_PUBLIC_*` build values from Infisical, then generate
+   a fresh native project:
 
    ```bash
-   pnpm prebuild
+   pnpm tsx ../../scripts/with-env.ts -- pnpm prebuild
    ```
 
 2. Boot a simulator and build the `Dofek` scheme from
    `ios/Dofek.xcworkspace` for `iphonesimulator` with Xcode or `xcodebuild`.
-3. Load the required `EXPO_PUBLIC_*` runtime values from Infisical before the
-   build. In particular, `EXPO_PUBLIC_SENTRY_DSN` must be a valid DSN.
-4. Start Metro for the development client:
+   `app.config.js` requires `EXPO_PUBLIC_SENTRY_DSN` while prebuild generates
+   the native Sentry configuration.
+3. Start Metro for the development client with the same environment:
 
    ```bash
-   pnpm expo start --dev-client --localhost \
+   pnpm tsx ../../scripts/with-env.ts -- pnpm expo start --dev-client --localhost \
      --private-key-path /secure/path/to/private-key.pem
    ```
 
-5. Install and launch the built `.app`, then verify that a real application
+4. Install and launch the built `.app`, then verify that a real application
    screen renders before beginning UI exploration. A running process that is
    still showing the Expo development launcher is not an app-level validation.
 
@@ -86,7 +87,8 @@ without Metro. The command below uses local ad-hoc signing so keychain-backed
 SecureStore remains available without a distribution identity:
 
 ```bash
-pnpm prebuild
+EXPO_PUBLIC_SENTRY_DSN=https://public-key@sentry.example/project-id \
+  pnpm prebuild
 
 EXPO_PUBLIC_SERVER_URL=http://127.0.0.1:3100 \
 EXPO_PUBLIC_SENTRY_DSN=https://public-key@sentry.example/project-id \

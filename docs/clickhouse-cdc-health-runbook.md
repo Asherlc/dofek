@@ -137,17 +137,21 @@ ingestion.
 4. Truncate only destination tables that will be safely resnapshotted by the
    recreated mirror.
 5. Re-run CDC setup through the canonical production deploy workflow. The
-   branch or tag passed to `--ref` must resolve exactly to the validated image's
-   `SENTRY_RELEASE` commit, not merely contain that commit; the workflow runs
-   the setup image inside the Swarm network with production PeerDB, Postgres,
-   and ClickHouse endpoints:
+   immutable tag passed to `--ref` must point to the validated image's exact
+   `SENTRY_RELEASE` commit; the workflow runs the setup image inside the Swarm
+   network with production PeerDB, Postgres, and ClickHouse endpoints:
 
    ```bash
    gh workflow run deploy-web.yml \
-     --ref '<branch-or-tag-at-exact-image-commit>' \
+     --ref '<immutable-tag-at-image-sentry-release>' \
      -f environment=production \
      -f image_tag='<validated-image-tag>'
    ```
+
+   Do not use a branch or a movable tag for `--ref`: either can advance between
+   image validation and workflow dispatch. The deploy workflow also verifies
+   the checked-out SHA against the image's `SENTRY_RELEASE` before changing the
+   stack.
 
    Do not use local `pnpm clickhouse-cdc` for production recovery. Its default
    PeerDB endpoint is `127.0.0.1:9900`. GitHub documents source-ref selection

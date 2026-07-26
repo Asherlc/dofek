@@ -101,17 +101,18 @@ use the checked-in bounded repair script to count only missing projection rows:
 
 ```bash
 pnpm backfill:body-measurements -- \
-  --start "2026-07-25T00:00:00Z" \
-  --end "2026-07-26T00:00:00Z"
+  --start "<start>" \
+  --end "<end>"
 ```
 
-The command is a dry run unless `--execute` is supplied. Review the exact
+Copy `<start>` and `<end>` from the incident evidence captured above. The
+command is a dry run unless `--execute` is supplied. Verify the incident-specific
 window and missing-row count before executing:
 
 ```bash
 pnpm backfill:body-measurements -- \
-  --start "2026-07-25T00:00:00Z" \
-  --end "2026-07-26T00:00:00Z" \
+  --start "<start>" \
+  --end "<end>" \
   --execute
 ```
 

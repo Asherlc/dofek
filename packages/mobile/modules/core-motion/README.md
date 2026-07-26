@@ -62,7 +62,12 @@ if (isAccelerometerRecordingAvailable()) {
 
   if (status === "authorized") {
     await startRecording(12 * 60 * 60);
-    const samples = await queryRecordedData(startedAt, endedAt);
+    const endedAt = new Date();
+    const startedAt = new Date(endedAt.getTime() - 60 * 60 * 1000);
+    const samples = await queryRecordedData(
+      startedAt.toISOString(),
+      endedAt.toISOString(),
+    );
   }
 }
 ```
