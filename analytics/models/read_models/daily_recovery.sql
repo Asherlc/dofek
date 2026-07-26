@@ -4,44 +4,25 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, date)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
 WITH {% if is_incremental() %}
-existing_dates AS (
-    SELECT
-        user_id,
-        max(date) AS latest_materialized_date,
-        max(refreshed_at) AS latest_materialized_refreshed_at
+target_state AS (
+    SELECT coalesce(max(refreshed_at), toDateTime64(0, 9, 'UTC')) AS last_refreshed_at
     FROM {{ this }}
-    GROUP BY user_id
+),
+
+changed_users AS (
+    SELECT DISTINCT recovery_inputs.user_id AS user_id
+    FROM {{ ref('daily_recovery_inputs') }} AS recovery_inputs FINAL
+    WHERE recovery_inputs.refreshed_at > (SELECT last_refreshed_at FROM target_state)
 ),
 {% endif %}
 
 recovery_inputs AS (
-    SELECT
-        user_id,
-        date,
-        hrv,
-        resting_hr,
-        respiratory_rate,
-        efficiency_pct,
-        hrv_mean_30d,
-        hrv_sd_30d,
-        rhr_mean_30d,
-        rhr_sd_30d,
-        rr_mean_30d,
-        rr_sd_30d,
-        hrv_mean_60d,
-        hrv_sd_60d,
-        rhr_mean_60d,
-        rhr_sd_60d,
-        refreshed_at
-    FROM {{ ref('daily_recovery_inputs') }} FINAL
-),
-
-recovery_inputs_to_materialize AS (
     SELECT
         recovery_inputs.user_id AS user_id,
         recovery_inputs.date AS date,
@@ -59,14 +40,11 @@ recovery_inputs_to_materialize AS (
         recovery_inputs.hrv_sd_60d AS hrv_sd_60d,
         recovery_inputs.rhr_mean_60d AS rhr_mean_60d,
         recovery_inputs.rhr_sd_60d AS rhr_sd_60d
-    FROM recovery_inputs
-    {% if is_incremental() %}
-    LEFT JOIN existing_dates
-        ON existing_dates.user_id = recovery_inputs.user_id
-    WHERE existing_dates.user_id IS NULL
-        OR recovery_inputs.refreshed_at > existing_dates.latest_materialized_refreshed_at
-        OR recovery_inputs.date >= existing_dates.latest_materialized_date - INTERVAL 60 DAY
-    {% endif %}
+    FROM {{ ref('daily_recovery_inputs') }} AS recovery_inputs FINAL
+    WHERE recovery_inputs.is_deleted = 0
+        {% if is_incremental() %}
+        AND user_id IN (SELECT user_id FROM changed_users)
+        {% endif %}
 ),
 
 scored AS (
@@ -92,7 +70,7 @@ scored AS (
             least(100, greatest(0, round(efficiency_pct))),
             62
         ) AS sleep_score
-    FROM recovery_inputs_to_materialize
+    FROM recovery_inputs
 ),
 
 sigmoid_inputs AS (
@@ -137,34 +115,63 @@ sigmoid_scores AS (
     FROM sigmoid_inputs
 ),
 
+{% if is_incremental() %}
+existing_keys AS (
+    SELECT
+        user_id,
+        date
+    FROM {{ this }} FINAL
+    WHERE is_deleted = 0
+        AND user_id IN (SELECT user_id FROM changed_users)
+),
+{% endif %}
+
+result_keys AS (
+    SELECT
+        user_id,
+        date
+    FROM sigmoid_scores
+    {% if is_incremental() %}
+    UNION DISTINCT
+    SELECT
+        user_id,
+        date
+    FROM existing_keys
+    {% endif %}
+),
+
 refresh_clock AS (
     SELECT
         toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-        now64(9) AS refreshed_at
+        now64(9, 'UTC') AS refreshed_at
 )
 
 SELECT
-    CAST(user_id, 'UUID') AS user_id,
-    CAST(date, 'Date') AS date,
-    hrv,
-    resting_hr,
-    respiratory_rate,
-    efficiency_pct,
-    hrv_mean_30d,
-    hrv_sd_30d,
-    rhr_mean_30d,
-    rhr_sd_30d,
-    rr_mean_30d,
-    rr_sd_30d,
-    hrv_mean_60d,
-    hrv_sd_60d,
-    rhr_mean_60d,
-    rhr_sd_60d,
-    hrv_score,
-    resting_hr_score,
-    sleep_score,
-    respiratory_rate_score,
+    CAST(result_keys.user_id, 'UUID') AS user_id,
+    CAST(result_keys.date, 'Date') AS date,
+    sigmoid_scores.hrv AS hrv,
+    sigmoid_scores.resting_hr AS resting_hr,
+    sigmoid_scores.respiratory_rate AS respiratory_rate,
+    sigmoid_scores.efficiency_pct AS efficiency_pct,
+    sigmoid_scores.hrv_mean_30d AS hrv_mean_30d,
+    sigmoid_scores.hrv_sd_30d AS hrv_sd_30d,
+    sigmoid_scores.rhr_mean_30d AS rhr_mean_30d,
+    sigmoid_scores.rhr_sd_30d AS rhr_sd_30d,
+    sigmoid_scores.rr_mean_30d AS rr_mean_30d,
+    sigmoid_scores.rr_sd_30d AS rr_sd_30d,
+    sigmoid_scores.hrv_mean_60d AS hrv_mean_60d,
+    sigmoid_scores.hrv_sd_60d AS hrv_sd_60d,
+    sigmoid_scores.rhr_mean_60d AS rhr_mean_60d,
+    sigmoid_scores.rhr_sd_60d AS rhr_sd_60d,
+    sigmoid_scores.hrv_score AS hrv_score,
+    sigmoid_scores.resting_hr_score AS resting_hr_score,
+    sigmoid_scores.sleep_score AS sleep_score,
+    sigmoid_scores.respiratory_rate_score AS respiratory_rate_score,
+    if(sigmoid_scores.user_id IS NULL, 1, 0) AS is_deleted,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
-FROM sigmoid_scores
+FROM result_keys
+LEFT JOIN sigmoid_scores
+    ON sigmoid_scores.user_id = result_keys.user_id
+    AND sigmoid_scores.date = result_keys.date
 CROSS JOIN refresh_clock

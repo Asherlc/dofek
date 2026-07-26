@@ -396,9 +396,11 @@ export function buildTestRecoveryReadModelSelectSql(
   CAST(NULL, 'Nullable(Float64)') AS resting_hr_score,
   CAST(NULL, 'Nullable(Float64)') AS sleep_score,
   CAST(NULL, 'Nullable(Float64)') AS respiratory_rate_score,
+  0 AS is_deleted,
   refresh_version,
   refreshed_at
-FROM ${databases.analytics}.daily_recovery_inputs`;
+FROM ${databases.analytics}.daily_recovery_inputs
+WHERE is_deleted = 0`;
 }
 
 export function buildTestStrainReadModelSelectSql(databases: IsolatedClickHouseDatabases): string {

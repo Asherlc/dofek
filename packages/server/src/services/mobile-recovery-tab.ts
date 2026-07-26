@@ -122,6 +122,7 @@ async function fetchRecoveryRows(
       efficiency_pct
     FROM analytics.daily_recovery AS recovery_inputs FINAL
     WHERE recovery_inputs.user_id = {userId:UUID}
+      AND recovery_inputs.is_deleted = 0
       AND recovery_inputs.date > toDate({windowStart:String})
       AND recovery_inputs.date <= toDate({endDate:String})
       ${recoveryAccessClause(ctx.accessWindow)}
