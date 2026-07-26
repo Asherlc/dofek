@@ -31,6 +31,7 @@ import {
 import { Card } from "../../components/Card";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
+import { HealthStatusCards } from "../../components/HealthStatusCards";
 import { MetricCard } from "../../components/MetricCard";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
@@ -266,6 +267,28 @@ export default function RecoveryScreen() {
         error={processingStatus.error}
         loading={processingStatus.isLoading}
       />
+
+      {recoveryData != null && (
+        <HealthStatusCards
+          metrics={recoveryData.healthStatus}
+          formatValue={(metric) => {
+            if (metric.metric === "trend_weight") {
+              return formatMeasurementText(units.formatWeight(metric.value));
+            }
+            if (metric.metric === "skin_temperature") {
+              return formatMeasurementText(units.formatTemperature(metric.value));
+            }
+            if (metric.metric === "hrv") return formatHRV(metric.value);
+            if (metric.metric === "spo2") return formatSpO2(metric.value);
+            if (metric.value == null) return "—";
+            if (metric.metric === "steps") return Math.round(metric.value).toLocaleString();
+            if (metric.metric === "body_fat_percentage") {
+              return `${formatBodyCompositionNumber(metric.value)}%`;
+            }
+            return `${formatNumber(metric.value, 0)} bpm`;
+          }}
+        />
+      )}
 
       {isLoading ? (
         <QueryStatePanel variant="loading" minHeight={200} />

@@ -142,7 +142,7 @@ WHERE database = {database:String}
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0055_migrate_body_measurement_to_dbt",
+    id: "0056_migrate_body_measurement_to_dbt",
     statements,
     run: async (client) => {
       await runClickHouseMigrationStatement(client, createTableSql);

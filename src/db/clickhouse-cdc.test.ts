@@ -85,6 +85,15 @@ function createConfiguredPeerDbMirrorApiClient(): PeerDbMirrorApiClient {
           mirrorName === "dofek_sensor_priority_raw_analytics"
             ? []
             : [
+                ...(mirrorName === "dofek_fitness_raw_analytics"
+                  ? [
+                      {
+                        sourceTableIdentifier: "fitness.provider_connection",
+                        destinationTableIdentifier: "provider_connection",
+                        exclude: [],
+                      },
+                    ]
+                  : []),
                 {
                   sourceTableIdentifier: "fitness.processing_flow_marker",
                   destinationTableIdentifier,
@@ -165,6 +174,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     "lab_result",
     "journal_entry",
     "provider",
+    "provider_connection",
     "provider_priority",
     "device_priority",
     "sensor_provider_priority",
@@ -595,6 +605,11 @@ describe("PeerDB ClickHouse CDC setup", () => {
       flowConfigUpdate: {
         cdcFlowConfigUpdate: {
           additional_tables: [
+            {
+              sourceTableIdentifier: "fitness.provider_connection",
+              destinationTableIdentifier: "provider_connection",
+              exclude: [],
+            },
             {
               sourceTableIdentifier: "fitness.processing_flow_marker",
               destinationTableIdentifier: "processing_flow_marker",
@@ -1180,6 +1195,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sleep_stage",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.daily_metrics",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.provider",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.provider_connection",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.provider_priority",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.device_priority",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.processing_flow_marker",
@@ -1683,7 +1699,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       return {};
     });
     let mirrorState = "STATUS_RUNNING";
-    let hasMarkerMapping = false;
+    let hasRequiredMappings = false;
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/mirrors/status")) {
@@ -1692,8 +1708,13 @@ describe("PeerDB ClickHouse CDC setup", () => {
             currentFlowState: mirrorState,
             cdcStatus: {
               config: {
-                tableMappings: hasMarkerMapping
+                tableMappings: hasRequiredMappings
                   ? [
+                      {
+                        sourceTableIdentifier: "fitness.provider_connection",
+                        destinationTableIdentifier: "provider_connection",
+                        exclude: [],
+                      },
                       {
                         sourceTableIdentifier: "fitness.processing_flow_marker",
                         destinationTableIdentifier: "processing_flow_marker",
@@ -1710,7 +1731,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       if (requestBody.includes('"requestedFlowState":"STATUS_PAUSED"')) {
         mirrorState = "STATUS_PAUSED";
       } else {
-        hasMarkerMapping = true;
+        hasRequiredMappings = true;
         mirrorState = "STATUS_RUNNING";
       }
       return new Response("{}");
@@ -1761,6 +1782,11 @@ describe("PeerDB ClickHouse CDC setup", () => {
             cdcFlowConfigUpdate: {
               additional_tables: [
                 {
+                  sourceTableIdentifier: "fitness.provider_connection",
+                  destinationTableIdentifier: "provider_connection",
+                  exclude: [],
+                },
+                {
                   sourceTableIdentifier: "fitness.processing_flow_marker",
                   destinationTableIdentifier: "processing_flow_marker",
                   exclude: [],
@@ -1778,6 +1804,11 @@ describe("PeerDB ClickHouse CDC setup", () => {
     configureExistingFitnessMirrorQuery();
     const fetchMock = vi.fn(async () =>
       peerDbStatusResponse("STATUS_RUNNING", [
+        {
+          sourceTableIdentifier: "fitness.provider_connection",
+          destinationTableIdentifier: "provider_connection",
+          exclude: [],
+        },
         {
           sourceTableIdentifier: "fitness.processing_flow_marker",
           destinationTableIdentifier: "processing_flow_marker",

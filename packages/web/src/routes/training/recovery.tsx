@@ -47,7 +47,7 @@ function RecoveryTab() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section
           title="Readiness Score"
-          subtitle="Composite score from HRV, resting HR, sleep, load balance"
+          subtitle="Composite score from heart rate variability, resting heart rate, sleep, and load balance"
         >
           {readiness.error && !readiness.data ? (
             <QueryStatePanel error={readiness.error} />
@@ -83,7 +83,10 @@ function RecoveryTab() {
           )}
         </Section>
 
-        <Section title="HRV Coefficient of Variation" subtitle="7-day rolling HRV variability">
+        <Section
+          title="Heart Rate Variability Coefficient of Variation"
+          subtitle="7-day rolling heart rate variability"
+        >
           {hrvVariability.error && !hrvVariability.data ? (
             <QueryStatePanel error={hrvVariability.error} />
           ) : (

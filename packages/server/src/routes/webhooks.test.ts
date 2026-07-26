@@ -1,6 +1,7 @@
 import type { AddressInfo } from "node:net";
 import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
 import { encryptCredentialValue } from "dofek/security/credential-encryption";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
@@ -115,7 +116,7 @@ async function request(
   path: string,
   body?: string,
   headers?: Record<string, string>,
-): Promise<{ status: number; body: string }> {
+): Promise<{ status: number; body: string; headers: Record<string, string> }> {
   return new Promise((resolve) => {
     const server = app.listen(0, () => {
       const addr = server.address();
@@ -129,11 +130,15 @@ async function request(
       fetch(`http://localhost:${port}${path}`, opts)
         .then(async (res) => {
           const text = await res.text();
-          resolve({ status: res.status, body: text });
+          resolve({
+            status: res.status,
+            body: text,
+            headers: Object.fromEntries(res.headers.entries()),
+          });
           server.close();
         })
         .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error" });
+          resolve({ status: 500, body: "fetch error", headers: {} });
           server.close();
         });
     });
@@ -207,6 +212,64 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
     const res = await request(createTestApp(), "get", "/api/webhooks/test-provider");
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toEqual({ "hub.challenge": "abc123" });
+  });
+
+  it("accepts the matching challenge token across multiple user subscriptions", async () => {
+    const challengeSpy = vi.fn((_query: Record<string, string>, verifyToken: string) =>
+      verifyToken === "second-token" ? { challenge: "second-user" } : null,
+    );
+    const provider = createMockWebhookProvider({
+      handleValidationChallenge: challengeSpy,
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema.mockResolvedValue([
+      {
+        id: "sub-1",
+        provider_id: "test-provider",
+        verify_token: "first-token",
+        signing_secret: null,
+      },
+      {
+        id: "sub-2",
+        provider_id: "test-provider",
+        verify_token: "second-token",
+        signing_secret: null,
+      },
+    ]);
+
+    const res = await request(createTestApp(), "get", "/api/webhooks/test-provider");
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ challenge: "second-user" });
+    expect(challengeSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops decrypting subscriptions after a challenge token matches", async () => {
+    const challengeSpy = vi.fn(() => ({ challenge: "first-user" }));
+    const provider = createMockWebhookProvider({
+      handleValidationChallenge: challengeSpy,
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema.mockResolvedValue([
+      {
+        id: "sub-1",
+        provider_id: "test-provider",
+        verify_token: "first-token",
+        signing_secret: null,
+      },
+      {
+        id: "sub-2",
+        provider_id: "test-provider",
+        verify_token: "enc:v1:not-valid-encrypted-value",
+        signing_secret: null,
+      },
+    ]);
+
+    const res = await request(createTestApp(), "get", "/api/webhooks/test-provider");
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ challenge: "first-user" });
+    expect(challengeSpy).toHaveBeenCalledTimes(1);
   });
 
   it("passes query parameters as string values to handleValidationChallenge", async () => {
@@ -292,6 +355,35 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
 });
 
 describe("POST /api/webhooks/:providerName — event processing", () => {
+  it("rate-limits only rejected requests with the configured policy", async () => {
+    const app = createTestApp();
+    const provider = createMockWebhookProvider({
+      parseWebhookPayload: vi.fn(() => []),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema.mockResolvedValue([
+      { id: "sub-1", provider_id: "test-provider", verify_token: "tok", signing_secret: null },
+    ]);
+    const successfulResponse = await request(app, "post", "/api/webhooks/test-provider", "{}");
+    expect(successfulResponse.status).toBe(200);
+
+    mockGetAllProviders.mockReturnValue([]);
+    for (let attempt = 0; attempt < 59; attempt++) {
+      await request(app, "post", "/api/webhooks/unknown", "{}");
+    }
+
+    const finalAllowedResponse = await request(app, "post", "/api/webhooks/unknown", "{}");
+    expect(finalAllowedResponse.status).toBe(404);
+
+    const limitedResponse = await request(app, "post", "/api/webhooks/unknown", "{}");
+    expect(limitedResponse.status).toBe(429);
+    expect(limitedResponse.body).toBe(
+      "Too many rejected webhook requests — please try again later",
+    );
+    expect(Number(limitedResponse.headers["retry-after"])).toBeGreaterThanOrEqual(800);
+    expect(limitedResponse.headers["x-ratelimit-limit"]).toBeUndefined();
+  });
+
   it("returns 404 for unknown provider", async () => {
     const res = await request(createTestApp(), "post", "/api/webhooks/unknown", "{}");
     expect(res.status).toBe(404);
@@ -346,6 +438,65 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     expect(res.status).toBe(200);
     // The signingSecret passed should be "the-token" (fallback from verify_token)
     expect(verifySpy).toHaveBeenCalledWith(expect.any(Buffer), expect.any(Object), "the-token");
+  });
+
+  it("accepts the matching signing secret across multiple user subscriptions", async () => {
+    const verifySpy = vi.fn(
+      (_body: Buffer, _headers: Record<string, string>, signingSecret: string) =>
+        signingSecret === "second-secret",
+    );
+    const provider = createMockWebhookProvider({
+      verifyWebhookSignature: verifySpy,
+      parseWebhookPayload: vi.fn(() => []),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema.mockResolvedValue([
+      {
+        id: "sub-1",
+        provider_id: "test-provider",
+        verify_token: "first-token",
+        signing_secret: "first-secret",
+      },
+      {
+        id: "sub-2",
+        provider_id: "test-provider",
+        verify_token: "second-token",
+        signing_secret: "second-secret",
+      },
+    ]);
+
+    const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", "{}");
+
+    expect(res.status).toBe(200);
+    expect(verifySpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops decrypting subscriptions after a signing secret matches", async () => {
+    const verifySpy = vi.fn(() => true);
+    const provider = createMockWebhookProvider({
+      verifyWebhookSignature: verifySpy,
+      parseWebhookPayload: vi.fn(() => []),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockExecuteWithSchema.mockResolvedValue([
+      {
+        id: "sub-1",
+        provider_id: "test-provider",
+        verify_token: "first-token",
+        signing_secret: "first-secret",
+      },
+      {
+        id: "sub-2",
+        provider_id: "test-provider",
+        verify_token: "second-token",
+        signing_secret: "enc:v1:not-valid-encrypted-value",
+      },
+    ]);
+
+    const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", "{}");
+
+    expect(res.status).toBe(200);
+    expect(verifySpy).toHaveBeenCalledTimes(1);
   });
 
   it("returns 400 for invalid JSON body", async () => {
@@ -721,11 +872,12 @@ describe("registerWebhookForProvider", () => {
     const provider = createMockWebhookProvider({ webhookScope: "app" });
     mockExecuteWithSchema.mockResolvedValue([{ id: "existing-sub" }]);
 
-    await registerWebhookForProvider(getMockDb(), provider);
+    await registerWebhookForProvider(getMockDb(), provider, "user-1");
     expect(provider.registerWebhook).not.toHaveBeenCalled();
   });
 
   it("registers webhook and inserts subscription for new app-level provider", async () => {
+    const db = getMockDb();
     const provider = createMockWebhookProvider({
       webhookScope: "app",
       registerWebhook: vi.fn(async () => ({
@@ -735,25 +887,29 @@ describe("registerWebhookForProvider", () => {
     });
     mockExecuteWithSchema.mockResolvedValue([]); // No existing subscription
 
-    await registerWebhookForProvider(getMockDb(), provider);
+    await registerWebhookForProvider(db, provider, "user-1");
     expect(provider.registerWebhook).toHaveBeenCalledWith(
       expect.stringContaining("/api/webhooks/test-provider"),
       expect.any(String),
     );
-    // DB insert is called internally — registerWebhook call above confirms the path was taken
+    const query = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[0]?.[0]);
+    expect(query.sql).toContain("ON CONFLICT (provider_name)");
+    expect(query.params).not.toContain("user-1");
   });
 
   it("registers webhook for per-user provider without checking for existing", async () => {
+    const db = getMockDb();
     const provider = createMockWebhookProvider({
       webhookScope: "user",
       registerWebhook: vi.fn(async () => ({ subscriptionId: "user-sub" })),
     });
 
-    await registerWebhookForProvider(getMockDb(), provider);
-    // Per-user scope should NOT check for existing subscriptions
-    // The first mock call is registerWebhook, not executeWithSchema checking existing
+    await registerWebhookForProvider(db, provider, "user-1");
     expect(provider.registerWebhook).toHaveBeenCalled();
-    // DB insert is called internally — registerWebhook call above confirms the path was taken
+    const query = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[0]?.[0]);
+    expect(query.sql).toContain("ON CONFLICT (user_id, provider_id)");
+    expect(query.params).toContain("user-1");
+    expect(query.params).toContain("test-provider");
   });
 
   it("uses PUBLIC_URL env var for callback URL", async () => {
@@ -765,7 +921,7 @@ describe("registerWebhookForProvider", () => {
       registerWebhook: vi.fn(async () => ({ subscriptionId: "sub-1" })),
     });
 
-    await registerWebhookForProvider(getMockDb(), provider);
+    await registerWebhookForProvider(getMockDb(), provider, "user-1");
     expect(provider.registerWebhook).toHaveBeenCalledWith(
       "https://my-custom-domain.com/api/webhooks/test-provider",
       expect.any(String),
@@ -783,7 +939,7 @@ describe("registerWebhookForProvider", () => {
       registerWebhook: vi.fn(async () => ({ subscriptionId: "sub-1" })),
     });
 
-    await registerWebhookForProvider(getMockDb(), provider);
+    await registerWebhookForProvider(getMockDb(), provider, "user-1");
     expect(provider.registerWebhook).toHaveBeenCalledWith(
       "https://dofek.asherlc.com/api/webhooks/test-provider",
       expect.any(String),
@@ -798,7 +954,7 @@ describe("registerWebhookForProvider", () => {
       registerWebhook: vi.fn(async () => ({ subscriptionId: "sub-1" })),
     });
 
-    await registerWebhookForProvider(getMockDb(), provider);
+    await registerWebhookForProvider(getMockDb(), provider, "user-1");
     const verifyToken = vi.mocked(provider.registerWebhook).mock.calls[0]?.[1];
     // 32 random bytes = 64 hex characters
     expect(verifyToken).toHaveLength(64);
@@ -811,7 +967,7 @@ describe("registerWebhookForProvider", () => {
       registerWebhook: vi.fn(async () => ({ subscriptionId: "user-sub" })),
     });
 
-    await registerWebhookForProvider(getMockDb(), provider);
+    await registerWebhookForProvider(getMockDb(), provider, "user-1");
     // For user-scoped webhooks, executeWithSchema should NOT be called to check existing
     // (it's only called for app-scoped)
     expect(provider.registerWebhook).toHaveBeenCalled();
@@ -826,7 +982,7 @@ describe("registerWebhookForProvider", () => {
     // No existing subscription
     mockExecuteWithSchema.mockResolvedValue([]);
 
-    await registerWebhookForProvider(getMockDb(), provider);
+    await registerWebhookForProvider(getMockDb(), provider, "user-1");
     // Should call executeWithSchema to check for existing, then call registerWebhook
     expect(mockExecuteWithSchema).toHaveBeenCalled();
     expect(provider.registerWebhook).toHaveBeenCalled();
@@ -842,7 +998,7 @@ describe("registerWebhookForProvider", () => {
       })),
     });
 
-    await registerWebhookForProvider(db, provider);
+    await registerWebhookForProvider(db, provider, "user-1");
     expect(db.execute).toHaveBeenCalled();
   });
 });

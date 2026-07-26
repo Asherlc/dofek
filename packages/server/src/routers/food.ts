@@ -7,6 +7,7 @@ import { z } from "zod";
 import { analyzeNutrition, analyzeNutritionItems } from "../lib/ai-nutrition.ts";
 import { logger } from "../logger.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
+import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
@@ -129,11 +130,19 @@ export const foodRouter = router({
     .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
     .query(async ({ ctx, input }) => {
       const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
-      const entries = await repo.byDate(input.date);
+      const settingsRepo = new SettingsRepository(ctx.db, ctx.userId);
+      const calorieGoal = await settingsRepo.getCalorieGoal();
+      const [entries, summary] = await Promise.all([
+        repo.byDate(input.date),
+        repo.nutritionSummaryByDate(input.date, calorieGoal),
+      ]);
       if (entries.length === 0) {
         logger.info(`[food] byDate returned 0 rows for userId=${ctx.userId} date=${input.date}`);
       }
-      return entries.map((entry) => entry.toDetail());
+      return {
+        entries: entries.map((entry) => entry.toDetail()),
+        summary,
+      };
     }),
 
   /** Get daily calorie/macro totals aggregated by day */

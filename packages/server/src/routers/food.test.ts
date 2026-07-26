@@ -117,17 +117,85 @@ describe("foodRouter", () => {
   });
 
   describe("byDate", () => {
-    it("returns food entries for a specific date", async () => {
-      const rows = [{ id: "f1", food_name: "Lunch" }];
-      const caller = makeCaller(rows);
+    it("returns entries with the canonical selected-date summary", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ key: "calorieGoal", value: 1600 }])
+        .mockResolvedValueOnce([{ id: "f1", food_name: "Lunch" }])
+        .mockResolvedValueOnce([
+          {
+            calories: 1000,
+            protein_g: 55,
+            carbs_g: 105,
+            fat_g: 40,
+            breakfast_calories: 400,
+            lunch_calories: 500,
+            dinner_calories: 0,
+            snack_calories: 0,
+            other_calories: 100,
+          },
+        ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
       const result = await caller.byDate({ date: "2024-01-15" });
-      expect(result).toEqual(rows);
+
+      expect(result).toEqual({
+        entries: [{ id: "f1", food_name: "Lunch" }],
+        summary: {
+          calories: 1000,
+          mealCalories: {
+            breakfast: 400,
+            lunch: 500,
+            dinner: 0,
+            snack: 0,
+            other: 100,
+          },
+          calorieGoal: {
+            target: 1600,
+            remaining: 600,
+            over: 0,
+            progressPercentage: 62.5,
+          },
+          macros: {
+            protein: { grams: 55, calories: 220, percentage: 22 },
+            carbs: { grams: 105, calories: 420, percentage: 42 },
+            fat: { grams: 40, calories: 360, percentage: 36 },
+          },
+        },
+      });
     });
 
     it("logs when no rows are returned", async () => {
       const infoSpy = vi.spyOn(logger, "info").mockImplementation(() => undefined);
-      const caller = makeCaller([]);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            calories: 0,
+            protein_g: 0,
+            carbs_g: 0,
+            fat_g: 0,
+            breakfast_calories: 0,
+            lunch_calories: 0,
+            dinner_calories: 0,
+            snack_calories: 0,
+            other_calories: 0,
+          },
+        ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
       await caller.byDate({ date: "2024-01-15" });
+
       expect(infoSpy).toHaveBeenCalledWith(
         "[food] byDate returned 0 rows for userId=user-1 date=2024-01-15",
       );

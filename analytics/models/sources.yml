@@ -29,6 +29,7 @@ sources:
       - name: lab_panel
       - name: lab_result
       - name: provider
+      - name: provider_connection
       - name: provider_priority
       - name: sensor_device_priority
       - name: sensor_provider_priority

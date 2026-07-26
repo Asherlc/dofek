@@ -53,6 +53,13 @@ entity "provider" {
   created_at : timestamp
 }
 
+entity "provider_connection" {
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  created_at : timestamp
+  updated_at : timestamp
+}
+
 entity "provider_priority" {
   * provider_id : text <<PK>>
   --
@@ -107,6 +114,7 @@ entity "user_profile" {
 entity "webhook_subscription" {
   * id : uuid <<PK>>
   --
+  user_id : uuid
   provider_id : text <<FK>>
   provider_name : text
   subscription_external_id : text
@@ -149,6 +157,23 @@ entity "activity_interval" {
   interval_type : text
   started_at : timestamp
   ended_at : timestamp
+  created_at : timestamp
+}
+
+entity "climbing_entry" {
+  * id : uuid <<PK>>
+  --
+  activity_id : uuid <<FK>>
+  external_id : text
+  climb_type : climbing_climb_type
+  grade_system : climbing_grade_system
+  grade : text
+  sent : boolean
+  attempt_count : integer
+  route_name : text
+  location_name : text
+  source_name : text
+  raw : jsonb
   created_at : timestamp
 }
 
@@ -505,6 +530,48 @@ entity "mcp_access_token" {
   last_used_at : timestamp
   expires_at : timestamp
   revoked_at : timestamp
+  oauth_client_id : text
+  oauth_resource : text
+}
+
+entity "mcp_oauth_authorization_code" {
+  * id : uuid <<PK>>
+  --
+  code_hash : text
+  client_id : text
+  user_id : uuid <<FK>>
+  scopes : text_array
+  code_challenge : text
+  redirect_uri : text
+  resource : text
+  expires_at : timestamp
+  consumed_at : timestamp
+  created_at : timestamp
+}
+
+entity "mcp_oauth_client" {
+  * client_id : text <<PK>>
+  --
+  client_secret : text
+  client_metadata : jsonb
+  client_id_issued_at : bigint
+  client_secret_expires_at : bigint
+  created_at : timestamp
+}
+
+entity "mcp_oauth_refresh_token" {
+  * id : uuid <<PK>>
+  --
+  token_hash : text
+  client_id : text
+  user_id : uuid <<FK>>
+  access_token_id : uuid <<FK>>
+  parent_refresh_token_id : uuid <<FK>>
+  scopes : text_array
+  resource : text
+  expires_at : timestamp
+  revoked_at : timestamp
+  created_at : timestamp
 }
 
 entity "session" {
@@ -530,6 +597,13 @@ entity "slack_installation" {
   updated_at : timestamp
 }
 
+entity "stripe_webhook_event" {
+  * event_id : text <<PK>>
+  --
+  event_created : bigint
+  processed_at : timestamp
+}
+
 entity "user_billing" {
   * user_id : uuid <<PK>>
   --
@@ -537,6 +611,8 @@ entity "user_billing" {
   stripe_subscription_id : text
   stripe_subscription_status : text
   stripe_current_period_end : timestamp
+  stripe_subscription_event_id : text
+  stripe_subscription_event_created : bigint
   paid_grant_reason : text
   created_at : timestamp
   updated_at : timestamp
@@ -615,6 +691,48 @@ entity "dexa_scan_region" {
   t_score_percentile : real
 }
 
+entity "file_upload" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  import_type : text
+  object_key : text
+  original_filename : text
+  content_type : text
+  expected_size_bytes : bigint
+  expected_sha256 : text
+  verified_sha256 : text
+  r2_multipart_upload_id : text
+  state : text
+  version : bigint
+  part_size_bytes : bigint
+  completion_parts : jsonb
+  import_job_id : text
+  import_since : timestamp
+  weight_unit : text
+  progress_percent : bigint
+  error_code : text
+  error_message : text
+  created_at : timestamp
+  updated_at : timestamp
+  expires_at : timestamp
+  completed_at : timestamp
+  object_deleted_at : timestamp
+}
+
+entity "file_upload_outbox" {
+  * event_id : uuid <<PK>>
+  --
+  upload_id : uuid <<FK>>
+  import_job_id : text
+  status : text
+  created_at : timestamp
+  dispatched_at : timestamp
+  completed_at : timestamp
+  failure_reason : text
+  failed_at : timestamp
+}
+
 entity "imu_session" {
   * id : uuid <<PK>>
   --
@@ -678,6 +796,27 @@ entity "menstrual_period" {
   created_at : timestamp
 }
 
+entity "provider_data_deletion_outbox" {
+  * event_id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  provider_id : text
+  generation : bigint
+  status : text
+  created_at : timestamp
+  dispatched_at : timestamp
+  completed_at : timestamp
+  failure_reason : text
+  failed_at : timestamp
+}
+
+entity "provider_data_generation" {
+  user_id : uuid <<FK>>
+  provider_id : text
+  current_generation : bigint
+  updated_at : timestamp
+}
+
 entity "shared_report" {
   * id : uuid <<PK>>
   --
@@ -704,15 +843,92 @@ entity "sync_log" {
   synced_at : timestamp
 }
 
+entity "processing_flow_marker" {
+  * id : uuid <<PK>>
+  --
+  operation_id : uuid <<FK>>
+  dataset_key : text
+  flow_name : text
+  batch_key : text
+  source_watermark : text
+  created_at : timestamp
+}
+
+entity "processing_metric_stream_batch" {
+  * id : uuid <<PK>>
+  --
+  operation_id : uuid <<FK>>
+  batch_id : text
+  dataset_keys : text_array
+  expected_event_count : integer
+  published_at : timestamp
+}
+
+entity "processing_operation" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  provider_id : text
+  kind : text
+  external_correlation_key : text
+  dataset_keys : text_array
+  created_at : timestamp
+}
+
+entity "processing_operation_output" {
+  * id : uuid <<PK>>
+  --
+  operation_id : uuid <<FK>>
+  dataset_key : text
+  output_path : text
+  created_at : timestamp
+}
+
+entity "processing_queue_outbox" {
+  * id : uuid <<PK>>
+  --
+  operation_id : uuid <<FK>>
+  queue_name : text
+  job_id : text
+  status : text
+  created_at : timestamp
+  dispatched_at : timestamp
+}
+
+entity "processing_stage_event" {
+  * id : uuid <<PK>>
+  --
+  sequence : bigint
+  operation_id : uuid <<FK>>
+  stage : text
+  status : text
+  dataset_key : text
+  output_path : text
+  model_name : text
+  occurred_at : timestamp
+  progress_percentage : integer
+  source_watermark : text
+  serving_watermark : text
+  message : text
+  error_code : text
+  error_message : text
+  metadata_schema_version : integer
+  metadata : jsonb
+  idempotency_key : text
+}
+
 exercise ||--o{ exercise_alias
 provider ||--o{ exercise_alias
 user_profile ||--o{ oauth_token
 provider ||--o{ oauth_token
 user_profile ||--o{ provider
+user_profile ||--o{ provider_connection
+provider ||--o{ provider_connection
 provider ||--o{ webhook_subscription
 provider ||--o{ activity
 user_profile ||--o{ activity
 activity ||--o{ activity_interval
+activity ||--o{ climbing_entry
 daily_metrics ||--o{ daily_metric_value
 daily_metric_type ||--o{ daily_metric_value
 provider ||--o{ daily_metrics
@@ -748,6 +964,10 @@ user_profile ||--o{ medication_dose_event
 user_profile ||--o{ auth_account
 user_profile ||--o{ data_export
 user_profile ||--o{ mcp_access_token
+user_profile ||--o{ mcp_oauth_authorization_code
+user_profile ||--o{ mcp_oauth_refresh_token
+mcp_access_token ||--o{ mcp_oauth_refresh_token
+mcp_oauth_refresh_token ||--o{ mcp_oauth_refresh_token
 user_profile ||--o{ session
 user_profile ||--o{ user_billing
 user_profile ||--o{ user_password_credential
@@ -756,14 +976,24 @@ user_profile ||--o{ breathwork_session
 provider ||--o{ dexa_scan
 user_profile ||--o{ dexa_scan
 dexa_scan ||--o{ dexa_scan_region
+user_profile ||--o{ file_upload
+file_upload ||--o{ file_upload_outbox
 user_profile ||--o{ imu_session
 provider ||--o{ journal_entry
 user_profile ||--o{ journal_entry
 journal_question ||--o{ journal_entry
 user_profile ||--o{ life_events
 user_profile ||--o{ menstrual_period
+user_profile ||--o{ provider_data_deletion_outbox
+user_profile ||--o{ provider_data_generation
 user_profile ||--o{ shared_report
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
+processing_operation ||--o{ processing_flow_marker
+processing_operation ||--o{ processing_metric_stream_batch
+user_profile ||--o{ processing_operation
+processing_operation ||--o{ processing_operation_output
+processing_operation ||--o{ processing_queue_outbox
+processing_operation ||--o{ processing_stage_event
 
 @enduml

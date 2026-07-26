@@ -1,8 +1,4 @@
-import {
-  type FormattedMeasurement,
-  formatHRVMeasurement,
-  formatSpO2Measurement,
-} from "@dofek/format/format";
+import { formatHRVMeasurement, formatSpO2Measurement } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { useMemo } from "react";
 import { z } from "zod";
@@ -17,18 +13,9 @@ import { useAutoSync } from "../hooks/useAutoSync.ts";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { chartColors } from "../lib/chartTheme.ts";
+import { type HealthStatusMetric, healthStatusMetricSchema } from "../lib/healthStatus.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
-
-type MetricEntry = {
-  label: string;
-  value: number | null;
-  avg: number | null;
-  stddev: number | null;
-  unit?: string;
-  formatValue?: (value: number | null | undefined) => FormattedMeasurement;
-  lowerBetter?: boolean;
-};
 
 const trendRowSchema = z.object({
   avg_hrv: z.number().nullable(),
@@ -39,6 +26,7 @@ const trendRowSchema = z.object({
   stddev_hrv: z.number().nullable(),
   stddev_resting_hr: z.number().nullable(),
   stddev_spo2: z.number().nullable(),
+  stddev_steps: z.number().nullable(),
   stddev_skin_temp: z.number().nullable(),
   latest_hrv: z.number().nullable(),
   latest_resting_hr: z.number().nullable(),
@@ -46,6 +34,7 @@ const trendRowSchema = z.object({
   latest_steps: z.number().nullable(),
   latest_skin_temp: z.number().nullable(),
   latest_date: z.string().nullable(),
+  healthStatus: z.array(healthStatusMetricSchema),
 });
 type TrendRow = z.infer<typeof trendRowSchema>;
 
@@ -80,16 +69,16 @@ export function spo2TempSectionConfig(
 ): { title: string; subtitle: string; yAxis: { name: string; min?: number }[] } {
   if (hasSpO2 && hasSkinTemp) {
     return {
-      title: "SpO2 & Skin Temperature",
+      title: "Blood Oxygen Saturation (SpO2) & Skin Temperature",
       subtitle: "Blood oxygen saturation and wrist skin temperature over time",
-      yAxis: [{ name: "SpO2 (%)", min: 90 }, { name: units.temperatureLabel }],
+      yAxis: [{ name: "Blood Oxygen Saturation (%)", min: 90 }, { name: units.temperatureLabel }],
     };
   }
   if (hasSpO2) {
     return {
-      title: "Blood Oxygen (SpO2)",
+      title: "Blood Oxygen Saturation (SpO2)",
       subtitle: "Blood oxygen saturation over time",
-      yAxis: [{ name: "SpO2 (%)", min: 90 }],
+      yAxis: [{ name: "Blood Oxygen Saturation (%)", min: 90 }],
     };
   }
   return {
@@ -111,61 +100,22 @@ export function buildSkinTempSeries(metrics: DailyMetricRow[], units: UnitConver
   };
 }
 
-export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitConverter) {
-  if (!trendData) return [];
-  const entries: (MetricEntry | false)[] = [
-    {
-      label: "Heart Rate Variability (HRV)",
-      value: trendData.latest_hrv,
-      avg: trendData.avg_hrv,
-      stddev: trendData.stddev_hrv,
-      formatValue: formatHRVMeasurement,
-      lowerBetter: false,
-    },
-    {
-      label: "Resting Heart Rate",
-      value: trendData.latest_resting_hr,
-      avg: trendData.avg_resting_hr,
-      stddev: trendData.stddev_resting_hr,
-      unit: "bpm",
-      lowerBetter: true,
-    },
-    trendData.latest_spo2 != null && {
-      label: "SpO2",
-      value: trendData.latest_spo2,
-      avg: trendData.avg_spo2,
-      stddev: trendData.stddev_spo2,
-      formatValue: formatSpO2Measurement,
-    },
-    {
-      label: "Steps",
-      value: trendData.latest_steps,
-      avg: trendData.avg_steps,
-      stddev: null,
-    },
-    trendData.latest_skin_temp != null && {
-      label: "Skin Temp",
-      value: trendData.latest_skin_temp,
-      avg: trendData.avg_skin_temp,
-      stddev: trendData.stddev_skin_temp,
-      formatValue: (value) => units.formatTemperature(value),
-    },
-  ];
-  return entries.filter((entry): entry is MetricEntry => entry !== false);
+export function buildHealthMetrics(trendData: TrendRow | undefined): HealthStatusMetric[] {
+  return trendData?.healthStatus ?? [];
 }
 
 export function isCoreDashboardReady({
-  readinessSettled,
-  workloadRatioSettled,
-  strainTargetSettled,
-  sleepPerformanceSettled,
+  readinessReady,
+  workloadRatioReady,
+  strainTargetReady,
+  sleepPerformanceReady,
 }: {
-  readinessSettled: boolean;
-  workloadRatioSettled: boolean;
-  strainTargetSettled: boolean;
-  sleepPerformanceSettled: boolean;
+  readinessReady: boolean;
+  workloadRatioReady: boolean;
+  strainTargetReady: boolean;
+  sleepPerformanceReady: boolean;
 }): boolean {
-  return readinessSettled && workloadRatioSettled && strainTargetSettled && sleepPerformanceSettled;
+  return readinessReady && workloadRatioReady && strainTargetReady && sleepPerformanceReady;
 }
 
 export function Dashboard() {
@@ -179,11 +129,21 @@ export function Dashboard() {
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const coreDashboardReady = isCoreDashboardReady({
-    readinessSettled: readinessData.isFetched,
-    workloadRatioSettled: workloadRatio.isFetched,
-    strainTargetSettled: strainTarget.isFetched,
-    sleepPerformanceSettled: sleepPerformance.isFetched,
+    readinessReady:
+      readinessData.data !== undefined || (readinessData.isFetched && readinessData.error == null),
+    workloadRatioReady:
+      workloadRatio.data !== undefined || (workloadRatio.isFetched && workloadRatio.error == null),
+    strainTargetReady:
+      strainTarget.data !== undefined || (strainTarget.isFetched && strainTarget.error == null),
+    sleepPerformanceReady:
+      sleepPerformance.data !== undefined ||
+      (sleepPerformance.isFetched && sleepPerformance.error == null),
   });
+  const coreDashboardLoading =
+    readinessData.isLoading ||
+    workloadRatio.isLoading ||
+    strainTarget.isLoading ||
+    sleepPerformance.isLoading;
   const insightsQuery = trpc.insights.compute.useQuery(
     { days, endDate },
     { enabled: coreDashboardReady },
@@ -210,7 +170,7 @@ export function Dashboard() {
       })[0];
   }, [insightsQuery.data]);
 
-  const healthMetrics = useMemo(() => buildHealthMetrics(trendData, units), [trendData, units]);
+  const healthMetrics = useMemo(() => buildHealthMetrics(trendData), [trendData]);
   const restingHeartRatePoints = useMemo(
     () =>
       restingHeartRateRows.flatMap((row) =>
@@ -219,18 +179,42 @@ export function Dashboard() {
     [restingHeartRateRows],
   );
 
-  const healthMonitor = trends.error ? (
-    <QueryStatePanel error={trends.error} height={160} />
-  ) : (
-    <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
-  );
-  const insightStatePanel = insightsQuery.isLoading ? (
-    <QueryStatePanel variant="loading" height={160} />
-  ) : insightsQuery.error ? (
-    <QueryStatePanel error={insightsQuery.error} height={160} />
-  ) : !topInsight ? (
-    <QueryStatePanel variant="empty" message="No insights yet." height={160} />
-  ) : null;
+  const healthMonitor =
+    trends.error && trends.data == null ? (
+      <QueryStatePanel error={trends.error} height={160} />
+    ) : (
+      <>
+        <HealthStatusBar
+          metrics={healthMetrics}
+          loading={trends.isLoading}
+          formatters={{
+            hrv: formatHRVMeasurement,
+            spo2: formatSpO2Measurement,
+            skin_temperature: (value) => units.formatTemperature(value),
+          }}
+          units={{ resting_heart_rate: "bpm" }}
+        />
+        {trends.error ? <QueryStatePanel error={trends.error} height={72} /> : null}
+      </>
+    );
+  const insightStatePanel =
+    !coreDashboardReady && coreDashboardLoading ? (
+      <QueryStatePanel variant="loading" height={160} />
+    ) : !coreDashboardReady ? (
+      <QueryStatePanel
+        variant="empty"
+        message="Insights unavailable until dashboard data loads."
+        height={160}
+      />
+    ) : insightsQuery.isLoading ? (
+      <QueryStatePanel variant="loading" height={160} />
+    ) : insightsQuery.error ? (
+      <QueryStatePanel error={insightsQuery.error} height={160} />
+    ) : !insightsQuery.isFetched ? (
+      <QueryStatePanel variant="loading" height={160} />
+    ) : !topInsight ? (
+      <QueryStatePanel variant="empty" message="No insights yet." height={160} />
+    ) : null;
 
   return (
     <PageLayout headerChildren={undefined}>
@@ -249,6 +233,10 @@ export function Dashboard() {
         workloadLoading={workloadRatio.isLoading}
         strainTargetLoading={strainTarget.isLoading}
         sleepLoading={sleepPerformance.isLoading}
+        readinessError={readinessData.error}
+        workloadError={workloadRatio.error}
+        strainTargetError={strainTarget.error}
+        sleepError={sleepPerformance.error}
       />
       <DashboardEvidenceOverview
         days={days}

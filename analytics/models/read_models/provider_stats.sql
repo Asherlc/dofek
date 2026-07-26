@@ -208,8 +208,8 @@ metric_stream_counts AS (
 current_providers AS (
     SELECT DISTINCT
         user_id,
-        id AS provider_id
-    FROM {{ source('postgres_fitness', 'provider') }} FINAL
+        provider_id
+    FROM {{ source('postgres_fitness', 'provider_connection') }} FINAL
     WHERE _peerdb_is_deleted = 0
         AND (user_id, id) IN (
             SELECT

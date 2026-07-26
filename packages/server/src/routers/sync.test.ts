@@ -225,16 +225,6 @@ function createProvidersDbMock() {
   };
 }
 
-function createSensorStoreQuery(responses: { providerStats?: Record<string, unknown>[] | Error }) {
-  return vi.fn(async (_schema: unknown, sql: string) => {
-    if (sql.includes("provider_stats")) {
-      if (responses.providerStats instanceof Error) throw responses.providerStats;
-      return responses.providerStats ?? [];
-    }
-    return [];
-  });
-}
-
 describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
 
@@ -565,30 +555,18 @@ describe("syncRouter", () => {
       expect(peloton?.needsReauth).toBe(false);
     });
 
-    it("marks push provider authorized when metric stream data exists", async () => {
+    it("marks a push provider authorized when its connection exists", async () => {
       mockGetAllProviders.mockReturnValue([]);
 
       const caller = createCaller({
-        db: createProvidersDbMock(),
-        sensorStore: {
-          query: createSensorStoreQuery({
-            providerStats: [
-              {
-                provider_id: "whoop_ble",
-                activities: 0,
-                daily_metrics: 0,
-                sleep_sessions: 0,
-                body_measurements: 0,
-                food_entries: 0,
-                health_events: 0,
-                metric_stream: 4,
-                nutrition_daily: 0,
-                lab_panels: 0,
-                lab_results: 0,
-                journal_entries: 0,
-              },
-            ],
-          }),
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              { provider_id: "whoop_ble", updated_at: new Date("2026-07-25T00:00:00Z") },
+            ])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([]),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -600,14 +578,11 @@ describe("syncRouter", () => {
       expect(whoopBle?.lastSyncedAt).toBeNull();
     });
 
-    it("marks push provider unauthorized after a successful zero-data stats query", async () => {
+    it("marks a push provider unauthorized without a connection", async () => {
       mockGetAllProviders.mockReturnValue([]);
 
       const caller = createCaller({
         db: createProvidersDbMock(),
-        sensorStore: {
-          query: createSensorStoreQuery({ providerStats: [] }),
-        },
         userId: "user-1",
         timezone: "UTC",
       });
@@ -619,53 +594,19 @@ describe("syncRouter", () => {
       ).toBe(false);
     });
 
-    it("rejects instead of marking push providers disconnected when provider stats lookup fails", async () => {
+    it("does not depend on provider stats when listing connections", async () => {
       mockGetAllProviders.mockReturnValue([]);
-      const providerStatsError = Object.assign(new Error("connect ECONNREFUSED clickhouse:8123"), {
-        code: "ECONNREFUSED",
-      });
+      const sensorQuery = vi.fn().mockRejectedValue(new Error("provider stats unavailable"));
 
       const caller = createCaller({
         db: createProvidersDbMock(),
-        sensorStore: {
-          query: createSensorStoreQuery({
-            providerStats: providerStatsError,
-          }),
-        },
+        sensorStore: { query: sensorQuery },
         userId: "user-1",
         timezone: "UTC",
       });
 
-      await expect(caller.providers()).rejects.toThrow("connect ECONNREFUSED clickhouse:8123");
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        "[sync.providers] provider stats lookup failed: connect ECONNREFUSED clickhouse:8123",
-      );
-      expect(mockCaptureException).toHaveBeenCalledWith(providerStatsError);
-    });
-
-    it("logs and rethrows non-Error provider stats failures with String(error)", async () => {
-      mockGetAllProviders.mockReturnValue([]);
-
-      const caller = createCaller({
-        db: createProvidersDbMock(),
-        sensorStore: {
-          query: vi.fn(async (_schema, sql: string) => {
-            if (sql.includes("provider_stats")) {
-              throw "string stats failure";
-            }
-            return [];
-          }),
-        },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-
-      await expect(caller.providers()).rejects.toThrow("string stats failure");
-
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        "[sync.providers] provider stats lookup failed: string stats failure",
-      );
-      expect(mockCaptureException).toHaveBeenCalledWith("string stats failure");
+      await expect(caller.providers()).resolves.toHaveLength(2);
+      expect(sensorQuery).not.toHaveBeenCalled();
     });
 
     it("skips ClickHouse provider stats when sensor store is not configured", async () => {
@@ -829,7 +770,13 @@ describe("syncRouter", () => {
         .mockResolvedValueOnce(null);
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValue([
+              { provider_id: "garmin", updated_at: new Date("2026-07-25T00:00:00Z") },
+            ]),
+        },
         userId: "user-1",
         timezone: "UTC",
       });

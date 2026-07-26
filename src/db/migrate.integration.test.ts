@@ -523,4 +523,33 @@ describe("runMigrations", () => {
       await client.end();
     }
   });
+
+  it("separates the global provider catalog from user connections", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      const nullableResult = await client.query(`
+        SELECT is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'fitness'
+          AND table_name = 'provider'
+          AND column_name = 'user_id'
+      `);
+      expect(nullableRowsSchema.parse(nullableResult.rows)).toEqual([{ is_nullable: "YES" }]);
+
+      const primaryKeyResult = await client.query(`
+        SELECT string_agg(column_name, ',' ORDER BY ordinal_position) AS columns
+        FROM information_schema.key_column_usage
+        WHERE table_schema = 'fitness'
+          AND table_name = 'provider_connection'
+          AND constraint_name = 'provider_connection_pkey'
+        GROUP BY constraint_name
+      `);
+      expect(primaryKeyRowsSchema.parse(primaryKeyResult.rows)).toEqual([
+        { columns: "user_id,provider_id" },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
 });

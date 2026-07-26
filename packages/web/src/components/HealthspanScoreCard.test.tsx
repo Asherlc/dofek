@@ -19,7 +19,14 @@ const baseMetrics: HealthspanMetric[] = [
     status: "excellent",
     yearsDelta: -1.4,
   },
-  { name: "HRV", value: 45, unit: "ms", score: 60, status: "fair", yearsDelta: -0.4 },
+  {
+    name: "Heart Rate Variability",
+    value: 45,
+    unit: "ms",
+    score: 60,
+    status: "fair",
+    yearsDelta: -0.4,
+  },
   { name: "VO2 Max", value: 42, unit: "ml/kg/min", score: 70, status: "good", yearsDelta: -0.8 },
 ];
 
@@ -64,7 +71,7 @@ describe("HealthspanScoreCard", () => {
   it("renders metric bars for each metric", () => {
     render(<HealthspanScoreCard data={makeData()} />);
     expect(screen.getByText("Resting Heart Rate")).toBeDefined();
-    expect(screen.getByText("HRV")).toBeDefined();
+    expect(screen.getByText("Heart Rate Variability")).toBeDefined();
     expect(screen.getByText("VO2 Max")).toBeDefined();
   });
 
