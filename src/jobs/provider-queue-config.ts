@@ -63,7 +63,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["ride-with-gps", realtimeProvider()],
   ["velohero", realtimeProvider()],
   ["xert", realtimeProvider()],
-  ["cycling-analytics", realtimeProvider()],
+  ["cycling_analytics", realtimeProvider()],
 
   // ── Frequent tier ──
   // Garmin sync is step-chained: one BullMQ job per sync phase (activities, sleep, etc.).
