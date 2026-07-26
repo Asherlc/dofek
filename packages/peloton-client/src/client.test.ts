@@ -159,8 +159,20 @@ describe("PelotonClient", () => {
       duration: 5,
       is_class_plan_shown: false,
       segment_list: [],
-      average_summaries: [],
-      summaries: [],
+      average_summaries: [
+        {
+          display_name: "Avg Output",
+          value: 118,
+          slug: "avg_output",
+        },
+      ],
+      summaries: [
+        {
+          display_name: "Total Output",
+          value: 450,
+          slug: "total_output",
+        },
+      ],
       metrics: [],
     };
     const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(graph));

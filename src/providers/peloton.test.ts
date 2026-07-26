@@ -156,15 +156,15 @@ const samplePerformanceGraph: PelotonPerformanceGraph = {
   is_class_plan_shown: true,
   segment_list: [],
   average_summaries: [
-    { display_name: "Avg Output", value: "200", slug: "avg_output" },
-    { display_name: "Avg Cadence", value: "85", slug: "avg_cadence" },
-    { display_name: "Avg Resistance", value: "45", slug: "avg_resistance" },
-    { display_name: "Avg Speed", value: "18.5", slug: "avg_speed" },
+    { display_name: "Avg Output", value: 200, slug: "avg_output" },
+    { display_name: "Avg Cadence", value: 85, slug: "avg_cadence" },
+    { display_name: "Avg Resistance", value: 45, slug: "avg_resistance" },
+    { display_name: "Avg Speed", value: 18.5, slug: "avg_speed" },
   ],
   summaries: [
-    { display_name: "Total Output", value: "360", slug: "total_output" },
-    { display_name: "Distance", value: "9.25", slug: "distance" },
-    { display_name: "Calories", value: "450", slug: "calories" },
+    { display_name: "Total Output", value: 360, slug: "total_output" },
+    { display_name: "Distance", value: 9.25, slug: "distance" },
+    { display_name: "Calories", value: 450, slug: "calories" },
   ],
   metrics: [
     {
