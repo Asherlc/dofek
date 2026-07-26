@@ -213,11 +213,11 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   if (allSamples.length > 0) {
     onProgress?.(`Pushing ${allSamples.length} samples...`);
     const batchCount = Math.ceil(allSamples.length / BATCH_SIZE);
-    for (let i = 0; i < allSamples.length; i += BATCH_SIZE) {
-      const batch = allSamples.slice(i, i + BATCH_SIZE);
+    for (let batchOffset = 0; batchOffset < allSamples.length; batchOffset += BATCH_SIZE) {
+      const batch = allSamples.slice(batchOffset, batchOffset + BATCH_SIZE);
       onStage?.({
         operation: "pushQuantitySamples",
-        batchIndex: i / BATCH_SIZE + 1,
+        batchIndex: batchOffset / BATCH_SIZE + 1,
         batchCount,
         itemCount: batch.length,
       });

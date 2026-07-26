@@ -243,15 +243,15 @@ describe("syncHealthKitToServer", () => {
   it("reports structured sync stages with quantity batch sizes", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();
-    const samples = Array.from({ length: 750 }, (_, i) => ({
+    const samples = Array.from({ length: 750 }, (_, sampleIndex) => ({
       type: "HKQuantityTypeIdentifierHeartRate",
       value: 72,
       unit: "count/min",
-      startDate: `2026-03-21T${String(i % 24).padStart(2, "0")}:00:00Z`,
-      endDate: `2026-03-21T${String(i % 24).padStart(2, "0")}:00:00Z`,
+      startDate: `2026-03-21T${String(sampleIndex % 24).padStart(2, "0")}:00:00Z`,
+      endDate: `2026-03-21T${String(sampleIndex % 24).padStart(2, "0")}:00:00Z`,
       sourceName: "Apple Watch",
       sourceBundle: "com.apple.health",
-      uuid: `sample-${i}`,
+      uuid: `sample-${sampleIndex}`,
     }));
     healthKit.queryDailyStatistics.mockResolvedValue([]);
     healthKit.queryQuantitySamples.mockImplementation(async (typeIdentifier: string) =>
