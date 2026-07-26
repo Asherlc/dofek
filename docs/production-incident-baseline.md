@@ -17900,3 +17900,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Deploy the fixed image, confirm the sink task
   remains stable, and verify the accumulated Redpanda events flow into
   ClickHouse.
+
+## 2026-07-26 — WHOOP BLE Initialization Ran While the App Was Backgrounded
+
+- **Status:** Direct fix validated locally; merge and mobile rollout pending.
+- **Symptoms:** Sentry issue `DOFEK-MOBILE-1D` recorded a `DISCONNECTED` error
+  from the `whoop-ble-init-sync` path while the app was not in the foreground.
+- **User impact:** WHOOP streaming could fail to initialize until a later sync
+  attempt, leaving sensor samples unavailable during that interval.
+- **Evidence:** The production event came from mobile build `1784961889` with
+  `app.in_foreground:false` and telemetry source `whoop-ble-init-sync`.
+  `initBackgroundWhoopBleSync` registered an app-state listener but then
+  unconditionally invoked the foreground BLE connection path regardless of
+  `AppState.currentState`.
+- **Root cause:** Background sync initialization treated setup as proof that
+  the app was active, so it could start a foreground BLE connection after the
+  application had already moved to the background.
+- **Fix / mitigation:** Run the immediate initialization sync only when
+  `AppState.currentState` is `active`; otherwise defer it to the existing
+  foreground transition listener. The explicit native background-refresh path
+  remains unchanged.
+- **Validation:** A regression test first reproduced the unwanted background
+  connection, then all 43 focused WHOOP BLE sync tests passed after the fix.
+  Targeted Biome checks and the mobile TypeScript typecheck also pass.
+- **Remaining risk / follow-up:** Merge through normal CI, release the mobile
+  change, and resolve `DOFEK-MOBILE-1D` after confirming no recurrence on the
+  fixed release.

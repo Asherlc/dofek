@@ -100,7 +100,7 @@ let currentRealtimeClient: WhoopBleRealtimeUploadClient | null = null;
 /**
  * Initialize always-on WHOOP BLE accelerometer sync.
  *
- * - Connects to the WHOOP strap and starts IMU streaming immediately
+ * - Connects to the WHOOP strap and starts IMU streaming while the app is active
  * - On subsequent foreground events, uploads buffered samples (streaming stays on)
  * - Should be called once after authentication when the setting is enabled
  */
@@ -160,17 +160,26 @@ export async function initBackgroundWhoopBleSync(
       });
   });
 
-  // Do an initial sync immediately — the AppState listener only fires on
-  // state *transitions*, so if the app is already active when init is called
-  // (the common case), nothing would happen until the user backgrounds and
-  // re-opens the app. Best-effort: don't let init failures propagate.
-  logger.info(LOG_CATEGORY, "initializing background sync");
-  try {
-    await syncOnForeground(trpcClient, whoopDeps, realtimeClient, shouldRunForegroundPeriodicDrain);
-    logger.info(LOG_CATEGORY, "initial sync complete");
-  } catch (error: unknown) {
-    logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
-    captureException(error, { source: "whoop-ble-init-sync" });
+  // The AppState listener only fires on state transitions, so sync immediately
+  // when init runs in the foreground. Defer a backgrounded initialization until
+  // the next active transition so this foreground sync does not try to start a
+  // BLE connection while the app is suspended.
+  if (shouldRunForegroundPeriodicDrain()) {
+    logger.info(LOG_CATEGORY, "initializing background sync");
+    try {
+      await syncOnForeground(
+        trpcClient,
+        whoopDeps,
+        realtimeClient,
+        shouldRunForegroundPeriodicDrain,
+      );
+      logger.info(LOG_CATEGORY, "initial sync complete");
+    } catch (error: unknown) {
+      logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
+      captureException(error, { source: "whoop-ble-init-sync" });
+    }
+  } else {
+    logger.info(LOG_CATEGORY, "initial sync deferred until app foregrounds");
   }
 
   // Periodically drain the buffer while the app is active so samples

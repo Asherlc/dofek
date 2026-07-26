@@ -106,6 +106,24 @@ describe("background-whoop-ble-sync", () => {
     expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
   });
 
+  it("waits to connect until the app foregrounds when initialized in the background", async () => {
+    AppState.currentState = "background";
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(whoopDeps.findWhoop).not.toHaveBeenCalled();
+    expect(whoopDeps.connect).not.toHaveBeenCalled();
+    expect(whoopDeps.startImuStreaming).not.toHaveBeenCalled();
+
+    AppState.currentState = "active";
+    appStateCallback?.("active");
+
+    await vi.waitFor(() => {
+      expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
+    });
+    expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
+  });
+
   it("uploads buffered samples with gyroscope data immediately on init", async () => {
     const samples = [
       {
