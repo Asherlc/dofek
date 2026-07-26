@@ -157,11 +157,13 @@ function deriveDatasetState(
     }
 
     const latestFact = latestBySequence(facts);
+    const delayed =
+      latestFact !== undefined && now.getTime() - latestFact.occurredAt.getTime() > delayedAfterMs;
+    const operationIsTerminal = operationStatus === "succeeded" || operationStatus === "failed";
     return {
       datasetKey,
       currentStage: stage,
-      status:
-        operationStatus === "succeeded" || operationStatus === "failed" ? "blocked" : "waiting",
+      status: operationIsTerminal && delayed ? "blocked" : "waiting",
       progressPercentage: null,
       lastAdvancedAt: latestFact?.occurredAt ?? null,
     };

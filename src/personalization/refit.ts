@@ -552,7 +552,7 @@ async function fitTrimpFromDb(sensorStore: RefitSensorStore, userId: string) {
         a.id AS activity_id,
         avg(ds.scalar) OVER (
           PARTITION BY a.id
-          ORDER BY ds.recorded_at
+          ORDER BY toUnixTimestamp(ds.recorded_at)
           RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
         ) AS rolling_30s_power
       FROM analytics.deduped_sensor ds

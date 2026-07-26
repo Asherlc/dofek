@@ -24,10 +24,14 @@ const unchangedActivityStartedAt = testTimestamp(-3600);
 const regularActivityStartedAt = testTimestamp(0);
 const gappedActivityStartedAt = testTimestamp(3600);
 const varyingPowerStartedAt = testTimestamp(7200);
+const finalGapActivityStartedAt = testTimestamp(10_800);
+const unalignedActivityStartedAt = testTimestamp(14_400);
 const unchangedActivityId = randomUUID();
 const regularActivityId = randomUUID();
 const gappedActivityId = randomUUID();
 const varyingActivityId = randomUUID();
+const finalGapActivityId = randomUUID();
+const unalignedActivityId = randomUUID();
 const readModelRowSchema = z.object({
   activity_id: z.string(),
   duration_seconds: z.coerce.number(),
@@ -279,5 +283,81 @@ describe("activity_power_curve read model", () => {
         is_deleted: 0,
       },
     ]);
+  });
+
+  it("includes the final segment when rejecting discontinuous windows", async () => {
+    const renderedSql = renderNonIncrementalActivityPowerCurveSql();
+
+    await insertActivity(
+      testContext,
+      finalGapActivityId,
+      "final-gap-power",
+      finalGapActivityStartedAt,
+      testTimestamp(10_820),
+    );
+    await syncClickHouseTestActivitySensorStore(testContext);
+    await seedClickHouseMetricStreamRows(testContext, [
+      ...powerSampleRows(finalGapActivityId, finalGapActivityStartedAt, [
+        { offsetSeconds: 0, power: 200 },
+        { offsetSeconds: 1, power: 200 },
+        { offsetSeconds: 2, power: 200 },
+        { offsetSeconds: 15, power: 200 },
+      ]),
+    ]);
+
+    const rows = await sensorStore.query(
+      readModelRowSchema,
+      `
+        SELECT
+          toString(activity_id) AS activity_id,
+          duration_seconds,
+          best_power,
+          is_deleted
+        FROM (${renderedSql}) AS power_curve
+        WHERE activity_id = '${finalGapActivityId}'
+          AND duration_seconds = 15
+      `,
+    );
+
+    expect(rows).toEqual([]);
+  });
+
+  it("preserves the exact-duration endpoint requirement for unaligned samples", async () => {
+    const renderedSql = renderNonIncrementalActivityPowerCurveSql();
+
+    await insertActivity(
+      testContext,
+      unalignedActivityId,
+      "unaligned-power",
+      unalignedActivityStartedAt,
+      testTimestamp(14_410),
+    );
+    await syncClickHouseTestActivitySensorStore(testContext);
+    await seedClickHouseMetricStreamRows(testContext, [
+      ...powerSampleRows(unalignedActivityId, unalignedActivityStartedAt, [
+        { offsetSeconds: 0, power: 200 },
+        { offsetSeconds: 1, power: 200 },
+        { offsetSeconds: 2, power: 200 },
+        { offsetSeconds: 3, power: 200 },
+        { offsetSeconds: 4.9, power: 200 },
+        { offsetSeconds: 5.1, power: 200 },
+      ]),
+    ]);
+
+    const rows = await sensorStore.query(
+      readModelRowSchema,
+      `
+        SELECT
+          toString(activity_id) AS activity_id,
+          duration_seconds,
+          best_power,
+          is_deleted
+        FROM (${renderedSql}) AS power_curve
+        WHERE activity_id = '${unalignedActivityId}'
+          AND duration_seconds = 5
+      `,
+    );
+
+    expect(rows).toEqual([]);
   });
 });

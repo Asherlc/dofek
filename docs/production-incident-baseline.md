@@ -17602,6 +17602,74 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   several workspaces are active; do not stop or prune another workspace's
   resources.
 
+## 2026-07-25 — Analytics Build Restart Loop Surfaced False Withings Failures
+
+- **Status:** Fix implemented and validated locally; production deployment and
+  post-deploy observation remain pending.
+- **Symptoms:** The Alerts page reported that Withings activities, sleep,
+  recovery, training, and provider summary were not updated even though the
+  provider sync itself completed. The production `analytics-worker` repeatedly
+  failed to record a successful cycle.
+- **User impact:** Newly synced Withings rows remain available in canonical
+  storage, but affected analytics and cached views can stay stale. During the
+  normal handoff between processing stages, the alert copy could also present
+  pending work as a completed update failure.
+- **Evidence:** The Withings operation created at `2026-07-26T00:10:39Z`
+  recorded successful ingestion and successful relational CDC for activities,
+  sleep, recovery, training, and provider inventory, while metric-stream CDC
+  remained queued or running. It recorded no failed processing event. A recent
+  terminal operation with no fact for its next required stage was nevertheless
+  classified as `blocked` immediately, and the alert repository translates
+  `blocked` into the reported failure copy. The exact downstream command was the
+  scheduled 35-model serial `dbt build`; ClickHouse `system.query_log` recorded
+  error 159 (`TIMEOUT_EXCEEDED`) at the configured 240-second execution ceiling
+  for `sleep_heart_rate_sample`, `provider_stats`, and
+  `activity_power_curve`. The worker log's first fatal model line was
+  `ERROR creating sql incremental model analytics.sleep_heart_rate_sample`
+  after 240.24 seconds. Docker Swarm subsequently replaced the task with
+  `task: non-zero exit (137): dockerexec: unhealthy container` before the build
+  could complete. Independently, personalized refitting returned ClickHouse
+  error 48 because a `DateTime64` ordering column was used with a numeric
+  `RANGE` offset. ClickHouse documents `max_execution_time` as the elapsed
+  query-execution limit:
+  <https://clickhouse.com/docs/operations/settings/settings#max_execution_time>.
+  Docker documents that healthcheck failures mark a container unhealthy:
+  <https://docs.docker.com/reference/dockerfile/#healthcheck>.
+- **Root cause:** Processing state treated the short event-publication gap after
+  successful ingestion as a terminally missing stage instead of waiting through
+  the existing 15-minute delay budget. Separately, three dbt models exceeded
+  ClickHouse's four-minute query budget: `provider_stats` scanned the raw metric
+  stream twice, `sleep_heart_rate_sample` scanned sensor history without
+  partition-date bounds, and `activity_power_curve` expanded samples through
+  nested window self-joins. These timeouts made the serial analytics build
+  outlive the worker's first-success health budget. The refit query also used an
+  unsupported `DateTime64 RANGE OFFSET` frame.
+- **Fix / mitigation:** Missing downstream facts now remain `waiting` until the
+  configured delay budget expires and become `blocked` only afterward.
+  `provider_stats` uses the metric stream's provider-generation projection and
+  scopes counts to dirty providers instead of repeating full `FINAL` scans.
+  `sleep_heart_rate_sample` prunes the deduped sensor scan to dates covered by
+  dirty sleep sessions.
+  `activity_power_curve` groups samples into per-activity arrays and computes
+  exact-duration windows from cumulative energy rather than nested sample
+  joins. The refit window orders by Unix seconds, making the 29-second numeric
+  range valid. No execution timeout or health budget was raised.
+- **Validation:** Production service state, processing-event rows, worker logs,
+  and ClickHouse query logs were correlated read-only. Regression tests first
+  failed for all five changes, then 96 focused tests passed. The dbt project
+  compiled, SQLFluff and analytics policy checks passed, TypeScript typechecking
+  passed, and an isolated real-ClickHouse fixture verified regular, gapped, and
+  varying-power windows. The repository's broader ClickHouse integration
+  bootstrap was attempted, but its unrelated historical body-measurement
+  rebuild exceeded the local 1 GiB container limit before the selected tests
+  ran.
+- **Remaining risk / follow-up:** Deploy and observe at least one full
+  production analytics cycle, then confirm `sleep_heart_rate_sample`,
+  `provider_stats`, and `activity_power_curve` complete below 240 seconds and
+  that newly synced Withings datasets do not emit alerts while downstream CDC
+  is active. The recurring body-measurement refresh timeout found during
+  diagnosis remains a separate query-optimization follow-up.
+
 ## 2026-07-25 — iOS Deploy Classifier Missed Native Build Inputs
 
 - **Status:** Direct fix validated locally; replacement CI pending.

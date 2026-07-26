@@ -15,7 +15,7 @@ describe("activity_power_curve model", () => {
     const currentPowerStateSql = extractCteSql(modelSql, "current_power_state");
     const currentPowerActivitySql = extractCteSql(modelSql, "current_power_activity");
     const dirtyKeysSql = extractCteSql(modelSql, "source_dirty_activity_keys");
-    const powerSamplesSql = extractCteSql(modelSql, "power_samples");
+    const powerSampleGroupsSql = extractCteSql(modelSql, "power_sample_groups");
 
     expect(currentPowerStateSql).toContain("channel = 'power'");
     expect(currentPowerStateSql).toContain("scalar > 0");
@@ -26,8 +26,16 @@ describe("activity_power_curve model", () => {
     expect(dirtyKeysSql).toContain(
       "source_refreshed_at > existing_activity_state.refreshed_at",
     );
-    expect(powerSamplesSql).toContain("WHERE (sensor.user_id, sensor.activity_id) IN (");
-    expect(powerSamplesSql).toContain("FROM activity_bounds");
+    expect(powerSampleGroupsSql).toContain("WHERE (sensor.user_id, sensor.activity_id) IN (");
+    expect(powerSampleGroupsSql).toContain("FROM activity_bounds");
+  });
+
+  it("computes duration candidates from per-activity arrays instead of quadratic sample joins", () => {
+    expect(modelSql).toContain("power_sample_groups AS (");
+    expect(modelSql).toContain("arrayEnumerate(");
+    expect(modelSql).toContain("arraySlice(");
+    expect(modelSql).not.toContain("INNER JOIN power_samples AS window_sample");
+    expect(modelSql).not.toContain("INNER JOIN power_segments AS segment");
   });
 
   it("emits per-duration tombstones for deleted activities", () => {
