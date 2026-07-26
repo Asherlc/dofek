@@ -211,7 +211,7 @@ current_providers AS (
         provider_id
     FROM {{ source('postgres_fitness', 'provider_connection') }} FINAL
     WHERE _peerdb_is_deleted = 0
-        AND (user_id, id) IN (
+        AND (user_id, provider_id) IN (
             SELECT
                 user_id,
                 provider_id

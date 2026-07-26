@@ -16,6 +16,11 @@ const providerCountSchema = z.array(
     metric_stream: z.coerce.number().int(),
   }),
 );
+const providerSchema = z.array(
+  z.object({
+    provider_id: z.string(),
+  }),
+);
 
 function renderMetricStreamCountSql(ingestDatabase: string): string {
   const modelSql = readModelSql("provider_stats.sql");
@@ -40,6 +45,21 @@ function renderMetricStreamCountSql(ingestDatabase: string): string {
     AND provider_id = 'test_provider'`;
 }
 
+function renderProviderConnectionSql(database: string): string {
+  const modelSql = readModelSql("provider_stats.sql");
+  const currentProvidersSql = extractCteSql(modelSql, "current_providers")
+    .replace(/\n\s+UNION DISTINCT[\s\S]*$/, "")
+    .replace(
+      /\{\{\s*source\('postgres_fitness',\s*'provider_connection'\)\s*\}\}/g,
+      `${database}.provider_connection`,
+    );
+
+  return `WITH providers AS (
+    SELECT {userId:UUID} AS user_id, 'test_provider' AS provider_id
+  )
+  ${currentProvidersSql}`;
+}
+
 describe("provider stats read model", () => {
   const ingestDatabase = `ingest_provider_stats_${randomUUID().replaceAll("-", "")}`;
   let client: ClickHouseClient;
@@ -52,6 +72,16 @@ describe("provider stats read model", () => {
         "ingest.metric_stream",
         `${ingestDatabase}.metric_stream`,
       ),
+    });
+    await client.command({
+      query: `CREATE TABLE ${ingestDatabase}.provider_connection (
+        user_id UUID,
+        provider_id String,
+        _peerdb_is_deleted Int8,
+        _peerdb_version Int64
+      )
+      ENGINE = ReplacingMergeTree(_peerdb_version)
+      ORDER BY (user_id, provider_id)`,
     });
   });
 
@@ -93,5 +123,23 @@ describe("provider stats read model", () => {
     });
 
     expect(providerCountSchema.parse(await result.json())).toEqual([{ metric_stream: 1 }]);
+  });
+
+  it("selects current provider connections by their provider_id column", async () => {
+    const userId = randomUUID();
+    await client.command({
+      query: `INSERT INTO ${ingestDatabase}.provider_connection
+        (user_id, provider_id, _peerdb_is_deleted, _peerdb_version)
+      VALUES ({userId:UUID}, 'test_provider', 0, 1)`,
+      query_params: { userId },
+    });
+
+    const result = await client.query({
+      query: renderProviderConnectionSql(ingestDatabase),
+      query_params: { userId },
+      format: "JSONEachRow",
+    });
+
+    expect(providerSchema.parse(await result.json())).toEqual([{ provider_id: "test_provider" }]);
   });
 });

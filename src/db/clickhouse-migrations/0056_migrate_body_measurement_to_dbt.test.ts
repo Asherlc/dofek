@@ -12,6 +12,14 @@ describe("0056_migrate_body_measurement_to_dbt", () => {
     await migration.run?.({ command, query }, "postgres://test");
 
     expect(migration.id).toBe("0056_migrate_body_measurement_to_dbt");
+    expect(query).toHaveBeenCalledWith({
+      query: `SELECT count() AS count
+FROM system.tables
+WHERE database = {database:String}
+  AND name = {name:String}`,
+      query_params: { database: "analytics", name: "v_body_measurement" },
+      format: "JSONEachRow",
+    });
     expect(command.mock.calls.map(([options]) => options.query)).toEqual([
       expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.body_measurement"),
       expect.stringContaining("INSERT INTO analytics.body_measurement"),
@@ -36,5 +44,24 @@ describe("0056_migrate_body_measurement_to_dbt", () => {
     expect(command.mock.calls.at(-1)?.[0].query).toContain(
       "CREATE VIEW IF NOT EXISTS analytics.v_body_measurement",
     );
+  });
+
+  it("requires a query-capable migration client", async () => {
+    const migration = createMigration();
+
+    await expect(
+      migration.run?.({ command: vi.fn().mockResolvedValue(undefined) }, "postgres://test"),
+    ).rejects.toThrow("ClickHouse migrations require a query-capable client");
+  });
+
+  it("rejects a missing object-existence result row", async () => {
+    const query = vi.fn().mockReturnValue({
+      json: vi.fn().mockResolvedValue([]),
+    });
+    const migration = createMigration();
+
+    await expect(
+      migration.run?.({ command: vi.fn().mockResolvedValue(undefined), query }, "postgres://test"),
+    ).rejects.toThrow();
   });
 });

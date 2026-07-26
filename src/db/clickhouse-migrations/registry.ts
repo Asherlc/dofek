@@ -41,7 +41,6 @@ import { createMigration as createMigration0040 } from "./0040_create_weekly_end
 import { createMigration as createMigration0041 } from "./0041_drop_daily_metrics_cycling_distance.ts";
 import { createMigration as createMigration0042 } from "./0042_recreate_activity_sensor_summary_column_order.ts";
 import { createMigration as createMigration0043 } from "./0043_activity_stream_lifecycle_columns.ts";
-import { createMigration as createMigration0044 } from "./0044_materialize_body_measurement_view.ts";
 import { createMigration as createMigration0045 } from "./0045_metric_stream_delete_acknowledgement.ts";
 import { createMigration as createMigration0046 } from "./0046_provider_data_generation.ts";
 import { createMigration as createMigration0047 } from "./0047_cover_provider_generation_projection.ts";
@@ -100,7 +99,6 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0041,
   createMigration0042,
   createMigration0043,
-  createMigration0044,
   createMigration0045,
   createMigration0046,
   createMigration0047,

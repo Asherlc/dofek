@@ -43,6 +43,7 @@ export const analyticsBuildOrder = [
   "analytics.v_activity",
   "analytics.v_activity_members",
   "analytics.v_sleep",
+  "analytics.v_body_measurement",
   "analytics.v_daily_metrics",
   "analytics.provider_stats",
   "analytics.deduped_activities",

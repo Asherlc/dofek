@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("clickHouseMigrations", () => {
   afterEach(() => {
-    vi.doUnmock("./0044_materialize_body_measurement_view.ts");
+    vi.doUnmock("./0056_migrate_body_measurement_to_dbt.ts");
     vi.resetModules();
   });
 
@@ -89,7 +89,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects duplicate migration ids", async () => {
-    vi.doMock("./0044_materialize_body_measurement_view.ts", () => ({
+    vi.doMock("./0056_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "0043_activity_stream_lifecycle_columns",
         statements: [],
@@ -103,7 +103,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects migration ids without a four digit prefix", async () => {
-    vi.doMock("./0044_materialize_body_measurement_view.ts", () => ({
+    vi.doMock("./0056_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "body_measurement_view",
         statements: [],
@@ -117,7 +117,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects migration ids with non-numeric four character prefixes", async () => {
-    vi.doMock("./0044_materialize_body_measurement_view.ts", () => ({
+    vi.doMock("./0056_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "abcd_body_measurement_view",
         statements: [],
@@ -131,7 +131,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects migration ids with embedded numeric prefixes", async () => {
-    vi.doMock("./0044_materialize_body_measurement_view.ts", () => ({
+    vi.doMock("./0056_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "x0044_body_measurement_view",
         statements: [],
@@ -145,7 +145,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects out-of-order migration ids", async () => {
-    vi.doMock("./0044_materialize_body_measurement_view.ts", () => ({
+    vi.doMock("./0056_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "0042_body_measurement_view",
         statements: [],

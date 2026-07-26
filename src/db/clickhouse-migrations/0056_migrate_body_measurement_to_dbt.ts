@@ -3,8 +3,6 @@ import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 import type { ClickHouseMigration } from "./types.ts";
 
-const countSchema = z.array(z.object({ count: z.coerce.number().int() }));
-
 const createTableSql = `CREATE TABLE IF NOT EXISTS analytics.body_measurement (
   id UUID,
   provider_id String,
@@ -136,8 +134,8 @@ WHERE database = {database:String}
     query_params: { database, name },
     format: "JSONEachRow",
   });
-  const rows = countSchema.parse(await result.json());
-  return (rows[0]?.count ?? 0) > 0;
+  const rows = z.tuple([z.object({ count: z.coerce.number().int() })]).parse(await result.json());
+  return rows[0].count > 0;
 }
 
 export function createMigration(): ClickHouseMigration {
