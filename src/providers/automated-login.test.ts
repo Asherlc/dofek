@@ -1,5 +1,5 @@
-import { TrainerRoadClient } from "trainerroad-client/client";
-import { VeloHeroClient } from "velohero-client/client";
+import { TrainerRoadClient } from "@dofek/trainerroad/client";
+import { VeloHeroClient } from "@dofek/velohero/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EightSleepProvider } from "./eight-sleep.ts";
 import { TrainerRoadProvider } from "./trainerroad.ts";

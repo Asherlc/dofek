@@ -1,5 +1,5 @@
 import { parseRetryAfterHeader } from "@dofek/provider-http/rate-limit";
-import { WhoopRateLimitError } from "whoop-whoop/client";
+import { WhoopRateLimitError } from "@dofek/whoop/client";
 import { ensureProvider } from "../../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { resolveScopedUserId } from "../../lib/user-context.ts";

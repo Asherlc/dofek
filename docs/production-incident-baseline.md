@@ -17752,6 +17752,110 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Future native input categories must be added
   to the single named classifier with a regression case in the same change.
 
+## 2026-07-25 — Public Packages Broke Clean CI and the Server Image
+
+- **Status:** Direct fixes validated locally; replacement CI pending.
+- **Symptoms:** The first CI run for the public-package release change failed
+  typechecking, unit tests, and downstream jobs with unresolved
+  `@dofek/*` workspace imports.
+- **User impact:** The pull request could not merge, and automatic npm releases
+  could not safely begin from `main`.
+- **Evidence:** The exact failing command was the root `pnpm typecheck` job. Its
+  first fatal line was
+  `src/client.ts(1,43): error TS2307: Cannot find module
+  '@dofek/provider-http/rate-limit'`. Subsequent failures reported missing
+  `@dofek/training/training`, `@dofek/scoring`, and `@dofek/zones` modules.
+  The same checkout also reported the unlisted `swift` binary from the WHOOP
+  BLE npm manifest and a Node 26 `module.register()` deprecation emitted by the
+  older `tsx` CLI. A later Knip job failed at `pnpm knip` with
+  `Unused devDependencies (1): supports-color package.json:270:6`. The final
+  mutation matrix then failed at `packages/peloton-client/src/types.ts:1-102`
+  with `No tests were executed`. After package discovery was corrected, the
+  Peloton error shard exposed five uncovered `PelotonAuthFlowError` mutants and
+  failed with a 44.44% mutation score. A subsequent E2E run built the production
+  server image but failed provider registration. Its first fatal application
+  line was `Failed to register peloton provider: Cannot find package
+  '@dofek/peloton' imported from /app/src/providers/peloton.ts`.
+- **Root cause:** The new package `exports` maps pointed at ignored compiled
+  `dist` or `build` directories. Those directories existed in the development
+  workspace, masking the defect, but were absent from a clean CI checkout.
+  Separately, the mutation Vitest project omitted the newly extracted Peloton
+  and Xert test directories. Once discovered, the extracted Peloton tests did
+  not exercise authorization failure branches, API method error paths, or
+  optional raw-workout fields deeply enough to satisfy the mutation gate. The
+  production Dockerfile also maintained explicit workspace-package allowlists
+  for dependency manifests, source copies, and runtime links; all three omitted
+  the newly extracted Peloton and Xert clients.
+- **Fix / mitigation:** Local workspace exports now resolve canonical source
+  files, while `publishConfig` rewrites npm tarball exports to compiled
+  JavaScript and declarations. pnpm owns packing and publishing; Lerna remains
+  only for independent changed-package versioning. The WHOOP BLE manifest no
+  longer exposes Swift as an npm lifecycle binary, and `tsx` was updated to its
+  current stable release. The root `supports-color` dependency makes pnpm
+  resolve one shared Sentry peer context across the root and server workspaces;
+  it is declared in Knip's `ignoreDependencies` because its use occurs during
+  dependency resolution rather than through a source import. The canonical
+  mutation test project now includes both newly extracted Peloton and Xert
+  packages, allowing Vitest's related-test analysis to discover their
+  colocated tests. The Peloton error tests now exercise authorization-flow
+  diagnostics both with and without optional upstream details; its auth,
+  client, and parsing tests now cover redirect and cookie behavior, upstream
+  failure paths, schema validation, and present or absent optional metadata. The
+  production image now installs both extracted client manifests, copies their
+  source and package metadata, and creates their `@dofek/peloton` and
+  `@dofek/xert` runtime links.
+  pnpm documents that supported `publishConfig` fields replace their
+  development values during packing, and Knip documents `ignoreDependencies`
+  for dependencies whose use static analysis cannot observe:
+  <https://pnpm.io/package_json#publishconfig> and
+  <https://knip.dev/guides/handling-issues>.
+- **Validation:** With all 15 generated package-output directories temporarily
+  removed, root typechecking and 1,091 public-package tests passed. All 15
+  packages then built and packed; every tarball contained compiled output,
+  exposed no source paths, and contained no unresolved `workspace:` protocol.
+  The full Docker-free suite passed 13,758 tests. A frozen pnpm 11 install, 117
+  Swift tests, Swift manifest resolution from outside the package directory,
+  release-workflow linting, the corrected Knip check, and all 7 cache-module
+  peer-context tests also passed. The previously failing Peloton mutation shard
+  discovered and ran 6 related tests; its 7 schema object mutants were
+  intentionally static and ignored by the existing `ignoreStatic` policy. An
+  Xert parsing shard ran 13 related tests and killed all 7 non-static mutants
+  for a 100% mutation score. The Peloton error shard ran 19 related tests and
+  killed all 9 non-static mutants for a 100% mutation score. The Peloton auth
+  shard improved from 45.03% to 82.46%; the client and parsing shards improved
+  from 55.77% and 54.72% to above 96%. Root-provider assertions for auth
+  causes, sync-window boundaries, metric slugs, values, and timestamps raised
+  its affected mutation shard from 62.16% to 94.59%. The corrected production
+  server target built from a clean Docker context, and the resulting image
+  imported both extracted packages successfully through Node's native
+  TypeScript execution mode.
+- **Remaining risk / follow-up:** Replacement GitHub Actions checks must pass on
+  Node 26 and complete E2E provider registration before merge. Future
+  public-package changes should validate a clean source checkout, the packed
+  manifest, and production-image package resolution, because any one check
+  alone can hide a release or deployment regression.
+
+## 2026-07-25 — Semgrep Runner Could Not Pull Its Container
+
+- **Status:** Resolved on the second workflow attempt.
+- **Symptoms:** The Semgrep workflow failed while GitHub Actions initialized
+  the pinned Semgrep job container, before repository checkout or analysis.
+- **User impact:** No production impact and no security finding. The pull
+  request's SAST merge gate could not complete on its first attempt.
+- **Evidence:** The exact failing step was `Initialize containers`. Each of its
+  three `docker pull` attempts failed, with the first fatal line
+  `Get "https://registry-1.docker.io/v2/": context deadline exceeded`.
+- **Root cause:** The hosted runner could not reach Docker Hub within the
+  container-pull deadline; no repository command or source file had executed.
+- **Fix / mitigation:** Rerun the failed workflow attempt against the same
+  commit and pinned image after identifying the external registry timeout.
+- **Validation:** The preceding Semgrep run passed on the parent commit, and
+  the replacement attempt completed successfully against the affected commit
+  with the same pinned image.
+- **Remaining risk / follow-up:** If the same registry timeout repeats, treat
+  Docker Hub availability as an external CI dependency and investigate a
+  controlled image mirror before changing scan behavior.
+
 ## 2026-07-25 — Provider-Connection Migration Failed on Legacy Production Shapes
 
 - **Status:** Root causes fixed; replacement main CI and production deployment

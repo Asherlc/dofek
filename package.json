@@ -121,6 +121,10 @@
     "generate": "drizzle-kit generate && tsx scripts/generate-schema-diagram.ts",
     "schema:diagram": "tsx scripts/generate-schema-diagram.ts",
     "schema:view": "tsx scripts/generate-schema-diagram.ts --open",
+    "release:npm:build": "lerna run build --stream",
+    "release:npm:test": "vitest run --project unit packages/provider-http packages/scoring packages/zones packages/training packages/eight-sleep packages/garmin-connect packages/peloton-client packages/trainerroad-client packages/trainingpeaks-connect packages/velohero-client packages/whoop-whoop packages/xert-client packages/zepp-client packages/zwift-client",
+    "release:npm:version": "lerna version patch --yes",
+    "release:npm:publish": "pnpm --recursive publish --access public --no-git-checks",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm lint:exact-versions && biome check . --max-diagnostics=500 && pnpm lint:suppressions && pnpm lint:workflow-downloads && pnpm lint:analytics-sql && pnpm lint:analytics-policy && pnpm lint:mobile-telemetry && pnpm lint:web-stories",
     "lint:fix": "biome check --write .",
@@ -189,12 +193,21 @@
     "@bull-board/api": "8.1.2",
     "@bull-board/express": "8.1.2",
     "@clickhouse/client": "1.23.1",
+    "@dofek/eight-sleep": "workspace:*",
     "@dofek/format": "workspace:*",
+    "@dofek/garmin-connect": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
+    "@dofek/peloton": "workspace:*",
     "@dofek/provider-http": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/stats": "workspace:*",
+    "@dofek/trainerroad": "workspace:*",
     "@dofek/training": "workspace:*",
+    "@dofek/velohero": "workspace:*",
+    "@dofek/whoop": "workspace:*",
+    "@dofek/xert": "workspace:*",
+    "@dofek/zepp-client": "workspace:*",
+    "@dofek/zwift": "workspace:*",
     "@garmin/fitsdk": "21.208.0",
     "@opentelemetry/api": "1.9.1",
     "@opentelemetry/auto-instrumentations-node": "0.78.0",
@@ -211,23 +224,16 @@
     "archiver": "8.0.0",
     "bullmq": "5.79.2",
     "drizzle-orm": "0.45.2",
-    "eight-sleep-client": "workspace:*",
-    "garmin-connect": "workspace:*",
     "kafkajs": "2.2.4",
     "nodemailer": "9.0.1",
     "pg": "8.16.0",
     "postgres": "3.4.8",
     "prom-client": "15.1.3",
     "sax": "1.6.0",
-    "trainerroad-client": "workspace:*",
-    "velohero-client": "workspace:*",
-    "whoop-whoop": "workspace:*",
     "winston": "3.19.0",
     "winston-transport": "4.9.0",
     "yauzl": "3.4.0",
-    "zepp-client": "workspace:*",
-    "zod": "4.4.3",
-    "zwift-client": "workspace:*"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@actions/expressions": "0.3.60",
@@ -252,6 +258,7 @@
     "drizzle-kit": "0.31.10",
     "jsdom": "29.0.0",
     "knip": "6.23.0",
+    "lerna": "9.0.7",
     "license-checker-rseidelsohn": "5.0.1",
     "msw": "2.12.11",
     "nyc": "18.0.0",
@@ -260,8 +267,9 @@
     "sherif": "1.13.0",
     "size-limit": "12.0.1",
     "stylelint": "17.14.0",
+    "supports-color": "10.2.2",
     "testcontainers": "12.0.0",
-    "tsx": "4.21.0",
+    "tsx": "4.23.1",
     "typescript": "6.0.3",
     "vitest": "3.2.6",
     "yaml": "2.9.0"
@@ -272,62 +280,8 @@
       "unsync-similar-dependencies"
     ]
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@sentry/cli",
-      "core-js",
-      "cypress",
-      "msgpackr-extract",
-      "msw",
-      "sharp"
-    ],
-    "overrides": {
-      "@expo/dom-webview": "55.0.5",
-      "@grpc/grpc-js": "1.14.4",
-      "@opentelemetry/core": "2.9.0",
-      "@protobufjs/utf8": "1.1.2",
-      "@xmldom/xmldom": "0.9.10",
-      "archiver@<8.0.0": "8.0.0",
-      "axios": "1.18.1",
-      "brace-expansion": "5.0.8",
-      "esbuild": "0.28.1",
-      "fast-uri@>=3.0.0 <3.1.4": "3.1.4",
-      "form-data": "4.0.6",
-      "gel>shell-quote": "1.10.0",
-      "hono": "4.12.25",
-      "ip-address": "10.2.0",
-      "@slack/bolt>path-to-regexp": "8.4.2",
-      "minimatch": "10.2.5",
-      "picomatch@>=4.0.0 <4.0.4": "4.0.4",
-      "postcss": "8.5.23",
-      "qs": "6.15.2",
-      "react": "19.2.3",
-      "react-dom": "19.2.3",
-      "router>path-to-regexp": "8.4.2",
-      "protobufjs": "8.7.1",
-      "shell-quote": "1.10.0",
-      "tar": "7.5.20",
-      "test-exclude@<8.0.0": "8.0.0",
-      "undici@>=6.0.0 <6.27.0": "6.27.0",
-      "uuid": "11.1.1",
-      "ws": "8.21.0",
-      "yaml": "2.9.0",
-      "body-parser": "2.3.0"
-    },
-    "packageExtensions": {
-      "@bacons/apple-targets@4.0.7": {
-        "dependencies": {
-          "@expo/image-utils": "0.11.1"
-        }
-      }
-    },
-    "patchedDependencies": {
-      "@expo/plist@0.0.18": "patches/@expo__plist@0.0.18.patch",
-      "@expo/plist@0.8.1": "patches/@expo__plist@0.8.1.patch"
-    }
-  },
   "engines": {
     "node": ">=26"
   },
-  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
+  "packageManager": "pnpm@11.17.0+sha512.cca3cea332ad254bb84145f966d19f4879615210346fc92c79a047f23a0d7b3cca3c3792f0076ba1f1831d277efbcf0a9119b31a9a60eca7fb3d6231f331ef72"
 }

@@ -1,5 +1,5 @@
-import { GarminApiError, GarminRateLimitError } from "garmin-connect/client";
-import type { GarminTokens } from "garmin-connect/types";
+import { GarminApiError, GarminRateLimitError } from "@dofek/garmin-connect/client";
+import type { GarminTokens } from "@dofek/garmin-connect/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenSet } from "../auth/oauth.ts";
 import { eachDay, formatDate } from "./garmin/date-utils.ts";
@@ -124,8 +124,8 @@ vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
 
-vi.mock("garmin-connect/client", async (importOriginal) => {
-  const original = await importOriginal<typeof import("garmin-connect/client")>();
+vi.mock("@dofek/garmin-connect/client", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@dofek/garmin-connect/client")>();
   return {
     GarminApiError: original.GarminApiError,
     GarminRateLimitError: original.GarminRateLimitError,
@@ -136,7 +136,7 @@ vi.mock("garmin-connect/client", async (importOriginal) => {
   };
 });
 
-vi.mock("garmin-connect/parsing", () => ({
+vi.mock("@dofek/garmin-connect/parsing", () => ({
   parseConnectActivity: mocks.parseConnectActivity,
   parseConnectSleep: mocks.parseConnectSleep,
   parseConnectSleepStages: mocks.parseConnectSleepStages,

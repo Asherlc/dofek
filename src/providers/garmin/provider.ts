@@ -1,6 +1,6 @@
+import { GarminConnectClient, GarminRateLimitError } from "@dofek/garmin-connect/client";
+import type { GarminTokens } from "@dofek/garmin-connect/types";
 import { and, eq } from "drizzle-orm";
-import { GarminConnectClient, GarminRateLimitError } from "garmin-connect/client";
-import type { GarminTokens } from "garmin-connect/types";
 import type { TokenSet } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { userSettings } from "../../db/schema/account.ts";

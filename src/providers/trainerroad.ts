@@ -1,5 +1,5 @@
-import { TrainerRoadClient } from "trainerroad-client/client";
-import { parseTrainerRoadActivity } from "trainerroad-client/parsing";
+import { TrainerRoadClient } from "@dofek/trainerroad/client";
+import { parseTrainerRoadActivity } from "@dofek/trainerroad/parsing";
 import {
   finishProviderActivityListSync,
   upsertProviderActivity,
