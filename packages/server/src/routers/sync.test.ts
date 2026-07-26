@@ -1304,8 +1304,9 @@ describe("syncRouter", () => {
       expect(result).toBeNull();
     });
 
-    it("returns null when Redis is unavailable", async () => {
-      mockGetJob.mockRejectedValueOnce(new Error("Redis connection refused"));
+    it("reports Redis failures instead of returning a missing job", async () => {
+      const redisError = new Error("Redis connection refused");
+      mockGetJob.mockRejectedValueOnce(redisError);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -1313,8 +1314,38 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      const result = await caller.syncStatus({ jobId: "some-job" });
-      expect(result).toBeNull();
+      await expect(caller.syncStatus({ jobId: "some-job" })).rejects.toMatchObject({
+        code: "BAD_GATEWAY",
+        message: "Sync status is temporarily unavailable. Please try again.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(redisError, {
+        tags: { procedure: "sync.syncStatus" },
+        extra: { jobId: "some-job" },
+      });
+    });
+
+    it("reports Redis failures when reading job state", async () => {
+      const redisError = new Error("Redis connection refused");
+      mockGetJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn().mockRejectedValueOnce(redisError),
+        progress: {},
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.syncStatus({ jobId: "some-job" })).rejects.toMatchObject({
+        code: "BAD_GATEWAY",
+        message: "Sync status is temporarily unavailable. Please try again.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(redisError, {
+        tags: { procedure: "sync.syncStatus" },
+        extra: { jobId: "some-job" },
+      });
     });
 
     it("returns null when job belongs to different user", async () => {
@@ -1628,8 +1659,9 @@ describe("syncRouter", () => {
       expect(result[0]?.percentage).toBe(73);
     });
 
-    it("returns empty array when Redis is unavailable", async () => {
-      mockGetJobs.mockRejectedValueOnce(new Error("Redis connection refused"));
+    it("reports Redis failures instead of returning no active syncs", async () => {
+      const redisError = new Error("Redis connection refused");
+      mockGetJobs.mockRejectedValueOnce(redisError);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -1637,8 +1669,40 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      const result = await caller.activeSyncs();
-      expect(result).toEqual([]);
+      await expect(caller.activeSyncs()).rejects.toMatchObject({
+        code: "BAD_GATEWAY",
+        message: "Active syncs are temporarily unavailable. Please try again.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(redisError, {
+        tags: { procedure: "sync.activeSyncs" },
+      });
+    });
+
+    it("reports Redis failures when reading an active job state", async () => {
+      const redisError = new Error("Redis connection refused");
+      mockGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-1",
+          data: { userId: "user-1", providerId: "wahoo" },
+          getState: vi.fn().mockRejectedValueOnce(redisError),
+          progress: {},
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.activeSyncs()).rejects.toMatchObject({
+        code: "BAD_GATEWAY",
+        message: "Active syncs are temporarily unavailable. Please try again.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(redisError, {
+        tags: { procedure: "sync.activeSyncs" },
+        extra: { jobId: "wahoo:job-1" },
+      });
     });
 
     it("handles jobs with no progress data", async () => {

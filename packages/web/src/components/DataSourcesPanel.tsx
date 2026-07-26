@@ -44,6 +44,19 @@ export function DataSourcesPanel() {
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
   const activeImports = trpc.sync.activeImports.useQuery(undefined, { staleTime: 0 });
   const resumedJobIds = useRef(new Set<string>());
+  const pollAbortControllers = useRef(new Set<AbortController>());
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      for (const controller of pollAbortControllers.current) {
+        controller.abort();
+      }
+      pollAbortControllers.current.clear();
+    };
+  }, []);
 
   // Auth modal state
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
@@ -59,29 +72,41 @@ export function DataSourcesPanel() {
   );
 
   const doPollSyncJob = useCallback(
-    (jobId: string, providerIds: string[]) =>
-      pollSyncJob({
-        jobId,
-        providerIds,
-        fetchStatus: (id) =>
-          trpcUtils.sync.syncStatus.fetch(
-            { jobId: id },
-            { staleTime: 0, meta: locallyReportedErrorMeta },
-          ),
-        updateState,
-        onComplete: () => {
-          trpcUtils.invalidate();
-        },
-        onError: (error) => {
-          const providerId = providerIds.length === 1 ? providerIds[0] : undefined;
-          captureException(
-            error,
-            providerId
-              ? { operation: "sync.syncStatus", providerId }
-              : { operation: "sync.syncStatus" },
-          );
-        },
-      }),
+    async (jobId: string, providerIds: string[]) => {
+      const controller = new AbortController();
+      if (isMounted.current) {
+        pollAbortControllers.current.add(controller);
+      } else {
+        controller.abort();
+      }
+      try {
+        await pollSyncJob({
+          jobId,
+          providerIds,
+          fetchStatus: (id) =>
+            trpcUtils.sync.syncStatus.fetch(
+              { jobId: id },
+              { staleTime: 0, meta: locallyReportedErrorMeta },
+            ),
+          updateState,
+          onComplete: () => {
+            trpcUtils.invalidate();
+          },
+          onError: (error) => {
+            const providerId = providerIds.length === 1 ? providerIds[0] : undefined;
+            captureException(
+              error,
+              providerId
+                ? { operation: "sync.syncStatus", providerId }
+                : { operation: "sync.syncStatus" },
+            );
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        pollAbortControllers.current.delete(controller);
+      }
+    },
     [trpcUtils, updateState],
   );
 
@@ -371,6 +396,12 @@ export function DataSourcesPanel() {
           </div>
         )}
       </div>
+
+      {activeSyncs.error ? (
+        <p role="alert" className="text-sm text-red-400">
+          {activeSyncs.error.message}
+        </p>
+      ) : null}
 
       <ProcessingStatusWidget
         data={processingStatus.data}

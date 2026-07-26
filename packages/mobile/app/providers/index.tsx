@@ -197,6 +197,7 @@ export default function ProvidersScreen() {
     async (jobId: string, providerIds: string[]) => {
       if (pollingJobIds.current.has(jobId)) return;
       pollingJobIds.current.add(jobId);
+      const activeProviderIds = new Set(providerIds);
 
       const cleanup = () => {
         pollingJobIds.current.delete(jobId);
@@ -216,18 +217,43 @@ export default function ProvidersScreen() {
       };
 
       const poll = async (): Promise<void> => {
+        if (!isMounted.current) return;
         let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
         try {
           status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
         } catch (error: unknown) {
           captureException(error, { context: "sync-status-poll" });
+          if (!isMounted.current) return;
+          const message =
+            error instanceof Error ? error.message : "Sync status is temporarily unavailable.";
+          setSyncProgress((previous) => {
+            const next = { ...previous };
+            for (const providerId of activeProviderIds) {
+              next[providerId] = { ...next[providerId], message };
+            }
+            return next;
+          });
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (!isMounted.current) return;
+          return poll();
+        }
+
+        if (!isMounted.current) return;
+        if (!status) {
           cleanup();
           return;
         }
 
-        if (!status) {
-          cleanup();
-          return;
+        for (const providerId of providerIds) {
+          const providerStatus = status.providers[providerId];
+          if (
+            providerStatus &&
+            (providerStatus.status === "running" || providerStatus.status === "pending")
+          ) {
+            activeProviderIds.add(providerId);
+          } else {
+            activeProviderIds.delete(providerId);
+          }
         }
 
         // Update per-provider syncing state and progress (only for this job's providers)
@@ -275,6 +301,7 @@ export default function ProvidersScreen() {
         }
 
         await new Promise((r) => setTimeout(r, 1000));
+        if (!isMounted.current) return;
         return poll();
       };
 
@@ -291,7 +318,12 @@ export default function ProvidersScreen() {
       if (resumedJobIds.current.has(activeJob.jobId)) continue;
       resumedJobIds.current.add(activeJob.jobId);
 
-      const providerIds = Object.keys(activeJob.providers);
+      const activeProviderIds = Object.entries(activeJob.providers)
+        .filter(
+          ([, providerStatus]) =>
+            providerStatus.status === "running" || providerStatus.status === "pending",
+        )
+        .map(([providerId]) => providerId);
       setSyncingProviders((prev) => {
         const next = new Set(prev);
         for (const [pid, providerStatus] of Object.entries(activeJob.providers)) {
@@ -301,8 +333,20 @@ export default function ProvidersScreen() {
         }
         return next;
       });
+      setSyncProgress((previous) => {
+        const next = { ...previous };
+        for (const [providerId, providerStatus] of Object.entries(activeJob.providers)) {
+          if (providerStatus.status === "running" || providerStatus.status === "pending") {
+            next[providerId] = {
+              percentage: activeJob.percentage,
+              message: providerStatus.message,
+            };
+          }
+        }
+        return next;
+      });
       setAnySyncing(true);
-      pollJob(activeJob.jobId, providerIds);
+      pollJob(activeJob.jobId, activeProviderIds);
     }
   }, [activeSyncs.data, pollJob]);
 
@@ -700,6 +744,14 @@ export default function ProvidersScreen() {
         loading={processingStatus.isLoading}
       />
       <Text style={styles.sectionTitle}>Data Sources</Text>
+      {activeSyncs.error ? (
+        <QueryStatePanel
+          variant="error"
+          title="Could not load sync progress"
+          message={getQueryErrorMessage(activeSyncs.error, "Unable to load sync progress.")}
+          minHeight={96}
+        />
+      ) : null}
       <FileImportProviderCard
         provider={{
           ...appleHealthProvider,

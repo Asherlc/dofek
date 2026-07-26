@@ -53,6 +53,13 @@ const mockActiveImportsQuery = vi.hoisted(() =>
     error: null,
   })),
 );
+const mockActiveSyncsQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  })),
+);
 const mockProviderStatsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
     data: [],
@@ -80,7 +87,7 @@ vi.mock("../lib/trpc.ts", () => ({
       },
       providerStats: { useQuery: mockProviderStatsQuery },
       logs: { useQuery: mockLogsQuery },
-      activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
+      activeSyncs: { useQuery: mockActiveSyncsQuery },
       activeImports: { useQuery: mockActiveImportsQuery },
       triggerSync: { useMutation: mockTriggerSyncUseMutation },
       syncStatus: { fetch: vi.fn() },
@@ -220,6 +227,8 @@ describe("DataSourcesPanel", () => {
     mockFileImportProviderCard.mockClear();
     mockActiveImportsQuery.mockReset();
     mockActiveImportsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockActiveSyncsQuery.mockReset();
+    mockActiveSyncsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockProviderStatsQuery.mockReset();
     mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockLogsQuery.mockReset();
@@ -485,6 +494,50 @@ describe("DataSourcesPanel", () => {
       providerId: "garmin",
     });
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(jobId);
+  });
+
+  it("shows the active sync server error message", () => {
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: new Error("Active syncs are temporarily unavailable. Please try again."),
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(
+      screen.getByText("Active syncs are temporarily unavailable. Please try again."),
+    ).toBeTruthy();
+  });
+
+  it("cancels active sync polling when the panel unmounts", async () => {
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [
+        {
+          jobId: "wahoo:job-active",
+          status: "running",
+          providers: { wahoo: { status: "running", message: "Syncing activities" } },
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    let pollingSignal: AbortSignal | undefined;
+    mockPollSyncJob.mockImplementationOnce((options: { signal?: AbortSignal }) => {
+      pollingSignal = options.signal;
+      return new Promise<void>((resolve) => {
+        options.signal?.addEventListener("abort", () => resolve(), { once: true });
+      });
+    });
+
+    const { unmount } = render(<DataSourcesPanel />);
+    await waitFor(() => {
+      expect(mockPollSyncJob).toHaveBeenCalledOnce();
+    });
+
+    expect(pollingSignal?.aborted).toBe(false);
+    unmount();
+    expect(pollingSignal?.aborted).toBe(true);
   });
 
   it("shows Kaya as a file import source with export upload routes", () => {

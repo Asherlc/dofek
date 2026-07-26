@@ -30,8 +30,9 @@ function todayYmd(): string {
  * cannot launch a second copy of the same import and refetch cycle.
  */
 export function useAutoSync(latestDate: string | null | undefined) {
+  const isMounted = useRef(false);
   const triggered = useRef(false);
-  const triggerSync = trpc.sync.triggerSync.useMutation();
+  const { mutateAsync: triggerProviderSync } = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
   const queryClient = useQueryClient();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, {
@@ -39,23 +40,41 @@ export function useAutoSync(latestDate: string | null | undefined) {
   });
 
   useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (triggered.current) return;
     if (!isDataStale(latestDate)) return;
     if (activeSyncs.isLoading) return;
+    if (activeSyncs.error) return;
     if ((activeSyncs.data?.length ?? 0) > 0) return;
     if (!latestDate) return;
 
     const idleHandle = runAfterUiIdle(() => {
-      if (triggered.current) return;
+      if (!isMounted.current || triggered.current) return;
       triggered.current = true;
 
       // Trigger API provider sync and poll until complete
-      triggerSync
-        .mutateAsync({ sinceDays: 1 })
+      triggerProviderSync({ sinceDays: 1 })
         .then(async ({ jobId }: { jobId?: string }) => {
           if (!jobId) return;
           const pollUntilDone = async (): Promise<void> => {
-            const status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
+            if (!isMounted.current) return;
+            let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
+            try {
+              status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
+            } catch (error: unknown) {
+              captureException(error, { source: "auto-sync-status" });
+              if (!isMounted.current) return;
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+              if (!isMounted.current) return;
+              return pollUntilDone();
+            }
+            if (!isMounted.current) return;
             if (!status || status.status === "completed" || status.status === "failed") {
               await invalidateSyncedHealthData(queryClient);
               return;
@@ -110,5 +129,13 @@ export function useAutoSync(latestDate: string | null | undefined) {
     return () => {
       idleHandle.cancel();
     };
-  }, [latestDate, activeSyncs.isLoading, activeSyncs.data, triggerSync, trpcUtils, queryClient]);
+  }, [
+    latestDate,
+    activeSyncs.isLoading,
+    activeSyncs.error,
+    activeSyncs.data,
+    triggerProviderSync,
+    trpcUtils,
+    queryClient,
+  ]);
 }
