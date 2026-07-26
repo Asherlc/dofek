@@ -36,7 +36,7 @@ describe("activity_power_curve model", () => {
     expect(powerSampleGroupsSql).toContain("WHERE (sensor.user_id, sensor.activity_id) IN (");
     expect(powerSampleGroupsSql).toContain("FROM activity_bounds");
     expect(powerSampleGroupsSql).toContain(
-      "INNER JOIN {{ ref('activity_sensor_sample') }} FINAL AS sensor",
+      "INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor FINAL",
     );
   });
 

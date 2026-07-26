@@ -146,7 +146,7 @@ power_sample_groups AS (
             groupArray((sensor.recorded_at, toFloat64(assumeNotNull(sensor.scalar))))
     ) AS samples
     FROM activity_bounds AS am
-    INNER JOIN {{ ref('activity_sensor_sample') }} FINAL AS sensor
+    INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor FINAL
         ON sensor.activity_id = am.activity_id
         AND sensor.user_id = am.user_id
         AND sensor.channel = 'power'
