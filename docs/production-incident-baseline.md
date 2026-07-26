@@ -17868,6 +17868,63 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   failure as external registry availability after confirming the digest and
   command are unchanged; investigate separately if pulls fail persistently.
 
+## 2026-07-26 — Swift Coverage Artifact Upload Timed Out After Tests Passed
+
+- **Status:** Resolved by an unchanged failed-job rerun.
+- **Symptoms:** The `Test / Swift Tests` job failed after both Swift test
+  packages and the coverage gate passed.
+- **User impact:** PR #2036 remained blocked on a red required check; there was
+  no product or production impact.
+- **Evidence:** In the
+  [initial job](https://github.com/Asherlc/dofek/actions/runs/30207624183/job/89808551536),
+  74 HealthKit tests and eight watch-transfer tests passed, line coverage was
+  93.22%, and function coverage was 100%. The first fatal line came from
+  `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`:
+  `Failed to CreateArtifact: Unable to make request: ETIMEDOUT`.
+- **Root cause:** The runner's `CreateArtifact` request reached its transport
+  deadline after all repository tests and coverage checks had completed; no
+  Swift assertion, build, or coverage threshold failed.
+- **Fix / mitigation:** Reran only the failed Swift job unchanged after the
+  original workflow completed. No repository retry, timeout, fallback, or
+  warn-and-continue behavior was added.
+- **Validation:** The
+  [attempt-two job](https://github.com/Asherlc/dofek/actions/runs/30207624183/job/89810786050)
+  passed both Swift test commands, the coverage gate, and the same pinned
+  artifact-upload step.
+- **Remaining risk / follow-up:** Treat a future identical post-test artifact
+  transport timeout as external only after confirming the test and coverage
+  gates passed; investigate the runner-to-GitHub path if it recurs.
+
+## 2026-07-26 — Persisted Test State Exhausted Workspace ClickHouse Memory
+
+- **Status:** Resolved for the issue-1997 workspace.
+- **Symptoms:** A focused router integration rerun failed in `beforeAll` while
+  rebuilding `v_sleep`; its first fatal line reported `memory limit exceeded`
+  with 1.98 GiB RSS against a 1.95 GiB limit. Restarting the process alone led
+  to the same failure while rebuilding `v_activity`.
+- **User impact:** Local regression validation was blocked; production and
+  every other workspace were unaffected.
+- **Evidence:** The failures occurred before the selected test ran. The second
+  attempt still reported 1.96 GiB RSS after a process restart. Re-creating only
+  the four `issue-1997_*` Compose volumes reduced the ClickHouse container to
+  850.4 MiB before the next run.
+- **Root cause:** Persisted ClickHouse state in the current workspace kept the
+  server at its query memory ceiling across a process-only restart.
+- **Fix / mitigation:** Used the repository Compose wrapper to run
+  `down --remove-orphans --volumes` for the resolved `issue-1997` project, then
+  recreated its Postgres, Redis, ClickHouse, and Redpanda dependencies. This
+  removed only disposable state owned by the current workspace, consistent
+  with Docker's documented
+  [`down --volumes` scope](https://docs.docker.com/reference/cli/docker/compose/down/).
+  No memory limit, timeout, or retry was changed.
+- **Validation:** From the fresh dependencies, both focused real-ClickHouse
+  router polarization tests passed: one test in `router.integration.test.ts`
+  and one test in `router-data.integration.test.ts`.
+- **Remaining risk / follow-up:** A failed integration `beforeAll` can leave
+  workspace-scoped ClickHouse state behind. If the same evidence recurs, clear
+  only that workspace's disposable Compose state rather than raising resource
+  limits.
+
 ## 2026-07-26 — Empty Polarization Model Triggered a Live Sensor Scan
 
 - **Status:** Direct fix validated locally; PR CI and production deployment
@@ -17899,7 +17956,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The focused repository and router unit suites pass. The
   real-ClickHouse regression fixture verifies three raw sensor rows, zero
   serving rows, an empty response, and exactly one serving-model query. The
-  existing router integration suite, full lint, and root/server/web
+  clean CI run then exposed two router fixtures that still assumed the removed
+  fallback populated their results; both now seed the canonical serving table
+  and pass as focused real-ClickHouse tests. Full lint and root/server/web
   typechecks also pass.
 - **Remaining risk / follow-up:** Complete PR CI, deploy the fix, confirm route
   latency remains bounded, and monitor the asynchronous analytics build so a
