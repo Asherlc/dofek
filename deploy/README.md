@@ -266,8 +266,13 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
        post-quiesce readiness step and ClickHouse CDC setup succeeds. If a
        prerequisite fails, the workflow leaves both consumers at zero replicas
        and reports that the operator must resolve the failed step and rerun the
-       deployment. GitHub applies `success()` to successful prior steps, while
-       `always()` runs even after failures, so critical deploy steps must not use
+       deployment. After restoration, each consumer must keep the same Swarm
+       task at `1/1` continuously for 60 seconds; a replacement task or any
+       replica loss restarts the stability window. Swarm creates a new task when
+       a task crashes, so a transient `1/1` sample is not deployment convergence
+       ([Docker Swarm tasks and scheduling](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling)).
+       GitHub applies `success()` to successful prior steps, while `always()`
+       runs even after failures, so critical deploy steps must not use
        `always()` as their status gate ([GitHub Actions status check functions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)).
    14. After the final production stack converges, record the image's full
        `SENTRY_RELEASE` commit SHA as deployed to `production` for

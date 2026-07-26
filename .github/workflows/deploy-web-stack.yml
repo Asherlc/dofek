@@ -892,8 +892,11 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 1200))
+          stability_window_seconds=60
           for service in analytics-worker metric-stream-clickhouse-sink; do
             service_name="${STACK_NAME}_${service}"
+            stable_task_id=""
+            stable_since_seconds=0
             while true; do
               update_state="$(
                 docker service inspect "$service_name" \
@@ -910,7 +913,13 @@ jobs:
               replicas="$(
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
-              echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              task_id="$(
+                docker service ps "$service_name" \
+                  --filter desired-state=running \
+                  --format '{{.ID}}' \
+                  | head -n 1
+              )"
+              echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none} task_id=${task_id:-none}"
               if [ "$desired_replicas" != "1" ]; then
                 docker service ps "$service_name" --no-trunc
                 echo "::error::${service_name} expected one desired replica after the full deploy, found ${desired_replicas}"
@@ -930,8 +939,28 @@ jobs:
               esac
               if [ "$replicas" = "1/1" ] && {
                 [ -z "$update_state" ] || [ "$update_state" = "completed" ]
-              }; then
-                break
+              } && [ -n "$task_id" ]; then
+                if [ -z "$stable_task_id" ]; then
+                  stable_task_id="$task_id"
+                  stable_since_seconds=$SECONDS
+                  echo "${service_name} task ${task_id} reached convergence; starting ${stability_window_seconds}s stability window"
+                elif [ "$stable_task_id" != "$task_id" ]; then
+                  echo "${service_name} task changed from ${stable_task_id} to ${task_id}; resetting stability window"
+                  stable_task_id="$task_id"
+                  stable_since_seconds=$SECONDS
+                fi
+
+                stable_elapsed_seconds=$((SECONDS - stable_since_seconds))
+                if [ "$stable_elapsed_seconds" -ge "$stability_window_seconds" ]; then
+                  echo "${service_name} task ${task_id} has remained converged for ${stability_window_seconds}s"
+                  break
+                fi
+              else
+                if [ -n "$stable_task_id" ]; then
+                  echo "${service_name} lost convergence; resetting stability window for task ${stable_task_id}"
+                fi
+                stable_task_id=""
+                stable_since_seconds=0
               fi
               if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
                 docker service ps "$service_name" --no-trunc
