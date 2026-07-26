@@ -392,7 +392,7 @@ export function ProviderDetailPage() {
       )}
 
       {/* Sync controls */}
-      {!hasFileImportConfig && !pushOnly && (
+      {provider?.authorized === true && !hasFileImportConfig && !pushOnly && (
         <section className="card p-4 space-y-3">
           <h2 className="text-sm font-medium text-foreground">Sync Controls</h2>
           <div className="flex flex-wrap items-end gap-3">
