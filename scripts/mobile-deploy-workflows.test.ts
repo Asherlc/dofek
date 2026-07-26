@@ -6,6 +6,13 @@ import { z } from "zod";
 
 const workflowSchema = z.object({
   jobs: z.object({
+    check: z.object({
+      env: z
+        .object({
+          IOS_NATIVE_INPUT_PATTERN: z.string(),
+        })
+        .optional(),
+    }),
     deploy: z.object({
       if: z.string(),
     }),
@@ -22,6 +29,13 @@ const alwaysFunction = {
 function readDeployCondition(workflowPath: string): string {
   const workflow = workflowSchema.parse(parse(readFileSync(workflowPath, "utf8")));
   return workflow.jobs.deploy.if;
+}
+
+function readIosNativeInputPattern(): RegExp {
+  const workflow = workflowSchema.parse(
+    parse(readFileSync(".github/workflows/deploy-ios.yml", "utf8")),
+  );
+  return new RegExp(z.string().parse(workflow.jobs.check.env?.IOS_NATIVE_INPUT_PATTERN));
 }
 
 function evaluateDeployCondition(
@@ -87,5 +101,32 @@ describe("mobile deploy workflow conditions", () => {
         });
       }
     }
+  }
+});
+
+describe("iOS native input detection", () => {
+  const nativeInputPattern = readIosNativeInputPattern();
+
+  const cases = [
+    ["pnpm-lock.yaml", true],
+    ["packages/mobile/package.json", true],
+    ["packages/mobile/app.json", true],
+    ["packages/mobile/app.config.js", true],
+    ["packages/mobile/plugins/with-podfile-post-install.js", true],
+    ["packages/mobile/build/ExportOptions.plist", true],
+    ["packages/mobile/targets/DofekWatch/Package.swift", true],
+    ["packages/mobile/native/SomeNativeInput.swift", true],
+    ["packages/mobile/modules/health-kit/expo-module.config.json", true],
+    ["packages/mobile/modules/health-kit/ios/HealthKitModule.swift", true],
+    ["packages/mobile/app/settings.tsx", false],
+    ["packages/mobile/components/MetricCard.tsx", false],
+    ["packages/mobile/modules/health-kit/src/HealthKitModule.ts", false],
+    ["packages/format/package.json", false],
+  ] as const;
+
+  for (const [path, shouldDeploy] of cases) {
+    it(`${shouldDeploy ? "deploys a binary for" : "keeps OTA-only"} ${path}`, () => {
+      expect(nativeInputPattern.test(path)).toBe(shouldDeploy);
+    });
   }
 });

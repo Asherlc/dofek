@@ -40,6 +40,8 @@ jobs:
     name: Deploy Check
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    env:
+      IOS_NATIVE_INPUT_PATTERN: '^(pnpm-lock\.yaml$|packages/mobile/(package\.json$|app\.json$|app\.config\.(js|ts|mjs|cjs)$|build/|plugins/|targets/|native/|modules/[^/]+/(expo-module\.config\.json$|ios/)))'
     outputs:
       commit_sha: ${{ steps.resolve.outputs.sha }}
       should_deploy: ${{ steps.detect.outputs.should_deploy }}
@@ -121,7 +123,7 @@ jobs:
           echo "Comparing $LAST_DEPLOY_SHA...$DIFF_SHA"
           DIFF=$(git diff --name-only "$LAST_DEPLOY_SHA"..."$DIFF_SHA")
           echo "$DIFF"
-          if echo "$DIFF" | grep -qE '^packages/mobile/(app\.json|app\.config\.ts|build/|targets/|modules/.*/ios/)'; then
+          if echo "$DIFF" | grep -qE "$IOS_NATIVE_INPUT_PATTERN"; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "iOS native changes detected"
           else
