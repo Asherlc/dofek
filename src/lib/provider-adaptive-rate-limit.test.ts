@@ -627,6 +627,33 @@ describe("RedisAdaptiveRateLimitStore", () => {
     expect(mock.execAttempts).toBe(2);
   });
 
+  it("completes atomic Strava admission after the quota pacing interval elapses", async () => {
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.useFakeTimers();
+    vi.setSystemTime(20_000);
+    const mock = createMockRedisAdaptiveStore({ atomic: true });
+    mock.values.set(
+      "provider-adaptive-rate:strava:provider",
+      JSON.stringify({
+        ...createInitialAdaptiveState("strava", "provider", null, 0),
+        lastRequestMs: 20_000,
+        stravaShortLimit: 200,
+        stravaShortUsage: 1,
+        stravaDailyLimit: 2_000,
+        stravaDailyUsage: 38,
+      }),
+    );
+
+    const admission = mock.store.awaitAdmission("strava", "provider", null);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await admission;
+
+    expect(mock.execAttempts).toBe(1);
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
   it("creates fresh adaptive state when Redis returns null during atomic admission", async () => {
     const mock = createMockRedisAdaptiveStore({ atomic: true });
 
