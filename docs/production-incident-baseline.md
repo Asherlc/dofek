@@ -18415,11 +18415,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [Sentry issue DOFEK-SERVER-5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E).
 - **User impact:** The affected Peloton connection could not import any workout
   page because validation rejected the complete page before parsing began.
-- **Evidence:** Five consecutive production events from `14:30` through
-  `16:30` UTC reported the same response drift. Peloton returned `null` for
+- **Evidence:** Six consecutive production events from `14:30` through
+  `17:00` UTC reported the same response drift. Peloton returned `null` for
   workout `title`, `end_time`, `metrics_type`, `peloton_id`, and `strava_id`,
   and omitted `ride.instructor.id`; the runtime schema accepted only omitted
-  optional strings and required a numeric end time and instructor ID.
+  optional strings and required a numeric end time and instructor ID. The
+  latest observed payload and exact Zod paths are preserved in
+  [Sentry issue DOFEK-SERVER-5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E).
 - **Root cause:** The client boundary modeled several optional upstream fields
   as undefined-only even though the observed API payload uses both JSON `null`
   and omission for absence. The schema therefore rejected valid unfinished and
