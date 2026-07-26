@@ -139,12 +139,10 @@ const weeklyReportRowSchema = z.object({
 /** Data access for weekly performance report aggregates. */
 export class WeeklyReportRepository {
   readonly #userId: string;
-  readonly #timezone: string;
   readonly #sensorStore: ActivitySensorStore;
 
-  constructor(userId: string, timezone: string, sensorStore: ActivitySensorStore) {
+  constructor(userId: string, sensorStore: ActivitySensorStore) {
     this.#userId = userId;
-    this.#timezone = timezone;
     this.#sensorStore = sensorStore;
   }
 
@@ -157,14 +155,14 @@ export class WeeklyReportRepository {
       weeklyReportRowSchema,
       `WITH per_activity AS (
         SELECT
-          toDate(toTimeZone(asum.started_at, {timezone:String})) AS date,
+          toDate(asum.started_at - INTERVAL 6 HOUR) AS date,
           dateDiff('second', asum.started_at, asum.ended_at) / 3600.0 AS hours,
           dateDiff('second', asum.started_at, asum.ended_at) / 60.0
             * asum.avg_hr / nullIf(toFloat64(asum.max_hr), 0) AS load
         FROM analytics.activity_summary asum
         WHERE asum.user_id = {userId:UUID}
-          AND toDate(toTimeZone(asum.started_at, {timezone:String})) >= toDate({windowStart:String})
-          AND toDate(toTimeZone(asum.started_at, {timezone:String})) <= toDate({endDate:String})
+          AND toDate(asum.started_at - INTERVAL 6 HOUR) >= toDate({windowStart:String})
+          AND toDate(asum.started_at - INTERVAL 6 HOUR) <= toDate({endDate:String})
           AND asum.ended_at IS NOT NULL
       ),
       daily_training AS (
@@ -247,7 +245,6 @@ export class WeeklyReportRepository {
       ORDER BY week_start ASC`,
       {
         userId: this.#userId,
-        timezone: this.#timezone,
         windowStart,
         endDate,
         totalDays,

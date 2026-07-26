@@ -12,28 +12,60 @@ import { WeeklyReportRepository } from "./weekly-report-repository.ts";
 
 const userId = "99999999-9999-4999-8999-999999999999";
 const emptyUserId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const boundaryUserId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const activityId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const boundaryActivityId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const boundaryActivityStartedAt = "2026-07-19 05:30:00";
+const boundaryRequestTimezone = "Pacific/Kiritimati";
 const endDate = "2026-07-25";
 
 describe("WeeklyReportRepository ClickHouse read models", () => {
   let testContext: TestContext;
   let sensorStore: ActivitySensorStore;
   let weekStart: string;
+  let boundaryWeekStart: string;
+  let requestTimezoneWeekStart: string;
 
   beforeAll(async () => {
     testContext = await setupTestDatabase();
     sensorStore = await createClickHouseTestActivitySensorStore(testContext);
     const weekResult = await getClickHouseTestClient(testContext).query({
-      query: `SELECT toString(toStartOfWeek(toDate('${endDate}'), 0)) AS week_start`,
+      query: `SELECT
+        toString(toStartOfWeek(toDate('${endDate}'), 0)) AS week_start,
+        toString(
+          toStartOfWeek(
+            toDate(toDateTime64('${boundaryActivityStartedAt}', 6, 'UTC') - INTERVAL 6 HOUR),
+            0
+          )
+        ) AS boundary_week_start,
+        toString(
+          toStartOfWeek(
+            toDate(
+              toTimeZone(
+                toDateTime64('${boundaryActivityStartedAt}', 6, 'UTC'),
+                '${boundaryRequestTimezone}'
+              )
+            ),
+            0
+          )
+        ) AS request_timezone_week_start`,
       format: "JSONEachRow",
     });
     const [weekRow] = z
-      .array(z.object({ week_start: dateStringSchema }))
+      .array(
+        z.object({
+          week_start: dateStringSchema,
+          boundary_week_start: dateStringSchema,
+          request_timezone_week_start: dateStringSchema,
+        }),
+      )
       .parse(await weekResult.json());
     if (!weekRow) {
       throw new Error("ClickHouse did not return the report week");
     }
     weekStart = weekRow.week_start;
+    boundaryWeekStart = weekRow.boundary_week_start;
+    requestTimezoneWeekStart = weekRow.request_timezone_week_start;
 
     await executeClickHouseTestCommand(
       testContext,
@@ -148,6 +180,68 @@ describe("WeeklyReportRepository ClickHouse read models", () => {
         now64(9)
       )`,
     );
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.activity_summary (
+        activity_id,
+        user_id,
+        activity_type,
+        started_at,
+        ended_at,
+        avg_hr,
+        max_hr
+      ) VALUES (
+        toUUID('${boundaryActivityId}'),
+        toUUID('${boundaryUserId}'),
+        'cycling',
+        toDateTime64('${boundaryActivityStartedAt}', 6, 'UTC'),
+        toDateTime64('${boundaryActivityStartedAt}', 6, 'UTC') + INTERVAL 1 HOUR,
+        100,
+        200
+      )`,
+    );
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.daily_sleep (
+        user_id,
+        date,
+        provider_id,
+        started_at,
+        duration_minutes,
+        refresh_version,
+        is_deleted,
+        refreshed_at
+      ) VALUES (
+        toUUID('${boundaryUserId}'),
+        toDate(toDateTime64('${boundaryActivityStartedAt}', 6, 'UTC') - INTERVAL 6 HOUR),
+        'test-provider',
+        toDateTime64('${boundaryActivityStartedAt}', 6, 'UTC'),
+        480,
+        1,
+        0,
+        now64(9)
+      )`,
+    );
+    await executeClickHouseTestCommand(
+      testContext,
+      `INSERT INTO analytics.daily_recovery (
+        user_id,
+        date,
+        hrv,
+        resting_hr,
+        is_deleted,
+        refresh_version,
+        refreshed_at
+      ) VALUES (
+        toUUID('${boundaryUserId}'),
+        toDate(toDateTime64('${boundaryActivityStartedAt}', 6, 'UTC') - INTERVAL 6 HOUR),
+        64,
+        52,
+        0,
+        1,
+        now64(9)
+      )`,
+    );
 
     for (const recursiveView of [
       "v_activity",
@@ -164,10 +258,7 @@ describe("WeeklyReportRepository ClickHouse read models", () => {
   });
 
   it("builds the report from compact serving models without recursive views", async () => {
-    const report = await new WeeklyReportRepository(userId, "UTC", sensorStore).getReport(
-      1,
-      endDate,
-    );
+    const report = await new WeeklyReportRepository(userId, sensorStore).getReport(1, endDate);
 
     expect(report.current).toEqual(
       expect.objectContaining({
@@ -183,11 +274,34 @@ describe("WeeklyReportRepository ClickHouse read models", () => {
   });
 
   it("returns the no-data result for an empty user", async () => {
-    const report = await new WeeklyReportRepository(emptyUserId, "UTC", sensorStore).getReport(
-      1,
+    const report = await new WeeklyReportRepository(emptyUserId, sensorStore).getReport(1, endDate);
+
+    expect(report).toEqual({ current: null, history: [] });
+  });
+
+  it("uses the serving-model health-day boundary for non-UTC requests", async () => {
+    const report = await new WeeklyReportRepository(boundaryUserId, sensorStore).getReport(
+      2,
       endDate,
     );
 
-    expect(report).toEqual({ current: null, history: [] });
+    expect(requestTimezoneWeekStart).not.toBe(boundaryWeekStart);
+    expect(report.history).toEqual([
+      expect.objectContaining({
+        weekStart: boundaryWeekStart,
+        trainingHours: 1,
+        activityCount: 1,
+        avgSleepMinutes: 480,
+        avgRestingHr: 52,
+        avgHrv: 64,
+      }),
+    ]);
+    expect(report.current).toEqual(
+      expect.objectContaining({
+        weekStart,
+        trainingHours: 0,
+        activityCount: 0,
+      }),
+    );
   });
 });

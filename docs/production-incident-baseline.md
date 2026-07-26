@@ -18131,7 +18131,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   regression first failed with
   `Unknown table expression identifier 'analytics_test_...v_activity'` after
   the recursive test views were removed, proving the repository's request-time
-  dependency.
+  dependency. Axiom could not be queried because the connected user token had
+  expired, so the issue's production timings and the executable real-ClickHouse
+  reproduction are the alternative evidence available for this follow-up.
+- **Classification:** Following the
+  [loading-performance runbook](performance/loading-performance-runbook.md),
+  this is a request-time query-shape bottleneck for `weeklyReport.report`,
+  supported by the production timings and real-database reproduction above.
 - **Root cause:** The weekly query joined `analytics.v_activity`, read
   `analytics.v_sleep` and `analytics.v_daily_metrics`, and expanded the
   resting-heart-rate calculation even though compact activity, daily-sleep,
@@ -18141,15 +18147,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `analytics.daily_recovery FINAL`, with explicit user and report-window
   bounds. Preserve empty calendar periods when a report has data, but return
   the established `{ current: null, history: [] }` result when none of those
-  serving models has a row for the user. The monthly repository now applies
-  the same no-data rule. ClickHouse documents `FINAL` as applying an engine's
-  merge logic during selection:
+  serving models has a row for the user. Activity dates use the same fixed
+  six-hour health-day boundary materialized by the daily sleep and recovery
+  models, so a request timezone cannot split related data across weeks. The
+  monthly repository now applies the same no-data rule. ClickHouse documents
+  `FINAL` as applying an engine's merge logic during selection:
   <https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier>.
 - **Validation:** The real-database weekly regression passes both the
   serving-model lifecycle case and an empty-user case with the recursive views
-  absent. The monthly real-database regression also passes its existing
-  lifecycle case and the new empty-user case. Focused repository and router
-  suites pass 101 tests.
+  absent. A non-UTC Sunday-boundary regression first failed because the
+  activity landed in a different week than its daily sleep and recovery rows;
+  it now passes with all three values in the serving-model health day. The
+  monthly real-database regression also passes its existing lifecycle case and
+  the new empty-user case. Focused repository and router suites pass 101 tests.
 - **Remaining risk / follow-up:** Merge through normal CI, deploy the weekly
   query, invoke both reports with populated and empty production accounts, and
   confirm bounded completion in ClickHouse query history. No timeout, retry,
