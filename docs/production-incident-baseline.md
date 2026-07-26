@@ -17470,3 +17470,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   shared Docker VM. Schedule ClickHouse-heavy local validation serially when
   several workspaces are active; do not stop or prune another workspace's
   resources.
+
+## 2026-07-25 — iOS Deploy Classifier Missed Native Build Inputs
+
+- **Status:** Direct fix validated locally; replacement CI pending.
+- **Symptoms:** The TestFlight deploy workflow could report
+  `should_deploy=false` after changes to the mobile dependency manifest, root
+  lockfile, app config, config plugins, or local Expo-module metadata.
+- **User impact:** A JavaScript OTA could reference native code that had not
+  been uploaded in a new iOS binary, leaving production devices without the
+  required native implementation.
+- **Evidence:** The exact faulty command was the `grep -qE` classifier in the
+  `Detect iOS native changes` step. Its pattern only matched `app.json`, a
+  nonexistent `app.config.ts` path, build/target files, and local-module `ios`
+  directories. It omitted the repository's actual `app.config.js`,
+  `packages/mobile/package.json`, `pnpm-lock.yaml`, config plugins, and
+  `expo-module.config.json`. Expo documents that Prebuild regenerates native
+  projects from app configuration and package dependencies, while Expo
+  Autolinking uses `expo-module.config.json` to recognize local native modules:
+  <https://docs.expo.dev/workflow/continuous-native-generation/> and
+  <https://docs.expo.dev/modules/autolinking/>.
+- **Root cause:** Native-input knowledge was embedded in an incomplete,
+  untested inline regex that no longer represented all inputs to the
+  repository's `expo prebuild --clean` and CocoaPods build.
+- **Fix / mitigation:** Define one named workflow classifier covering the
+  mobile manifest, root lockfile, app config, config plugins, build and target
+  inputs, local-module metadata, and local-module iOS sources. Exercise that
+  exact classifier from the workflow unit test, including an OTA-only
+  TypeScript route case.
+- **Validation:** All 41 mobile deploy workflow tests, full lint, root/server/web
+  typechecks, and 13,648 Docker-free unit/mobile tests pass without retries,
+  timeouts, or fallback release behavior. CI remains pending.
+- **Remaining risk / follow-up:** Future native input categories must be added
+  to the single named classifier with a regression case in the same change.
