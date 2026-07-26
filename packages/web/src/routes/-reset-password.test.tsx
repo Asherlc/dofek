@@ -6,15 +6,24 @@ const mockUseSearch = vi.hoisted(() => vi.fn());
 const mockConfirmPasswordReset = vi.hoisted(() => vi.fn());
 const mockCaptureException = vi.hoisted(() => vi.fn());
 const captured = vi.hoisted(() => {
-  const ref: { component: (() => React.ReactElement) | null } = { component: null };
+  const ref: {
+    component: (() => React.ReactElement) | null;
+    validateSearch: ((search: Record<string, unknown>) => { token?: string }) | null;
+  } = { component: null, validateSearch: null };
   return ref;
 });
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (options: { component: () => React.ReactElement }) => {
-    captured.component = options.component;
-    return {};
-  },
+  createFileRoute:
+    () =>
+    (options: {
+      component: () => React.ReactElement;
+      validateSearch: (search: Record<string, unknown>) => { token?: string };
+    }) => {
+      captured.component = options.component;
+      captured.validateSearch = options.validateSearch;
+      return {};
+    },
   Link: ({ children }: { children: React.ReactNode }) => <a href="/login">{children}</a>,
   useSearch: mockUseSearch,
 }));
@@ -35,6 +44,27 @@ afterEach(() => {
 });
 
 describe("Reset password route", () => {
+  it("keeps a missing token absent and shows an invalid-link state", () => {
+    if (!captured.validateSearch) throw new Error("Reset password search validator not captured");
+    expect(captured.validateSearch({})).toEqual({});
+    expect(captured.validateSearch({ token: "" })).toEqual({});
+    expect(captured.validateSearch({ token: "reset-token" })).toEqual({ token: "reset-token" });
+
+    mockUseSearch.mockReturnValue({});
+    if (!captured.component) throw new Error("Reset password route component not captured");
+    const ResetPasswordPage = captured.component;
+
+    render(<ResetPasswordPage />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This password reset link is missing or invalid.",
+    );
+    expect(screen.queryByLabelText("New password")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reset password" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Return to sign in" })).toBeTruthy();
+    expect(mockConfirmPasswordReset).not.toHaveBeenCalled();
+  });
+
   it("reports confirmation failures without the reset token or password", async () => {
     const error = new Error("Reset link has expired");
     const token = "reset-token-must-not-leak";
