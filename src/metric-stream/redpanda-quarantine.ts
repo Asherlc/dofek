@@ -1,4 +1,4 @@
-import { ConfigResourceTypes } from "kafkajs";
+import kafkaJs, { type ConfigResourceTypes } from "kafkajs";
 
 const QUARANTINE_RETENTION_MS = "604800000";
 const QUARANTINE_RETENTION_BYTES = "1073741824";
@@ -101,7 +101,7 @@ export class KafkaMetricStreamQuarantineWriter implements MetricStreamQuarantine
         {
           configEntries: quarantineTopicConfig,
           name: this.#topic,
-          type: ConfigResourceTypes.TOPIC,
+          type: kafkaJs.ConfigResourceTypes.TOPIC,
         },
       ],
     });
