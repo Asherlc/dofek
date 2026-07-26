@@ -347,10 +347,19 @@ PR preview object cleanup:
 
 Databasus backup state:
 
+- Databasus is an always-on operational service in production, not an optional
+  management UI: its process owns the configured backup schedule.
 - Databasus stores its own users, storage targets, database definitions, schedules, and backup history in `/mnt/dofek-data/databasus`.
 - Terraform creates that directory and performs a one-time copy from the legacy `databasus_data` Docker volume when the bind-mount path is still empty.
 - If that path is empty or replaced, Databasus comes up as a fresh install and scheduled DB backups stop even if the `dofek-db-backups` bucket still exists.
-- After any Databasus storage or deploy change, verify the latest object in `dofek-db-backups` is less than 24 hours old.
+- The scheduled `Database Backup Freshness` workflow and the production deploy
+  workflow fail when the latest object in `dofek-db-backups` is not less than
+  24 hours old. Cloudflare documents R2's S3 `ListObjectsV2` support, including
+  continuation tokens:
+  <https://developers.cloudflare.com/r2/api/s3/api/#implemented-object-level-operations>.
+- After any Databasus storage or deploy change, verify both freshness and a
+  real isolated restore by following
+  [the database backup recovery runbook](../docs/database-backup-recovery-runbook.md).
 
 Required Infisical keys for mobile pipelines:
 
