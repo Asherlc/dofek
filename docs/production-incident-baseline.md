@@ -7,6 +7,71 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-25: Locked-device workout route queries generated Sentry errors
+
+### Symptoms
+
+Sentry issue `DOFEK-MOBILE-1A` recorded three handled production errors at
+`2026-07-25T16:52:46Z`. Each error came from
+`queryWorkoutRoutes.lookupWorkout(...)` and reported
+`HEALTHKIT_DATABASE_INACCESSIBLE` with native HealthKit error
+`com.apple.healthkit:6`.
+
+### User Impact
+
+One backgrounded iOS user was affected. Three workout-route lookups did not
+return GPS data during that sync pass; the rest of the HealthKit sync was
+allowed to continue. A later catch-up sync can query those routes again while
+they remain inside its sync window.
+
+### Evidence
+
+All three events came from the same physical iPhone, release
+`com.dofek.app@1.0.0+1784919398`, and production OTA update. Sentry recorded
+`app.in_foreground=false`, the same timestamp to the second, and three distinct
+workout UUIDs. The first fatal operation was
+`queryWorkoutRoutes.lookupWorkout(<uuid>)`, and the native error text was
+`Protected health data is inaccessible (com.apple.healthkit:6)`.
+
+Apple documents `HKError.Code.errorDatabaseInaccessible` as the expected result
+when an app queries protected HealthKit data while the device is locked:
+<https://developer.apple.com/documentation/healthkit/hkerror/code/errordatabaseinaccessible>.
+
+### Root Cause
+
+The background-sync boundary already classifies
+`HEALTHKIT_DATABASE_INACCESSIBLE` as a transient locked-device condition and
+does not report it to Sentry. The bounded-concurrency workout-route loop catches
+route-query failures internally, however, and reports every caught error before
+returning a non-fatal sync result. That internal catch prevents this specific
+HealthKit error from reaching the existing background classification. Three
+parallel route workers therefore emitted three Sentry events for one lock-state
+transition.
+
+### Fix or Mitigation
+
+Added one shared TypeScript classifier for the native
+`HEALTHKIT_DATABASE_INACCESSIBLE` code. The workout-route loop now rethrows
+that typed transient error before its normal non-fatal reporting path, allowing
+the existing background-sync boundary to log the locked state without sending
+it to Sentry and to mark the observer batch unsuccessful. Other route-query
+errors remain non-fatal and continue to be reported with workout context.
+
+### Validation
+
+The regression tests failed before the implementation because the route error
+was captured and the sync resolved successfully. After the fix, the focused
+HealthKit suites pass all 47 tests, the complete mobile project passes, and
+mobile TypeScript, Biome, and the handled-error telemetry policy all pass
+without retries or relaxed checks.
+
+### Remaining Risk
+
+The locked-device behavior cannot be reproduced in Simulator and still needs
+confirmation from a production physical-device background delivery after the
+mobile update ships. The affected route data remains dependent on a later
+successful catch-up within the configured sync window.
+
 ## 2026-07-21: Provider availability mutation shard lacked router coverage
 
 ### Symptoms
@@ -17349,3 +17414,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   validation pass without ad-hoc waits. Replacement CI must pass before merge.
 - **Remaining risk / follow-up:** None beyond completing replacement CI; the
   compiler now enforces future fixture parity with the canonical DTO.
+
+## 2026-07-25 — Local ClickHouse OOM During Concurrent Validation
+
+- **Status:** Resolved by ending the concurrent full-suite workload; no
+  repository resilience change was made.
+- **Symptoms:** The issue-1729 SQLFluff lint process lost its local ClickHouse
+  HTTP connection while several workspaces were validating concurrently.
+- **User impact:** No production or CI users were affected. Local PR validation
+  was delayed.
+- **Evidence:** The exact failing command was `pnpm lint`, in the
+  `lint:analytics-sql` step. Its first fatal line was
+  `dbt tried to connect to the database and failed`, followed by
+  `RemoteDisconnected('Remote end closed connection without response')`.
+  `docker inspect issue-1729-clickhouse-1` reported `"OOMKilled": true`, and
+  `docker stats --no-stream` showed five other workspace ClickHouse containers
+  active within the same 7.65 GiB Docker VM.
+- **Root cause:** Running the repository-wide Vitest suite and SQL lint while
+  multiple workspaces also ran ClickHouse exhausted the shared Docker VM
+  memory, so Docker killed the issue-1729 ClickHouse process. Docker documents
+  that containers can be killed when the host runs out of memory:
+  <https://docs.docker.com/engine/containers/resource_constraints/#understand-the-risks-of-running-out-of-memory>.
+- **Fix / mitigation:** Let the concurrent full-suite process finish and keep
+  subsequent validation serial and scoped to this workspace. No retry,
+  timeout, fallback, or memory-limit change was added.
+- **Validation:** Typecheck, 346 issue-focused unit tests, 26 focused
+  integration tests, the 35-model analytics build, and the isolated 39-test
+  mobile teardown suite pass. CI remains the authoritative full-matrix gate.
+- **Remaining risk / follow-up:** Concurrent workspaces can still exhaust the
+  shared Docker VM. Schedule ClickHouse-heavy local validation serially when
+  several workspaces are active; do not stop or prune another workspace's
+  resources.

@@ -1,5 +1,6 @@
 import type { Database } from "dofek/db";
 import { nutrientAmountEntriesFromLegacyFields } from "dofek/db/nutrient-columns";
+import { ensureProvider } from "dofek/db/tokens";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -238,11 +239,7 @@ export class FoodEntryRepository {
 
   /** Ensure the 'dofek' provider row exists (for self-created entries) */
   async ensureDofekProvider(userId: string): Promise<void> {
-    await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${DOFEK_PROVIDER_ID}, 'Dofek App', ${userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensureProvider(this.#db, DOFEK_PROVIDER_ID, "Dofek App", undefined, userId);
   }
 
   /** Save parsed food items to the database as unconfirmed. Returns the entry IDs. */

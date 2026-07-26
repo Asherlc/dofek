@@ -2255,6 +2255,31 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("shows an actionable message without reporting when Apple Health becomes locked", async () => {
+    const { captureException } = await import("../../lib/telemetry");
+    const mockCaptureException = vi.mocked(captureException);
+    mockCaptureException.mockClear();
+    mockSyncHealthKit.mockRejectedValueOnce(
+      Object.assign(new Error("HealthKit data is unavailable while the device is locked"), {
+        code: "HEALTHKIT_DATABASE_INACCESSIBLE",
+      }),
+    );
+    await renderProvidersScreen();
+
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Sync")).toBeTruthy();
+    });
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    fireEvent.click(appleCard.getByText("Sync"));
+
+    await waitFor(() => {
+      expect(appleCard.getByText("Device locked — unlock to sync Apple Health data")).toBeTruthy();
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
   it("writes direct Dofek food entries back to Apple Health when Sync is clicked", async () => {
     await renderProvidersScreen();
 

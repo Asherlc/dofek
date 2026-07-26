@@ -280,6 +280,9 @@ The server image runs in multiple modes via `entrypoint.sh`:
 # Run pending database migrations (runs once, then exits)
 docker run dofek:latest migrate
 
+# Resume the provider-connection backfill and validate its cutover constraints
+docker run dofek:latest provider-connection-cutover
+
 # API server (Express + tRPC)
 docker run dofek:latest web
 
@@ -290,7 +293,7 @@ docker run dofek:latest worker
 docker run dofek:latest sync
 ```
 
-All modes use Node 26 to run TypeScript source directly — no build step. The `sync`, `worker`, and `migrate` modes run migrations themselves. In production, `web` does not run migrations on startup; CI runs migrations before `docker stack deploy`. This also means swarm rollback is image rollback only, not schema rollback.
+All modes use Node 26 to run TypeScript source directly — no build step. The `sync`, `worker`, and `migrate` modes run migrations themselves. The `provider-connection-cutover` mode runs the [resumable provider-connection backfill](scripts/backfill-provider-connections.ts) only after the corresponding app rollout converges. In production, `web` does not run migrations on startup; CI runs migrations before `docker stack deploy`. This also means swarm rollback is image rollback only, not schema rollback.
 
 ## Deployment
 

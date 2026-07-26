@@ -163,7 +163,7 @@ describe("processScheduledSyncJob", () => {
     expect(providerQueues.has("strong-csv")).toBe(false);
 
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[scheduled-sync] Skipping CSV provider strong-csv",
+      "[scheduled-sync] Skipping non-sync provider strong-csv",
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Enqueued 3 sync jobs for 3 users",
@@ -188,22 +188,16 @@ describe("processScheduledSyncJob", () => {
     expect(providerQueues.size).toBe(1);
   });
 
-  it("defaults sinceDays when provider metadata is missing", async () => {
+  it("skips connections whose provider plugin is missing", async () => {
     const db = createScheduledSyncDatabase([
       { user_id: "user-1", provider_id: "unknown-provider" },
     ]);
 
     await processScheduledSyncJob(createScheduledSyncJob(), db);
 
-    const unknownQueue = getMockQueue("unknown-provider");
-    expect(unknownQueue.add).toHaveBeenCalledWith(
-      "sync",
-      {
-        userId: "user-1",
-        providerId: "unknown-provider",
-        sinceDays: 1,
-      },
-      expect.objectContaining({ attempts: 288 }),
+    expect(providerQueues.has("unknown-provider")).toBe(false);
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[scheduled-sync] Skipping non-sync provider unknown-provider",
     );
   });
 

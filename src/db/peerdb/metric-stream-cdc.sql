@@ -42,6 +42,10 @@ WITH TABLE MAPPING
     to: provider
   },
   {
+    from: fitness.provider_connection,
+    to: provider_connection
+  },
+  {
     from: fitness.provider_priority,
     to: provider_priority
   },

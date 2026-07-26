@@ -6,12 +6,12 @@ import {
   teardownBackgroundObservers,
 } from "../modules/health-kit";
 import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple-health-provider";
+import { isHealthKitDatabaseInaccessible } from "./health-kit-errors";
 import type { HealthKitSyncStage, SyncTrpcClient } from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";
 const DEBOUNCE_MS = 500;
-const HEALTHKIT_DATABASE_INACCESSIBLE_CODE = "HEALTHKIT_DATABASE_INACCESSIBLE";
 
 let subscription: EventSubscription | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -63,16 +63,6 @@ function createStageTelemetry() {
     complete,
   };
 }
-
-function isHealthKitDatabaseInaccessible(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === HEALTHKIT_DATABASE_INACCESSIBLE_CODE
-  );
-}
-
 async function performHealthKitSync(
   trpcClient: SyncTrpcClient,
   onSyncComplete?: () => void | Promise<void>,

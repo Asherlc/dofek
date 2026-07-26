@@ -8,7 +8,7 @@ interface QueryStatePanelProps {
   retrying?: boolean;
 }
 
-function getQueryErrorMessage(error: unknown, fallback = "Failed to load data."): string {
+export function getQueryErrorMessage(error: unknown, fallback = "Failed to load data."): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
   }

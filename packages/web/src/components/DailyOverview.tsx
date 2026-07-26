@@ -24,6 +24,7 @@ import type {
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface DailyOverviewProps {
   endDate?: string;
@@ -35,6 +36,10 @@ interface DailyOverviewProps {
   workloadLoading?: boolean;
   strainTargetLoading?: boolean;
   sleepLoading?: boolean;
+  readinessError?: unknown;
+  workloadError?: unknown;
+  strainTargetError?: unknown;
+  sleepError?: unknown;
   embedded?: boolean;
 }
 
@@ -518,6 +523,14 @@ function RingSkeleton() {
   );
 }
 
+function RingQueryError({ label, error }: { label: string; error: unknown }) {
+  return (
+    <div role="alert" aria-label={`${label} error`} className="max-w-[180px] text-center text-xs">
+      <QueryStatePanel error={error} height={72} />
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────
 
 type ExpandedRing = "recovery" | "strain" | "sleep" | null;
@@ -539,6 +552,10 @@ export function DailyOverview({
   workloadLoading = false,
   strainTargetLoading = false,
   sleepLoading = false,
+  readinessError,
+  workloadError,
+  strainTargetError,
+  sleepError,
   embedded = false,
 }: DailyOverviewProps) {
   const [expandedRing, setExpandedRing] = useState<ExpandedRing>(null);
@@ -568,9 +585,14 @@ export function DailyOverview({
     recoveryScore != null ||
     (workloadRatio?.timeSeries?.length ?? 0) > 0 ||
     freshSleepPerformance != null;
+  const hasAnyError =
+    readinessError != null ||
+    workloadError != null ||
+    strainTargetError != null ||
+    sleepError != null;
 
   // Hide the entire section only once all queries have resolved and none have data
-  if (allLoaded && !hasAnyData) {
+  if (allLoaded && !hasAnyData && !hasAnyError) {
     return null;
   }
 
@@ -598,87 +620,101 @@ export function DailyOverview({
       </div>
 
       <div className="flex items-center justify-center gap-6 sm:gap-10 lg:gap-14 flex-wrap">
-        {readinessLoading ? (
-          <RingSkeleton />
-        ) : recoveryScore != null ? (
-          <ReadinessRing
-            score={recoveryScore}
-            onClick={() => toggle("recovery")}
-            expanded={expandedRing === "recovery"}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <ScoreRing
-              value={0}
-              maxValue={100}
-              color={chartThemeColors.gridLine}
+        <div className="flex flex-col items-center gap-2">
+          {readinessLoading ? (
+            <RingSkeleton />
+          ) : recoveryScore != null ? (
+            <ReadinessRing
+              score={recoveryScore}
               onClick={() => toggle("recovery")}
               expanded={expandedRing === "recovery"}
-              label="Recovery"
-            >
-              <span className="text-2xl font-bold text-subtle">--</span>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
-                Recovery
-              </span>
-            </ScoreRing>
-            <span className="text-xs text-dim">No data</span>
-          </div>
-        )}
+            />
+          ) : readinessError == null ? (
+            <div className="flex flex-col items-center gap-2">
+              <ScoreRing
+                value={0}
+                maxValue={100}
+                color={chartThemeColors.gridLine}
+                onClick={() => toggle("recovery")}
+                expanded={expandedRing === "recovery"}
+                label="Recovery"
+              >
+                <span className="text-2xl font-bold text-subtle">--</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
+                  Recovery
+                </span>
+              </ScoreRing>
+              <span className="text-xs text-dim">No data</span>
+            </div>
+          ) : null}
+          {readinessError != null ? (
+            <RingQueryError label="Recovery" error={readinessError} />
+          ) : null}
+        </div>
 
-        {strainLoading ? (
-          <RingSkeleton />
-        ) : (workloadRatio?.timeSeries?.length ?? 0) > 0 ? (
-          <StrainRing
-            strain={strain}
-            targetFraction={targetFraction}
-            onClick={() => toggle("strain")}
-            expanded={expandedRing === "strain"}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <ScoreRing
-              value={0}
-              maxValue={21}
-              color={chartThemeColors.gridLine}
+        <div className="flex flex-col items-center gap-2">
+          {strainLoading ? (
+            <RingSkeleton />
+          ) : (workloadRatio?.timeSeries?.length ?? 0) > 0 ? (
+            <StrainRing
+              strain={strain}
+              targetFraction={targetFraction}
               onClick={() => toggle("strain")}
               expanded={expandedRing === "strain"}
-              label="Strain"
-            >
-              <span className="text-2xl font-bold text-subtle">--</span>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
-                Strain
-              </span>
-            </ScoreRing>
-            <span className="text-xs text-dim">No data</span>
-          </div>
-        )}
+            />
+          ) : workloadError == null && strainTargetError == null ? (
+            <div className="flex flex-col items-center gap-2">
+              <ScoreRing
+                value={0}
+                maxValue={21}
+                color={chartThemeColors.gridLine}
+                onClick={() => toggle("strain")}
+                expanded={expandedRing === "strain"}
+                label="Strain"
+              >
+                <span className="text-2xl font-bold text-subtle">--</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
+                  Strain
+                </span>
+              </ScoreRing>
+              <span className="text-xs text-dim">No data</span>
+            </div>
+          ) : null}
+          {workloadError != null ? <RingQueryError label="Strain" error={workloadError} /> : null}
+          {strainTargetError != null ? (
+            <RingQueryError label="Strain target" error={strainTargetError} />
+          ) : null}
+        </div>
 
-        {sleepLoading ? (
-          <RingSkeleton />
-        ) : freshSleepPerformance != null ? (
-          <SleepRing
-            performance={freshSleepPerformance}
-            onClick={() => toggle("sleep")}
-            expanded={expandedRing === "sleep"}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <ScoreRing
-              value={0}
-              maxValue={100}
-              color={chartThemeColors.gridLine}
+        <div className="flex flex-col items-center gap-2">
+          {sleepLoading ? (
+            <RingSkeleton />
+          ) : freshSleepPerformance != null ? (
+            <SleepRing
+              performance={freshSleepPerformance}
               onClick={() => toggle("sleep")}
               expanded={expandedRing === "sleep"}
-              label="Sleep"
-            >
-              <span className="text-2xl font-bold text-subtle">--</span>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
-                Sleep
-              </span>
-            </ScoreRing>
-            <span className="text-xs text-dim">No data</span>
-          </div>
-        )}
+            />
+          ) : sleepError == null ? (
+            <div className="flex flex-col items-center gap-2">
+              <ScoreRing
+                value={0}
+                maxValue={100}
+                color={chartThemeColors.gridLine}
+                onClick={() => toggle("sleep")}
+                expanded={expandedRing === "sleep"}
+                label="Sleep"
+              >
+                <span className="text-2xl font-bold text-subtle">--</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
+                  Sleep
+                </span>
+              </ScoreRing>
+              <span className="text-xs text-dim">No data</span>
+            </div>
+          ) : null}
+          {sleepError != null ? <RingQueryError label="Sleep" error={sleepError} /> : null}
+        </div>
       </div>
 
       {/* Expandable breakdown panels — kept mounted for open/close animation */}

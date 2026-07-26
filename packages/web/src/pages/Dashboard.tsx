@@ -105,17 +105,17 @@ export function buildHealthMetrics(trendData: TrendRow | undefined): HealthStatu
 }
 
 export function isCoreDashboardReady({
-  readinessSettled,
-  workloadRatioSettled,
-  strainTargetSettled,
-  sleepPerformanceSettled,
+  readinessReady,
+  workloadRatioReady,
+  strainTargetReady,
+  sleepPerformanceReady,
 }: {
-  readinessSettled: boolean;
-  workloadRatioSettled: boolean;
-  strainTargetSettled: boolean;
-  sleepPerformanceSettled: boolean;
+  readinessReady: boolean;
+  workloadRatioReady: boolean;
+  strainTargetReady: boolean;
+  sleepPerformanceReady: boolean;
 }): boolean {
-  return readinessSettled && workloadRatioSettled && strainTargetSettled && sleepPerformanceSettled;
+  return readinessReady && workloadRatioReady && strainTargetReady && sleepPerformanceReady;
 }
 
 export function Dashboard() {
@@ -129,11 +129,21 @@ export function Dashboard() {
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const coreDashboardReady = isCoreDashboardReady({
-    readinessSettled: readinessData.isFetched,
-    workloadRatioSettled: workloadRatio.isFetched,
-    strainTargetSettled: strainTarget.isFetched,
-    sleepPerformanceSettled: sleepPerformance.isFetched,
+    readinessReady:
+      readinessData.data !== undefined || (readinessData.isFetched && readinessData.error == null),
+    workloadRatioReady:
+      workloadRatio.data !== undefined || (workloadRatio.isFetched && workloadRatio.error == null),
+    strainTargetReady:
+      strainTarget.data !== undefined || (strainTarget.isFetched && strainTarget.error == null),
+    sleepPerformanceReady:
+      sleepPerformance.data !== undefined ||
+      (sleepPerformance.isFetched && sleepPerformance.error == null),
   });
+  const coreDashboardLoading =
+    readinessData.isLoading ||
+    workloadRatio.isLoading ||
+    strainTarget.isLoading ||
+    sleepPerformance.isLoading;
   const insightsQuery = trpc.insights.compute.useQuery(
     { days, endDate },
     { enabled: coreDashboardReady },
@@ -187,13 +197,24 @@ export function Dashboard() {
         {trends.error ? <QueryStatePanel error={trends.error} height={72} /> : null}
       </>
     );
-  const insightStatePanel = insightsQuery.isLoading ? (
-    <QueryStatePanel variant="loading" height={160} />
-  ) : insightsQuery.error ? (
-    <QueryStatePanel error={insightsQuery.error} height={160} />
-  ) : !topInsight ? (
-    <QueryStatePanel variant="empty" message="No insights yet." height={160} />
-  ) : null;
+  const insightStatePanel =
+    !coreDashboardReady && coreDashboardLoading ? (
+      <QueryStatePanel variant="loading" height={160} />
+    ) : !coreDashboardReady ? (
+      <QueryStatePanel
+        variant="empty"
+        message="Insights unavailable until dashboard data loads."
+        height={160}
+      />
+    ) : insightsQuery.isLoading ? (
+      <QueryStatePanel variant="loading" height={160} />
+    ) : insightsQuery.error ? (
+      <QueryStatePanel error={insightsQuery.error} height={160} />
+    ) : !insightsQuery.isFetched ? (
+      <QueryStatePanel variant="loading" height={160} />
+    ) : !topInsight ? (
+      <QueryStatePanel variant="empty" message="No insights yet." height={160} />
+    ) : null;
 
   return (
     <PageLayout headerChildren={undefined}>
@@ -212,6 +233,10 @@ export function Dashboard() {
         workloadLoading={workloadRatio.isLoading}
         strainTargetLoading={strainTarget.isLoading}
         sleepLoading={sleepPerformance.isLoading}
+        readinessError={readinessData.error}
+        workloadError={workloadRatio.error}
+        strainTargetError={strainTarget.error}
+        sleepError={sleepPerformance.error}
       />
       <DashboardEvidenceOverview
         days={days}
