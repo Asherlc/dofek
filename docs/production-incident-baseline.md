@@ -17752,110 +17752,6 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Future native input categories must be added
   to the single named classifier with a regression case in the same change.
 
-## 2026-07-25 — Public Packages Broke Clean CI and the Server Image
-
-- **Status:** Direct fixes validated locally; replacement CI pending.
-- **Symptoms:** The first CI run for the public-package release change failed
-  typechecking, unit tests, and downstream jobs with unresolved
-  `@dofek/*` workspace imports.
-- **User impact:** The pull request could not merge, and automatic npm releases
-  could not safely begin from `main`.
-- **Evidence:** The exact failing command was the root `pnpm typecheck` job. Its
-  first fatal line was
-  `src/client.ts(1,43): error TS2307: Cannot find module
-  '@dofek/provider-http/rate-limit'`. Subsequent failures reported missing
-  `@dofek/training/training`, `@dofek/scoring`, and `@dofek/zones` modules.
-  The same checkout also reported the unlisted `swift` binary from the WHOOP
-  BLE npm manifest and a Node 26 `module.register()` deprecation emitted by the
-  older `tsx` CLI. A later Knip job failed at `pnpm knip` with
-  `Unused devDependencies (1): supports-color package.json:270:6`. The final
-  mutation matrix then failed at `packages/peloton-client/src/types.ts:1-102`
-  with `No tests were executed`. After package discovery was corrected, the
-  Peloton error shard exposed five uncovered `PelotonAuthFlowError` mutants and
-  failed with a 44.44% mutation score. A subsequent E2E run built the production
-  server image but failed provider registration. Its first fatal application
-  line was `Failed to register peloton provider: Cannot find package
-  '@dofek/peloton' imported from /app/src/providers/peloton.ts`.
-- **Root cause:** The new package `exports` maps pointed at ignored compiled
-  `dist` or `build` directories. Those directories existed in the development
-  workspace, masking the defect, but were absent from a clean CI checkout.
-  Separately, the mutation Vitest project omitted the newly extracted Peloton
-  and Xert test directories. Once discovered, the extracted Peloton tests did
-  not exercise authorization failure branches, API method error paths, or
-  optional raw-workout fields deeply enough to satisfy the mutation gate. The
-  production Dockerfile also maintained explicit workspace-package allowlists
-  for dependency manifests, source copies, and runtime links; all three omitted
-  the newly extracted Peloton and Xert clients.
-- **Fix / mitigation:** Local workspace exports now resolve canonical source
-  files, while `publishConfig` rewrites npm tarball exports to compiled
-  JavaScript and declarations. pnpm owns packing and publishing; Lerna remains
-  only for independent changed-package versioning. The WHOOP BLE manifest no
-  longer exposes Swift as an npm lifecycle binary, and `tsx` was updated to its
-  current stable release. The root `supports-color` dependency makes pnpm
-  resolve one shared Sentry peer context across the root and server workspaces;
-  it is declared in Knip's `ignoreDependencies` because its use occurs during
-  dependency resolution rather than through a source import. The canonical
-  mutation test project now includes both newly extracted Peloton and Xert
-  packages, allowing Vitest's related-test analysis to discover their
-  colocated tests. The Peloton error tests now exercise authorization-flow
-  diagnostics both with and without optional upstream details; its auth,
-  client, and parsing tests now cover redirect and cookie behavior, upstream
-  failure paths, schema validation, and present or absent optional metadata. The
-  production image now installs both extracted client manifests, copies their
-  source and package metadata, and creates their `@dofek/peloton` and
-  `@dofek/xert` runtime links.
-  pnpm documents that supported `publishConfig` fields replace their
-  development values during packing, and Knip documents `ignoreDependencies`
-  for dependencies whose use static analysis cannot observe:
-  <https://pnpm.io/package_json#publishconfig> and
-  <https://knip.dev/guides/handling-issues>.
-- **Validation:** With all 15 generated package-output directories temporarily
-  removed, root typechecking and 1,091 public-package tests passed. All 15
-  packages then built and packed; every tarball contained compiled output,
-  exposed no source paths, and contained no unresolved `workspace:` protocol.
-  The full Docker-free suite passed 13,758 tests. A frozen pnpm 11 install, 117
-  Swift tests, Swift manifest resolution from outside the package directory,
-  release-workflow linting, the corrected Knip check, and all 7 cache-module
-  peer-context tests also passed. The previously failing Peloton mutation shard
-  discovered and ran 6 related tests; its 7 schema object mutants were
-  intentionally static and ignored by the existing `ignoreStatic` policy. An
-  Xert parsing shard ran 13 related tests and killed all 7 non-static mutants
-  for a 100% mutation score. The Peloton error shard ran 19 related tests and
-  killed all 9 non-static mutants for a 100% mutation score. The Peloton auth
-  shard improved from 45.03% to 82.46%; the client and parsing shards improved
-  from 55.77% and 54.72% to above 96%. Root-provider assertions for auth
-  causes, sync-window boundaries, metric slugs, values, and timestamps raised
-  its affected mutation shard from 62.16% to 94.59%. The corrected production
-  server target built from a clean Docker context, and the resulting image
-  imported both extracted packages successfully through Node's native
-  TypeScript execution mode.
-- **Remaining risk / follow-up:** Replacement GitHub Actions checks must pass on
-  Node 26 and complete E2E provider registration before merge. Future
-  public-package changes should validate a clean source checkout, the packed
-  manifest, and production-image package resolution, because any one check
-  alone can hide a release or deployment regression.
-
-## 2026-07-25 — Semgrep Runner Could Not Pull Its Container
-
-- **Status:** Resolved on the second workflow attempt.
-- **Symptoms:** The Semgrep workflow failed while GitHub Actions initialized
-  the pinned Semgrep job container, before repository checkout or analysis.
-- **User impact:** No production impact and no security finding. The pull
-  request's SAST merge gate could not complete on its first attempt.
-- **Evidence:** The exact failing step was `Initialize containers`. Each of its
-  three `docker pull` attempts failed, with the first fatal line
-  `Get "https://registry-1.docker.io/v2/": context deadline exceeded`.
-- **Root cause:** The hosted runner could not reach Docker Hub within the
-  container-pull deadline; no repository command or source file had executed.
-- **Fix / mitigation:** Rerun the failed workflow attempt against the same
-  commit and pinned image after identifying the external registry timeout.
-- **Validation:** The preceding Semgrep run passed on the parent commit, and
-  the replacement attempt completed successfully against the affected commit
-  with the same pinned image.
-- **Remaining risk / follow-up:** If the same registry timeout repeats, treat
-  Docker Hub availability as an external CI dependency and investigate a
-  controlled image mirror before changing scan behavior.
-
 ## 2026-07-25 — Provider-Connection Migration Failed on Legacy Production Shapes
 
 - **Status:** Root causes fixed; replacement main CI and production deployment
@@ -17972,6 +17868,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   failure as external registry availability after confirming the digest and
   command are unchanged; investigate separately if pulls fail persistently.
 
+## 2026-07-26 — Empty Polarization Model Triggered a Live Sensor Scan
+
+- **Status:** Direct fix validated locally; PR CI and production deployment
+  pending.
+- **Symptoms:** `efficiency.polarizationTrend` repeatedly reached the
+  120-second production query timeout. The Endurance page kept the
+  Polarization Index card in its loading state while the request remained
+  active.
+- **User impact:** Users could not view either polarization data or the
+  no-data state for the selected range.
+- **Evidence:** The production route timed out repeatedly during the audit.
+  The TDD unit reproduction reported `expected "spy" to be called 1 times, but
+  got 2 times`. A real-ClickHouse fixture then populated three deduped
+  heart-rate rows while leaving `activity_polarization_zones` empty; the
+  pre-fix repository returned a computed week with `maxHr: 190`, proving that
+  it queried the raw-derived models after the serving query returned no rows.
+- **Root cause:** The repository treated an empty
+  `activity_polarization_zones` result as a cache miss and synchronously
+  recomputed the trend from `activity_summary` and `deduped_sensor`.
+- **Fix / mitigation:** Make `activity_polarization_zones` the sole request-time
+  source and return `{ maxHr: null, weeks: [] }` when it is empty. No retry,
+  timeout, fallback, or resource limit was added.
+- **Validation:** The focused repository and router unit suites pass. The
+  real-ClickHouse regression fixture verifies three raw sensor rows, zero
+  serving rows, an empty response, and exactly one serving-model query. The
+  existing router integration suite, full lint, and root/server/web
+  typechecks also pass.
+- **Remaining risk / follow-up:** Complete PR CI, deploy the fix, confirm route
+  latency remains bounded, and monitor the asynchronous analytics build so a
+  stale serving model is diagnosed out of band rather than recomputed in a
+  request.
+
 ## 2026-07-25 — Metric-Stream Sink Failed on a CommonJS Named Import
 
 - **Status:** Direct fix validated locally; production deployment pending.
@@ -18004,146 +17932,3 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Deploy the fixed image, confirm the sink task
   remains stable, and verify the accumulated Redpanda events flow into
   ClickHouse.
-
-## 2026-07-26 — WHOOP BLE Initialization Ran While the App Was Backgrounded
-
-- **Status:** Direct fix validated locally; merge and mobile rollout pending.
-- **Symptoms:** Sentry issue `DOFEK-MOBILE-1D` recorded a `DISCONNECTED` error
-  from the `whoop-ble-init-sync` path while the app was not in the foreground.
-- **User impact:** WHOOP streaming could fail to initialize until a later sync
-  attempt, leaving sensor samples unavailable during that interval.
-- **Evidence:** The production event came from mobile build `1784961889` with
-  `app.in_foreground:false` and telemetry source `whoop-ble-init-sync`.
-  `initBackgroundWhoopBleSync` registered an app-state listener but then
-  unconditionally invoked the foreground BLE connection path regardless of
-  `AppState.currentState`.
-- **Root cause:** Background sync initialization treated setup as proof that
-  the app was active, so it could start a foreground BLE connection after the
-  application had already moved to the background.
-- **Fix / mitigation:** Run the immediate initialization sync only when
-  `AppState.currentState` is `active`; otherwise defer it to the existing
-  foreground transition listener. The explicit native background-refresh path
-  remains unchanged.
-- **Validation:** Regression tests first reproduced the unwanted background
-  connection and lifecycle races, then all 47 focused WHOOP BLE sync tests
-  passed after the fix.
-  Targeted Biome checks and the mobile TypeScript typecheck also pass.
-- **Remaining risk / follow-up:** Merge through normal CI and release the
-  mobile change. Because the Simulator cannot exercise Bluetooth hardware
-  ([Expo simulator limitations](https://docs.expo.dev/workflow/ios-simulator/#limitations)),
-  validate on a physical device by enabling WHOOP sync, backgrounding during
-  initialization, confirming no `whoop-ble-init-sync` error, then foregrounding
-  and confirming streaming resumes. Resolve `DOFEK-MOBILE-1D` after confirming
-  no recurrence on the fixed release.
-
-## 2026-07-26 — Current dbt Run Statuses Failed Artifact Validation
-
-- **Status:** Direct fix validated locally; merge and production deployment
-  pending.
-- **Symptoms:** The production analytics worker completed a dbt invocation but
-  then raised a Zod validation error while parsing `run_results.json` in
-  [Sentry issue DOFEK-SERVER-5D](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5D).
-- **User impact:** The worker could not record the completed invocation's model
-  outcomes or finish that analytics refresh cycle.
-- **Evidence:** The event at `2026-07-26T07:34:43.056Z` rejected
-  `results[12].status` because the application accepted only `success`, `pass`,
-  `warn`, `error`, `fail`, and `skipped`. The installed dbt 1.11 artifact
-  contract additionally defines `partial success`, `runtime error`, and
-  `no-op`; those values are also present in dbt's official
-  [run-results v6 JSON schema](https://schemas.getdbt.com/dbt/run-results/v6.json).
-- **Root cause:** The runtime validator duplicated an older subset of dbt's
-  status enum, so a valid artifact from the current pinned dbt version failed
-  at the application boundary.
-- **Fix / mitigation:** Accept all statuses in the current artifact contract,
-  classify `partial success` and `runtime error` as failed outcomes, and treat
-  the intentional `no-op` outcome as succeeded. Existing warning and skipped
-  semantics remain unchanged.
-- **Validation:** A regression test first reproduced the exact Zod rejection
-  for all three omitted statuses. The focused artifact suite now passes all
-  seven tests, targeted Biome checks report no findings, and the root
-  TypeScript typecheck passes.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy the corrected
-  parser, observe a complete analytics cycle, then resolve
-  `DOFEK-SERVER-5D` if it does not recur on the fixed release.
-
-## 2026-07-26 — Monthly Report Timed Out on Recursive Analytics Views
-
-- **Status:** Direct fix validated locally and against production data; merge
-  and production deployment pending.
-- **Symptoms:** Monthly report requests repeatedly raised ClickHouse client
-  timeouts in
-  [Sentry issue DOFEK-SERVER-5C](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5C).
-- **User impact:** The monthly report could not load before the request's
-  120-second execution deadline.
-- **Evidence:** The exact parameterized production repository query timed out
-  after 120.012 seconds while reading 3,777,652 rows and 995.16 MiB, with a
-  1.04 GiB peak (`system.query_log` query
-  `0d06d6a2-85ac-4307-b9d3-f7e5da89f1f3`). The equivalent aggregation over the compact
-  `activity_summary`, `daily_sleep`, and `daily_recovery` serving models
-  completed against the same production data in 0.101 seconds
-  (`system.query_log` query `f077c95b-74ee-444f-b293-462d55824277`), reading
-  8,146 rows and 244.61 KiB with a 7.87 MiB peak. The physical
-  serving tables contained only 3,653 activity-summary rows, 330 daily-sleep
-  rows, and 119 daily-recovery rows.
-- **Classification:** Following the
-  [loading-performance runbook](performance/loading-performance-runbook.md),
-  this is a request-time query-shape bottleneck for
-  `monthlyReport.report`, supported by Sentry trace
-  `e3a2fe258e538c23a152e01cddc739e5` and the production ClickHouse query-log
-  records above. Axiom could not be queried because the connected user token
-  had expired, so the exact Sentry and ClickHouse records are the checked-in
-  equivalent evidence required by the runbook.
-- **Root cause:** The request path joined `analytics.v_activity` and read
-  `analytics.v_sleep`, `analytics.v_daily_metrics`, and the resting-heart-rate
-  view, forcing global recursive deduplication and sensor aggregation for a
-  small user-and-month result that already existed in compact dbt-owned
-  serving models.
-- **Fix / mitigation:** Read current activities from
-  `analytics.activity_summary`, daily sleep from `analytics.daily_sleep FINAL`,
-  and daily vitals from `analytics.daily_recovery FINAL`. Preserve the
-  monthly response shape and calculations without adding a timeout, retry, or
-  cache fallback. ClickHouse documents `FINAL` as the query modifier that
-  applies an engine's merge logic to the selected data:
-  <https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier>.
-- **Validation:** A real-ClickHouse regression test first failed after its
-  recursive test views were removed, reproducing the old repository's hard
-  dependency on `v_activity`. It now seeds only the three compact serving
-  models and verifies the complete monthly report result with those recursive
-  views absent. The focused integration test passes.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy the query,
-  invoke the production monthly report, confirm sub-second completion in
-  ClickHouse query history, and resolve `DOFEK-SERVER-5C` if no fixed-release
-  event recurs. The weekly report contains a similar recursive query and should
-  be investigated separately rather than silently expanded into this fix.
-
-## 2026-07-26 — Empty Polarization Model Triggered a Live Sensor Scan
-
-- **Status:** Direct fix validated locally; PR CI and production deployment
-  pending.
-- **Symptoms:** `efficiency.polarizationTrend` repeatedly reached the
-  120-second production query timeout. The Endurance page kept the
-  Polarization Index card in its loading state while the request remained
-  active.
-- **User impact:** Users could not view either polarization data or the
-  no-data state for the selected range.
-- **Evidence:** The production route timed out repeatedly during the audit.
-  The TDD unit reproduction reported `expected "spy" to be called 1 times, but
-  got 2 times`. A real-ClickHouse fixture then populated three deduped
-  heart-rate rows while leaving `activity_polarization_zones` empty; the
-  pre-fix repository returned a computed week with `maxHr: 190`, proving that
-  it queried the raw-derived models after the serving query returned no rows.
-- **Root cause:** The repository treated an empty
-  `activity_polarization_zones` result as a cache miss and synchronously
-  recomputed the trend from `activity_summary` and `deduped_sensor`.
-- **Fix / mitigation:** Make `activity_polarization_zones` the sole request-time
-  source and return `{ maxHr: null, weeks: [] }` when it is empty. No retry,
-  timeout, fallback, or resource limit was added.
-- **Validation:** The focused repository and router unit suites pass. The
-  real-ClickHouse regression fixture verifies three raw sensor rows, zero
-  serving rows, an empty response, and exactly one serving-model query. The
-  existing router integration suite, full lint, and root/server/web
-  typechecks also pass.
-- **Remaining risk / follow-up:** Complete PR CI, deploy the fix, confirm route
-  latency remains bounded, and monitor the asynchronous analytics build so a
-  stale serving model is diagnosed out of band rather than recomputed in a
-  request.
