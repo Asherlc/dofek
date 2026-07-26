@@ -529,7 +529,9 @@ describe("GarminProvider.authSetup()", () => {
     const forwardedFetch = mocks.signIn.mock.calls[0]?.[3];
     if (typeof forwardedFetch !== "function") throw new Error("expected forwarded fetch function");
     await forwardedFetch("https://example.com");
-    expect(customFetch).toHaveBeenCalledWith("https://example.com");
+    expect(customFetch).toHaveBeenCalledWith("https://example.com", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.accessToken).toBe(JSON.stringify(tokens));
     expect(result.scopes).toBe(INTERNAL_SCOPE_MARKER);
   });
@@ -660,7 +662,10 @@ describe("GarminProvider.authSetup()", () => {
     const nonOauthUrl = "https://connect.garmin.com/api/data";
     const init = { method: "POST" };
     await forwardedFetch(nonOauthUrl, init);
-    expect(customFetch).toHaveBeenCalledWith(nonOauthUrl, init);
+    expect(customFetch).toHaveBeenCalledWith(nonOauthUrl, {
+      ...init,
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("handles invalid URLs passed to the forwarded fetch", async () => {
