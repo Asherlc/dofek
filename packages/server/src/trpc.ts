@@ -48,8 +48,9 @@ const UNEXPECTED_SERVER_ERROR_MESSAGE =
 
 function shouldSanitizeInternalError(error: TRPCError): boolean {
   if (error.code !== "INTERNAL_SERVER_ERROR") return false;
-  if (error.cause) return error.message === error.cause.message;
-  return error.message === error.code;
+  // tRPC copies an unknown cause's message onto its wrapper. An explicitly authored
+  // client-safe TRPCError instead has a distinct actionable message, which we preserve.
+  return error.message === error.code || error.message === error.cause?.message;
 }
 
 const trpc = initTRPC.context<Context>().create({

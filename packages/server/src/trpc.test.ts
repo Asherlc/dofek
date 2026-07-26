@@ -44,6 +44,8 @@ describe("tRPC error serialization", () => {
     expect(result.body).not.toContain("SELECT user_id");
     expect(result.body).not.toContain("private-session");
     expect(result.body).not.toContain("params:");
+    expect(result.body).toContain('"code":"INTERNAL_SERVER_ERROR"');
+    expect(result.body).toContain('"httpStatus":500');
     expect(result.observedError?.cause).toBe(databaseError);
   });
 
@@ -62,6 +64,38 @@ describe("tRPC error serialization", () => {
     expect(result.observedError?.cause).toBe(validationResult.error);
   });
 
+  it("hides a default internal message even when the error has a cause", async () => {
+    const rootCause = new Error("private database failure");
+    const defaultError = new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "INTERNAL_SERVER_ERROR",
+      cause: rootCause,
+    });
+
+    const result = await serializeTransportError(defaultError);
+
+    expect(result.body).toContain(safeInternalErrorMessage);
+    expect(result.body).not.toContain(rootCause.message);
+    expect(result.observedError).toBe(defaultError);
+    expect(result.observedError?.cause).toBe(rootCause);
+  });
+
+  it("preserves non-internal error messages", async () => {
+    const badRequestCause = new Error("Choose a supported date range.");
+    const badRequestError = new TRPCError({
+      code: "BAD_REQUEST",
+      cause: badRequestCause,
+    });
+
+    const result = await serializeTransportError(badRequestError);
+
+    expect(result.status).toBe(400);
+    expect(result.body).toContain(badRequestCause.message);
+    expect(result.body).not.toContain(safeInternalErrorMessage);
+    expect(result.observedError).toBe(badRequestError);
+    expect(result.observedError?.cause).toBe(badRequestCause);
+  });
+
   it("preserves explicit actionable internal error messages", async () => {
     const rootCause = new Error("private upstream response");
     const explicitError = new TRPCError({
@@ -77,6 +111,19 @@ describe("tRPC error serialization", () => {
     expect(result.body).not.toContain(rootCause.message);
     expect(result.observedError).toBe(explicitError);
     expect(result.observedError?.cause).toBe(rootCause);
+  });
+
+  it("preserves explicit actionable internal error messages without a cause", async () => {
+    const explicitError = new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Reconnect your account and try again.",
+    });
+
+    const result = await serializeTransportError(explicitError);
+
+    expect(result.body).toContain("Reconnect your account and try again.");
+    expect(result.body).not.toContain(safeInternalErrorMessage);
+    expect(result.observedError).toBe(explicitError);
   });
 });
 
