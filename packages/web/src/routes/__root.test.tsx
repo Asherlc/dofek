@@ -52,6 +52,34 @@ vi.mock("../lib/processing-alerts-context.tsx", () => ({
   useActiveProcessingAlertCount: () => 0,
 }));
 
+vi.mock("../components/UnitProvider.tsx", () => ({
+  UnitProvider: ({
+    children,
+    settingsEnabled,
+  }: {
+    children: React.ReactNode;
+    settingsEnabled: boolean;
+  }) => (
+    <div data-testid="unit-provider" data-settings-enabled={String(settingsEnabled)}>
+      {children}
+    </div>
+  ),
+}));
+
+vi.mock("../components/DashboardLayoutProvider.tsx", () => ({
+  DashboardLayoutProvider: ({
+    children,
+    settingsEnabled,
+  }: {
+    children: React.ReactNode;
+    settingsEnabled: boolean;
+  }) => (
+    <div data-testid="dashboard-layout-provider" data-settings-enabled={String(settingsEnabled)}>
+      {children}
+    </div>
+  ),
+}));
+
 // Import triggers createRootRoute, which captures the component.
 import "./__root.tsx";
 
@@ -334,6 +362,36 @@ describe("AuthGate", () => {
     const { getByTestId } = renderAuthGate();
 
     expect(getByTestId("outlet")).toBeTruthy();
+  });
+
+  it("loads user settings only after authentication", () => {
+    mockUseAuth.mockReturnValue({
+      user: authenticatedUser,
+      isLoading: false,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({ pathname: "/dashboard" });
+
+    const view = renderAuthGate();
+
+    expect(view.getByTestId("unit-provider").dataset.settingsEnabled).toBe("true");
+    expect(view.getByTestId("dashboard-layout-provider").dataset.settingsEnabled).toBe("true");
+  });
+
+  it("keeps protected settings disabled on signed-out public pages", () => {
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({ pathname: "/login" });
+
+    const view = renderAuthGate();
+
+    expect(view.getByTestId("unit-provider").dataset.settingsEnabled).toBe("false");
+    expect(view.getByTestId("dashboard-layout-provider").dataset.settingsEnabled).toBe("false");
   });
 
   it("clears in-memory query data when the active user changes", () => {
