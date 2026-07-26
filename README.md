@@ -22,6 +22,7 @@ If you are starting cold and do not want to hunt through agent notes, begin here
 - [docs/exercise-metadata.md](docs/exercise-metadata.md): strength exercise muscle metadata source, overrides, and update workflow.
 - [docs/testing.md](docs/testing.md): testing patterns used across the repo.
 - [docs/processing-status-runbook.md](docs/processing-status-runbook.md): durable provider/import processing evidence and operational diagnosis.
+- [docs/database-backup-recovery-runbook.md](docs/database-backup-recovery-runbook.md): production backup freshness and isolated restore verification.
 
 ## Architecture
 

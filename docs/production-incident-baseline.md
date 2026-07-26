@@ -18115,3 +18115,53 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   ClickHouse query history, and resolve `DOFEK-SERVER-5C` if no fixed-release
   event recurs. The weekly report contains a similar recursive query and should
   be investigated separately rather than silently expanded into this fix.
+
+## 2026-07-25 — Oracle Override Disabled the Database Backup Scheduler
+
+- **Status:** Root cause confirmed; direct source fix and external freshness
+  monitor implemented. Production deployment, a fresh backup, and isolated
+  restore verification remain pending.
+- **Symptoms:** The `dofek-db-backups` R2 bucket contained only four objects,
+  and its newest object was last modified at `2026-06-09T18:47:00Z`, more than
+  46 days before discovery.
+- **User impact:** Production had no current PostgreSQL recovery point and
+  violated the documented requirement that the newest backup be less than 24
+  hours old.
+- **Evidence:** Production `dofek_databasus` had a clean desired state of
+  `0/0`, no current or previous tasks, and no application crash line. Its
+  persistent state was last written on 2026-06-07. Deploy run
+  [27097059759](https://github.com/Asherlc/dofek/actions/runs/27097059759)
+  ran `docker stack deploy` with `deploy/stack.oracle.yml`, logged
+  `Updating service dofek_databasus`, and then removed the service endpoint.
+  The exact causal configuration was
+  `services.databasus.deploy.replicas: 0`; the lack of a fatal Databasus log is
+  expected because Swarm was applying the declared desired state. Docker
+  documents service tasks as the mechanism by which Swarm maintains a
+  service's desired state:
+  <https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling>.
+- **Root cause:** The Oracle override misclassified Databasus as an optional
+  management UI and scaled it to zero on every production deployment, stopping
+  the process that owned the backup schedule. No independent R2 freshness
+  monitor detected the gap.
+- **Fix / mitigation:** Remove only the Databasus zero-replica override, require
+  the service to converge during production deploys, and add a fail-loud
+  paginated R2 freshness checker that runs every six hours and after production
+  deployment. Add the
+  [database backup recovery runbook](database-backup-recovery-runbook.md) for
+  scheduler triage and real restore verification. No retry, timeout increase,
+  fallback, or warning-only behavior was added.
+- **Validation:** Unit tests first reproduced empty-bucket, missing-timestamp,
+  stale-boundary, newest-object, and pagination failures. The focused checker
+  suite passes after implementation. A read-only run against production R2
+  then rejected the known newest recovery point as 1,123.47 hours old. The
+  rendered Oracle stack resolves Databasus to one replica. Repository lint,
+  root/server/web typechecks, the new workflow's Actionlint validation, and
+  comparison of the deploy workflow against its existing Actionlint findings
+  all pass. The full Docker-free suite remains a serialized pre-merge check.
+- **Remaining risk / follow-up:** Deploy the source fix, confirm Databasus
+  retained its database, schedule, R2 target, and encryption key, trigger a
+  fresh backup, require the checker to pass, and restore that backup into an
+  isolated database. Protect and verify recovery of Databasus's `secret.key`;
+  the official manual recovery path requires it alongside the backup and
+  metadata objects:
+  <https://databasus.com/how-to-recover-without-databasus>.

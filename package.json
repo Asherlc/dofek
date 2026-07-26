@@ -143,6 +143,7 @@
     "test": "vitest --project unit --project mobile",
     "clickhouse-cdc": "tsx scripts/with-env.ts -- tsx scripts/run-clickhouse-cdc.ts",
     "check:clickhouse-cdc": "tsx scripts/with-env.ts -- tsx scripts/check-clickhouse-cdc.ts",
+    "check:database-backup-freshness": "tsx scripts/check-database-backup-freshness.ts",
     "catch-up:metric-stream": "tsx scripts/with-env.ts -- tsx scripts/catch-up-clickhouse-metric-stream.ts",
     "backfill:body-measurements": "tsx scripts/with-env.ts -- tsx scripts/backfill-body-measurement-sample.ts",
     "backfill:climbing-attempt-count": "tsx scripts/with-env.ts -- tsx scripts/backfill-climbing-attempt-count.ts",
