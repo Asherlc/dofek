@@ -9,7 +9,7 @@ import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
-import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
+import { createCapturingMetricStreamPublisher, fakeJwt } from "./test-helpers.ts";
 import { WgerProvider } from "./wger.ts";
 
 // ============================================================
@@ -52,14 +52,6 @@ function fakeWeightEntry(overrides: Partial<FakeWgerWeightEntry> = {}): FakeWger
     weight: "82.5",
     ...overrides,
   };
-}
-
-function fakeJwt(expirationEpochSeconds: number): string {
-  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
-  const payload = Buffer.from(JSON.stringify({ exp: expirationEpochSeconds })).toString(
-    "base64url",
-  );
-  return `${header}.${payload}.signature`;
 }
 
 const refreshedAccessToken = fakeJwt(1_893_456_000);

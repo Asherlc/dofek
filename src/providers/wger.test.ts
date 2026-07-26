@@ -78,16 +78,8 @@ import {
   ProviderTokenRejectedError,
   RefreshTokenRevokedError,
 } from "./auth-errors.ts";
-import { createMockDatabase } from "./test-helpers.ts";
+import { createMockDatabase, fakeJwt } from "./test-helpers.ts";
 import { parseWgerWeightEntry, parseWgerWorkoutSession, WgerProvider } from "./wger.ts";
-
-function fakeJwt(expirationEpochSeconds: number): string {
-  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
-  const payload = Buffer.from(JSON.stringify({ exp: expirationEpochSeconds })).toString(
-    "base64url",
-  );
-  return `${header}.${payload}.signature`;
-}
 
 describe("parseWgerWorkoutSession", () => {
   it("parses a session with comment", () => {

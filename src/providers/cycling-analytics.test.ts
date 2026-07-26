@@ -560,6 +560,34 @@ describe("CyclingAnalyticsProvider", () => {
     });
   });
 
+  it("syncs with an unexpired personal token when deployment OAuth is not configured", async () => {
+    delete process.env.CYCLING_ANALYTICS_CLIENT_ID;
+    delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "personal-access-token",
+      refreshToken: null,
+      expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+      scopes: "read_rides",
+    });
+    const fetchFn = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer personal-access-token");
+      return Response.json({ rides: [] });
+    });
+    const { db } = createMockDatabase();
+
+    const result = await new CyclingAnalyticsProvider(fetchFn).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+    expect(fetchFn).toHaveBeenCalledOnce();
+  });
+
   it.each([401, 403])("rejects a personal token when validation returns %s", async (status) => {
     const setup = new CyclingAnalyticsProvider(
       async () => new Response("sensitive rejection response", { status }),

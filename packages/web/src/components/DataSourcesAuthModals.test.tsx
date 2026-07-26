@@ -139,7 +139,7 @@ describe("Data source authentication telemetry", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
 
-    await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(error.message));
     expect(mockCaptureException).toHaveBeenCalledWith(error, {
       operation: "tokenAuth.connect",
       providerId: "ultrahuman",

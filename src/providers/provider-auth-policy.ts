@@ -1,5 +1,5 @@
 import { CUSTOM_AUTH_SYNC_PROVIDER_IDS } from "../lib/custom-auth-providers.ts";
-import type { Provider, ProviderAuthSetup, ProviderAuthType } from "./types.ts";
+import { getProviderAuthTypeFromSetup, type Provider, type ProviderAuthSetup } from "./types.ts";
 
 /**
  * No provider may use deployment-wide user credentials. Keep this exported
@@ -25,14 +25,6 @@ export function isImportOnlyProvider(provider: Provider): boolean {
 export type PerUserAuthComplianceResult =
   | { ok: true }
   | { ok: false; providerId: string; reason: string };
-
-function getAuthTypeFromSetup(setup: ProviderAuthSetup): ProviderAuthType | "none" {
-  if (setup.automatedLogin) return "credential";
-  if (setup.oauth1Flow) return "oauth1";
-  if (setup.oauthConfig && setup.exchangeCode) return "oauth";
-  if (setup.manualToken) return "token";
-  return "none";
-}
 
 /**
  * Validates that a provider follows the per-user authentication policy.
@@ -80,7 +72,7 @@ export function checkPerUserAuthCompliance(provider: Provider): PerUserAuthCompl
     };
   }
 
-  const authType = getAuthTypeFromSetup(setup);
+  const authType = getProviderAuthTypeFromSetup(setup);
   if (authType === "none") {
     return {
       ok: false,

@@ -15,7 +15,7 @@ Supported connect flows:
 | OAuth 2.0 | Provider has a standard OAuth app | Strava, Oura, Withings |
 | OAuth 1.0 | Provider requires 3-legged OAuth 1 | FatSecret |
 | Credential (`automatedLogin`) | Email/password or token exchange without browser | Eight Sleep, Zwift, Amazfit/Zepp |
-| Personal token (`manualToken`) | User mints a personal API or refresh token | Ultrahuman, Wger |
+| Personal token (`manualToken`) | User mints a personal API or access token | Cycling Analytics, Ultrahuman |
 | Custom auth router | Login flow needs extra UI/steps | Garmin, WHOOP |
 
 App-level OAuth client IDs/secrets in env vars are fine — those identify the Dofek application, not an individual user.
@@ -131,7 +131,11 @@ authSetup(_options?: { host?: string }): ProviderAuthSetup {
 
 For providers that let each user mint a personal token, return `manualToken`. The shared web and
 mobile modal links to the vendor instructions, accepts the token as a password field, validates it
-through `exchangeToken()`, and stores the returned token set per user:
+through `exchangeToken()`, and stores the returned token set per user. This passthrough template is
+only for provider-issued API/access tokens. If the provider instead asks the user for a refresh
+credential, exchange it for the provider's access/refresh token response and preserve the returned
+expiry and rotation data (for example, Wger documents a JWT refresh endpoint in its
+[official API guide](https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens)):
 
 ```typescript
 authSetup(): ProviderAuthSetup {

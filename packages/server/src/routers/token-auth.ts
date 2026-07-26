@@ -2,6 +2,7 @@ import {
   ProviderRateLimitError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
+import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { connectProviderWithTokens } from "dofek/db/tokens";
 import { queryCache } from "dofek/lib/cache";
@@ -9,6 +10,7 @@ import { authFailureReasonFromError } from "dofek/providers/auth-errors";
 import { getAllProviders } from "dofek/providers/registry";
 import type { TokenSet } from "dofek/providers/types";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
@@ -96,7 +98,17 @@ export const tokenAuthRouter = router({
           cause: error,
         });
       }
-      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
+      try {
+        await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
+      } catch (error: unknown) {
+        captureException(error, {
+          tags: { procedure: "tokenAuth.connect" },
+          extra: { providerId: provider.id, userId: ctx.userId },
+        });
+        logger.warn(
+          `[tokenAuth.connect] Connection persisted but provider cache invalidation failed for ${provider.id} (user ${ctx.userId})`,
+        );
+      }
 
       return { success: true };
     }),

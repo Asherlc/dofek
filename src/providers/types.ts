@@ -110,6 +110,39 @@ export interface SyncError {
  */
 export type ProviderAuthType = "oauth" | "credential" | "token" | "file-import" | "oauth1";
 
+export interface ProviderAuthCapabilities {
+  automatedLogin: boolean;
+  manualToken: boolean;
+  oauth1: boolean;
+  oauth: boolean;
+}
+
+/**
+ * Canonical precedence for providers that expose more than one connection flow.
+ * Personal tokens are the public self-service path when OAuth is also available.
+ */
+export function classifyProviderAuth(
+  capabilities: ProviderAuthCapabilities,
+): ProviderAuthType | "none" {
+  if (capabilities.automatedLogin) return "credential";
+  if (capabilities.oauth1) return "oauth1";
+  if (capabilities.manualToken) return "token";
+  if (capabilities.oauth) return "oauth";
+  return "none";
+}
+
+export function getProviderAuthTypeFromSetup(
+  setup: ProviderAuthSetup | undefined,
+): ProviderAuthType | "none" {
+  if (!setup) return "none";
+  return classifyProviderAuth({
+    automatedLogin: Boolean(setup.automatedLogin),
+    oauth1: Boolean(setup.oauth1Flow),
+    manualToken: Boolean(setup.manualToken),
+    oauth: Boolean(setup.oauthConfig && setup.exchangeCode),
+  });
+}
+
 /**
  * Common fields shared by all providers (sync and import).
  */
@@ -321,10 +354,5 @@ export function getProviderAuthType(provider: Provider): ProviderAuthType | "non
   } catch {
     return "none";
   }
-  if (!setup) return "none";
-  if (setup.automatedLogin) return "credential";
-  if (setup.oauth1Flow) return "oauth1";
-  if (setup.oauthConfig) return "oauth";
-  if (setup.manualToken) return "token";
-  return "none";
+  return getProviderAuthTypeFromSetup(setup);
 }

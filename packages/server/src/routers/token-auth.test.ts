@@ -8,14 +8,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   mockConnectProviderWithTokens,
+  mockCaptureException,
   mockInvalidateByPrefix,
   mockGetAllProviders,
+  mockLoggerWarn,
   mockEnsureProvidersRegistered,
 } = vi.hoisted(() => ({
   mockConnectProviderWithTokens: vi.fn(),
+  mockCaptureException: vi.fn(),
   mockInvalidateByPrefix: vi.fn(),
   mockGetAllProviders: vi.fn(),
+  mockLoggerWarn: vi.fn(),
   mockEnsureProvidersRegistered: vi.fn(),
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: mockCaptureException,
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: { warn: mockLoggerWarn },
 }));
 
 vi.mock("dofek/db/tokens", () => ({
@@ -217,6 +229,48 @@ describe("tokenAuthRouter", () => {
       "user-123",
     );
     expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+  });
+
+  it("reports cache invalidation failure after persisting a successful connection", async () => {
+    const cacheError = new Error("cache unavailable");
+    const tokens = {
+      accessToken: "access-123",
+      refreshToken: "refresh-456",
+      expiresAt: new Date("2026-08-01T00:00:00Z"),
+      scopes: "read",
+    };
+    const provider = stubProvider({
+      id: "wger",
+      name: "Wger",
+      authSetup: () => ({
+        manualToken: {
+          label: "Refresh token",
+          instructionsUrl: "https://wger.de/en/software/api",
+          exchangeToken: vi.fn().mockResolvedValue(tokens),
+        },
+        apiBaseUrl: "https://wger.de/api/v2",
+      }),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+    mockConnectProviderWithTokens.mockResolvedValue(undefined);
+    mockInvalidateByPrefix.mockRejectedValue(cacheError);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-123",
+      timezone: "UTC",
+    });
+
+    await expect(caller.connect({ providerId: "wger", token: "refresh-input" })).resolves.toEqual({
+      success: true,
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(cacheError, {
+      tags: { procedure: "tokenAuth.connect" },
+      extra: { providerId: "wger", userId: "user-123" },
+    });
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "[tokenAuth.connect] Connection persisted but provider cache invalidation failed for wger (user user-123)",
+    );
   });
 
   it("rejects unknown providers", async () => {

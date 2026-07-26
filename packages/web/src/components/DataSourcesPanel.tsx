@@ -346,6 +346,15 @@ export function DataSourcesPanel() {
               label: p.tokenAuth.label,
               instructionsUrl: p.tokenAuth.instructionsUrl,
             });
+          } else {
+            const error = new Error(
+              `${p.name} personal-token authentication is unavailable. Refresh and try again.`,
+            );
+            captureException(error, {
+              operation: "connect-provider",
+              providerId: p.id,
+            });
+            updateState(p.id, { status: "error", message: error.message });
           }
           break;
         case "custom:whoop":
@@ -358,7 +367,7 @@ export function DataSourcesPanel() {
           handleSync(p.id, fullSync);
       }
     },
-    [handleSync],
+    [handleSync, updateState],
   );
 
   // Build unified list: server providers + Apple Health (file-import-only, not registered on server)

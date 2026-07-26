@@ -226,11 +226,6 @@ describe("UltrahumanProvider", () => {
   });
 
   describe("auth", () => {
-    it("uses per-user personal token auth", () => {
-      const provider = new UltrahumanProvider();
-      expect(provider.authSetup().manualToken?.label).toBe("Personal API token");
-    });
-
     it("accepts custom fetch function", () => {
       const mockFetch: typeof globalThis.fetch = () => Promise.resolve(new Response());
       const provider = new UltrahumanProvider(mockFetch);
@@ -333,24 +328,7 @@ describe("UltrahumanProvider", () => {
   });
 });
 
-// ============================================================
-// UltrahumanClient — error handling
-// ============================================================
-
-describe("UltrahumanClient — error handling", () => {
-  it.each([401, 403])("classifies a %i response as a redacted token rejection", async (status) => {
-    const response = new Response("Invalid API key: private upstream detail", { status });
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => response;
-    const client = new UltrahumanClient("bad-token", "user@example.com", mockFetch);
-
-    await expect(client.getDailyMetrics("2026-03-01")).rejects.toMatchObject({
-      authFailureReason: "authentication_failed",
-      message:
-        "Ultrahuman rejected this token. Create a new personal API token in Ultrahuman Vision and reconnect.",
-    });
-    expect(response.bodyUsed).toBe(false);
-  });
-
+describe("UltrahumanClient", () => {
   it("throws on 500 server error", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Internal Server Error", { status: 500 });

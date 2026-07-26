@@ -86,6 +86,31 @@ describe("getProviderAuthType", () => {
     expect(getProviderAuthType(provider)).toBe("token");
   });
 
+  it("prioritizes personal token auth when OAuth is also configured", () => {
+    const setup: ProviderAuthSetup = {
+      oauthConfig: dummyOAuthConfig,
+      exchangeCode: async () => ({
+        accessToken: "oauth-token",
+        refreshToken: null,
+        expiresAt: new Date(),
+        scopes: null,
+      }),
+      manualToken: {
+        label: "Personal API token",
+        instructionsUrl: "https://example.com/settings/api-token",
+        exchangeToken: async () => ({
+          accessToken: "personal-token",
+          refreshToken: null,
+          expiresAt: new Date(),
+          scopes: "read",
+        }),
+      },
+    };
+    const provider = stubProvider({ authSetup: () => setup });
+
+    expect(getProviderAuthType(provider)).toBe("token");
+  });
+
   it("returns 'oauth1' when oauth1Flow is defined", () => {
     const setup: ProviderAuthSetup = {
       oauthConfig: dummyOAuthConfig,

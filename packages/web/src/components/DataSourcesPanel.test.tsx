@@ -348,6 +348,41 @@ describe("DataSourcesPanel", () => {
     ).toBeTruthy();
   });
 
+  it("surfaces and reports missing personal-token metadata", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "wger",
+          name: "Wger",
+          authorized: false,
+          authType: "token",
+          tokenAuth: null,
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(
+      within(screen.getByTestId("provider-card-wger")).getByRole("button", { name: "Sync" }),
+    );
+
+    expect(
+      screen.getByText("Wger personal-token authentication is unavailable. Refresh and try again."),
+    ).toBeTruthy();
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      operation: "connect-provider",
+      providerId: "wger",
+    });
+    expect(mockCaptureException.mock.calls[0]?.[0]).toMatchObject({
+      message: "Wger personal-token authentication is unavailable. Refresh and try again.",
+    });
+  });
+
   it("shows provider stats failures without hiding known provider cards", () => {
     const statsError = new Error("Provider statistics are temporarily unavailable");
     mockProviderStatsQuery.mockReturnValue({

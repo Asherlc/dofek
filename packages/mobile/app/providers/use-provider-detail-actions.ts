@@ -247,6 +247,15 @@ export function useProviderDetailActions(
             label: displayProvider.tokenAuth.label,
             instructionsUrl: displayProvider.tokenAuth.instructionsUrl,
           });
+        } else {
+          const error = new Error(
+            `${displayProvider.name} personal-token authentication is unavailable. Refresh and try again.`,
+          );
+          captureException(error, {
+            context: "connect-provider-detail",
+            providerId: displayProvider.id,
+          });
+          setSyncMessage(error.message);
         }
         break;
       case "custom:whoop":

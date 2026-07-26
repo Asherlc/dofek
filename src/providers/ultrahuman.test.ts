@@ -114,7 +114,7 @@ describe("parseUltrahumanMetrics", () => {
 });
 
 describe("UltrahumanClient", () => {
-  it.each([401, 403, 404])("throws an authentication error for status %s", async (status) => {
+  it.each([401, 403])("throws an authentication error for status %s", async (status) => {
     const mockFetch = vi
       .fn()
       .mockResolvedValue(new Response("sensitive rejection response", { status }));
@@ -130,6 +130,20 @@ describe("UltrahumanClient", () => {
     expect(error instanceof Error ? error.message : "").not.toContain(
       "sensitive rejection response",
     );
+  });
+
+  it("does not classify a 404 response as a rejected token", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(new Response("resource unavailable", { status: 404 }));
+    const client = new UltrahumanClient("token", "test@test.com", mockFetch);
+
+    const error = await client.getDailyMetrics("2026-03-01").catch((caught: unknown) => caught);
+
+    expect(authFailureReasonFromError(error)).toBeUndefined();
+    expect(error).toMatchObject({
+      message: "Ultrahuman API error (404): resource unavailable",
+    });
   });
 
   it("returns parsed response on success", async () => {
@@ -155,6 +169,7 @@ describe("UltrahumanClient", () => {
     await new UltrahumanClient("token", "delegated+user@example.com", mockFetch).getDailyMetrics(
       "2026-03-01",
     );
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it("omits the email query for the token owner's own data", async () => {
@@ -166,6 +181,7 @@ describe("UltrahumanClient", () => {
     });
 
     await new UltrahumanClient("token", undefined, mockFetch).getDailyMetrics("2026-03-01");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -202,9 +218,7 @@ describe("UltrahumanProvider", () => {
     });
   });
 
-  it.each([
-    401, 403, 404,
-  ])("rejects a personal token when validation returns %s", async (status) => {
+  it.each([401, 403])("rejects a personal token when validation returns %s", async (status) => {
     const setup = new UltrahumanProvider(
       async () => new Response("sensitive rejection response", { status }),
     ).authSetup();
@@ -222,6 +236,22 @@ describe("UltrahumanProvider", () => {
     expect(error instanceof Error ? error.message : "").not.toContain(
       "sensitive rejection response",
     );
+  });
+
+  it("does not classify a 404 validation response as a rejected token", async () => {
+    const setup = new UltrahumanProvider(
+      async () => new Response("resource unavailable", { status: 404 }),
+    ).authSetup();
+    if (!setup.manualToken) throw new Error("expected manual token authentication");
+
+    const error = await setup.manualToken
+      .exchangeToken("personal-token")
+      .catch((caught: unknown) => caught);
+
+    expect(authFailureReasonFromError(error)).toBeUndefined();
+    expect(error).toMatchObject({
+      message: "Ultrahuman token validation failed (404). Try again.",
+    });
   });
 
   it("reports a safe error when personal token validation fails unexpectedly", async () => {
@@ -264,7 +294,11 @@ describe("UltrahumanProvider", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
     const result = await new UltrahumanProvider(mockFetch).sync(
-      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        userId: "user-1",
+      }),
     );
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toBe(
@@ -274,7 +308,7 @@ describe("UltrahumanProvider", () => {
   });
 
   it.each([
-    401, 403, 404,
+    401, 403,
   ])("marks a rejected personal token response (%s) as requiring authentication", async (status) => {
     const { db, spies } = createMockDatabase({
       tokensResult: [
@@ -296,6 +330,7 @@ describe("UltrahumanProvider", () => {
           sinceDate: "2026-03-01",
           untilDate: "2026-03-01",
         }),
+        userId: "user-1",
       }),
     );
 
@@ -305,6 +340,24 @@ describe("UltrahumanProvider", () => {
     expect(spies.values).toHaveBeenCalledWith(
       expect.objectContaining({ authFailureReason: "authentication_failed" }),
     );
+  });
+
+  it("fails before loading credentials when the sync user is missing", async () => {
+    const { db, spies } = createMockDatabase();
+
+    const result = await new UltrahumanProvider().sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe("Ultrahuman sync requires an authenticated user ID.");
+    expect(spies.select).not.toHaveBeenCalled();
   });
 
   it("collects a non-authentication daily error without converting it to an auth failure", async () => {
@@ -328,6 +381,7 @@ describe("UltrahumanProvider", () => {
           sinceDate: "2026-03-01",
           untilDate: "2026-03-01",
         }),
+        userId: "user-1",
       }),
     );
 

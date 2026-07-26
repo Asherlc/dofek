@@ -11,6 +11,7 @@ const mockUseLocalSearchParams = vi.fn().mockReturnValue({});
 const mockSyncMutateAsync = vi.fn();
 const mockImportSharedFile = vi.fn();
 const mockGetDocumentAsync = vi.fn();
+const mockAlert = vi.hoisted(() => vi.fn());
 
 vi.mock("react-native", () => ({
   AppState: {
@@ -48,7 +49,7 @@ vi.mock("react-native", () => ({
     return React.createElement("div", rest, children);
   },
   RefreshControl: () => null,
-  Alert: { alert: vi.fn() },
+  Alert: { alert: mockAlert },
   TouchableOpacity: ({
     children,
     onPress,
@@ -942,6 +943,7 @@ describe("ProvidersScreen", () => {
     mockSyncMutateAsync.mockReset();
     mockImportSharedFile.mockReset();
     mockGetDocumentAsync.mockReset();
+    mockAlert.mockReset();
     mockProvidersQuery.mockReset();
     mockStatsQuery.mockReset();
     mockLogsQuery.mockReset();
@@ -1783,6 +1785,31 @@ describe("ProvidersScreen", () => {
     await waitFor(() => {
       expect(screen.getByText("Connect Wger")).toBeTruthy();
       expect(screen.getByPlaceholderText("JWT refresh token")).toBeTruthy();
+    });
+  });
+
+  it("surfaces and reports missing personal-token metadata", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [{ ...tokenProvider, tokenAuth: null }],
+      isLoading: false,
+    });
+    const { captureException } = await import("../../lib/telemetry");
+    const mockCaptureException = vi.mocked(captureException);
+    mockCaptureException.mockClear();
+
+    await renderProvidersScreen();
+    fireEvent.click(within(screen.getByTestId("provider-card-wger")).getByText("Connect"));
+
+    expect(mockAlert).toHaveBeenCalledWith(
+      "Unable to connect provider",
+      "Wger personal-token authentication is unavailable. Refresh and try again.",
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      context: "connect-provider-list",
+      providerId: "wger",
+    });
+    expect(mockCaptureException.mock.calls[0]?.[0]).toMatchObject({
+      message: "Wger personal-token authentication is unavailable. Refresh and try again.",
     });
   });
 

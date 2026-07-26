@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { classifyProviderAuth } from "./types.ts";
 
 /**
  * Wraps a raw Provider plugin with derived state (connection status, auth type, etc.).
@@ -48,21 +49,20 @@ export class ProviderModel {
       try {
         const setup = provider.authSetup?.();
         if (setup && typeof setup === "object") {
-          if ("automatedLogin" in setup && setup.automatedLogin) {
-            authType = "credential";
-          } else if ("oauth1Flow" in setup && setup.oauth1Flow) {
-            authType = "oauth1";
-          } else if ("oauthConfig" in setup && setup.oauthConfig) {
-            authType = "oauth";
-          } else {
-            const parsedManualToken = providerTokenAuthSchema.safeParse(
-              Reflect.get(setup, "manualToken"),
-            );
-            if (parsedManualToken.success) {
-              authType = "token";
-              this.tokenAuth = parsedManualToken.data;
-            }
+          const parsedManualToken = providerTokenAuthSchema.safeParse(
+            Reflect.get(setup, "manualToken"),
+          );
+          if (parsedManualToken.success) {
+            this.tokenAuth = parsedManualToken.data;
           }
+          authType = classifyProviderAuth({
+            automatedLogin: typeof Reflect.get(setup, "automatedLogin") === "function",
+            oauth1: Boolean(Reflect.get(setup, "oauth1Flow")),
+            manualToken: parsedManualToken.success,
+            oauth:
+              Boolean(Reflect.get(setup, "oauthConfig")) &&
+              typeof Reflect.get(setup, "exchangeCode") === "function",
+          });
         }
       } catch {
         /* credentials not configured */

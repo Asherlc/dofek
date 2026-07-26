@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CyclingAnalyticsProvider } from "./cycling-analytics.ts";
 import { ProviderModel, providerTokenAuthSchema } from "./provider-model.ts";
 
 describe("ProviderModel", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it.each([
     "not-a-url",
     "http://example.com/token",
@@ -21,7 +26,11 @@ describe("ProviderModel", () => {
 
   it("isConnected is true for providers with authSetup that have tokens", () => {
     const model = new ProviderModel(
-      { id: "strava", name: "Strava", authSetup: () => ({ oauthConfig: {} }) },
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({ oauthConfig: {}, exchangeCode: async () => ({}) }),
+      },
       new Set(["strava"]),
     );
     expect(model.isConnected).toBe(true);
@@ -30,7 +39,11 @@ describe("ProviderModel", () => {
 
   it("isConnected is false for providers with authSetup that lack tokens", () => {
     const model = new ProviderModel(
-      { id: "strava", name: "Strava", authSetup: () => ({ oauthConfig: {} }) },
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({ oauthConfig: {}, exchangeCode: async () => ({}) }),
+      },
       new Set(),
     );
     expect(model.isConnected).toBe(false);
@@ -60,6 +73,19 @@ describe("ProviderModel", () => {
     expect(model.isConnected).toBe(false);
   });
 
+  it("does not classify OAuth metadata without an authorization-code exchanger", () => {
+    const model = new ProviderModel(
+      {
+        id: "incomplete-oauth",
+        name: "Incomplete OAuth",
+        authSetup: () => ({ oauthConfig: {} }),
+      },
+      new Set(),
+    );
+
+    expect(model.authType).toBe("none");
+  });
+
   it("exposes manual token connection metadata", () => {
     const model = new ProviderModel(
       {
@@ -81,6 +107,25 @@ describe("ProviderModel", () => {
     expect(model.tokenAuth).toEqual({
       label: "Refresh token",
       instructionsUrl: "https://example.com/settings/api-key",
+    });
+  });
+
+  it.each([
+    { configuredOAuth: false, clientId: "", clientSecret: "" },
+    { configuredOAuth: true, clientId: "client-id", clientSecret: "client-secret" },
+  ])("exposes Cycling Analytics personal-token auth when OAuth configured is $configuredOAuth", ({
+    clientId,
+    clientSecret,
+  }) => {
+    vi.stubEnv("CYCLING_ANALYTICS_CLIENT_ID", clientId);
+    vi.stubEnv("CYCLING_ANALYTICS_CLIENT_SECRET", clientSecret);
+
+    const model = new ProviderModel(new CyclingAnalyticsProvider(), new Set());
+
+    expect(model.authType).toBe("token");
+    expect(model.tokenAuth).toEqual({
+      label: "Personal API token",
+      instructionsUrl: "https://www.cyclinganalytics.com/developer/api/authentication",
     });
   });
 

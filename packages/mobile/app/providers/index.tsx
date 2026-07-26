@@ -606,6 +606,15 @@ export default function ProvidersScreen() {
               label: provider.tokenAuth.label,
               instructionsUrl: provider.tokenAuth.instructionsUrl,
             });
+          } else {
+            const error = new Error(
+              `${provider.label} personal-token authentication is unavailable. Refresh and try again.`,
+            );
+            captureException(error, {
+              context: "connect-provider-list",
+              providerId: provider.id,
+            });
+            Alert.alert("Unable to connect provider", error.message);
           }
           break;
         case "custom:whoop":

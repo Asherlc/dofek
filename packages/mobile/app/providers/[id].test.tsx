@@ -814,6 +814,33 @@ describe("ProviderDetailScreen", () => {
       });
     });
 
+    it("surfaces and reports missing personal-token metadata", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "wger" });
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...tokenProvider, tokenAuth: null }],
+        isLoading: false,
+      });
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Connect"));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            "Wger personal-token authentication is unavailable. Refresh and try again.",
+          ),
+        ).toBeTruthy();
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+        context: "connect-provider-detail",
+        providerId: "wger",
+      });
+      expect(mockCaptureException.mock.calls[0]?.[0]).toMatchObject({
+        message: "Wger personal-token authentication is unavailable. Refresh and try again.",
+      });
+    });
+
     it("triggers Apple Health sync with syncRangeDays: 7 when Sync is clicked", async () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
       mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });

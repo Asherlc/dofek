@@ -137,7 +137,7 @@ export class UltrahumanClient {
     });
 
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403 || response.status === 404) {
+      if (response.status === 401 || response.status === 403) {
         throw new ProviderTokenRejectedError(
           "Ultrahuman",
           "Create a new personal API token in Ultrahuman Vision and reconnect.",
@@ -193,7 +193,7 @@ export class UltrahumanProvider implements SyncProvider {
               },
             },
           );
-          if (response.status === 401 || response.status === 403 || response.status === 404) {
+          if (response.status === 401 || response.status === 403) {
             throw new ProviderTokenRejectedError(
               this.name,
               "Create a new personal API token in Ultrahuman Vision and try again.",
@@ -225,7 +225,10 @@ export class UltrahumanProvider implements SyncProvider {
 
     let client: UltrahumanClient;
     try {
-      const stored = await loadTokens(db, this.id);
+      if (!options.userId) {
+        throw new Error("Ultrahuman sync requires an authenticated user ID.");
+      }
+      const stored = await loadTokens(db, this.id, options.userId);
       if (!stored) {
         throw new Error(
           "No Ultrahuman personal API token found. Connect Ultrahuman in Data Sources.",
