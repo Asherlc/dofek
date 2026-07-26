@@ -18185,8 +18185,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Restore both consumers to one replica as an explicit
   operator action, then make production web deployments non-cancellable and
   serialized. The reusable stack deployment already has
-  `cancel-in-progress: false`; the dispatcher now matches that contract so a
+  `cancel-in-progress: false`; the dispatcher now matches that contract and
+  gives automatic and manual production triggers one concurrency key so a
   newer run waits instead of interrupting a partially applied deployment.
+  Automatic deploys also require the successful CI commit to remain the
+  current default-branch commit, preventing out-of-order CI completion from
+  later rolling production back to a queued stale release.
   GitHub documents that `cancel-in-progress: true` cancels an already running
   job or workflow in the same concurrency group:
   <https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency>.

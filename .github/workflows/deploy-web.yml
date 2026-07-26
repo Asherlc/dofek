@@ -27,13 +27,18 @@ permissions:
   id-token: write
 
 concurrency:
-  group: deploy-web-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'main' }}
+  group: deploy-web-production
   cancel-in-progress: false
 
 jobs:
   production:
     name: Deploy Web Production
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' && inputs.environment == 'production'
+    if: >-
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_sha == github.sha) ||
+      (github.event_name == 'workflow_dispatch' &&
+      inputs.environment == 'production')
     permissions:
       contents: read
       actions: read
