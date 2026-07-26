@@ -3,6 +3,15 @@
  * Providers that define `authSetup` require authentication. Connection state is
  * supplied from the user-scoped provider connection table.
  */
+function isHttpsUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export class ProviderModel {
   readonly id: string;
   readonly name: string;
@@ -48,7 +57,7 @@ export class ProviderModel {
             "label" in setup.manualToken &&
             typeof setup.manualToken.label === "string" &&
             "instructionsUrl" in setup.manualToken &&
-            typeof setup.manualToken.instructionsUrl === "string"
+            isHttpsUrl(setup.manualToken.instructionsUrl)
           ) {
             authType = "token";
             this.tokenAuth = {

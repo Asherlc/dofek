@@ -147,6 +147,9 @@ export function TokenAuthModal({
   const connectMutation = trpc.tokenAuth.connect.useMutation({
     meta: locallyReportedErrorMeta,
   });
+  const handleClose = useCallback(() => {
+    if (!loading) onClose();
+  }, [loading, onClose]);
 
   const handleConnect = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -155,16 +158,17 @@ export function TokenAuthModal({
       setLoading(true);
       try {
         await connectMutation.mutateAsync({ providerId, token });
-        onSuccess();
       } catch (caught: unknown) {
         captureException(caught, {
           operation: "tokenAuth.connect",
           providerId,
         });
         setError(caught instanceof Error ? caught.message : "Token connection failed");
-      } finally {
         setLoading(false);
+        return;
       }
+      setLoading(false);
+      onSuccess();
     },
     [connectMutation, onSuccess, providerId, token],
   );
@@ -172,7 +176,7 @@ export function TokenAuthModal({
   return (
     <ModalDialog
       open
-      onClose={onClose}
+      onClose={handleClose}
       initialFocusRef={tokenRef}
       contentClassName="bg-surface-solid border border-border-strong rounded-xl p-6 w-[calc(100%-2rem)] max-w-sm shadow-2xl"
     >
@@ -182,7 +186,8 @@ export function TokenAuthModal({
         </ModalDialogTitle>
         <button
           type="button"
-          onClick={onClose}
+          onClick={handleClose}
+          disabled={loading}
           className="text-subtle hover:text-foreground text-lg leading-none p-1"
           aria-label="Close"
         >

@@ -65,7 +65,7 @@ export interface ProviderAuthSetup {
   /** User-supplied API token flow for providers that issue personal tokens. */
   manualToken?: {
     label: string;
-    instructionsUrl: string;
+    instructionsUrl: `https://${string}`;
     exchangeToken: (token: string) => Promise<TokenSet>;
   };
   /** OAuth 1.0 flow for providers that use 3-legged OAuth (e.g. FatSecret) */

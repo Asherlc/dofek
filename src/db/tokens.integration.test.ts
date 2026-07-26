@@ -179,6 +179,7 @@ describe("Token storage (integration)", () => {
         {
           id: providerId,
           name: "Failed Token Persistence",
+          apiBaseUrl: "https://example.com/api",
         },
         {
           accessToken: "access-token",

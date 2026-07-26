@@ -144,21 +144,26 @@ export function TokenAuthModal({
     tokenRef.current?.focus();
   }, []);
 
+  const handleClose = useCallback(() => {
+    if (!loading) onClose();
+  }, [loading, onClose]);
+
   const handleConnect = useCallback(async () => {
     setError("");
     setLoading(true);
     try {
       await connectMutation.mutateAsync({ providerId, token });
-      onSuccess();
     } catch (caught: unknown) {
       captureException(caught, {
         source: "provider-token-auth-connect",
         providerId,
       });
       setError(caught instanceof Error ? caught.message : "Token connection failed");
-    } finally {
       setLoading(false);
+      return;
     }
+    setLoading(false);
+    onSuccess();
   }, [connectMutation, onSuccess, providerId, token]);
 
   const openInstructions = useCallback(() => {
@@ -172,16 +177,18 @@ export function TokenAuthModal({
   }, [instructionsUrl, providerId]);
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Connect {providerName}</Text>
             <TouchableOpacity
-              onPress={onClose}
+              onPress={handleClose}
               activeOpacity={0.7}
+              disabled={loading}
               accessibilityRole="button"
               accessibilityLabel={`Close ${providerName} connection`}
+              accessibilityState={{ disabled: loading }}
             >
               <Text style={styles.modalClose}>{"\u00D7"}</Text>
             </TouchableOpacity>

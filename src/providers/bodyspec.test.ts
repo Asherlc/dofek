@@ -75,6 +75,7 @@ vi.mock("../db/schema/events.ts", () => ({
 import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
+import { ProviderAuthenticationFailedError } from "./auth-errors.ts";
 
 // ============================================================
 // Fixtures
@@ -1161,6 +1162,32 @@ describe("BodySpecProvider", () => {
           headers: { Authorization: "Bearer my-secret-token" },
         }),
       );
+    });
+
+    it.each([
+      401, 403,
+    ])("classifies a %i data response as a redacted authentication failure", async (status) => {
+      vi.mocked(loadTokens).mockResolvedValue({
+        accessToken: "revoked-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      });
+      const response = errorResponse(status, "upstream-secret-response");
+      const provider = new BodySpecProvider(vi.fn().mockResolvedValue(response));
+
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
+
+      expect(result.errors).toHaveLength(1);
+      const error = result.errors[0];
+      expect(error?.cause).toBeInstanceOf(ProviderAuthenticationFailedError);
+      expect(error?.message).not.toContain("upstream-secret-response");
+      expect(response.bodyUsed).toBe(false);
     });
 
     it("truncates long error response bodies", async () => {

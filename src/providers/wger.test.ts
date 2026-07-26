@@ -73,6 +73,7 @@ vi.mock("../db/metric-stream-writer.ts", () => ({
 
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { deleteTokens, loadTokens, saveTokens } from "../db/tokens.ts";
+import { authFailureReasonFromError } from "./auth-errors.ts";
 import { createMockDatabase } from "./test-helpers.ts";
 import { parseWgerWeightEntry, parseWgerWorkoutSession, WgerProvider } from "./wger.ts";
 
@@ -291,6 +292,43 @@ describe("WgerProvider", () => {
     ]);
     expect(deleteTokens).not.toHaveBeenCalled();
     expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { endpoint: "workoutsession", status: 401 },
+    { endpoint: "workoutsession", status: 403 },
+    { endpoint: "weightentry", status: 401 },
+    { endpoint: "weightentry", status: 403 },
+  ])("marks a $status from the $endpoint data endpoint as requiring authentication", async ({
+    endpoint,
+    status,
+  }) => {
+    const sensitiveBody = "vendor response containing private details";
+    const mockFetch: typeof globalThis.fetch = async (input) => {
+      if (String(input).includes(`/${endpoint}/`)) {
+        return new Response(sensitiveBody, { status });
+      }
+      return Response.json({ count: 0, next: null, previous: null, results: [] });
+    };
+    const { db } = createMockDatabase();
+
+    const result = await new WgerProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
+    expect(result.errors[0]?.message).not.toContain(sensitiveBody);
+    expect(
+      result.errors[0]?.cause instanceof Error ? result.errors[0].cause.message : "",
+    ).not.toContain(sensitiveBody);
   });
 
   it("skips workout sessions after the sync window end", async () => {

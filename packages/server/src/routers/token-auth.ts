@@ -20,6 +20,7 @@ export const tokenAuthRouter = router({
         token: z.string().trim().min(1, "Token is required"),
       }),
     )
+    .output(z.object({ success: z.literal(true) }))
     .mutation(async ({ ctx, input }) => {
       await ensureProvidersRegistered();
 
@@ -36,6 +37,12 @@ export const tokenAuthRouter = router({
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `Provider ${input.providerId} does not support personal token authentication`,
+        });
+      }
+      if (!setup.apiBaseUrl) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `${provider.name} personal-token authentication is misconfigured.`,
         });
       }
 
@@ -64,19 +71,31 @@ export const tokenAuthRouter = router({
             cause: error,
           });
         }
-        throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `${provider.name} returned an unexpected response. Try again later.`,
+          cause: error,
+        });
       }
 
-      await connectProviderWithTokens(
-        ctx.db,
-        {
-          id: provider.id,
-          name: provider.name,
-          apiBaseUrl: setup.apiBaseUrl,
-        },
-        tokens,
-        ctx.userId,
-      );
+      try {
+        await connectProviderWithTokens(
+          ctx.db,
+          {
+            id: provider.id,
+            name: provider.name,
+            apiBaseUrl: setup.apiBaseUrl,
+          },
+          tokens,
+          ctx.userId,
+        );
+      } catch (error: unknown) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Could not save the ${provider.name} connection. Try again later.`,
+          cause: error,
+        });
+      }
       await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
 
       return { success: true };

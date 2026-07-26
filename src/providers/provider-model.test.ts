@@ -73,6 +73,30 @@ describe("ProviderModel", () => {
     });
   });
 
+  it.each([
+    "javascript:alert('xss')",
+    "http://example.com/token",
+    "not-a-url",
+  ])("does not expose an unsafe manual token instructions URL: %s", (instructionsUrl) => {
+    const model = new ProviderModel(
+      {
+        id: "unsafe-token-provider",
+        name: "Unsafe Token Provider",
+        authSetup: () => ({
+          manualToken: {
+            label: "Personal token",
+            instructionsUrl,
+            exchangeToken: async () => ({}),
+          },
+        }),
+      },
+      new Set(),
+    );
+
+    expect(model.authType).toBe("none");
+    expect(model.tokenAuth).toBeNull();
+  });
+
   it("applies customAuthOverrides when provided", () => {
     const model = new ProviderModel(
       { id: "whoop", name: "WHOOP", authSetup: () => undefined },

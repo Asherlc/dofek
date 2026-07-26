@@ -174,7 +174,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
           scopes: "read_rides",
         };
       },
-    };
+    } satisfies NonNullable<ProviderAuthSetup["manualToken"]>;
 
     if (!config) {
       return {

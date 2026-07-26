@@ -124,6 +124,7 @@ describe("tokenAuthRouter", () => {
           instructionsUrl: "https://wger.de/en/software/api",
           exchangeToken: vi.fn().mockResolvedValue(tokens),
         },
+        apiBaseUrl: "https://wger.de/api/v2",
       }),
     });
     const db = { execute: vi.fn() };
@@ -134,15 +135,18 @@ describe("tokenAuthRouter", () => {
 
     const caller = createCaller({ db, userId: "user-123", timezone: "UTC" });
 
-    await expect(caller.connect({ providerId: "wger", token: "refresh-input" })).rejects.toThrow(
-      "token persistence failed",
-    );
+    await expect(
+      caller.connect({ providerId: "wger", token: "refresh-input" }),
+    ).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Could not save the Wger connection. Try again later.",
+    } satisfies Partial<TRPCError>);
     expect(mockConnectProviderWithTokens).toHaveBeenCalledWith(
       db,
       {
         id: "wger",
         name: "Wger",
-        apiBaseUrl: undefined,
+        apiBaseUrl: "https://wger.de/api/v2",
       },
       tokens,
       "user-123",
@@ -192,6 +196,7 @@ describe("tokenAuthRouter", () => {
             .fn()
             .mockRejectedValue(new ProviderAuthenticationFailedError("Ultrahuman")),
         },
+        apiBaseUrl: "https://partner.ultrahuman.com/api/v1",
       }),
     });
     mockGetAllProviders.mockReturnValue([provider]);
@@ -225,6 +230,7 @@ describe("tokenAuthRouter", () => {
           instructionsUrl: "https://wger.de/en/software/api",
           exchangeToken: vi.fn().mockRejectedValue(rateLimitError),
         },
+        apiBaseUrl: "https://wger.de/api/v2",
       }),
     });
     mockGetAllProviders.mockReturnValue([provider]);
@@ -257,6 +263,7 @@ describe("tokenAuthRouter", () => {
           instructionsUrl: "https://vision.ultrahuman.com/developer-docs",
           exchangeToken: vi.fn().mockRejectedValue(outage),
         },
+        apiBaseUrl: "https://partner.ultrahuman.com/api/v1",
       }),
     });
     mockGetAllProviders.mockReturnValue([provider]);
@@ -273,5 +280,64 @@ describe("tokenAuthRouter", () => {
       code: "SERVICE_UNAVAILABLE",
       message: "Ultrahuman is temporarily unavailable. Try again shortly.",
     } satisfies Partial<TRPCError>);
+  });
+
+  it("returns a safe semantic error for an unexpected provider response", async () => {
+    const provider = stubProvider({
+      id: "ultrahuman",
+      name: "Ultrahuman",
+      authSetup: () => ({
+        manualToken: {
+          label: "Personal API token",
+          instructionsUrl: "https://vision.ultrahuman.com/developer-docs",
+          exchangeToken: vi.fn().mockRejectedValue(new Error("raw upstream response secret")),
+        },
+        apiBaseUrl: "https://partner.ultrahuman.com/api/v1",
+      }),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-123",
+      timezone: "UTC",
+    });
+
+    await expect(
+      caller.connect({ providerId: "ultrahuman", token: "personal-secret-token" }),
+    ).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Ultrahuman returned an unexpected response. Try again later.",
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("fails before exchanging a token when provider API metadata is missing", async () => {
+    const exchangeToken = vi.fn();
+    const provider = stubProvider({
+      id: "misconfigured",
+      name: "Misconfigured Provider",
+      authSetup: () => ({
+        manualToken: {
+          label: "Personal API token",
+          instructionsUrl: "https://example.com/token",
+          exchangeToken,
+        },
+      }),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-123",
+      timezone: "UTC",
+    });
+
+    await expect(
+      caller.connect({ providerId: "misconfigured", token: "personal-secret-token" }),
+    ).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Misconfigured Provider personal-token authentication is misconfigured.",
+    } satisfies Partial<TRPCError>);
+    expect(exchangeToken).not.toHaveBeenCalled();
   });
 });

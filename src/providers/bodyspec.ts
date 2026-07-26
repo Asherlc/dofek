@@ -9,6 +9,7 @@ import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
 import type { SyncDegradation } from "../sync/sync-degradation.ts";
+import { ProviderAuthenticationFailedError } from "./auth-errors.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -234,6 +235,13 @@ function bodySpecOAuthConfig(host?: string): OAuthConfig {
 class BodySpecClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     super(accessToken, BODYSPEC_API_BASE, fetchFn, "bodyspec");
+  }
+
+  protected override async handleErrorResponse(response: Response, path: string): Promise<never> {
+    if (response.status === 401 || response.status === 403) {
+      throw new ProviderAuthenticationFailedError("BodySpec");
+    }
+    return super.handleErrorResponse(response, path);
   }
 
   async listResults(page = 1, pageSize = 100): Promise<BodySpecResultsListResponse> {

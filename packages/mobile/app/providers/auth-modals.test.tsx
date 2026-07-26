@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -156,6 +156,43 @@ describe("provider auth modals", () => {
       providerId: "ultrahuman",
     });
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(token);
+  });
+
+  it("keeps the token modal open while a connection is pending", async () => {
+    let resolveConnection: ((value: { success: true }) => void) | undefined;
+    tokenConnect.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConnection = resolve;
+      }),
+    );
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    render(
+      <TokenAuthModal
+        providerId="wger"
+        providerName="Wger"
+        tokenLabel="JWT refresh token"
+        instructionsUrl="https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens"
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("JWT refresh token"), {
+      target: { value: "pending-refresh-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Wger" }));
+
+    const closeButton = screen.getByRole("button", { name: "Close Wger connection" });
+    if (!(closeButton instanceof HTMLButtonElement)) {
+      throw new Error("Expected the close action to render as a button");
+    }
+    await waitFor(() => expect(closeButton.disabled).toBe(true));
+    fireEvent.click(closeButton);
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => resolveConnection?.({ success: true }));
+    expect(onSuccess).toHaveBeenCalledOnce();
   });
 
   it("reports a Garmin sign-in error while preserving its message", async () => {

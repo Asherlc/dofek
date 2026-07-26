@@ -126,7 +126,7 @@ export async function connectProviderWithTokens(
   provider: {
     id: string;
     name: string;
-    apiBaseUrl?: string;
+    apiBaseUrl: string;
   },
   tokens: TokenSet,
   userId: string,

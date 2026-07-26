@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
@@ -145,6 +145,40 @@ describe("Data source authentication telemetry", () => {
       providerId: "ultrahuman",
     });
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(token);
+  });
+
+  it("keeps the token modal open while a connection is pending", async () => {
+    let resolveConnection: ((value: { success: true }) => void) | undefined;
+    mockTokenConnect.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConnection = resolve;
+      }),
+    );
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
+
+    render(
+      <TokenAuthModal
+        providerId="wger"
+        providerName="Wger"
+        tokenLabel="JWT refresh token"
+        instructionsUrl="https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens"
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("JWT refresh token"), {
+      target: { value: "pending-refresh-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Close" })).toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => resolveConnection?.({ success: true }));
+    expect(onSuccess).toHaveBeenCalledOnce();
   });
 
   it("reports credential sign-in failures without credentials", async () => {

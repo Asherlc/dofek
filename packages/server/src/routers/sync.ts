@@ -49,7 +49,9 @@ const syncProviderRowOutputSchema = z.object({
   tokenAuth: z
     .object({
       label: z.string(),
-      instructionsUrl: z.url(),
+      instructionsUrl: z.url().refine((value) => new URL(value).protocol === "https:", {
+        message: "Token instructions URL must use HTTPS",
+      }),
     })
     .nullable(),
   authorized: z.boolean(),

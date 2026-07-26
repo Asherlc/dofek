@@ -151,6 +151,19 @@ async function exchangeWgerRefreshToken(
   };
 }
 
+async function assertWgerDataResponse(response: Response): Promise<void> {
+  if (response.status === 401 || response.status === 403) {
+    throw new ProviderTokenRejectedError(
+      "Wger",
+      "Create a new JWT refresh token in Wger's API key settings and reconnect.",
+    );
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Wger API error (${response.status}): ${text}`);
+  }
+}
+
 // ============================================================
 // Provider implementation
 // ============================================================
@@ -251,10 +264,7 @@ export class WgerProvider implements SyncProvider {
                   Accept: "application/json",
                 },
               });
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`Wger API error (${response.status}): ${text}`);
-              }
+              await assertWgerDataResponse(response);
               const data: WgerPaginatedResponse<WgerWorkoutSession> = await response.json();
               return {
                 items: data.results ?? [],
@@ -343,10 +353,7 @@ export class WgerProvider implements SyncProvider {
                   Accept: "application/json",
                 },
               });
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`Wger API error (${response.status}): ${text}`);
-              }
+              await assertWgerDataResponse(response);
               const data: WgerPaginatedResponse<WgerWeightEntry> = await response.json();
               return {
                 items: data.results ?? [],

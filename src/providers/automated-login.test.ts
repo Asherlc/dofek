@@ -338,26 +338,17 @@ describe("UltrahumanProvider", () => {
 // ============================================================
 
 describe("UltrahumanClient — error handling", () => {
-  it("throws on non-OK response with status and body", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Forbidden", { status: 403 });
-    };
-
+  it.each([401, 403])("classifies a %i response as a redacted token rejection", async (status) => {
+    const response = new Response("Invalid API key: private upstream detail", { status });
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => response;
     const client = new UltrahumanClient("bad-token", "user@example.com", mockFetch);
-    await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
-      "Ultrahuman API error (403)",
-    );
-  });
 
-  it("throws on 401 unauthorized", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Unauthorized", { status: 401 });
-    };
-
-    const client = new UltrahumanClient("expired-token", "user@example.com", mockFetch);
-    await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
-      "Ultrahuman API error (401)",
-    );
+    await expect(client.getDailyMetrics("2026-03-01")).rejects.toMatchObject({
+      authFailureReason: "authentication_failed",
+      message:
+        "Ultrahuman rejected this token. Create a new personal API token in Ultrahuman Vision and reconnect.",
+    });
+    expect(response.bodyUsed).toBe(false);
   });
 
   it("throws on 500 server error", async () => {
@@ -385,15 +376,6 @@ describe("UltrahumanClient — error handling", () => {
     const result = await client.getDailyMetrics("2026-03-01");
     expect(result.status).toBe(200);
     expect(result.data.metrics["2026-03-01"]).toEqual([]);
-  });
-
-  it("includes error body text in thrown error", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Invalid API key", { status: 403 });
-    };
-
-    const client = new UltrahumanClient("bad-token", "user@example.com", mockFetch);
-    await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow("Invalid API key");
   });
 
   it("returns metrics with data when API returns populated response", async () => {
