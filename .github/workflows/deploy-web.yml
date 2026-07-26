@@ -28,7 +28,7 @@ permissions:
 
 concurrency:
   group: deploy-web-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'main' }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   production:

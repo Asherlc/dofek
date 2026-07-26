@@ -169,6 +169,14 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> configure CDC and restore consumers
 ```
 
+Production web deployments are serialized and never cancel an in-progress
+deployment. A rollout intentionally quiesces ClickHouse consumers before
+migrations and restores them only after the final stack converges, so a newer
+run must wait rather than interrupt that state transition. GitHub documents
+that `cancel-in-progress: true` terminates a running job or workflow in the same
+concurrency group:
+<https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency>.
+
 1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`), because `Deploy Web` is triggered by the successful `CI` `workflow_run` for `main` and deploys that tag. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
    Automatic deploys also check out the successful CI run's full commit SHA
    before rendering stack configuration. GitHub documents that a
