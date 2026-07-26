@@ -18484,12 +18484,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F).
 - **Root cause:** The newly extracted reusable Peloton client encoded summary
   values as strings without a production-shaped non-empty summary fixture. The
-  observed response uses numeric values, so the schema rejected a valid graph
-  even though downstream parsing consumes only its numeric metric series.
+  observed response uses numeric values, as captured in
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F),
+  so the schema rejected a valid graph even though downstream parsing consumes
+  only its numeric metric series.
 - **Fix / mitigation:** Model summary values as numbers at the Zod response
   boundary and retain the upstream values unchanged. Do not coerce them or
-  accept a string-or-number union: neither would describe the observed
-  contract, and both would preserve an unnecessary compatibility path.
+  accept a string-or-number union: neither would describe the observed numeric
+  contract recorded in
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F),
+  and both would preserve an unnecessary compatibility path.
 - **Validation:** The production-shaped performance-graph regression failed
   first with the exact two Zod paths reported by Sentry. After correcting the
   canonical schema, 129 focused client/provider unit tests and all 12 Peloton

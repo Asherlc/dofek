@@ -154,7 +154,7 @@ describe("PelotonClient", () => {
     await expect(client.getWorkouts()).resolves.toEqual(response);
   });
 
-  it("requests and validates performance graphs", async () => {
+  it("accepts numeric performance summaries (DOFEK-SERVER-5F)", async () => {
     const graph = {
       duration: 5,
       is_class_plan_shown: false,
