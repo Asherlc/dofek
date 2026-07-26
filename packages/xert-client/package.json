@@ -1,6 +1,6 @@
 {
   "name": "@dofek/xert",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unofficial Xert API client with password authentication, token refresh, and activity parsing",
   "type": "module",
   "license": "MIT",
@@ -11,12 +11,23 @@
   },
   "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/xert-client#readme",
   "bugs": "https://github.com/Asherlc/dofek/issues",
-  "keywords": ["xert", "cycling", "api-client", "oauth", "unofficial", "typescript"],
+  "keywords": [
+    "xert",
+    "cycling",
+    "api-client",
+    "oauth",
+    "unofficial",
+    "typescript"
+  ],
   "engines": {
     "node": ">=22.14.0"
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/client.ts",
     "./*": "./src/*.ts"

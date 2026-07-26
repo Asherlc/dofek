@@ -1,6 +1,6 @@
 {
   "name": "@dofek/scoring",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Platform-agnostic health scoring models, labels, colors, and design tokens",
   "type": "module",
   "license": "MIT",
@@ -11,12 +11,23 @@
   },
   "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/scoring#readme",
   "bugs": "https://github.com/Asherlc/dofek/issues",
-  "keywords": ["health", "fitness", "scoring", "recovery", "strain", "typescript"],
+  "keywords": [
+    "health",
+    "fitness",
+    "scoring",
+    "recovery",
+    "strain",
+    "typescript"
+  ],
   "engines": {
     "node": ">=22.14.0"
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     "./scoring": "./src/scoring.ts",
     "./colors": "./src/colors.ts",

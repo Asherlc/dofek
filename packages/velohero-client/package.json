@@ -1,6 +1,6 @@
 {
   "name": "@dofek/velohero",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unofficial VeloHero API client using reverse-engineered session authentication",
   "type": "module",
   "license": "MIT",
@@ -11,12 +11,22 @@
   },
   "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/velohero-client#readme",
   "bugs": "https://github.com/Asherlc/dofek/issues",
-  "keywords": ["velohero", "cycling", "api-client", "unofficial", "typescript"],
+  "keywords": [
+    "velohero",
+    "cycling",
+    "api-client",
+    "unofficial",
+    "typescript"
+  ],
   "engines": {
     "node": ">=22.14.0"
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/client.ts",
     "./*": "./src/*.ts"
