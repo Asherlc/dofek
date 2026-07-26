@@ -8,7 +8,7 @@ type WriteArg = { buffer: ArrayBuffer };
 const mockWriteFileSync = vi.hoisted(() => vi.fn<(arg: FileWriteArg) => void>());
 const mockReadFileSync = vi.hoisted(() => vi.fn<(arg: FileReadArg) => ArrayBuffer | undefined>());
 const mockOpenSync = vi.hoisted(() => vi.fn<(arg: OpenArg) => number>());
-const mockWriteSync = vi.hoisted(() => vi.fn<(arg: WriteArg) => void>());
+const mockWriteSync = vi.hoisted(() => vi.fn((arg: WriteArg): number => arg.buffer.byteLength));
 const mockCloseSync = vi.hoisted(() => vi.fn<(arg: { fd: number }) => void>());
 
 vi.mock("@zos/fs", () => ({
@@ -107,6 +107,15 @@ describe("appendSamples", () => {
     const writeFirstCall = writeCalls[0];
     if (!writeFirstCall) throw new Error("expected writeSync to be called");
     expect(writeFirstCall[0].buffer.byteLength).toBe(4 + 28);
+  });
+
+  it("throws when the file system writes only part of a chunk", () => {
+    mockWriteSync.mockReturnValueOnce(1);
+
+    expect(() => appendSamples([{ tMs: 0, ax: 1, ay: 2, az: 3 }], false, SESSION_FILE)).toThrow(
+      "Session file write incomplete: wrote 1 of 20 bytes",
+    );
+    expect(mockCloseSync).toHaveBeenCalledTimes(1);
   });
 });
 
