@@ -14,7 +14,7 @@ import {
 } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
-import { ProviderModel } from "dofek/providers/provider-model";
+import { ProviderModel, providerTokenAuthSchema } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
 import { operationStatusOutputSchema, readOperationProgress } from "../lib/operation-progress.ts";
@@ -46,14 +46,7 @@ const syncProviderRowOutputSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   authType: z.string(),
-  tokenAuth: z
-    .object({
-      label: z.string(),
-      instructionsUrl: z.url().refine((value) => new URL(value).protocol === "https:", {
-        message: "Token instructions URL must use HTTPS",
-      }),
-    })
-    .nullable(),
+  tokenAuth: providerTokenAuthSchema.nullable(),
   authorized: z.boolean(),
   lastSyncedAt: z.string().nullable(),
   importOnly: z.boolean(),

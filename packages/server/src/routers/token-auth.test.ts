@@ -108,6 +108,71 @@ describe("tokenAuthRouter", () => {
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-123:sync.providers");
   });
 
+  it("selects the requested provider when multiple providers support personal tokens", async () => {
+    const firstExchange = vi.fn().mockResolvedValue({
+      accessToken: "wrong-access",
+      refreshToken: null,
+      expiresAt: new Date("2026-08-01T00:00:00Z"),
+      scopes: "wrong",
+    });
+    const requestedTokens = {
+      accessToken: "requested-access",
+      refreshToken: "requested-refresh",
+      expiresAt: new Date("2026-09-01T00:00:00Z"),
+      scopes: "requested",
+    };
+    const requestedExchange = vi.fn().mockResolvedValue(requestedTokens);
+    mockGetAllProviders.mockReturnValue([
+      stubProvider({
+        id: "first-provider",
+        name: "First Provider",
+        authSetup: () => ({
+          manualToken: {
+            label: "First token",
+            instructionsUrl: "https://first.example.com/token",
+            exchangeToken: firstExchange,
+          },
+          apiBaseUrl: "https://first.example.com/api",
+        }),
+      }),
+      stubProvider({
+        id: "requested-provider",
+        name: "Requested Provider",
+        authSetup: () => ({
+          manualToken: {
+            label: "Requested token",
+            instructionsUrl: "https://requested.example.com/token",
+            exchangeToken: requestedExchange,
+          },
+          apiBaseUrl: "https://requested.example.com/api",
+        }),
+      }),
+    ]);
+    mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+    mockConnectProviderWithTokens.mockResolvedValue(undefined);
+    mockInvalidateByPrefix.mockResolvedValue(undefined);
+    const db = { execute: vi.fn() };
+    const caller = createCaller({ db, userId: "user-123", timezone: "UTC" });
+
+    await caller.connect({
+      providerId: "requested-provider",
+      token: "requested-token-input",
+    });
+
+    expect(firstExchange).not.toHaveBeenCalled();
+    expect(requestedExchange).toHaveBeenCalledWith("requested-token-input");
+    expect(mockConnectProviderWithTokens).toHaveBeenCalledWith(
+      db,
+      {
+        id: "requested-provider",
+        name: "Requested Provider",
+        apiBaseUrl: "https://requested.example.com/api",
+      },
+      requestedTokens,
+      "user-123",
+    );
+  });
+
   it("does not invalidate the authorized state when atomic token persistence fails", async () => {
     const tokens = {
       accessToken: "access-123",

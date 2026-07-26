@@ -114,11 +114,21 @@ describe("parseUltrahumanMetrics", () => {
 });
 
 describe("UltrahumanClient", () => {
-  it("throws on API error", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(new Response("Unauthorized", { status: 401 }));
+  it.each([401, 403, 404])("throws an authentication error for status %s", async (status) => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(new Response("sensitive rejection response", { status }));
     const client = new UltrahumanClient("token", "test@test.com", mockFetch);
-    await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
-      "Ultrahuman rejected this token.",
+
+    const error = await client.getDailyMetrics("2026-03-01").catch((caught: unknown) => caught);
+
+    expect(authFailureReasonFromError(error)).toBe("authentication_failed");
+    expect(error).toMatchObject({
+      message:
+        "Ultrahuman rejected this token. Create a new personal API token in Ultrahuman Vision and reconnect.",
+    });
+    expect(error instanceof Error ? error.message : "").not.toContain(
+      "sensitive rejection response",
     );
   });
 
@@ -132,6 +142,19 @@ describe("UltrahumanClient", () => {
     const client = new UltrahumanClient("token", "test@test.com", mockFetch);
     const result = await client.getDailyMetrics("2026-03-01");
     expect(result.status).toBe(200);
+  });
+
+  it("includes the encoded email query when requesting delegated data", async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      expect(String(input)).toBe(
+        "https://partner.ultrahuman.com/api/v1/partner/daily_metrics?email=delegated%2Buser%40example.com&date=2026-03-01",
+      );
+      return Response.json({ data: { metrics: {} }, error: null, status: 200 });
+    });
+
+    await new UltrahumanClient("token", "delegated+user@example.com", mockFetch).getDailyMetrics(
+      "2026-03-01",
+    );
   });
 
   it("omits the email query for the token owner's own data", async () => {
@@ -179,9 +202,48 @@ describe("UltrahumanProvider", () => {
     });
   });
 
-  it("sync returns error when no tokens or env vars", async () => {
+  it.each([
+    401, 403, 404,
+  ])("rejects a personal token when validation returns %s", async (status) => {
+    const setup = new UltrahumanProvider(
+      async () => new Response("sensitive rejection response", { status }),
+    ).authSetup();
+    if (!setup.manualToken) throw new Error("expected manual token authentication");
+
+    const error = await setup.manualToken
+      .exchangeToken("rejected-token")
+      .catch((caught: unknown) => caught);
+
+    expect(authFailureReasonFromError(error)).toBe("authentication_failed");
+    expect(error).toMatchObject({
+      message:
+        "Ultrahuman rejected this token. Create a new personal API token in Ultrahuman Vision and try again.",
+    });
+    expect(error instanceof Error ? error.message : "").not.toContain(
+      "sensitive rejection response",
+    );
+  });
+
+  it("reports a safe error when personal token validation fails unexpectedly", async () => {
+    const setup = new UltrahumanProvider(
+      async () => new Response("sensitive provider error", { status: 500 }),
+    ).authSetup();
+    if (!setup.manualToken) throw new Error("expected manual token authentication");
+
+    const error = await setup.manualToken
+      .exchangeToken("personal-token")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      message: "Ultrahuman token validation failed (500). Try again.",
+    });
+    expect(error instanceof Error ? error.message : "").not.toContain("sensitive provider error");
+  });
+
+  it("sync returns an actionable error when no personal token is stored", async () => {
     delete process.env.ULTRAHUMAN_API_TOKEN;
     delete process.env.ULTRAHUMAN_EMAIL;
+    const mockFetch = vi.fn<typeof globalThis.fetch>();
     const mockDb = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
@@ -201,10 +263,14 @@ describe("UltrahumanProvider", () => {
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
     };
-    const result = await new UltrahumanProvider().sync(
+    const result = await new UltrahumanProvider(mockFetch).sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
-    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe(
+      "No Ultrahuman personal API token found. Connect Ultrahuman in Data Sources.",
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -238,6 +304,41 @@ describe("UltrahumanProvider", () => {
     expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
     expect(spies.values).toHaveBeenCalledWith(
       expect.objectContaining({ authFailureReason: "authentication_failed" }),
+    );
+  });
+
+  it("collects a non-authentication daily error without converting it to an auth failure", async () => {
+    const { db, spies } = createMockDatabase({
+      tokensResult: [
+        {
+          accessToken: "personal-token",
+          refreshToken: null,
+          expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+          scopes: "self",
+        },
+      ],
+    });
+    const mockFetch: typeof globalThis.fetch = async () =>
+      new Response("provider validation failed", { status: 500 });
+
+    const result = await new UltrahumanProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe(
+      "2026-03-01: Ultrahuman API error (500): provider validation failed",
+    );
+    expect(authFailureReasonFromError(result.errors[0]?.cause)).toBeUndefined();
+    expect(spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({ authFailureReason: undefined }),
     );
   });
 });

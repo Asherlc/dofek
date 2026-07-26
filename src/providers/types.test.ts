@@ -42,6 +42,11 @@ describe("getProviderAuthType", () => {
     expect(getProviderAuthType(provider)).toBe("none");
   });
 
+  it("returns 'none' when authSetup returns an empty setup", () => {
+    const provider = stubProvider({ authSetup: () => ({}) });
+    expect(getProviderAuthType(provider)).toBe("none");
+  });
+
   it("returns 'none' when authSetup throws", () => {
     const provider = stubProvider({
       authSetup: () => {

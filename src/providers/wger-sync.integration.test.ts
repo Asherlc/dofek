@@ -54,6 +54,16 @@ function fakeWeightEntry(overrides: Partial<FakeWgerWeightEntry> = {}): FakeWger
   };
 }
 
+function fakeJwt(expirationEpochSeconds: number): string {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ exp: expirationEpochSeconds })).toString(
+    "base64url",
+  );
+  return `${header}.${payload}.signature`;
+}
+
+const refreshedAccessToken = fakeJwt(1_893_456_000);
+
 function wgerHandlers(
   sessions: FakeWgerWorkoutSession[],
   weightEntries: FakeWgerWeightEntry[],
@@ -61,16 +71,13 @@ function wgerHandlers(
 ) {
   return [
     // Token refresh
-    http.post("https://wger.de/api/v2/token", () => {
+    http.post("https://wger.de/api/v2/token/refresh", () => {
       if (opts?.refreshError) {
         return new HttpResponse("Unauthorized", { status: 401 });
       }
       return HttpResponse.json({
-        access_token: "refreshed-token",
-        refresh_token: "new-refresh",
-        expires_in: 7200,
-        scope: "read",
-        token_type: "Bearer",
+        access: refreshedAccessToken,
+        refresh: "new-refresh",
       });
     }),
 
@@ -258,7 +265,8 @@ describe("WgerProvider.sync() (integration)", () => {
     // Verify token was refreshed in DB
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "wger");
-    expect(tokens?.accessToken).toBe("refreshed-token");
+    expect(tokens?.accessToken).toBe(refreshedAccessToken);
+    expect(tokens?.refreshToken).toBe("new-refresh");
   });
 
   it("handles pagination across multiple pages", async () => {
@@ -514,7 +522,9 @@ describe("WgerProvider.sync() (integration)", () => {
     );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("No OAuth tokens");
+    expect(result.errors[0]?.message).toBe(
+      "No tokens found for Wger. Connect Wger in Data Sources.",
+    );
     expect(result.recordsSynced).toBe(0);
   });
 });

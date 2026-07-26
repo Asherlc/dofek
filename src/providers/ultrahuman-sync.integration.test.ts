@@ -317,7 +317,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     }
   });
 
-  it("returns error when no token or email is available", async () => {
+  it("returns an actionable error when no personal token is stored", async () => {
     const savedToken = process.env.ULTRAHUMAN_API_TOKEN;
     const savedEmail = process.env.ULTRAHUMAN_EMAIL;
     delete process.env.ULTRAHUMAN_API_TOKEN;
@@ -337,7 +337,9 @@ describe("UltrahumanProvider.sync() (integration)", () => {
       );
 
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]?.message).toContain("token and email required");
+      expect(result.errors[0]?.message).toBe(
+        "No Ultrahuman personal API token found. Connect Ultrahuman in Data Sources.",
+      );
       expect(result.recordsSynced).toBe(0);
     } finally {
       process.env.ULTRAHUMAN_API_TOKEN = savedToken;

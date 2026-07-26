@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { ProviderModel } from "./provider-model.ts";
+import { ProviderModel, providerTokenAuthSchema } from "./provider-model.ts";
 
 describe("ProviderModel", () => {
+  it.each([
+    "not-a-url",
+    "http://example.com/token",
+  ])("rejects a non-HTTPS token URL at the shared schema boundary: %s", (instructionsUrl) => {
+    const result = providerTokenAuthSchema.safeParse({
+      label: "Personal token",
+      instructionsUrl,
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("isConnected is true for providers without authSetup", () => {
     const model = new ProviderModel({ id: "strong-csv", name: "Strong" }, new Set());
     expect(model.isConnected).toBe(true);
@@ -89,6 +100,42 @@ describe("ProviderModel", () => {
             exchangeToken: async () => ({}),
           },
         }),
+      },
+      new Set(),
+    );
+
+    expect(model.authType).toBe("none");
+    expect(model.tokenAuth).toBeNull();
+  });
+
+  it.each([
+    {},
+    { manualToken: "token" },
+    { manualToken: null },
+    { manualToken: {} },
+    {
+      manualToken: {
+        label: 123,
+        instructionsUrl: "https://example.com/token",
+      },
+    },
+    {
+      manualToken: {
+        label: "Personal token",
+      },
+    },
+    {
+      manualToken: {
+        label: "Personal token",
+        instructionsUrl: new URL("https://example.com/token"),
+      },
+    },
+  ])("does not expose malformed manual token metadata: %j", (setup) => {
+    const model = new ProviderModel(
+      {
+        id: "malformed-token-provider",
+        name: "Malformed Token Provider",
+        authSetup: () => setup,
       },
       new Set(),
     );

@@ -1,16 +1,20 @@
+import { z } from "zod";
+
 /**
  * Wraps a raw Provider plugin with derived state (connection status, auth type, etc.).
  * Providers that define `authSetup` require authentication. Connection state is
  * supplied from the user-scoped provider connection table.
  */
-function isHttpsUrl(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  try {
-    return new URL(value).protocol === "https:";
-  } catch {
-    return false;
-  }
+function isHttpsUrl(value: string): boolean {
+  return value.toLowerCase().startsWith("https://");
 }
+
+export const providerTokenAuthSchema = z.object({
+  label: z.string(),
+  instructionsUrl: z.url().refine(isHttpsUrl, {
+    message: "Token instructions URL must use HTTPS",
+  }),
+});
 
 export class ProviderModel {
   readonly id: string;
@@ -50,20 +54,14 @@ export class ProviderModel {
             authType = "oauth1";
           } else if ("oauthConfig" in setup && setup.oauthConfig) {
             authType = "oauth";
-          } else if (
-            "manualToken" in setup &&
-            typeof setup.manualToken === "object" &&
-            setup.manualToken !== null &&
-            "label" in setup.manualToken &&
-            typeof setup.manualToken.label === "string" &&
-            "instructionsUrl" in setup.manualToken &&
-            isHttpsUrl(setup.manualToken.instructionsUrl)
-          ) {
-            authType = "token";
-            this.tokenAuth = {
-              label: setup.manualToken.label,
-              instructionsUrl: setup.manualToken.instructionsUrl,
-            };
+          } else {
+            const parsedManualToken = providerTokenAuthSchema.safeParse(
+              Reflect.get(setup, "manualToken"),
+            );
+            if (parsedManualToken.success) {
+              authType = "token";
+              this.tokenAuth = parsedManualToken.data;
+            }
           }
         }
       } catch {

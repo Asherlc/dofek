@@ -4,7 +4,7 @@ import {
   decryptCredentialValue,
   encryptCredentialValue,
 } from "../security/credential-encryption.ts";
-import type { Database, SyncDatabase } from "./index.ts";
+import type { SyncDatabase } from "./index.ts";
 import { oauthToken } from "./schema/reference.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
@@ -36,6 +36,12 @@ function oauthTokenContext(
 
 interface ProviderEnsureDatabase {
   execute(query: SQLWrapper): Promise<unknown>;
+}
+
+type ProviderConnectionTransaction = ProviderEnsureDatabase & Pick<SyncDatabase, "insert">;
+
+interface ProviderConnectionDatabase {
+  transaction<T>(callback: (transaction: ProviderConnectionTransaction) => Promise<T>): Promise<T>;
 }
 
 /**
@@ -122,7 +128,7 @@ export async function saveTokens(
  * authorized provider without usable credentials.
  */
 export async function connectProviderWithTokens(
-  db: Database,
+  db: ProviderConnectionDatabase,
   provider: {
     id: string;
     name: string;

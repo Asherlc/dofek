@@ -320,9 +320,11 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
     );
   });
 
-  it("marks a rejected personal token as requiring authentication", async () => {
+  it.each([
+    401, 403,
+  ])("marks a rejected personal token response (%s) as requiring authentication", async (status) => {
     const mockFetch: typeof globalThis.fetch = async () =>
-      new Response("Unauthorized", { status: 401 });
+      new Response("sensitive rejection response", { status });
     const { db } = createMockDatabase();
 
     const result = await new CyclingAnalyticsProvider(mockFetch).sync(
@@ -335,6 +337,7 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
     expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
+    expect(result.errors[0]?.message).not.toContain("sensitive rejection response");
   });
 
   it("returns elapsed sync duration", async () => {
@@ -555,6 +558,42 @@ describe("CyclingAnalyticsProvider", () => {
       refreshToken: null,
       scopes: "read_rides",
     });
+  });
+
+  it.each([401, 403])("rejects a personal token when validation returns %s", async (status) => {
+    const setup = new CyclingAnalyticsProvider(
+      async () => new Response("sensitive rejection response", { status }),
+    ).authSetup();
+    if (!setup.manualToken) throw new Error("expected manual token authentication");
+
+    const error = await setup.manualToken
+      .exchangeToken("rejected-token")
+      .catch((caught: unknown) => caught);
+
+    expect(authFailureReasonFromError(error)).toBe("authentication_failed");
+    expect(error).toMatchObject({
+      message:
+        "Cycling Analytics rejected this token. Create a personal token with read_rides permission and try again.",
+    });
+    expect(error instanceof Error ? error.message : "").not.toContain(
+      "sensitive rejection response",
+    );
+  });
+
+  it("reports a safe error when personal token validation fails unexpectedly", async () => {
+    const setup = new CyclingAnalyticsProvider(
+      async () => new Response("sensitive provider outage", { status: 500 }),
+    ).authSetup();
+    if (!setup.manualToken) throw new Error("expected manual token authentication");
+
+    const error = await setup.manualToken
+      .exchangeToken("personal-token")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      message: "Cycling Analytics token validation failed (500). Try again.",
+    });
+    expect(error instanceof Error ? error.message : "").not.toContain("sensitive provider outage");
   });
 
   it("sync returns error when no tokens", async () => {

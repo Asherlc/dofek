@@ -1,6 +1,8 @@
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
+import { oauthToken, providerConnection } from "./schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { connectProviderWithTokens, ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
 
@@ -168,6 +170,50 @@ describe("Token storage (integration)", () => {
     );
     expect(catalogRows).toEqual([{ id: "shared-oauth-provider", name: "Shared OAuth" }]);
     expect(connectionRows).toEqual([{ user_id: firstUserId }, { user_id: secondUserId }]);
+  });
+
+  it("atomically persists a provider connection and encrypted token pair", async () => {
+    const providerId = "atomic-token-persistence";
+    const tokens = {
+      accessToken: "atomic-access-token",
+      refreshToken: "atomic-refresh-token",
+      expiresAt: new Date("2026-09-01T00:00:00Z"),
+      scopes: "read write",
+    };
+
+    await connectProviderWithTokens(
+      ctx.db,
+      {
+        id: providerId,
+        name: "Atomic Token Persistence",
+        apiBaseUrl: "https://example.com/api",
+      },
+      tokens,
+      TEST_USER_ID,
+    );
+
+    const connectionRows = await ctx.db
+      .select({ providerId: providerConnection.providerId })
+      .from(providerConnection)
+      .where(
+        and(
+          eq(providerConnection.userId, TEST_USER_ID),
+          eq(providerConnection.providerId, providerId),
+        ),
+      );
+    const encryptedRows = await ctx.db
+      .select({
+        accessToken: oauthToken.accessToken,
+        refreshToken: oauthToken.refreshToken,
+      })
+      .from(oauthToken)
+      .where(and(eq(oauthToken.userId, TEST_USER_ID), eq(oauthToken.providerId, providerId)));
+
+    expect(connectionRows).toEqual([{ providerId }]);
+    expect(encryptedRows).toHaveLength(1);
+    expect(isEncryptedCredentialValue(encryptedRows[0]?.accessToken ?? "")).toBe(true);
+    expect(isEncryptedCredentialValue(encryptedRows[0]?.refreshToken ?? "")).toBe(true);
+    await expect(loadTokens(ctx.db, providerId, TEST_USER_ID)).resolves.toEqual(tokens);
   });
 
   it("rolls back a new provider connection when token persistence fails", async () => {
