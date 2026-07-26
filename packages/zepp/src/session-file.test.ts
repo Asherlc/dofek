@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-type FileWriteArg = { path: string; data: ArrayBuffer };
+type FileWriteArg = { path: string; data: ArrayBuffer | string };
 type FileReadArg = { path: string; options: { encoding: string } };
 type OpenArg = { path: string; flag: number };
-type WriteArg = { data: ArrayBuffer };
+type WriteArg = { buffer: ArrayBuffer };
 
 const mockWriteFileSync = vi.hoisted(() => vi.fn<(arg: FileWriteArg) => void>());
 const mockReadFileSync = vi.hoisted(() => vi.fn<(arg: FileReadArg) => ArrayBuffer | undefined>());
 const mockOpenSync = vi.hoisted(() => vi.fn<(arg: OpenArg) => number>());
-const mockWriteSync = vi.hoisted(() => vi.fn<(arg: WriteArg) => void>());
+const mockWriteSync = vi.hoisted(() => vi.fn((arg: WriteArg): number => arg.buffer.byteLength));
 const mockCloseSync = vi.hoisted(() => vi.fn<(arg: { fd: number }) => void>());
 
 vi.mock("@zos/fs", () => ({
@@ -23,9 +23,15 @@ vi.mock("@zos/fs", () => ({
   O_CREAT: 8,
 }));
 
-import { appendSamples, finalizeSessionFile, resetSessionFile } from "./session-file.ts";
+import {
+  appendSamples,
+  finalizeSessionFile,
+  resetSessionFile,
+  writeSessionMetaFile,
+} from "./session-file.ts";
 
 const SESSION_FILE = "data://imu/session.bin";
+const SESSION_META_FILE = "data://imu/session_meta.json";
 const HEADER_SIZE = 32;
 
 beforeEach(() => {
@@ -51,7 +57,27 @@ describe("resetSessionFile", () => {
     const firstCall = writeCalls[0];
     if (!firstCall) throw new Error("expected writeFileSync to be called");
     expect(firstCall[0].path).toBe(SESSION_FILE);
-    expect(firstCall[0].data.byteLength).toBe(HEADER_SIZE);
+    const { data } = firstCall[0];
+    if (typeof data === "string") throw new Error("expected session header to be an ArrayBuffer");
+    expect(data.byteLength).toBe(HEADER_SIZE);
+  });
+});
+
+describe("writeSessionMetaFile", () => {
+  it("writes metadata as a JSON string", () => {
+    const meta = {
+      sampleCount: 500,
+      observedHzX100: 2500,
+      hasGyro: true,
+      updatedAt: 1234,
+    };
+
+    writeSessionMetaFile(meta, SESSION_META_FILE);
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith({
+      path: SESSION_META_FILE,
+      data: JSON.stringify(meta),
+    });
   });
 });
 
@@ -80,7 +106,16 @@ describe("appendSamples", () => {
     const writeCalls = mockWriteSync.mock.calls;
     const writeFirstCall = writeCalls[0];
     if (!writeFirstCall) throw new Error("expected writeSync to be called");
-    expect(writeFirstCall[0].data.byteLength).toBe(4 + 28);
+    expect(writeFirstCall[0].buffer.byteLength).toBe(4 + 28);
+  });
+
+  it("throws when the file system writes only part of a chunk", () => {
+    mockWriteSync.mockReturnValueOnce(1);
+
+    expect(() => appendSamples([{ tMs: 0, ax: 1, ay: 2, az: 3 }], false, SESSION_FILE)).toThrow(
+      "Session file write incomplete: wrote 1 of 20 bytes",
+    );
+    expect(mockCloseSync).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -108,7 +143,7 @@ describe("finalizeSessionFile", () => {
     const writeCalls = mockWriteSync.mock.calls;
     const writeFirstCall = writeCalls[0];
     if (!writeFirstCall) throw new Error("expected writeSync to be called");
-    const patchedView = new DataView(writeFirstCall[0].data);
+    const patchedView = new DataView(writeFirstCall[0].buffer);
     expect(patchedView.getUint32(16, true)).toBe(500);
     expect(patchedView.getUint16(22, true)).toBe(2500);
   });

@@ -4,7 +4,6 @@ import { queryPermission, requestPermission } from "@zos/app";
 import * as appService from "@zos/app-service";
 import { getDeviceInfo } from "@zos/device";
 import { setWakeUpRelaunch } from "@zos/display";
-import { writeFileSync } from "@zos/fs";
 import { showToast } from "@zos/interaction";
 import {
   Accelerometer,
@@ -41,7 +40,12 @@ import {
 import { collectHealthData } from "../src/health-collector.ts";
 import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
-import { appendSamples, finalizeSessionFile, resetSessionFile } from "../src/session-file.ts";
+import {
+  appendSamples,
+  finalizeSessionFile,
+  resetSessionFile,
+  writeSessionMetaFile,
+} from "../src/session-file.ts";
 import {
   AUTO_TRANSFER_SAMPLE_COUNT,
   FLUSH_SAMPLE_THRESHOLD,
@@ -665,17 +669,15 @@ Page(
     },
 
     writeMetaFile() {
-      writeFileSync({
-        path: SESSION_META_FILE,
-        data: new TextEncoder().encode(
-          JSON.stringify({
-            sampleCount: this.state.sampleCount,
-            observedHzX100: this.state.observedHzX100,
-            hasGyro: this.state.hasGyro,
-            updatedAt: Date.now(),
-          }),
-        ).buffer,
-      });
+      writeSessionMetaFile(
+        {
+          sampleCount: this.state.sampleCount,
+          observedHzX100: this.state.observedHzX100,
+          hasGyro: this.state.hasGyro,
+          updatedAt: Date.now(),
+        },
+        SESSION_META_FILE,
+      );
     },
 
     publishSessionStatus(state: string) {

@@ -12,9 +12,29 @@ import {
 import { createHeader, encodeChunk, HEADER_SIZE, patchHeaderSampleCount } from "./imu-format.ts";
 import type { ImuSample, SessionFileMeta } from "./types.ts";
 
+interface SessionMeta {
+  sampleCount: number;
+  observedHzX100: number;
+  hasGyro: boolean;
+  updatedAt: number;
+}
+
 export function resetSessionFile(meta: SessionFileMeta, path: string): void {
   const header = createHeader(meta);
   writeFileSync({ path, data: header });
+}
+
+export function writeSessionMetaFile(meta: SessionMeta, path: string): void {
+  writeFileSync({ path, data: JSON.stringify(meta) });
+}
+
+function writeBuffer(fd: number, buffer: ArrayBuffer): void {
+  const bytesWritten = writeSync({ fd, buffer });
+  if (bytesWritten !== buffer.byteLength) {
+    throw new Error(
+      `Session file write incomplete: wrote ${bytesWritten} of ${buffer.byteLength} bytes`,
+    );
+  }
 }
 
 export function appendSamples(samples: ImuSample[], hasGyro: boolean, path: string): void {
@@ -27,7 +47,7 @@ export function appendSamples(samples: ImuSample[], hasGyro: boolean, path: stri
   });
 
   try {
-    writeSync({ fd, data: chunk });
+    writeBuffer(fd, chunk);
   } finally {
     closeSync({ fd });
   }
@@ -55,7 +75,7 @@ export function finalizeSessionFile(
 
   const fd = openSync({ path, flag: O_RDWR });
   try {
-    writeSync({ fd, data: patched });
+    writeBuffer(fd, patched);
   } finally {
     closeSync({ fd });
   }
