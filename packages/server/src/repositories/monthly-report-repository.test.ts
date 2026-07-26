@@ -126,6 +126,17 @@ describe("MonthlyReportRepository", () => {
     expect(result).toEqual({ current: null, history: [] });
   });
 
+  it("binds the requested user and month window", async () => {
+    const { repo, execute } = makeRepository([]);
+
+    await repo.getReport(12);
+
+    expect(execute).toHaveBeenCalledWith(expect.anything(), expect.any(String), {
+      userId: "user-1",
+      months: 12,
+    });
+  });
+
   it("returns single month as current with empty history", async () => {
     const { repo } = makeRepository([makeDbRow({ month_start: "2025-03-01" })]);
     const result = await repo.getReport(6);
