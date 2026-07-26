@@ -166,6 +166,7 @@ export async function initBackgroundWhoopBleSync(
   // BLE connection while the app is suspended.
   if (shouldRunForegroundPeriodicDrain()) {
     logger.info(LOG_CATEGORY, "initializing background sync");
+    syncing = true;
     try {
       await syncOnForeground(
         trpcClient,
@@ -177,6 +178,8 @@ export async function initBackgroundWhoopBleSync(
     } catch (error: unknown) {
       logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
       captureException(error, { source: "whoop-ble-init-sync" });
+    } finally {
+      syncing = false;
     }
   } else {
     logger.info(LOG_CATEGORY, "initial sync deferred until app foregrounds");

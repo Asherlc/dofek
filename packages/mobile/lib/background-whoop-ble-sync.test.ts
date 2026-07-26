@@ -124,6 +124,30 @@ describe("background-whoop-ble-sync", () => {
     expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
   });
 
+  it("prevents a foreground transition from overlapping the initial sync", async () => {
+    let resolveInitialDrain: (() => void) | null = null;
+    vi.mocked(whoopDeps.peekBufferedSamples)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveInitialDrain = () => resolve([]);
+          }),
+      )
+      .mockResolvedValue([]);
+
+    const initPromise = initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+    await vi.waitFor(() => {
+      expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1);
+    });
+
+    appStateCallback?.("active");
+
+    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1);
+
+    resolveInitialDrain?.();
+    await initPromise;
+  });
+
   it("uploads buffered samples with gyroscope data immediately on init", async () => {
     const samples = [
       {
