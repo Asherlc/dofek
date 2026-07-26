@@ -18351,9 +18351,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-26 — Worker Deployments Stalled Active BullMQ Jobs
 
-- **Status:** Initial lifecycle fixes merged and deployed; a follow-up provider
-  admission root cause was confirmed from the fixed-release rollout, with its
-  direct fix validated locally and pending PR/deployment.
+- **Status:** Resolved. The lifecycle and shared provider-admission fixes are
+  deployed, the exact stalled production job recovered without manual
+  mutation, and both Sentry issues are resolved.
 - **Symptoms:** Sentry issues
   [DOFEK-SERVER-4N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4N)
   and
@@ -18426,11 +18426,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   shutdown branch was added. The admission regression failed against the
   previous implementation; after the fix, 82 focused package/application tests
   pass, including an atomic Redis-store case that advances through the exact
-  persisted production quota shape.
-- **Remaining risk / follow-up:** Merge and deploy the admission fix, verify the
-  reclaimed Strava job completes and subsequent jobs make bounded progress,
-  observe no fixed-release 4N/2K events across another rollout, then resolve
-  both Sentry issues.
+  persisted production quota shape. PR #2046 deployed as release `7bc37db`;
+  the exact reclaimed Strava job
+  `sync-req-strava-f923fed7-d934-4cd9-8cb9-8e83020d0e69-11df2d47b5e2f49a237cfc5f`
+  then reached 100%, completed two activities and 6,299 metric rows, and
+  released its Redis lock. Neither issue recurred on the fixed release, and
+  DOFEK-SERVER-4N and DOFEK-SERVER-2K were resolved with this evidence attached.
+- **Remaining risk / follow-up:** None beyond normal Sentry and worker-progress
+  monitoring.
 
 ## 2026-07-26 — Peloton Workout Response Drift Blocked Sync
 
@@ -18502,3 +18505,60 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge through normal CI, deploy, observe a
   successful scheduled Peloton sync on the fixed release, and then resolve
   DOFEK-SERVER-5F.
+
+## 2026-07-26 — Reused Analytics CTEs Recomputed and Forced Projection Failed
+
+- **Status:** Both remaining aggregate analytics failures have direct fixes
+  reproduced and validated locally; merge and production validation pending.
+- **Symptoms:** The production analytics worker continued reporting
+  [Sentry issue DOFEK-SERVER-5A](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5A)
+  after the power-curve fix deployed. Each serial dbt cycle failed
+  `provider_stats`, timed out `sleep_heart_rate_sample`, and skipped their
+  downstream models.
+- **User impact:** Provider inventory counts and sleep, recovery, training, and
+  healthspan read models could remain stale because a failed cycle never
+  reached cache warming or recorded a successful analytics refresh.
+- **Evidence:** The exact failing command remained the scheduled production
+  `dbt build`. Its first provider fatal line was ClickHouse code `117`:
+  `Projection by_provider_generation is specified in setting
+  force_optimize_projection_name but not used`. The same cycle then failed the
+  sleep model with code `159`: `Timeout exceeded: elapsed 240014.146311 ms,
+  maximum: 240000 ms`. The compiled provider query forced the covering
+  projection in both metric-stream scans, while the sleep model marked three
+  reused CTEs `AS materialized` without enabling materialized CTE execution and
+  rebuilt the heart-rate and activity refresh joins again for its dirty
+  subset. ClickHouse documents that `force_optimize_projection_name` checks
+  that the named projection is actually used at least once:
+  <https://clickhouse.com/docs/whats-new/changelog/2023>.
+- **Root cause:** `provider_stats` made an optional physical optimization a
+  correctness prerequisite, so any valid plan that could not use that
+  projection threw instead of reading the canonical base table. Separately,
+  the sleep model's shared CTE declarations were still inlined, and its
+  `active_dirty_sleep` stage explicitly repeated the already-computed refresh
+  joins. ClickHouse 26.3 introduced materialized CTEs specifically to evaluate
+  a reused CTE once in a temporary table, but requires
+  `enable_materialized_cte=1` for the clause to take effect:
+  <https://clickhouse.com/blog/clickhouse-release-26-03>.
+- **Fix / mitigation:** Keep the covering projection available to the
+  optimizer but remove the forced-projection requirement, so the canonical
+  table remains a correct fallback. Enable materialized CTE execution only for
+  these two offline dbt models; materialize the reused provider state/key set;
+  and carry sleep end, duration, and refresh state through one materialized
+  `current_sleep_state` into the dirty-key stage instead of rebuilding its
+  source joins. This follows ClickHouse's guidance to add and use projections
+  based on measured query need rather than making them speculative
+  prerequisites:
+  <https://clickhouse.com/blog/10-best-practice-tips>. No timeout, retry,
+  resource limit, or worker health budget changed.
+- **Validation:** Both model-structure regressions failed before
+  implementation. A real ClickHouse provider regression then reproduced the
+  exact production code `117` when the projection was unavailable and passed
+  after the model regained its base-table fallback. After the fix, all 45
+  focused SQL/helper unit tests and all six real-ClickHouse provider/sleep
+  integration cases pass, including bounded incremental sleep, complete full
+  refresh, lifecycle tombstones, current metric-stream versions, and
+  projection-unavailable refresh aggregation.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy without
+  changing the four-minute query ceiling, observe a complete production dbt
+  cycle in which both models succeed, verify downstream cache warming, then
+  resolve DOFEK-SERVER-5A.

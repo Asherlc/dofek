@@ -5,7 +5,8 @@
     order_by='(user_id, provider_id)',
     query_settings={
         'max_threads': 1,
-        'join_use_nulls': 1
+        'join_use_nulls': 1,
+        'enable_materialized_cte': 1
     }
 ) }}
 
@@ -46,14 +47,7 @@ WITH source_provider_refreshes AS (
         user_id,
         provider_id,
         max(ingested_at) AS source_refreshed_at
-    FROM (
-        SELECT
-            user_id,
-            provider_id,
-            ingested_at
-        FROM {{ source('ingest', 'metric_stream') }}
-        SETTINGS force_optimize_projection_name = 'by_provider_generation'
-    )
+    FROM {{ source('ingest', 'metric_stream') }}
     GROUP BY user_id, provider_id
 
     UNION ALL
@@ -105,7 +99,7 @@ WITH source_provider_refreshes AS (
     GROUP BY user_id, provider_id
 ),
 
-current_provider_state AS (
+current_provider_state AS materialized (
     SELECT
         user_id,
         provider_id,
@@ -152,7 +146,7 @@ stale_providers AS (
 ),
 {% endif %}
 
-providers AS (
+providers AS materialized (
     SELECT
         user_id,
         provider_id
@@ -172,17 +166,7 @@ metric_stream_current AS (
         provider_id,
         id,
         argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted
-    FROM (
-        SELECT
-            user_id,
-            provider_id,
-            id,
-            is_deleted,
-            version,
-            ingested_at
-        FROM {{ source('ingest', 'metric_stream') }}
-        SETTINGS force_optimize_projection_name = 'by_provider_generation'
-    )
+    FROM {{ source('ingest', 'metric_stream') }}
     WHERE (user_id, provider_id) IN (
         SELECT
             user_id,
