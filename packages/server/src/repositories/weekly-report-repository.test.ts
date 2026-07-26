@@ -220,7 +220,7 @@ describe("WeeklyReportRepository", () => {
       getHeartRateCurveRows: vi.fn(),
       getPaceCurveRows: vi.fn(),
     };
-    const repo = new WeeklyReportRepository("user-1", "UTC", sensorStore);
+    const repo = new WeeklyReportRepository("user-1", sensorStore);
     return { repo, execute: query };
   }
 
