@@ -1,4 +1,4 @@
-interface SessionProgress {
+export interface SessionProgress {
   sampleCount: number;
   observedHzX100: number;
 }
@@ -8,10 +8,13 @@ export function createSessionProgressHandler({
   publishHostStatus,
 }: {
   updateWatch: (progress: SessionProgress) => void;
-  publishHostStatus: () => void;
+  publishHostStatus: (progress: SessionProgress) => void;
 }): (progress: SessionProgress) => void {
   return (progress) => {
-    updateWatch(progress);
-    publishHostStatus();
+    try {
+      updateWatch(progress);
+    } finally {
+      publishHostStatus(progress);
+    }
   };
 }

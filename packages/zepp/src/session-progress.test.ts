@@ -17,6 +17,22 @@ describe("createSessionProgressHandler", () => {
 
     expect(updateWatch).toHaveBeenNthCalledWith(1, firstProgress);
     expect(updateWatch).toHaveBeenNthCalledWith(2, nextProgress);
-    expect(publishHostStatus).toHaveBeenCalledTimes(2);
+    expect(publishHostStatus).toHaveBeenNthCalledWith(1, firstProgress);
+    expect(publishHostStatus).toHaveBeenNthCalledWith(2, nextProgress);
+  });
+
+  it("still publishes the progress report when the watch update fails", () => {
+    const error = new Error("metadata write failed");
+    const publishHostStatus = vi.fn();
+    const handleProgress = createSessionProgressHandler({
+      updateWatch: () => {
+        throw error;
+      },
+      publishHostStatus,
+    });
+    const progress = { sampleCount: 4_170, observedHzX100: 2_498 };
+
+    expect(() => handleProgress(progress)).toThrow(error);
+    expect(publishHostStatus).toHaveBeenCalledWith(progress);
   });
 });
