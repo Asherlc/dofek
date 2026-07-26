@@ -111,22 +111,15 @@ existing_duration_rows AS (
 ),
 {% endif %}
 
-power_samples AS (
+power_sample_groups AS (
     SELECT
         am.activity_id AS activity_id,
         am.user_id AS user_id,
         am.started_at AS started_at,
-        sensor.recorded_at AS recorded_at,
-        sensor.scalar AS power,
-        row_number() OVER (
-            PARTITION BY am.activity_id
-            ORDER BY sensor.recorded_at
-        ) AS row_number,
-        sum(sensor.scalar) OVER (
-            PARTITION BY am.activity_id
-            ORDER BY sensor.recorded_at
-            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        ) AS cumulative_sum
+        arraySort(
+            sample -> sample.1,
+            groupArray((sensor.recorded_at, toFloat64(assumeNotNull(sensor.scalar))))
+        ) AS samples
     FROM activity_bounds AS am
     INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor
         ON sensor.activity_id = am.activity_id
@@ -140,37 +133,78 @@ power_samples AS (
             activity_id
         FROM activity_bounds
     )
+    GROUP BY
+        am.activity_id,
+        am.user_id,
+        am.started_at
 ),
 
-power_segments AS (
-    SELECT
-        current_sample.activity_id AS activity_id,
-        current_sample.user_id AS user_id,
-        current_sample.started_at AS started_at,
-        current_sample.recorded_at AS recorded_at,
-        next_sample.recorded_at AS next_recorded_at,
-        current_sample.power AS power,
-        current_sample.row_number AS row_number,
-        dateDiff('millisecond', current_sample.recorded_at, next_sample.recorded_at) / 1000.0 AS segment_seconds
-    FROM power_samples AS current_sample
-    INNER JOIN power_samples AS next_sample
-        ON next_sample.activity_id = current_sample.activity_id
-        AND toInt64(next_sample.row_number) = toInt64(current_sample.row_number) + 1
-    WHERE next_sample.recorded_at > current_sample.recorded_at
-),
-
-sample_gap_stats AS (
+power_sample_arrays AS (
     SELECT
         activity_id,
-        greatest(5.0, quantileExact(0.5) (segment_seconds) * 2.0) AS max_continuous_gap_seconds
-    FROM power_segments
-    GROUP BY activity_id
+        user_id,
+        started_at,
+        arrayMap(sample -> sample.1, samples) AS recorded_times,
+        arrayMap(sample -> sample.2, samples) AS powers
+    FROM power_sample_groups
+),
+
+power_sample_segments AS (
+    SELECT
+        activity_id,
+        user_id,
+        started_at,
+        recorded_times,
+        powers,
+        arrayMap(
+            sample_index -> dateDiff(
+                'millisecond',
+                recorded_times[sample_index],
+                recorded_times[sample_index + 1]
+            ) / 1000.0,
+            arrayEnumerate(arrayPopBack(recorded_times))
+        ) AS segment_seconds
+    FROM power_sample_arrays
+    WHERE length(recorded_times) > 1
+),
+
+power_sample_energy AS (
+    SELECT
+        activity_id,
+        user_id,
+        started_at,
+        recorded_times,
+        segment_seconds,
+        arrayCumSum(
+            arrayConcat(
+                [toFloat64(0)],
+                arrayMap(
+                    (power, segment_seconds) -> power * segment_seconds,
+                    arrayPopBack(powers),
+                    segment_seconds
+                )
+            )
+        ) AS cumulative_energy,
+        greatest(
+            5.0,
+            arrayReduce('quantileExact(0.5)', segment_seconds) * 2.0
+        ) AS max_continuous_gap_seconds
+    FROM power_sample_segments
+),
+
+power_sample_endpoints AS (
+    SELECT
+        activity_id,
+        user_id,
+        sample_index,
+        recorded_times[sample_index] AS recorded_at,
+        cumulative_energy[sample_index] AS cumulative_energy
+    FROM power_sample_energy
+    ARRAY JOIN arrayEnumerate(recorded_times) AS sample_index
 ),
 
 duration_values AS (
-    SELECT
-        duration_seconds,
-        toInt64(duration_seconds) * 1000 AS duration_milliseconds
+    SELECT duration_seconds
     FROM (
         SELECT arrayJoin([5, 15, 30, 60, 120, 180, 300, 420, 600, 1200, 1800, 3600, 5400, 7200]) AS duration_seconds
     )
@@ -180,31 +214,34 @@ candidate_duration_windows AS (
     SELECT
         start_sample.activity_id AS activity_id,
         start_sample.user_id AS user_id,
-        start_sample.started_at AS started_at,
+        sample_group.started_at AS started_at,
         duration_values.duration_seconds AS duration_seconds,
         start_sample.recorded_at AS window_started_at,
-        max(window_sample.recorded_at) AS window_ended_at,
-        max(dateDiff('millisecond', start_sample.recorded_at, window_sample.recorded_at)) / 1000.0 AS elapsed_seconds,
-        max(segment.segment_seconds) AS max_gap_seconds,
-        sum(segment.power * segment.segment_seconds) / sum(segment.segment_seconds) AS avg_power
-    FROM power_samples AS start_sample
+        end_sample.recorded_at AS window_ended_at,
+        dateDiff('millisecond', start_sample.recorded_at, end_sample.recorded_at) / 1000.0 AS elapsed_seconds,
+        arrayMax(
+            arraySlice(
+                sample_group.segment_seconds,
+                start_sample.sample_index,
+                end_sample.sample_index - start_sample.sample_index
+            )
+        ) AS max_gap_seconds,
+        (
+            end_sample.cumulative_energy - start_sample.cumulative_energy
+        ) / duration_values.duration_seconds AS avg_power,
+        sample_group.max_continuous_gap_seconds AS max_continuous_gap_seconds
+    FROM power_sample_endpoints AS start_sample
     CROSS JOIN duration_values
-    INNER JOIN power_samples AS window_sample
-        ON window_sample.activity_id = start_sample.activity_id
-        AND toInt64(window_sample.row_number) >= toInt64(start_sample.row_number)
-    INNER JOIN power_segments AS segment
-        ON segment.activity_id = start_sample.activity_id
-        AND toInt64(segment.row_number) >= toInt64(start_sample.row_number)
-        AND toInt64(segment.row_number) < toInt64(window_sample.row_number)
-    WHERE dateDiff('millisecond', start_sample.recorded_at, window_sample.recorded_at)
-        <= duration_values.duration_milliseconds
-    GROUP BY
-        start_sample.activity_id,
-        start_sample.user_id,
-        start_sample.started_at,
-        start_sample.recorded_at,
-        window_sample.row_number,
-        duration_values.duration_seconds
+    INNER JOIN power_sample_endpoints AS end_sample
+        ON end_sample.activity_id = start_sample.activity_id
+        AND end_sample.user_id = start_sample.user_id
+        AND end_sample.recorded_at = addSeconds(
+            start_sample.recorded_at,
+            duration_values.duration_seconds
+        )
+    INNER JOIN power_sample_energy AS sample_group
+        ON sample_group.activity_id = start_sample.activity_id
+        AND sample_group.user_id = start_sample.user_id
 ),
 
 duration_windows AS (
@@ -218,10 +255,8 @@ duration_windows AS (
         candidate_duration_windows.elapsed_seconds AS covered_seconds,
         candidate_duration_windows.avg_power AS avg_power
     FROM candidate_duration_windows
-    INNER JOIN sample_gap_stats AS gap_stats
-        ON gap_stats.activity_id = candidate_duration_windows.activity_id
     WHERE candidate_duration_windows.elapsed_seconds >= toFloat64(candidate_duration_windows.duration_seconds)
-        AND candidate_duration_windows.max_gap_seconds <= gap_stats.max_continuous_gap_seconds
+        AND candidate_duration_windows.max_gap_seconds <= candidate_duration_windows.max_continuous_gap_seconds
 ),
 
 best_powers AS (
@@ -241,10 +276,10 @@ best_powers AS (
 
 activity_dates AS (
     SELECT
-        power_samples.activity_id,
-        toString(toDate(toTimeZone(power_samples.started_at, 'UTC'))) AS activity_date
-    FROM power_samples
-    GROUP BY power_samples.activity_id, power_samples.started_at
+        power_sample_groups.activity_id,
+        toString(toDate(toTimeZone(power_sample_groups.started_at, 'UTC'))) AS activity_date
+    FROM power_sample_groups
+    GROUP BY power_sample_groups.activity_id, power_sample_groups.started_at
 ),
 
 refresh_clock AS (

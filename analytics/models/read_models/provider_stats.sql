@@ -43,14 +43,6 @@ WITH current_providers AS (
     SELECT DISTINCT
         user_id,
         provider_id
-    FROM {{ source('ingest', 'metric_stream') }} FINAL
-    WHERE is_deleted = 0
-
-    UNION DISTINCT
-
-    SELECT DISTINCT
-        user_id,
-        provider_id
     FROM {{ source('postgres_fitness', 'food_entry') }} FINAL
     WHERE _peerdb_is_deleted = 0
 

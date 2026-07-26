@@ -228,11 +228,28 @@ describe("deriveProcessingState", () => {
     expect(state.overallStatus).toBe("delayed");
   });
 
-  it("derives blocked when a terminal operation omitted a required stage", () => {
+  it("keeps a recent terminal operation waiting for its required downstream stage", () => {
     const state = deriveProcessingState({
       datasetKeys: ["activity"],
       outputManifest: { activity: ["relational"] },
       events: [event(1, "ingest", "succeeded", "activity")],
+      operationStatus: "succeeded",
+      now,
+      delayedAfterMs: 300_000,
+    });
+
+    expect(state.datasets[0]).toMatchObject({
+      currentStage: "canonical_commit",
+      status: "waiting",
+    });
+    expect(state.overallStatus).toBe("waiting");
+  });
+
+  it("derives blocked when a terminal operation omits a required stage past the delay budget", () => {
+    const state = deriveProcessingState({
+      datasetKeys: ["activity"],
+      outputManifest: { activity: ["relational"] },
+      events: [event(1, "ingest", "succeeded", "activity", new Date(now.getTime() - 300_001))],
       operationStatus: "succeeded",
       now,
       delayedAfterMs: 300_000,

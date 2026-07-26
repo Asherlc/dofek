@@ -246,6 +246,22 @@ active_dirty_sleep AS (
     WHERE active_sleep.is_nap = FALSE
 ),
 
+dirty_sleep_dates AS (
+    SELECT DISTINCT
+        user_id,
+        arrayJoin(
+            arrayMap(
+                day_offset -> toDate(started_at) + day_offset,
+                range(
+                    toUInt32(
+                        greatest(0, dateDiff('day', toDate(started_at), toDate(ended_at)))
+                    ) + 1
+                )
+            )
+        ) AS recorded_date
+    FROM active_dirty_sleep
+),
+
 sleep_activity_bounds AS (
     SELECT
         user_id,
@@ -293,6 +309,12 @@ current_samples AS (
         AND samples.recorded_at >= active_activity.started_at
         AND samples.recorded_at <= active_activity.ended_at
     WHERE samples.channel = 'heart_rate'
+        AND (samples.user_id, samples.recorded_date) IN (
+            SELECT
+                user_id,
+                recorded_date
+            FROM dirty_sleep_dates
+        )
         AND active_activity.id IS NULL
 ),
 
