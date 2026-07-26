@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { WhoopCycle } from "whoop-whoop/types";
+import type { WhoopCycle } from "@dofek/whoop/types";
 import { z } from "zod";
 
 export const WHOOP_CYCLE_WINDOW_MS = 200 * 24 * 60 * 60 * 1000;

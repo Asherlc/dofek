@@ -1,5 +1,5 @@
-import { VeloHeroClient } from "velohero-client/client";
-import { parseVeloHeroWorkout } from "velohero-client/parsing";
+import { VeloHeroClient } from "@dofek/velohero/client";
+import { parseVeloHeroWorkout } from "@dofek/velohero/parsing";
 import {
   finishProviderActivityListSync,
   upsertProviderActivity,

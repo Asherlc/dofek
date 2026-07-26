@@ -1,5 +1,5 @@
+import { WhoopClient } from "@dofek/whoop/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
   buildWhoopTokenSet,

@@ -18,6 +18,7 @@ packages:
   - packages/server
   - packages/web
   - packages/mobile
+  - packages/mobile/modules/whoop-ble
   - packages/whoop-whoop
   - packages/eight-sleep
   - packages/zwift-client
@@ -26,6 +27,8 @@ packages:
   - packages/velohero-client
   - packages/garmin-connect
   - packages/trainingpeaks-connect
+  - packages/peloton-client
+  - packages/xert-client
 
 ignoredBuiltDependencies:
   - cpu-features

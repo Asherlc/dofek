@@ -101,7 +101,7 @@ dofek/
 ├── packages/
 │   ├── server/                    # dofek-server — Express + tRPC API + BullMQ jobs
 │   ├── web/                       # dofek-web — Vite + React SPA (browser)
-│   ├── mobile/                    # dofek-mobile — Expo + React Native app (iOS)
+│   ├── mobile/                    # dofek-mobile — Expo app; includes @dofek/whoop-ble
 │   ├── ios/                       # Shared iOS-native support package(s)
 │   ├── format/                    # @dofek/format — date, duration, number, unit formatting
 │   ├── scoring/                   # @dofek/scoring — score colors, labels, workload helpers
@@ -458,20 +458,40 @@ The server registry currently has 30 providers in `packages/server/src/routers/s
 OAuth providers also need a callback URL env var pointing at your deployment's `/callback` route (for example `https://dofek.asherlc.com/callback`). Set `OAUTH_REDIRECT_URI` in Infisical. After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
 Provider secrets must be stored in Infisical, not `.env.local`.
 
-### Reverse-Engineered API Packages (8)
+### Published Reverse-Engineered Packages
 
-Standalone TypeScript packages for internal APIs that lack public developer access:
+Reusable clients for provider access patterns that are unavailable or constrained
+in the providers' public APIs are published under the `@dofek` npm scope. The
+native WHOOP package covers the separate Bluetooth protocol:
 
 | Package | Auth Pattern | Source |
 |---------|-------------|--------|
-| `packages/whoop-whoop` | AWS Cognito | Internal API |
-| `packages/eight-sleep` | Hardcoded OAuth creds (from APK) | Internal API |
-| `packages/zwift-client` | Keycloak password grant | Internal API |
-| `packages/zepp-client` | Huami registration token exchange | Internal API |
-| `packages/trainerroad-client` | CSRF cookie form login | Internal API |
-| `packages/velohero-client` | SSO token | Simple web API |
-| `packages/garmin-connect` | Multi-step SSO (OAuth1 → OAuth2) | Based on python-garminconnect |
-| `packages/trainingpeaks-connect` | Browser cookie → Bearer exchange | Based on tp2intervals |
+| `@dofek/whoop` | AWS Cognito | Internal API |
+| `@dofek/whoop-ble` | Bluetooth Low Energy | Reverse-engineered device protocol |
+| `@dofek/eight-sleep` | Hardcoded OAuth creds (from APK) | Internal API |
+| `@dofek/peloton` | Auth0 Universal Login automation + PKCE | Private member API |
+| `@dofek/zwift` | Keycloak password grant | Internal API |
+| `@dofek/zepp-client` | Huami registration token exchange | Internal API |
+| `@dofek/trainerroad` | CSRF cookie form login | Internal API |
+| `@dofek/velohero` | SSO token | Simple web API |
+| `@dofek/garmin-connect` | Multi-step SSO (OAuth1 → OAuth2) | Based on python-garminconnect |
+| `@dofek/trainingpeaks` | Browser cookie → Bearer exchange | Based on tp2intervals |
+| `@dofek/xert` | Password grant + refresh token | Observed activity API |
+
+The supporting `@dofek/provider-http`, `@dofek/scoring`, `@dofek/zones`, and
+`@dofek/training` packages are public as well. Releases are independently
+versioned and published from a successful `main` CI run using npm trusted
+publishing and provenance. npm documents trusted publishing's GitHub Actions
+requirements in its [trusted publishers guide](https://docs.npmjs.com/trusted-publishers/);
+the monorepo release follows [Lerna's OIDC publishing guidance](https://lerna.js.org/docs/recipes/oidc-trusted-publishing).
+
+SwiftPM mirrors are tested, exported, patch-versioned, tagged, and released by
+one configuration-driven workflow after successful `main` CI. Add a package to
+`.github/swift-packages.json` with its canonical source directory, distribution
+repository, exporter script, and release-token secret; a package does not need
+its own workflow.
+Swift.org recommends semantic-version tags for published Swift packages in its
+[package release guidance](https://www.swift.org/documentation/package-manager/).
 
 ### Not Implemented
 

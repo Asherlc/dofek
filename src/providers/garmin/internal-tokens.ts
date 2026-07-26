@@ -1,4 +1,4 @@
-import type { GarminTokens } from "garmin-connect/types";
+import type { GarminTokens } from "@dofek/garmin-connect/types";
 import { z } from "zod";
 import type { TokenSet } from "../../auth/oauth.ts";
 

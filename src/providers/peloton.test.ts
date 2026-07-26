@@ -1,9 +1,9 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
-import { AccessTokenExpiredError } from "./auth-errors.ts";
 import {
   mapFitnessDiscipline,
+  PelotonAuthenticationError,
   PelotonClient,
   type PelotonPerformanceGraph,
   PelotonProvider,
@@ -690,7 +690,7 @@ describe("PelotonClient — error handling", () => {
     };
 
     const client = new PelotonClient("bad-token", mockFetch);
-    await expect(client.getUserId()).rejects.toThrow(AccessTokenExpiredError);
+    await expect(client.getUserId()).rejects.toThrow(PelotonAuthenticationError);
   });
 
   it("caches userId after first call", async () => {

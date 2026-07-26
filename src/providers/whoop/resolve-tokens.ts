@@ -1,5 +1,5 @@
-import { WhoopClient } from "whoop-whoop/client";
-import type { WhoopAuthToken } from "whoop-whoop/types";
+import { WhoopClient } from "@dofek/whoop/client";
+import type { WhoopAuthToken } from "@dofek/whoop/types";
 import { z } from "zod";
 import type { TokenSet } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
