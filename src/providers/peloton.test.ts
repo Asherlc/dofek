@@ -991,6 +991,9 @@ describe("PelotonProvider.sync — authentication failures", () => {
       .catch((cause: unknown) => cause);
 
     expect(error).toBeInstanceOf(AccessTokenExpiredError);
+    if (!(error instanceof AccessTokenExpiredError)) {
+      throw new Error("Expected an expired access token error");
+    }
     expect(error.cause).toBeInstanceOf(PelotonAuthenticationError);
   });
 
@@ -1012,8 +1015,12 @@ describe("PelotonProvider.sync — authentication failures", () => {
       }),
     );
 
-    expect(result.errors[0]?.cause).toBeInstanceOf(AccessTokenExpiredError);
-    expect(result.errors[0]?.cause?.cause).toBeInstanceOf(PelotonAuthenticationError);
+    const performanceError = result.errors[0]?.cause;
+    expect(performanceError).toBeInstanceOf(AccessTokenExpiredError);
+    if (!(performanceError instanceof AccessTokenExpiredError)) {
+      throw new Error("Expected an expired access token error");
+    }
+    expect(performanceError.cause).toBeInstanceOf(PelotonAuthenticationError);
   });
 });
 
