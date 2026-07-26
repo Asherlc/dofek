@@ -19,8 +19,8 @@
     "react-native",
     "imu"
   ],
-  "main": "./build/index.js",
-  "types": "./build/index.d.ts",
+  "main": "./index.ts",
+  "types": "./index.ts",
   "sideEffects": false,
   "files": [
     "build",
@@ -31,19 +31,23 @@
     "LICENSE"
   ],
   "exports": {
-    ".": {
-      "types": "./build/index.d.ts",
-      "import": "./build/index.js",
-      "default": "./build/index.js"
-    }
+    ".": "./index.ts"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "main": "./build/index.js",
+    "types": "./build/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./build/index.d.ts",
+        "import": "./build/index.js",
+        "default": "./build/index.js"
+      }
+    }
   },
   "scripts": {
     "build": "tsc",
     "prepack": "pnpm run build",
-    "test": "swift test",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {

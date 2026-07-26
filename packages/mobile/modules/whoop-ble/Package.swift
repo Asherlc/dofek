@@ -3,8 +3,11 @@ import Foundation
 import PackageDescription
 
 let expoFiles = ["WhoopBleModule.swift", "ExpoWhoopBle.podspec"]
+let packageDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let expoExclusions = expoFiles.filter {
-    FileManager.default.fileExists(atPath: "ios/\($0)")
+    FileManager.default.fileExists(
+        atPath: packageDirectory.appendingPathComponent("ios/\($0)").path
+    )
 }
 
 let package = Package(

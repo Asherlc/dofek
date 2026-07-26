@@ -22,12 +22,12 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
-    runs-on: macos-latest
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-          ref: ${{ github.event.workflow_run.head_sha || 'main' }}
+          ref: main
 
       - name: Test Swift package
         working-directory: packages/mobile/modules/whoop-ble
@@ -36,7 +36,7 @@ jobs:
   release:
     name: Version and Publish
     needs: verify-whoop-ble
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -63,10 +63,6 @@ jobs:
       - name: Set up Node.js and pnpm
         if: steps.current.outputs.should_release == 'true'
         uses: ./.github/actions/setup-node-pnpm
-
-      - name: Install current npm CLI
-        if: steps.current.outputs.should_release == 'true'
-        run: npm install --global npm@12.0.1
 
       - name: Configure release identity
         if: steps.current.outputs.should_release == 'true'

@@ -6,15 +6,17 @@ only after the `CI` workflow succeeds for the current `main` commit.
 
 ## npm architecture
 
-pnpm remains the workspace package manager. Lerna 9 is used only for the part
-pnpm does not provide: detecting changed release packages, independently
-patch-versioning them, updating workspace dependency versions, creating release
-commits and tags, and publishing those tags. Lerna recommends letting the
-package manager own workspace installation, supports independent versions, and
-added npm OIDC trusted publishing in version 9
+pnpm remains the workspace and publishing package manager. Lerna 9 is used only
+for the part pnpm does not provide: detecting changed release packages,
+independently patch-versioning them, updating workspace dependency versions,
+and creating release commits and tags. Lerna recommends letting the package
+manager own workspace installation and supports independent versions
 ([Lerna workspace guidance](https://lerna.js.org/docs/getting-started#adding-lerna-to-an-existing-repo),
-[version and publish](https://lerna.js.org/docs/features/version-and-publish),
-[OIDC publishing](https://lerna.js.org/docs/recipes/oidc-trusted-publishing)).
+[version and publish](https://lerna.js.org/docs/features/version-and-publish)).
+pnpm rewrites supported `publishConfig` fields when packing, which lets local
+workspace exports resolve TypeScript source while npm tarballs export compiled
+JavaScript and declarations
+([pnpm `publishConfig`](https://pnpm.io/package_json#publishconfig)).
 
 The automatic path is:
 
@@ -25,7 +27,8 @@ The automatic path is:
 3. `lerna version patch --yes` independently patch-bumps only changed packages,
    updates internal package references, creates a release commit, tags each
    package as `<name>@<version>`, and pushes the release commit and tags.
-4. `lerna publish from-git --yes` publishes the tagged versions.
+4. `pnpm --recursive publish` publishes workspace versions that are not yet in
+   the registry. Private application workspaces are skipped.
 5. npm authenticates the workflow with a short-lived GitHub OIDC credential and
    automatically records provenance. No npm write token is stored in GitHub.
 
@@ -37,7 +40,7 @@ requires a package to exist before its trusted publisher can be configured
 
 The workflow recognizes a tagged release commit whose parent is the tested
 commit. This makes a failed registry upload recoverable with
-`workflow_dispatch`: Lerna can publish the versions already tagged at `HEAD`
+`workflow_dispatch`: pnpm can publish the versions already tagged at `HEAD`
 without creating another version.
 
 ### Adding another npm package
@@ -49,6 +52,8 @@ A public package must:
   `homepage`, `bugs`, `engines`, `files`, `exports`, and
   `"publishConfig": { "access": "public" }`;
 - ship compiled JavaScript and declarations rather than TypeScript source;
+- use source paths in the local `exports` map and compiled paths in
+  `publishConfig.exports`;
 - include standalone `README.md`, `LICENSE`, and agent-only `AGENTS.md`
   documentation, with `CLAUDE.md` and `GEMINI.md` symlinked to `AGENTS.md`;
 - use `workspace:` references for other Dofek packages so pnpm and Lerna can

@@ -21,7 +21,7 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.packages.outputs.matrix }}
       should_release: ${{ steps.current.outputs.should_release }}
@@ -73,7 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
-    runs-on: macos-latest
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -94,7 +94,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out canonical source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -145,24 +145,57 @@ jobs:
             git status --short
           fi
 
-      - name: Version and publish Swift package
+      - name: Resolve Swift package version
+        if: steps.current.outputs.should_release == 'true'
+        id: version
+        env:
+          HAS_CHANGES: ${{ steps.changed.outputs.has_changes }}
+        run: |
+          if [ "$HAS_CHANGES" = "true" ]; then
+            VERSION=$(node --import tsx scripts/next-swift-package-version.ts swiftpm-mirror)
+          else
+            VERSION=$(
+              git -C swiftpm-mirror tag \
+                --points-at HEAD \
+                --list '[0-9]*.[0-9]*.[0-9]*' \
+                --sort=-version:refname |
+                head -n 1
+            )
+            if [ -z "$VERSION" ]; then
+              echo "The unchanged Swift package mirror HEAD has no semantic-version tag." >&2
+              exit 1
+            fi
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Version and push Swift package
         if: >
           steps.current.outputs.should_release == 'true' &&
           steps.changed.outputs.has_changes == 'true'
         env:
-          DISPLAY_NAME: ${{ matrix.display_name }}
-          GH_TOKEN: ${{ secrets[matrix.token_secret] }}
-          MIRROR_REPOSITORY: ${{ matrix.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION=$(node --import tsx scripts/next-swift-package-version.ts swiftpm-mirror)
           git -C swiftpm-mirror config user.name "github-actions[bot]"
           git -C swiftpm-mirror config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C swiftpm-mirror add --all
           git -C swiftpm-mirror commit -m "Release $VERSION"
           git -C swiftpm-mirror tag "$VERSION"
           git -C swiftpm-mirror push origin HEAD:main "refs/tags/$VERSION" --atomic
-          gh release create "$VERSION" \
-            --repo "$MIRROR_REPOSITORY" \
-            --title "$DISPLAY_NAME $VERSION" \
-            --generate-notes \
-            --verify-tag
+
+      - name: Create GitHub release
+        if: steps.current.outputs.should_release == 'true'
+        env:
+          DISPLAY_NAME: ${{ matrix.display_name }}
+          GH_TOKEN: ${{ secrets[matrix.token_secret] }}
+          MIRROR_REPOSITORY: ${{ matrix.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "$VERSION" --repo "$MIRROR_REPOSITORY" >/dev/null 2>&1; then
+            echo "$MIRROR_REPOSITORY already has release $VERSION."
+          else
+            gh release create "$VERSION" \
+              --repo "$MIRROR_REPOSITORY" \
+              --title "$DISPLAY_NAME $VERSION" \
+              --generate-notes \
+              --verify-tag
+          fi

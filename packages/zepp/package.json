@@ -1,6 +1,7 @@
 {
   "name": "@dofek/zepp",
   "version": "1.0.0",
+  "private": true,
   "description": "Raw IMU logger for Zepp OS API_LEVEL 3.0+ devices",
   "type": "module",
   "exports": {

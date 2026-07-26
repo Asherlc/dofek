@@ -18,17 +18,21 @@
   "sideEffects": false,
   "files": ["dist", "README.md", "LICENSE"],
   "exports": {
-    ".": {
-      "types": "./dist/zones.d.ts",
-      "import": "./dist/zones.js"
-    },
-    "./zones": {
-      "types": "./dist/zones.d.ts",
-      "import": "./dist/zones.js"
-    }
+    ".": "./src/zones.ts",
+    "./zones": "./src/zones.ts"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/zones.d.ts",
+        "import": "./dist/zones.js"
+      },
+      "./zones": {
+        "types": "./dist/zones.d.ts",
+        "import": "./dist/zones.js"
+      }
+    }
   },
   "dependencies": {
     "@dofek/scoring": "workspace:*"

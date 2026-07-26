@@ -30,8 +30,60 @@ packages:
   - packages/peloton-client
   - packages/xert-client
 
-ignoredBuiltDependencies:
-  - cpu-features
-  - esbuild
-  - protobufjs
-  - ssh2
+dedupePeers: true
+
+overrides:
+  "@expo/dom-webview": 55.0.5
+  "@grpc/grpc-js": 1.14.4
+  "@opentelemetry/core": 2.9.0
+  "@protobufjs/utf8": 1.1.2
+  "@slack/bolt>path-to-regexp": 8.4.2
+  "@xmldom/xmldom": 0.9.10
+  "archiver@<8.0.0": 8.0.0
+  axios: 1.18.1
+  body-parser: 2.3.0
+  brace-expansion: 5.0.8
+  esbuild: 0.28.1
+  "fast-uri@>=3.0.0 <3.1.4": 3.1.4
+  form-data: 4.0.6
+  "gel>shell-quote": 1.10.0
+  hono: 4.12.25
+  ip-address: 10.2.0
+  "lerna>minimatch": 3.1.4
+  minimatch: 10.2.5
+  "picomatch@>=4.0.0 <4.0.4": 4.0.4
+  postcss: 8.5.23
+  protobufjs: 8.7.1
+  qs: 6.15.2
+  react: 19.2.3
+  react-dom: 19.2.3
+  "router>path-to-regexp": 8.4.2
+  shell-quote: 1.10.0
+  tar: 7.5.20
+  "test-exclude@<8.0.0": 8.0.0
+  "undici@>=6.0.0 <6.27.0": 6.27.0
+  uuid: 11.1.1
+  ws: 8.21.0
+  yaml: 2.9.0
+
+packageExtensions:
+  "@bacons/apple-targets@4.0.7":
+    dependencies:
+      "@expo/image-utils": 0.11.1
+
+patchedDependencies:
+  "@expo/plist@0.0.18": patches/@expo__plist@0.0.18.patch
+  "@expo/plist@0.8.1": patches/@expo__plist@0.8.1.patch
+
+allowBuilds:
+  "@sentry/cli": true
+  core-js: true
+  cpu-features: false
+  cypress: true
+  esbuild: false
+  msgpackr-extract: true
+  msw: true
+  nx: false
+  protobufjs: false
+  sharp: true
+  ssh2: false

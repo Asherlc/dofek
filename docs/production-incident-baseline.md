@@ -17702,3 +17702,42 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   timeouts, or fallback release behavior. CI remains pending.
 - **Remaining risk / follow-up:** Future native input categories must be added
   to the single named classifier with a regression case in the same change.
+
+## 2026-07-25 — Public Package Exports Broke Clean CI Checkouts
+
+- **Status:** Direct fix validated locally; replacement CI pending.
+- **Symptoms:** The first CI run for the public-package release change failed
+  typechecking, unit tests, and downstream jobs with unresolved
+  `@dofek/*` workspace imports.
+- **User impact:** The pull request could not merge, and automatic npm releases
+  could not safely begin from `main`.
+- **Evidence:** The exact failing command was the root `pnpm typecheck` job. Its
+  first fatal line was
+  `src/client.ts(1,43): error TS2307: Cannot find module
+  '@dofek/provider-http/rate-limit'`. Subsequent failures reported missing
+  `@dofek/training/training`, `@dofek/scoring`, and `@dofek/zones` modules.
+  The same checkout also reported the unlisted `swift` binary from the WHOOP
+  BLE npm manifest and a Node 26 `module.register()` deprecation emitted by the
+  older `tsx` CLI.
+- **Root cause:** The new package `exports` maps pointed at ignored compiled
+  `dist` or `build` directories. Those directories existed in the development
+  workspace, masking the defect, but were absent from a clean CI checkout.
+- **Fix / mitigation:** Local workspace exports now resolve canonical source
+  files, while `publishConfig` rewrites npm tarball exports to compiled
+  JavaScript and declarations. pnpm owns packing and publishing; Lerna remains
+  only for independent changed-package versioning. The WHOOP BLE manifest no
+  longer exposes Swift as an npm lifecycle binary, and `tsx` was updated to its
+  current stable release. pnpm documents that supported `publishConfig` fields
+  replace their development values during packing:
+  <https://pnpm.io/package_json#publishconfig>.
+- **Validation:** With all 15 generated package-output directories temporarily
+  removed, root typechecking and 1,091 public-package tests passed. All 15
+  packages then built and packed; every tarball contained compiled output,
+  exposed no source paths, and contained no unresolved `workspace:` protocol.
+  The full Docker-free suite passed 13,758 tests. A frozen pnpm 11 install, 117
+  Swift tests, Swift manifest resolution from outside the package directory,
+  and release-workflow linting also passed.
+- **Remaining risk / follow-up:** Replacement GitHub Actions checks must pass on
+  Node 26 before merge. Future public-package changes should validate both a
+  clean source checkout and the packed manifest, because either half alone can
+  hide an export-path regression.

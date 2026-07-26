@@ -100,6 +100,16 @@ describe("parseAuth0FormHtml", () => {
       fields: { first: "one", second: "two" },
     });
   });
+
+  it("decodes HTML entities in the form action", () => {
+    const form = parseAuth0FormHtml(`
+      <form method="POST" action="/login/callback?state=one&amp;connection=peloton">
+        <input name="state" type="hidden" value="one" />
+      </form>
+    `);
+
+    expect(form.action).toBe("/login/callback?state=one&connection=peloton");
+  });
 });
 
 describe("pelotonAutomatedLogin", () => {

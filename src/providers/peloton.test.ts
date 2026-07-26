@@ -1,6 +1,7 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { AccessTokenExpiredError } from "./auth-errors.ts";
 import {
   mapFitnessDiscipline,
   PelotonAuthenticationError,
@@ -966,6 +967,44 @@ describe("PelotonProvider.sync — happy path", () => {
     expect(result.recordsSynced).toBeGreaterThan(0);
     expect(mockDb.insert).toHaveBeenCalled();
     expect(mockDb.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe("PelotonProvider.sync — authentication failures", () => {
+  it("classifies a rejected workouts request as an expired access token", async () => {
+    const mockFetch: typeof globalThis.fetch = async () =>
+      new Response("Unauthorized", { status: 401 });
+    const provider = new PelotonProvider(mockFetch);
+
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db: createMockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(AccessTokenExpiredError);
+  });
+
+  it("classifies a rejected performance graph request as an expired access token", async () => {
+    const workout = makeSyncWorkout();
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
+    const provider = new PelotonProvider(mockFetch);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({
+          since: new Date((workout.start_time - 1000) * 1000),
+        }),
+      }),
+    );
+
+    expect(result.errors[0]?.cause).toBeInstanceOf(AccessTokenExpiredError);
   });
 });
 

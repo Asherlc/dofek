@@ -18,13 +18,16 @@
   "sideEffects": false,
   "files": ["dist", "README.md", "LICENSE"],
   "exports": {
-    "./*": {
-      "types": "./dist/*.d.ts",
-      "import": "./dist/*.js"
-    }
+    "./*": "./src/*.ts"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "exports": {
+      "./*": {
+        "types": "./dist/*.d.ts",
+        "import": "./dist/*.js"
+      }
+    }
   },
   "dependencies": {
     "@dofek/scoring": "workspace:*",

@@ -23,6 +23,7 @@ import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
+import { AccessTokenExpiredError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -37,6 +38,17 @@ export {
   pelotonOAuthConfig,
 };
 export type { PelotonPerformanceGraph, PelotonWorkout };
+
+async function requestPeloton<T>(request: () => Promise<T>): Promise<T> {
+  try {
+    return await request();
+  } catch (error: unknown) {
+    if (error instanceof PelotonAuthenticationError) {
+      throw new AccessTokenExpiredError("Peloton", { cause: error });
+    }
+    throw error;
+  }
+}
 
 export class PelotonProvider implements SyncProvider {
   readonly id = "peloton";
@@ -116,7 +128,7 @@ export class PelotonProvider implements SyncProvider {
           stepName: "workouts",
           initialCursor: 0,
           fetchPage: async (page) => {
-            const response = await client.getWorkouts(page ?? 0);
+            const response = await requestPeloton(() => client.getWorkouts(page ?? 0));
             totalWorkouts = response.total;
             return {
               items: response.data,
@@ -180,7 +192,9 @@ export class PelotonProvider implements SyncProvider {
 
               try {
                 const everyN = 5;
-                const graph = await client.getPerformanceGraph(workout.id, everyN);
+                const graph = await requestPeloton(() =>
+                  client.getPerformanceGraph(workout.id, everyN),
+                );
                 const series = parsePerformanceGraph(graph, everyN);
                 const hrSeries = series.find((item) => item.slug === "heart_rate");
                 const hasPedaling = workout.has_pedaling_metrics !== false;

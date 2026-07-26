@@ -137,10 +137,11 @@ export function parseAuth0FormHtml(html: string): {
   action: string;
   fields: Record<string, string>;
 } {
-  const action = html.match(/<form[^>]+action="([^"]+)"/)?.[1];
-  if (!action) {
+  const rawAction = html.match(/<form[^>]+action="([^"]+)"/)?.[1];
+  if (!rawAction) {
     throw new PelotonAuthFlowError("login-form", "Could not find form action in Auth0 response");
   }
+  const action = decodeHtmlEntities(rawAction);
 
   const fields: Record<string, string> = {};
   for (const match of html.matchAll(/<input[^>]+type="hidden"[^>]*>/gi)) {

@@ -18,21 +18,26 @@
   "sideEffects": false,
   "files": ["dist", "README.md", "LICENSE"],
   "exports": {
-    ".": {
-      "types": "./dist/rate-limit.d.ts",
-      "import": "./dist/rate-limit.js"
-    },
-    "./rate-limit": {
-      "types": "./dist/rate-limit.d.ts",
-      "import": "./dist/rate-limit.js"
-    },
-    "./adaptive-rate-limit": {
-      "types": "./dist/adaptive-rate-limit.d.ts",
-      "import": "./dist/adaptive-rate-limit.js"
-    }
+    ".": "./src/rate-limit.ts",
+    "./rate-limit": "./src/rate-limit.ts",
+    "./adaptive-rate-limit": "./src/adaptive-rate-limit.ts"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/rate-limit.d.ts",
+        "import": "./dist/rate-limit.js"
+      },
+      "./rate-limit": {
+        "types": "./dist/rate-limit.d.ts",
+        "import": "./dist/rate-limit.js"
+      },
+      "./adaptive-rate-limit": {
+        "types": "./dist/adaptive-rate-limit.d.ts",
+        "import": "./dist/adaptive-rate-limit.js"
+      }
+    }
   },
   "scripts": {
     "build": "tsc",
