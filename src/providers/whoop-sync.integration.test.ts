@@ -1,15 +1,15 @@
-import { and, desc, eq } from "drizzle-orm";
-import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
+import { WhoopClient } from "@dofek/whoop/client";
 import type {
   WhoopHrValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
   WhoopWorkoutRecord,
-} from "whoop-whoop/types";
-import { parseDuringRange } from "whoop-whoop/utils";
+} from "@dofek/whoop/types";
+import { parseDuringRange } from "@dofek/whoop/utils";
+import { and, desc, eq } from "drizzle-orm";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity, dailyMetrics, sleepSession, sleepStage } from "../db/schema/activity.ts";
 import { TEST_USER_ID } from "../db/schema/core.ts";
 import { journalEntry, syncLog } from "../db/schema/events.ts";

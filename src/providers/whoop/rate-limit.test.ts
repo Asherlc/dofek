@@ -1,6 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { WhoopRateLimitError } from "@dofek/whoop/client";
 import { describe, expect, it } from "vitest";
-import { WhoopRateLimitError } from "whoop-whoop/client";
 import { findWhoopRateLimitError, isWhoopRateLimitError } from "./rate-limit.ts";
 
 describe("isWhoopRateLimitError", () => {

@@ -1,10 +1,10 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import {
   parseEightSleepDailyMetrics,
   parseEightSleepHeartRateSamples,
   parseEightSleepTrendDay,
-} from "eight-sleep-client/parsing";
-import type { EightSleepTrendDay } from "eight-sleep-client/types";
+} from "@dofek/eight-sleep/parsing";
+import type { EightSleepTrendDay } from "@dofek/eight-sleep/types";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 import { EightSleepProvider } from "./eight-sleep.ts";

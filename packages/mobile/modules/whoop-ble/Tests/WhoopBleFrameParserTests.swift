@@ -1,6 +1,6 @@
 // swiftlint:disable file_length
 import XCTest
-@testable import WhoopBleLib
+@testable import WhoopBLE
 
 extension Data {
     init?(hexString: String) {

@@ -12,7 +12,7 @@
         "vitest.config.mutation.ts"
       ],
       "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js}"],
-      "ignoreDependencies": ["sharp", "tsx"],
+      "ignoreDependencies": ["sharp", "supports-color"],
       "ignoreBinaries": [
         "cmake", "dbt", "expo", "infisical", "open", "openssl", "uv",
         "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",

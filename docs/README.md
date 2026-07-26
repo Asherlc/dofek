@@ -63,6 +63,7 @@ Cross-provider reverse-engineering references:
 | Doc | What it is for |
 |-----|----------------|
 | [ci-debugging.md](ci-debugging.md) | Debugging GitHub Actions failures with `gh` CLI. |
+| [package-publishing.md](package-publishing.md) | npm trusted publishing, independent Lerna releases, and configuration-driven SwiftPM mirrors. |
 | [performance/loading-performance-runbook.md](performance/loading-performance-runbook.md) | Evidence-first workflow for diagnosing slow web and mobile loading before optimizing clients, tRPC, or ClickHouse. |
 | [performance/loading-baseline-2026-07-18.md](performance/loading-baseline-2026-07-18.md) | Current Axiom-backed loading taxonomy and backend evidence gate. |
 | [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md) | Deploy failures around ClickHouse CDC, analytics read models, and hot fitness views. |

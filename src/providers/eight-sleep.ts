@@ -1,10 +1,10 @@
-import { EightSleepClient } from "eight-sleep-client/client";
+import { EightSleepClient } from "@dofek/eight-sleep/client";
 import {
   parseEightSleepDailyMetrics,
   parseEightSleepHeartRateSamples,
   parseEightSleepTrendDay,
-} from "eight-sleep-client/parsing";
-import type { EightSleepTrendDay } from "eight-sleep-client/types";
+} from "@dofek/eight-sleep/parsing";
+import type { EightSleepTrendDay } from "@dofek/eight-sleep/types";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
