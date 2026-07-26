@@ -17751,3 +17751,47 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   timeouts, or fallback release behavior. CI remains pending.
 - **Remaining risk / follow-up:** Future native input categories must be added
   to the single named classifier with a regression case in the same change.
+
+## 2026-07-25 — Provider-Connection Migration Failed on Legacy Production Shapes
+
+- **Status:** Root causes fixed; replacement main CI and production deployment
+  pending.
+- **Symptoms:** Deploy Web run `30183265419` failed twice in its `Run
+  migrations` step while rolling out provider-connection ownership.
+- **User impact:** The requested main release did not reach the application
+  rollout or provider-connection cutover. Existing production services
+  continued running the prior image.
+- **Evidence:** The first attempt's fatal line was `Migration
+  0057_provider_connection.sql failed`, followed by `could not create unique
+  index "webhook_subscription_app_provider_name_idx"`. Production contained
+  two active legacy Withings rows with the same callback and external
+  subscription ID. The sole current Withings OAuth token was created within 20
+  milliseconds of the newer row. After the stale row was made inactive, the
+  PostgreSQL migration applied, and the rerun exposed the next first fatal
+  line: `ALTER of key column user_id from type UUID to type Nullable` in
+  ClickHouse migration `0055_provider_connection_catalog`. `SHOW CREATE TABLE
+  postgres_fitness.provider` confirmed the production mirror still used
+  `ORDER BY (user_id, id)`.
+- **Root cause:** The legacy webhook upsert used nullable `provider_id` as its
+  conflict key, allowing a reconnect to create a duplicate because PostgreSQL
+  treats nulls as distinct. Separately, ClickHouse migration 0055 attempted to
+  change the type of `user_id` in place even though that legacy column remained
+  part of the MergeTree sorting key, which ClickHouse rejects.
+- **Fix / mitigation:** Marked only the stale April Withings subscription
+  inactive, preserving the row for audit. Replaced the ClickHouse in-place
+  alteration with a restart-safe table rebuild: create the canonical nullable
+  provider table ordered by provider ID, copy the legacy rows, atomically
+  rename the old and new tables, copy once more from the backup to cover
+  concurrent CDC writes, then remove the backup. ClickHouse documents atomic
+  table exchange/rename as the supported pattern for primary-key changes:
+  <https://clickhouse.com/docs/use-cases/observability/clickstack/managing/performance_tuning>.
+- **Validation:** A real-ClickHouse integration test reproduces the production
+  `ORDER BY (user_id, id)` table, applies migration 0055, and verifies the row
+  is preserved, `user_id` becomes nullable and leaves the sorting key, and the
+  provider-connection mirror exists. The focused integration test and eight
+  related unit tests pass.
+- **Remaining risk / follow-up:** Merge the migration repair through normal
+  main CI, observe the resulting production deployment, attach the surviving
+  legacy Withings webhook row to its backfilled provider connection, and
+  verify the ClickHouse migration record, canonical table shape, provider
+  foreign keys, and service convergence.
