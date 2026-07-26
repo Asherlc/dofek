@@ -145,14 +145,17 @@ async function drainSyncQueue(
   }
 
   syncing = true;
-  const succeeded = await performHealthKitSync(
-    catchUp?.trpcClient ?? trpcClient,
-    catchUp?.onSyncComplete ?? onSyncComplete,
-  );
-  if (updateIds.length > 0) {
-    acknowledgeObserverUpdates(updateIds, succeeded);
+  try {
+    const succeeded = await performHealthKitSync(
+      catchUp?.trpcClient ?? trpcClient,
+      catchUp?.onSyncComplete ?? onSyncComplete,
+    );
+    if (updateIds.length > 0) {
+      acknowledgeObserverUpdates(updateIds, succeeded);
+    }
+  } finally {
+    syncing = undefined;
   }
-  syncing = undefined;
 
   await drainSyncQueue(trpcClient, onSyncComplete);
 }
