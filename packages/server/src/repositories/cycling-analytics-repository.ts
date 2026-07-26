@@ -192,6 +192,7 @@ export class CyclingAnalyticsRepository {
         SELECT nullIf(argMax(weight_kg, recorded_at), 0) AS weight_kg
         FROM analytics.daily_body_measurement FINAL
         WHERE user_id = {userId:UUID}
+          AND is_deleted = 0
           ${this.#accessWindowPredicate("recorded_at")}
       ),
       user_baseline AS (

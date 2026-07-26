@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("clickHouseMigrations", () => {
   afterEach(() => {
-    vi.doUnmock("./0044_materialize_body_measurement_view.ts");
+    vi.doUnmock("./0058_migrate_body_measurement_to_dbt.ts");
     vi.resetModules();
   });
 
@@ -67,17 +67,47 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("ALTER TABLE analytics.daily_strain"),
       ]),
     });
-    expect(migrations.at(-1)).toMatchObject({
+    expect(
+      migrations.find((migration) => migration.id === "0055_provider_connection_catalog"),
+    ).toMatchObject({
       id: "0055_provider_connection_catalog",
       statements: expect.arrayContaining([
         expect.stringContaining("MODIFY COLUMN user_id Nullable(UUID)"),
         expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection"),
       ]),
     });
+    expect(
+      migrations.find((migration) => migration.id === "0056_daily_body_measurement_lifecycle"),
+    ).toMatchObject({
+      id: "0056_daily_body_measurement_lifecycle",
+      statements: expect.arrayContaining([
+        expect.stringContaining("ADD COLUMN IF NOT EXISTS is_deleted"),
+        expect.stringContaining("ADD COLUMN IF NOT EXISTS source_synced_at"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0057_daily_recovery_lifecycle"),
+    ).toMatchObject({
+      id: "0057_daily_recovery_lifecycle",
+      statements: expect.arrayContaining([
+        expect.stringContaining("ALTER TABLE analytics.daily_recovery_inputs"),
+        expect.stringContaining("ALTER TABLE analytics.daily_recovery"),
+      ]),
+    });
+    expect(migrations.at(-1)).toMatchObject({
+      id: "0058_migrate_body_measurement_to_dbt",
+      statements: expect.arrayContaining([
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.body_measurement"),
+        expect.stringContaining("INSERT INTO analytics.body_measurement"),
+        "DROP VIEW IF EXISTS analytics.v_body_measurement",
+        "DROP TABLE IF EXISTS analytics.v_body_measurement",
+        expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement"),
+      ]),
+    });
   });
 
   it("rejects duplicate migration ids", async () => {
-    vi.doMock("./0044_materialize_body_measurement_view.ts", () => ({
+    vi.doMock("./0058_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "0043_activity_stream_lifecycle_columns",
         statements: [],
@@ -91,7 +121,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects migration ids without a four digit prefix", async () => {
-    vi.doMock("./0044_materialize_body_measurement_view.ts", () => ({
+    vi.doMock("./0058_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "body_measurement_view",
         statements: [],
@@ -105,7 +135,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects migration ids with non-numeric four character prefixes", async () => {
-    vi.doMock("./0044_materialize_body_measurement_view.ts", () => ({
+    vi.doMock("./0058_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "abcd_body_measurement_view",
         statements: [],
@@ -119,7 +149,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects migration ids with embedded numeric prefixes", async () => {
-    vi.doMock("./0044_materialize_body_measurement_view.ts", () => ({
+    vi.doMock("./0058_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "x0044_body_measurement_view",
         statements: [],
@@ -133,7 +163,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects out-of-order migration ids", async () => {
-    vi.doMock("./0044_materialize_body_measurement_view.ts", () => ({
+    vi.doMock("./0058_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "0042_body_measurement_view",
         statements: [],

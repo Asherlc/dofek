@@ -23,6 +23,7 @@ import {
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
+import { PaginationControls } from "../../components/PaginationControls";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
@@ -33,6 +34,7 @@ import { colors, radius, spacing } from "../../theme";
 
 const TILE_SIZE = 96;
 const DEFAULT_WEEKS = 4;
+const ACTIVITY_PAGE_SIZE = 20;
 const ALL_ACTIVITY_TYPES = "all";
 const DATE_RANGE_OPTIONS = [
   { value: 4, label: "4 weeks" },
@@ -92,6 +94,7 @@ export default function ActivitiesScreen() {
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
+  const [activityPage, setActivityPage] = useState(0);
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
   const queryInput = {
     weeks,
@@ -127,6 +130,33 @@ export default function ActivitiesScreen() {
 
   const dayGroups = query.data;
   const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
+  const activityCount = dayGroups?.reduce((total, day) => total + day.activities.length, 0) ?? 0;
+  const totalActivityPages = Math.ceil(activityCount / ACTIVITY_PAGE_SIZE);
+  const currentActivityPage = Math.min(activityPage, Math.max(totalActivityPages - 1, 0));
+  const visibleDayGroups = useMemo(() => {
+    if (!dayGroups) return undefined;
+    const visibleActivities = dayGroups
+      .flatMap((day) =>
+        day.activities.map((activity) => ({
+          date: day.date,
+          activity,
+        })),
+      )
+      .slice(
+        currentActivityPage * ACTIVITY_PAGE_SIZE,
+        (currentActivityPage + 1) * ACTIVITY_PAGE_SIZE,
+      );
+    const grouped = new Map<string, typeof visibleActivities>();
+    for (const entry of visibleActivities) {
+      const existing = grouped.get(entry.date) ?? [];
+      existing.push(entry);
+      grouped.set(entry.date, existing);
+    }
+    return [...grouped.entries()].map(([date, entries]) => ({
+      date,
+      activities: entries.map((entry) => entry.activity),
+    }));
+  }, [currentActivityPage, dayGroups]);
   const selectedCount = selectedActivityIds.size;
   const toggleSelectedActivity = (activityId: string) => {
     setSelectedActivityIds((current) => {
@@ -145,10 +175,12 @@ export default function ActivitiesScreen() {
   };
   const updateActivityType = (nextActivityType: string) => {
     setActivityType(nextActivityType);
+    setActivityPage(0);
     cancelSelection();
   };
   const updateWeeks = (nextWeeks: number) => {
     setWeeks(nextWeeks);
+    setActivityPage(0);
     cancelSelection();
   };
   const confirmBulkDelete = () => {
@@ -250,7 +282,7 @@ export default function ActivitiesScreen() {
               style={styles.backgroundErrorPanel}
             />
           ) : null}
-          {dayGroups.map((day) => (
+          {visibleDayGroups?.map((day) => (
             <View key={day.date} style={styles.daySection}>
               <View style={styles.dayHeaderRow}>
                 <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
@@ -322,6 +354,13 @@ export default function ActivitiesScreen() {
               ))}
             </View>
           ))}
+          <PaginationControls
+            page={currentActivityPage}
+            pageSize={ACTIVITY_PAGE_SIZE}
+            totalItems={activityCount}
+            itemLabel="activities"
+            onPageChange={setActivityPage}
+          />
         </>
       )}
     </ScrollView>

@@ -120,6 +120,28 @@ describe("LifeEventsPanel", () => {
     expect(screen.getByText("Life events refresh failed")).toBeDefined();
   });
 
+  it("paginates life events", () => {
+    mocks.listUseQuery.mockReturnValue({
+      data: Array.from({ length: 21 }, (_, index) => ({
+        ...event,
+        id: `event-${index + 1}`,
+        label: `Event ${index + 1}`,
+      })),
+      error: null,
+      isLoading: false,
+    });
+
+    render(<LifeEventsPanel />);
+
+    expect(screen.getByRole("button", { name: /Event 1Feb/ })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Event 21Feb/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next life events page" }));
+
+    expect(screen.queryByRole("button", { name: /Event 1Feb/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Event 21Feb/ })).toBeDefined();
+  });
+
   it("shows analysis failures while keeping the selected event", () => {
     const refetch = vi.fn();
     mocks.analyzeUseQuery.mockReturnValue({

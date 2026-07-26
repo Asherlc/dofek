@@ -7,6 +7,16 @@ struct HealthKitErrorDetails: Equatable {
     let code: String
     let reason: String
 
+    static func isAuthorizationNotDetermined(_ error: Error) -> Bool {
+        let nativeError = error as NSError
+        return nativeError.domain == HKErrorDomain &&
+            nativeError.code == HKError.Code.errorAuthorizationNotDetermined.rawValue
+    }
+
+    static func shouldReportObserverError(_ error: Error) -> Bool {
+        return !isAuthorizationNotDetermined(error)
+    }
+
     init(operation: String, fallbackCode: String, error: Error) {
         let nativeError = error as NSError
         self.code = Self.isDatabaseInaccessible(nativeError)

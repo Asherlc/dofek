@@ -152,6 +152,13 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".v_body_measurement"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
           command.includes(".healthspan_activity_zone_minutes"),
       ),
     ).toBe(true);
@@ -263,6 +270,14 @@ describe("clickhouse integration test helpers", () => {
           command.includes("\nSELECT"),
       ),
     ).toBe(true);
+    const bodyMeasurementInsert = commands.find(
+      (command) =>
+        command.includes("INSERT INTO analytics_test_") && command.includes(".v_body_measurement"),
+    );
+    expect(bodyMeasurementInsert).toContain("lagInFrame(recorded_at, 1, recorded_at)");
+    expect(bodyMeasurementInsert).toContain(
+      "PARTITION BY final_groups.user_id, final_groups.group_id",
+    );
     const providerStatsInsert = commands.find(
       (command) =>
         command.includes("INSERT INTO analytics_test_") && command.includes(".provider_stats"),
@@ -376,7 +391,16 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".weekly_healthspan") &&
-          command.includes(".v_daily_metrics"),
+          command.includes(".v_daily_metrics") &&
+          (command.match(/daily_body_measurement FINAL/g)?.length ?? 0) === 2,
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".daily_body_measurement") &&
+          command.includes("ORDER BY (user_id, measurement_id)"),
       ),
     ).toBe(true);
   });

@@ -36,6 +36,7 @@ import {
   buildTestRestingHeartRateSelectSql,
 } from "./clickhouse-integration-test-read-models-a.ts";
 import {
+  buildTestBodyMeasurementSelectSql,
   buildTestDailyActivityLoadSelectSql,
   buildTestDailyBodyMeasurementSelectSql,
   buildTestDailyEnduranceLoadSelectSql,
@@ -631,6 +632,11 @@ ${buildTestDailyActivityLoadSelectSql(defaultTestDatabases)}`,
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_strain
 AS
 ${buildTestStrainReadModelSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.v_body_measurement
+AS
+${buildTestBodyMeasurementSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_body_measurement

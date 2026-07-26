@@ -535,6 +535,35 @@ describe("ActivitiesPage", () => {
     expect(screen.queryByText("Select")).not.toBeNull();
   });
 
+  it("paginates the activity card history", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: Array.from({ length: 21 }, (_, index) =>
+            activity({
+              id: `activity-${index + 1}`,
+              name: `Ride ${index + 1}`,
+            }),
+          ),
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByText("Ride 1")).toBeDefined();
+    expect(screen.queryByText("Ride 21")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
+
+    expect(screen.queryByText("Ride 1")).toBeNull();
+    expect(screen.getByText("Ride 21")).toBeDefined();
+  });
+
   it("restores selected hidden activities after confirmation", async () => {
     mockQuery = {
       data: [

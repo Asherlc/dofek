@@ -20,6 +20,7 @@ describe("fetchBodyWeightRows", () => {
 
     expect(calls[0]?.query).toContain("AND weight_kg > 0");
     expect(calls[0]?.query).toContain("analytics.daily_body_measurement FINAL");
+    expect(calls[0]?.query).toContain("AND is_deleted = 0");
     expect(calls[0]?.query).not.toContain("analytics.v_body_measurement");
   });
 

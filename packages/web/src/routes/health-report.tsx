@@ -4,6 +4,7 @@ import { useState } from "react";
 import { z } from "zod";
 import { MonthlyReportContent } from "../components/MonthlyReportContent.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { PaginationControls } from "../components/PaginationControls.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { healthReportTabs } from "../lib/healthReportNavigation.ts";
@@ -68,6 +69,7 @@ const monthlyReportSchema = z.object({
   current: monthSummarySchema.nullable(),
   history: z.array(monthSummarySchema),
 });
+const REPORT_PAGE_SIZE = 20;
 
 function SharedReportShell({ children }: { children: React.ReactNode }) {
   return (
@@ -148,6 +150,7 @@ function SharedHealthReport({ token }: { token: string }) {
 
 function HealthReportManagement() {
   const { data: reports, error, isLoading } = trpc.healthReport.myReports.useQuery();
+  const [page, setPage] = useState(0);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [manualCopyLink, setManualCopyLink] = useState<{
     token: string;
@@ -167,6 +170,13 @@ function HealthReportManagement() {
       setManualCopyLink({ token, url });
     }
   };
+  const reportItems = reports ?? [];
+  const reportPageCount = Math.ceil(reportItems.length / REPORT_PAGE_SIZE);
+  const currentPage = Math.min(page, Math.max(reportPageCount - 1, 0));
+  const visibleReports = reportItems.slice(
+    currentPage * REPORT_PAGE_SIZE,
+    (currentPage + 1) * REPORT_PAGE_SIZE,
+  );
 
   return (
     <PageLayout
@@ -192,7 +202,7 @@ function HealthReportManagement() {
               </p>
             ) : (
               <div className="space-y-2">
-                {reports.map((report) => (
+                {visibleReports.map((report) => (
                   <div key={report.id} className="border-b border-border py-3 last:border-0">
                     <div className="flex items-center justify-between">
                       <div>
@@ -233,6 +243,13 @@ function HealthReportManagement() {
                     )}
                   </div>
                 ))}
+                <PaginationControls
+                  page={currentPage}
+                  pageSize={REPORT_PAGE_SIZE}
+                  totalItems={reportItems.length}
+                  itemLabel="reports"
+                  onPageChange={setPage}
+                />
               </div>
             )}
           </div>
