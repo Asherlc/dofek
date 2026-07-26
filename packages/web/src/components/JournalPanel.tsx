@@ -125,12 +125,14 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
 
   const totalPages = Math.ceil(entries.length / JOURNAL_PAGE_SIZE);
   const currentPage = Math.min(page, Math.max(totalPages - 1, 0));
+  const sortedEntries = useMemo(
+    () => [...entries].sort((a, b) => b.date.localeCompare(a.date)),
+    [entries],
+  );
   const visibleEntries = useMemo(
     () =>
-      [...entries]
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(currentPage * JOURNAL_PAGE_SIZE, (currentPage + 1) * JOURNAL_PAGE_SIZE),
-    [currentPage, entries],
+      sortedEntries.slice(currentPage * JOURNAL_PAGE_SIZE, (currentPage + 1) * JOURNAL_PAGE_SIZE),
+    [currentPage, sortedEntries],
   );
 
   // Group visible entries by date.
