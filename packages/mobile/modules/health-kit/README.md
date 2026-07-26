@@ -85,7 +85,7 @@ a physical iPhone with a Release build:
    expiration and that no `com.dofek.healthkit-observer` expiration event is
    reported.
 4. Repeat with multiple sample types delivered together and confirm every
-   update ID is completed exactly once after the coalesced sync.
+   update ID is completed exactly once after its queued serialized sync settles.
 
 Apple requires the observer completion handler to run after the app finishes
 processing the delivered data:

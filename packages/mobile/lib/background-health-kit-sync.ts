@@ -12,13 +12,14 @@ import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";
 
+interface SyncContext {
+  onSyncComplete?: () => void | Promise<void>;
+  trpcClient: SyncTrpcClient;
+}
+
 let subscription: EventSubscription | null = null;
-let pendingCatchUp:
-  | {
-      onSyncComplete?: () => void | Promise<void>;
-      trpcClient: SyncTrpcClient;
-    }
-  | undefined;
+let currentSyncContext: SyncContext | undefined;
+let pendingCatchUp: SyncContext | undefined;
 const pendingUpdateIds = new Set<string>();
 let syncing: true | undefined;
 
@@ -124,15 +125,13 @@ function acknowledgeObserverUpdates(updateIds: string[], succeeded: boolean): vo
   }
 }
 
-async function drainSyncQueue(
-  trpcClient: SyncTrpcClient,
-  onSyncComplete?: () => void | Promise<void>,
-): Promise<void> {
-  if (syncing) {
+async function drainSyncQueue(): Promise<void> {
+  const context = currentSyncContext;
+  if (syncing || !context) {
     return;
   }
 
-  const catchUp = pendingCatchUp;
+  const catchUp = pendingCatchUp === context;
   if (catchUp) {
     pendingCatchUp = undefined;
   } else if (pendingUpdateIds.size === 0) {
@@ -147,17 +146,31 @@ async function drainSyncQueue(
   syncing = true;
   try {
     const succeeded = await performHealthKitSync(
-      catchUp?.trpcClient ?? trpcClient,
-      catchUp?.onSyncComplete ?? onSyncComplete,
+      context.trpcClient,
+      context.onSyncComplete
+        ? async () => {
+            if (currentSyncContext === context) {
+              await context.onSyncComplete?.();
+            }
+          }
+        : undefined,
     );
-    if (updateIds.length > 0) {
+    if (currentSyncContext === context && updateIds.length > 0) {
       acknowledgeObserverUpdates(updateIds, succeeded);
+    }
+  } catch (error) {
+    captureException(error, {
+      source: TAG,
+      operation: "drainSyncQueue",
+    });
+    if (currentSyncContext === context && updateIds.length > 0) {
+      acknowledgeObserverUpdates(updateIds, false);
     }
   } finally {
     syncing = undefined;
   }
 
-  await drainSyncQueue(trpcClient, onSyncComplete);
+  await drainSyncQueue();
 }
 
 /**
@@ -183,12 +196,18 @@ export async function initBackgroundHealthKitSync(
     teardownBackgroundHealthKitSync();
   }
 
+  const context: SyncContext = { trpcClient, onSyncComplete };
+  currentSyncContext = context;
+
   // Listen before registering native observers so an immediate HealthKit
   // delivery can never race ahead of the JavaScript callback.
   subscription = addSampleUpdateListener((event) => {
+    if (currentSyncContext !== context) {
+      return;
+    }
     logger.info(TAG, "Sample update event received, queueing sync");
     pendingUpdateIds.add(event.updateId);
-    void drainSyncQueue(trpcClient, onSyncComplete);
+    void drainSyncQueue();
   });
 
   try {
@@ -202,14 +221,15 @@ export async function initBackgroundHealthKitSync(
     throw error;
   }
   logger.info(TAG, "Background observers registered");
-  pendingCatchUp = { trpcClient, onSyncComplete };
-  void drainSyncQueue(trpcClient, onSyncComplete);
+  pendingCatchUp = context;
+  void drainSyncQueue();
 
   logger.info(TAG, "Init complete, listening for HealthKit updates");
 }
 
-/** Clean up background sync listeners and timers */
+/** Clean up background sync listeners and observers. */
 export function teardownBackgroundHealthKitSync() {
+  currentSyncContext = undefined;
   if (subscription) {
     logger.info(TAG, "Tearing down: removing listener");
     subscription.remove();
