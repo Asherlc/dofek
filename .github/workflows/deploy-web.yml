@@ -26,10 +26,6 @@ permissions:
   packages: read
   id-token: write
 
-concurrency:
-  group: deploy-web-production
-  cancel-in-progress: false
-
 jobs:
   eligibility:
     name: Check Production Deploy Eligibility
@@ -70,6 +66,9 @@ jobs:
     name: Deploy Web Production
     needs: eligibility
     if: needs.eligibility.outputs.should_deploy == 'true'
+    concurrency:
+      group: deploy-web-production
+      cancel-in-progress: false
     permissions:
       contents: read
       actions: read

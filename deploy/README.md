@@ -174,13 +174,14 @@ deployment. Automatic and manual triggers share the same production concurrency
 group. A rollout intentionally quiesces ClickHouse consumers before migrations
 and restores them only after the final stack converges, so a newer run must
 wait rather than interrupt that state transition. Automatic runs also deploy
-only when an eligibility job, running after the workflow acquires the
-production concurrency slot, confirms through the GitHub commits API that
-their successful CI commit is still the current `main` commit. An older
-successful run that finishes out of order is skipped before Terraform instead
-of rolling production back. GitHub documents both the commits endpoint and
-that `cancel-in-progress: true` terminates a running job or workflow in the same
-concurrency group:
+only when an eligibility job confirms through the GitHub commits API that their
+successful CI commit is still the current `main` commit. Only eligible runs
+enter the production job's concurrency group, so an older success that finishes
+out of order cannot displace a valid pending deployment and is skipped before
+Terraform instead of rolling production back. GitHub documents both the
+commits endpoint and that concurrency groups retain at most one running and one
+pending job, with `cancel-in-progress` controlling whether a running job is
+terminated:
 <https://docs.github.com/en/rest/commits/commits#get-a-commit>,
 <https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency>.
 
