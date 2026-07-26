@@ -174,10 +174,14 @@ deployment. Automatic and manual triggers share the same production concurrency
 group. A rollout intentionally quiesces ClickHouse consumers before migrations
 and restores them only after the final stack converges, so a newer run must
 wait rather than interrupt that state transition. Automatic runs also deploy
-only when their successful CI commit is still the current default-branch
-commit; an older successful run that finishes out of order is skipped instead
-of rolling production back. GitHub documents that `cancel-in-progress: true`
-terminates a running job or workflow in the same concurrency group:
+only when an eligibility job, running after the workflow acquires the
+production concurrency slot, confirms through the GitHub commits API that
+their successful CI commit is still the current `main` commit. An older
+successful run that finishes out of order is skipped before Terraform instead
+of rolling production back. GitHub documents both the commits endpoint and
+that `cancel-in-progress: true` terminates a running job or workflow in the same
+concurrency group:
+<https://docs.github.com/en/rest/commits/commits#get-a-commit>,
 <https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency>.
 
 1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`), because `Deploy Web` is triggered by the successful `CI` `workflow_run` for `main` and deploys that tag. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
@@ -185,9 +189,9 @@ terminates a running job or workflow in the same concurrency group:
    before rendering stack configuration. GitHub documents that a
    `workflow_run` workflow's `GITHUB_SHA` is the last commit on the default
    branch rather than necessarily the triggering workflow's commit, so using
-   `github.sha` as the freshness boundary and
-   `github.event.workflow_run.head_sha` as the deploy commit prevents a stale
-   successful run from rolling production backward while keeping image code,
+   a live API result as the freshness boundary and
+   `github.event.workflow_run.head_sha` as the deploy commit prevents a queued
+   stale success from rolling production backward while keeping image code,
    healthchecks, entrypoints, and stack configuration from different revisions
    from being mixed:
    <https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run>.
