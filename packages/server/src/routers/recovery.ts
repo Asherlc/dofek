@@ -144,6 +144,21 @@ export interface StrainTargetResult {
   readinessScore?: number;
 }
 
+const strainTargetResultSchema = z.object({
+  targetStrain: z.number(),
+  currentStrain: z.number(),
+  currentStrainSource: z.enum(["activity", "none"]).optional(),
+  currentPhysiologyLoad: z.number().nullable().optional(),
+  progressPercent: z.number(),
+  zone: z.enum(["Push", "Maintain", "Recovery"]),
+  explanation: z.string(),
+  dailyLoad: z.number().optional(),
+  acuteLoad: z.number().optional(),
+  chronicLoad: z.number().optional(),
+  workloadRatio: z.number().nullable().optional(),
+  readinessScore: z.number().optional(),
+});
+
 const strainTargetReadinessRowSchema = z.object({
   date: dateStringSchema,
   hrv_score: z.coerce.number().nullable(),
@@ -605,6 +620,7 @@ export const recoveryRouter = router({
    */
   strainTarget: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
+    .output(strainTargetResultSchema.nullable())
     .query(async ({ ctx, input }): Promise<StrainTargetResult | null> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.strainTarget");
       const recoveryAccessWindowClause =
