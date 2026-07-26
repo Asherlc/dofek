@@ -87,6 +87,7 @@ without Metro. The command below uses local ad-hoc signing so keychain-backed
 SecureStore remains available without a distribution identity:
 
 ```bash
+EXPO_PUBLIC_SERVER_URL=http://127.0.0.1:3100 \
 EXPO_PUBLIC_SENTRY_DSN=https://public-key@sentry.example/project-id \
   pnpm prebuild
 
