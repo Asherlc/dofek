@@ -236,6 +236,43 @@ describe("DataSourcesPanel", () => {
     mockCaptureException.mockReset();
   });
 
+  it("reserves one stable provider region while inventory loads", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    });
+
+    const { rerender } = render(<DataSourcesPanel />);
+    const loadingRegion = screen.getByRole("region", { name: "Available data sources" });
+
+    expect(loadingRegion.getAttribute("aria-busy")).toBe("true");
+    expect(loadingRegion.className).toContain("h-80");
+    expect(loadingRegion.className).toContain("sm:h-96");
+    expect(loadingRegion.className).toContain("lg:h-[28rem]");
+    expect(loadingRegion.className).toContain("overflow-y-auto");
+
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: true,
+          authType: "custom:garmin",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    rerender(<DataSourcesPanel />);
+
+    expect(screen.getByRole("region", { name: "Available data sources" })).toBe(loadingRegion);
+    expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
+  });
+
   it("shows active processing progress above provider cards", () => {
     mockDataHealthQuery.mockReturnValue({
       data: {

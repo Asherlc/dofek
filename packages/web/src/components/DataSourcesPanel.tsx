@@ -365,7 +365,7 @@ export function DataSourcesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex min-h-6 items-center justify-between">
         <h3 className="text-sm font-medium text-foreground">Data Sources</h3>
         {enabledSyncable.length > 1 && (
           <div className="flex gap-2">
@@ -413,58 +413,64 @@ export function DataSourcesPanel() {
       {stats.error ? <QueryStatePanel error={stats.error} height={72} /> : null}
       {logs.error ? <QueryStatePanel error={logs.error} height={72} /> : null}
 
-      {providers.isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
-            <div key={id} className="h-24 rounded-lg bg-skeleton animate-pulse" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {unifiedProviders.map((entry) => {
-            if (entry.kind === "import") {
-              const providerStats = statsByProvider.get(entry.id);
-              const recentLogs = (logsByProvider.get(entry.id) ?? []).slice(0, 5);
+      <section
+        aria-label="Available data sources"
+        aria-busy={providers.isLoading}
+        className="h-80 overflow-y-auto overscroll-contain rounded-lg pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-96 lg:h-[28rem]"
+      >
+        {providers.isLoading ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
+              <div key={id} className="h-24 rounded-lg bg-skeleton animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {unifiedProviders.map((entry) => {
+              if (entry.kind === "import") {
+                const providerStats = statsByProvider.get(entry.id);
+                const recentLogs = (logsByProvider.get(entry.id) ?? []).slice(0, 5);
+                return (
+                  <FileImportProviderCard
+                    key={entry.id}
+                    providerId={entry.id}
+                    {...entry.config}
+                    stats={providerStats}
+                    recentLogs={recentLogs}
+                    activeImport={activeImportByProvider.get(entry.id)}
+                  />
+                );
+              }
+
+              const provider = entry.provider;
+              const state = providerStates[provider.id] ?? { status: "idle" };
+              const needsAuth =
+                !provider.pushOnly &&
+                provider.authType !== "none" &&
+                provider.authType !== "file-import" &&
+                !provider.authorized;
+              const needsReauth = provider.needsReauth === true;
+              const providerStats = statsByProvider.get(provider.id);
+              const recentLogs = (logsByProvider.get(provider.id) ?? []).slice(0, 5);
+
               return (
-                <FileImportProviderCard
-                  key={entry.id}
-                  providerId={entry.id}
-                  {...entry.config}
+                <SyncProviderCard
+                  key={provider.id}
+                  provider={provider}
+                  state={state}
+                  needsAuth={needsAuth}
+                  needsReauth={needsReauth}
+                  pushOnly={provider.pushOnly === true}
                   stats={providerStats}
                   recentLogs={recentLogs}
-                  activeImport={activeImportByProvider.get(entry.id)}
+                  onSync={() => handleProviderClick(provider)}
+                  onFullSync={() => handleProviderClick(provider, true)}
                 />
               );
-            }
-
-            const provider = entry.provider;
-            const state = providerStates[provider.id] ?? { status: "idle" };
-            const needsAuth =
-              !provider.pushOnly &&
-              provider.authType !== "none" &&
-              provider.authType !== "file-import" &&
-              !provider.authorized;
-            const needsReauth = provider.needsReauth === true;
-            const providerStats = statsByProvider.get(provider.id);
-            const recentLogs = (logsByProvider.get(provider.id) ?? []).slice(0, 5);
-
-            return (
-              <SyncProviderCard
-                key={provider.id}
-                provider={provider}
-                state={state}
-                needsAuth={needsAuth}
-                needsReauth={needsReauth}
-                pushOnly={provider.pushOnly === true}
-                stats={providerStats}
-                recentLogs={recentLogs}
-                onSync={() => handleProviderClick(provider)}
-                onFullSync={() => handleProviderClick(provider, true)}
-              />
-            );
-          })}
-        </div>
-      )}
+            })}
+          </div>
+        )}
+      </section>
 
       {/* WHOOP Auth Modal */}
       {whoopAuthOpen && (

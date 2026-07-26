@@ -17900,3 +17900,42 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Deploy the fixed image, confirm the sink task
   remains stable, and verify the accumulated Redpanda events flow into
   ClickHouse.
+
+## 2026-07-26 — Settings Provider Inventory Caused Large Layout Shifts
+
+- **Status:** Direct web fix validated locally; CI and production deployment
+  pending.
+- **Symptoms:** Authenticated direct loads measured CLS `0.2274` on
+  `/settings` and `0.2347` on `/providers` while asynchronous Settings content
+  populated.
+- **User impact:** Sections below Data Sources moved after first paint, so
+  users could lose their reading position or target the wrong control. A good
+  CLS score is `0.1` or less at the 75th percentile, segmented by device type:
+  <https://web.dev/articles/cls#what_is_a_good_cls_score>.
+- **Evidence:** Document TTFB was only 8–21 ms. The loading state reserved one
+  desktop row with three 96 px skeletons, then replaced it with 19 provider
+  cards across seven rows. A deterministic Chrome 150 regression delayed the
+  provider tRPC batch and reproduced a 76 px downstream movement after the
+  provider viewport alone was stabilized: Billing grew 80 px and the Data
+  Sources action header grew 4 px. The Chrome DevTools connector could not
+  record a source trace because its shared browser profile was already locked;
+  the test therefore also compares section geometry independently of Layout
+  Shift API entries.
+- **Root cause:** Loading and resolved states did not share layout
+  reservations. Provider inventory height depended on provider count, the
+  Billing placeholder was shorter than its resolved content, and Data Sources
+  actions increased their header height after the provider response arrived.
+- **Fix / mitigation:** Keep provider cards inside one responsive fixed-height
+  scroll region shared by loading and resolved states, reserve Billing's
+  responsive resolved height, and reserve the Data Sources action-header
+  height. No server query, cache, timeout, or retry behavior changed.
+- **Validation:** The focused component regression failed before the provider
+  region existed and then passed. After the complete fix, Chrome 150 direct
+  loads of `/settings` and redirected `/providers` reported zero Billing
+  height delta, zero Data Sources height delta, zero normalized downstream
+  movement, and CLS `0.0000`; both routes passed without retries.
+- **Remaining risk / follow-up:** Confirm production field CLS after rollout
+  because synthetic page-load tests cannot represent every provider inventory,
+  viewport, font, or long-lived session. The provider catalog now scrolls
+  within its reserved region, so usability should also be reviewed on narrow
+  web viewports.
