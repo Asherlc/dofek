@@ -129,21 +129,6 @@ export interface ReadinessRow {
   weights: ReadinessWeights;
 }
 
-export interface StrainTargetResult {
-  targetStrain: number;
-  currentStrain: number;
-  currentStrainSource?: "activity" | "none";
-  currentPhysiologyLoad?: number | null;
-  progressPercent: number;
-  zone: "Push" | "Maintain" | "Recovery";
-  explanation: string;
-  dailyLoad?: number;
-  acuteLoad?: number;
-  chronicLoad?: number;
-  workloadRatio?: number | null;
-  readinessScore?: number;
-}
-
 const strainTargetResultSchema = z.object({
   targetStrain: z.number(),
   currentStrain: z.number(),
@@ -158,6 +143,8 @@ const strainTargetResultSchema = z.object({
   workloadRatio: z.number().nullable().optional(),
   readinessScore: z.number().optional(),
 });
+
+export type StrainTargetResult = z.infer<typeof strainTargetResultSchema>;
 
 const strainTargetReadinessRowSchema = z.object({
   date: dateStringSchema,
