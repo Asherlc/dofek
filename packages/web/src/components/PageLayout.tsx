@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useActiveProcessingAlertCount } from "../lib/processing-alerts-context.tsx";
 import { AppHeader } from "./AppHeader.tsx";
 
 interface Tab {
@@ -21,9 +22,10 @@ export function PageLayout({
   subtitle?: string;
   children: ReactNode;
 }) {
+  const activeAlertCount = useActiveProcessingAlertCount();
   return (
     <div className="min-h-screen bg-page text-foreground overflow-x-hidden lg:flex">
-      <AppHeader />
+      <AppHeader activeAlertCount={activeAlertCount} />
       <div className="lg:min-w-0 lg:flex-1">
         {tabs && (
           <nav

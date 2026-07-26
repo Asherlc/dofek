@@ -60,20 +60,8 @@ public class WhoopBleModule: Module {
                 case .success(let value):
                     promise.resolve(value)
                 case .failure(let error):
-                    switch error {
-                    case .invalidPeripheralId(let identifier):
-                        promise.reject("INVALID_ID", "Invalid peripheral ID: \(identifier)")
-                    case .peripheralNotFound(let identifier):
-                        promise.reject("NOT_FOUND", "Peripheral not found: \(identifier)")
-                    case .timeout:
-                        promise.reject("TIMEOUT", "Connection timed out")
-                    case .serviceNotFound:
-                        promise.reject("NO_SERVICE", "WHOOP service not found")
-                    case .characteristicsNotFound:
-                        promise.reject("NO_CHARACTERISTICS", "Required characteristics not found")
-                    case .disconnected(let message):
-                        promise.reject("DISCONNECTED", message ?? "Disconnected")
-                    }
+                    let rejection = error.rejection
+                    promise.reject(rejection.code, rejection.message)
                 }
             }
         }
@@ -173,8 +161,10 @@ public class WhoopBleModule: Module {
                     "lastWriteError": self.connectionManager.lastWriteError ?? "none",
                     "realtimeBufferCount": self.sampleBuffer.realtimeSampleCount,
                     "watchdogRetryCount": Int(self.watchdog.retryCount),
-                    "droppedFrames": Int(self.frameParser.droppedFrameCount),
-                    "droppedCmdFrames": Int(self.cmdFrameParser.droppedFrameCount),
+                    "malformedFrames": Int(self.frameParser.malformedFrameCount),
+                    "malformedCmdFrames": Int(self.cmdFrameParser.malformedFrameCount),
+                    "coalescedFrames": Int(self.frameParser.coalescedFrameCount),
+                    "coalescedCmdFrames": Int(self.cmdFrameParser.coalescedFrameCount),
                 ]
             }
         }

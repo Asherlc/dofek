@@ -1,6 +1,8 @@
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import { sleepSession, sleepStage } from "dofek/db/schema/activity";
+import { ensureProvider } from "dofek/db/tokens";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import express, { Router } from "express";
 import { z } from "zod";
@@ -242,12 +244,7 @@ export function createIngestZosHealthRouter(deps: {
     }
 
     try {
-      // Ensure provider row exists
-      await deps.db.execute(
-        sql`INSERT INTO fitness.provider (id, name, user_id)
-            VALUES (${PROVIDER_ID}, ${PROVIDER_NAME}, ${userId})
-            ON CONFLICT (id) DO UPDATE SET name = ${PROVIDER_NAME}`,
-      );
+      await ensureProvider(deps.db, PROVIDER_ID, PROVIDER_NAME, undefined, userId);
 
       // Process daily metrics — upsert with raw SQL since the unique
       // constraint is a NULLS NOT DISTINCT index on (user_id, date, provider_id, source_name)
@@ -483,6 +480,7 @@ export function createIngestZosHealthRouter(deps: {
         await writeMetricStreamRows({ database: deps.db, publisher, rows });
       }
 
+      await invalidateAllUserQueries(userId);
       sendJson(res, 200, { status: "ok" });
     } catch (error) {
       Sentry.captureException(error);

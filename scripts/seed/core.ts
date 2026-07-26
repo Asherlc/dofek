@@ -51,9 +51,15 @@ export async function clearSeedData(sql: Sql): Promise<void> {
   await sql`DELETE FROM fitness.user_settings WHERE user_id = ${USER_ID}`;
   await sql`DELETE FROM fitness.sync_log WHERE user_id = ${USER_ID}`;
   await sql`DELETE FROM fitness.oauth_token WHERE user_id = ${USER_ID}`;
+  await sql`DELETE FROM fitness.provider_connection WHERE user_id = ${USER_ID}`;
   await sql`DELETE FROM fitness.session WHERE user_id = ${USER_ID}`;
   await sql`DELETE FROM fitness.provider_priority WHERE provider_id IN ('whoop', 'apple_health', 'strava', 'bodyspec', 'manual_review')`;
-  await sql`DELETE FROM fitness.provider WHERE user_id = ${USER_ID} AND id IN ('whoop', 'apple_health', 'strava', 'bodyspec', 'manual_review')`;
+  await sql`DELETE FROM fitness.provider
+    WHERE id IN ('whoop', 'apple_health', 'strava', 'bodyspec', 'manual_review')
+      AND NOT EXISTS (
+        SELECT 1 FROM fitness.provider_connection
+        WHERE provider_connection.provider_id = provider.id
+      )`;
 }
 
 export async function seedCore(sql: Sql): Promise<void> {
@@ -76,10 +82,14 @@ export async function seedCore(sql: Sql): Promise<void> {
   for (const providerId of SEED_PROVIDER_IDS) {
     await sql`
       INSERT INTO fitness.provider (id, name, user_id)
-      VALUES (${providerId}, ${SEED_PROVIDER_NAMES[providerId]}, ${USER_ID})
+      VALUES (${providerId}, ${SEED_PROVIDER_NAMES[providerId]}, NULL)
       ON CONFLICT (id) DO UPDATE
-        SET name = EXCLUDED.name,
-            user_id = EXCLUDED.user_id
+        SET name = EXCLUDED.name
+    `;
+    await sql`
+      INSERT INTO fitness.provider_connection (user_id, provider_id)
+      VALUES (${USER_ID}, ${providerId})
+      ON CONFLICT (user_id, provider_id) DO NOTHING
     `;
   }
 

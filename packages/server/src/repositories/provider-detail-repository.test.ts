@@ -80,8 +80,8 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("DISCONNECT_CHILD_TABLES", () => {
-  it("contains 16 child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).toHaveLength(16);
+  it("contains 17 child tables", () => {
+    expect(DISCONNECT_CHILD_TABLES).toHaveLength(17);
   });
 
   it("includes all required child tables", () => {
@@ -101,15 +101,16 @@ describe("DISCONNECT_CHILD_TABLES", () => {
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sync_log");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.activity");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.oauth_token");
+    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.provider_connection");
   });
 
   it("starts with daily_metrics after Postgres metric_stream retirement", () => {
     expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.daily_metrics");
   });
 
-  it("ends with activity then oauth_token (FK order)", () => {
+  it("ends with OAuth token then provider connection (FK order)", () => {
     const lastTwo = DISCONNECT_CHILD_TABLES.slice(-2);
-    expect(lastTwo).toEqual(["fitness.activity", "fitness.oauth_token"]);
+    expect(lastTwo).toEqual(["fitness.oauth_token", "fitness.provider_connection"]);
   });
 
   it("deletes lab_result before lab_panel (FK order)", () => {
@@ -360,18 +361,16 @@ describe("ProviderDetailRepository", () => {
   // ── verifyOwnership ──
 
   describe("verifyOwnership", () => {
-    it("returns true when provider exists in oauth_token table for user", async () => {
+    it("queries the authoritative provider connection for the user", async () => {
       const { repo, execute } = makeRepository([{ id: "strava" }]);
       const result = await repo.verifyOwnership("strava");
       expect(result).toBe(true);
-      // Verify query contains UNION as expected for the expanded check
       const queryString = stringifyQuery(vi.mocked(execute).mock.calls[0]?.[0]);
-      expect(queryString).toMatch(/UNION/i);
-      expect(queryString).toMatch(/fitness\.oauth_token/i);
-      expect(queryString).toMatch(/fitness\.provider/i);
+      expect(queryString).toMatch(/fitness\.provider_connection/i);
+      expect(queryString).not.toMatch(/fitness\.oauth_token/i);
     });
 
-    it("returns true when provider exists in provider table for user (even if not in tokens)", async () => {
+    it("returns true when the provider connection exists", async () => {
       const { repo } = makeRepository([{ id: "strava" }]);
       const result = await repo.verifyOwnership("strava");
       expect(result).toBe(true);
@@ -705,13 +704,13 @@ describe("ProviderDetailRepository", () => {
 
       await repo.deleteProviderData("test-provider");
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
-      expect(txExecute).toHaveBeenCalledTimes(16);
+      expect(txExecute).toHaveBeenCalledTimes(17);
     });
 
     it("DISCONNECT_CHILD_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(DISCONNECT_CHILD_TABLES.length).toBe(16);
+      expect(DISCONNECT_CHILD_TABLES.length).toBe(17);
       expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.daily_metrics");
-      expect(DISCONNECT_CHILD_TABLES[15]).toBe("fitness.oauth_token");
+      expect(DISCONNECT_CHILD_TABLES[16]).toBe("fitness.provider_connection");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {

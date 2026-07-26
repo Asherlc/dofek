@@ -11,6 +11,7 @@ import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
 import { initProductionSentry } from "../lib/sentry.ts";
 import { jobContext, logger } from "../logger.ts";
+import { startDataExportOutboxDispatcher } from "./data-export-outbox.ts";
 import { startFileUploadOutboxDispatcher } from "./file-upload-outbox.ts";
 import { startFileUploadReconciler } from "./file-upload-reconciliation.ts";
 import { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
@@ -37,6 +38,7 @@ import {
   FIT_FILE_IMPORT_QUEUE,
   type FitFileImportBatchJobData,
   type FitFileImportJobData,
+  getDataExportQueue,
   getImportQueue,
   getProviderDataDeletionQueue,
   getRedisConnection,
@@ -68,6 +70,27 @@ const WORKER_READINESS_PORT = 3001;
 const db = createDatabaseFromEnv();
 const connection = getRedisConnection();
 let importUploadStorage: ReturnType<typeof createImportUploadStorageFromEnv> | null = null;
+
+const rawSyncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES;
+const syncIntervalMinutes =
+  rawSyncIntervalMinutes === undefined ? 30 : Number(rawSyncIntervalMinutes);
+try {
+  if (!Number.isFinite(syncIntervalMinutes) || syncIntervalMinutes <= 0) {
+    throw new Error(
+      `SYNC_INTERVAL_MINUTES must be a finite positive number, received ${JSON.stringify(rawSyncIntervalMinutes)}`,
+    );
+  }
+  await setupScheduledSync(syncIntervalMinutes);
+} catch (error: unknown) {
+  Sentry.captureException(error, {
+    tags: { workerStartupStep: "scheduledSyncRegistration" },
+  });
+  logger.error("[worker] Failed to set up scheduled sync", {
+    error,
+    errorStack: error instanceof Error ? error.stack : undefined,
+  });
+  throw error;
+}
 
 function getImportUploadStorage() {
   importUploadStorage ??= createImportUploadStorageFromEnv();
@@ -314,6 +337,7 @@ const providerDataDeletionOutboxDispatcher = startProviderDataDeletionOutboxDisp
   db,
   getProviderDataDeletionQueue(),
 );
+const dataExportOutboxDispatcher = startDataExportOutboxDispatcher(db, getDataExportQueue());
 const fileUploadOutboxDispatcher = startFileUploadOutboxDispatcher(db, getImportQueue());
 const fileUploadReconciler = startFileUploadReconciler(db, getImportUploadStorage());
 
@@ -458,14 +482,6 @@ logger.info(
   `[worker] Readiness endpoint listening on http://${WORKER_READINESS_HOST}:${WORKER_READINESS_PORT}/readyz`,
 );
 
-// Set up periodic sync for API providers
-const syncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES
-  ? Number(process.env.SYNC_INTERVAL_MINUTES)
-  : 30;
-setupScheduledSync(syncIntervalMinutes).catch((err) => {
-  logger.error(`[worker] Failed to set up scheduled sync: ${err}`);
-});
-
 // ── Graceful shutdown ──
 
 let shuttingDown = false;
@@ -479,6 +495,7 @@ async function shutdown() {
       readinessServer.close((error) => (error ? reject(error) : resolve()));
     }),
     providerDataDeletionOutboxDispatcher.close(),
+    dataExportOutboxDispatcher.close(),
     fileUploadOutboxDispatcher.close(),
     fileUploadReconciler.close(),
     ...allWorkers.map((worker) => worker.close()),

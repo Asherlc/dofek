@@ -1,5 +1,6 @@
 import { TupleParam } from "@clickhouse/client";
 import * as Sentry from "@sentry/node";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { z } from "zod";
 import { logger } from "../logger.ts";
 import {
@@ -318,6 +319,7 @@ export async function processProviderDataDeletionJob(
     job.data.providerId,
     job.data.eventId,
   );
+  await invalidateAllUserQueries(job.data.userId);
   await dependencies.markCompleted(job.data.eventId);
   await updateProgress(job, 100, "Provider data deletion complete.", checkpoint);
 }

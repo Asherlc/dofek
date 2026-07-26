@@ -63,6 +63,7 @@ export class PolarProvider implements WebhookProvider {
 
     return {
       oauthConfig: config,
+      reconnectStrategy: "revoke-then-replace",
       exchangeCode: async (code) => {
         // Inline token exchange to capture Polar's x_user_id (needed for
         // AccessLink registration). The shared exchangeCodeForTokens drops it.
@@ -126,16 +127,15 @@ export class PolarProvider implements WebhookProvider {
             await client.deregisterUser(polarUserId);
             logger.info(`[polar] Deregistered user ${polarUserId} to revoke old token`);
           } else {
-            logger.warn(
-              "[polar] Could not discover Polar user ID for deregistration — old token may be expired",
+            throw new Error(
+              "Could not discover Polar user ID for deregistration; existing authorization was not confirmed revoked",
             );
           }
         } catch (revokeError) {
-          // Best-effort — if the old token is completely dead, we can't revoke.
-          // The user may need to contact Polar support.
           logger.warn(
             `[polar] Token revocation failed: ${revokeError instanceof Error ? revokeError.message : String(revokeError)}`,
           );
+          throw revokeError;
         }
       },
       apiBaseUrl: POLAR_API_BASE,

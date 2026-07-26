@@ -20,6 +20,10 @@ import { getQueryErrorMessage, QueryStatePanel } from "../../components/QuerySta
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
+import {
+  HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE,
+  isHealthKitDatabaseInaccessible,
+} from "../../lib/health-kit-errors";
 import { syncDofekFoodToHealthKit } from "../../lib/health-kit-food-writeback";
 import {
   type ImportProviderId,
@@ -175,8 +179,12 @@ export default function ProvidersScreen() {
         setHealthKitProgress(`Done — ${result.inserted} records synced, ${foodSummary}`);
         trpcUtils.invalidate();
       } catch (error: unknown) {
-        captureException(error, { context: "healthkit-manual-sync" });
-        setHealthKitProgress(error instanceof Error ? error.message : "Sync failed");
+        if (!isHealthKitDatabaseInaccessible(error)) {
+          captureException(error, { context: "healthkit-manual-sync" });
+          setHealthKitProgress(error instanceof Error ? error.message : "Sync failed");
+          return;
+        }
+        setHealthKitProgress(HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE);
       } finally {
         setHealthKitSyncing(false);
         setAnySyncing(false);
@@ -600,10 +608,10 @@ export default function ProvidersScreen() {
     pushOnly: provider.pushOnly,
   }));
   const statsMap: Record<string, ProviderStats> = {};
-  for (const s of stats.error ? [] : (stats.data ?? [])) {
+  for (const s of stats.data ?? []) {
     statsMap[s.providerId] = s;
   }
-  const logList: SyncLog[] = logs.error ? [] : (logs.data ?? []);
+  const logList: SyncLog[] = logs.data ?? [];
 
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
@@ -845,17 +853,22 @@ export default function ProvidersScreen() {
 
       {/* Sync History */}
       <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Sync History</Text>
-      {logs.isLoading ? (
-        <ActivityIndicator color={colors.accent} style={{ marginTop: 12 }} />
-      ) : logs.error ? (
+      {logs.error ? (
         <View style={styles.card}>
           <QueryStatePanel
             variant="error"
-            title="Could not load sync history"
+            title={
+              logs.data === undefined
+                ? "Could not load sync history"
+                : "Could not refresh sync history"
+            }
             message={getQueryErrorMessage(logs.error, "Failed to load sync history.")}
           />
         </View>
-      ) : logList.length === 0 ? (
+      ) : null}
+      {logs.isLoading && logs.data === undefined ? (
+        <ActivityIndicator color={colors.accent} style={{ marginTop: 12 }} />
+      ) : logs.error && logs.data === undefined ? null : logList.length === 0 ? (
         <View style={styles.card}>
           <Text style={styles.emptyText}>No sync history yet.</Text>
         </View>

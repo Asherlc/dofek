@@ -1,8 +1,10 @@
 import { formatDateYmd } from "@dofek/format/format";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { deleteDietarySamples, writeDietarySamples } from "../modules/health-kit";
-import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple-health-provider";
+import { AppleHealthAuthorizationService } from "./apple-health-provider";
 import { syncDofekFoodToHealthKit } from "./health-kit-food-writeback";
+import { invalidateSyncedHealthData } from "./invalidate-synced-health-data";
 import { runAfterUiIdle } from "./runAfterUiIdle";
 import { captureException, logger } from "./telemetry";
 import { trpc } from "./trpc";
@@ -18,35 +20,21 @@ function todayYmd(): string {
   return formatDateYmd();
 }
 
-type TrpcUtils = ReturnType<typeof trpc.useUtils>;
-
-async function invalidateSyncedHealthData(trpcUtils: TrpcUtils): Promise<void> {
-  await Promise.all([
-    trpcUtils.mobileDashboard.dashboard.invalidate(),
-    trpcUtils.mobileDashboard.recovery.invalidate(),
-    trpcUtils.mobileDashboard.training.invalidate(),
-    trpcUtils.calendar.weekList.invalidate(),
-    trpcUtils.calendar.activityOverview.invalidate(),
-    trpcUtils.activity.list.invalidate(),
-    trpcUtils.food.byDate.invalidate(),
-    trpcUtils.processing.status.invalidate(),
-    trpcUtils.nutritionAnalytics.adaptiveTdee.invalidate(),
-    trpcUtils.nutritionAnalytics.macroRatios.invalidate(),
-    trpcUtils.nutritionAnalytics.micronutrientAdequacy.invalidate(),
-  ]);
-}
-
 /**
  * Auto-sync hook for the iOS overview screen.
  * When the app opens and data is stale, triggers:
  * 1. Server-side sync for all API providers (polls until complete, then invalidates cache)
- * 2. HealthKit sync to push local health data to the server (invalidates cache on completion)
+ * 2. Direct Dofek food writeback to HealthKit
+ *
+ * HealthKit ingestion is owned by background-health-kit-sync so foreground startup
+ * cannot launch a second copy of the same import and refetch cycle.
  */
 export function useAutoSync(latestDate: string | null | undefined) {
   const isMounted = useRef(false);
   const triggered = useRef(false);
   const { mutateAsync: triggerProviderSync } = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, {
     enabled: isDataStale(latestDate),
   });
@@ -88,7 +76,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
             }
             if (!isMounted.current) return;
             if (!status || status.status === "completed" || status.status === "failed") {
-              await invalidateSyncedHealthData(trpcUtils);
+              await invalidateSyncedHealthData(queryClient);
               return;
             }
             await new Promise((r) => setTimeout(r, 2000));
@@ -101,23 +89,16 @@ export function useAutoSync(latestDate: string | null | undefined) {
           captureException(error, { source: "auto-sync-providers" });
         });
 
-      // Trigger HealthKit sync (iOS only)
+      // HealthKit ingestion is initialized once by the root layout. This path only
+      // writes canonical Dofek nutrition entries out to HealthKit.
       const appleHealthAuthorization = new AppleHealthAuthorizationService();
-      const appleHealthSync = new AppleHealthSyncService({ trpcClient: trpcUtils.client });
       void appleHealthAuthorization
         .resolve()
         .then((authorizationState) => {
           if (!authorizationState.canAttemptSync()) {
             return null;
           }
-          logger.info("auto-sync", "Starting HealthKit sync");
-          return appleHealthSync.sync({ syncRangeDays: 1 });
-        })
-        .then(async (result) => {
-          if (!result) {
-            return;
-          }
-          await syncDofekFoodToHealthKit({
+          return syncDofekFoodToHealthKit({
             trpcClient: trpcUtils.client,
             healthKit: {
               writeDietarySamples,
@@ -126,18 +107,22 @@ export function useAutoSync(latestDate: string | null | undefined) {
             startDate: latestDate,
             endDate: todayYmd(),
           });
+        })
+        .then((result) => {
+          if (!result) {
+            return;
+          }
           logger.info(
             "auto-sync",
-            `HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
+            `HealthKit food writeback complete: ${result.written} written, ${result.errors.length} errors`,
           );
-          await invalidateSyncedHealthData(trpcUtils);
         })
         .catch((error: unknown) => {
           logger.warn(
             "auto-sync",
-            `HealthKit sync failed: ${error instanceof Error ? error.message : String(error)}`,
+            `HealthKit food writeback failed: ${error instanceof Error ? error.message : String(error)}`,
           );
-          captureException(error, { source: "auto-sync-healthkit" });
+          captureException(error, { source: "auto-sync-healthkit-food-writeback" });
         });
     });
 
@@ -151,5 +136,6 @@ export function useAutoSync(latestDate: string | null | undefined) {
     activeSyncs.data,
     triggerProviderSync,
     trpcUtils,
+    queryClient,
   ]);
 }

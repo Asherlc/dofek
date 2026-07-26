@@ -1,4 +1,11 @@
-import { MemoryCacheStore, NullCacheStore, queryCache } from "dofek/lib/cache";
+import {
+  invalidateAllQueries,
+  invalidateAllUserQueries,
+  invalidateUserQueryDomains,
+  MemoryCacheStore,
+  NullCacheStore,
+  queryCache,
+} from "dofek/lib/cache";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("MemoryCacheStore", () => {
@@ -112,5 +119,53 @@ describe("NullCacheStore", () => {
     const store = new NullCacheStore();
 
     await expect(store.get("missing")).resolves.toBeUndefined();
+  });
+});
+
+describe("user query invalidation", () => {
+  afterEach(async () => {
+    await queryCache.invalidateAll();
+  });
+
+  it("invalidates every cached read model derived from a domain", async () => {
+    await queryCache.set("user1:personalization.status:UTC:{}", "status", 60_000);
+    await queryCache.set("user1:mobileDashboard.dashboard:UTC:{}", "dashboard", 60_000);
+    await queryCache.set("user1:recovery.readinessScore:UTC:{}", "recovery", 60_000);
+    await queryCache.set("user1:stress.scores:UTC:{}", "stress", 60_000);
+    await queryCache.set("user1:pmc.chart:UTC:{}", "pmc", 60_000);
+    await queryCache.set("user1:journal.entries:UTC:{}", "journal", 60_000);
+    await queryCache.set("user2:personalization.status:UTC:{}", "other-user", 60_000);
+
+    await invalidateUserQueryDomains("user1", ["personalization"]);
+
+    expect(await queryCache.get("user1:personalization.status:UTC:{}")).toBeUndefined();
+    expect(await queryCache.get("user1:mobileDashboard.dashboard:UTC:{}")).toBeUndefined();
+    expect(await queryCache.get("user1:recovery.readinessScore:UTC:{}")).toBeUndefined();
+    expect(await queryCache.get("user1:stress.scores:UTC:{}")).toBeUndefined();
+    expect(await queryCache.get("user1:pmc.chart:UTC:{}")).toBeUndefined();
+    expect(await queryCache.get("user1:journal.entries:UTC:{}")).toBe("journal");
+    expect(await queryCache.get("user2:personalization.status:UTC:{}")).toBe("other-user");
+  });
+
+  it("invalidates all domains for one user", async () => {
+    await queryCache.set("user1:journal.entries:UTC:{}", "journal", 60_000);
+    await queryCache.set("user1:activity.list:UTC:{}", "activity", 60_000);
+    await queryCache.set("user2:activity.list:UTC:{}", "other-user", 60_000);
+
+    await invalidateAllUserQueries("user1");
+
+    expect(await queryCache.get("user1:journal.entries:UTC:{}")).toBeUndefined();
+    expect(await queryCache.get("user1:activity.list:UTC:{}")).toBeUndefined();
+    expect(await queryCache.get("user2:activity.list:UTC:{}")).toBe("other-user");
+  });
+
+  it("invalidates globally visible queries for every user", async () => {
+    await queryCache.set("user1:journal.questions:UTC:{}", "first-user", 60_000);
+    await queryCache.set("user2:journal.questions:UTC:{}", "second-user", 60_000);
+
+    await invalidateAllQueries();
+
+    expect(await queryCache.get("user1:journal.questions:UTC:{}")).toBeUndefined();
+    expect(await queryCache.get("user2:journal.questions:UTC:{}")).toBeUndefined();
   });
 });

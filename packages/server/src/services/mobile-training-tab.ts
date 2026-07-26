@@ -212,6 +212,7 @@ export async function loadMobileTrainingTab(
         strain.workload_ratio AS workload_ratio
       FROM analytics.daily_strain AS strain FINAL
       WHERE strain.user_id = {userId:UUID}
+        AND strain.is_deleted = 0
         AND strain.date > toDate({outputWindowStart:String})
         AND strain.date <= toDate({endDate:String})
         ${strainAccessClause(ctx.accessWindow)}
@@ -235,6 +236,7 @@ export async function loadMobileTrainingTab(
         recovery.respiratory_rate_score AS respiratory_rate_score
       FROM analytics.daily_recovery AS recovery FINAL
       WHERE recovery.user_id = {userId:UUID}
+        AND recovery.is_deleted = 0
         AND recovery.date > toDate({windowStart:String})
         AND recovery.date <= toDate({endDate:String})
         ${recoveryAccessClause(ctx.accessWindow)}

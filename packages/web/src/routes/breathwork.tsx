@@ -3,6 +3,9 @@ import { totalSessionSeconds } from "@dofek/scoring/breathwork";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export const Route = createFileRoute("/breathwork")({
@@ -10,6 +13,13 @@ export const Route = createFileRoute("/breathwork")({
 });
 
 type SessionPhase = "inhale" | "hold-in" | "exhale" | "hold-out";
+
+interface CompletedSessionInput {
+  techniqueId: string;
+  rounds: number;
+  durationSeconds: number;
+  startedAt: string;
+}
 
 const PHASE_LABELS: Record<SessionPhase, string> = {
   inhale: "Breathe In",
@@ -42,9 +52,8 @@ function BreathingCircle({ phase, progress }: { phase: SessionPhase; progress: n
 }
 
 function BreathworkPage() {
-  const { data: techniques } = trpc.breathwork.techniques.useQuery();
-  const { data: history } = trpc.breathwork.history.useQuery({ days: 30 });
-  const logMutation = trpc.breathwork.logSession.useMutation();
+  const techniques = trpc.breathwork.techniques.useQuery();
+  const history = trpc.breathwork.history.useQuery({ days: 30 });
   const utils = trpc.useUtils();
 
   const [selectedTechniqueId, setSelectedTechniqueId] = useState<string>("box-breathing");
@@ -52,11 +61,23 @@ function BreathworkPage() {
   const [currentRound, setCurrentRound] = useState(0);
   const [currentPhase, setCurrentPhase] = useState<SessionPhase>("inhale");
   const [phaseProgress, setPhaseProgress] = useState(0);
+  const [pendingSession, setPendingSession] = useState<CompletedSessionInput | null>(null);
+
+  const logMutation = trpc.breathwork.logSession.useMutation({
+    meta: locallyReportedErrorMeta,
+    onSuccess: () => {
+      setPendingSession(null);
+      utils.breathwork.history.invalidate();
+    },
+    onError: (error) => {
+      captureException(error, { context: "breathwork-log-session" });
+    },
+  });
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<string | null>(null);
 
-  const selectedTechnique = techniques?.find((t) => t.id === selectedTechniqueId);
+  const selectedTechnique = techniques.data?.find((t) => t.id === selectedTechniqueId);
 
   const stopSession = useCallback(() => {
     if (timerRef.current) {
@@ -93,23 +114,22 @@ function BreathworkPage() {
     }
 
     let phaseIdx = 0;
-    let phaseElapsed = 0;
-    let _elapsed = 0;
+    let phaseElapsedMs = 0;
 
     timerRef.current = setInterval(() => {
-      phaseElapsed += 0.05;
-      _elapsed += 0.05;
+      phaseElapsedMs += 50;
 
       const currentPhaseDef = phases[phaseIdx];
       if (!currentPhaseDef) return;
 
-      const progress = Math.min(phaseElapsed / currentPhaseDef.duration, 1);
+      const phaseDurationMs = currentPhaseDef.duration * 1_000;
+      const progress = Math.min(phaseElapsedMs / phaseDurationMs, 1);
       setPhaseProgress(progress);
       setCurrentPhase(currentPhaseDef.phase);
 
-      if (phaseElapsed >= currentPhaseDef.duration) {
+      if (phaseElapsedMs >= phaseDurationMs) {
         phaseIdx++;
-        phaseElapsed = 0;
+        phaseElapsedMs = 0;
 
         if (phaseIdx >= phases.length) {
           phaseIdx = 0;
@@ -125,24 +145,19 @@ function BreathworkPage() {
             setIsRunning(false);
 
             const totalSeconds = totalSessionSeconds(technique, technique.defaultRounds);
-            logMutation.mutate(
-              {
-                techniqueId: technique.id,
-                rounds: technique.defaultRounds,
-                durationSeconds: totalSeconds,
-                startedAt: startTimeRef.current ?? new Date().toISOString(),
-              },
-              {
-                onSuccess: () => {
-                  utils.breathwork.history.invalidate();
-                },
-              },
-            );
+            const completedSession = {
+              techniqueId: technique.id,
+              rounds: technique.defaultRounds,
+              durationSeconds: totalSeconds,
+              startedAt: startTimeRef.current ?? new Date().toISOString(),
+            };
+            setPendingSession(completedSession);
+            logMutation.mutate(completedSession);
           }
         }
       }
     }, 50);
-  }, [selectedTechnique, logMutation, utils]);
+  }, [selectedTechnique, logMutation]);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -162,100 +177,163 @@ function BreathworkPage() {
           <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
             Choose Technique
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {techniques?.map((technique) => (
-              <button
-                key={technique.id}
-                type="button"
-                onClick={() => !isRunning && setSelectedTechniqueId(technique.id)}
-                className={`p-4 rounded-lg border text-left transition-colors ${
-                  selectedTechniqueId === technique.id
-                    ? "border-accent bg-accent/10"
-                    : "border-border hover:border-border-strong"
-                } ${isRunning ? "opacity-50" : ""}`}
-                disabled={isRunning}
-              >
-                <div className="text-sm font-medium text-foreground">{technique.name}</div>
-                <div className="text-xs text-dim mt-1 line-clamp-2">{technique.description}</div>
-                <div className="text-xs text-muted mt-2">
-                  {technique.defaultRounds} rounds
-                  {selectedTechnique?.id === technique.id &&
-                    ` / ${Math.round(totalSessionSeconds(technique, technique.defaultRounds) / 60)}m`}
-                </div>
-              </button>
-            ))}
-          </div>
+          {techniques.data !== undefined ? (
+            techniques.data.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {techniques.data.map((technique) => (
+                  <button
+                    key={technique.id}
+                    type="button"
+                    onClick={() => !isRunning && setSelectedTechniqueId(technique.id)}
+                    className={`p-4 rounded-lg border text-left transition-colors ${
+                      selectedTechniqueId === technique.id
+                        ? "border-accent bg-accent/10"
+                        : "border-border hover:border-border-strong"
+                    } ${isRunning ? "opacity-50" : ""}`}
+                    disabled={isRunning}
+                  >
+                    <div className="text-sm font-medium text-foreground">{technique.name}</div>
+                    <div className="text-xs text-dim mt-1 line-clamp-2">
+                      {technique.description}
+                    </div>
+                    <div className="text-xs text-muted mt-2">
+                      {technique.defaultRounds} rounds
+                      {selectedTechnique?.id === technique.id &&
+                        ` / ${Math.round(
+                          totalSessionSeconds(technique, technique.defaultRounds) / 60,
+                        )}m`}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <QueryStatePanel
+                variant="empty"
+                message="No breathwork techniques are available."
+                height={96}
+              />
+            )
+          ) : techniques.isLoading ? (
+            <QueryStatePanel variant="loading" height={96} />
+          ) : techniques.error ? (
+            <QueryStatePanel error={techniques.error} height={96} />
+          ) : (
+            <QueryStatePanel
+              variant="empty"
+              message="No breathwork techniques are available."
+              height={96}
+            />
+          )}
+          {techniques.data !== undefined && techniques.error ? (
+            <QueryStatePanel error={techniques.error} height={72} />
+          ) : null}
         </div>
 
         {/* Breathing animation */}
-        <div className="card p-6">
-          {isRunning ? (
-            <>
-              <div className="text-center text-xs text-muted mb-2">
-                Round {Math.min(currentRound, selectedTechnique?.defaultRounds ?? 0)} of{" "}
-                {selectedTechnique?.defaultRounds}
-              </div>
-              <BreathingCircle phase={currentPhase} progress={phaseProgress} />
-              <div className="flex justify-center mt-4">
+        {selectedTechnique ? (
+          <div className="card p-6">
+            {isRunning ? (
+              <>
+                <div className="text-center text-xs text-muted mb-2">
+                  Round {Math.min(currentRound, selectedTechnique.defaultRounds)} of{" "}
+                  {selectedTechnique.defaultRounds}
+                </div>
+                <BreathingCircle phase={currentPhase} progress={phaseProgress} />
+                <div className="flex justify-center mt-4">
+                  <button
+                    type="button"
+                    onClick={stopSession}
+                    className="px-6 py-2 bg-red-500/15 text-red-400 rounded-lg text-sm font-medium hover:bg-red-500/25 transition-colors"
+                  >
+                    Stop
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center py-8">
+                <div className="text-sm text-dim mb-4">{selectedTechnique.name}</div>
                 <button
                   type="button"
-                  onClick={stopSession}
-                  className="px-6 py-2 bg-red-500/15 text-red-400 rounded-lg text-sm font-medium hover:bg-red-500/25 transition-colors"
+                  onClick={startSession}
+                  disabled={pendingSession !== null}
+                  className="px-8 py-3 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
                 >
-                  Stop
+                  Start Session
                 </button>
               </div>
-            </>
-          ) : (
-            <div className="flex flex-col items-center py-8">
-              <div className="text-sm text-dim mb-4">
-                {selectedTechnique?.name ?? "Select a technique"}
+            )}
+            {logMutation.error ? (
+              <div className="mt-4 space-y-3">
+                <QueryStatePanel error={logMutation.error} height={72} />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pendingSession) logMutation.mutate(pendingSession);
+                  }}
+                  disabled={!pendingSession || logMutation.isPending}
+                  className="px-4 py-2 bg-accent text-white rounded text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+                >
+                  {logMutation.isPending ? "Saving..." : "Retry Save"}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={startSession}
-                disabled={!selectedTechnique}
-                className="px-8 py-3 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
-              >
-                Start Session
-              </button>
-            </div>
-          )}
-        </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* History */}
-        {history && history.length > 0 && (
-          <div className="card p-6">
-            <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-              Recent Sessions
-            </h3>
-            <div className="space-y-2">
-              {history.map((session) => {
-                const technique = techniques?.find((t) => t.id === session.techniqueId);
-                return (
-                  <div
-                    key={session.id}
-                    className="flex items-center justify-between py-2 border-b border-border last:border-0"
-                  >
-                    <div>
-                      <span className="text-sm text-foreground">
-                        {technique?.name ?? session.techniqueId}
-                      </span>
-                      <span className="text-xs text-dim ml-2">
-                        {formatDateMedium(session.startedAt)}
-                      </span>
+        <div className="card p-6">
+          <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
+            Recent Sessions
+          </h3>
+          {history.data !== undefined ? (
+            history.data.length > 0 ? (
+              <div className="space-y-2">
+                {history.data.map((session) => {
+                  const technique = techniques.data?.find((t) => t.id === session.techniqueId);
+                  return (
+                    <div
+                      key={session.id}
+                      className="flex items-center justify-between py-2 border-b border-border last:border-0"
+                    >
+                      <div>
+                        <span className="text-sm text-foreground">
+                          {technique?.name ?? session.techniqueId}
+                        </span>
+                        <span className="text-xs text-dim ml-2">
+                          {formatDateMedium(session.startedAt)}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs text-muted">
+                          {session.rounds} rounds / {Math.round(session.durationSeconds / 60)}m
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <span className="text-xs text-muted">
-                        {session.rounds} rounds / {Math.round(session.durationSeconds / 60)}m
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                  );
+                })}
+              </div>
+            ) : (
+              <QueryStatePanel
+                variant="empty"
+                message="No breathwork sessions logged yet."
+                height={96}
+              />
+            )
+          ) : history.isLoading ? (
+            <QueryStatePanel variant="loading" height={96} />
+          ) : history.error ? (
+            <QueryStatePanel error={history.error} height={96} />
+          ) : (
+            <QueryStatePanel
+              variant="empty"
+              message="No breathwork sessions logged yet."
+              height={96}
+            />
+          )}
+          {history.data !== undefined && history.error ? (
+            <QueryStatePanel error={history.error} height={72} />
+          ) : null}
+        </div>
       </div>
     </PageLayout>
   );

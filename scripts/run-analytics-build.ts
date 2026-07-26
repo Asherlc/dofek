@@ -3,7 +3,12 @@ import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
+import {
+  type AnalyticsMicrobatchBounds,
+  resolveAnalyticsMicrobatchBounds,
+} from "../src/processing/analytics-microbatch-bounds.ts";
 import { recordAnalyticsRunForPendingProcessing } from "../src/processing/analytics-processing.ts";
 import { PRODUCTION_DBT_MODELS } from "../src/processing/dataset-contracts.ts";
 import { parseDbtRunArtifacts } from "../src/processing/dbt-run-results.ts";
@@ -11,6 +16,7 @@ import { parseDbtRunArtifacts } from "../src/processing/dbt-run-results.ts";
 interface RunAnalyticsBuildInput {
   selectedModels: readonly string[];
   artifactDirectory: string;
+  microbatchBounds: AnalyticsMicrobatchBounds;
   runDbt(argumentsList: readonly string[]): Promise<number>;
   readArtifact(name: "manifest.json" | "run_results.json"): Promise<unknown>;
   recordRun(input: {
@@ -22,6 +28,7 @@ interface RunAnalyticsBuildInput {
 export async function runAnalyticsBuild({
   selectedModels,
   artifactDirectory,
+  microbatchBounds,
   runDbt,
   readArtifact,
   recordRun,
@@ -39,6 +46,8 @@ export async function runAnalyticsBuild({
     "1",
     "--target-path",
     artifactDirectory,
+    "--vars",
+    JSON.stringify(microbatchBounds),
     "--select",
     selectedModels.join(" "),
   ];
@@ -58,7 +67,13 @@ export async function runAnalyticsBuild({
   });
 
   if (exitCode !== 0) {
-    throw new Error(`dbt build failed with exit code ${exitCode}`);
+    const failureDetails = artifacts.models
+      .filter((model) => model.status !== "succeeded")
+      .map((model) => `${model.name}: ${model.message ?? model.errorCode ?? model.status}`)
+      .join("; ");
+    throw new Error(
+      `dbt build failed with exit code ${exitCode}${failureDetails ? `: ${failureDetails}` : ""}`,
+    );
   }
   if (!artifacts.succeeded || processingResult.failed > 0) {
     throw new Error("dbt build did not complete every required analytics model");
@@ -74,25 +89,36 @@ function runDbtProcess(argumentsList: readonly string[]): Promise<number> {
   });
 }
 
-async function main(): Promise<void> {
+export async function runAnalyticsBuildFromEnvironment(): Promise<void> {
   const { mkdtemp } = await import("node:fs/promises");
   const artifactDirectory = await mkdtemp(join(tmpdir(), "dofek-dbt-artifacts-"));
-  const database = createDatabaseFromEnv();
   try {
-    const result = await runAnalyticsBuild({
-      selectedModels: PRODUCTION_DBT_MODELS,
-      artifactDirectory,
-      runDbt: runDbtProcess,
-      readArtifact: async (name) => {
-        const serializedArtifact = await readFile(join(artifactDirectory, name), "utf8");
-        const parsedArtifact: unknown = JSON.parse(serializedArtifact);
-        return parsedArtifact;
-      },
-      recordRun: (run) => recordAnalyticsRunForPendingProcessing(database, run),
-    });
-    console.log(
-      `[analytics-processing] recorded ${result.datasets} datasets; ${result.failed} failed`,
-    );
+    const database = createDatabaseFromEnv();
+    try {
+      const clickHouse = createClickHouseClientFromEnv();
+      try {
+        const microbatchBounds = await resolveAnalyticsMicrobatchBounds(clickHouse);
+        const result = await runAnalyticsBuild({
+          selectedModels: PRODUCTION_DBT_MODELS,
+          artifactDirectory,
+          microbatchBounds,
+          runDbt: runDbtProcess,
+          readArtifact: async (name) => {
+            const serializedArtifact = await readFile(join(artifactDirectory, name), "utf8");
+            const parsedArtifact: unknown = JSON.parse(serializedArtifact);
+            return parsedArtifact;
+          },
+          recordRun: (run) => recordAnalyticsRunForPendingProcessing(database, run),
+        });
+        console.log(
+          `[analytics-processing] recorded ${result.datasets} datasets; ${result.failed} failed`,
+        );
+      } finally {
+        await clickHouse.close?.();
+      }
+    } finally {
+      await database.$client.end();
+    }
   } finally {
     await rm(artifactDirectory, { recursive: true, force: true });
   }
@@ -100,5 +126,5 @@ async function main(): Promise<void> {
 
 const scriptPath = process.argv[1];
 if (scriptPath && import.meta.url === pathToFileURL(scriptPath).href) {
-  await main();
+  await runAnalyticsBuildFromEnvironment();
 }

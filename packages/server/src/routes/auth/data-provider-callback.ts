@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/node";
-import { revokeToken } from "dofek/auth/oauth";
+import { type OAuthConfig, revokeToken, type TokenSet } from "dofek/auth/oauth";
 import { queryCache } from "dofek/lib/cache";
 import type { Request, Response } from "express";
 import { MissingEmailForSignupError, resolveOrCreateUser } from "../../auth/account-linking.ts";
@@ -16,15 +16,77 @@ import {
   getMobileAuthExchangeStoreRef,
   getOAuth1SecretStoreRef,
   getOAuthStateStoreRef,
+  getPendingEmailSignupStoreRef,
   getPostLoginRedirect,
   oauthSuccessHtml,
   persistProviderConnection,
-  storePendingEmailSignup,
 } from "./shared.ts";
 import { handleSlackCallback } from "./slack-oauth.ts";
 
+interface ReconnectFailure {
+  kind: "preserved" | "removed";
+  providerName: string;
+}
+
+async function revokeStandardTokens(
+  oauthConfig: OAuthConfig,
+  tokens: TokenSet,
+  providerId: string,
+): Promise<void> {
+  const errors: string[] = [];
+  for (const [tokenType, token] of [
+    ["access", tokens.accessToken],
+    ["refresh", tokens.refreshToken],
+  ] as const) {
+    if (!token) continue;
+    try {
+      logger.info(`[auth] Revoking superseded ${providerId} ${tokenType} token...`);
+      await revokeToken(oauthConfig, token);
+      logger.info(`[auth] ${providerId} ${tokenType} token revocation succeeded`);
+    } catch (error: unknown) {
+      const message = `${tokenType} token revocation failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      errors.push(message);
+      logger.error(`[auth] ${providerId} ${message}`);
+      Sentry.captureException(error);
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(`Failed to revoke superseded ${providerId} tokens: ${errors.join("; ")}`);
+  }
+}
+
+async function revokeSupersededAuthorization(params: {
+  oauthConfig: OAuthConfig;
+  tokens: TokenSet;
+  providerId: string;
+  revokeExistingTokens?: (tokens: TokenSet) => Promise<void>;
+}): Promise<void> {
+  if (params.revokeExistingTokens) {
+    try {
+      await params.revokeExistingTokens(params.tokens);
+      return;
+    } catch (error: unknown) {
+      logger.warn(
+        `[auth] Custom revocation failed for superseded ${params.providerId} authorization: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      Sentry.captureException(error);
+      if (!params.oauthConfig.revokeUrl) {
+        throw error;
+      }
+    }
+  }
+  if (params.oauthConfig.revokeUrl) {
+    await revokeStandardTokens(params.oauthConfig, params.tokens, params.providerId);
+  }
+}
+
 export async function handleOAuth2Callback(req: Request, res: Response): Promise<void> {
   let resolvedProviderName: string | undefined;
+  let reconnectFailure: ReconnectFailure | undefined;
   try {
     const code = typeof req.query.code === "string" ? req.query.code : undefined;
     const state = typeof req.query.state === "string" ? req.query.state : undefined;
@@ -163,90 +225,57 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       }
     }
 
-    // Revoke existing tokens before exchange — some providers (e.g. Wahoo) limit
-    // the number of active tokens per app+user and reject new token creation until
-    // old tokens are revoked.
-    let revocationOutcome: string | undefined;
-    if (setup.revokeExistingTokens || setup.oauthConfig.revokeUrl) {
-      let existingTokens: Awaited<ReturnType<typeof import("dofek/db/tokens").loadTokens>> | null =
-        null;
-      try {
-        const { loadTokens } = await import("dofek/db/tokens");
-        existingTokens = await loadTokens(db, providerId, stateUserId);
-      } catch (loadError) {
-        revocationOutcome = `failed to load existing tokens: ${loadError}`;
-        logger.warn(`[auth] Pre-exchange token revocation failed for ${providerId}: ${loadError}`);
-        Sentry.captureException(loadError);
-      }
-      if (existingTokens) {
-        let customRevocationFailed = false;
-        if (setup.revokeExistingTokens) {
-          try {
-            logger.info(`[auth] Revoking existing ${providerId} authorization before exchange...`);
-            await setup.revokeExistingTokens(existingTokens);
-            revocationOutcome = "custom revocation succeeded";
-            logger.info(`[auth] Custom revocation succeeded for ${providerId}`);
-          } catch (customRevokeError) {
-            customRevocationFailed = true;
-            revocationOutcome = `custom revocation failed: ${customRevokeError}`;
-            logger.warn(
-              `[auth] Custom token revocation failed for ${providerId}, will try standard OAuth revocation: ${customRevokeError}`,
-            );
-          }
-        }
+    let existingTokens: TokenSet | null = null;
+    const isDataReconnect = intent === "data";
+    if (isDataReconnect && (setup.revokeExistingTokens || setup.oauthConfig.revokeUrl)) {
+      const { loadTokens } = await import("dofek/db/tokens");
+      existingTokens = await loadTokens(db, providerId, stateUserId);
+    }
 
-        // Standard OAuth revocation: used as primary when no custom handler,
-        // or as fallback when the custom handler fails (e.g. expired bearer token).
-        if (
-          (!setup.revokeExistingTokens || customRevocationFailed) &&
-          setup.oauthConfig.revokeUrl
-        ) {
-          const revocationErrors: string[] = [];
-          if (existingTokens.accessToken) {
-            try {
-              logger.info(`[auth] Revoking existing ${providerId} access token before exchange...`);
-              await revokeToken(setup.oauthConfig, existingTokens.accessToken);
-              logger.info(`[auth] Access token revocation succeeded for ${providerId}`);
-            } catch (accessRevokeError) {
-              const message = `access token revocation failed: ${accessRevokeError}`;
-              revocationErrors.push(message);
-              logger.error(`[auth] ${providerId} ${message}`);
-            }
-          }
-          if (existingTokens.refreshToken) {
-            try {
-              logger.info(
-                `[auth] Revoking existing ${providerId} refresh token before exchange...`,
-              );
-              await revokeToken(setup.oauthConfig, existingTokens.refreshToken);
-              logger.info(`[auth] Refresh token revocation succeeded for ${providerId}`);
-            } catch (refreshRevokeError) {
-              const message = `refresh token revocation failed: ${refreshRevokeError}`;
-              revocationErrors.push(message);
-              logger.error(`[auth] ${providerId} ${message}`);
-            }
-          }
-          if (revocationErrors.length > 0) {
-            revocationOutcome = `standard OAuth revocation: ${revocationErrors.join("; ")}`;
-          } else {
-            revocationOutcome = "standard OAuth revocation succeeded";
-          }
-        }
-      } else {
-        revocationOutcome = "no existing tokens found";
+    if (existingTokens && setup.reconnectStrategy === "revoke-then-replace") {
+      if (!setup.revokeExistingTokens) {
+        throw new Error(
+          `${provider.name} requires pre-exchange revocation but has no revocation handler`,
+        );
       }
+      reconnectFailure = { kind: "preserved", providerName: provider.name };
+      logger.info(`[auth] Revoking existing ${providerId} authorization before exchange...`);
+      await setup.revokeExistingTokens(existingTokens);
+      logger.info(`[auth] Existing ${providerId} authorization revoked`);
+
+      reconnectFailure = { kind: "removed", providerName: provider.name };
+      const { deleteTokens } = await import("dofek/db/tokens");
+      try {
+        await deleteTokens(db, providerId, stateUserId);
+      } catch (deleteError: unknown) {
+        const detail = deleteError instanceof Error ? deleteError.message : String(deleteError);
+        const cleanupError = new Error(
+          `${providerId} authorization was revoked but its stored credential could not be deleted; a stale revoked credential remains stored: ${detail}`,
+          { cause: deleteError },
+        );
+        logger.error(`[auth] ${cleanupError.message}`, {
+          err: deleteError,
+          providerId,
+          userId: stateUserId,
+        });
+        throw cleanupError;
+      }
+      await queryCache.invalidateByPrefix(`${stateUserId}:sync.providers`);
     }
 
     logger.info(`[auth] Exchanging code for ${providerId} tokens...`);
-    const tokens = await setup
-      .exchangeCode(code, storedCodeVerifier)
-      .catch((exchangeError: unknown) => {
-        // Include revocation context so we can diagnose token-limit deadlocks
-        const context = revocationOutcome ? ` (prior revocation: ${revocationOutcome})` : "";
-        const message =
-          exchangeError instanceof Error ? exchangeError.message : String(exchangeError);
-        throw new Error(`${message}${context}`);
-      });
+    let tokens: TokenSet;
+    try {
+      tokens = await setup.exchangeCode(code, storedCodeVerifier);
+    } catch (exchangeError: unknown) {
+      if (existingTokens) {
+        reconnectFailure = {
+          kind: setup.reconnectStrategy === "revoke-then-replace" ? "removed" : "preserved",
+          providerName: provider.name,
+        };
+      }
+      throw exchangeError;
+    }
 
     // Auto-link identity when connecting data providers (if getUserIdentity is available)
     if (setup.getUserIdentity && intent !== "data") {
@@ -291,7 +320,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
           return;
         } catch (loginErr: unknown) {
           if (loginErr instanceof MissingEmailForSignupError) {
-            const token = storePendingEmailSignup({
+            const token = await getPendingEmailSignupStoreRef().issue({
               providerId,
               providerName: provider.name,
               apiBaseUrl: setup.apiBaseUrl,
@@ -352,6 +381,24 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       });
     }
 
+    if (existingTokens && setup.reconnectStrategy !== "revoke-then-replace") {
+      try {
+        await revokeSupersededAuthorization({
+          oauthConfig: setup.oauthConfig,
+          tokens: existingTokens,
+          providerId,
+          revokeExistingTokens: setup.revokeExistingTokens,
+        });
+      } catch (revokeError: unknown) {
+        logger.error(
+          `[auth] Replacement ${providerId} connection succeeded, but superseded authorization cleanup failed: ${
+            revokeError instanceof Error ? revokeError.message : String(revokeError)
+          }`,
+        );
+        Sentry.captureException(revokeError);
+      }
+    }
+
     res.send(
       oauthSuccessHtml(
         provider.name,
@@ -370,11 +417,16 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     // Wahoo-specific: when orphaned tokens on Wahoo's side block new token creation,
     // the user needs to deauthorize the app from the Wahoo mobile app.
     if (message.includes("Too many unrevoked access tokens")) {
+      const priorAuthorizationMessage =
+        reconnectFailure?.kind === "removed"
+          ? "<p>Your previous Wahoo authorization was removed before the replacement could be completed.</p>"
+          : "";
       res
         .status(400)
         .send(
           [
             "<h2>Wahoo connection blocked by orphaned tokens</h2>",
+            priorAuthorizationMessage,
             "<p>Wahoo limits the number of active tokens per app. Old tokens from a previous session are blocking the new connection.</p>",
             "<p><strong>To fix this:</strong></p>",
             "<ol>",
@@ -385,6 +437,23 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
             '<li>Come back here and <a href="/settings">try connecting Wahoo again</a></li>',
             "</ol>",
           ].join("\n"),
+        );
+      return;
+    }
+
+    if (reconnectFailure?.kind === "preserved") {
+      res
+        .status(400)
+        .send(
+          `${reconnectFailure.providerName} reconnect failed. Your existing connection is still active. Please try again later.`,
+        );
+      return;
+    }
+    if (reconnectFailure?.kind === "removed") {
+      res
+        .status(400)
+        .send(
+          `The previous ${reconnectFailure.providerName} authorization was removed before the new authorization could be completed. Please connect ${reconnectFailure.providerName} again.`,
         );
       return;
     }

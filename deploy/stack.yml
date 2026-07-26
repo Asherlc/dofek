@@ -139,6 +139,7 @@ services:
     command: ["analytics-worker"]
     env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
+      DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
       NODE_ENV: production
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
       CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
@@ -152,7 +153,15 @@ services:
       OTEL_TRACES_SAMPLER: parentbased_traceidratio
       OTEL_TRACES_SAMPLER_ARG: "0.1"
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f analytics-worker || exit 1"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1:3002/readyz",
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -182,9 +191,17 @@ services:
       OTEL_TRACES_SAMPLER: parentbased_traceidratio
       OTEL_TRACES_SAMPLER_ARG: "0.1"
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f cdc-health || exit 1"]
+      test:
+        [
+          "CMD",
+          "node",
+          "--experimental-strip-types",
+          "--disable-warning=ExperimentalWarning",
+          "scripts/cdc-health-state.ts",
+          "probe",
+        ]
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 3
       start_period: 15s
     deploy:

@@ -585,6 +585,10 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
     );
     const createKafkaMetricStreamConsumerFromEnv = vi.fn(() => ({
       consumer,
+      quarantine: {
+        connect: vi.fn(async () => undefined),
+        write: vi.fn(async () => undefined),
+      },
       topic: "metric-stream-v1",
     }));
 
@@ -605,6 +609,7 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
     );
     expect(runMetricStreamEventConsumer).toHaveBeenCalledWith({
       consumer,
+      quarantine: expect.any(Object),
       topic: "metric-stream-v1",
       handleEvents: expect.any(Function),
     });

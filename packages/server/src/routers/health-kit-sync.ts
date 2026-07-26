@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/node";
-import { queryCache } from "dofek/lib/cache";
+import { ensureProvider as ensureProviderConnection } from "dofek/db/tokens";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
@@ -34,11 +34,7 @@ import { processSleepSamples } from "./health-kit-sync-sleep.ts";
 
 /** Ensure the apple_health provider row exists */
 async function ensureProvider(db: Database, userId: string) {
-  await db.execute(
-    sql`INSERT INTO fitness.provider (id, name, user_id)
-        VALUES (${PROVIDER_ID}, 'Apple Health', ${userId})
-        ON CONFLICT (id) DO NOTHING`,
-  );
+  await ensureProviderConnection(db, PROVIDER_ID, "Apple Health", undefined, userId);
 }
 
 /** Route a sample to its destination category */
@@ -177,7 +173,7 @@ export const healthKitSyncRouter = router({
 
       // Invalidate cached data so queries pick up the newly ingested data
       if (inserted > 0 && errors.length === 0) {
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, {
@@ -229,7 +225,7 @@ export const healthKitSyncRouter = router({
       });
 
       if (inserted > 0) {
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, { endpoint: "pushWorkouts", status: "success" });
@@ -252,7 +248,7 @@ export const healthKitSyncRouter = router({
       );
 
       if (inserted > 0) {
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, { endpoint: "pushWorkoutRoutes", status: "success" });
@@ -270,7 +266,7 @@ export const healthKitSyncRouter = router({
       const inserted = await processSleepSamples(ctx.db, ctx.userId, input.samples);
 
       if (inserted > 0) {
-        await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+        await invalidateAllUserQueries(ctx.userId);
       }
 
       healthKitPushTotal.add(1, { endpoint: "pushSleepSamples", status: "success" });

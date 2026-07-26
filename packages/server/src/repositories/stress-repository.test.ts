@@ -51,6 +51,7 @@ describe("StressRepository", () => {
 
       const queryText = sensorStore.query.mock.calls[0]?.[1];
       expect(queryText).toContain("analytics.daily_recovery AS recovery_inputs FINAL");
+      expect(queryText).toContain("recovery_inputs.is_deleted = 0");
       expect(queryText).not.toContain("fitness.v_daily_metrics");
       expect(queryText).not.toContain("analytics.v_sleep");
     });

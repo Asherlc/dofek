@@ -1,7 +1,7 @@
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import { TRPCError } from "@trpc/server";
 import { getProviderRateLimitStatusFromRedis } from "dofek/admin/provider-rate-limit-status";
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { resolveAccessWindow } from "../billing/entitlement.ts";
@@ -309,12 +309,11 @@ export const adminRouter = router({
       executeWithSchema(
         ctx.db,
         userDetailProviderSchema,
-        sql`SELECT p.id, p.name, MAX(ot.created_at)::text AS created_at
-              FROM fitness.oauth_token ot
-              JOIN fitness.provider p ON p.id = ot.provider_id
-              WHERE ot.user_id = ${input.userId}
-              GROUP BY p.id, p.name
-              ORDER BY created_at`,
+        sql`SELECT p.id, p.name, pc.created_at::text AS created_at
+              FROM fitness.provider_connection pc
+              JOIN fitness.provider p ON p.id = pc.provider_id
+              WHERE pc.user_id = ${input.userId}
+              ORDER BY pc.created_at`,
       ),
       executeWithSchema(
         ctx.db,
@@ -392,6 +391,7 @@ export const adminRouter = router({
                 paid_grant_reason = EXCLUDED.paid_grant_reason,
                 updated_at = NOW()`,
         );
+        await invalidateAllUserQueries(input.userId);
         return { ok: true };
       }
 
@@ -401,6 +401,7 @@ export const adminRouter = router({
                 updated_at = NOW()
             WHERE user_id = ${input.userId}`,
       );
+      await invalidateAllUserQueries(input.userId);
       return { ok: true };
     }),
 

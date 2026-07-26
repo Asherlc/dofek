@@ -1,8 +1,13 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { dateWindowStartString } from "../lib/date-window.ts";
-import type { DailyMetricsViewRow } from "../repositories/daily-metrics-repository.ts";
+import type { SmoothedWeightRow } from "../repositories/body-analytics-repository.ts";
+import type {
+  DailyMetricsViewRow,
+  HrvBaselineRow,
+} from "../repositories/daily-metrics-repository.ts";
 import { fetchHealthspanRawData } from "../routers/healthspan-query.ts";
+import { buildHealthStatusFromValues, buildWeightHealthStatus } from "./health-status.ts";
 import { loadMobileRecoveryTab } from "./mobile-recovery-tab.ts";
 
 vi.mock("dofek/personalization/storage", () => ({
@@ -16,6 +21,15 @@ vi.mock("../routers/healthspan-query.ts", () => ({
 vi.mock("../repositories/resting-heart-rate-query.ts", () => ({
   fetchRestingHeartRateValuesCte: vi.fn(async () => sql`SELECT 1`),
 }));
+
+vi.mock("./health-status.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./health-status.ts")>();
+  return {
+    ...actual,
+    buildHealthStatusFromValues: vi.fn(actual.buildHealthStatusFromValues),
+    buildWeightHealthStatus: vi.fn(actual.buildWeightHealthStatus),
+  };
+});
 
 function metricRow(
   date: string,
@@ -65,6 +79,8 @@ async function runRecoveryTab(
   recoveryRows: ReturnType<typeof recoveryRow>[],
   options: {
     metrics?: DailyMetricsViewRow[];
+    hrvBaseline?: HrvBaselineRow[];
+    weight?: SmoothedWeightRow[];
     goalWeight?: string | null;
     days?: number;
     endDate?: string;
@@ -91,12 +107,12 @@ async function runRecoveryTab(
   vi.spyOn(
     (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository.prototype,
     "getHrvBaseline",
-  ).mockResolvedValue([]);
+  ).mockResolvedValue(options.hrvBaseline ?? []);
   vi.spyOn(
     (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
       .prototype,
     "getSmoothedWeight",
-  ).mockResolvedValue([]);
+  ).mockResolvedValue(options.weight ?? []);
   vi.spyOn(
     (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
       .prototype,
@@ -182,6 +198,7 @@ describe("loadMobileRecoveryTab", () => {
       String(call[1]).includes("analytics.daily_recovery"),
     );
     expect(recoveryQueries).toHaveLength(1);
+    expect(String(recoveryQueries[0]?.[1])).toContain("recovery_inputs.is_deleted = 0");
     expect(result.readinessScore).toHaveLength(1);
     expect(result.stress.daily).toHaveLength(1);
 
@@ -498,6 +515,111 @@ describe("loadMobileRecoveryTab", () => {
   });
 
   describe("mutation killers", () => {
+    it("passes each recovery metric's non-null history to its server-side classifier", async () => {
+      vi.mocked(buildHealthStatusFromValues).mockClear();
+      vi.mocked(buildWeightHealthStatus).mockClear();
+
+      await runRecoveryTab([], {
+        hrvBaseline: [
+          {
+            date: "2026-03-26",
+            hrv: 48,
+            resting_hr: null,
+            mean_60d: 50,
+            sd_60d: 2,
+            mean_7d: 49,
+            resting_hr_mean_7d: null,
+          },
+          {
+            date: "2026-03-27",
+            hrv: null,
+            resting_hr: 54,
+            mean_60d: 50,
+            sd_60d: 2,
+            mean_7d: 49,
+            resting_hr_mean_7d: 54,
+          },
+          {
+            date: "2026-03-28",
+            hrv: 52,
+            resting_hr: 50,
+            mean_60d: 50,
+            sd_60d: 2,
+            mean_7d: 50,
+            resting_hr_mean_7d: 52,
+          },
+        ],
+        weight: [
+          {
+            date: "2026-03-27",
+            rawWeight: 80,
+            smoothedWeight: 80,
+            weeklyChange: null,
+            interpolated: false,
+          },
+          {
+            date: "2026-03-28",
+            rawWeight: 79,
+            smoothedWeight: 79,
+            weeklyChange: -1,
+            interpolated: false,
+          },
+        ],
+        metrics: [
+          metricRow("2026-03-26", 50, {
+            spo2_avg: 97,
+            steps: null,
+            skin_temp_c: 33.1,
+          }),
+          metricRow("2026-03-27", 51, {
+            spo2_avg: null,
+            steps: 8_000,
+            skin_temp_c: null,
+          }),
+          metricRow("2026-03-28", 52, {
+            spo2_avg: 99,
+            steps: 10_000,
+            skin_temp_c: 33.5,
+          }),
+        ],
+        goalWeight: "75",
+      });
+
+      expect(vi.mocked(buildHealthStatusFromValues).mock.calls.map(([input]) => input)).toEqual([
+        {
+          metric: "hrv",
+          label: "Heart Rate Variability (HRV)",
+          values: [48, 52],
+          intent: "higher",
+        },
+        {
+          metric: "resting_heart_rate",
+          label: "Resting Heart Rate",
+          values: [54, 50],
+          intent: "lower",
+        },
+        {
+          metric: "spo2",
+          label: "SpO2",
+          values: [97, 99],
+          intent: "neutral",
+        },
+        {
+          metric: "steps",
+          label: "Steps",
+          values: [8_000, 10_000],
+          intent: "neutral",
+        },
+        {
+          metric: "skin_temperature",
+          label: "Skin Temperature",
+          values: [33.1, 33.5],
+          intent: "neutral",
+        },
+      ]);
+      expect(buildWeightHealthStatus).toHaveBeenCalledWith([80, 79], 75);
+    });
+
     it("rounds HRV deviation to 2 decimal places", async () => {
       const result = await runRecoveryTab([
         recoveryRow({ hrv: 45, hrv_mean_60d: 60, hrv_sd_60d: 7 }),

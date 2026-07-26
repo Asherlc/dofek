@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
-import { queryCache } from "../lib/cache.ts";
+import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import type { RefitSensorStore } from "../personalization/refit.ts";
 import { reportJobProgress } from "./job-progress.ts";
@@ -79,7 +79,7 @@ export async function processPostSyncJob(
   // Invalidate user-specific cache after personalized parameters are refitted.
   try {
     await updatePostSyncProgress(job, 75, "Invalidating user cache...");
-    await queryCache.invalidateByPrefix(`${job.data.userId}:`);
+    await invalidateAllUserQueries(job.data.userId);
     logger.info(`[post-sync] Cache invalidated for user ${job.data.userId}`);
   } catch (error) {
     logger.error(`[post-sync] Failed to invalidate cache for user ${job.data.userId}: ${error}`);

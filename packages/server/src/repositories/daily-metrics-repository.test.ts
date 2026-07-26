@@ -54,6 +54,7 @@ function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, 
     stddev_hrv: "7.5",
     stddev_resting_hr: "3.1",
     stddev_spo2: "0.8",
+    stddev_steps: "1200",
     stddev_skin_temp: "0.4",
     latest_hrv: "48",
     latest_resting_hr: "55",
@@ -76,6 +77,7 @@ function makeAllNullTrendsRow(): Record<string, unknown> {
     stddev_hrv: null,
     stddev_resting_hr: null,
     stddev_spo2: null,
+    stddev_steps: null,
     stddev_skin_temp: null,
     latest_hrv: null,
     latest_resting_hr: null,
@@ -252,8 +254,11 @@ describe("DailyMetricsRepository", () => {
       expect(result?.avg_resting_hr).toBe(56.2);
       expect(result?.latest_hrv).toBe(48);
       expect(result?.latest_resting_hr).toBe(55);
+      expect(result?.stddev_steps).toBe(1200);
       expect(result?.latest_date).toBe("2025-03-15");
       expect(execute).toHaveBeenCalledTimes(1);
+      const compiledQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("STDDEV(steps) AS stddev_steps");
     });
 
     it("joins resting heart rate values into the trends query", async () => {
@@ -351,6 +356,7 @@ describe("DailyMetricsRepository", () => {
         avg_skin_temp: null,
         stddev_hrv: null,
         stddev_spo2: null,
+        stddev_steps: null,
         stddev_skin_temp: null,
         latest_hrv: null,
         latest_spo2: null,

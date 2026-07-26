@@ -202,11 +202,19 @@ ${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
   id String,
   name String,
   api_base_url Nullable(String),
-  user_id UUID,
+  user_id Nullable(UUID),
   created_at DateTime64(6, 'UTC'),
 ${peerDbMetadataColumnDefinitions}
 )
-${replacingMergeTreeTable("(user_id, id)")}`,
+${replacingMergeTreeTable("(id)")}`,
+    `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection (
+  user_id UUID,
+  provider_id String,
+  created_at DateTime64(6, 'UTC'),
+  updated_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(user_id, provider_id)")}`,
     `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_priority (
   provider_id String,
   priority Int32,

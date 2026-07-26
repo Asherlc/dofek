@@ -6,56 +6,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // --- Mutable mock state ---
 const mockMutateAsync = vi.fn();
 const mockInvalidate = vi.fn();
-const mockActivityListInvalidate = vi.fn();
-const mockCalendarActivityOverviewInvalidate = vi.fn();
-const mockCalendarWeekListInvalidate = vi.fn();
-const mockDashboardInvalidate = vi.fn();
-const mockDataHealthInvalidate = vi.fn();
-const mockFoodByDateInvalidate = vi.fn();
-const mockNutritionAnalyticsAdaptiveTdeeInvalidate = vi.fn();
-const mockNutritionAnalyticsMacroRatiosInvalidate = vi.fn();
-const mockNutritionAnalyticsMicronutrientAdequacyInvalidate = vi.fn();
-const mockRecoveryInvalidate = vi.fn();
-const mockTrainingInvalidate = vi.fn();
 const mockSyncStatusFetch = vi.fn();
+const mockQueryClient = {};
+const mockInvalidateSyncedHealthData = vi.fn();
 let mockActiveSyncs: {
   data: unknown[] | undefined;
   isLoading: boolean;
   error: Error | null;
 };
 
-const mockTrpcUtils = {
-  invalidate: mockInvalidate,
-  processing: {
-    status: { invalidate: mockDataHealthInvalidate },
-  },
-  sync: {
-    syncStatus: { fetch: mockSyncStatusFetch },
-  },
-  mobileDashboard: {
-    dashboard: { invalidate: mockDashboardInvalidate },
-    recovery: { invalidate: mockRecoveryInvalidate },
-    training: { invalidate: mockTrainingInvalidate },
-  },
-  calendar: {
-    weekList: { invalidate: mockCalendarWeekListInvalidate },
-    activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
-  },
-  activity: {
-    list: { invalidate: mockActivityListInvalidate },
-  },
-  food: {
-    byDate: { invalidate: mockFoodByDateInvalidate },
-  },
-  nutritionAnalytics: {
-    adaptiveTdee: { invalidate: mockNutritionAnalyticsAdaptiveTdeeInvalidate },
-    macroRatios: { invalidate: mockNutritionAnalyticsMacroRatiosInvalidate },
-    micronutrientAdequacy: {
-      invalidate: mockNutritionAnalyticsMicronutrientAdequacyInvalidate,
-    },
-  },
-  client: {},
-};
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@tanstack/react-query")>();
+  return {
+    ...original,
+    useQueryClient: () => mockQueryClient,
+  };
+});
 
 vi.mock("./trpc", () => ({
   trpc: {
@@ -67,7 +33,13 @@ vi.mock("./trpc", () => ({
         useQuery: () => mockActiveSyncs,
       },
     },
-    useUtils: () => mockTrpcUtils,
+    useUtils: () => ({
+      invalidate: mockInvalidate,
+      sync: {
+        syncStatus: { fetch: mockSyncStatusFetch },
+      },
+      client: {},
+    }),
   },
 }));
 
@@ -111,6 +83,10 @@ const mockSyncDofekFoodToHealthKit = vi.fn();
 
 vi.mock("./health-kit-food-writeback", () => ({
   syncDofekFoodToHealthKit: (...args: unknown[]) => mockSyncDofekFoodToHealthKit(...args),
+}));
+
+vi.mock("./invalidate-synced-health-data", () => ({
+  invalidateSyncedHealthData: (...args: unknown[]) => mockInvalidateSyncedHealthData(...args),
 }));
 
 const { useAutoSync, isDataStale } = await import("./useAutoSync");
@@ -159,17 +135,7 @@ describe("useAutoSync", () => {
     mockGetRequestStatus.mockResolvedValue("unnecessary");
     mockRequestPermissions.mockResolvedValue(true);
     mockSyncDofekFoodToHealthKit.mockResolvedValue({ written: 0, skipped: 0, errors: [] });
-    mockActivityListInvalidate.mockResolvedValue(undefined);
-    mockCalendarActivityOverviewInvalidate.mockResolvedValue(undefined);
-    mockCalendarWeekListInvalidate.mockResolvedValue(undefined);
-    mockDashboardInvalidate.mockResolvedValue(undefined);
-    mockDataHealthInvalidate.mockResolvedValue(undefined);
-    mockFoodByDateInvalidate.mockResolvedValue(undefined);
-    mockNutritionAnalyticsAdaptiveTdeeInvalidate.mockResolvedValue(undefined);
-    mockNutritionAnalyticsMacroRatiosInvalidate.mockResolvedValue(undefined);
-    mockNutritionAnalyticsMicronutrientAdequacyInvalidate.mockResolvedValue(undefined);
-    mockRecoveryInvalidate.mockResolvedValue(undefined);
-    mockTrainingInvalidate.mockResolvedValue(undefined);
+    mockInvalidateSyncedHealthData.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -224,17 +190,8 @@ describe("useAutoSync", () => {
 
     expect(mockMutateAsync).toHaveBeenCalledWith({ sinceDays: 1 });
     expect(mockSyncStatusFetch).toHaveBeenCalledWith({ jobId: "test-job" }, { staleTime: 0 });
-    expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
-    expect(mockRecoveryInvalidate).toHaveBeenCalledOnce();
-    expect(mockTrainingInvalidate).toHaveBeenCalledOnce();
-    expect(mockCalendarWeekListInvalidate).toHaveBeenCalledOnce();
-    expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalledOnce();
-    expect(mockActivityListInvalidate).toHaveBeenCalledOnce();
-    expect(mockFoodByDateInvalidate).toHaveBeenCalledOnce();
-    expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalledOnce();
-    expect(mockNutritionAnalyticsMacroRatiosInvalidate).toHaveBeenCalledOnce();
-    expect(mockNutritionAnalyticsMicronutrientAdequacyInvalidate).toHaveBeenCalledOnce();
-    expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
+    expect(mockInvalidateSyncedHealthData).toHaveBeenCalledOnce();
+    expect(mockInvalidateSyncedHealthData).toHaveBeenCalledWith(mockQueryClient);
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
@@ -258,7 +215,7 @@ describe("useAutoSync", () => {
     });
 
     expect(mockSyncStatusFetch).toHaveBeenCalledOnce();
-    expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
+    expect(mockInvalidateSyncedHealthData).toHaveBeenCalledOnce();
   });
 
   it("continues status polling when active sync data changes while the trigger is pending", async () => {
@@ -282,7 +239,7 @@ describe("useAutoSync", () => {
     });
 
     expect(mockSyncStatusFetch).toHaveBeenCalledOnce();
-    expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
+    expect(mockInvalidateSyncedHealthData).toHaveBeenCalledOnce();
   });
 
   it("polls multiple times before completing", async () => {
@@ -295,7 +252,7 @@ describe("useAutoSync", () => {
     await act(() => vi.runAllTimersAsync());
 
     expect(mockSyncStatusFetch).toHaveBeenCalledTimes(3);
-    expect(mockDashboardInvalidate).toHaveBeenCalled();
+    expect(mockInvalidateSyncedHealthData).toHaveBeenCalled();
   });
 
   it("retries sync status after a transient server error", async () => {
@@ -311,7 +268,7 @@ describe("useAutoSync", () => {
     expect(mockCaptureException).toHaveBeenCalledWith(statusError, {
       source: "auto-sync-status",
     });
-    expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
+    expect(mockInvalidateSyncedHealthData).toHaveBeenCalledOnce();
   });
 
   it("stops retrying sync status when unmounted during the retry delay", async () => {
@@ -336,9 +293,7 @@ describe("useAutoSync", () => {
     renderHook(() => useAutoSync("2026-03-21"));
     await act(() => vi.runAllTimersAsync());
 
-    expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
-    expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
-    expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalledOnce();
+    expect(mockInvalidateSyncedHealthData).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
@@ -348,9 +303,7 @@ describe("useAutoSync", () => {
     renderHook(() => useAutoSync("2026-03-21"));
     await act(() => vi.runAllTimersAsync());
 
-    expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
-    expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
-    expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalledOnce();
+    expect(mockInvalidateSyncedHealthData).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
@@ -362,8 +315,21 @@ describe("useAutoSync", () => {
     await act(() => vi.runAllTimersAsync());
 
     expect(mockMutateAsync).toHaveBeenCalled();
+    expect(mockInvalidateSyncedHealthData).not.toHaveBeenCalled();
     expect(mockInvalidate).not.toHaveBeenCalled();
     expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+      source: "auto-sync-providers",
+    });
+  });
+
+  it("reports synchronized-health invalidation failures", async () => {
+    const invalidateError = new Error("invalidate failed");
+    mockInvalidateSyncedHealthData.mockRejectedValue(invalidateError);
+
+    renderHook(() => useAutoSync("2026-03-21"));
+    await act(() => vi.runAllTimersAsync());
+
+    expect(mockCaptureException).toHaveBeenCalledWith(invalidateError, {
       source: "auto-sync-providers",
     });
   });
@@ -380,38 +346,13 @@ describe("useAutoSync", () => {
     expect(mockMutateAsync).toHaveBeenCalledTimes(1);
   });
 
-  describe("HealthKit sync", () => {
+  describe("HealthKit food writeback", () => {
     beforeEach(() => {
       mockIsAvailable.mockReturnValue(true);
       mockHasEverAuthorized.mockReturnValue(true);
-      mockSyncHealthKitToServer.mockResolvedValue({
-        inserted: 5,
-        errors: [],
-      });
     });
 
-    it("triggers HealthKit sync and invalidates affected query families on success", async () => {
-      renderHook(() => useAutoSync("2026-03-21"));
-      await act(() => vi.runAllTimersAsync());
-
-      expect(mockSyncHealthKitToServer).toHaveBeenCalledWith(
-        expect.objectContaining({ syncRangeDays: 1 }),
-      );
-      expect(mockDashboardInvalidate).toHaveBeenCalled();
-      expect(mockRecoveryInvalidate).toHaveBeenCalled();
-      expect(mockTrainingInvalidate).toHaveBeenCalled();
-      expect(mockCalendarWeekListInvalidate).toHaveBeenCalled();
-      expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalled();
-      expect(mockActivityListInvalidate).toHaveBeenCalled();
-      expect(mockFoodByDateInvalidate).toHaveBeenCalled();
-      expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalled();
-      expect(mockNutritionAnalyticsMacroRatiosInvalidate).toHaveBeenCalled();
-      expect(mockNutritionAnalyticsMicronutrientAdequacyInvalidate).toHaveBeenCalled();
-      expect(mockDataHealthInvalidate).toHaveBeenCalled();
-      expect(mockInvalidate).not.toHaveBeenCalled();
-    });
-
-    it("writes direct Dofek food entries back to HealthKit after HealthKit sync", async () => {
+    it("writes direct Dofek food entries back to HealthKit", async () => {
       renderHook(() => useAutoSync("2026-03-21"));
       await act(() => vi.runAllTimersAsync());
 
@@ -423,60 +364,43 @@ describe("useAutoSync", () => {
       );
     });
 
-    it("runs HealthKit sync even when the legacy authorization flag is false", async () => {
+    it("writes food when the legacy authorization flag is false", async () => {
       mockHasEverAuthorized.mockReturnValue(false);
 
       renderHook(() => useAutoSync("2026-03-21"));
       await act(() => vi.runAllTimersAsync());
 
-      expect(mockSyncHealthKitToServer).toHaveBeenCalledWith(
-        expect.objectContaining({ syncRangeDays: 1 }),
-      );
+      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalled();
     });
 
-    it("syncs even when new types need permission (shouldRequest)", async () => {
+    it("writes food when new types need permission", async () => {
       mockHasEverAuthorized.mockReturnValue(true);
 
       renderHook(() => useAutoSync("2026-03-21"));
       await act(() => vi.runAllTimersAsync());
 
-      expect(mockSyncHealthKitToServer).toHaveBeenCalledWith(
-        expect.objectContaining({ syncRangeDays: 1 }),
-      );
+      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalled();
     });
 
-    it("skips HealthKit sync when not available", async () => {
+    it("skips food writeback when HealthKit is not available", async () => {
       mockIsAvailable.mockReturnValue(false);
 
       renderHook(() => useAutoSync("2026-03-21"));
       await act(() => vi.runAllTimersAsync());
 
-      expect(mockSyncHealthKitToServer).not.toHaveBeenCalled();
+      expect(mockSyncDofekFoodToHealthKit).not.toHaveBeenCalled();
     });
 
-    it("catches HealthKit sync failure and calls captureException", async () => {
+    it("reports HealthKit food writeback failures", async () => {
       const hkError = new Error("hk error");
-      mockSyncHealthKitToServer.mockRejectedValue(hkError);
+      mockSyncDofekFoodToHealthKit.mockRejectedValue(hkError);
 
       renderHook(() => useAutoSync("2026-03-21"));
       await act(() => vi.runAllTimersAsync());
 
-      expect(mockSyncHealthKitToServer).toHaveBeenCalled();
+      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalled();
       expect(mockCaptureException).toHaveBeenCalledWith(hkError, {
-        source: "auto-sync-healthkit",
-      });
-    });
-
-    it("reports cache invalidation failures after HealthKit sync", async () => {
-      const invalidateError = new Error("invalidate failed");
-      mockMutateAsync.mockResolvedValue({});
-      mockDashboardInvalidate.mockRejectedValue(invalidateError);
-
-      renderHook(() => useAutoSync("2026-03-21"));
-      await act(() => vi.runAllTimersAsync());
-
-      expect(mockCaptureException).toHaveBeenCalledWith(invalidateError, {
-        source: "auto-sync-healthkit",
+        source: "auto-sync-healthkit-food-writeback",
       });
     });
   });

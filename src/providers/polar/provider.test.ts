@@ -214,7 +214,7 @@ describe("PolarProvider.authSetup", () => {
     expect(calledUrls).toContain("DELETE https://www.polaraccesslink.com/v3/users/12345");
   });
 
-  it("revokeExistingTokens does not throw when old token is rejected", async () => {
+  it("revokeExistingTokens rejects when old authorization cannot be confirmed revoked", async () => {
     process.env.POLAR_CLIENT_ID = "polar-id";
     process.env.POLAR_CLIENT_SECRET = "polar-secret";
 
@@ -228,13 +228,14 @@ describe("PolarProvider.authSetup", () => {
       throw new Error("Expected revokeExistingTokens to be defined");
     }
 
-    // Should not throw — revocation is best-effort
-    await setup.revokeExistingTokens({
-      accessToken: "dead-token",
-      refreshToken: null,
-      expiresAt: new Date("2020-01-01"),
-      scopes: null,
-    });
+    await expect(
+      setup.revokeExistingTokens({
+        accessToken: "dead-token",
+        refreshToken: null,
+        expiresAt: new Date("2020-01-01"),
+        scopes: null,
+      }),
+    ).rejects.toThrow("not confirmed revoked");
   });
 });
 
@@ -524,7 +525,7 @@ describe("PolarProvider — revokeExistingTokens", () => {
     expect(deletedIds).toEqual(["old-user-9"]);
   });
 
-  it("warns and does not deregister when the user id cannot be discovered", async () => {
+  it("rejects and does not deregister when the user id cannot be discovered", async () => {
     process.env.POLAR_CLIENT_ID = "client-id";
     process.env.POLAR_CLIENT_SECRET = "client-secret";
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
@@ -548,14 +549,14 @@ describe("PolarProvider — revokeExistingTokens", () => {
     });
 
     const provider = new PolarProvider(mockFetch);
-    const revoke = provider.authSetup().revokeExistingTokens;
+    const setup = provider.authSetup();
+    expect(setup.reconnectStrategy).toBe("revoke-then-replace");
+    const revoke = setup.revokeExistingTokens;
     if (!revoke) throw new Error("expected revokeExistingTokens");
-    await revoke(oldTokens);
+    await expect(revoke(oldTokens)).rejects.toThrow("not confirmed revoked");
 
     expect(deleteCalled).toBe(false);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Could not discover Polar user ID"),
-    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Token revocation failed"));
   });
 });
 

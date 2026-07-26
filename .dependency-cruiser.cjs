@@ -126,6 +126,8 @@ module.exports = {
         "fixtures/",
         "routeTree\\.gen\\.ts$",
         "drizzle/",
+        "^packages/web/dist/",
+        "^packages/web/storybook-static/",
       ],
     },
   },

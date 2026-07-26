@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import {
-  computeDailyTotals,
-  computeMealCalories,
-  type FoodEntry,
-  foodEntrySchema,
-} from "./NutritionPage";
+import { type FoodEntry, foodEntrySchema, selectedDateFoodSchema } from "./NutritionPage";
 
 const entrySchema = z.array(foodEntrySchema);
 
@@ -53,47 +48,23 @@ describe("foodEntrySchema", () => {
   });
 });
 
-describe("computeDailyTotals", () => {
-  it("sums calories across entries", () => {
-    const entries = [makeEntry({ calories: 200 }), makeEntry({ calories: 300 })];
-    expect(computeDailyTotals(entries).totalCalories).toBe(500);
-  });
+describe("selectedDateFoodSchema", () => {
+  it("parses entries with the server-owned display summary", () => {
+    const result = selectedDateFoodSchema.parse({
+      entries: [makeEntry()],
+      summary: {
+        calories: 999,
+        mealCalories: { breakfast: 777, lunch: 0, dinner: 0, snack: 0, other: 0 },
+        calorieGoal: { target: 2200, remaining: 1201, over: 0, progressPercentage: 45.4 },
+        macros: {
+          protein: { grams: 88, calories: 352, percentage: 35 },
+          carbs: { grams: 111, calories: 444, percentage: 44 },
+          fat: { grams: 22, calories: 198, percentage: 20 },
+        },
+      },
+    });
 
-  it("treats null calories as 0", () => {
-    const entries = [makeEntry({ calories: null }), makeEntry({ calories: 300 })];
-    expect(computeDailyTotals(entries).totalCalories).toBe(300);
-  });
-
-  it("treats all-null macros as 0", () => {
-    const entries = [makeEntry({ calories: null, protein_g: null, carbs_g: null, fat_g: null })];
-    const totals = computeDailyTotals(entries);
-    expect(totals.totalCalories).toBe(0);
-    expect(totals.totalProtein).toBe(0);
-    expect(totals.totalCarbs).toBe(0);
-    expect(totals.totalFat).toBe(0);
-  });
-
-  it("returns zeros for empty array", () => {
-    const totals = computeDailyTotals([]);
-    expect(totals.totalCalories).toBe(0);
-    expect(totals.totalProtein).toBe(0);
-    expect(totals.totalCarbs).toBe(0);
-    expect(totals.totalFat).toBe(0);
-  });
-});
-
-describe("computeMealCalories", () => {
-  it("sums calories for a meal group", () => {
-    const entries = [makeEntry({ calories: 100 }), makeEntry({ calories: 250 })];
-    expect(computeMealCalories(entries)).toBe(350);
-  });
-
-  it("treats null calories as 0", () => {
-    const entries = [makeEntry({ calories: null }), makeEntry({ calories: 150 })];
-    expect(computeMealCalories(entries)).toBe(150);
-  });
-
-  it("returns 0 for empty array", () => {
-    expect(computeMealCalories([])).toBe(0);
+    expect(result.summary.calories).toBe(999);
+    expect(result.summary.mealCalories.breakfast).toBe(777);
   });
 });

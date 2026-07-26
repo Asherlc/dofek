@@ -1,9 +1,13 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import * as Sentry from "@sentry/node";
 import type { Database, SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
@@ -170,6 +174,26 @@ function firstAuthFailureReason(errors: SyncError[]): ProviderAuthFailureReason 
     .find((authFailureReason) => authFailureReason !== undefined);
 }
 
+function isProviderServiceUnavailableError(error: unknown): boolean {
+  const visitedErrors = new Set<Error>();
+  let currentError = error;
+
+  while (currentError instanceof Error && !visitedErrors.has(currentError)) {
+    if (currentError instanceof ProviderServiceUnavailableError) {
+      return true;
+    }
+
+    visitedErrors.add(currentError);
+    currentError = "cause" in currentError ? currentError.cause : undefined;
+  }
+
+  return false;
+}
+
+function shouldReportProviderError(error: unknown): boolean {
+  return !isProviderServiceUnavailableError(error) && !authFailureReasonFromError(error);
+}
+
 async function scheduleRateLimitRetry(
   job: SyncJob,
   error: ProviderRateLimitError,
@@ -235,8 +259,6 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       percentage: computePercentage(completedCount, 0, totalProviders),
     });
 
-    await ensureProvider(db, provider.id, provider.name, undefined, job.data.userId);
-
     const requiresTokens = providerRequiresStoredTokens(provider);
     if (requiresTokens) {
       const tokens = await loadTokens(db, provider.id, job.data.userId);
@@ -251,6 +273,8 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         continue;
       }
     }
+
+    await ensureProvider(db, provider.id, provider.name, undefined, job.data.userId);
 
     const activeCooldown = await providerRateLimitCooldownStore.getActive(
       provider.id,
@@ -341,6 +365,9 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           }),
         ),
       );
+      if (result.recordsSynced > 0) {
+        await invalidateAllUserQueries(job.data.userId);
+      }
       if (result.continued) {
         syncRunContinued = true;
         providerStatus[provider.id] = {
@@ -398,8 +425,9 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       if (hasErrors) {
         for (const err of result.errors) {
           logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
-          if (!authFailureReasonFromError(err.cause)) {
-            Sentry.captureException(err.cause ?? new Error(err.message), {
+          const reportableError = err.cause ?? new Error(err.message);
+          if (shouldReportProviderError(reportableError)) {
+            Sentry.captureException(reportableError, {
               tags: { provider: provider.id },
               ...(err.context ? { extra: err.context } : {}),
             });
@@ -490,7 +518,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       completedCount++;
       const message = err instanceof Error ? err.message : String(err);
       const authFailureReason = authFailureReasonFromError(err);
-      if (!authFailureReason) {
+      if (shouldReportProviderError(err)) {
         Sentry.captureException(err, { tags: { provider: provider.id } });
       }
       providerStatus[provider.id] = { status: "error", message };

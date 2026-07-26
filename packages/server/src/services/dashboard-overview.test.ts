@@ -14,6 +14,7 @@ function makeSensorStore({
       expect(queryText).not.toContain("fitness.metric_stream");
       let rows: Record<string, unknown>[];
       if (queryText.includes("analytics.daily_recovery")) {
+        expect(queryText).toContain("recovery.is_deleted = 0");
         rows = [
           {
             date: "2026-06-29",
@@ -37,8 +38,10 @@ function makeSensorStore({
           },
         ];
       } else if (queryText.includes("analytics.daily_strain") && queryText.includes(" AS load")) {
+        expect(queryText).toContain("strain.is_deleted = 0");
         rows = [{ load: 0 }];
       } else if (queryText.includes("analytics.daily_strain")) {
+        expect(queryText).toContain("strain.is_deleted = 0");
         rows = [{ metric_date: metricDate, daily_load: 120 }];
       } else {
         rows = [];

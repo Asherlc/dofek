@@ -20,6 +20,8 @@ vi.mock("../trpc.ts", async () => {
 });
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: vi.fn().mockResolvedValue(undefined),
+  invalidateUserQueryDomains: vi.fn().mockResolvedValue(undefined),
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },
@@ -39,7 +41,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries, invalidateUserQueryDomains, queryCache } from "dofek/lib/cache";
 import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
 import { recoveryRouter } from "./recovery.ts";
 import { settingsRouter } from "./settings.ts";
@@ -581,7 +583,7 @@ describe("settingsRouter", () => {
 
   describe("set", () => {
     it("upserts a setting", async () => {
-      const rows = [{ key: "theme", value: "light" }];
+      const rows = [{ key: "unitSystem", value: "metric" }];
       const execute = vi.fn().mockResolvedValue(rows);
       const caller = createCaller({
         db: { execute },
@@ -590,14 +592,16 @@ describe("settingsRouter", () => {
         timezone: "UTC",
         sensorStore: makeMockSensorStore([]),
       });
-      const result = await caller.set({ key: "theme", value: "light" });
-      expect(result).toEqual({ key: "theme", value: "light" });
+      const result = await caller.set({ key: "unitSystem", value: "metric" });
+      expect(result).toEqual({ key: "unitSystem", value: "metric" });
       expectCallsUseNonEmptySql(execute);
     });
 
     it("invalidates server-side settings cache after upsert", async () => {
       const rows = [{ key: "unitSystem", value: "imperial" }];
       const execute = vi.fn().mockResolvedValue(rows);
+      const invalidateByPrefix = vi.mocked(queryCache.invalidateByPrefix);
+      invalidateByPrefix.mockClear();
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -605,7 +609,8 @@ describe("settingsRouter", () => {
         sensorStore: makeMockSensorStore([]),
       });
       await caller.set({ key: "unitSystem", value: "imperial" });
-      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
+      expect(invalidateByPrefix).toHaveBeenCalledOnce();
+      expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
     });
 
     it("throws when upsert fails", async () => {
@@ -615,7 +620,7 @@ describe("settingsRouter", () => {
         timezone: "UTC",
         sensorStore: makeMockSensorStore([]),
       });
-      await expect(caller.set({ key: "theme", value: "dark" })).rejects.toThrow(
+      await expect(caller.set({ key: "unitSystem", value: "metric" })).rejects.toThrow(
         "Failed to upsert setting",
       );
     });
@@ -641,6 +646,7 @@ describe("settingsRouter", () => {
       expect(mockTransaction).toHaveBeenCalledTimes(1);
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 4);
       expectCallsUseNonEmptySql(txExecute);
+      expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
     });
   });
 
@@ -1013,18 +1019,22 @@ describe("sportSettingsRouter", () => {
     it("creates sport settings", async () => {
       const created = { sport: "cycling", ftp: 250 };
       const caller = makeCaller([created]);
+      vi.mocked(invalidateUserQueryDomains).mockClear();
       const result = await caller.upsert({ sport: "cycling", ftp: 250 });
       expect(result).toEqual(created);
+      expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["sportSettings"]);
     });
   });
 
   describe("delete", () => {
     it("deletes sport settings", async () => {
       const caller = makeCaller([]);
+      vi.mocked(invalidateUserQueryDomains).mockClear();
       const result = await caller.delete({
         id: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toEqual({ success: true });
+      expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["sportSettings"]);
     });
   });
 });

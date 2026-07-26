@@ -37,25 +37,6 @@ describe("production analytics read-model build", () => {
     expect(workerBlockMatch?.groups?.body).not.toContain("dbt build");
   });
 
-  it("delays the first scheduled analytics build after container startup", () => {
-    const entrypoint = readProjectFile("entrypoint.sh");
-    const analyticsWorkerBlockMatch = entrypoint.match(/  analytics-worker\)\n(?<body>[\s\S]*?)\n    ;;/);
-
-    expect(analyticsWorkerBlockMatch).not.toBeNull();
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("ANALYTICS_BUILD_STARTUP_DELAY_SECONDS:-120");
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
-      'require_non_negative_integer "ANALYTICS_BUILD_INTERVAL_SECONDS" "$interval_seconds"',
-    );
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
-      'require_non_negative_integer "ANALYTICS_BUILD_RETRY_DELAY_SECONDS" "$retry_delay_seconds"',
-    );
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
-      'require_non_negative_integer "ANALYTICS_BUILD_STARTUP_DELAY_SECONDS" "$startup_delay_seconds"',
-    );
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("sleep \"$startup_delay_seconds\"");
-    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("dbt build");
-  });
-
   it("does not run analytics dbt builds in the deploy migration path", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const migrateBlockMatch = entrypoint.match(/  migrate\)\n(?<body>[\s\S]*?)\n    ;;/);
@@ -89,8 +70,8 @@ describe("production analytics read-model build", () => {
     const activityMatch = entrypoint.match(/^DBT_ACTIVITY_MODELS="([^"]+)"$/m);
     const sleepDashboardMatch = entrypoint.match(/^DBT_SLEEP_DASHBOARD_MODELS="([^"]+)"$/m);
 
-    // DBT_ACTIVITY_MODELS order is load-bearing: upstream intermediaries must build
-    // before downstream activity read models and provider_stats in run_dbt_safe_builds().
+    // The E2E build keeps upstream intermediaries before downstream activity
+    // read models and provider_stats.
     expect(activityMatch?.[1]?.split(" ")).toEqual([
       "sensor_scalar_sample",
       "deduped_sensor",
@@ -130,7 +111,6 @@ describe("production analytics read-model build", () => {
       "healthspan_activity_zone_minutes",
       "weekly_healthspan",
     ]);
-    expect(entrypoint).toContain('DBT_SAFE_MODELS="$DBT_ACTIVITY_MODELS $DBT_SLEEP_DASHBOARD_MODELS"');
     expect(entrypoint).toContain("run_dbt_safe_builds()");
     expect(entrypoint).toContain('--select "$DBT_ACTIVITY_MODELS" &&');
     expect(entrypoint).toContain('--select "$DBT_SLEEP_DASHBOARD_MODELS"');
@@ -302,7 +282,9 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_sensor_sample");
 
     expect(sql).toContain("incremental_strategy='microbatch'");
-    expect(sql).toContain("activity_sensor_sample_begin = var('activity_sensor_sample_begin', '2000-01-01')");
+    expect(sql).toContain(
+      "activity_sensor_sample_begin = var('activity_sensor_sample_begin', default_microbatch_begin)",
+    );
     expect(sql).toContain("begin=activity_sensor_sample_begin");
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
@@ -326,11 +308,15 @@ describe("production analytics read-model build", () => {
     expect(sourcesYaml).toContain("name: ingest");
     expect(sourcesYaml).toContain("event_time: ingested_at");
     expect(sensorScalarSampleSql).toContain("event_time='_peerdb_synced_at'");
-    expect(sensorScalarSampleSql).toContain("sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', '2000-01-01')");
+    expect(sensorScalarSampleSql).toContain(
+      "sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', default_microbatch_begin)",
+    );
     expect(sensorScalarSampleSql).toContain("begin=sensor_scalar_sample_begin");
     expect(sensorScalarSampleSql).toContain("source('ingest', 'metric_stream_freshness')");
     expect(dedupedSensorSql).toContain("event_time='refreshed_at'");
-    expect(dedupedSensorSql).toContain("deduped_sensor_begin = var('deduped_sensor_begin', '2000-01-01')");
+    expect(dedupedSensorSql).toContain(
+      "deduped_sensor_begin = var('deduped_sensor_begin', default_microbatch_begin)",
+    );
     expect(dedupedSensorSql).toContain("begin=deduped_sensor_begin");
     expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");
     expect(dedupedSensorSql).toContain("source_refreshed_at AS refreshed_at");
@@ -343,7 +329,9 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_location_sample");
 
     expect(sql).toContain("incremental_strategy='microbatch'");
-    expect(sql).toContain("activity_location_sample_begin = var('activity_location_sample_begin', '2000-01-01')");
+    expect(sql).toContain(
+      "activity_location_sample_begin = var('activity_location_sample_begin', default_microbatch_begin)",
+    );
     expect(sql).toContain("begin=activity_location_sample_begin");
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
@@ -666,11 +654,20 @@ describe("production analytics read-model build", () => {
 
   it("materializes daily activity load from activity summary rows", () => {
     const sql = readModel("daily_activity_load");
+    const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("ref('activity_summary_rows')");
+    expect(sql).toContain("FROM {{ ref('activity_summary_rows') }} AS activity_summary FINAL");
+    expect(sql).toContain("WHERE activity_summary.is_deleted = 0");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("query_settings={");
     expect(sql).toContain("'max_threads': 1");
+    expect(sql).toContain("changed_activity_keys AS");
+    expect(sql).toContain("existing_activities AS");
+    expect(sql).toContain("if(activity_load.activity_id IS NULL, 1, 0) AS is_deleted");
+    expect(normalizedSql).toContain(
+      "refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+    );
     expect(sql).not.toContain("ref('activity_sensor_sample')");
     expect(sql).not.toContain("ref('deduped_sensor')");
   });
@@ -731,12 +728,17 @@ describe("production analytics read-model build", () => {
   it("materializes daily recovery inputs from compact daily and sleep sources", () => {
     const sql = readModel("daily_recovery_inputs");
 
+    expect(sql).toContain("{% if is_incremental() %}");
+    expect(sql).toContain("existing_rows AS");
+    expect(sql).toContain("dirty_keys AS");
+    expect(sql).toContain("IS DISTINCT FROM tuple(");
     expect(sql).toContain("analytics.v_daily_metrics");
     expect(sql).toContain("analytics.v_sleep");
     expect(sql).toContain("argMax(efficiency_pct, tuple(duration_minutes, started_at))");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("hrv_mean_60d");
     expect(sql).toContain("rhr_mean_60d");
+    expect(sql).toContain("if(inputs_with_baselines.user_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
     expect(sql).not.toContain("ref('deduped_sensor')");
   });
@@ -748,10 +750,13 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("{% if is_incremental() %}");
-    expect(sql).toContain("existing_dates AS");
-    expect(sql).toContain("latest_materialized_refreshed_at");
-    expect(normalizedSql).toContain("recovery_inputs.refreshed_at > existing_dates.latest_materialized_refreshed_at");
-    expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 60 DAY");
+    expect(sql).toContain("changed_users AS");
+    expect(sql).toContain("existing_keys AS");
+    expect(normalizedSql).toContain("WHERE recovery_inputs.is_deleted = 0");
+    expect(normalizedSql).toContain(
+      "recovery_inputs.refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+    );
+    expect(sql).toContain("if(sigmoid_scores.user_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).toContain("ref('daily_recovery_inputs')");
     expect(sql).toContain("hrv_score");
     expect(sql).toContain("resting_hr_score");
@@ -798,11 +803,15 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(sql).toContain("{% if is_incremental() %}");
-    expect(sql).toContain("existing_dates AS");
-    expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 54 DAY");
-    expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 27 DAY");
+    expect(sql).toContain("changed_users AS");
+    expect(sql).toContain("existing_keys AS");
     expect(sql).toContain("output_min_date");
     expect(sql).toContain("ref('daily_activity_load')");
+    expect(sql).toContain("WHERE is_deleted = 0");
+    expect(sql).toContain("if(current_rows.user_id IS NULL, 1, 0) AS is_deleted");
+    expect(normalizedSql).toContain(
+      "refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+    );
     expect(sql).toContain("acute_load_7d");
     expect(sql).toContain("chronic_load_28d");
     expect(sql).toContain("workload_ratio");
@@ -841,6 +850,11 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("ref('activity_vo2max_estimate')");
     expect(sql).toContain("ref('daily_body_measurement')");
+    expect(sql).toContain("changed_body_weeks AS");
+    expect(sql).toContain("WHERE is_deleted = 0");
+    expect(normalizedSql).toContain(
+      "ref('daily_body_measurement') }} FINAL WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+    );
     expect(sql).toContain("toMonday(toDate(started_at)) AS week_start");
     expect(sql).not.toContain("activity_date");
     expect(sql).toContain("argMax(vo2max, started_at) AS latest_vo2max");
@@ -858,9 +872,20 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("order_by='(user_id, measurement_id)'");
     expect(sql).toContain("{% if is_incremental() %}");
-    expect(sql).toContain("existing_measurements AS");
+    expect(sql).toContain("system.view_refreshes");
+    expect(sql).toContain("analytics.body_measurement_sample");
+    expect(sql).toContain("changed_user_watermarks AS");
+    expect(sql).toContain("existing_rows AS");
     expect(sql).toContain("analytics.v_body_measurement");
-    expect(normalizedSql).toContain("existing_measurements.latest_recorded_at) - INTERVAL 7 DAY");
+    expect(normalizedSql).toContain(
+      "source._peerdb_synced_at <= body_view_state.last_success_time",
+    );
+    expect(normalizedSql).toContain(
+      "source_changes.source_synced_at > target_user_state.last_source_synced_at",
+    );
+    expect(normalizedSql).toContain("if(live_body.measurement_id IS NULL, 1, 0) AS is_deleted");
+    expect(sql).toContain("rows_to_write.source_synced_at AS source_synced_at");
+    expect(sql).not.toContain("INTERVAL 7 DAY");
     expect(normalizedSql).not.toContain("row_number() OVER");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });

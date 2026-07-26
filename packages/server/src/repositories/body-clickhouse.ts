@@ -105,8 +105,8 @@ export function bodyWeightDedupClickHouseQuery(
     FROM (
       SELECT
         local_date,
-        argMax(weight_kg, (recorded_at, refresh_version, measurement_id)) AS weight_kg,
-        argMax(body_fat_pct, (recorded_at, refresh_version, measurement_id)) AS body_fat_pct
+        argMin(weight_kg, (recorded_at, refresh_version, measurement_id)) AS weight_kg,
+        argMin(body_fat_pct, (recorded_at, refresh_version, measurement_id)) AS body_fat_pct
       FROM (
         SELECT
           toDate(toTimeZone(recorded_at, {timezone:String})) AS local_date,
@@ -117,6 +117,8 @@ export function bodyWeightDedupClickHouseQuery(
           measurement_id
         FROM analytics.daily_body_measurement FINAL
         WHERE user_id = {userId:UUID}
+          AND is_deleted = 0
+          AND toDate(toTimeZone(recorded_at, {timezone:String})) <= ${endDateExpression(endDate)}
           ${localDateRangePredicate}
           ${options.requireBodyFat ? "AND body_fat_pct IS NOT NULL" : ""}
       ) AS body_rows

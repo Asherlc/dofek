@@ -54,7 +54,7 @@ jobs:
       - uses: ./.github/actions/setup-node-pnpm
       - name: Check for forbidden licenses
         run: |
-          pnpm exec license-checker --production --excludePrivatePackages \
+          pnpm exec license-checker-rseidelsohn --production --excludePrivatePackages \
             --failOn "GPL-2.0-only;GPL-2.0-or-later;GPL-3.0-only;GPL-3.0-or-later;AGPL-1.0-only;AGPL-3.0-only;AGPL-3.0-or-later" \
             --summary
 
@@ -743,6 +743,15 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
+      redpanda:
+        image: mirror.gcr.io/redpandadata/redpanda:v26.1.12
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "rpk cluster health | grep -q 'Healthy:.*true'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
       clickhouse:
         image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine
         env:
@@ -761,12 +770,15 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
       CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
+      REDPANDA_BROKERS: localhost:9092
       REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - name: Download FIT decoder binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -867,6 +879,8 @@ jobs:
     name: E2E Tests (Web)
     if: inputs.run_e2e_web
     runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: dofek-ci-e2e
     permissions:
       contents: read
       packages: read
@@ -991,13 +1005,27 @@ jobs:
           persist-credentials: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: packages/mobile/modules/health-kit/.build
-          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
+          path: |
+            packages/mobile/modules/background-refresh/.build
+            packages/mobile/modules/core-motion/.build
+            packages/mobile/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/background-refresh/Package.swift', 'packages/mobile/modules/core-motion/Package.swift', 'packages/mobile/modules/health-kit/Package.swift') }}
           restore-keys: swift-build-v1-
+      - name: Run Background Refresh Swift tests
+        working-directory: packages/mobile/modules/background-refresh
+        run: swift test
+      - name: Run Core Motion Swift tests
+        working-directory: packages/mobile/modules/core-motion
+        run: swift test
       - name: Run Swift tests with coverage
         run: |
           cd packages/mobile/modules/health-kit
           bash scripts/check-coverage.sh
+      - name: Run Watch transfer tests
+        run: |
+          swift test \
+            --package-path packages/mobile/targets/DofekWatch \
+            --scratch-path "$RUNNER_TEMP/dofek-watch-transfer-core"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

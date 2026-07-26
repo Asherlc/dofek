@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { confirmPasswordReset } from "../lib/auth.ts";
+import { captureException } from "../lib/telemetry.ts";
 
 function ResetPasswordPage() {
   const { token } = useSearch({ from: "/reset-password" });
@@ -22,6 +23,7 @@ function ResetPasswordPage() {
       await confirmPasswordReset(token, password);
       setSuccess(true);
     } catch (err: unknown) {
+      captureException(err, { operation: "auth.password-reset-confirm" });
       setError(err instanceof Error ? err.message : "Password reset failed");
     } finally {
       setSubmitting(false);

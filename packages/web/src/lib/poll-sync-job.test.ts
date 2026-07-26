@@ -1,12 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { pollSyncJob, type SyncJobStatus } from "../lib/poll-sync-job.ts";
 
-const mockCaptureException = vi.hoisted(() => vi.fn());
-
-vi.mock("../lib/telemetry.ts", () => ({
-  captureException: mockCaptureException,
-}));
-
 function createDeferred<T>() {
   let resolvePromise: ((value: T) => void) | undefined;
   let rejectPromise: ((reason: unknown) => void) | undefined;
@@ -107,6 +101,7 @@ describe("pollSyncJob", () => {
         providers: { wahoo: { status: "done", message: "5 synced" } },
       });
     const onComplete = vi.fn();
+    const onError = vi.fn();
 
     const polling = pollSyncJob({
       jobId: "sync-123",
@@ -114,6 +109,7 @@ describe("pollSyncJob", () => {
       fetchStatus,
       updateState,
       onComplete,
+      onError,
       pollIntervalMs: 1000,
       signal: controller.signal,
     });
@@ -123,11 +119,7 @@ describe("pollSyncJob", () => {
     });
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(mockCaptureException).toHaveBeenCalledWith(pollingError, {
-      context: "poll-sync-job",
-      jobId: "sync-123",
-      providerIds: ["wahoo"],
-    });
+    expect(onError).toHaveBeenCalledWith(pollingError);
     expect(updateState).toHaveBeenCalledOnce();
 
     controller.abort();
@@ -169,12 +161,14 @@ describe("pollSyncJob", () => {
     const fetchStatus = vi.fn().mockReturnValue(deferredStatus.promise);
     const updateState = vi.fn();
     const onComplete = vi.fn();
+    const onError = vi.fn();
     const polling = pollSyncJob({
       jobId: "sync-123",
       providerIds: ["wahoo"],
       fetchStatus,
       updateState,
       onComplete,
+      onError,
       signal: controller.signal,
     });
 
@@ -182,7 +176,7 @@ describe("pollSyncJob", () => {
     deferredStatus.reject(new Error("Redis connection refused"));
     await polling;
 
-    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
     expect(updateState).not.toHaveBeenCalled();
     expect(onComplete).not.toHaveBeenCalled();
   });

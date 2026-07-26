@@ -10,6 +10,7 @@ const routeMocks = vi.hoisted(() => ({
   executeWithSchema: vi.fn<
     (...args: unknown[]) => Promise<Array<{ id: string; externalId?: string }>>
   >(async () => []),
+  invalidateAllUserQueries: vi.fn<(userId: string) => Promise<void>>(async () => undefined),
   loggerError: vi.fn<(message: string) => void>(),
   loggerWarn: vi.fn<(message: string) => void>(),
   validateCompanionToken: vi.fn<(_db: unknown, token: string) => Promise<string | null>>(),
@@ -29,6 +30,10 @@ vi.mock("../companion/token-repository.ts", () => ({
 
 vi.mock("../lib/typed-sql.ts", () => ({
   executeWithSchema: routeMocks.executeWithSchema,
+}));
+
+vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: routeMocks.invalidateAllUserQueries,
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -169,6 +174,8 @@ describe("createIngestZosHealthRouter", () => {
     routeMocks.captureException.mockReset();
     routeMocks.executeWithSchema.mockReset();
     routeMocks.executeWithSchema.mockResolvedValue([]);
+    routeMocks.invalidateAllUserQueries.mockReset();
+    routeMocks.invalidateAllUserQueries.mockResolvedValue(undefined);
     routeMocks.loggerError.mockReset();
     routeMocks.loggerWarn.mockReset();
     routeMocks.validateCompanionToken.mockReset();
@@ -263,6 +270,7 @@ describe("createIngestZosHealthRouter", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(routeMocks.invalidateAllUserQueries).toHaveBeenCalledWith(userId);
     expect(execute).toHaveBeenCalledTimes(2);
     expect(routeMocks.writeMetricStreamRows).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -603,9 +611,13 @@ describe("createIngestZosHealthRouter", () => {
 
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: "Failed to ingest health data." });
-    expect(routeMocks.captureException).toHaveBeenCalledWith(ingestError);
+    const ensureError = expect.objectContaining({
+      message: expect.stringContaining("ensureProvider(amazfit-zepp) failed"),
+      cause: ingestError,
+    });
+    expect(routeMocks.captureException).toHaveBeenCalledWith(ensureError);
     expect(routeMocks.loggerError).toHaveBeenCalledWith(
-      `[ingest-zos] Failed to ingest health data: ${ingestError}`,
+      expect.stringContaining("[ingest-zos] Failed to ingest health data: Error: ensureProvider"),
     );
   });
 });

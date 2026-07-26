@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
@@ -16,8 +17,41 @@ import {
   shouldDoStrengthToday,
   shouldPreferRest,
 } from "../repositories/training-recommendation.ts";
-import { TrainingRepository } from "../repositories/training-repository.ts";
+import {
+  type TrainingHrZonesResult,
+  TrainingRepository,
+} from "../repositories/training-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
+
+const trainingHrZonesOutputSchema = z.object({
+  maxHr: z.number().nullable(),
+  weeks: z.array(
+    z.object({
+      max_hr: z.number().nullable(),
+      week: z.string(),
+      zone0: z.number(),
+      zone1: z.number(),
+      zone2: z.number(),
+      zone3: z.number(),
+      zone4: z.number(),
+      zone5: z.number(),
+    }),
+  ),
+  intensityDistribution: z.object({
+    model: z.literal("karvonen-five-zone"),
+    activityScope: z.literal("endurance"),
+    totalSeconds: z.number(),
+    zones: z.array(
+      z.object({
+        zone: z.number(),
+        label: z.string(),
+        seconds: z.number(),
+        percent: z.number(),
+      }),
+    ),
+    explanation: z.string(),
+  }),
+}) satisfies z.ZodType<TrainingHrZonesResult>;
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -73,17 +107,22 @@ export const trainingRouter = router({
     },
   ),
 
-  hrZones: selectedChartRangeQuery("training.hrZones", CacheTTL.LONG, async ({ ctx, range }) => {
-    const sensorStore = requireSensorStore(ctx.sensorStore, "training");
-    const repo = new TrainingRepository(
-      ctx.db,
-      ctx.userId,
-      ctx.timezone,
-      sensorStore,
-      ctx.accessWindow,
-    );
-    return repo.getHrZones(range.days);
-  }),
+  hrZones: selectedChartRangeQuery(
+    "training.hrZones",
+    CacheTTL.LONG,
+    async ({ ctx, range }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "training");
+      const repo = new TrainingRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        sensorStore,
+        ctx.accessWindow,
+      );
+      return repo.getHrZones(range.days);
+    },
+    { outputSchema: trainingHrZonesOutputSchema },
+  ),
 
   activityStats: selectedChartRangeQuery(
     "training.activityStats",

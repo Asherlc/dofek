@@ -6,8 +6,18 @@ TypeScript directly; dbt discovers them by path and runs them as models.
 The call sites are:
 
 - `pnpm analytics:build` for local/manual runs.
-- `entrypoint.sh` `migrate`, `sync`, `worker`, and `analytics` modes, which run `dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS`.
-- `entrypoint.sh` `analytics-worker` mode, which runs `dbt build --threads 1 --select $DBT_SAFE_MODELS` on an interval in production. Production sets the interval to 15 minutes and uses a bounded retry delay after failures so a transient ClickHouse outage does not turn into an immediate dbt restart loop.
+- `entrypoint.sh` `migrate`, `sync`, `worker`, and `analytics` modes, which
+  build the ordered activity and sleep/dashboard model groups with one dbt
+  thread.
+- `entrypoint.sh` `analytics-worker` mode, which delegates the scheduled build
+  loop to `scripts/run-analytics-worker.ts`. The worker exposes loopback
+  `/readyz` state for the current step, last failure, and last successful
+  cycle. A failed first cycle is unhealthy immediately; after a prior success,
+  health becomes unavailable when that success is older than the configured
+  build interval plus retry delay. Production keeps the bounded retry delay as
+  a recovery path, while Docker health reflects refresh progress independently.
+  Docker documents that healthcheck command exit status determines container
+  health: <https://docs.docker.com/reference/dockerfile/#healthcheck>.
 
 Model dependencies are declared with dbt `ref()` calls. `sensor_scalar_sample`
 stages scalar metric samples, `deduped_sensor` reads `sensor_scalar_sample`, and
@@ -88,6 +98,41 @@ final API responses. `daily_recovery`, `daily_strain`,
 lower-level recovery, activity-load, and zone-minute models remain internal
 ingredients. `provider_stats` remains the route-facing provider inventory model
 so request paths do not recompute provider counts from raw source tables.
+
+## Microbatch start bounds and historical backfills
+
+The production analytics runner and `pnpm analytics:build` resolve one lower
+bound for scalar sensor models and one for location models from the earliest
+relevant `ingest.metric_stream.ingested_at` value. When a source group is
+empty, its bound is the current UTC day, so a fresh database schedules only the
+current daily batch. Direct dbt invocations have the same current-day fallback
+in the four model configs. dbt documents `begin` as the initial/full-refresh
+starting point and notes that it does not discover the earliest event timestamp
+from the data automatically:
+<https://docs.getdbt.com/reference/resource-configs/begin>.
+
+Historical replay must be an explicit, bounded operator action. Supply both
+`--event-time-start` and `--event-time-end`, select only the required
+microbatch models, and monitor ClickHouse capacity while the run is active:
+
+```sh
+pnpm tsx scripts/with-env.ts -- env \
+  DBT_TARGET=dev \
+  UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+  uv run --project analytics dbt run \
+  --project-dir analytics \
+  --profiles-dir analytics \
+  --threads 1 \
+  --event-time-start "2025-01-01" \
+  --event-time-end "2025-02-01" \
+  --select "sensor_scalar_sample deduped_sensor activity_sensor_sample activity_location_sample"
+```
+
+Choose the smallest interval that contains the data being repaired and advance
+long backfills in separately observed windows. dbt's microbatch documentation
+defines these flags as the supported historical backfill controls and
+recommends providing both bounds:
+<https://docs.getdbt.com/docs/build/incremental-microbatch#backfills>.
 
 After both safe dbt build groups succeed, `scripts/warm-query-cache.ts` replays
 every live query key registered in Redis with its original user, timezone,

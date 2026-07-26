@@ -82,8 +82,13 @@ const mockProviders: {
   isLoading: false,
 };
 
-const mockStats: { data: MockProviderStats[]; isLoading: boolean } = {
+const mockStats: {
+  data: MockProviderStats[] | undefined;
+  error: Error | null;
+  isLoading: boolean;
+} = {
   data: [],
+  error: null,
   isLoading: false,
 };
 const mockRecords: {
@@ -93,6 +98,28 @@ const mockRecords: {
   error: null;
 } = {
   data: { rows: [], columns: [] },
+  isLoading: false,
+  isError: false,
+  error: null,
+};
+const mockDetailLogs: {
+  data:
+    | Array<{
+        id: string;
+        syncedAt: string;
+        dataType: string;
+        status: string;
+        recordCount: number | null;
+        durationMs: number | null;
+        errorMessage: string | null;
+        authFailureReason: string | null;
+      }>
+    | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+} = {
+  data: [],
   isLoading: false,
   isError: false,
   error: null,
@@ -124,10 +151,12 @@ const mockDisconnectMutation = { mutateAsync: vi.fn(), isPending: false };
 const mockDeleteAllDataMutation = { mutateAsync: vi.fn(), isPending: false };
 const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: false });
 const mockSettingsSetMutate = vi.fn();
+const mockSettingsGetGetData = vi.fn();
 const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 const mockPollSyncJob = vi.fn();
+const mockSyncStatusFetch = vi.fn();
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -145,7 +174,7 @@ vi.mock("../lib/trpc.ts", () => ({
       disconnect: { useMutation: () => mockDisconnectMutation },
       deleteAllData: { useMutation: () => mockDeleteAllDataMutation },
       deletionStatus: { useQuery: () => ({ data: undefined, error: null }) },
-      logs: { useQuery: () => ({ data: [], isLoading: false }) },
+      logs: { useQuery: () => mockDetailLogs },
       logFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
       availableDataTypes: { useQuery: () => mockAvailableDataTypes },
       records: { useQuery: () => mockRecords },
@@ -162,7 +191,7 @@ vi.mock("../lib/trpc.ts", () => ({
       sync: {
         providers: { invalidate: vi.fn() },
         providerStats: { invalidate: vi.fn() },
-        syncStatus: { fetch: vi.fn() },
+        syncStatus: { fetch: mockSyncStatusFetch },
       },
       providerDetail: {
         availableDataTypes: { invalidate: vi.fn() },
@@ -170,7 +199,11 @@ vi.mock("../lib/trpc.ts", () => ({
         records: { invalidate: vi.fn() },
       },
       settings: {
-        get: { setData: mockSettingsGetSetData, invalidate: mockSettingsGetInvalidate },
+        get: {
+          getData: mockSettingsGetGetData,
+          setData: mockSettingsGetSetData,
+          invalidate: mockSettingsGetInvalidate,
+        },
       },
     }),
   },
@@ -195,10 +228,15 @@ beforeEach(() => {
   mockDataHealth.error = null;
   mockActiveImports.data = [];
   mockStats.data = [];
+  mockStats.error = null;
   mockRecords.data = { rows: [], columns: [] };
   mockRecords.isLoading = false;
   mockRecords.isError = false;
   mockRecords.error = null;
+  mockDetailLogs.data = [];
+  mockDetailLogs.isLoading = false;
+  mockDetailLogs.isError = false;
+  mockDetailLogs.error = null;
 });
 
 afterEach(() => {
@@ -281,6 +319,79 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(
       screen.getByText("Analytics data is temporarily unavailable. Please retry in a minute."),
     ).toBeTruthy();
+  });
+
+  it("renders a not-found state without exposing generic sync controls", async () => {
+    mockUseParams.mockReturnValue({ id: "does-not-exist" });
+    mockProviders.data = [];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Provider not found")).toBeTruthy();
+    expect(
+      screen.getByText("This provider is unavailable. Return to Data Sources to choose another."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Sync Controls")).toBeNull();
+    expect(screen.queryByText("Sync Last 7 Days")).toBeNull();
+  });
+
+  it("shows provider statistics failures while retaining known provider details", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockStats.data = undefined;
+    mockStats.error = new Error("Provider statistics are temporarily unavailable");
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByRole("heading", { name: "Wahoo" })).toBeTruthy();
+    expect(screen.getByText("Provider statistics are temporarily unavailable")).toBeTruthy();
+    expect(screen.getByText("Sync Controls")).toBeTruthy();
+  });
+
+  it("keeps cached sync history visible when its background refresh fails", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockDetailLogs.data = [
+      {
+        id: "log-1",
+        syncedAt: "2026-07-24T12:00:00.000Z",
+        dataType: "activities",
+        status: "success",
+        recordCount: 12,
+        durationMs: 100,
+        errorMessage: null,
+        authFailureReason: null,
+      },
+    ];
+    mockDetailLogs.isError = true;
+    mockDetailLogs.error = new Error("Sync history refresh failed");
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Sync history refresh failed")).toBeTruthy();
+    expect(screen.getByText("activities")).toBeTruthy();
+    expect(screen.getByText("12")).toBeTruthy();
   });
 
   it("shows 'Import only' instead of 'Connected' for import-only providers", async () => {
@@ -389,7 +500,7 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.queryByText("Import only")).toBeNull();
   });
 
-  it("shows provider data readiness when read models are blocked", async () => {
+  it("shows provider processing progress while read models update", async () => {
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
       {
@@ -402,7 +513,7 @@ describe("ProviderDetailPage import-only providers", () => {
       },
     ];
     mockDataHealth.data = {
-      overallStatus: "blocked",
+      overallStatus: "active",
       generatedAt: "2026-06-30T12:00:00Z",
       scope: { providerId: "wahoo", datasets: ["activity"] },
       operations: [],
@@ -410,7 +521,7 @@ describe("ProviderDetailPage import-only providers", () => {
         {
           key: "activity",
           label: "Activities",
-          status: "blocked",
+          status: "active",
           currentStage: "cdc",
           progressPercentage: null,
           lastAdvancedAt: "2026-06-29T12:00:00Z",
@@ -423,7 +534,7 @@ describe("ProviderDetailPage import-only providers", () => {
     render(<ProviderDetailPage />);
 
     expect(screen.getByText("Wahoo data status")).toBeTruthy();
-    expect(screen.getByText("Your data update didn’t finish")).toBeTruthy();
+    expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
   });
 
   it("shows single-provider cooldown outcome without polling a fake job", async () => {
@@ -556,8 +667,62 @@ describe("ProviderDetailPage import-only providers", () => {
       fireEvent.click(screen.getByText("Sync Last 7 Days"));
     });
 
-    expect(mockCaptureException).toHaveBeenCalledWith(syncError, { context: "sync-provider" });
+    expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+      operation: "sync.triggerSync",
+      providerId: "wahoo",
+    });
     expect(screen.getByText("Queue unavailable")).toBeTruthy();
+  });
+
+  it("reports provider polling failures without the job id", async () => {
+    const jobId = "secret-provider-job-id";
+    const pollError = new Error("Sync status unavailable");
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      jobId,
+      jobIds: [jobId],
+      providerJobs: [{ providerId: "wahoo", jobId, queueName: "sync-wahoo" }],
+      providerResults: [{ providerId: "wahoo", status: "started", jobId }],
+    });
+    mockPollSyncJob.mockImplementationOnce(
+      async ({
+        fetchStatus,
+        onError,
+      }: {
+        fetchStatus: (id: string) => Promise<unknown>;
+        onError: (error: unknown) => void;
+      }) => {
+        await fetchStatus(jobId);
+        onError(pollError);
+      },
+    );
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+
+    expect(mockSyncStatusFetch).toHaveBeenCalledWith(
+      { jobId },
+      { staleTime: 0, meta: { errorReportedLocally: true } },
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(pollError, {
+      operation: "sync.syncStatus",
+      providerId: "wahoo",
+    });
+    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(jobId);
   });
 
   it("does not trigger sync for an inverted date range", async () => {
@@ -731,6 +896,7 @@ describe("WhoopWearLocationPicker", () => {
     ];
     mockSettingsGetQuery.mockReturnValue({ data: null, isLoading: false });
     mockSettingsSetMutate.mockReset();
+    mockSettingsGetGetData.mockReset();
     mockSettingsGetSetData.mockReset();
     mockSettingsGetInvalidate.mockReset();
   });
@@ -815,7 +981,10 @@ describe("WhoopWearLocationPicker", () => {
 
     expect(mockSettingsSetMutate).toHaveBeenCalledWith(
       { key: "whoop.wearLocation", value: "bicep" },
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.objectContaining({
+        onError: expect.any(Function),
+        onSettled: expect.any(Function),
+      }),
     );
   });
 
@@ -829,5 +998,55 @@ describe("WhoopWearLocationPicker", () => {
       { key: "whoop.wearLocation" },
       { key: "whoop.wearLocation", value: "chest" },
     );
+  });
+
+  it("restores the exact cached location and displays the server error when a write fails", async () => {
+    const previousSetting = { key: "whoop.wearLocation", value: "bicep" };
+    mockSettingsGetQuery.mockReturnValue({
+      data: previousSetting,
+      error: null,
+      isLoading: false,
+    });
+    mockSettingsGetGetData.mockReturnValue(previousSetting);
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    fireEvent.click(screen.getByText("Chest / Torso"));
+    const options = mockSettingsSetMutate.mock.calls[0]?.[1];
+    const writeError = new Error("Wear location was not saved.");
+    act(() => options.onError(writeError));
+    act(() => options.onSettled());
+
+    expect(mockSettingsGetSetData).toHaveBeenLastCalledWith(
+      { key: "whoop.wearLocation" },
+      previousSetting,
+    );
+    expect(mockSettingsGetInvalidate).toHaveBeenCalledWith({ key: "whoop.wearLocation" });
+    expect(screen.getByRole("alert").textContent).toBe(writeError.message);
+    expect(mockCaptureException).toHaveBeenCalledWith(writeError, {
+      context: "whoop-wear-location-write",
+    });
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps cached location visible and displays an exact background read error", async () => {
+    const readError = new Error("Wear location could not be loaded.");
+    mockSettingsGetQuery.mockReturnValue({
+      data: { key: "whoop.wearLocation", value: "bicep" },
+      error: readError,
+      isLoading: false,
+    });
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Bicep / Upper Arm").closest("button")?.className).toContain(
+      "border-emerald-500",
+    );
+    expect(screen.getByRole("alert").textContent).toBe(readError.message);
+    expect(mockCaptureException).toHaveBeenCalledWith(readError, {
+      context: "whoop-wear-location-read",
+    });
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
   });
 });

@@ -13,14 +13,13 @@ import {
   type SyncJobData,
 } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
 import { operationStatusOutputSchema, readOperationProgress } from "../lib/operation-progress.ts";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
-import { logger } from "../logger.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
   adminProcedure,
@@ -41,13 +40,6 @@ import {
   toJobId,
   UPLOAD_IMPORT_PROVIDERS,
 } from "./sync-helpers.ts";
-
-function logProvidersQueryFailure(operation: string, error: unknown): void {
-  logger.warn(
-    `[sync.providers] ${operation} failed: ${error instanceof Error ? error.message : String(error)}`,
-  );
-  captureException(error);
-}
 
 const syncProviderRowOutputSchema = z.object({
   id: z.string(),
@@ -248,21 +240,17 @@ const syncRouterProcedures = {
       const all = getAllProviders();
       const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
 
-      // Batch: load all tokens, last sync times, and recent auth errors in 3 queries instead of 3N
-      const [allTokens, lastSyncs, latestErrors, providerStats] = await Promise.all([
+      // Batch: load connections, last sync times, recent auth errors, and stats.
+      const [allConnections, lastSyncs, latestErrors] = await Promise.all([
         repo.getConnectedProviderIds(),
         repo.getLastSyncTimes(),
         repo.getLatestErrors(),
-        ctx.sensorStore
-          ? repo.getProviderStats().catch((error: unknown) => {
-              logProvidersQueryFailure("provider stats lookup", error);
-              throw error;
-            })
-          : Promise.resolve(undefined),
       ]);
 
-      const tokenSet = new Set(allTokens.map((r) => r.providerId));
-      const tokenUpdatedAtMap = new Map(allTokens.map((r) => [r.providerId, r.updatedAt]));
+      const connectionSet = new Set(allConnections.map((row) => row.providerId));
+      const connectionUpdatedAtMap = new Map(
+        allConnections.map((row) => [row.providerId, row.updatedAt]),
+      );
       const lastSyncMap = new Map(lastSyncs.map((r) => [r.providerId, r.lastSynced]));
       const authErrorProviders = new Set(
         latestErrors
@@ -270,17 +258,15 @@ const syncRouterProcedures = {
             hasCurrentProviderAuthFailure(
               r.authFailureReason,
               r.syncedAt,
-              tokenUpdatedAtMap.get(r.providerId),
+              connectionUpdatedAtMap.get(r.providerId),
             ),
           )
           .map((r) => r.providerId),
       );
-      const statsByProvider = new Map(providerStats?.map((row) => [row.providerId, row]));
-
       const registeredProviders = all
         .filter((p) => p.validate() === null)
         .map((p) => {
-          const model = new ProviderModel(p, tokenSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
+          const model = new ProviderModel(p, connectionSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
           return {
             id: model.id,
             name: model.name,
@@ -295,16 +281,12 @@ const syncRouterProcedures = {
         });
 
       const pushProviders = PUSH_PROVIDERS.map((provider) => {
-        const stats = statsByProvider.get(provider.id);
-        // Push providers have no OAuth token; data presence is their connection signal.
-        const hasData = (stats?.metricStream ?? 0) > 0;
-
         return {
           id: provider.id,
           name: provider.name,
           description: provider.description,
           authType: provider.authType,
-          authorized: hasData,
+          authorized: connectionSet.has(provider.id),
           lastSyncedAt: null,
           importOnly: false,
           pushOnly: true,
@@ -424,7 +406,7 @@ const syncRouterProcedures = {
     // ClickHouse read models update outside the API server, but the API
     // server's in-memory cache can still hold stale results until TTL expiry.
     if (operationProgress.status === "completed" || operationProgress.status === "failed") {
-      await queryCache.invalidateByPrefix(`${ctx.userId}:`);
+      await invalidateAllUserQueries(ctx.userId);
     }
 
     return {
@@ -602,6 +584,8 @@ function createTriggerSyncProcedure() {
     .mutation(async ({ ctx, input }) => {
       await ensureProvidersRegistered();
       const repo = new SyncRepository(ctx.db, ctx.userId);
+      const allConnections = await repo.getConnectedProviderIds();
+      const connectionSet = new Set(allConnections.map((row) => row.providerId));
 
       const providerIds: string[] = [];
 
@@ -614,15 +598,20 @@ function createTriggerSyncProcedure() {
         if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
         const validation = provider.validate();
         if (validation) throw new Error(`Provider not configured: ${validation}`);
+        const model = new ProviderModel(provider, connectionSet, undefined, CUSTOM_AUTH_PROVIDERS);
+        if (!model.isConnected) {
+          throw new Error(`Provider not connected: ${provider.id}`);
+        }
         providerIds.push(provider.id);
       } else {
-        // Check which providers have tokens to determine connectivity
-        const allTokens = await repo.getConnectedProviderIds();
-        const tokenSet = new Set(allTokens.map((row) => row.providerId));
-
         for (const provider of getAllProviders()) {
           if (provider.validate() !== null) continue;
-          const model = new ProviderModel(provider, tokenSet, undefined, CUSTOM_AUTH_PROVIDERS);
+          const model = new ProviderModel(
+            provider,
+            connectionSet,
+            undefined,
+            CUSTOM_AUTH_PROVIDERS,
+          );
           if (model.importOnly || !model.isConnected) continue;
           providerIds.push(model.id);
         }

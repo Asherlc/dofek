@@ -58,12 +58,38 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("FROM ingest.metric_stream"),
       ]),
     });
-    expect(migrations.at(-1)).toMatchObject({
-      id: "0053_daily_sleep_lifecycle",
+    expect(
+      migrations.find((migration) => migration.id === "0054_activity_load_lifecycle"),
+    ).toMatchObject({
+      id: "0054_activity_load_lifecycle",
       statements: expect.arrayContaining([
-        expect.stringContaining(
-          "ADD COLUMN IF NOT EXISTS is_deleted UInt8 DEFAULT 0 AFTER refresh_version",
-        ),
+        expect.stringContaining("ALTER TABLE analytics.daily_activity_load"),
+        expect.stringContaining("ALTER TABLE analytics.daily_strain"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0055_provider_connection_catalog"),
+    ).toMatchObject({
+      id: "0055_provider_connection_catalog",
+      statements: expect.arrayContaining([
+        expect.stringContaining("MODIFY COLUMN user_id Nullable(UUID)"),
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0056_daily_body_measurement_lifecycle"),
+    ).toMatchObject({
+      id: "0056_daily_body_measurement_lifecycle",
+      statements: expect.arrayContaining([
+        expect.stringContaining("ADD COLUMN IF NOT EXISTS is_deleted"),
+        expect.stringContaining("ADD COLUMN IF NOT EXISTS source_synced_at"),
+      ]),
+    });
+    expect(migrations.at(-1)).toMatchObject({
+      id: "0057_daily_recovery_lifecycle",
+      statements: expect.arrayContaining([
+        expect.stringContaining("ALTER TABLE analytics.daily_recovery_inputs"),
+        expect.stringContaining("ALTER TABLE analytics.daily_recovery"),
       ]),
     });
   });

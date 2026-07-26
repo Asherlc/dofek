@@ -1,5 +1,3 @@
-import { captureException } from "./telemetry.ts";
-
 export interface ProviderStatus {
   status: "pending" | "running" | "done" | "error";
   message?: string;
@@ -24,6 +22,7 @@ export interface PollSyncJobOptions {
   fetchStatus: (jobId: string) => Promise<SyncJobStatus | null>;
   updateState: (id: string, state: SyncProviderState) => void;
   onComplete: () => void;
+  onError?: (error: unknown) => void;
   pollIntervalMs?: number;
   signal?: AbortSignal;
 }
@@ -53,6 +52,7 @@ export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
     fetchStatus,
     updateState,
     onComplete,
+    onError,
     pollIntervalMs = 1000,
     signal,
   } = opts;
@@ -73,7 +73,7 @@ export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
       job = await fetchStatus(jobId);
     } catch (error: unknown) {
       if (signal?.aborted) return;
-      captureException(error, { context: "poll-sync-job", jobId, providerIds });
+      onError?.(error);
       const message =
         error instanceof Error ? error.message : "Sync status is temporarily unavailable.";
       for (const providerId of providerIds) {

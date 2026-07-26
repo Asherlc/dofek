@@ -24,7 +24,7 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
         const unit = escapeTooltipHtml(row.unit);
         return `<b>${nutrient}</b><br/>
           ${row.avgIntake} ${unit} / ${row.rda} ${unit}<br/>
-          <b>${row.percentRda}% of RDA</b><br/>
+          <b>${row.percentRda}% of Recommended Dietary Allowance (RDA)</b><br/>
           <span style="color:${chartThemeColors.axisLabel}">(${row.daysTracked} days tracked)</span>`;
       },
     }),
@@ -70,7 +70,7 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
           label: {
             show: true,
             position: "end" as const,
-            formatter: "100% RDA",
+            formatter: "100% Recommended Dietary Allowance (RDA)",
             color: chartThemeColors.axisLabel,
           },
           tooltip: { show: false },

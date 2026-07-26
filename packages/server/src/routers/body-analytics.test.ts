@@ -75,7 +75,7 @@ describe("bodyAnalyticsRouter", () => {
   describe("smoothedWeight", () => {
     it("returns empty array when no data", async () => {
       const caller = makeCaller([]);
-      const result = await caller.smoothedWeight({ days: 90, endDate: "2026-03-15" });
+      const result = await caller.smoothedWeight({ days: 90, endDate: "2024-01-08" });
       expect(result).toEqual([]);
     });
 
@@ -91,7 +91,7 @@ describe("bodyAnalyticsRouter", () => {
         { date: "2024-01-08", weight_kg: 79.8 },
       ];
       const caller = makeCaller(rows);
-      const result = await caller.smoothedWeight({ days: 90, endDate: "2026-03-15" });
+      const result = await caller.smoothedWeight({ days: 90, endDate: "2024-01-08" });
 
       expect(result).toHaveLength(8);
       expect(result[0]?.rawWeight).toBe(80);
@@ -205,16 +205,63 @@ describe("bodyAnalyticsRouter", () => {
       const rows = Array.from({ length: 20 }, (_, index) => ({
         date: `2024-01-${String(index + 1).padStart(2, "0")}`,
         weight_kg: 80 - index * 0.1,
+        body_fat_pct: 20,
       }));
       const caller = makeCaller(rows);
-      const result = await caller.weightOverview({ days: 90, endDate: "2026-03-15" });
+      const result = await caller.weightOverview({ days: 90, endDate: "2024-01-20" });
 
       expect(result.smoothedWeight).toHaveLength(20);
       expect(result.prediction?.ratePerWeek).not.toBeNull();
       expect(result.prediction?.periodDeltas).toBeDefined();
+      expect(result.healthStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            metric: "trend_weight",
+            intent: "neutral",
+            value: expect.any(Number),
+          }),
+        ]),
+      );
     });
 
-    it("uses a lower date bound for finite selected ranges", async () => {
+    it("returns neutral body fat classifications from server-owned recomposition data", async () => {
+      vi.spyOn(BodyAnalyticsRepository.prototype, "getRecomposition").mockResolvedValueOnce([
+        {
+          date: "2024-01-19",
+          weightKg: 80,
+          bodyFatPct: 21,
+          fatMassKg: 16.8,
+          leanMassKg: 63.2,
+          smoothedFatMass: 16.8,
+          smoothedLeanMass: 63.2,
+        },
+        {
+          date: "2024-01-20",
+          weightKg: 80,
+          bodyFatPct: 23,
+          fatMassKg: 18.4,
+          leanMassKg: 61.6,
+          smoothedFatMass: 17,
+          smoothedLeanMass: 63,
+        },
+      ]);
+      const caller = makeCaller([]);
+
+      const result = await caller.weightOverview({ days: 90, endDate: "2024-01-20" });
+
+      expect(result.healthStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            metric: "body_fat_percentage",
+            value: 23,
+            baseline: 22,
+            intent: "neutral",
+          }),
+        ]),
+      );
+    });
+
+    it("fetches full history through the selected end date for finite ranges", async () => {
       const sensorStore = makeMockSensorStore([]);
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -227,8 +274,12 @@ describe("bodyAnalyticsRouter", () => {
 
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
-      expect(queryText).toContain("subtractDays(toDate({endDate:String}), {days:UInt32})");
-      expect(queryParams).toMatchObject({ endDate: "2026-03-15", days: 90 });
+      expect(queryText).toContain(
+        "toDate(toTimeZone(recorded_at, {timezone:String})) <= toDate({endDate:String})",
+      );
+      expect(queryText).not.toContain("subtractDays");
+      expect(queryParams).toMatchObject({ endDate: "2026-03-15" });
+      expect(queryParams).not.toHaveProperty("days");
     });
 
     it("omits the lower date bound when days is null", async () => {
@@ -269,6 +320,7 @@ describe("bodyAnalyticsRouter", () => {
       const rows = Array.from({ length: 20 }, (_, index) => ({
         date: `2024-01-${String(index + 1).padStart(2, "0")}`,
         weight_kg: 80 - index * 0.1,
+        body_fat_pct: 20,
       }));
       const predictionError = new Error("regression blew up");
       vi.spyOn(BodyAnalyticsRepository.prototype, "getWeightPrediction").mockRejectedValueOnce(
@@ -276,11 +328,27 @@ describe("bodyAnalyticsRouter", () => {
       );
       const caller = makeCaller(rows);
 
-      const result = await caller.weightOverview({ days: 90, endDate: "2026-03-15" });
+      const result = await caller.weightOverview({ days: 90, endDate: "2024-01-20" });
 
       expect(result.smoothedWeight).toHaveLength(20);
       expect(result.prediction).toBeNull();
       expect(captureException).toHaveBeenCalledWith(predictionError);
+    });
+
+    it("returns a semantic API error when recomposition cannot be loaded", async () => {
+      const recompositionError = new Error("relation analytics.body_composition does not exist");
+      vi.spyOn(BodyAnalyticsRepository.prototype, "getRecomposition").mockRejectedValueOnce(
+        recompositionError,
+      );
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.weightOverview({ days: 90, endDate: "2024-01-20" }),
+      ).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Body composition data is temporarily unavailable. Please try again.",
+      });
+      expect(captureException).toHaveBeenCalledWith(recompositionError);
     });
   });
 

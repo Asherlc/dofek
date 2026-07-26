@@ -4,6 +4,7 @@ import type { ConnectionOptions, JobsOptions } from "bullmq";
 import { FlowProducer, Queue, QueueEvents, RedisConnection } from "bullmq";
 import { z } from "zod";
 import type {} from "../bullmq-redis-client.ts";
+import type { DataExportRequest } from "../db/data-export.ts";
 import type { ProviderDataDeletionRequest } from "../db/provider-data-deletion.ts";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
@@ -88,8 +89,10 @@ export interface FitFileImportBatchJobData {
 export interface ExportJobData {
   exportId: string;
   userId: string;
-  /** Full path to the output ZIP file in the shared job-files directory */
-  outputPath: string;
+}
+
+export interface DataExportQueue {
+  add(name: string, data: ExportJobData, options?: JobsOptions): Promise<unknown>;
 }
 
 export interface ScheduledSyncJobData {
@@ -194,6 +197,7 @@ const ACTIVITY_RESTORE_ANALYTICS_JOB_NAME = "activity-restore-analytics-refresh"
 const ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME = "activity-recompute-analytics-refresh";
 const PROVIDER_DELETE_ANALYTICS_JOB_NAME = "provider-delete-analytics-refresh";
 const PROVIDER_DATA_DELETION_JOB_NAME = "provider-data-deletion";
+const DATA_EXPORT_JOB_NAME = "export";
 const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
 
 function activityRecomputeAnalyticsJobId(userId: string, activityIds: string[]): string {
@@ -315,6 +319,21 @@ export function createExportQueue(connection?: ConnectionOptions): Queue<ExportJ
   return new Queue(EXPORT_QUEUE, { connection: connection ?? getRedisConnection() });
 }
 
+export async function enqueueDataExport(
+  request: DataExportRequest,
+  queue: DataExportQueue = getDataExportQueue(),
+): Promise<void> {
+  await queue.add(
+    DATA_EXPORT_JOB_NAME,
+    { exportId: request.exportId, userId: request.userId },
+    {
+      jobId: request.exportId,
+      removeOnComplete: true,
+      removeOnFail: true,
+    },
+  );
+}
+
 export function createScheduledSyncQueue(
   connection?: ConnectionOptions,
 ): Queue<ScheduledSyncJobData> {
@@ -345,6 +364,7 @@ let cachedPostSyncQueue: Queue<PostSyncJobData> | null = null;
 let cachedActivityDeleteAnalyticsQueue: Queue<ActivityAnalyticsJobData> | null = null;
 let cachedProviderDataDeletionQueue: Queue<ProviderDataDeletionJobData> | null = null;
 let cachedImportQueue: Queue<ImportJobData> | null = null;
+let cachedDataExportQueue: Queue<ExportJobData> | null = null;
 let cachedFitFileImportQueue: Queue<FitFileImportJobData, FitFileImportJobResult> | null = null;
 let cachedFitFileImportQueueEvents: QueueEvents | null = null;
 let cachedFlowProducer: FlowProducer | null = null;
@@ -354,6 +374,13 @@ export function getImportQueue(): Queue<ImportJobData> {
     cachedImportQueue = createImportQueue();
   }
   return cachedImportQueue;
+}
+
+export function getDataExportQueue(): Queue<ExportJobData> {
+  if (!cachedDataExportQueue) {
+    cachedDataExportQueue = createExportQueue();
+  }
+  return cachedDataExportQueue;
 }
 
 export function getFitFileImportQueue(): Queue<FitFileImportJobData, FitFileImportJobResult> {
@@ -596,6 +623,7 @@ export async function closeAllQueueResources(): Promise<void> {
     closePromises.push(cachedActivityDeleteAnalyticsQueue.close());
   if (cachedProviderDataDeletionQueue) closePromises.push(cachedProviderDataDeletionQueue.close());
   if (cachedImportQueue) closePromises.push(cachedImportQueue.close());
+  if (cachedDataExportQueue) closePromises.push(cachedDataExportQueue.close());
   if (cachedFitFileImportQueue) closePromises.push(cachedFitFileImportQueue.close());
   if (cachedFitFileImportQueueEvents) closePromises.push(cachedFitFileImportQueueEvents.close());
   if (cachedFlowProducer) closePromises.push(cachedFlowProducer.close());
@@ -604,6 +632,7 @@ export async function closeAllQueueResources(): Promise<void> {
   cachedActivityDeleteAnalyticsQueue = null;
   cachedProviderDataDeletionQueue = null;
   cachedImportQueue = null;
+  cachedDataExportQueue = null;
   cachedFitFileImportQueue = null;
   cachedFitFileImportQueueEvents = null;
   cachedFlowProducer = null;

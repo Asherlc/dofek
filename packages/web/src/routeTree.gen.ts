@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WeeklyReportRouteImport } from './routes/weekly-report'
 import { Route as TrainingRouteImport } from './routes/training'
 import { Route as TrackingRouteImport } from './routes/tracking'
 import { Route as TermsRouteImport } from './routes/terms'
@@ -31,6 +32,7 @@ import { Route as CorrelationRouteImport } from './routes/correlation'
 import { Route as BreathworkRouteImport } from './routes/breathwork'
 import { Route as BodyRouteImport } from './routes/body'
 import { Route as BehaviorImpactRouteImport } from './routes/behavior-impact'
+import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ActivitiesRouteImport } from './routes/activities'
 import { Route as IndexRouteImport } from './routes/index'
@@ -53,6 +55,11 @@ import { Route as BodyHeartRateRouteImport } from './routes/body/heart-rate'
 import { Route as ActivityIdRouteImport } from './routes/activity.$id'
 import { Route as AdminUsersUserIdRouteImport } from './routes/admin/users/$userId'
 
+const WeeklyReportRoute = WeeklyReportRouteImport.update({
+  id: '/weekly-report',
+  path: '/weekly-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TrainingRoute = TrainingRouteImport.update({
   id: '/training',
   path: '/training',
@@ -161,6 +168,11 @@ const BodyRoute = BodyRouteImport.update({
 const BehaviorImpactRoute = BehaviorImpactRouteImport.update({
   id: '/behavior-impact',
   path: '/behavior-impact',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlertsRoute = AlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -277,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/activities': typeof ActivitiesRoute
   '/admin': typeof AdminRouteWithChildren
+  '/alerts': typeof AlertsRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/breathwork': typeof BreathworkRoute
@@ -299,6 +312,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
+  '/weekly-report': typeof WeeklyReportRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
@@ -321,6 +335,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/activities': typeof ActivitiesRoute
+  '/alerts': typeof AlertsRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/breathwork': typeof BreathworkRoute
   '/correlation': typeof CorrelationRoute
@@ -339,6 +354,7 @@ export interface FileRoutesByTo {
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
+  '/weekly-report': typeof WeeklyReportRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
@@ -363,6 +379,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/activities': typeof ActivitiesRoute
   '/admin': typeof AdminRouteWithChildren
+  '/alerts': typeof AlertsRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/breathwork': typeof BreathworkRoute
@@ -385,6 +402,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
+  '/weekly-report': typeof WeeklyReportRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
@@ -410,6 +428,7 @@ export interface FileRouteTypes {
     | '/'
     | '/activities'
     | '/admin'
+    | '/alerts'
     | '/behavior-impact'
     | '/body'
     | '/breathwork'
@@ -432,6 +451,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/tracking'
     | '/training'
+    | '/weekly-report'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/nutrition/analytics'
@@ -454,6 +474,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/activities'
+    | '/alerts'
     | '/behavior-impact'
     | '/breathwork'
     | '/correlation'
@@ -472,6 +493,7 @@ export interface FileRouteTypes {
     | '/support'
     | '/terms'
     | '/tracking'
+    | '/weekly-report'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/nutrition/analytics'
@@ -495,6 +517,7 @@ export interface FileRouteTypes {
     | '/'
     | '/activities'
     | '/admin'
+    | '/alerts'
     | '/behavior-impact'
     | '/body'
     | '/breathwork'
@@ -517,6 +540,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/tracking'
     | '/training'
+    | '/weekly-report'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/nutrition/analytics'
@@ -541,6 +565,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ActivitiesRoute: typeof ActivitiesRoute
   AdminRoute: typeof AdminRouteWithChildren
+  AlertsRoute: typeof AlertsRoute
   BehaviorImpactRoute: typeof BehaviorImpactRoute
   BodyRoute: typeof BodyRouteWithChildren
   BreathworkRoute: typeof BreathworkRoute
@@ -563,11 +588,19 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   TrackingRoute: typeof TrackingRoute
   TrainingRoute: typeof TrainingRouteWithChildren
+  WeeklyReportRoute: typeof WeeklyReportRoute
   ActivityIdRoute: typeof ActivityIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/weekly-report': {
+      id: '/weekly-report'
+      path: '/weekly-report'
+      fullPath: '/weekly-report'
+      preLoaderRoute: typeof WeeklyReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/training': {
       id: '/training'
       path: '/training'
@@ -720,6 +753,13 @@ declare module '@tanstack/react-router' {
       path: '/behavior-impact'
       fullPath: '/behavior-impact'
       preLoaderRoute: typeof BehaviorImpactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts': {
+      id: '/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -956,6 +996,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ActivitiesRoute: ActivitiesRoute,
   AdminRoute: AdminRouteWithChildren,
+  AlertsRoute: AlertsRoute,
   BehaviorImpactRoute: BehaviorImpactRoute,
   BodyRoute: BodyRouteWithChildren,
   BreathworkRoute: BreathworkRoute,
@@ -978,6 +1019,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   TrackingRoute: TrackingRoute,
   TrainingRoute: TrainingRouteWithChildren,
+  WeeklyReportRoute: WeeklyReportRoute,
   ActivityIdRoute: ActivityIdRoute,
 }
 export const routeTree = rootRouteImport

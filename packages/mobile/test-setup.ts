@@ -296,6 +296,7 @@ vi.mock("react-native", () => {
 
   const Alert = { alert: vi.fn() };
   const Linking = { openURL: vi.fn(() => Promise.resolve()) };
+  const Share = { share: vi.fn(() => Promise.resolve({ action: "sharedAction" })) };
 
   const RefreshControl = createMockComponent("RefreshControl");
 
@@ -348,6 +349,7 @@ vi.mock("react-native", () => {
     Platform,
     Alert,
     Linking,
+    Share,
     AppState,
     LayoutAnimation,
     UIManager,
@@ -614,8 +616,9 @@ vi.mock("./modules/watch-motion", () => ({
   })),
   requestWatchSync: vi.fn(() => Promise.resolve(false)),
   requestWatchRecording: vi.fn(() => Promise.resolve(false)),
-  getPendingWatchSamples: vi.fn(() => Promise.resolve([])),
-  acknowledgeWatchSamples: vi.fn(),
-  getLastWatchSyncTimestamp: vi.fn(() => null),
-  setLastWatchSyncTimestamp: vi.fn(),
+  getPendingWatchFileNames: vi.fn(() => []),
+  getPendingWatchAltitudeFileNames: vi.fn(() => []),
+  readWatchFile: vi.fn(() => Promise.resolve([])),
+  readWatchAltitudeFile: vi.fn(() => Promise.resolve([])),
+  deleteWatchFile: vi.fn(),
 }));

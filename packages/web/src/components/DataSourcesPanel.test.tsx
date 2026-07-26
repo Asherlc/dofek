@@ -41,6 +41,7 @@ const mockProvidersQuery = vi.hoisted(() =>
 );
 
 const mockSyncMutateAsync = vi.hoisted(() => vi.fn());
+const mockTriggerSyncUseMutation = vi.hoisted(() => vi.fn());
 const mockPollSyncJob = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
 const mockSyncStatusFetch = vi.hoisted(() => vi.fn());
@@ -66,6 +67,14 @@ const mockProviderStatsQuery = vi.hoisted(() =>
     error: null,
   })),
 );
+const mockLogsQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<Array<Record<string, unknown>>>>(() => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  })),
+);
+const mockCaptureException = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -77,10 +86,10 @@ vi.mock("../lib/trpc.ts", () => ({
         useQuery: mockProvidersQuery,
       },
       providerStats: { useQuery: mockProviderStatsQuery },
-      logs: { useQuery: () => ({ data: [], isLoading: false }) },
+      logs: { useQuery: mockLogsQuery },
       activeSyncs: { useQuery: mockActiveSyncsQuery },
       activeImports: { useQuery: mockActiveImportsQuery },
-      triggerSync: { useMutation: () => ({ mutateAsync: mockSyncMutateAsync, isPending: false }) },
+      triggerSync: { useMutation: mockTriggerSyncUseMutation },
       syncStatus: { fetch: vi.fn() },
     },
     useUtils: () => ({
@@ -91,6 +100,10 @@ vi.mock("../lib/trpc.ts", () => ({
       },
     }),
   },
+}));
+
+vi.mock("../lib/telemetry.ts", () => ({
+  captureException: mockCaptureException,
 }));
 
 vi.mock("./DataSourcesAuthModals.tsx", () => ({
@@ -196,6 +209,11 @@ describe("DataSourcesPanel", () => {
     });
     mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockSyncMutateAsync.mockReset();
+    mockTriggerSyncUseMutation.mockReset();
+    mockTriggerSyncUseMutation.mockReturnValue({
+      mutateAsync: mockSyncMutateAsync,
+      isPending: false,
+    });
     mockSyncMutateAsync.mockResolvedValue({
       jobId: undefined,
       jobIds: [],
@@ -207,18 +225,21 @@ describe("DataSourcesPanel", () => {
     mockInvalidate.mockReset();
     mockSyncStatusFetch.mockReset();
     mockFileImportProviderCard.mockClear();
-    mockActiveSyncsQuery.mockReset();
-    mockActiveSyncsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockActiveImportsQuery.mockReset();
     mockActiveImportsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockActiveSyncsQuery.mockReset();
+    mockActiveSyncsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockProviderStatsQuery.mockReset();
     mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockLogsQuery.mockReset();
+    mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockCaptureException.mockReset();
   });
 
-  it("shows server data readiness messages above provider cards", () => {
+  it("shows active processing progress above provider cards", () => {
     mockDataHealthQuery.mockReturnValue({
       data: {
-        overallStatus: "blocked",
+        overallStatus: "active",
         generatedAt: "2026-06-30T08:00:00.000Z",
         scope: { providerId: null, datasets: ["providers"] },
         operations: [],
@@ -231,8 +252,9 @@ describe("DataSourcesPanel", () => {
             latestReadModelAt: "2026-06-29T07:00:00.000Z",
             cdcLagSeconds: 60,
             readModelLagSeconds: 86400,
-            status: "blocked",
-            message: "Activities are synced, but activity summaries need attention.",
+            status: "active",
+            progressPercentage: 60,
+            message: "Activities are updating.",
           },
         ],
       },
@@ -246,27 +268,12 @@ describe("DataSourcesPanel", () => {
       { datasets: ["providers"] },
       expect.any(Object),
     );
-    const readiness = screen.getByText("Your data update didn’t finish");
+    const readiness = screen.getByText("Recomputing activities", { selector: "span" });
     const provider = screen.getByText("Garmin");
 
     expect(
       readiness.compareDocumentPosition(provider) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-  });
-
-  it("shows the active sync server error message", () => {
-    mockActiveSyncsQuery.mockReturnValue({
-      data: [],
-      isLoading: false,
-      error: new Error("Active syncs are temporarily unavailable. Please try again."),
-    });
-
-    render(<DataSourcesPanel />);
-
-    expect(
-      screen.getByText("Active syncs are temporarily unavailable. Please try again."),
-    ).toBeTruthy();
-    expect(screen.getByText("Garmin")).toBeTruthy();
   });
 
   it("keeps cached providers visible when a background refresh fails", () => {
@@ -293,6 +300,45 @@ describe("DataSourcesPanel", () => {
 
     expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
     expect(screen.getByText(refreshError.message)).toBeTruthy();
+  });
+
+  it("shows provider stats failures without hiding known provider cards", () => {
+    const statsError = new Error("Provider statistics are temporarily unavailable");
+    mockProviderStatsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: statsError,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
+    expect(screen.getByText(statsError.message)).toBeTruthy();
+  });
+
+  it("keeps cached sync history on cards when its background refresh fails", () => {
+    const cachedLog = {
+      id: "log-1",
+      providerId: "garmin",
+      dataType: "activities",
+      status: "success",
+      recordCount: 12,
+      errorMessage: null,
+      authFailureReason: null,
+      durationMs: 100,
+      syncedAt: "2026-07-24T12:00:00.000Z",
+    };
+    const logsError = new Error("Sync history refresh failed");
+    mockLogsQuery.mockReturnValue({
+      data: [cachedLog],
+      isLoading: false,
+      error: logsError,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
+    expect(screen.getByText(logsError.message)).toBeTruthy();
   });
 
   it("shows sync-all skipped and failed provider outcomes only on matching cards", async () => {
@@ -375,6 +421,93 @@ describe("DataSourcesPanel", () => {
       );
     });
     expect(mockPollSyncJob).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports provider sync startup failures with sanitized context", async () => {
+    const error = new Error("Provider queue unavailable");
+    mockSyncMutateAsync.mockRejectedValue(error);
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(within(screen.getByTestId("provider-card-garmin")).getByText("Sync"));
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("provider-card-garmin")).getByText(error.message),
+      ).toBeTruthy(),
+    );
+    expect(mockTriggerSyncUseMutation).toHaveBeenCalledWith({
+      meta: { errorReportedLocally: true },
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      operation: "sync.triggerSync",
+      providerId: "garmin",
+    });
+  });
+
+  it("reports bulk sync startup failures once without provider inputs", async () => {
+    const error = new Error("Provider queues unavailable");
+    mockSyncMutateAsync.mockRejectedValue(error);
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(screen.getByText("Sync All"));
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("provider-card-garmin")).getByText(error.message),
+      ).toBeTruthy(),
+    );
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      operation: "sync.triggerSync",
+    });
+  });
+
+  it("reports polling failures without the job id and skips the global duplicate", async () => {
+    const pollError = new Error("Sync status unavailable");
+    const jobId = "secret-job-id";
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId,
+      jobIds: [jobId],
+      providerJobs: [{ providerId: "garmin", jobId, queueName: "sync-garmin" }],
+      providerResults: [
+        { providerId: "garmin", status: "started", jobId, queueName: "sync-garmin" },
+      ],
+    });
+    mockPollSyncJob.mockImplementation(async (options) => {
+      await options.fetchStatus(jobId);
+      options.onError?.(pollError);
+    });
+
+    render(<DataSourcesPanel />);
+    fireEvent.click(within(screen.getByTestId("provider-card-garmin")).getByText("Sync"));
+
+    await waitFor(() => expect(mockCaptureException).toHaveBeenCalled());
+    expect(mockSyncStatusFetch).toHaveBeenCalledWith(
+      { jobId },
+      {
+        staleTime: 0,
+        meta: { errorReportedLocally: true },
+      },
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(pollError, {
+      operation: "sync.syncStatus",
+      providerId: "garmin",
+    });
+    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(jobId);
+  });
+
+  it("shows the active sync server error message", () => {
+    mockActiveSyncsQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: new Error("Active syncs are temporarily unavailable. Please try again."),
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(
+      screen.getByText("Active syncs are temporarily unavailable. Please try again."),
+    ).toBeTruthy();
   });
 
   it("cancels active sync polling when the panel unmounts", async () => {

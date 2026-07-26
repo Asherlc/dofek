@@ -5,7 +5,33 @@ import { basename, join } from "node:path";
 const workspaceDirectory = realpathSync(process.cwd());
 const composeEnvironmentPath = join(workspaceDirectory, ".env.local");
 const composeFilePath = join(workspaceDirectory, "docker-compose.yml");
-const composeProjectName = basename(workspaceDirectory);
+const rawComposeArguments = process.argv.slice(2);
+const unwrappedComposeArguments =
+  rawComposeArguments[0] === "--" ? rawComposeArguments.slice(1) : rawComposeArguments;
+const projectSuffixFlag = "--project-suffix";
+const projectSuffixIndex = unwrappedComposeArguments.indexOf(projectSuffixFlag);
+const projectSuffix =
+  projectSuffixIndex === -1 ? null : unwrappedComposeArguments[projectSuffixIndex + 1];
+
+if (projectSuffixIndex !== -1) {
+  if (!projectSuffix || !/^[a-z0-9][a-z0-9_-]*$/.test(projectSuffix)) {
+    throw new Error("--project-suffix requires a lowercase alphanumeric Compose name suffix");
+  }
+  if (unwrappedComposeArguments.indexOf(projectSuffixFlag, projectSuffixIndex + 1) !== -1) {
+    throw new Error("--project-suffix can only be specified once");
+  }
+}
+
+const composeArguments =
+  projectSuffixIndex === -1
+    ? unwrappedComposeArguments
+    : [
+        ...unwrappedComposeArguments.slice(0, projectSuffixIndex),
+        ...unwrappedComposeArguments.slice(projectSuffixIndex + 2),
+      ];
+const baseComposeProjectName = basename(workspaceDirectory);
+const composeProjectName =
+  projectSuffix === null ? baseComposeProjectName : `${baseComposeProjectName}-${projectSuffix}`;
 const dockerArguments = [
   "compose",
   "--project-name",
@@ -18,9 +44,6 @@ if (existsSync(composeEnvironmentPath)) {
   dockerArguments.push("--env-file", composeEnvironmentPath);
 }
 
-const rawComposeArguments = process.argv.slice(2);
-const composeArguments =
-  rawComposeArguments[0] === "--" ? rawComposeArguments.slice(1) : rawComposeArguments;
 dockerArguments.push(...composeArguments);
 
 const result = spawnSync("docker", dockerArguments, {

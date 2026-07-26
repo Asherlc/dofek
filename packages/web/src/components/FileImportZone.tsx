@@ -3,6 +3,7 @@ import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { captureException } from "@sentry/react";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import {
   type FileUploadApi,
   type FileUploadPhase,
@@ -81,10 +82,18 @@ export function FileImportZone({
   const stoppedRef = useRef(false);
   const validProviderId = providerId?.length ? providerId : null;
   const sessionKey = providerId ?? importType;
-  const { mutateAsync: initiateUpload } = trpc.fileUpload.initiate.useMutation();
-  const { mutateAsync: authorizeUploadParts } = trpc.fileUpload.authorizeParts.useMutation();
-  const { mutateAsync: completeUpload } = trpc.fileUpload.complete.useMutation();
-  const { mutateAsync: abortUpload } = trpc.fileUpload.abort.useMutation();
+  const { mutateAsync: initiateUpload } = trpc.fileUpload.initiate.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const { mutateAsync: authorizeUploadParts } = trpc.fileUpload.authorizeParts.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const { mutateAsync: completeUpload } = trpc.fileUpload.complete.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const { mutateAsync: abortUpload } = trpc.fileUpload.abort.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const trpcUtils = trpc.useUtils();
 
   const invalidateImportedData = useCallback(async () => {

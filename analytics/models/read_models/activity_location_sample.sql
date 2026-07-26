@@ -1,4 +1,5 @@
-{% set activity_location_sample_begin = var('activity_location_sample_begin', '2000-01-01') %}
+{% set default_microbatch_begin = run_started_at.strftime('%Y-%m-%d') %}
+{% set activity_location_sample_begin = var('activity_location_sample_begin', default_microbatch_begin) %}
 
 {{ config(
     materialized='incremental',

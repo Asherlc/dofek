@@ -32,6 +32,9 @@ const hoisted = vi.hoisted(() => {
     listen: mockReadinessListen,
     close: mockReadinessClose,
   };
+  const scheduledSyncState: { error: Error | null } = {
+    error: null,
+  };
 
   class MockUnrecoverableError extends Error {}
 
@@ -40,6 +43,7 @@ const hoisted = vi.hoisted(() => {
   const mockReconcileGarminProgress = vi.fn().mockRejectedValueOnce(reconcileGarminProgressError);
   const mockCloseGarminProgress = vi.fn().mockResolvedValue(undefined);
   const mockCloseProviderDataDeletionOutbox = vi.fn().mockResolvedValue(undefined);
+  const mockCloseDataExportOutbox = vi.fn().mockResolvedValue(undefined);
   const mockCloseFileUploadOutbox = vi.fn().mockResolvedValue(undefined);
   const mockCloseFileUploadReconciler = vi.fn().mockResolvedValue(undefined);
   const mockImportUploadStorage = { name: "import-upload-storage" };
@@ -63,11 +67,13 @@ const hoisted = vi.hoisted(() => {
     mockReadinessListen,
     mockReadinessClose,
     mockReadinessServer,
+    scheduledSyncState,
     mockObserveFitJob,
     reconcileGarminProgressError,
     mockReconcileGarminProgress,
     mockCloseGarminProgress,
     mockCloseProviderDataDeletionOutbox,
+    mockCloseDataExportOutbox,
     mockCloseFileUploadOutbox,
     mockCloseFileUploadReconciler,
     mockImportUploadStorage,
@@ -161,6 +167,12 @@ vi.mock("./provider-data-deletion-outbox.ts", () => ({
   })),
 }));
 
+vi.mock("./data-export-outbox.ts", () => ({
+  startDataExportOutboxDispatcher: vi.fn(() => ({
+    close: hoisted.mockCloseDataExportOutbox,
+  })),
+}));
+
 vi.mock("./file-upload-outbox.ts", () => ({
   startFileUploadOutboxDispatcher: vi.fn(() => ({
     close: hoisted.mockCloseFileUploadOutbox,
@@ -174,7 +186,10 @@ vi.mock("./file-upload-reconciliation.ts", () => ({
 }));
 
 vi.mock("./scheduled-sync.ts", () => ({
-  setupScheduledSync: vi.fn(() => Promise.resolve()),
+  setupScheduledSync: () =>
+    hoisted.scheduledSyncState.error
+      ? Promise.reject(hoisted.scheduledSyncState.error)
+      : Promise.resolve(),
 }));
 
 vi.mock("./worker-readiness.ts", () => ({
@@ -210,6 +225,7 @@ vi.mock("./queues.ts", () => ({
   },
   getRedisConnection: vi.fn(() => ({})),
   getImportQueue: vi.fn(() => ({})),
+  getDataExportQueue: vi.fn(() => ({})),
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
   IMPORT_QUEUE: "import-queue",
   FIT_FILE_IMPORT_QUEUE: "fit-file-import-queue",
@@ -257,6 +273,7 @@ const {
   mockReconcileGarminProgress,
   mockCloseGarminProgress,
   mockCloseProviderDataDeletionOutbox,
+  mockCloseDataExportOutbox,
   workerOnMocks,
   workerProcessors,
 } = hoisted;
@@ -425,6 +442,16 @@ describe("worker module", () => {
     });
     expect(logger.error).toHaveBeenCalledWith(
       "[worker] Failed to reconcile Garmin import progress: Error: progress Redis unavailable",
+    );
+  });
+
+  it("starts export outbox recovery with the durable database row and export queue", async () => {
+    const { startDataExportOutboxDispatcher } = await import("./data-export-outbox.ts");
+    const { getDataExportQueue } = await import("./queues.ts");
+
+    expect(startDataExportOutboxDispatcher).toHaveBeenCalledWith(
+      mockDatabase,
+      vi.mocked(getDataExportQueue).mock.results[0]?.value,
     );
   });
 
@@ -1167,7 +1194,7 @@ describe("worker module", () => {
     const { processExportJob } = await import("./process-export-job.ts");
     vi.mocked(processExportJob).mockClear();
 
-    await invokeProcessor("export-queue", { userId: "u", outputPath: "/tmp/out.zip" });
+    await invokeProcessor("export-queue", { exportId: "export-1", userId: "u" });
 
     expect(processExportJob).toHaveBeenCalled();
   });
@@ -1331,6 +1358,7 @@ describe("worker module", () => {
     expect(mockReadinessClose).toHaveBeenCalledOnce();
     expect(mockCloseGarminProgress).toHaveBeenCalledOnce();
     expect(mockCloseProviderDataDeletionOutbox).toHaveBeenCalledOnce();
+    expect(mockCloseDataExportOutbox).toHaveBeenCalledOnce();
     expect(hoisted.mockCloseFileUploadOutbox).toHaveBeenCalledOnce();
     expect(hoisted.mockCloseFileUploadReconciler).toHaveBeenCalledOnce();
     expect(mockClose).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
@@ -1339,5 +1367,52 @@ describe("worker module", () => {
       ...Array.from({ length: EXPECTED_WORKER_COUNT }, () => "worker"),
       "Garmin progress",
     ]);
+  });
+
+  it("fails startup before registering sync when the interval is invalid", async () => {
+    const previousSyncInterval = process.env.SYNC_INTERVAL_MINUTES;
+    const workerRunCount = mockRun.mock.calls.length;
+    const readinessListenCount = mockReadinessListen.mock.calls.length;
+    process.env.SYNC_INTERVAL_MINUTES = "not-a-number";
+    mockReconcileGarminProgress.mockResolvedValue(undefined);
+    vi.resetModules();
+
+    try {
+      await expect(import("./worker.ts")).rejects.toThrow(
+        'SYNC_INTERVAL_MINUTES must be a finite positive number, received "not-a-number"',
+      );
+    } finally {
+      if (previousSyncInterval === undefined) {
+        delete process.env.SYNC_INTERVAL_MINUTES;
+      } else {
+        process.env.SYNC_INTERVAL_MINUTES = previousSyncInterval;
+      }
+    }
+
+    expect(mockRun).toHaveBeenCalledTimes(workerRunCount);
+    expect(mockReadinessListen).toHaveBeenCalledTimes(readinessListenCount);
+  });
+
+  it("fails startup before running workers or exposing readiness when scheduler registration fails", async () => {
+    const registrationError = new Error("scheduler Redis command failed");
+    const workerRunCount = mockRun.mock.calls.length;
+    const readinessListenCount = mockReadinessListen.mock.calls.length;
+    hoisted.scheduledSyncState.error = registrationError;
+    mockReconcileGarminProgress.mockResolvedValue(undefined);
+    vi.resetModules();
+
+    await expect(import("./worker.ts")).rejects.toBe(registrationError);
+
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    expect(Sentry.captureException).toHaveBeenCalledWith(registrationError, {
+      tags: { workerStartupStep: "scheduledSyncRegistration" },
+    });
+    expect(logger.error).toHaveBeenCalledWith("[worker] Failed to set up scheduled sync", {
+      error: registrationError,
+      errorStack: registrationError.stack,
+    });
+    expect(mockRun).toHaveBeenCalledTimes(workerRunCount);
+    expect(mockReadinessListen).toHaveBeenCalledTimes(readinessListenCount);
   });
 });

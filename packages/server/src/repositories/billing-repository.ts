@@ -29,6 +29,7 @@ const billingCustomerProfileSchema = z.object({
   stripe_subscription_status: z.string().nullable(),
   stripe_customer_id: z.string().nullable(),
 });
+const updatedBillingUserSchema = z.object({ user_id: z.string() });
 
 export type BillingCustomerProfile = z.infer<typeof billingCustomerProfileSchema>;
 
@@ -108,8 +109,10 @@ export class BillingRepository {
     stripeSubscriptionId: string;
     stripeSubscriptionStatus: string;
     stripeCurrentPeriodEnd: Date | null;
-  }): Promise<void> {
-    await this.#db.execute(
+  }): Promise<string[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      updatedBillingUserSchema,
       sql`WITH recorded_event AS (
             INSERT INTO fitness.stripe_webhook_event (event_id, event_created)
             VALUES (${input.stripeEventId}, ${input.stripeEventCreated})
@@ -128,7 +131,9 @@ export class BillingRepository {
             AND (
               stripe_subscription_event_created IS NULL
               OR stripe_subscription_event_created < ${input.stripeEventCreated}
-            )`,
+            )
+          RETURNING user_id`,
     );
+    return rows.map((row) => row.user_id);
   }
 }

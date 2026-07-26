@@ -71,6 +71,7 @@ describe("AppHeader", () => {
 
     expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Nutrition").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Reports").length).toBeGreaterThan(0);
     expect(screen.getByText("Ada Lovelace")).toBeTruthy();
   });
 
@@ -83,5 +84,12 @@ describe("AppHeader", () => {
     const settingsLink = screen.getByLabelText("Open settings");
     expect(settingsLink.getAttribute("href")).toBe("/settings");
     expect(settingsLink.textContent).toContain("Ada Lovelace");
+  });
+
+  it("shows active alerts in the desktop sidebar and mobile header", () => {
+    render(<AppHeader activeAlertCount={1} />);
+
+    expect(screen.getAllByLabelText("Alerts, 1 active")).toHaveLength(2);
+    expect(screen.getAllByText("1")).toHaveLength(2);
   });
 });

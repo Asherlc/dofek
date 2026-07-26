@@ -31,6 +31,7 @@ import {
 import { Card } from "../../components/Card";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
+import { HealthStatusCards } from "../../components/HealthStatusCards";
 import { MetricCard } from "../../components/MetricCard";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
@@ -267,6 +268,28 @@ export default function RecoveryScreen() {
         loading={processingStatus.isLoading}
       />
 
+      {recoveryData != null && (
+        <HealthStatusCards
+          metrics={recoveryData.healthStatus}
+          formatValue={(metric) => {
+            if (metric.metric === "trend_weight") {
+              return formatMeasurementText(units.formatWeight(metric.value));
+            }
+            if (metric.metric === "skin_temperature") {
+              return formatMeasurementText(units.formatTemperature(metric.value));
+            }
+            if (metric.metric === "hrv") return formatHRV(metric.value);
+            if (metric.metric === "spo2") return formatSpO2(metric.value);
+            if (metric.value == null) return "—";
+            if (metric.metric === "steps") return Math.round(metric.value).toLocaleString();
+            if (metric.metric === "body_fat_percentage") {
+              return `${formatBodyCompositionNumber(metric.value)}%`;
+            }
+            return `${formatNumber(metric.value, 0)} bpm`;
+          }}
+        />
+      )}
+
       {isLoading ? (
         <QueryStatePanel variant="loading" minHeight={200} />
       ) : (
@@ -494,13 +517,21 @@ export default function RecoveryScreen() {
               </Card>
             )}
 
-          {/* Body Weight */}
+          {/* Trend Weight */}
           {latestWeight != null && (
-            <Card title="Body Weight">
+            <Card title="Trend Weight">
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
                     {formatMeasurementText(units.formatWeight(latestWeight.smoothedWeight))}
+                  </Text>
+                  {latestWeight.rawWeight != null && (
+                    <Text style={styles.weightScale}>
+                      Scale: {formatMeasurementText(units.formatWeight(latestWeight.rawWeight))}
+                    </Text>
+                  )}
+                  <Text style={styles.weightExplanation}>
+                    Moves 10% toward each day's scale weight; gaps are interpolated.
                   </Text>
                   {weightPrediction?.ratePerWeek != null && (
                     <Text
@@ -696,6 +727,16 @@ const styles = StyleSheet.create({
   weightRate: {
     fontSize: 13,
     fontWeight: "600",
+    marginTop: 2,
+  },
+  weightScale: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  weightExplanation: {
+    fontSize: 11,
+    color: colors.textTertiary,
     marginTop: 2,
   },
   weightGoal: {

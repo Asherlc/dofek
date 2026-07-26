@@ -215,6 +215,10 @@ export function getDataPathStats(): {
   hasCmdResponseCharacteristic: boolean;
   lastWriteError: string;
   watchdogRetryCount: number;
+  malformedFrames: number;
+  malformedCmdFrames: number;
+  coalescedFrames: number;
+  coalescedCmdFrames: number;
 } {
   return WhoopBleModule.getDataPathStats();
 }

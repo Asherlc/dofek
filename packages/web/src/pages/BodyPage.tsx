@@ -22,8 +22,8 @@ import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeightPredictionSummary } from "../components/WeightPredictionSummary.tsx";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { useBodyDays } from "../lib/bodyDaysContext.ts";
-import { buildBodyHealthMetrics } from "../lib/bodyHealthMetrics.ts";
 import { chartColors } from "../lib/chartTheme.ts";
+import { healthStatusMetricSchema } from "../lib/healthStatus.ts";
 import { minimumSelectedRangeQueryInput, selectedRangeQueryInput } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -33,6 +33,7 @@ const trendRowSchema = z.object({
   avg_resting_hr: z.number().nullable(),
   latest_resting_hr: z.number().nullable(),
   stddev_resting_hr: z.number().nullable(),
+  healthStatus: z.array(healthStatusMetricSchema),
 });
 
 const dailyMetricRowSchema = z.object({
@@ -62,9 +63,18 @@ function buildSkinTempSeries(
   };
 }
 
-function getQueryError(...queries: Array<{ isError: boolean; error: unknown }>): unknown {
+type QueryResultWithData = { data?: unknown; isError: boolean; error: unknown };
+
+function getQueryError(...queries: QueryResultWithData[]): unknown {
   for (const query of queries) {
-    if (query.isError) return query.error;
+    if (query.isError && query.data == null) return query.error;
+  }
+  return null;
+}
+
+function getBackgroundQueryError(...queries: QueryResultWithData[]): unknown {
+  for (const query of queries) {
+    if (query.isError && query.data != null) return query.error;
   }
   return null;
 }
@@ -88,10 +98,6 @@ export function BodyPage() {
     ...selectedRangeQueryInput(days),
     endDate,
   });
-  const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({
-    ...selectedRangeQueryInput(days),
-    endDate,
-  });
   const insightsQuery = trpc.insights.compute.useQuery({
     ...minimumSelectedRangeQueryInput(days, 90),
     endDate,
@@ -105,7 +111,7 @@ export function BodyPage() {
 
   const spo2Series = useMemo(
     () => ({
-      name: "SpO2",
+      name: "Blood Oxygen Saturation (SpO2)",
       data: metrics.map((d): [string, number | null] => [d.date, d.spo2_avg]),
       color: chartColors.blue,
       areaStyle: true,
@@ -118,23 +124,19 @@ export function BodyPage() {
 
   const smoothedWeightData = weightOverview.data?.smoothedWeight ?? [];
 
-  const healthStatusError =
-    (trends.isError && trends.data == null ? trends.error : null) ??
-    (weightOverview.isError && weightOverview.data == null ? weightOverview.error : null) ??
-    (bodyRecomp.isError && bodyRecomp.data == null ? bodyRecomp.error : null);
+  const healthStatusError = getQueryError(trends, weightOverview);
 
   const healthMetrics = useMemo(() => {
     if (healthStatusError) return [];
 
-    return buildBodyHealthMetrics({
-      trendData,
-      weightData: smoothedWeightData,
-      recompData: bodyRecomp.data ?? [],
-      days,
-      endDate,
-      units,
-    });
-  }, [healthStatusError, trendData, smoothedWeightData, bodyRecomp.data, days, endDate, units]);
+    const restingHeartRate = trendData?.healthStatus.find(
+      (metric) => metric.metric === "resting_heart_rate",
+    );
+    return [
+      ...(restingHeartRate ? [restingHeartRate] : []),
+      ...(weightOverview.data?.healthStatus ?? []),
+    ];
+  }, [healthStatusError, trendData, weightOverview.data]);
 
   const bodyInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -153,22 +155,30 @@ export function BodyPage() {
   const hrvSectionError = getQueryError(hrvBaseline);
   const stressSectionError = getQueryError(stressData);
   const spo2SectionError = getQueryError(dailyMetrics);
-  const bodyRecompSectionError = getQueryError(bodyRecomp);
+  const bodyRecompSectionError = getQueryError(weightOverview);
   const insightsSectionError = getQueryError(insightsQuery);
+  const backgroundQueryError = getBackgroundQueryError(
+    trends,
+    dailyMetrics,
+    hrvBaseline,
+    stressData,
+    weightOverview,
+    insightsQuery,
+  );
 
   // SpO2/temp chart config
   const spo2TempTitle =
     hasSpO2 && hasSkinTemp
-      ? "Blood Oxygen & Skin Temperature"
+      ? "Blood Oxygen Saturation (SpO2) & Skin Temperature"
       : hasSpO2
-        ? "Blood Oxygen (SpO2)"
+        ? "Blood Oxygen Saturation (SpO2)"
         : "Skin Temperature";
 
   const spo2TempYAxis =
     hasSpO2 && hasSkinTemp
-      ? [{ name: "SpO2 (%)", min: 90 }, { name: units.temperatureLabel }]
+      ? [{ name: "Blood Oxygen Saturation (%)", min: 90 }, { name: units.temperatureLabel }]
       : hasSpO2
-        ? [{ name: "SpO2 (%)", min: 90 }]
+        ? [{ name: "Blood Oxygen Saturation (%)", min: 90 }]
         : [{ name: units.temperatureLabel }];
 
   return (
@@ -177,13 +187,17 @@ export function BodyPage() {
         <TimeRangeSelector days={days} onChange={setDays} />
       </div>
 
+      {backgroundQueryError ? <QueryStatePanel error={backgroundQueryError} height={72} /> : null}
+
       {/* Health Status Bar */}
       {healthStatusError ? (
         <QueryStatePanel error={healthStatusError} height={160} />
       ) : (
         <HealthStatusBar
           metrics={healthMetrics}
-          loading={trends.isLoading || weightOverview.isLoading || bodyRecomp.isLoading}
+          loading={trends.isLoading || weightOverview.isLoading}
+          formatters={{ trend_weight: (value) => units.formatWeight(value) }}
+          units={{ resting_heart_rate: "bpm", body_fat_percentage: "%" }}
         />
       )}
 
@@ -235,7 +249,7 @@ export function BodyPage() {
           </div>
           {weightOverview.isPending ? (
             <ChartLoadingSkeleton height={48} />
-          ) : weightOverview.isError ? (
+          ) : weightOverview.isError && weightOverview.data == null ? (
             <QueryStatePanel error={weightOverview.error} height={48} />
           ) : predictionSectionError ? (
             <QueryStatePanel error={predictionSectionError} height={48} />
@@ -249,12 +263,12 @@ export function BodyPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card p-2 sm:p-4">
             <div className="mb-2 flex items-center gap-2">
-              <h4 className="text-xs font-medium text-subtle uppercase">Weight Trend</h4>
-              <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time, with goal weight and forward projection when set." />
+              <h4 className="text-xs font-medium text-subtle uppercase">Trend Weight</h4>
+              <ChartDescriptionTooltip description="Trend Weight starts from your first accessible scale reading, then moves 10% toward each day's weight. Missing days between readings are linearly interpolated. The chart also shows goal weight and a forward projection when set." />
             </div>
             {weightOverview.isPending ? (
               <SmoothedWeightChart data={[]} loading />
-            ) : weightOverview.isError ? (
+            ) : weightOverview.isError && weightOverview.data == null ? (
               <QueryStatePanel error={weightOverview.error} height={250} />
             ) : (
               <SmoothedWeightChart data={smoothedWeightData} prediction={weightPredictionDisplay} />
@@ -268,7 +282,10 @@ export function BodyPage() {
             {bodyRecompSectionError ? (
               <QueryStatePanel error={bodyRecompSectionError} height={250} />
             ) : (
-              <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
+              <BodyRecompositionChart
+                data={weightOverview.data?.recomposition ?? []}
+                loading={weightOverview.isLoading}
+              />
             )}
           </div>
         </div>

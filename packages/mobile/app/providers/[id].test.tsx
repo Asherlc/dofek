@@ -235,8 +235,10 @@ const mockInvalidateLogs = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: false });
 const mockSettingsSetMutate = vi.fn();
+const mockSettingsGetGetData = vi.fn();
 const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
+const mockCaptureException = vi.fn();
 const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
   refreshing: false,
   onRefresh: vi.fn(),
@@ -295,10 +297,18 @@ vi.mock("../../lib/trpc", () => ({
         logs: { invalidate: mockInvalidateDetailLogs },
       },
       settings: {
-        get: { setData: mockSettingsGetSetData, invalidate: mockSettingsGetInvalidate },
+        get: {
+          getData: mockSettingsGetGetData,
+          setData: mockSettingsGetSetData,
+          invalidate: mockSettingsGetInvalidate,
+        },
       },
     }),
   },
+}));
+
+vi.mock("../../lib/telemetry", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
 vi.mock("../../modules/health-kit", () => ({
@@ -375,8 +385,12 @@ const appleHealthStats = {
 };
 
 function setupDefaultMocks() {
-  mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
-  mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false });
+  mockProvidersQuery.mockReturnValue({
+    data: [authorizedProvider],
+    error: null,
+    isLoading: false,
+  });
+  mockProviderStatsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
   mockDataHealthQuery.mockReturnValue({ data: null, isLoading: false, error: null });
   mockAvailableDataTypesQuery.mockReturnValue({
     data: ["activities"],
@@ -422,6 +436,7 @@ describe("ProviderDetailScreen", () => {
     mockRequestPermissions.mockReset();
     mockRequestPermissions.mockResolvedValue(true);
     mockSyncHealthKit.mockReset();
+    mockCaptureException.mockReset();
     mockAlertFn.mockReset();
     mockUseRefresh.mockClear();
     setupDefaultMocks();
@@ -473,6 +488,21 @@ describe("ProviderDetailScreen", () => {
       expect(mockRecordsQuery).not.toHaveBeenCalled();
       expect(mockLogsQuery).not.toHaveBeenCalled();
       expect(mockDeletionStatusQuery).not.toHaveBeenCalled();
+    });
+
+    it("keeps cached provider details visible after an inventory refresh failure", async () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [authorizedProvider],
+        isLoading: false,
+        error: new Error("Provider inventory refresh failed"),
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Wahoo")).toBeTruthy();
+      expect(screen.getByText("Provider inventory refresh failed")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Sync" })).toBeTruthy();
     });
   });
 
@@ -563,10 +593,10 @@ describe("ProviderDetailScreen", () => {
       expect(screen.queryByText("Full sync")).toBeNull();
     });
 
-    it("shows provider data readiness when read models are blocked", async () => {
+    it("shows provider processing progress while read models update", async () => {
       mockDataHealthQuery.mockReturnValue({
         data: {
-          overallStatus: "blocked",
+          overallStatus: "active",
           generatedAt: "2026-06-30T12:00:00Z",
           scope: { providerId: "wahoo", datasets: ["activity"] },
           operations: [],
@@ -579,7 +609,7 @@ describe("ProviderDetailScreen", () => {
               latestReadModelAt: null,
               cdcLagSeconds: 90000,
               readModelLagSeconds: null,
-              status: "blocked",
+              status: "active",
               message: "Activity data is available, but ClickHouse mirrors are not current.",
             },
           ],
@@ -592,7 +622,7 @@ describe("ProviderDetailScreen", () => {
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("Wahoo data status")).toBeTruthy();
-      expect(screen.getByText("Your data update didn’t finish")).toBeTruthy();
+      expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
     });
 
     it("triggers generic provider sync with sinceDays=7 when Sync is clicked", async () => {
@@ -764,6 +794,31 @@ describe("ProviderDetailScreen", () => {
           expect.objectContaining({ syncRangeDays: 7 }),
         );
       });
+    });
+
+    it("shows an actionable message without reporting when Apple Health becomes locked", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+      mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
+      mockSyncHealthKit.mockRejectedValueOnce(
+        Object.assign(new Error("HealthKit data is unavailable while the device is locked"), {
+          code: "HEALTHKIT_DATABASE_INACCESSIBLE",
+        }),
+      );
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Sync")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Sync"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Device locked — unlock to sync Apple Health data")).toBeTruthy();
+      });
+      expect(mockCaptureException).not.toHaveBeenCalled();
     });
 
     it("triggers Apple Health full sync with syncRangeDays: null when Full sync is clicked", async () => {
@@ -994,6 +1049,21 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Activity records", () => {
+    it("shows provider statistics failures while retaining known provider details", async () => {
+      mockProviderStatsQuery.mockReturnValue({
+        data: undefined,
+        error: new Error("Provider statistics are temporarily unavailable"),
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Wahoo")).toBeTruthy();
+      expect(screen.getByText("Provider statistics are temporarily unavailable")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Sync" })).toBeTruthy();
+    });
+
     it("exposes record detail disclosure state", async () => {
       mockRecordsQuery.mockReturnValue({
         data: {
@@ -1096,8 +1166,10 @@ describe("ProviderDetailScreen", () => {
       mockLogsQuery.mockReturnValue({ data: [], isLoading: false });
       mockSettingsGetQuery.mockReturnValue({ data: null, isLoading: false });
       mockSettingsSetMutate.mockReset();
+      mockSettingsGetGetData.mockReset();
       mockSettingsGetSetData.mockReset();
       mockSettingsGetInvalidate.mockReset();
+      mockCaptureException.mockReset();
     });
 
     it("renders wear location picker when providerId is whoop", async () => {
@@ -1150,7 +1222,10 @@ describe("ProviderDetailScreen", () => {
 
       expect(mockSettingsSetMutate).toHaveBeenCalledWith(
         { key: "whoop.wearLocation", value: "bicep" },
-        expect.objectContaining({ onSettled: expect.any(Function) }),
+        expect.objectContaining({
+          onError: expect.any(Function),
+          onSettled: expect.any(Function),
+        }),
       );
     });
 
@@ -1164,6 +1239,62 @@ describe("ProviderDetailScreen", () => {
         { key: "whoop.wearLocation" },
         { key: "whoop.wearLocation", value: "chest" },
       );
+    });
+
+    it("restores the exact cached location and displays the server error when a write fails", async () => {
+      const previousSetting = { key: "whoop.wearLocation", value: "bicep" };
+      mockSettingsGetQuery.mockReturnValue({
+        data: previousSetting,
+        error: null,
+        isLoading: false,
+      });
+      mockSettingsGetGetData.mockReturnValue(previousSetting);
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Chest / Torso"));
+      const options = mockSettingsSetMutate.mock.calls[0]?.[1];
+      const writeError = new Error("Wear location was not saved.");
+      act(() => options.onError(writeError));
+      act(() => options.onSettled());
+
+      expect(mockSettingsGetSetData).toHaveBeenLastCalledWith(
+        { key: "whoop.wearLocation" },
+        previousSetting,
+      );
+      expect(mockSettingsGetInvalidate).toHaveBeenCalledWith({ key: "whoop.wearLocation" });
+      expect(screen.getByText(writeError.message)).toBeTruthy();
+      expect(mockCaptureException).toHaveBeenCalledWith(writeError, {
+        context: "whoop-wear-location-write",
+      });
+      expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps cached location visible and displays an exact background read error", async () => {
+      const readError = new Error("Wear location could not be loaded.");
+      mockSettingsGetQuery.mockReturnValue({
+        data: { key: "whoop.wearLocation", value: "bicep" },
+        error: readError,
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(
+        screen
+          .getByRole("button", {
+            name: "Bicep / Upper Arm, Bicep band, arm sleeve, or impact sleeve",
+          })
+          .getAttribute("aria-selected"),
+      ).toBe("true");
+      expect(screen.getByText(readError.message)).toBeTruthy();
+      await waitFor(() =>
+        expect(mockCaptureException).toHaveBeenCalledWith(readError, {
+          context: "whoop-wear-location-read",
+        }),
+      );
+      expect(mockCaptureException).toHaveBeenCalledTimes(1);
     });
   });
 });

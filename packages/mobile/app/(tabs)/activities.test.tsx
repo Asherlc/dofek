@@ -123,6 +123,7 @@ vi.mock("../../lib/useRefresh", () => ({
 vi.mock("react-native-svg", () => ({
   default: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) =>
     createElement("svg", props, children),
+  Circle: (props: Record<string, unknown>) => createElement("circle", props),
   Polyline: ({ testID, ...props }: Record<string, unknown>) =>
     createElement("polyline", { ...props, "data-testid": testID }),
 }));
@@ -177,10 +178,10 @@ describe("ActivitiesScreen", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows activity readiness when activity summaries are blocked", () => {
+  it("shows activity progress while summaries are updating", () => {
     mockDataHealthQuery = {
       data: {
-        overallStatus: "blocked",
+        overallStatus: "active",
         generatedAt: "2026-06-30T08:00:00.000Z",
         scope: { providerId: null, datasets: ["activity"] },
         operations: [],
@@ -193,8 +194,9 @@ describe("ActivitiesScreen", () => {
             latestReadModelAt: null,
             cdcLagSeconds: null,
             readModelLagSeconds: null,
-            status: "blocked",
-            message: "Activities data is available, but ClickHouse mirrors are not current.",
+            status: "active",
+            progressPercentage: 60,
+            message: "Activities are updating.",
           },
         ],
       },
@@ -205,7 +207,7 @@ describe("ActivitiesScreen", () => {
     render(<ActivitiesScreen />);
 
     expect(processingStatusInput).toEqual({ datasets: ["activity"] });
-    expect(screen.getByText("Your data update didn’t finish")).toBeDefined();
+    expect(screen.getByText("Recomputing activities")).toBeDefined();
   });
 
   it("uses QueryStatePanel for overview loading state", () => {

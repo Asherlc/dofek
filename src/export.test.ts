@@ -1,7 +1,7 @@
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock archiver
+// Mock Archiver
 const mockArchive = {
   pipe: vi.fn(),
   append: vi.fn(),
@@ -9,7 +9,7 @@ const mockArchive = {
   on: vi.fn(),
 };
 vi.mock("archiver", () => ({
-  default: vi.fn(() => mockArchive),
+  ZipArchive: vi.fn(() => mockArchive),
 }));
 
 // Mock fs
@@ -168,7 +168,7 @@ describe("generateExport", () => {
 
     await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
-    expect(archiver).toHaveBeenCalledWith("zip", { zlib: { level: 6 } });
+    expect(ZipArchive).toHaveBeenCalledWith({ zlib: { level: 6 } });
   });
 
   it("writes empty CSV files for empty regular tables", async () => {

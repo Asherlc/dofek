@@ -151,6 +151,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
 
       - name: Resolve image tag
         id: resolve
@@ -329,18 +330,67 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Prune unused images before pull
+      - name: Reclaim Docker root disk before pull
         run: |
+          set -euo pipefail
+
+          server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
+          if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
+            echo "::error::Unable to derive SSH host from DOCKER_HOST"
+            exit 1
+          fi
+
+          ssh_options=(
+            -o ConnectTimeout=30
+            -o ServerAliveInterval=30
+            -o ServerAliveCountMax=10
+          )
+
+          ssh "${ssh_options[@]}" "${SSH_USER}@${server_host}" 'df -h /'
           docker system df || true
+          docker container prune --force
           docker image prune -af
           docker system df || true
 
+          minimum_kb=$((8 * 1024 * 1024))
+          available_kb="$(
+            ssh "${ssh_options[@]}" "${SSH_USER}@${server_host}" \
+              'df --output=avail -k / | tail -n 1 | tr -d " "'
+          )"
+          ssh "${ssh_options[@]}" "${SSH_USER}@${server_host}" 'df -h /'
+          if ! [[ "$available_kb" =~ ^[0-9]+$ ]]; then
+            echo "::error::Unable to determine free space on the remote Docker root filesystem"
+            exit 1
+          fi
+          if [ "$available_kb" -lt "$minimum_kb" ]; then
+            echo "::error::Remote Docker root filesystem has less than 8 GiB free after container and image cleanup; aborting before image pulls."
+            exit 1
+          fi
+
       - name: Pull deploy images
+        id: pull_images
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+
+          sentry_release="$(
+            docker image inspect "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+              --format '{{range .Config.Env}}{{println .}}{{end}}' \
+              | sed -n 's/^SENTRY_RELEASE=//p' \
+              | head -n 1
+          )"
+          if [ -z "$sentry_release" ]; then
+            echo "::error::Image ghcr.io/asherlc/dofek:${IMAGE_TAG} does not declare SENTRY_RELEASE"
+            exit 1
+          fi
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [ "$sentry_release" != "$checked_out_sha" ]; then
+            echo "::error::Checked-out commit ${checked_out_sha} does not match image SENTRY_RELEASE ${sentry_release}; dispatch the workflow from the image's source commit."
+            exit 1
+          fi
+          echo "sentry_release=$sentry_release" >> "$GITHUB_OUTPUT"
 
           server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
@@ -682,6 +732,16 @@ jobs:
             sleep "$retry_sleep_seconds"
           done
 
+      - name: Backfill and cut over provider connections
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          docker run --rm --network "${STACK_NAME}_default" \
+            --env-file "$INFISICAL_ENV_FILE" \
+            --entrypoint sh \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec ./entrypoint.sh provider-connection-cutover'
+
       - name: Wait for ClickHouse after stack deploy
         run: |
           readiness_attempts=36
@@ -851,6 +911,11 @@ jobs:
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              if [ "$desired_replicas" != "1" ]; then
+                docker service ps "$service_name" --no-trunc
+                echo "::error::${service_name} expected one desired replica after the full deploy, found ${desired_replicas}"
+                exit 1
+              fi
               case "$update_state" in
                 rollback_*)
                   docker service ps "$service_name" --no-trunc
@@ -863,7 +928,7 @@ jobs:
                   exit 1
                   ;;
               esac
-              if [ "$replicas" = "${desired_replicas}/${desired_replicas}" ] && {
+              if [ "$replicas" = "1/1" ] && {
                 [ -z "$update_state" ] || [ "$update_state" = "completed" ]
               }; then
                 break
@@ -876,6 +941,19 @@ jobs:
               sleep 10
             done
           done
+
+      - name: Record Sentry production release
+        if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
+        uses: getsentry/action-release@ff07929a6537bac57790c3451cf4d364aca38528 # v3.7.0
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: east-bay-software
+        with:
+          environment: production
+          projects: dofek-web dofek-server
+          release: ${{ steps.pull_images.outputs.sentry_release }}
+          set_commits: skip
 
       - name: Report quiesced ClickHouse consumers
         if: failure() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.deploy_stack_full.conclusion == 'skipped'

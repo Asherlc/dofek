@@ -90,9 +90,22 @@ See `src/db/sensor-channels.ts` for the full list of channel constants.
 
 | Table | Purpose |
 |-------|---------|
-| `fitness.provider` | Registered data sources (wahoo, strava, etc.) |
+| `fitness.provider` | Global data-source catalog (wahoo, strava, etc.); `user_id` is a deprecated rollback-only field and is not authoritative. |
+| `fitness.provider_connection` | Per-user provider connections, keyed by `(user_id, provider_id)`; this is the authoritative configured/connected relationship. |
 | `fitness.exercise` | Canonical exercise library (provider-agnostic) |
 | `fitness.exercise_alias` | Maps provider-specific exercise names to canonical exercises |
+
+OAuth tokens and user-scoped webhook subscriptions reference the same
+`(user_id, provider_id)` connection, so deleting one user's connection cascades
+only that user's credentials. The deploy migration creates the catalog and
+connection structures additively; after the new application version converges,
+the resumable `backfill:provider-connections` command derives connections from
+the legacy owner, OAuth tokens, and every raw child table, validates the
+composite foreign keys, and removes the obsolete application-wide webhook
+uniqueness index. PostgreSQL documents this `NOT VALID` then `VALIDATE
+CONSTRAINT` cutover pattern for adding foreign keys without holding the
+validation scan's stronger lock during the initial constraint addition:
+<https://www.postgresql.org/docs/current/sql-altertable.html>.
 
 ### Activities
 

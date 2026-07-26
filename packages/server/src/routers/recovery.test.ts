@@ -415,6 +415,7 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(result.displayedDate).toBeNull();
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     expect(queryText).toContain("analytics.daily_strain AS strain FINAL");
+    expect(queryText).toContain("strain.is_deleted = 0");
     expect(queryText).toContain("toDate(toTimeZone(toDateTime(strain.date), {timezone:String}))");
     expect(queryText).not.toContain("analytics.activity_summary");
     expect(vi.mocked(sensorStore.query).mock.calls[0]?.[3]).toEqual({ priority: "dashboard" });
@@ -799,6 +800,7 @@ describe("recoveryRouter.readinessScore", () => {
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
     expect(queryText).toContain("analytics.daily_recovery AS recovery_inputs FINAL");
+    expect(queryText).toContain("recovery_inputs.is_deleted = 0");
     expect(queryText).not.toContain("fitness.v_daily_metrics");
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).not.toContain("accessStartDate");
@@ -1439,6 +1441,7 @@ describe("recoveryRouter.strainTarget", () => {
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
     expect(queryText).toContain("analytics.daily_strain AS strain FINAL");
+    expect(queryText).toContain("strain.is_deleted = 0");
     expect(queryText).toContain("toString(strain.date) AS date");
     expect(queryText).toContain("strain.date >= toDate({windowStart:String})");
     expect(queryText).not.toContain("analytics.activity_summary");
@@ -1504,6 +1507,7 @@ describe("recoveryRouter.strainTarget", () => {
       windowStart: "2026-02-26",
       endDate: "2026-03-28",
     });
+    expect(String(recoveryQueryCall?.[1])).toContain("recovery.is_deleted = 0");
     expect(recoveryQueryCall?.[2]).not.toHaveProperty("accessStartDate");
     expect(recoveryQueryCall?.[2]).not.toHaveProperty("accessEndDateExclusive");
     expect(queryTexts.some((queryText) => queryText.includes("analytics.daily_recovery"))).toBe(

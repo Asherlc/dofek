@@ -32,6 +32,7 @@ import { DofekChart } from "../components/DofekChart.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import {
   chartThemeColors,
   dofekAxis,
@@ -141,7 +142,7 @@ export function ActivityDetailPage() {
     );
   }
 
-  if (detail.error || !detail.data) {
+  if (detail.error && !detail.data && detail.error.data?.code === "NOT_FOUND") {
     return (
       <PageLayout>
         <div className="py-8 text-center">
@@ -154,14 +155,31 @@ export function ActivityDetailPage() {
     );
   }
 
+  if (!detail.data) {
+    return (
+      <PageLayout>
+        <QueryStatePanel
+          error={
+            detail.error ??
+            new Error("Activity details are unavailable. Return to Activities and try again.")
+          }
+          height={400}
+        />
+      </PageLayout>
+    );
+  }
+
   const activity = detail.data;
   const zones = hrZones.data ?? [];
+  const exercises = strengthExercises.data ?? [];
   const hasGps = points.some((p) => p.lat != null && p.lng != null);
   const hasHr = points.some((p) => p.heartRate != null);
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
   const hasAltitude = points.some((p) => p.altitude != null);
-  const showHrZones = hasHr || zones.length > 0;
+  const showHrZones = hrZones.error != null || hasHr || zones.length > 0;
+  const hrZonesHaveCachedData = zones.length > 0;
+  const strengthExercisesHaveCachedData = exercises.length > 0;
 
   return (
     <PageLayout>
@@ -183,6 +201,17 @@ export function ActivityDetailPage() {
       {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
 
       <ActivityHeader activity={activity} units={units} hasGps={hasGps} />
+
+      {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
+
+      {stream.error ? (
+        <Section
+          title="Sensor Data"
+          description="The recorded route and sensor samples for this activity."
+        >
+          <QueryStatePanel error={stream.error} height={72} />
+        </Section>
+      ) : null}
 
       {hasGps && (
         <Section
@@ -212,15 +241,27 @@ export function ActivityDetailPage() {
         </Section>
       )}
 
-      {(strengthExercises.data?.length ?? 0) > 0 && (
-        <Section
-          title="Exercises"
-          description="Exercises performed during this strength workout, with details for each set."
-        >
-          <WorkoutMuscleMap exercises={strengthExercises.data ?? []} />
-          <StrengthExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
-        </Section>
-      )}
+      {isStrengthActivity &&
+        (strengthExercises.isLoading || strengthExercises.error || exercises.length > 0) && (
+          <Section
+            title="Exercises"
+            description="Exercises performed during this strength workout, with details for each set."
+          >
+            {strengthExercises.error && !strengthExercisesHaveCachedData ? (
+              <QueryStatePanel error={strengthExercises.error} height={160} />
+            ) : strengthExercises.isLoading && !strengthExercisesHaveCachedData ? (
+              <QueryStatePanel variant="loading" height={160} />
+            ) : (
+              <>
+                <WorkoutMuscleMap exercises={exercises} />
+                <StrengthExerciseBreakdown exercises={exercises} units={units} />
+                {strengthExercises.error ? (
+                  <QueryStatePanel error={strengthExercises.error} height={72} />
+                ) : null}
+              </>
+            )}
+          </Section>
+        )}
 
       {isClimbingActivity && (climbingEntries.error || (climbingEntries.data?.length ?? 0) > 0) && (
         <Section
@@ -255,24 +296,34 @@ export function ActivityDetailPage() {
             title="Heart Rate Zones"
             description="This chart shows how much time you spent in each heart rate zone."
           >
-            <HrZonesChart
-              zones={zones}
-              loading={hrZones.isLoading}
-              errorMessage={hrZones.error?.message}
-            />
+            {hrZones.error && !hrZonesHaveCachedData ? (
+              <QueryStatePanel error={hrZones.error} height={250} />
+            ) : (
+              <>
+                <HrZonesChart zones={zones} loading={hrZones.isLoading} />
+                {hrZones.error ? <QueryStatePanel error={hrZones.error} height={72} /> : null}
+              </>
+            )}
           </Section>
         )}
 
-        {isCycling && hasPower && powerZones.data != null && (
+        {isCycling && hasPower && (powerZones.error || powerZones.data != null) && (
           <Section
             title="Power Zones"
             description="This chart shows how much time you spent in each power zone."
           >
-            <PowerZonesChart
-              zones={powerZones.data.zones}
-              ftp={powerZones.data.ftp}
-              loading={powerZones.isLoading}
-            />
+            {powerZones.error && powerZones.data == null ? (
+              <QueryStatePanel error={powerZones.error} height={250} />
+            ) : powerZones.data ? (
+              <>
+                <PowerZonesChart
+                  zones={powerZones.data.zones}
+                  ftp={powerZones.data.ftp}
+                  loading={powerZones.isLoading}
+                />
+                {powerZones.error ? <QueryStatePanel error={powerZones.error} height={72} /> : null}
+              </>
+            ) : null}
           </Section>
         )}
       </div>
@@ -666,7 +717,7 @@ function MetricsChart({
     grid: {
       top: 40,
       right: 60 + Math.max(0, visibleRightAxisCount - 1) * 60,
-      bottom: 60,
+      bottom: 86,
       left: 60,
     },
     tooltip: dofekTooltip(),
@@ -678,12 +729,24 @@ function MetricsChart({
         xAxisIndex: 0,
         start: 0,
         end: 100,
-        height: 20,
-        bottom: 10,
+        height: 32,
+        bottom: 16,
+        showDataShadow: false,
+        showDetail: true,
+        labelFormatter: (_value: number, valueText: string) => formatTimeOnly(valueText),
+        handleSize: "100%",
+        moveHandleSize: 8,
+        brushSelect: false,
+        borderRadius: 4,
         borderColor: chartThemeColors.tooltipBorder,
         backgroundColor: chartThemeColors.tooltipBackground,
         fillerColor: `${statusColors.positive}26`,
-        handleStyle: { color: statusColors.positive },
+        handleStyle: {
+          color: statusColors.positive,
+          borderColor: chartThemeColors.tooltipBackground,
+          borderWidth: 2,
+        },
+        moveHandleStyle: { color: statusColors.positive },
         textStyle: { color: chartThemeColors.axisLabel },
       },
     ],
@@ -697,7 +760,15 @@ function MetricsChart({
     series,
   };
 
-  return <DofekChart option={option} height={350} onEvents={chartEvents} />;
+  return (
+    <figure className="m-0">
+      <DofekChart option={option} height={380} onEvents={chartEvents} />
+      <figcaption className="mt-1 flex flex-wrap items-baseline gap-x-2 px-[60px] text-xs text-dim">
+        <span className="font-medium text-muted">Zoom timeline</span>
+        <span>Drag the handles to focus on part of the activity.</span>
+      </figcaption>
+    </figure>
+  );
 }
 
 function ElevationChart({

@@ -12,6 +12,11 @@ export type {
   ClimbingSessionSummaryRow,
   ClimbingVolumeByGradeRow,
 } from "./repositories/climbing-repository.ts";
+// Training router types
+export type {
+  HrZoneRow,
+  TrainingHrZonesResult,
+} from "./repositories/training-repository.ts";
 // Calendar router types
 export type { CalendarDay } from "./routers/calendar.ts";
 // Cycling advanced router types
@@ -35,6 +40,8 @@ export type {
   PolarizationTrendResult,
   PolarizationWeek,
 } from "./routers/efficiency.ts";
+// Health report router types
+export type { HealthReportGenerateInput } from "./routers/health-report.ts";
 // Healthspan router types
 export type { HealthspanMetric, HealthspanResult } from "./routers/healthspan.ts";
 // Hiking router types
@@ -45,6 +52,8 @@ export type {
   GradeAdjustedPaceRow,
   WalkingBiomechanicsRow,
 } from "./routers/hiking.ts";
+// Monthly report router types
+export type { MonthlyReportResult, MonthSummary } from "./routers/monthly-report.ts";
 // PMC router types
 export type { PmcChartResult, PmcDataPoint, TssModelInfo } from "./routers/pmc.ts";
 // Power router types

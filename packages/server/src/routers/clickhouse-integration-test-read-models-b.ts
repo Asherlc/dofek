@@ -76,6 +76,7 @@ SELECT
   activity_load.started_at AS started_at,
   activity_load.ended_at AS ended_at,
   activity_load.daily_load AS daily_load,
+  toUInt8(0) AS is_deleted,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
 FROM activity_load
@@ -363,6 +364,8 @@ SELECT
   body_source.recorded_at AS recorded_at,
   body_source.weight_kg AS weight_kg,
   body_source.body_fat_pct AS body_fat_pct,
+  0 AS is_deleted,
+  refresh_clock.refreshed_at AS source_synced_at,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
 FROM body_source
@@ -393,9 +396,11 @@ export function buildTestRecoveryReadModelSelectSql(
   CAST(NULL, 'Nullable(Float64)') AS resting_hr_score,
   CAST(NULL, 'Nullable(Float64)') AS sleep_score,
   CAST(NULL, 'Nullable(Float64)') AS respiratory_rate_score,
+  0 AS is_deleted,
   refresh_version,
   refreshed_at
-FROM ${databases.analytics}.daily_recovery_inputs`;
+FROM ${databases.analytics}.daily_recovery_inputs
+WHERE is_deleted = 0`;
 }
 
 export function buildTestStrainReadModelSelectSql(databases: IsolatedClickHouseDatabases): string {
@@ -404,7 +409,8 @@ export function buildTestStrainReadModelSelectSql(databases: IsolatedClickHouseD
     user_id,
     toDate(started_at) AS date,
     coalesce(sum(daily_load), 0) AS daily_load
-  FROM ${databases.analytics}.daily_activity_load
+  FROM ${databases.analytics}.daily_activity_load FINAL
+  WHERE is_deleted = 0
   GROUP BY user_id, toDate(started_at)
 ),
 date_bounds AS (
@@ -455,6 +461,7 @@ SELECT
   acute_load_7d,
   chronic_load_28d,
   if(chronic_load_28d > 0 AND chronic_count = 28, acute_load_7d / chronic_load_28d, NULL) AS workload_ratio,
+  toUInt8(0) AS is_deleted,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
 FROM with_windows
@@ -482,7 +489,8 @@ export function buildTestHealthspanReadModelSelectSql(
   SELECT
     user_id,
     toMonday(date) AS week_start
-  FROM ${databases.analytics}.daily_body_measurement
+  FROM ${databases.analytics}.daily_body_measurement FINAL
+  WHERE is_deleted = 0
   GROUP BY user_id, toMonday(date)
 ),
 metrics AS (
@@ -511,7 +519,8 @@ body_by_week AS (
     toMonday(date) AS week_start,
     argMax(weight_kg, (recorded_at, refresh_version, measurement_id)) AS weight_kg,
     argMax(body_fat_pct, (recorded_at, refresh_version, measurement_id)) AS body_fat_pct
-  FROM ${databases.analytics}.daily_body_measurement
+  FROM ${databases.analytics}.daily_body_measurement FINAL
+  WHERE is_deleted = 0
   GROUP BY user_id, toMonday(date)
 ),
 refresh_clock AS (

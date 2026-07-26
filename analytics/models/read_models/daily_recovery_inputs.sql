@@ -4,11 +4,36 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, date)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
-WITH daily_metrics AS (
+WITH {% if is_incremental() %}
+existing_rows AS (
+    SELECT
+        user_id,
+        date,
+        hrv,
+        resting_hr,
+        respiratory_rate,
+        efficiency_pct,
+        hrv_mean_30d,
+        hrv_sd_30d,
+        rhr_mean_30d,
+        rhr_sd_30d,
+        rr_mean_30d,
+        rr_sd_30d,
+        hrv_mean_60d,
+        hrv_sd_60d,
+        rhr_mean_60d,
+        rhr_sd_60d
+    FROM {{ this }} FINAL
+    WHERE is_deleted = 0
+),
+{% endif %}
+
+daily_metrics AS (
     SELECT
         user_id,
         date,
@@ -117,15 +142,82 @@ inputs_with_baselines AS (
     FROM daily_inputs
 ),
 
+{% if is_incremental() %}
+dirty_keys AS (
+    SELECT
+        inputs_with_baselines.user_id AS user_id,
+        inputs_with_baselines.date AS date
+    FROM inputs_with_baselines
+    LEFT JOIN existing_rows
+        ON existing_rows.user_id = inputs_with_baselines.user_id
+        AND existing_rows.date = inputs_with_baselines.date
+    WHERE existing_rows.user_id IS NULL
+        OR tuple(
+            inputs_with_baselines.hrv,
+            inputs_with_baselines.resting_hr,
+            inputs_with_baselines.respiratory_rate,
+            inputs_with_baselines.efficiency_pct,
+            inputs_with_baselines.hrv_mean_30d,
+            inputs_with_baselines.hrv_sd_30d,
+            inputs_with_baselines.rhr_mean_30d,
+            inputs_with_baselines.rhr_sd_30d,
+            inputs_with_baselines.rr_mean_30d,
+            inputs_with_baselines.rr_sd_30d,
+            inputs_with_baselines.hrv_mean_60d,
+            inputs_with_baselines.hrv_sd_60d,
+            inputs_with_baselines.rhr_mean_60d,
+            inputs_with_baselines.rhr_sd_60d
+        ) IS DISTINCT FROM tuple(
+            existing_rows.hrv,
+            existing_rows.resting_hr,
+            existing_rows.respiratory_rate,
+            existing_rows.efficiency_pct,
+            existing_rows.hrv_mean_30d,
+            existing_rows.hrv_sd_30d,
+            existing_rows.rhr_mean_30d,
+            existing_rows.rhr_sd_30d,
+            existing_rows.rr_mean_30d,
+            existing_rows.rr_sd_30d,
+            existing_rows.hrv_mean_60d,
+            existing_rows.hrv_sd_60d,
+            existing_rows.rhr_mean_60d,
+            existing_rows.rhr_sd_60d
+        )
+    UNION DISTINCT
+    SELECT
+        existing_rows.user_id AS user_id,
+        existing_rows.date AS date
+    FROM existing_rows
+    LEFT JOIN inputs_with_baselines
+        ON inputs_with_baselines.user_id = existing_rows.user_id
+        AND inputs_with_baselines.date = existing_rows.date
+    WHERE inputs_with_baselines.user_id IS NULL
+),
+{% endif %}
+
+result_keys AS (
+    {% if is_incremental() %}
+    SELECT
+        user_id,
+        date
+    FROM dirty_keys
+    {% else %}
+    SELECT
+        user_id,
+        date
+    FROM inputs_with_baselines
+    {% endif %}
+),
+
 refresh_clock AS (
     SELECT
         toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-        now64(9) AS refreshed_at
+        now64(9, 'UTC') AS refreshed_at
 )
 
 SELECT
-    CAST(inputs_with_baselines.user_id, 'UUID') AS user_id,
-    CAST(inputs_with_baselines.date, 'Date') AS date,
+    CAST(result_keys.user_id, 'UUID') AS user_id,
+    CAST(result_keys.date, 'Date') AS date,
     inputs_with_baselines.hrv AS hrv,
     inputs_with_baselines.resting_hr AS resting_hr,
     inputs_with_baselines.respiratory_rate AS respiratory_rate,
@@ -140,7 +232,11 @@ SELECT
     inputs_with_baselines.hrv_sd_60d AS hrv_sd_60d,
     inputs_with_baselines.rhr_mean_60d AS rhr_mean_60d,
     inputs_with_baselines.rhr_sd_60d AS rhr_sd_60d,
+    if(inputs_with_baselines.user_id IS NULL, 1, 0) AS is_deleted,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
-FROM inputs_with_baselines
+FROM result_keys
+LEFT JOIN inputs_with_baselines
+    ON inputs_with_baselines.user_id = result_keys.user_id
+    AND inputs_with_baselines.date = result_keys.date
 CROSS JOIN refresh_clock

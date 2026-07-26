@@ -7,20 +7,26 @@ const {
   mockRevokeToken,
   mockLogger,
   mockLoadTokens,
+  mockDeleteTokens,
+  mockInvalidateByPrefix,
   mockGetAllProviders,
   mockResolveOrCreateUser,
   mockGetSessionIdFromRequest,
   mockValidateSession,
   mockPersistProviderConnection,
+  mockIssuePendingEmailSignup,
 } = vi.hoisted(() => ({
   mockRevokeToken: vi.fn(),
   mockLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   mockLoadTokens: vi.fn(),
+  mockDeleteTokens: vi.fn(),
+  mockInvalidateByPrefix: vi.fn(),
   mockGetAllProviders: vi.fn(),
   mockResolveOrCreateUser: vi.fn(),
   mockGetSessionIdFromRequest: vi.fn(),
   mockValidateSession: vi.fn(),
   mockPersistProviderConnection: vi.fn(),
+  mockIssuePendingEmailSignup: vi.fn(),
 }));
 
 vi.mock("dofek/auth/oauth", () => ({
@@ -34,7 +40,7 @@ vi.mock("@sentry/node", () => ({
 vi.mock("../../logger.ts", () => ({ logger: mockLogger }));
 
 vi.mock("dofek/lib/cache", () => ({
-  queryCache: { invalidateByPrefix: vi.fn() },
+  queryCache: { invalidateByPrefix: mockInvalidateByPrefix },
 }));
 
 vi.mock("../../auth/account-linking.ts", () => ({
@@ -59,6 +65,7 @@ vi.mock("./slack-oauth.ts", () => ({
 
 vi.mock("dofek/db/tokens", () => ({
   loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
+  deleteTokens: (...args: unknown[]) => mockDeleteTokens(...args),
   ensureProvider: vi.fn(),
   saveTokens: vi.fn(),
 }));
@@ -85,10 +92,16 @@ vi.mock("./shared.ts", () => ({
   oauthSuccessHtml: vi.fn(() => "<html>success</html>"),
   persistProviderConnection: (...args: unknown[]) => mockPersistProviderConnection(...args),
   sanitizeReturnTo: vi.fn(),
-  completeSignupHtml: vi.fn(),
-  storePendingEmailSignup: vi.fn(),
+  completeSignupHtml: vi.fn(
+    (providerName: string, token: string) => `<html>${providerName}:${token}</html>`,
+  ),
+  getPendingEmailSignupStoreRef: vi.fn(() => ({
+    issue: mockIssuePendingEmailSignup,
+  })),
 }));
 
+import * as Sentry from "@sentry/node";
+import { MissingEmailForSignupError } from "../../auth/account-linking.ts";
 import { handleOAuth2Callback } from "./data-provider-callback.ts";
 
 /** Type-safe partial mock helper — avoids banned `as` assertions. */
@@ -147,6 +160,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
             revokeUrl: "https://api.wahooligan.com/oauth/revoke",
           },
           exchangeCode: mockExchangeCode,
+          reconnectStrategy: "revoke-then-replace",
           revokeExistingTokens: mockRevokeExistingTokens,
         }),
       },
@@ -167,7 +181,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     vi.restoreAllMocks();
   });
 
-  it("falls back to standard OAuth revocation when custom revocation fails", async () => {
+  it("does not attempt a less authoritative fallback when required revocation fails", async () => {
     // Existing tokens in the database
     mockLoadTokens.mockResolvedValue({
       accessToken: "expired-access",
@@ -183,27 +197,13 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     // Custom revocation was attempted and failed
     expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
 
-    // Standard OAuth revocation was called as fallback for both tokens
-    expect(mockRevokeToken).toHaveBeenCalledTimes(2);
-    expect(mockRevokeToken).toHaveBeenCalledWith(
-      expect.objectContaining({ revokeUrl: "https://api.wahooligan.com/oauth/revoke" }),
-      "expired-access",
+    expect(mockRevokeToken).not.toHaveBeenCalled();
+    expect(mockExchangeCode).not.toHaveBeenCalled();
+    expect(mockDeleteTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("existing connection is still active"),
     );
-    expect(mockRevokeToken).toHaveBeenCalledWith(
-      expect.objectContaining({ revokeUrl: "https://api.wahooligan.com/oauth/revoke" }),
-      "expired-refresh",
-    );
-
-    // Exchange still proceeded
-    expect(mockExchangeCode).toHaveBeenCalledWith("auth-code", undefined);
-
-    // Warning was logged
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      expect.stringContaining("Custom token revocation failed for wahoo"),
-    );
-
-    // Success response was sent
-    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
   });
 
   it("skips standard revocation when custom revocation succeeds", async () => {
@@ -224,19 +224,19 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     // Standard OAuth revocation was NOT called (custom succeeded)
     expect(mockRevokeToken).not.toHaveBeenCalled();
 
+    expect(mockDeleteTokens).toHaveBeenCalledWith(mockDb, "wahoo", "user-1");
+
     // Exchange proceeded
     expect(mockExchangeCode).toHaveBeenCalled();
   });
 
-  it("includes revocation context in logged error when exchange fails", async () => {
+  it("explains that the previous authorization was removed when token limits still block exchange", async () => {
     mockLoadTokens.mockResolvedValue({
       accessToken: "expired-access",
       refreshToken: "expired-refresh",
     });
 
-    // Both revocation methods fail
-    mockRevokeExistingTokens.mockRejectedValue(new Error("401 Unauthorized"));
-    mockRevokeToken.mockRejectedValue(new Error("Token revocation failed (503): Service error"));
+    mockRevokeExistingTokens.mockResolvedValue(undefined);
 
     // Exchange also fails with the specific Wahoo "too many tokens" error
     mockExchangeCode.mockRejectedValue(new Error("Too many unrevoked access tokens"));
@@ -250,16 +250,444 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Authorized Apps"));
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Settings"));
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("wahooligan.com/profile"));
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("previous Wahoo authorization was removed"),
+    );
+  });
 
-    // The final logged error includes both the exchange error and the revocation context
-    const allErrorMessages: string[] = mockLogger.error.mock.calls.map((call: unknown[]) =>
-      String(call[0]),
+  it("preserves an existing connection when exchange fails for a safe reconnect", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "ride-with-gps",
+        name: "Ride with GPS",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://ridewithgps.com/oauth/authorize",
+            tokenUrl: "https://ridewithgps.com/oauth/token.json",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://ridewithgps.com/oauth/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "ride-with-gps",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockExchangeCode.mockRejectedValue(new Error("provider unavailable"));
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockExchangeCode).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).not.toHaveBeenCalled();
+    expect(mockDeleteTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("existing connection is still active"),
     );
-    const callbackError = allErrorMessages.find((message) =>
-      message.includes("OAuth callback failed"),
+  });
+
+  it("revokes only present superseded tokens after a safe replacement succeeds", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "ride-with-gps",
+        name: "Ride with GPS",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://ridewithgps.com/oauth/authorize",
+            tokenUrl: "https://ridewithgps.com/oauth/token.json",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://ridewithgps.com/oauth/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "ride-with-gps",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: null,
+    });
+    mockRevokeToken.mockResolvedValue(undefined);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockPersistProviderConnection).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).toHaveBeenCalledWith(
+      expect.objectContaining({ revokeUrl: "https://ridewithgps.com/oauth/revoke" }),
+      "working-access",
     );
-    expect(callbackError).toContain("Too many unrevoked access tokens");
-    expect(callbackError).toContain("prior revocation");
+    expect(mockLogger.error).not.toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it("keeps a safe replacement active when one superseded token cannot be revoked", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "ride-with-gps",
+        name: "Ride with GPS",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://ridewithgps.com/oauth/authorize",
+            tokenUrl: "https://ridewithgps.com/oauth/token.json",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://ridewithgps.com/oauth/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "ride-with-gps",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeToken
+      .mockRejectedValueOnce(new Error("revocation endpoint unavailable"))
+      .mockResolvedValueOnce(undefined);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockPersistProviderConnection).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).toHaveBeenCalledTimes(2);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining("access token revocation failed: revocation endpoint unavailable"),
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining("superseded authorization cleanup failed"),
+    );
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it("falls back to standard revocation after safe custom cleanup fails", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "ride-with-gps",
+        name: "Ride with GPS",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://ridewithgps.com/oauth/authorize",
+            tokenUrl: "https://ridewithgps.com/oauth/token.json",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://ridewithgps.com/oauth/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+          revokeExistingTokens: mockRevokeExistingTokens,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "ride-with-gps",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeExistingTokens.mockRejectedValue(new Error("custom cleanup unavailable"));
+    mockRevokeToken.mockResolvedValue(undefined);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockPersistProviderConnection).toHaveBeenCalledOnce();
+    expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).toHaveBeenCalledTimes(2);
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Custom revocation failed"),
+    );
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it("uses successful safe custom cleanup without a standard revocation endpoint", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "custom-provider",
+        name: "Custom Provider",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://custom.example/authorize",
+            tokenUrl: "https://custom.example/token",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+          },
+          exchangeCode: mockExchangeCode,
+          revokeExistingTokens: mockRevokeExistingTokens,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "custom-provider",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeExistingTokens.mockResolvedValue(undefined);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockPersistProviderConnection).toHaveBeenCalledOnce();
+    expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
+    expect(mockRevokeToken).not.toHaveBeenCalled();
+    expect(mockLogger.warn).not.toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it("rejects a destructive strategy without a pre-exchange revocation handler", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "misconfigured-provider",
+        name: "Misconfigured Provider",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://misconfigured.example/authorize",
+            tokenUrl: "https://misconfigured.example/token",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://misconfigured.example/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+          reconnectStrategy: "revoke-then-replace",
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "misconfigured-provider",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockExchangeCode).not.toHaveBeenCalled();
+    expect(mockDeleteTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining("pre-exchange revocation but has no revocation handler"),
+      expect.anything(),
+    );
+  });
+
+  it("does not load data-connection tokens for an account-link callback", async () => {
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "ride-with-gps",
+      codeVerifier: undefined,
+      intent: "link",
+      linkUserId: "user-1",
+      userId: undefined,
+      returnTo: undefined,
+    });
+    const mockGetUserIdentity = vi.fn().mockResolvedValue({
+      providerAccountId: "rwgps-account-1",
+      email: "rwgps@example.com",
+      name: "Ride with GPS User",
+    });
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "ride-with-gps",
+        name: "Ride with GPS",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://ridewithgps.com/oauth/authorize",
+            tokenUrl: "https://ridewithgps.com/oauth/token.json",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user"],
+            revokeUrl: "https://ridewithgps.com/oauth/revoke",
+          },
+          exchangeCode: mockExchangeCode,
+          getUserIdentity: mockGetUserIdentity,
+        }),
+      },
+    ]);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockLoadTokens).not.toHaveBeenCalled();
+    expect(mockRevokeToken).not.toHaveBeenCalled();
+    expect(mockResolveOrCreateUser).toHaveBeenCalledWith(
+      mockDb,
+      "ride-with-gps",
+      expect.objectContaining({ providerAccountId: "rwgps-account-1" }),
+      "user-1",
+    );
+    expect(res.redirect).toHaveBeenCalledWith("/settings");
+  });
+
+  it("clears confirmed revoked credentials when a destructive exchange fails", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://api.wahooligan.com/oauth/authorize",
+            tokenUrl: "https://api.wahooligan.com/oauth/token",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user_read"],
+          },
+          exchangeCode: mockExchangeCode,
+          revokeExistingTokens: mockRevokeExistingTokens,
+          reconnectStrategy: "revoke-then-replace",
+        }),
+      },
+    ]);
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeExistingTokens.mockResolvedValue(undefined);
+    mockExchangeCode.mockRejectedValue(new Error("token endpoint unavailable"));
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
+    expect(mockDeleteTokens).toHaveBeenCalledWith(mockDb, "wahoo", "user-1");
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("previous Wahoo authorization was removed"),
+    );
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("connect Wahoo again"));
+  });
+
+  it("reports a stale revoked credential when local deletion fails", async () => {
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeExistingTokens.mockResolvedValue(undefined);
+    mockDeleteTokens.mockRejectedValue(new Error("database unavailable"));
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
+    expect(mockExchangeCode).not.toHaveBeenCalled();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "wahoo authorization was revoked but its stored credential could not be deleted",
+      ),
+      expect.objectContaining({
+        err: expect.any(Error),
+        providerId: "wahoo",
+        userId: "user-1",
+      }),
+    );
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("stale revoked credential remains stored"),
+        cause: expect.objectContaining({ message: "database unavailable" }),
+      }),
+    );
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("previous Wahoo authorization was removed"),
+    );
+  });
+
+  it("retains existing credentials and aborts exchange when required revocation fails", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://api.wahooligan.com/oauth/authorize",
+            tokenUrl: "https://api.wahooligan.com/oauth/token",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["user_read"],
+          },
+          exchangeCode: mockExchangeCode,
+          revokeExistingTokens: mockRevokeExistingTokens,
+          reconnectStrategy: "revoke-then-replace",
+        }),
+      },
+    ]);
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "working-access",
+      refreshToken: "working-refresh",
+    });
+    mockRevokeExistingTokens.mockRejectedValue(new Error("revocation unavailable"));
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockDeleteTokens).not.toHaveBeenCalled();
+    expect(mockExchangeCode).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("existing connection is still active"),
+    );
   });
 
   it("shows deauthorization instructions when exchange fails with orphaned tokens and no stored tokens", async () => {
@@ -357,5 +785,46 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       expect.stringContaining("does not match authenticated OAuth state"),
       expect.anything(),
     );
+  });
+
+  it("awaits pending signup issuance and renders the issued token when email is missing", async () => {
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "wahoo",
+      codeVerifier: undefined,
+      intent: "login",
+      linkUserId: undefined,
+      userId: undefined,
+      returnTo: "/dashboard",
+    });
+    const mockGetUserIdentity = vi.fn().mockResolvedValue({
+      providerAccountId: "wahoo-account-without-email",
+      email: null,
+      name: "Wahoo User",
+    });
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authSetup: () => ({
+          oauthConfig: { clientId: "test-id", redirectUri: "https://dofek.example/callback" },
+          exchangeCode: mockExchangeCode,
+          getUserIdentity: mockGetUserIdentity,
+        }),
+      },
+    ]);
+    mockResolveOrCreateUser.mockRejectedValue(new MissingEmailForSignupError());
+    mockIssuePendingEmailSignup.mockResolvedValue("issued-pending-token");
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockIssuePendingEmailSignup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "wahoo",
+        providerName: "Wahoo",
+        returnTo: "/dashboard",
+      }),
+    );
+    expect(res.send).toHaveBeenCalledWith("<html>Wahoo:issued-pending-token</html>");
   });
 });

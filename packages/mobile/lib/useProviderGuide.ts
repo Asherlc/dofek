@@ -18,6 +18,7 @@ export function useProviderGuide() {
 
   const showProviderGuide =
     providers.data !== undefined &&
+    status.data !== undefined &&
     !isLoading &&
     shouldShowProviderGuide(connectedCount, dismissed);
 
@@ -32,6 +33,7 @@ export function useProviderGuide() {
   return {
     showProviderGuide,
     dismiss,
+    error: providers.error ?? status.error,
     isLoading,
     providers: guideProviders,
   };

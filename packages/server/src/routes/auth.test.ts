@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getMobileAuthExchangeStoreRef,
   getOAuthStateStoreRef,
+  getPendingEmailSignupStoreRef,
   oauthSuccessHtml,
 } from "./auth/shared.ts";
 
@@ -73,6 +74,7 @@ vi.mock("../auth/account-linking.ts", () => ({
 }));
 
 vi.mock("dofek/lib/cache", () => ({
+  invalidateAllUserQueries: vi.fn(() => Promise.resolve()),
   queryCache: { invalidateByPrefix: vi.fn(() => Promise.resolve()) },
 }));
 
@@ -132,7 +134,7 @@ import cookieParser from "cookie-parser";
 import { revokeToken } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
 import { loadTokens } from "dofek/db/tokens";
-import { queryCache } from "dofek/lib/cache";
+import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { getAllProviders } from "dofek/providers/registry";
 import { isWebhookProvider, type SyncProvider } from "dofek/providers/types";
 import express from "express";
@@ -155,6 +157,7 @@ import {
   validateNativeAppleCallback,
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
+import type { PendingEmailSignupEntry } from "../lib/pending-email-signup-store.ts";
 import { logger } from "../logger.ts";
 import { handleMobileProviderHandoff } from "./auth/data-provider-oauth.ts";
 import { createAuthRouter } from "./auth/index.ts";
@@ -166,6 +169,27 @@ function createTestApp() {
   app.use(cookieParser());
   app.use(createAuthRouter(fakeDb));
   return { app, fakeDb };
+}
+
+function makePendingEmailSignupEntry(
+  overrides: Partial<PendingEmailSignupEntry> = {},
+): PendingEmailSignupEntry {
+  return {
+    providerId: "strava",
+    providerName: "Strava",
+    identity: {
+      providerAccountId: "pending-account",
+      email: null,
+      name: "Pending Runner",
+    },
+    tokens: {
+      accessToken: "pending-access-token",
+      refreshToken: "pending-refresh-token",
+      expiresAt: new Date("2027-06-01"),
+      scopes: "read",
+    },
+    ...overrides,
+  };
 }
 
 function getPort(server: ReturnType<express.Express["listen"]>): number {
@@ -1227,6 +1251,7 @@ describe("createAuthRouter", () => {
       const executeCalls = vi.mocked(fakeDb.execute).mock.calls;
       // Should have at least 2 calls: installation insert + auth_account insert
       expect(executeCalls.length).toBeGreaterThanOrEqual(2);
+      expect(invalidateAllUserQueries).toHaveBeenCalledWith("real-user-id");
 
       fetchSpy.mockRestore();
       delete process.env.SLACK_CLIENT_ID;
@@ -2469,15 +2494,19 @@ describe("createAuthRouter", () => {
         },
       ]);
 
-      const { app } = createTestApp();
+      const { app: callbackApp } = createTestApp();
       const returnTo = encodeURIComponent("/dashboard?tab=providers");
 
-      const startRes = await request(app, "get", `/auth/login/data/strava?return_to=${returnTo}`);
+      const startRes = await request(
+        callbackApp,
+        "get",
+        `/auth/login/data/strava?return_to=${returnTo}`,
+      );
       const location = startRes.headers.location;
       if (typeof location !== "string") throw new Error("Expected location header");
       const state = new URL(location).searchParams.get("state");
       const callbackRes = await request(
-        app,
+        callbackApp,
         "get",
         `/callback?code=strava-web-signup-code&state=${state}`,
       );
@@ -2485,7 +2514,8 @@ describe("createAuthRouter", () => {
       const token = tokenMatch?.[1];
       if (!token) throw new Error("Expected pending signup token in form");
 
-      const completeRes = await request(app, "post", "/auth/complete-signup", {
+      const { app: completionApp } = createTestApp();
+      const completeRes = await request(completionApp, "post", "/auth/complete-signup", {
         formBody: { token, email: "runner@example.com" },
       });
       const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
@@ -2521,6 +2551,225 @@ describe("createAuthRouter", () => {
       );
       expect(createSession).toHaveBeenCalled();
       expect(setSessionCookie).toHaveBeenCalled();
+
+      const reusedTokenRes = await request(completionApp, "post", "/auth/complete-signup", {
+        formBody: { token, email: "runner@example.com" },
+      });
+
+      expect(reusedTokenRes.status).toBe(400);
+      expect(reusedTokenRes.body).toContain("Signup session expired");
+      expect(createSession).toHaveBeenCalledTimes(1);
+    });
+
+    it("renews a delayed completion so it remains exclusive past the original lease", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "concurrent-access-token",
+          refreshToken: "concurrent-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-concurrent-signup-1",
+          email: null,
+          name: "Concurrent Runner",
+        }),
+      );
+      const deferredUser = Promise.withResolvers<{ userId: string; isNewUser: boolean }>();
+      const firstCompletionStarted = Promise.withResolvers<void>();
+      vi.mocked(resolveOrCreateUser)
+        .mockRejectedValueOnce(new MissingEmailForSignupError("Strava"))
+        .mockImplementationOnce(() => {
+          firstCompletionStarted.resolve();
+          return deferredUser.promise;
+        });
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+            identityCapabilities: { providesEmail: false },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/login/data/strava");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-concurrent-code&state=${state}`,
+      );
+      const tokenMatch = callbackRes.body.match(/name="token" value="([^"]+)"/);
+      const token = tokenMatch?.[1];
+      if (!token) throw new Error("Expected pending signup token in form");
+
+      vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+      let firstCompletePromise: ReturnType<typeof request> | undefined;
+      try {
+        firstCompletePromise = request(app, "post", "/auth/complete-signup", {
+          formBody: { token, email: "concurrent@example.com" },
+        });
+        await firstCompletionStarted.promise;
+        await vi.advanceTimersByTimeAsync(60_001);
+
+        const secondCompleteRes = await request(app, "post", "/auth/complete-signup", {
+          formBody: { token, email: "concurrent@example.com" },
+        });
+        const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+
+        expect(secondCompleteRes.status).toBe(409);
+        expect(secondCompleteRes.body).toContain("Signup is already being completed");
+        expect(resolveOrCreateUser).toHaveBeenCalledTimes(2);
+        expect(ensureProvider).not.toHaveBeenCalled();
+        expect(saveTokens).not.toHaveBeenCalled();
+        expect(createSession).not.toHaveBeenCalled();
+
+        deferredUser.resolve({ userId: "concurrent-user", isNewUser: true });
+        const firstCompleteRes = await firstCompletePromise;
+
+        expect(firstCompleteRes.status).toBe(302);
+        expect(ensureProvider).toHaveBeenCalledTimes(1);
+        expect(saveTokens).toHaveBeenCalledTimes(1);
+        expect(createSession).toHaveBeenCalledTimes(1);
+      } finally {
+        deferredUser.resolve({ userId: "concurrent-user", isNewUser: true });
+        await firstCompletePromise;
+        vi.useRealTimers();
+      }
+    });
+
+    it("fails safely and clears renewal when claim renewal fails", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "renewal-failure-access-token",
+          refreshToken: "renewal-failure-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-renewal-failure-1",
+          email: null,
+          name: "Renewal Failure Runner",
+        }),
+      );
+      const deferredUser = Promise.withResolvers<{ userId: string; isNewUser: boolean }>();
+      const completionStarted = Promise.withResolvers<void>();
+      vi.mocked(resolveOrCreateUser)
+        .mockRejectedValueOnce(new MissingEmailForSignupError("Strava"))
+        .mockImplementationOnce(() => {
+          completionStarted.resolve();
+          return deferredUser.promise;
+        });
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+            identityCapabilities: { providesEmail: false },
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+      const startRes = await request(app, "get", "/auth/login/data/strava");
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-renewal-failure-code&state=${state}`,
+      );
+      const tokenMatch = callbackRes.body.match(/name="token" value="([^"]+)"/);
+      const token = tokenMatch?.[1];
+      if (!token) throw new Error("Expected pending signup token in form");
+
+      const pendingStore = getPendingEmailSignupStoreRef();
+      const renewalAttempt = Promise.withResolvers<void>();
+      const renewSpy = vi
+        .spyOn(pendingStore, "renew")
+        .mockImplementationOnce(() => renewalAttempt.promise);
+      const completeSpy = vi.spyOn(pendingStore, "complete");
+      const releaseSpy = vi.spyOn(pendingStore, "release");
+      vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+      let completionPromise: ReturnType<typeof request> | undefined;
+      try {
+        completionPromise = request(app, "post", "/auth/complete-signup", {
+          formBody: { token, email: "renewal-failure@example.com" },
+        });
+        await completionStarted.promise;
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(renewSpy).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(renewSpy).toHaveBeenCalledOnce();
+        renewalAttempt.reject(new Error("sensitive Redis command failure"));
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(renewSpy).toHaveBeenCalledOnce();
+        deferredUser.resolve({ userId: "renewal-failure-user", isNewUser: true });
+
+        const completionRes = await completionPromise;
+        const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+
+        expect(completionRes.status).toBe(500);
+        expect(completeSpy).not.toHaveBeenCalled();
+        expect(releaseSpy).toHaveBeenCalledOnce();
+        expect(ensureProvider).not.toHaveBeenCalled();
+        expect(saveTokens).not.toHaveBeenCalled();
+        expect(createSession).not.toHaveBeenCalled();
+        await expect(pendingStore.get(token)).resolves.not.toBeNull();
+        expect(vi.getTimerCount()).toBe(0);
+        expect(Sentry.captureException).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: "PendingEmailSignupClaimRenewalError",
+            message: "Pending email signup claim renewal failed",
+          }),
+          {
+            tags: { context: "pending-email-signup-renewal" },
+          },
+        );
+        expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+          "[auth] Pending signup claim renewal failed",
+        );
+        expect(vi.mocked(logger.error)).toHaveBeenCalledOnce();
+        expect(JSON.stringify(vi.mocked(Sentry.captureException).mock.calls)).not.toContain(
+          "sensitive Redis command failure",
+        );
+        expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain(
+          "sensitive Redis command failure",
+        );
+      } finally {
+        deferredUser.resolve({ userId: "renewal-failure-user", isNewUser: true });
+        renewalAttempt.reject(new Error("sensitive Redis command failure"));
+        await completionPromise;
+        vi.useRealTimers();
+        renewSpy.mockRestore();
+        completeSpy.mockRestore();
+        releaseSpy.mockRestore();
+      }
     });
 
     it("returns a callback error when provider login fails for a reason other than missing email", async () => {
@@ -2628,6 +2877,8 @@ describe("createAuthRouter", () => {
       const tokenMatch = callbackRes.body.match(/name="token" value="([^"]+)"/);
       const token = tokenMatch?.[1];
       if (!token) throw new Error("Expected pending signup token in form");
+      const mobileIssueSpy = vi.spyOn(getMobileAuthExchangeStoreRef(), "issue");
+      const pendingCompleteSpy = vi.spyOn(getPendingEmailSignupStoreRef(), "complete");
 
       const completeRes = await request(app, "post", "/auth/complete-signup", {
         formBody: { token, email: "runner-mobile@example.com" },
@@ -2653,6 +2904,12 @@ describe("createAuthRouter", () => {
         undefined,
         "mobile-email-user",
       );
+      const [mobileIssueOrder] = mobileIssueSpy.mock.invocationCallOrder;
+      const [pendingCompleteOrder] = pendingCompleteSpy.mock.invocationCallOrder;
+      if (mobileIssueOrder === undefined || pendingCompleteOrder === undefined) {
+        throw new Error("Expected mobile issuance and pending signup completion");
+      }
+      expect(mobileIssueOrder).toBeLessThan(pendingCompleteOrder);
       expect(setSessionCookie).not.toHaveBeenCalled();
     });
 
@@ -2752,6 +3009,127 @@ describe("createAuthRouter", () => {
       expect(res.body).toContain("Signup session expired");
     });
 
+    it("reports expiry when the pending signup disappears before it can be claimed", async () => {
+      const { app } = createTestApp();
+      const pendingStore = getPendingEmailSignupStoreRef();
+      const pending = makePendingEmailSignupEntry();
+      const token = await pendingStore.issue(pending);
+      const getSpy = vi
+        .spyOn(pendingStore, "get")
+        .mockResolvedValueOnce(pending)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+
+      const res = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "runner@example.com" },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Signup session expired");
+      expect(getSpy).toHaveBeenCalledTimes(3);
+    });
+
+    it("uses the matching provider and rejects an untrusted mobile scheme", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          authSetup: () => null,
+        },
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => null,
+        },
+      ]);
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({
+        userId: "matched-provider-user",
+        isNewUser: false,
+      });
+      const { app } = createTestApp();
+      const pendingStore = getPendingEmailSignupStoreRef();
+      const token = await pendingStore.issue(
+        makePendingEmailSignupEntry({ mobileScheme: "untrusted-app" }),
+      );
+      const mobileIssueSpy = vi.spyOn(getMobileAuthExchangeStoreRef(), "issue");
+
+      const res = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "runner@example.com" },
+      });
+      const { ensureProvider } = await import("dofek/db/tokens");
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/");
+      expect(ensureProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        "Strava",
+        undefined,
+        "matched-provider-user",
+      );
+      expect(mobileIssueSpy).not.toHaveBeenCalled();
+      expect(setSessionCookie).toHaveBeenCalledOnce();
+    });
+
+    it("releases the claim when its provider is no longer available", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([]);
+      const { app } = createTestApp();
+      const pendingStore = getPendingEmailSignupStoreRef();
+      const token = await pendingStore.issue(makePendingEmailSignupEntry());
+      const releaseSpy = vi.spyOn(pendingStore, "release");
+      const completeSpy = vi.spyOn(pendingStore, "complete");
+
+      const res = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "runner@example.com" },
+      });
+
+      expect(res.status).toBe(500);
+      expect(res.body).toContain("Provider no longer available");
+      expect(releaseSpy).toHaveBeenCalledOnce();
+      expect(completeSpy).not.toHaveBeenCalled();
+      await expect(pendingStore.get(token)).resolves.not.toBeNull();
+    });
+
+    it("does not release a claim when loading the pending signup fails", async () => {
+      const loadError = new Error("pending store unavailable");
+      const { app } = createTestApp();
+      const pendingStore = getPendingEmailSignupStoreRef();
+      vi.spyOn(pendingStore, "get").mockRejectedValueOnce(loadError);
+      const releaseSpy = vi.spyOn(pendingStore, "release");
+
+      const res = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token: "pending-token", email: "runner@example.com" },
+      });
+
+      expect(res.status).toBe(500);
+      expect(releaseSpy).not.toHaveBeenCalled();
+      expect(Sentry.captureException).toHaveBeenCalledWith(loadError);
+    });
+
+    it("reports a claim release failure without hiding the completion error", async () => {
+      const completionError = new Error("database unavailable");
+      const releaseError = new Error("claim release unavailable");
+      vi.mocked(resolveOrCreateUser).mockRejectedValueOnce(completionError);
+      const { app } = createTestApp();
+      const pendingStore = getPendingEmailSignupStoreRef();
+      const token = await pendingStore.issue(makePendingEmailSignupEntry());
+      const releaseSpy = vi.spyOn(pendingStore, "release").mockRejectedValueOnce(releaseError);
+
+      const res = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "runner@example.com" },
+      });
+
+      expect(res.status).toBe(500);
+      expect(releaseSpy).toHaveBeenCalledOnce();
+      expect(Sentry.captureException).toHaveBeenCalledWith(releaseError, {
+        tags: { context: "pending-email-signup-release" },
+      });
+      expect(Sentry.captureException).toHaveBeenCalledWith(completionError);
+      expect(logger.error).toHaveBeenCalledWith(
+        "[auth] Releasing pending signup claim failed: Error: claim release unavailable",
+      );
+    });
+
     it("re-renders the manual signup form when the submitted email is invalid", async () => {
       const mockExchangeCode = vi.fn(() =>
         Promise.resolve({
@@ -2811,6 +3189,7 @@ describe("createAuthRouter", () => {
       expect(completeRes.status).toBe(400);
       expect(completeRes.body).toContain("Enter a valid email address.");
       expect(completeRes.body).toContain('value="not-an-email"');
+      await expect(getPendingEmailSignupStoreRef().get(token)).resolves.not.toBeNull();
     });
 
     it("fails complete-signup if the provider is no longer registered", async () => {
@@ -2875,6 +3254,7 @@ describe("createAuthRouter", () => {
       expect(completeRes.status).toBe(500);
       expect(completeRes.body).toContain("Provider no longer available");
       expect(ensureProvider).not.toHaveBeenCalled();
+      await expect(getPendingEmailSignupStoreRef().get(token)).resolves.not.toBeNull();
     });
 
     it("handles link intent: links provider and redirects to /settings", async () => {
@@ -4020,7 +4400,7 @@ describe("createAuthRouter", () => {
     });
   });
 
-  describe("GET /callback (pre-exchange token revocation)", () => {
+  describe("GET /callback (reconnect token revocation)", () => {
     it("uses provider-specific revocation when available", async () => {
       vi.mocked(loadTokens).mockResolvedValueOnce({
         accessToken: "old-access",
@@ -4071,6 +4451,9 @@ describe("createAuthRouter", () => {
       });
       expect(revokeToken).not.toHaveBeenCalled();
       expect(mockExchangeCode).toHaveBeenCalledWith("code", undefined);
+      expect(mockExchangeCode.mock.invocationCallOrder[0]).toBeLessThan(
+        mockRevokeExistingTokens.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      );
     });
 
     it("revokes existing access and refresh tokens when revokeUrl is configured", async () => {
@@ -4127,8 +4510,11 @@ describe("createAuthRouter", () => {
         "old-refresh",
       );
 
-      // Exchange should still happen after revocation
+      // Safe reconnect exchanges the replacement before revoking old tokens.
       expect(mockExchangeCode).toHaveBeenCalledWith("code", undefined);
+      expect(mockExchangeCode.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(revokeToken).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      );
     });
 
     it("skips revocation when no existing tokens are stored", async () => {
@@ -4170,7 +4556,7 @@ describe("createAuthRouter", () => {
       expect(mockExchangeCode).toHaveBeenCalled();
     });
 
-    it("proceeds with exchange even when revocation fails", async () => {
+    it("fails before exchange when existing credentials cannot be loaded", async () => {
       vi.mocked(loadTokens).mockRejectedValueOnce(new Error("DB connection lost"));
 
       const mockExchangeCode = vi.fn(() =>
@@ -4204,11 +4590,13 @@ describe("createAuthRouter", () => {
       const state = new URL(location).searchParams.get("state");
 
       const callbackRes = await request(app, "get", `/callback?code=code&state=${state}`);
-      expect(callbackRes.status).toBe(200);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("Pre-exchange token revocation failed for wahoo"),
+      expect(callbackRes.status).toBe(500);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("DB connection lost"),
+        expect.objectContaining({ err: expect.any(Error) }),
       );
-      expect(mockExchangeCode).toHaveBeenCalled();
+      expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+      expect(mockExchangeCode).not.toHaveBeenCalled();
     });
   });
 

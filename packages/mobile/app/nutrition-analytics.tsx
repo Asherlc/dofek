@@ -106,12 +106,14 @@ function AdaptiveTdeeSection({ days }: { days: number }) {
   return (
     <View style={styles.card}>
       <ChartTitleWithTooltip
-        title="Adaptive TDEE Estimate"
+        title="Adaptive Total Daily Energy Expenditure (TDEE) Estimate"
         description="Estimated from logged calorie intake and observed body-weight change."
         textStyle={styles.cardTitle}
       />
       {data == null || data.estimatedTdee == null ? (
-        <Text style={styles.emptyText}>Not enough data</Text>
+        <Text style={styles.emptyText}>
+          Not enough data to estimate Total Daily Energy Expenditure (TDEE)
+        </Text>
       ) : (
         <>
           <Text style={styles.bigValue}>{formatCalories(data.estimatedTdee)}/day</Text>
@@ -184,7 +186,7 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
         textStyle={styles.sectionTitle}
       />
       <Text style={styles.sectionSubtext}>
-        Average daily intake vs. Recommended Daily Allowance
+        Average daily intake vs. Recommended Dietary Allowance (RDA)
       </Text>
 
       {sorted.map((nutrient) => {

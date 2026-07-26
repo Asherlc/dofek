@@ -9,6 +9,7 @@ import {
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { QueryErrorBoundary } from "../components/QueryErrorBoundary.tsx";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
+import { ProcessingAlertsProvider } from "../lib/processing-alerts-context.tsx";
 
 const PUBLIC_PATHS = new Set(["/", "/login", "/privacy", "/reset-password"]);
 
@@ -31,7 +32,10 @@ function AuthGate() {
   const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
-  const isPublic = PUBLIC_PATHS.has(location.pathname);
+  const isSharedHealthReport =
+    location.pathname === "/health-report" &&
+    new URLSearchParams(location.href.split("?")[1] ?? "").has("token");
+  const isPublic = PUBLIC_PATHS.has(location.pathname) || isSharedHealthReport;
   const previousUserIdRef = useRef<string | null>(null);
 
   useLayoutEffect(() => {
@@ -104,7 +108,7 @@ function AuthGate() {
 
   if (!user) return content;
 
-  return content;
+  return <ProcessingAlertsProvider>{content}</ProcessingAlertsProvider>;
 }
 
 function parseReturnTo(value: unknown): string | undefined {
