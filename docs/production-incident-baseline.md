@@ -17931,3 +17931,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   initialization, confirming no `whoop-ble-init-sync` error, then foregrounding
   and confirming streaming resumes. Resolve `DOFEK-MOBILE-1D` after confirming
   no recurrence on the fixed release.
+
+## 2026-07-26 — Current dbt Run Statuses Failed Artifact Validation
+
+- **Status:** Direct fix validated locally; merge and production deployment
+  pending.
+- **Symptoms:** The production analytics worker completed a dbt invocation but
+  then raised a Zod validation error while parsing `run_results.json` in
+  [Sentry issue DOFEK-SERVER-5D](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5D).
+- **User impact:** The worker could not record the completed invocation's model
+  outcomes or finish that analytics refresh cycle.
+- **Evidence:** The event at `2026-07-26T07:34:43.056Z` rejected
+  `results[12].status` because the application accepted only `success`, `pass`,
+  `warn`, `error`, `fail`, and `skipped`. The installed dbt 1.11 artifact
+  contract additionally defines `partial success`, `runtime error`, and
+  `no-op`; those values are also present in dbt's official
+  [run-results v6 JSON schema](https://schemas.getdbt.com/dbt/run-results/v6.json).
+- **Root cause:** The runtime validator duplicated an older subset of dbt's
+  status enum, so a valid artifact from the current pinned dbt version failed
+  at the application boundary.
+- **Fix / mitigation:** Accept all statuses in the current artifact contract,
+  classify `partial success` and `runtime error` as failed outcomes, and treat
+  the intentional `no-op` outcome as succeeded. Existing warning and skipped
+  semantics remain unchanged.
+- **Validation:** A regression test first reproduced the exact Zod rejection
+  for all three omitted statuses. The focused artifact suite now passes all
+  seven tests, targeted Biome checks report no findings, and the root
+  TypeScript typecheck passes.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy the corrected
+  parser, observe a complete analytics cycle, then resolve
+  `DOFEK-SERVER-5D` if it does not recur on the fixed release.

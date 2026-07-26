@@ -207,6 +207,78 @@ describe("parseDbtRunArtifacts", () => {
     expect(parsed.succeeded).toBe(false);
   });
 
+  it("maps every dbt run status emitted by the installed dbt version", () => {
+    const extendedManifest = {
+      ...manifest,
+      nodes: {
+        ...manifest.nodes,
+        "model.dofek.activity_summary": {
+          unique_id: "model.dofek.activity_summary",
+          name: "activity_summary",
+        },
+      },
+    };
+    const parsed = parseDbtRunArtifacts({
+      manifest: extendedManifest,
+      sources,
+      selectedModels: ["daily_sleep", "daily_recovery", "activity_summary"],
+      runResults: {
+        metadata: { invocation_id: "run-current-dbt-statuses" },
+        results: [
+          {
+            unique_id: "model.dofek.daily_sleep",
+            status: "partial success",
+            execution_time: 2,
+            message: "Some batches failed",
+          },
+          {
+            unique_id: "model.dofek.daily_recovery",
+            status: "runtime error",
+            execution_time: 1,
+            message: "Freshness query failed",
+          },
+          {
+            unique_id: "model.dofek.activity_summary",
+            status: "no-op",
+            execution_time: 0,
+            message: null,
+          },
+        ],
+      },
+    });
+
+    expect(parsed.models).toEqual([
+      {
+        name: "daily_sleep",
+        uniqueId: "model.dofek.daily_sleep",
+        status: "failed",
+        warning: false,
+        executionTimeSeconds: 2,
+        errorCode: "dbt_model_failed",
+        message: "Some batches failed",
+      },
+      {
+        name: "daily_recovery",
+        uniqueId: "model.dofek.daily_recovery",
+        status: "failed",
+        warning: false,
+        executionTimeSeconds: 1,
+        errorCode: "dbt_model_failed",
+        message: "Freshness query failed",
+      },
+      {
+        name: "activity_summary",
+        uniqueId: "model.dofek.activity_summary",
+        status: "succeeded",
+        warning: false,
+        executionTimeSeconds: 0,
+        errorCode: null,
+        message: null,
+      },
+    ]);
+    expect(parsed.succeeded).toBe(false);
+  });
+
   it("uses model resources and ignores absent non-model results", () => {
     const resourceTypedManifest = {
       ...manifest,
