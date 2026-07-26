@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import { KafkaMetricStreamQuarantineWriter } from "./redpanda-quarantine.ts";
 
@@ -12,6 +13,27 @@ interface QuarantineSendRequest {
 }
 
 describe("KafkaMetricStreamQuarantineWriter", () => {
+  it("loads through Node's native ESM loader", () => {
+    const moduleUrl = new URL("./redpanda-quarantine.ts", import.meta.url);
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--enable-source-maps",
+        "--disable-warning=ExperimentalWarning",
+        "--input-type=module",
+        "--eval",
+        `await import(${JSON.stringify(moduleUrl.href)})`,
+      ],
+      { encoding: "utf8" },
+    );
+
+    expect({ status: result.status, stderr: result.stderr }).toEqual({
+      status: 0,
+      stderr: "",
+    });
+  });
+
   it("stores full replay context with all-replica acknowledgement", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-25T00:00:00.000Z"));

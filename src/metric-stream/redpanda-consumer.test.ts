@@ -41,7 +41,9 @@ const kafkaConstructor = vi.hoisted(() =>
 );
 
 vi.mock("kafkajs", () => ({
-  ConfigResourceTypes: { TOPIC: 2 },
+  default: {
+    ConfigResourceTypes: { TOPIC: 2 },
+  },
   Kafka: kafkaConstructor,
 }));
 vi.mock("@sentry/node", () => ({
