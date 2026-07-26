@@ -263,10 +263,11 @@ latest_weight AS (
     SELECT
         body_measurement.user_id AS user_id,
         argMax(body_measurement.weight_kg, body_measurement.recorded_at) AS weight_kg
-    FROM analytics.v_body_measurement AS body_measurement
+    FROM {{ ref('body_measurement') }} AS body_measurement FINAL
     INNER JOIN dirty_users
         ON dirty_users.user_id = body_measurement.user_id
     WHERE body_measurement.weight_kg IS NOT null
+        AND body_measurement.is_deleted = 0
     GROUP BY body_measurement.user_id
 ),
 

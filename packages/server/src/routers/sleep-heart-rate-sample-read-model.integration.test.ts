@@ -15,10 +15,11 @@ const lifecycleSchema = z.array(
   }),
 );
 
-function renderIncrementalSleepHeartRateSql(
+function renderSleepHeartRateSql(
   targetTable: string,
   analyticsDatabase: string,
   postgresDatabase: string,
+  isIncremental: boolean,
 ): string {
   return readModelSql("sleep_heart_rate_sample.sql")
     .replace(/^\{\{ config\([\s\S]*?\n\) \}\}\s*/, "")
@@ -29,7 +30,8 @@ function renderIncrementalSleepHeartRateSql(
     .replace(/\{\{\s*ref\('([^']+)'\)\s*\}\}/g, `${analyticsDatabase}.$1`)
     .replace(
       /\{%\s*if is_incremental\(\)\s*%\}([\s\S]*?)(?:\{%\s*else\s*%\}([\s\S]*?))?\{%\s*endif\s*%\}/g,
-      (_, incrementalSql: string) => incrementalSql,
+      (_, incrementalSql: string, nonIncrementalSql: string | undefined) =>
+        isIncremental ? incrementalSql : (nonIncrementalSql ?? ""),
     )
     .replace(/\{\{\s*this\s*\}\}/g, targetTable);
 }
@@ -148,11 +150,7 @@ describe("sleep heart-rate sample read model", () => {
 
       const result = await client.query({
         query: `SELECT uniqExact(sleep_id) AS count
-          FROM (${renderIncrementalSleepHeartRateSql(
-            targetTable,
-            analyticsDatabase,
-            postgresDatabase,
-          )})
+          FROM (${renderSleepHeartRateSql(targetTable, analyticsDatabase, postgresDatabase, true)})
           SETTINGS join_use_nulls = 1`,
         format: "JSONEachRow",
       });
@@ -160,6 +158,60 @@ describe("sleep heart-rate sample read model", () => {
       expect(countSchema.parse(await result.json())).toEqual([{ count: 2 }]);
     } finally {
       await client.command({ query: `DROP TABLE IF EXISTS ${targetTable}` });
+      await client.command({ query: `TRUNCATE TABLE ${postgresDatabase}.sleep_session` });
+      await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.deduped_sensor` });
+    }
+  });
+
+  it("processes every eligible sleep key during a full refresh", async () => {
+    const userId = randomUUID();
+    const sleepIds = [randomUUID(), randomUUID(), randomUUID()];
+    const targetTable = `${analyticsDatabase}.test_full_refresh_sleep_heart_rate`;
+
+    try {
+      for (const [index, sleepId] of sleepIds.entries()) {
+        const day = 20 + index;
+        const startedAt = `2026-07-${day} 00:00:00`;
+        const recordedAt = `2026-07-${day} 00:01:00`;
+        const endedAt = `2026-07-${day} 08:00:00`;
+
+        await client.command({
+          query: `INSERT INTO ${postgresDatabase}.sleep_session (
+            id, user_id, started_at, ended_at, duration_minutes, sleep_type,
+            _peerdb_synced_at, _peerdb_is_deleted
+          ) VALUES (
+            {sleepId:UUID}, {userId:UUID},
+            {startedAt:DateTime64(6, 'UTC')}, {endedAt:DateTime64(6, 'UTC')},
+            480, 'sleep', now64(9), 0
+          )`,
+          query_params: {
+            endedAt,
+            sleepId,
+            startedAt,
+            userId,
+          },
+        });
+        await client.command({
+          query: `INSERT INTO ${analyticsDatabase}.deduped_sensor (
+            user_id, recorded_at, recorded_date, channel, scalar,
+            is_deleted, refresh_version, refreshed_at
+          ) VALUES (
+            {userId:UUID}, {recordedAt:DateTime64(6, 'UTC')}, toDate({recordedAt:String}),
+            'heart_rate', 60, 0, 1, now64(9)
+          )`,
+          query_params: { recordedAt, userId },
+        });
+      }
+
+      const result = await client.query({
+        query: `SELECT uniqExact(sleep_id) AS count
+          FROM (${renderSleepHeartRateSql(targetTable, analyticsDatabase, postgresDatabase, false)})
+          SETTINGS join_use_nulls = 1`,
+        format: "JSONEachRow",
+      });
+
+      expect(countSchema.parse(await result.json())).toEqual([{ count: 3 }]);
+    } finally {
       await client.command({ query: `TRUNCATE TABLE ${postgresDatabase}.sleep_session` });
       await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.deduped_sensor` });
     }
@@ -198,11 +250,7 @@ describe("sleep heart-rate sample read model", () => {
 
       const result = await client.query({
         query: `SELECT toString(sleep_id) AS sleep_id, is_deleted
-          FROM (${renderIncrementalSleepHeartRateSql(
-            targetTable,
-            analyticsDatabase,
-            postgresDatabase,
-          )})
+          FROM (${renderSleepHeartRateSql(targetTable, analyticsDatabase, postgresDatabase, true)})
           WHERE toString(sleep_id) = {sleepId:String}
           SETTINGS join_use_nulls = 1`,
         query_params: { sleepId },

@@ -59,11 +59,13 @@ describe("clickHouseMigrations", () => {
       ]),
     });
     expect(migrations.at(-1)).toMatchObject({
-      id: "0055_bound_body_measurement_refresh",
+      id: "0055_migrate_body_measurement_to_dbt",
       statements: expect.arrayContaining([
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.body_measurement"),
+        expect.stringContaining("INSERT INTO analytics.body_measurement"),
         "DROP VIEW IF EXISTS analytics.v_body_measurement",
         "DROP TABLE IF EXISTS analytics.v_body_measurement",
-        expect.stringContaining("lagInFrame(recorded_at"),
+        expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement"),
       ]),
     });
   });

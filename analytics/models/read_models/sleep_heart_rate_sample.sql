@@ -211,7 +211,9 @@ dirty_keys AS materialized (
     ORDER BY
         user_id,
         sleep_id
-    LIMIT {{ sleep_dirty_key_batch_size }}
+    {% if is_incremental() %}
+        LIMIT {{ sleep_dirty_key_batch_size }}
+    {% endif %}
 ),
 
 active_dirty_sleep AS (

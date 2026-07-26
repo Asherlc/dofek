@@ -155,7 +155,6 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).not.toContain("ENGINE = PostgreSQL");
-    expect(sql).toContain("REFRESH EVERY 15 MINUTE");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW");
     expect(sql).not.toContain("SYSTEM WAIT VIEW");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample");
@@ -190,9 +189,6 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.deduped_location");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.deduped_location");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
-    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.v_body_measurement");
-    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.v_body_measurement");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.body_measurement_sample");
     expect(sql).toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.body_measurement_sample_ingest TO analytics.body_measurement_sample",
@@ -241,19 +237,6 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("min(toString(connected_activity_id)) AS group_id");
     expect(sql).toContain("min(toString(connected_sleep_id)) AS group_id");
     expect(sql).not.toContain("connected_measurement_id");
-    expect(sql).toContain("lagInFrame(recorded_at");
-    expect(sql).toContain("PARTITION BY final_groups.user_id, final_groups.group_id");
-    expect(sql).toContain("ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW");
-    expect(sql).toContain(
-      "concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))",
-    );
-    expect(sql).not.toContain("uniqExact(ifNull(external_id, toString(id))");
-    expect(sql).toContain("body_measurement_samples AS");
-    expect(sql).toContain("measurement_key AS external_id");
-    expect(sql).toContain("_peerdb_synced_at AS created_at");
-    expect(sql).toContain("best.created_at AS created_at");
-    expect(sql).toContain("GROUP BY\n    provider_id,\n    user_id,\n    measurement_key");
-    expect(sql).not.toContain("ifNull(external_id, toString(id)) AS external_id");
     expect(sql).toContain("JOIN analytics.deduped_sensor AS");
   });
 });

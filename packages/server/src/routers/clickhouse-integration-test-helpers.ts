@@ -667,6 +667,9 @@ ${buildTestHealthspanReadModelSelectSql(defaultTestDatabases)}`,
   await client.command({
     query: buildTestAnalyticsTableStatement("analytics.daily_cycling"),
   });
+  await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.v_body_measurement"),
+  });
 }
 
 export async function syncClickHouseTestActivitySensorStore(

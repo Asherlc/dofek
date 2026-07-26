@@ -26,7 +26,7 @@ current_power_state AS (
         activity_id,
         user_id,
         max(refreshed_at) AS refreshed_at
-    FROM {{ ref('activity_sensor_sample') }}
+    FROM {{ ref('activity_sensor_sample') }} FINAL
     WHERE channel = 'power'
         AND scalar > 0
         AND is_deleted = 0

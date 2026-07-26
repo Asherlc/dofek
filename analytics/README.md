@@ -26,7 +26,10 @@ activity/sample joins out of web/API requests. `deduped_activities` materializes
 the activity overlap graph once, and `deduped_activity_members` exposes canonical
 activity/member aliases for downstream models. `activity_sensor_sample` and
 `activity_location_sample` are bounded microbatch intermediates over sample
-time. `sleep_heart_rate_sample` instead advances through at most 32 dirty sleep
+time. `body_measurement` incrementally rebuilds only users whose body samples
+or priority inputs changed, and `analytics.v_body_measurement` is a thin
+active-row view over that dbt-owned canonical table. `sleep_heart_rate_sample`
+instead advances through at most 32 dirty sleep
 keys per incremental build, including lifecycle tombstones, so one accumulated
 sleep backlog cannot monopolize a build. dbt documents incremental models as
 transforming only the rows selected by the model's incremental filter:
@@ -79,7 +82,9 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `daily_sleep`, `daily_recovery_inputs`, `daily_recovery`, `activity_sensor_sample`, `activity_location_sample`,
 `activity_sensor_summary_rows`, `activity_location_summary_rows`,
 `activity_stream_points`, `activity_heart_rate_zones`, `activity_summary_rows`,
-`hiking_activity`, `activity_vo2max_estimate`, `activity_aerobic_efficiency`, `activity_polarization_zones`, `activity_power_curve`, `cycling_activity`, `daily_cycling`, `provider_stats`,
+`hiking_activity`, `body_measurement`, `activity_vo2max_estimate`,
+`activity_aerobic_efficiency`, `activity_polarization_zones`,
+`activity_power_curve`, `cycling_activity`, `daily_cycling`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
 and `weekly_healthspan`. Activity sample-time models use dbt's `microbatch`
 incremental strategy with daily batches and short lookbacks so ClickHouse

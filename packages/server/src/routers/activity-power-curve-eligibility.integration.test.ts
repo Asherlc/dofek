@@ -120,4 +120,39 @@ describe("activity power-curve eligibility", () => {
       { activity_id: poweredActivityId },
     ]);
   });
+
+  it("does not schedule an activity whose latest power sample is a tombstone", async () => {
+    const userId = randomUUID();
+    const activityId = randomUUID();
+    const targetTable = `${analyticsDatabase}.activity_power_curve`;
+
+    await client.command({
+      query: `INSERT INTO ${analyticsDatabase}.activity_summary_rows VALUES (
+        {activityId:UUID}, {userId:UUID}, 'cycling',
+        now64(6) - INTERVAL 1 HOUR, now64(6), 0, now64(9)
+      )`,
+      query_params: { activityId, userId },
+    });
+    await client.command({
+      query: `INSERT INTO ${analyticsDatabase}.activity_sensor_sample VALUES
+        (
+          {activityId:UUID}, {userId:UUID}, 'power', 200, 0,
+          toDateTime64('2026-07-25 00:00:00', 9, 'UTC')
+        ),
+        (
+          {activityId:UUID}, {userId:UUID}, 'power', 200, 1,
+          toDateTime64('2026-07-25 00:01:00', 9, 'UTC')
+        )`,
+      query_params: { activityId, userId },
+    });
+
+    const result = await client.query({
+      query: renderDirtyActivityKeysSql(analyticsDatabase, targetTable),
+      format: "JSONEachRow",
+    });
+
+    expect(activityKeySchema.parse(await result.json())).not.toContainEqual({
+      activity_id: activityId,
+    });
+  });
 });

@@ -25,13 +25,14 @@ body_source AS (
         body.recorded_at AS recorded_at,
         body.weight_kg AS weight_kg,
         body.body_fat_pct AS body_fat_pct
-    FROM analytics.v_body_measurement AS body
+    FROM {{ ref('body_measurement') }} AS body FINAL
     {% if is_incremental() %}
     LEFT JOIN existing_measurements
         ON existing_measurements.user_id = body.user_id
     {% endif %}
     WHERE body.weight_kg IS NOT NULL
         AND body.weight_kg > 0
+        AND body.is_deleted = 0
         {% if is_incremental() %}
         AND (
             existing_measurements.user_id IS NULL

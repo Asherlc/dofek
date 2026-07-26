@@ -88,6 +88,7 @@ describe("production analytics read-model build", () => {
       "activity_heart_rate_zones",
       "activity_summary_rows",
       "hiking_activity",
+      "body_measurement",
       "activity_vo2max_estimate",
       "activity_aerobic_efficiency",
       "activity_polarization_zones",
@@ -882,7 +883,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("latest_vo2max");
   });
 
-  it("materializes daily body measurements from the body measurement view", () => {
+  it("materializes daily body measurements from the canonical body model", () => {
     const sql = readModel("daily_body_measurement");
     const normalizedSql = compactWhitespace(sql);
 
@@ -891,7 +892,8 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("order_by='(user_id, measurement_id)'");
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("existing_measurements AS");
-    expect(sql).toContain("analytics.v_body_measurement");
+    expect(sql).toContain("ref('body_measurement')");
+    expect(sql).toContain("body.is_deleted = 0");
     expect(normalizedSql).toContain("existing_measurements.latest_recorded_at) - INTERVAL 7 DAY");
     expect(normalizedSql).not.toContain("row_number() OVER");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");

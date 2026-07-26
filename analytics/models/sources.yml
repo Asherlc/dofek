@@ -4,6 +4,7 @@ sources:
   - name: analytics
     schema: analytics
     tables:
+      - name: body_measurement_sample
       - name: v_activity
       - name: v_activity_members
   - name: ingest
