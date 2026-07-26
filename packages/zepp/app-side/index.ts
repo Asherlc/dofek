@@ -1,6 +1,7 @@
 import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
+import { parseSessionCommand, SESSION_COMMAND } from "../src/session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 import { summarizeZeppFetchResponse, type ZeppFetchResponse } from "../src/zepp-fetch.ts";
 
@@ -98,7 +99,20 @@ AppSideService(
       settings.settingsStorage.setItem(STORAGE_KEYS.SESSION_STATUS, JSON.stringify(payload));
     },
 
-    handleSettingsChange(key: string, _newValue: string) {
+    handleSettingsChange(key: string, newValue: unknown) {
+      if (key === STORAGE_KEYS.CMD_LOGGING) {
+        const command = parseSessionCommand(newValue);
+        if (!command) {
+          return;
+        }
+        this.call({
+          method: command === SESSION_COMMAND.START ? "logging.start" : "logging.stop",
+          params: command === SESSION_COMMAND.START ? this.getPreferences() : {},
+        });
+        settings.settingsStorage.removeItem(STORAGE_KEYS.CMD_LOGGING);
+        return;
+      }
+
       if (key === STORAGE_KEYS.CMD_TRANSFER) {
         this.call({ method: "transfer.start", params: {} });
       }
@@ -113,8 +127,8 @@ AppSideService(
         });
       }
 
-      if (key === STORAGE_KEYS.CMD_LOGIN_PASSWORD && _newValue) {
-        this.loginWithPassword(_newValue).catch((error: unknown) => {
+      if (key === STORAGE_KEYS.CMD_LOGIN_PASSWORD && typeof newValue === "string" && newValue) {
+        this.loginWithPassword(newValue).catch((error: unknown) => {
           logger.error("password login failed %j", error);
         });
       }
