@@ -1,8 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 import {
   createClickHouseTestActivitySensorStore,
   executeClickHouseTestCommand,
+  getClickHouseTestClient,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { MonthlyReportRepository } from "./monthly-report-repository.ts";
@@ -13,10 +16,22 @@ const activityId = "88888888-8888-4888-8888-888888888888";
 describe("MonthlyReportRepository ClickHouse read models", () => {
   let testContext: TestContext;
   let sensorStore: ActivitySensorStore;
+  let monthStart: string;
 
   beforeAll(async () => {
     testContext = await setupTestDatabase();
     sensorStore = await createClickHouseTestActivitySensorStore(testContext);
+    const monthResult = await getClickHouseTestClient(testContext).query({
+      query: "SELECT toString(toStartOfMonth(today())) AS month_start",
+      format: "JSONEachRow",
+    });
+    const [monthRow] = z
+      .array(z.object({ month_start: dateStringSchema }))
+      .parse(await monthResult.json());
+    if (!monthRow) {
+      throw new Error("ClickHouse did not return its current month");
+    }
+    monthStart = monthRow.month_start;
 
     await executeClickHouseTestCommand(
       testContext,
@@ -32,8 +47,8 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         toUUID('${activityId}'),
         toUUID('${userId}'),
         'cycling',
-        toDateTime64(toStartOfMonth(today()) + INTERVAL 5 DAY, 6, 'UTC'),
-        toDateTime64(toStartOfMonth(today()) + INTERVAL 5 DAY + INTERVAL 1 HOUR, 6, 'UTC'),
+        toDateTime64(toDate('${monthStart}') + INTERVAL 5 DAY, 6, 'UTC'),
+        toDateTime64(toDate('${monthStart}') + INTERVAL 5 DAY + INTERVAL 1 HOUR, 6, 'UTC'),
         100,
         200
       )`,
@@ -51,36 +66,36 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         refreshed_at
       ) VALUES (
         toUUID('${userId}'),
-        toDate(toStartOfMonth(today()) + INTERVAL 5 DAY),
+        toDate('${monthStart}') + INTERVAL 5 DAY,
         'test-provider',
-        toDateTime64(toStartOfMonth(today()) + INTERVAL 5 DAY, 6, 'UTC'),
+        toDateTime64(toDate('${monthStart}') + INTERVAL 5 DAY, 6, 'UTC'),
         300,
         1,
         0,
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate(toStartOfMonth(today()) + INTERVAL 5 DAY),
+        toDate('${monthStart}') + INTERVAL 5 DAY,
         'test-provider',
-        toDateTime64(toStartOfMonth(today()) + INTERVAL 5 DAY, 6, 'UTC'),
+        toDateTime64(toDate('${monthStart}') + INTERVAL 5 DAY, 6, 'UTC'),
         480,
         2,
         0,
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate(toStartOfMonth(today()) + INTERVAL 6 DAY),
+        toDate('${monthStart}') + INTERVAL 6 DAY,
         'test-provider',
-        toDateTime64(toStartOfMonth(today()) + INTERVAL 6 DAY, 6, 'UTC'),
+        toDateTime64(toDate('${monthStart}') + INTERVAL 6 DAY, 6, 'UTC'),
         600,
         1,
         0,
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate(toStartOfMonth(today()) + INTERVAL 6 DAY),
+        toDate('${monthStart}') + INTERVAL 6 DAY,
         'test-provider',
-        toDateTime64(toStartOfMonth(today()) + INTERVAL 6 DAY, 6, 'UTC'),
+        toDateTime64(toDate('${monthStart}') + INTERVAL 6 DAY, 6, 'UTC'),
         600,
         2,
         1,
@@ -99,7 +114,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         refreshed_at
       ) VALUES (
         toUUID('${userId}'),
-        toDate(toStartOfMonth(today()) + INTERVAL 5 DAY),
+        toDate('${monthStart}') + INTERVAL 5 DAY,
         40,
         60,
         0,
@@ -107,7 +122,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate(toStartOfMonth(today()) + INTERVAL 5 DAY),
+        toDate('${monthStart}') + INTERVAL 5 DAY,
         60,
         50,
         0,
@@ -115,7 +130,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate(toStartOfMonth(today()) + INTERVAL 6 DAY),
+        toDate('${monthStart}') + INTERVAL 6 DAY,
         80,
         45,
         0,
@@ -123,7 +138,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate(toStartOfMonth(today()) + INTERVAL 6 DAY),
+        toDate('${monthStart}') + INTERVAL 6 DAY,
         80,
         45,
         1,
@@ -145,7 +160,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
     const report = await new MonthlyReportRepository(userId, sensorStore).getReport(12);
 
     expect(report.current).toEqual({
-      monthStart: `${new Date().toISOString().slice(0, 7)}-01`,
+      monthStart,
       trainingHours: 1,
       activityCount: 1,
       avgDailyStrain: 30,

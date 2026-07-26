@@ -17973,11 +17973,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   120-second execution deadline.
 - **Evidence:** The exact parameterized production repository query timed out
   after 120.012 seconds while reading 3,777,652 rows and 995.16 MiB, with a
-  1.04 GiB peak. The equivalent aggregation over the compact
+  1.04 GiB peak (`system.query_log` query
+  `0d06d6a2-85ac-4307-b9d3-f7e5da89f1f3`). The equivalent aggregation over the compact
   `activity_summary`, `daily_sleep`, and `daily_recovery` serving models
-  completed against the same production data in 0.101 seconds. The physical
+  completed against the same production data in 0.101 seconds
+  (`system.query_log` query `f077c95b-74ee-444f-b293-462d55824277`), reading
+  8,146 rows and 244.61 KiB with a 7.87 MiB peak. The physical
   serving tables contained only 3,653 activity-summary rows, 330 daily-sleep
   rows, and 119 daily-recovery rows.
+- **Classification:** Following the
+  [loading-performance runbook](performance/loading-performance-runbook.md),
+  this is a request-time query-shape bottleneck for
+  `monthlyReport.report`, supported by Sentry trace
+  `e3a2fe258e538c23a152e01cddc739e5` and the production ClickHouse query-log
+  records above. Axiom could not be queried because the connected user token
+  had expired, so the exact Sentry and ClickHouse records are the checked-in
+  equivalent evidence required by the runbook.
 - **Root cause:** The request path joined `analytics.v_activity` and read
   `analytics.v_sleep`, `analytics.v_daily_metrics`, and the resting-heart-rate
   view, forcing global recursive deduplication and sensor aggregation for a
