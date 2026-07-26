@@ -18472,8 +18472,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-26 — Peloton Performance Summary Type Drift Blocked Sync
 
-- **Status:** Direct source fix reproduced and validated locally; merge and
-  production deployment pending.
+- **Status:** Resolved after the direct source fix merged in PR #2047 and
+  deployed in release `f5b951f09ae35f3947dfd03fa0459b7d7d3a4596`.
 - **Symptoms:** The first post-deploy scheduled Peloton sync reported
   [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F)
   while validating performance graphs.
@@ -18501,10 +18501,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   first with the exact two Zod paths reported by Sentry. After correcting the
   canonical schema, 129 focused client/provider unit tests and all 12 Peloton
   sync integration tests pass; the root TypeScript typecheck and targeted
-  Biome checks also pass.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy, observe a
-  successful scheduled Peloton sync on the fixed release, and then resolve
-  DOFEK-SERVER-5F.
+  Biome checks also pass. The first scheduled production sync on the fixed
+  release completed at `2026-07-26T20:00:05Z` with two workouts and 1,261
+  metric-stream rows. Sentry recorded no event after the previous release's
+  final failure at `2026-07-26T19:30:04Z`, and DOFEK-SERVER-5F was resolved
+  with that evidence attached.
+- **Remaining risk / follow-up:** None beyond normal scheduled-sync and Sentry
+  monitoring.
 
 ## 2026-07-26 — Reused Analytics CTEs Recomputed and Forced Projection Failed
 
@@ -18562,3 +18565,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   changing the four-minute query ceiling, observe a complete production dbt
   cycle in which both models succeed, verify downstream cache warming, then
   resolve DOFEK-SERVER-5A.
+
+## 2026-07-26 — HealthKit Observer Sync Waited Behind a Background Timer
+
+- **Status:** Direct source fix reproduced and validated locally; merge, OTA
+  deployment, and physical-device production validation pending.
+- **Symptoms:** The iOS native observer coordinator reported
+  [Sentry issue DOFEK-MOBILE-1C](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1C)
+  because HealthKit observer callbacks remained incomplete past their
+  25-second native failure boundary.
+- **User impact:** Background HealthKit deliveries could expire before their
+  JavaScript sync began, delaying the affected samples until a later delivery
+  or foreground catch-up.
+- **Evidence:** The latest production breadcrumb trail recorded a burst of
+  observer updates beginning at `03:17:55.677Z`; every callback logged
+  `Sample update event received, debouncing`, but `Starting sync` did not
+  appear until `03:18:25.763Z`, about 30 seconds later and after the native
+  25-second expiration. The app was backgrounded and the device was locked.
+  The timestamps, device state, and expired update ID are preserved in
+  [Sentry issue DOFEK-MOBILE-1C](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1C).
+- **Root cause:** The observer path deferred its serialized queue behind a
+  500-millisecond JavaScript `setTimeout`. In the recorded background delivery,
+  that timer did not execute for about 30 seconds while the native completion
+  deadline continued advancing.
+- **Fix / mitigation:** Remove the timer and enqueue each native delivery
+  directly into the existing single-flight queue. One sync still runs at a
+  time; update IDs delivered during it remain pending for the next serialized
+  sync and are acknowledged only after that sync settles. The native
+  25-second failure boundary remains unchanged. Apple requires observer
+  completion only after processing the delivered data:
+  <https://developer.apple.com/documentation/healthkit/executing-observer-queries>.
+- **Validation:** The regression first failed because no sync began without
+  advancing fake timers. After the direct queue fix, the regression and all 31
+  background HealthKit orchestration tests pass, including initial catch-up
+  ordering, updates delivered during an active sync, exact native
+  acknowledgements, locked-device behavior, and failure telemetry.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy the
+  JavaScript bundle through the production OTA channel, then confirm on a
+  physical-device observer delivery that `Starting sync` follows the update
+  immediately and no fixed-update expiration is reported before resolving
+  DOFEK-MOBILE-1C.

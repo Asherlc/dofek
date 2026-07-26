@@ -11,17 +11,15 @@ import type { HealthKitSyncStage, SyncTrpcClient } from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";
-const DEBOUNCE_MS = 500;
+
+interface SyncContext {
+  onSyncComplete?: () => void | Promise<void>;
+  trpcClient: SyncTrpcClient;
+}
 
 let subscription: EventSubscription | null = null;
-let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-let observerSyncReady: true | undefined;
-let pendingCatchUp:
-  | {
-      onSyncComplete?: () => void | Promise<void>;
-      trpcClient: SyncTrpcClient;
-    }
-  | undefined;
+let currentSyncContext: SyncContext | undefined;
+let pendingCatchUp: SyncContext | undefined;
 const pendingUpdateIds = new Set<string>();
 let syncing: true | undefined;
 
@@ -127,56 +125,58 @@ function acknowledgeObserverUpdates(updateIds: string[], succeeded: boolean): vo
   }
 }
 
-async function drainSyncQueue(
-  trpcClient: SyncTrpcClient,
-  onSyncComplete?: () => void | Promise<void>,
-): Promise<void> {
-  if (syncing) {
+async function drainSyncQueue(): Promise<void> {
+  const context = currentSyncContext;
+  if (syncing || !context) {
     return;
   }
 
-  const catchUp = pendingCatchUp;
+  const catchUp = pendingCatchUp === context;
   if (catchUp) {
     pendingCatchUp = undefined;
-  } else if (!observerSyncReady) {
+  } else if (pendingUpdateIds.size === 0) {
     return;
   }
 
   const updateIds = catchUp ? [] : Array.from(pendingUpdateIds);
   if (!catchUp) {
     pendingUpdateIds.clear();
-    observerSyncReady = undefined;
   }
 
   syncing = true;
-  const succeeded = await performHealthKitSync(
-    catchUp?.trpcClient ?? trpcClient,
-    catchUp?.onSyncComplete ?? onSyncComplete,
-  );
-  if (updateIds.length > 0) {
-    acknowledgeObserverUpdates(updateIds, succeeded);
+  try {
+    const succeeded = await performHealthKitSync(
+      context.trpcClient,
+      context.onSyncComplete
+        ? async () => {
+            if (currentSyncContext === context) {
+              await context.onSyncComplete?.();
+            }
+          }
+        : undefined,
+    );
+    if (currentSyncContext === context && updateIds.length > 0) {
+      acknowledgeObserverUpdates(updateIds, succeeded);
+    }
+  } catch (error) {
+    captureException(error, {
+      source: TAG,
+      operation: "drainSyncQueue",
+    });
+    if (currentSyncContext === context && updateIds.length > 0) {
+      acknowledgeObserverUpdates(updateIds, false);
+    }
+  } finally {
+    syncing = undefined;
   }
-  syncing = undefined;
 
-  await drainSyncQueue(trpcClient, onSyncComplete);
-}
-
-function scheduleObserverSync(
-  trpcClient: SyncTrpcClient,
-  onSyncComplete?: () => void | Promise<void>,
-): void {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => {
-    debounceTimer = undefined;
-    observerSyncReady = true;
-    void drainSyncQueue(trpcClient, onSyncComplete);
-  }, DEBOUNCE_MS);
+  await drainSyncQueue();
 }
 
 /**
  * Initialize background HealthKit sync.
  * Sets up observer queries that fire when new health samples arrive,
- * then debounces and syncs the last 24 hours of data to the server.
+ * then serializes syncs of the last 24 hours of data to the server.
  *
  * Call this once after authentication is established.
  */
@@ -196,12 +196,18 @@ export async function initBackgroundHealthKitSync(
     teardownBackgroundHealthKitSync();
   }
 
+  const context: SyncContext = { trpcClient, onSyncComplete };
+  currentSyncContext = context;
+
   // Listen before registering native observers so an immediate HealthKit
   // delivery can never race ahead of the JavaScript callback.
   subscription = addSampleUpdateListener((event) => {
-    logger.info(TAG, "Sample update event received, debouncing");
+    if (currentSyncContext !== context) {
+      return;
+    }
+    logger.info(TAG, "Sample update event received, queueing sync");
     pendingUpdateIds.add(event.updateId);
-    scheduleObserverSync(trpcClient, onSyncComplete);
+    void drainSyncQueue();
   });
 
   try {
@@ -215,22 +221,20 @@ export async function initBackgroundHealthKitSync(
     throw error;
   }
   logger.info(TAG, "Background observers registered");
-  pendingCatchUp = { trpcClient, onSyncComplete };
-  void drainSyncQueue(trpcClient, onSyncComplete);
+  pendingCatchUp = context;
+  void drainSyncQueue();
 
   logger.info(TAG, "Init complete, listening for HealthKit updates");
 }
 
-/** Clean up background sync listeners and timers */
+/** Clean up background sync listeners and observers. */
 export function teardownBackgroundHealthKitSync() {
+  currentSyncContext = undefined;
   if (subscription) {
     logger.info(TAG, "Tearing down: removing listener");
     subscription.remove();
     subscription = null;
   }
-  clearTimeout(debounceTimer);
-  debounceTimer = undefined;
-  observerSyncReady = undefined;
   pendingCatchUp = undefined;
   pendingUpdateIds.clear();
   try {
