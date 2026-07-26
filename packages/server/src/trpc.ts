@@ -43,7 +43,29 @@ export interface AuthenticatedContext extends Context {
 
 const fullAccessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" };
 
-const trpc = initTRPC.context<Context>().create();
+const UNEXPECTED_SERVER_ERROR_MESSAGE =
+  "We couldn't complete this request. Please try again. If the problem continues, contact support.";
+
+function shouldSanitizeInternalError(error: TRPCError): boolean {
+  if (error.code !== "INTERNAL_SERVER_ERROR") return false;
+  // tRPC copies an unknown cause's message onto its wrapper. An explicitly authored
+  // client-safe TRPCError instead has a distinct actionable message, which we preserve.
+  return error.message === error.code || error.message === error.cause?.message;
+}
+
+const trpc = initTRPC.context<Context>().create({
+  errorFormatter({ error, shape }) {
+    if (!shouldSanitizeInternalError(error)) return shape;
+
+    const data = { ...shape.data };
+    delete data.stack;
+    return {
+      ...shape,
+      message: UNEXPECTED_SERVER_ERROR_MESSAGE,
+      data,
+    };
+  },
+});
 const tracer = trace.getTracer("dofek-server");
 const ANALYTICS_UNAVAILABLE_MESSAGE =
   "Analytics data is temporarily unavailable. Please retry in a minute.";
