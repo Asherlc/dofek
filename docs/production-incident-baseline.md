@@ -17900,3 +17900,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Deploy the fixed image, confirm the sink task
   remains stable, and verify the accumulated Redpanda events flow into
   ClickHouse.
+
+## 2026-07-26 — Empty Polarization Model Triggered a Live Sensor Scan
+
+- **Status:** Direct fix validated locally; PR CI and production deployment
+  pending.
+- **Symptoms:** `efficiency.polarizationTrend` repeatedly reached the
+  120-second production query timeout. The Endurance page kept the
+  Polarization Index card in its loading state while the request remained
+  active.
+- **User impact:** Users could not view either polarization data or the
+  no-data state for the selected range.
+- **Evidence:** The production route timed out repeatedly during the audit.
+  The TDD unit reproduction reported `expected "spy" to be called 1 times, but
+  got 2 times`. A real-ClickHouse fixture then populated three deduped
+  heart-rate rows while leaving `activity_polarization_zones` empty; the
+  pre-fix repository returned a computed week with `maxHr: 190`, proving that
+  it queried the raw-derived models after the serving query returned no rows.
+- **Root cause:** The repository treated an empty
+  `activity_polarization_zones` result as a cache miss and synchronously
+  recomputed the trend from `activity_summary` and `deduped_sensor`.
+- **Fix / mitigation:** Make `activity_polarization_zones` the sole request-time
+  source and return `{ maxHr: null, weeks: [] }` when it is empty. No retry,
+  timeout, fallback, or resource limit was added.
+- **Validation:** The focused repository and router unit suites pass. The
+  real-ClickHouse regression fixture verifies three raw sensor rows, zero
+  serving rows, an empty response, and exactly one serving-model query. The
+  existing router integration suite, full lint, and root/server/web
+  typechecks also pass.
+- **Remaining risk / follow-up:** Complete PR CI, deploy the fix, confirm route
+  latency remains bounded, and monitor the asynchronous analytics build so a
+  stale serving model is diagnosed out of band rather than recomputed in a
+  request.
