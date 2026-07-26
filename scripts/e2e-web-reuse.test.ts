@@ -25,7 +25,12 @@ appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify({
   command: "pnpm",
   arguments: process.argv.slice(2),
 }) + "\\n");
-if (process.argv.includes("ps")) process.stdout.write("one-shot-container\\n");
+if (process.argv.includes("ps")) {
+  if (!process.argv.includes("--silent")) {
+    process.stdout.write("> dofek@0.1.0 compose\\n> tsx scripts/compose-command.ts\\n");
+  }
+  process.stdout.write("one-shot-container\\n");
+}
 `,
     );
     writeFileSync(
@@ -61,13 +66,14 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
         .split("\n")
         .map((line) => commandSchema.parse(JSON.parse(line)));
       const composeCommands = commands.filter(
-        (command) => command.command === "pnpm" && command.arguments[0] === "compose",
+        (command) => command.command === "pnpm" && command.arguments.includes("compose"),
       );
 
       expect(composeCommands).toHaveLength(6);
       expect(
         composeCommands.every((command) =>
           command.arguments
+            .filter((argument) => argument !== "--silent")
             .join(" ")
             .startsWith("compose -- --project-suffix e2e -f docker-compose.e2e.yml"),
         ),
