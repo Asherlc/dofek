@@ -10,6 +10,7 @@ const queryControl = vi.hoisted(() => ({
   showError: false,
   preserveData: false,
 }));
+const mockMonthlyReportQuery = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: { component: () => ReactElement }) => {
@@ -48,27 +49,30 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     monthlyReport: {
       report: {
-        useQuery: () => ({
-          data:
-            queryControl.showError && !queryControl.preserveData
-              ? undefined
-              : {
-                  current: {
-                    monthStart: "2026-07-01",
-                    trainingHours: 20,
-                    activityCount: 10,
-                    avgDailyStrain: 8,
-                    avgSleepMinutes: 450,
-                    avgRestingHr: 55,
-                    avgHrv: 48,
-                    trainingHoursTrend: null,
-                    avgSleepTrend: null,
+        useQuery: (...args: unknown[]) => {
+          mockMonthlyReportQuery(...args);
+          return {
+            data:
+              queryControl.showError && !queryControl.preserveData
+                ? undefined
+                : {
+                    current: {
+                      monthStart: "2026-07-01",
+                      trainingHours: 20,
+                      activityCount: 10,
+                      avgDailyStrain: 8,
+                      avgSleepMinutes: 450,
+                      avgRestingHr: 55,
+                      avgHrv: 48,
+                      trainingHoursTrend: null,
+                      avgSleepTrend: null,
+                    },
+                    history: [],
                   },
-                  history: [],
-                },
-          isLoading: false,
-          error: queryControl.showError ? new Error("Monthly report service unavailable") : null,
-        }),
+            isLoading: false,
+            error: queryControl.showError ? new Error("Monthly report service unavailable") : null,
+          };
+        },
       },
     },
   },
@@ -80,6 +84,7 @@ describe("Monthly report route", () => {
   beforeEach(() => {
     queryControl.showError = false;
     queryControl.preserveData = false;
+    mockMonthlyReportQuery.mockClear();
   });
 
   it("shows canonical monthly data with a share action", () => {
@@ -94,6 +99,7 @@ describe("Monthly report route", () => {
         name: "Share monthly report for 6 months",
       }),
     ).toBeTruthy();
+    expect(mockMonthlyReportQuery).toHaveBeenCalledWith({ months: 6 }, { retry: false });
   });
 
   it("shows the server error instead of insufficient data when the query fails", () => {

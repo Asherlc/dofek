@@ -17,11 +17,17 @@ const REPORT_MONTHS = 6;
 
 export default function ReportsScreen() {
   const endDate = useTodayQueryDate();
-  const weeklyReport = trpc.weeklyReport.report.useQuery({
-    weeks: REPORT_WEEKS,
-    endDate,
-  });
-  const monthlyReport = trpc.monthlyReport.report.useQuery({ months: REPORT_MONTHS });
+  const weeklyReport = trpc.weeklyReport.report.useQuery(
+    {
+      weeks: REPORT_WEEKS,
+      endDate,
+    },
+    { retry: false },
+  );
+  const monthlyReport = trpc.monthlyReport.report.useQuery(
+    { months: REPORT_MONTHS },
+    { retry: false },
+  );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>

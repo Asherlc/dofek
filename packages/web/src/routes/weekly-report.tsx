@@ -15,7 +15,10 @@ export const Route = createFileRoute("/weekly-report")({
 
 function WeeklyReportPage() {
   const endDate = useTodayQueryDate();
-  const report = trpc.weeklyReport.report.useQuery({ weeks: REPORT_WEEKS, endDate });
+  const report = trpc.weeklyReport.report.useQuery(
+    { weeks: REPORT_WEEKS, endDate },
+    { retry: false },
+  );
 
   return (
     <PageLayout
