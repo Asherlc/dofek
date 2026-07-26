@@ -309,12 +309,11 @@ export const adminRouter = router({
       executeWithSchema(
         ctx.db,
         userDetailProviderSchema,
-        sql`SELECT p.id, p.name, MAX(ot.created_at)::text AS created_at
-              FROM fitness.oauth_token ot
-              JOIN fitness.provider p ON p.id = ot.provider_id
-              WHERE ot.user_id = ${input.userId}
-              GROUP BY p.id, p.name
-              ORDER BY created_at`,
+        sql`SELECT p.id, p.name, pc.created_at::text AS created_at
+              FROM fitness.provider_connection pc
+              JOIN fitness.provider p ON p.id = pc.provider_id
+              WHERE pc.user_id = ${input.userId}
+              ORDER BY pc.created_at`,
       ),
       executeWithSchema(
         ctx.db,

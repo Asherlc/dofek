@@ -1,7 +1,7 @@
 /**
  * Wraps a raw Provider plugin with derived state (connection status, auth type, etc.).
- * Providers that define `authSetup` require authentication — they are only connected
- * when tokens exist in the database.
+ * Providers that define `authSetup` require authentication. Connection state is
+ * supplied from the user-scoped provider connection table.
  */
 export class ProviderModel {
   readonly id: string;
@@ -18,7 +18,7 @@ export class ProviderModel {
       importOnly?: boolean;
       authSetup?(options?: { host?: string }): unknown;
     },
-    tokenSet: Set<string>,
+    connectionSet: Set<string>,
     lastSyncMap?: Map<string, string>,
     customAuthOverrides?: Record<string, string>,
   ) {
@@ -48,7 +48,7 @@ export class ProviderModel {
 
     this.authType = customAuthOverrides?.[provider.id] ?? authType;
     const needsAuth = this.authType !== "none" && this.authType !== "file-import";
-    this.isConnected = needsAuth ? tokenSet.has(provider.id) : true;
+    this.isConnected = needsAuth ? connectionSet.has(provider.id) : true;
     this.lastSyncedAt = lastSyncMap?.get(provider.id) ?? null;
   }
 }

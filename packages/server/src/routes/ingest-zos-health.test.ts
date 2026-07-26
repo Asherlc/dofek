@@ -611,9 +611,13 @@ describe("createIngestZosHealthRouter", () => {
 
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: "Failed to ingest health data." });
-    expect(routeMocks.captureException).toHaveBeenCalledWith(ingestError);
+    const ensureError = expect.objectContaining({
+      message: expect.stringContaining("ensureProvider(amazfit-zepp) failed"),
+      cause: ingestError,
+    });
+    expect(routeMocks.captureException).toHaveBeenCalledWith(ensureError);
     expect(routeMocks.loggerError).toHaveBeenCalledWith(
-      `[ingest-zos] Failed to ingest health data: ${ingestError}`,
+      expect.stringContaining("[ingest-zos] Failed to ingest health data: Error: ensureProvider"),
     );
   });
 });

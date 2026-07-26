@@ -71,6 +71,12 @@ const reviewRawTableCopies: readonly ReviewRawTableCopy[] = [
     sourceTable: "provider",
     columns: ["id", "name", "api_base_url", "user_id", "created_at"],
     selectExpressions: ["id", "name", "api_base_url", "user_id", "created_at"],
+  },
+  {
+    targetTable: "postgres_fitness.provider_connection",
+    sourceTable: "provider_connection",
+    columns: ["user_id", "provider_id", "created_at", "updated_at"],
+    selectExpressions: ["user_id", "provider_id", "created_at", "updated_at"],
     whereClause: `user_id = ${clickHouseStringLiteral(USER_ID)}`,
   },
   {

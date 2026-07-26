@@ -850,6 +850,11 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("ref('activity_vo2max_estimate')");
     expect(sql).toContain("ref('daily_body_measurement')");
+    expect(sql).toContain("changed_body_weeks AS");
+    expect(sql).toContain("WHERE is_deleted = 0");
+    expect(normalizedSql).toContain(
+      "ref('daily_body_measurement') }} FINAL WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+    );
     expect(sql).toContain("toMonday(toDate(started_at)) AS week_start");
     expect(sql).not.toContain("activity_date");
     expect(sql).toContain("argMax(vo2max, started_at) AS latest_vo2max");
@@ -867,9 +872,20 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("order_by='(user_id, measurement_id)'");
     expect(sql).toContain("{% if is_incremental() %}");
-    expect(sql).toContain("existing_measurements AS");
+    expect(sql).toContain("system.view_refreshes");
+    expect(sql).toContain("analytics.body_measurement_sample");
+    expect(sql).toContain("changed_user_watermarks AS");
+    expect(sql).toContain("existing_rows AS");
     expect(sql).toContain("analytics.v_body_measurement");
-    expect(normalizedSql).toContain("existing_measurements.latest_recorded_at) - INTERVAL 7 DAY");
+    expect(normalizedSql).toContain(
+      "source._peerdb_synced_at <= body_view_state.last_success_time",
+    );
+    expect(normalizedSql).toContain(
+      "source_changes.source_synced_at > target_user_state.last_source_synced_at",
+    );
+    expect(normalizedSql).toContain("if(live_body.measurement_id IS NULL, 1, 0) AS is_deleted");
+    expect(sql).toContain("rows_to_write.source_synced_at AS source_synced_at");
+    expect(sql).not.toContain("INTERVAL 7 DAY");
     expect(normalizedSql).not.toContain("row_number() OVER");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });

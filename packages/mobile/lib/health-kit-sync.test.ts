@@ -324,6 +324,30 @@ describe("syncHealthKitToServer", () => {
     });
   });
 
+  it("propagates locked-device route errors without reporting them", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const lockedDeviceError = Object.assign(
+      new Error("HealthKit data is unavailable while the device is locked"),
+      {
+        code: "HEALTHKIT_DATABASE_INACCESSIBLE",
+      },
+    );
+    healthKit.queryWorkoutRoutes.mockRejectedValue(lockedDeviceError);
+    vi.mocked(captureException).mockClear();
+
+    await expect(
+      syncHealthKitToServer({
+        trpcClient: client,
+        healthKit,
+        syncRangeDays: 1,
+      }),
+    ).rejects.toBe(lockedDeviceError);
+
+    expect(captureException).not.toHaveBeenCalled();
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).not.toHaveBeenCalled();
+  });
+
   it("records route push errors as non-fatal", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();

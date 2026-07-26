@@ -1,13 +1,12 @@
 import { formatCalories, formatGrams } from "@dofek/format/format";
+import type { SelectedDateNutritionSummary } from "@dofek/nutrition/selected-date-summary";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
 interface MacroSummaryProps {
   calories: number;
-  caloriesGoal: number;
-  proteinGrams: number;
-  carbsGrams: number;
-  fatGrams: number;
+  calorieGoal: SelectedDateNutritionSummary["calorieGoal"];
+  macros: SelectedDateNutritionSummary["macros"];
 }
 
 function MacroBar({ label, grams, color }: { label: string; grams: number; color: string }) {
@@ -20,35 +19,28 @@ function MacroBar({ label, grams, color }: { label: string; grams: number; color
   );
 }
 
-export function MacroSummary({
-  calories,
-  caloriesGoal,
-  proteinGrams,
-  carbsGrams,
-  fatGrams,
-}: MacroSummaryProps) {
-  const caloriesRemaining = caloriesGoal - calories;
-  const progressFraction = Math.min(calories / caloriesGoal, 1);
-
+export function MacroSummary({ calories, calorieGoal, macros }: MacroSummaryProps) {
   return (
     <View style={styles.container}>
       <View style={styles.calorieSection}>
         <Text style={styles.calorieCount}>{formatCalories(calories)}</Text>
-        <Text style={styles.calorieLabel}>of {formatCalories(caloriesGoal)}</Text>
+        <Text style={styles.calorieLabel}>of {formatCalories(calorieGoal.target)}</Text>
         <View style={styles.progressBarBackground}>
-          <View style={[styles.progressBarFill, { width: `${progressFraction * 100}%` }]} />
+          <View style={[styles.progressBarFill, { width: `${calorieGoal.progressPercentage}%` }]} />
         </View>
         <Text style={styles.remainingText}>
-          {caloriesRemaining > 0
-            ? `${formatCalories(caloriesRemaining)} remaining`
-            : "Goal reached"}
+          {calorieGoal.remaining > 0
+            ? `${formatCalories(calorieGoal.remaining)} remaining`
+            : calorieGoal.over > 0
+              ? `${formatCalories(calorieGoal.over)} over goal`
+              : "Goal reached"}
         </Text>
       </View>
 
       <View style={styles.macroSection}>
-        <MacroBar label="Protein" grams={proteinGrams} color={colors.positive} />
-        <MacroBar label="Carbs" grams={carbsGrams} color={colors.warning} />
-        <MacroBar label="Fat" grams={fatGrams} color={colors.danger} />
+        <MacroBar label="Protein" grams={macros.protein.grams} color={colors.positive} />
+        <MacroBar label="Carbs" grams={macros.carbs.grams} color={colors.warning} />
+        <MacroBar label="Fat" grams={macros.fat.grams} color={colors.danger} />
       </View>
     </View>
   );

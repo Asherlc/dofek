@@ -2,7 +2,7 @@ import type { ClickHouseMigration } from "./types.ts";
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0056_daily_recovery_lifecycle",
+    id: "0057_daily_recovery_lifecycle",
     statements: [
       `ALTER TABLE analytics.daily_recovery_inputs
         ADD COLUMN IF NOT EXISTS is_deleted UInt8 DEFAULT 0 AFTER rhr_sd_60d`,

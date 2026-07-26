@@ -364,6 +364,8 @@ SELECT
   body_source.recorded_at AS recorded_at,
   body_source.weight_kg AS weight_kg,
   body_source.body_fat_pct AS body_fat_pct,
+  0 AS is_deleted,
+  refresh_clock.refreshed_at AS source_synced_at,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
 FROM body_source
@@ -487,7 +489,8 @@ export function buildTestHealthspanReadModelSelectSql(
   SELECT
     user_id,
     toMonday(date) AS week_start
-  FROM ${databases.analytics}.daily_body_measurement
+  FROM ${databases.analytics}.daily_body_measurement FINAL
+  WHERE is_deleted = 0
   GROUP BY user_id, toMonday(date)
 ),
 metrics AS (
@@ -516,7 +519,8 @@ body_by_week AS (
     toMonday(date) AS week_start,
     argMax(weight_kg, (recorded_at, refresh_version, measurement_id)) AS weight_kg,
     argMax(body_fat_pct, (recorded_at, refresh_version, measurement_id)) AS body_fat_pct
-  FROM ${databases.analytics}.daily_body_measurement
+  FROM ${databases.analytics}.daily_body_measurement FINAL
+  WHERE is_deleted = 0
   GROUP BY user_id, toMonday(date)
 ),
 refresh_clock AS (

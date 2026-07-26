@@ -67,7 +67,10 @@ export default function ReportsScreen() {
                     : "Not tracked"
                 }
               />
-              <ReportMetric label="Avg HRV" value={formatHRV(weeklyReport.data.current.avgHrv)} />
+              <ReportMetric
+                label="Average Heart Rate Variability (HRV)"
+                value={formatHRV(weeklyReport.data.current.avgHrv)}
+              />
             </View>
           </Card>
         ) : (
@@ -104,7 +107,10 @@ export default function ReportsScreen() {
                 label="Avg sleep"
                 value={formatDurationMinutes(monthlyReport.data.current.avgSleepMinutes)}
               />
-              <ReportMetric label="Avg HRV" value={formatHRV(monthlyReport.data.current.avgHrv)} />
+              <ReportMetric
+                label="Average Heart Rate Variability (HRV)"
+                value={formatHRV(monthlyReport.data.current.avgHrv)}
+              />
             </View>
           </Card>
         ) : (

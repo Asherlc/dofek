@@ -37,8 +37,8 @@ export function AnomalyAlertBanner({ anomalies, loading }: AnomalyAlertBannerPro
       </ul>
       {illnessPattern && (
         <p className={`text-xs ${detailColor} italic`}>
-          Combined elevated resting HR and depressed HRV may indicate your body is fighting
-          something. Consider taking it easy today.
+          Combined elevated resting heart rate and depressed heart rate variability may indicate
+          your body is fighting something. Consider taking it easy today.
         </p>
       )}
     </div>

@@ -199,7 +199,7 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
   return {
     providers: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.provider WHERE user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.provider_connection WHERE user_id = '${userId}'`,
     ),
     sessions: await readCount(
       sql,
@@ -207,7 +207,7 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     ),
     providerPriorities: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.provider_priority pp JOIN fitness.provider p ON p.id = pp.provider_id WHERE p.user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.provider_priority pp JOIN fitness.provider_connection pc ON pc.provider_id = pp.provider_id WHERE pc.user_id = '${userId}'`,
     ),
     userSettings: await readCount(
       sql,

@@ -259,8 +259,6 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       percentage: computePercentage(completedCount, 0, totalProviders),
     });
 
-    await ensureProvider(db, provider.id, provider.name, undefined, job.data.userId);
-
     const requiresTokens = providerRequiresStoredTokens(provider);
     if (requiresTokens) {
       const tokens = await loadTokens(db, provider.id, job.data.userId);
@@ -275,6 +273,8 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         continue;
       }
     }
+
+    await ensureProvider(db, provider.id, provider.name, undefined, job.data.userId);
 
     const activeCooldown = await providerRateLimitCooldownStore.getActive(
       provider.id,

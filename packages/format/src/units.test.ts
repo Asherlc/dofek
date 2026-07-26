@@ -112,6 +112,9 @@ describe("unit labels", () => {
     expect(metric.distanceLabel).toBe("km");
     expect(metric.elevationLabel).toBe("m");
     expect(metric.temperatureLabel).toBe("°C");
+    expect(metric.percentageLabel).toBe("%");
+    expect(metric.calorieLabel).toBe("kcal");
+    expect(metric.caloriesPerDayLabel).toBe("kcal/day");
     expect(metric.speedLabel).toBe("km/h");
     expect(metric.heightLabel).toBe("cm");
     expect(metric.paceLabel).toBe("/km");

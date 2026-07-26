@@ -173,6 +173,7 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
 
 describe("ProviderDetailRepository provider data deletion (integration)", () => {
   const userId = "00000000-0000-4000-8000-0000000000b3";
+  const secondUserId = "00000000-0000-4000-8000-0000000000b4";
   const providerId = "provider-delete-integration";
   let testContext: TestContext;
 
@@ -180,7 +181,9 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
     testContext = await setupTestDatabase();
     await testContext.db.execute(
       sql`INSERT INTO fitness.user_profile (id, name)
-          VALUES (${userId}, 'Provider Delete Integration User')
+          VALUES
+            (${userId}, 'Provider Delete Integration User'),
+            (${secondUserId}, 'Second Provider Delete Integration User')
           ON CONFLICT (id) DO NOTHING`,
     );
     await testContext.db.execute(
@@ -188,13 +191,21 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
           VALUES (${providerId}, 'Provider Delete Integration', ${userId})`,
     );
     await testContext.db.execute(
+      sql`INSERT INTO fitness.provider_connection (user_id, provider_id)
+          VALUES (${userId}, ${providerId}), (${secondUserId}, ${providerId})`,
+    );
+    await testContext.db.execute(
       sql`INSERT INTO fitness.oauth_token (provider_id, user_id, access_token, expires_at)
-          VALUES (${providerId}, ${userId}, 'encrypted-test-token', now() + interval '1 hour')`,
+          VALUES
+            (${providerId}, ${userId}, 'encrypted-test-token', now() + interval '1 hour'),
+            (${providerId}, ${secondUserId}, 'encrypted-second-token', now() + interval '1 hour')`,
     );
     await testContext.db.execute(
       sql`INSERT INTO fitness.activity
             (provider_id, user_id, external_id, activity_type, started_at)
-          VALUES (${providerId}, ${userId}, 'activity-1', 'running', now())`,
+          VALUES
+            (${providerId}, ${userId}, 'activity-1', 'running', now()),
+            (${providerId}, ${secondUserId}, 'activity-2', 'cycling', now())`,
     );
     await testContext.db.execute(
       sql`INSERT INTO fitness.daily_metrics (provider_id, user_id, date)
@@ -203,16 +214,10 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
   }, 120_000);
 
   afterAll(async () => {
-    await testContext?.db.execute(
-      sql`DELETE FROM fitness.oauth_token WHERE provider_id = ${providerId} AND user_id = ${userId}`,
-    );
-    await testContext?.db.execute(
-      sql`DELETE FROM fitness.provider WHERE id = ${providerId} AND user_id = ${userId}`,
-    );
     await testContext?.cleanup();
   });
 
-  it("deletes provider records and preserves the provider connection token", async () => {
+  it("deletes one user's records while preserving both users' connections and tokens", async () => {
     const repository = new ProviderDetailRepository(testContext.db, userId);
 
     const request = await repository.requestProviderDataDeletion(providerId);
@@ -242,10 +247,70 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
       sql`SELECT count(*) AS count FROM fitness.oauth_token
           WHERE provider_id = ${providerId} AND user_id = ${userId}`,
     );
+    const [secondUserActivityCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.activity
+          WHERE provider_id = ${providerId} AND user_id = ${secondUserId}`,
+    );
+    const [connectionCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.provider_connection
+          WHERE provider_id = ${providerId}`,
+    );
+    const [allTokenCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.oauth_token
+          WHERE provider_id = ${providerId}`,
+    );
 
     expect(activityCount?.count).toBe(0);
     expect(dailyMetricsCount?.count).toBe(0);
     expect(tokenCount?.count).toBe(1);
+    expect(secondUserActivityCount?.count).toBe(1);
+    expect(connectionCount?.count).toBe(2);
+    expect(allTokenCount?.count).toBe(2);
+  });
+
+  it("disconnects one user without changing the other user's connection", async () => {
+    const repository = new ProviderDetailRepository(testContext.db, userId);
+
+    await repository.deleteProviderData(providerId);
+
+    const rows = await testContext.db.execute<{
+      user_id: string;
+      connection_count: number;
+      token_count: number;
+      activity_count: number;
+    }>(sql`
+      SELECT
+        user_profile.id AS user_id,
+        (
+          SELECT count(*)::int FROM fitness.provider_connection
+          WHERE provider_id = ${providerId}
+            AND user_id = user_profile.id
+        ) AS connection_count,
+        (
+          SELECT count(*)::int FROM fitness.oauth_token
+          WHERE provider_id = ${providerId}
+            AND user_id = user_profile.id
+        ) AS token_count,
+        (
+          SELECT count(*)::int FROM fitness.activity
+          WHERE provider_id = ${providerId}
+            AND user_id = user_profile.id
+        ) AS activity_count
+      FROM fitness.user_profile
+      WHERE id IN (${userId}, ${secondUserId})
+      ORDER BY id
+    `);
+
+    expect(rows).toEqual([
+      { user_id: userId, connection_count: 0, token_count: 0, activity_count: 0 },
+      { user_id: secondUserId, connection_count: 1, token_count: 1, activity_count: 1 },
+    ]);
   });
 
   it("fails with the missing-table error before writing another outbox event", async () => {

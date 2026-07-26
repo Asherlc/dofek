@@ -8,6 +8,7 @@ interface MealSectionProps {
   mealName: string;
   mealKey: string;
   entries: FoodEntry[];
+  totalCalories: number;
   onAddFood: (mealKey: string) => void;
   onDeleteFood: (id: string) => void;
   deleting: boolean;
@@ -17,12 +18,11 @@ export function MealSection({
   mealName,
   mealKey,
   entries,
+  totalCalories,
   onAddFood,
   onDeleteFood,
   deleting,
 }: MealSectionProps) {
-  const totalCalories = entries.reduce((sum, entry) => sum + (entry.calories ?? 0), 0);
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>

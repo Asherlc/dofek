@@ -533,11 +533,18 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         }),
       ).rejects.toThrow("connection refused");
 
-      expect(Sentry.captureException).toHaveBeenCalledWith(dbError, {
+      const ensureError = expect.objectContaining({
+        message: expect.stringContaining("ensureProvider(apple_motion) failed"),
+        cause: dbError,
+      });
+      expect(Sentry.captureException).toHaveBeenCalledWith(ensureError, {
         tags: { source: "imu-push-samples" },
       });
-      expect(mockSpan.recordException).toHaveBeenCalledWith(dbError);
-      expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 2, message: "connection refused" });
+      expect(mockSpan.recordException).toHaveBeenCalledWith(ensureError);
+      expect(mockSpan.setStatus).toHaveBeenCalledWith({
+        code: 2,
+        message: expect.stringContaining("ensureProvider(apple_motion) failed"),
+      });
     });
 
     it("reports publish failures from the repository to Sentry", async () => {
@@ -613,10 +620,14 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         }),
       ).rejects.toThrow(stringError);
 
-      expect(Sentry.captureException).toHaveBeenCalledWith(stringError, {
+      const ensureError = expect.objectContaining({
+        message: expect.stringContaining("ensureProvider(apple_motion) failed"),
+        cause: stringError,
+      });
+      expect(Sentry.captureException).toHaveBeenCalledWith(ensureError, {
         tags: { source: "imu-push-samples" },
       });
-      expect(mockSpan.recordException).not.toHaveBeenCalled();
+      expect(mockSpan.recordException).toHaveBeenCalledWith(ensureError);
     });
   });
 });

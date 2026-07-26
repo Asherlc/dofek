@@ -346,7 +346,11 @@ export const PROVIDER_DATA_TABLES = [
 ];
 
 /** Tables to cascade-delete when disconnecting a provider, including credentials. */
-export const DISCONNECT_CHILD_TABLES = [...PROVIDER_DATA_TABLES, "fitness.oauth_token"];
+export const DISCONNECT_CHILD_TABLES = [
+  ...PROVIDER_DATA_TABLES,
+  "fitness.oauth_token",
+  "fitness.provider_connection",
+];
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -787,20 +791,10 @@ export class ProviderDetailRepository {
     const rows = await executeWithSchema(
       this.#db,
       ownerCheckSchema,
-      sql`SELECT provider_id AS id FROM fitness.oauth_token
-          WHERE provider_id = ${providerId} AND user_id = ${this.#userId}
-          UNION ALL
-          SELECT id FROM fitness.provider
-          WHERE id = ${providerId} AND user_id = ${this.#userId}
-          UNION ALL
-          SELECT provider_id AS id FROM fitness.activity
-          WHERE provider_id = ${providerId} AND user_id = ${this.#userId}
-          UNION ALL
-          SELECT provider_id AS id FROM fitness.daily_metrics
-          WHERE provider_id = ${providerId} AND user_id = ${this.#userId}
-          UNION ALL
-          SELECT provider_id AS id FROM fitness.sleep_session
-          WHERE provider_id = ${providerId} AND user_id = ${this.#userId}
+      sql`SELECT provider_id AS id
+          FROM fitness.provider_connection
+          WHERE provider_id = ${providerId}
+            AND user_id = ${this.#userId}
           LIMIT 1`,
     );
     return rows.length > 0;

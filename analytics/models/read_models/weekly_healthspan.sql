@@ -9,6 +9,15 @@
 ) }}
 
 WITH {% if is_incremental() %}
+target_state AS (
+    SELECT
+        coalesce(
+            max(refreshed_at),
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) AS last_refreshed_at
+    FROM {{ this }} FINAL
+),
+
 existing_weeks AS (
     SELECT
         user_id,
@@ -97,8 +106,19 @@ body_by_week AS (
         argMax(weight_kg, (recorded_at, refresh_version, measurement_id)) AS weight_kg,
         argMax(body_fat_pct, (recorded_at, refresh_version, measurement_id)) AS body_fat_pct
     FROM {{ ref('daily_body_measurement') }} FINAL
+    WHERE is_deleted = 0
     GROUP BY user_id, toMonday(date)
 ),
+
+{% if is_incremental() %}
+changed_body_weeks AS (
+    SELECT DISTINCT
+        user_id,
+        toMonday(date) AS week_start
+    FROM {{ ref('daily_body_measurement') }} FINAL
+    WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)
+),
+{% endif %}
 
 week_keys AS (
     SELECT
@@ -147,6 +167,11 @@ week_keys_to_materialize AS (
         ON existing_weeks.user_id = week_keys.user_id
     WHERE existing_weeks.user_id IS null
         OR week_keys.week_start >= existing_weeks.latest_materialized_week_start - INTERVAL 26 WEEK
+    UNION DISTINCT
+    SELECT
+        changed_body_weeks.user_id AS user_id,
+        changed_body_weeks.week_start AS week_start
+    FROM changed_body_weeks
     {% endif %}
 ),
 

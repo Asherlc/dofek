@@ -1,5 +1,4 @@
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { ALTITUDE, SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import {
@@ -8,6 +7,7 @@ import {
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
 const PROVIDER_SLUG = "apple_motion";
 const INSERT_BATCH_SIZE = 2000;
@@ -43,11 +43,12 @@ export class WatchAltitudeSyncRepository {
 
   async ensureProvider(): Promise<void> {
     const providerId = this.#getProviderId();
-    await this.#database.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${providerId}, 'Apple Motion', ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#database,
+      providerId,
+      providerName: "Apple Motion",
+      userId: this.#userId,
+    });
   }
 
   async insertSampleBatch(deviceId: string, samples: WatchAltitudeSample[]): Promise<number> {

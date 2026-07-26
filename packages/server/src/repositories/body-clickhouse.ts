@@ -117,6 +117,7 @@ export function bodyWeightDedupClickHouseQuery(
           measurement_id
         FROM analytics.daily_body_measurement FINAL
         WHERE user_id = {userId:UUID}
+          AND is_deleted = 0
           AND toDate(toTimeZone(recorded_at, {timezone:String})) <= ${endDateExpression(endDate)}
           ${localDateRangePredicate}
           ${options.requireBodyFat ? "AND body_fat_pct IS NOT NULL" : ""}

@@ -129,6 +129,9 @@ describe("CyclingAnalyticsRepository", () => {
       { date: "2026-07-10", eftp: 266, activityName: "Intervals" },
     ]);
     expect(result.eftpTrend.currentEftp).toBe(266);
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toMatch(
+      /FROM analytics\.daily_body_measurement FINAL[\s\S]*AND is_deleted = 0/,
+    );
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
       expect.anything(),

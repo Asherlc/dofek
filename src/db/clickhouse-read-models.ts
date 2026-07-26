@@ -871,8 +871,8 @@ function buildProviderStatsReadModelSql(): string {
   return `${standardViewHeader("analytics.provider_stats")}
 WITH
 providers AS (
-  SELECT DISTINCT user_id, id AS provider_id
-  FROM postgres_fitness.provider FINAL
+  SELECT DISTINCT user_id, provider_id
+  FROM postgres_fitness.provider_connection FINAL
   WHERE _peerdb_is_deleted = 0
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id

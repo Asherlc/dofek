@@ -8,7 +8,8 @@
     "./food-entry-nutrition": "./src/food-entry-nutrition.ts",
     "./meal": "./src/meal.ts",
     "./nutrients": "./src/nutrients.ts",
-    "./open-food-facts": "./src/open-food-facts.ts"
+    "./open-food-facts": "./src/open-food-facts.ts",
+    "./selected-date-summary": "./src/selected-date-summary.ts"
   },
   "dependencies": {
     "@dofek/format": "workspace:*",

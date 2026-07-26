@@ -1,7 +1,6 @@
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import { SpanStatusCode, trace } from "@opentelemetry/api";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import {
@@ -10,6 +9,7 @@ import {
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
 const tracer = trace.getTracer("dofek-server");
 
@@ -36,11 +36,12 @@ export class InertialMeasurementUnitSyncRepository {
   }
 
   async ensureProvider(): Promise<void> {
-    await this.#database.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${PROVIDER_ID}, 'Apple Motion', ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#database,
+      providerId: PROVIDER_ID,
+      providerName: "Apple Motion",
+      userId: this.#userId,
+    });
   }
 
   async insertBatch(

@@ -7,6 +7,71 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-25: Locked-device workout route queries generated Sentry errors
+
+### Symptoms
+
+Sentry issue `DOFEK-MOBILE-1A` recorded three handled production errors at
+`2026-07-25T16:52:46Z`. Each error came from
+`queryWorkoutRoutes.lookupWorkout(...)` and reported
+`HEALTHKIT_DATABASE_INACCESSIBLE` with native HealthKit error
+`com.apple.healthkit:6`.
+
+### User Impact
+
+One backgrounded iOS user was affected. Three workout-route lookups did not
+return GPS data during that sync pass; the rest of the HealthKit sync was
+allowed to continue. A later catch-up sync can query those routes again while
+they remain inside its sync window.
+
+### Evidence
+
+All three events came from the same physical iPhone, release
+`com.dofek.app@1.0.0+1784919398`, and production OTA update. Sentry recorded
+`app.in_foreground=false`, the same timestamp to the second, and three distinct
+workout UUIDs. The first fatal operation was
+`queryWorkoutRoutes.lookupWorkout(<uuid>)`, and the native error text was
+`Protected health data is inaccessible (com.apple.healthkit:6)`.
+
+Apple documents `HKError.Code.errorDatabaseInaccessible` as the expected result
+when an app queries protected HealthKit data while the device is locked:
+<https://developer.apple.com/documentation/healthkit/hkerror/code/errordatabaseinaccessible>.
+
+### Root Cause
+
+The background-sync boundary already classifies
+`HEALTHKIT_DATABASE_INACCESSIBLE` as a transient locked-device condition and
+does not report it to Sentry. The bounded-concurrency workout-route loop catches
+route-query failures internally, however, and reports every caught error before
+returning a non-fatal sync result. That internal catch prevents this specific
+HealthKit error from reaching the existing background classification. Three
+parallel route workers therefore emitted three Sentry events for one lock-state
+transition.
+
+### Fix or Mitigation
+
+Added one shared TypeScript classifier for the native
+`HEALTHKIT_DATABASE_INACCESSIBLE` code. The workout-route loop now rethrows
+that typed transient error before its normal non-fatal reporting path, allowing
+the existing background-sync boundary to log the locked state without sending
+it to Sentry and to mark the observer batch unsuccessful. Other route-query
+errors remain non-fatal and continue to be reported with workout context.
+
+### Validation
+
+The regression tests failed before the implementation because the route error
+was captured and the sync resolved successfully. After the fix, the focused
+HealthKit suites pass all 47 tests, the complete mobile project passes, and
+mobile TypeScript, Biome, and the handled-error telemetry policy all pass
+without retries or relaxed checks.
+
+### Remaining Risk
+
+The locked-device behavior cannot be reproduced in Simulator and still needs
+confirmation from a production physical-device background delivery after the
+mobile update ships. The affected route data remains dependent on a later
+successful catch-up within the configured sync window.
+
 ## 2026-07-21: Provider availability mutation shard lacked router coverage
 
 ### Symptoms
@@ -17215,6 +17280,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   against Infisical, investigate provider availability and runner egress using
   the captured endpoint evidence before changing workflow behavior.
 
+## 2026-07-25 — Mobile Preview Secret Load Timeout Recurred
+
+- **Status:** External runner-egress failure identified on PR #1961;
+  replacement CI pending.
+- **Symptoms:** `Publish Mobile Preview OTA` failed before Expo export or
+  publication began.
+- **User impact:** No production users were affected. PR #1961 was temporarily
+  blocked from merge.
+- **Evidence:** The exact failed step in [workflow run
+  30175976190](https://github.com/Asherlc/dofek/actions/runs/30175976190) was
+  `Load mobile preview secrets from Infisical`. Its first causal fatal line was
+  `Post "https://app.infisical.com/api/v1/auth/oidc-auth/login": dial tcp
+  100.49.202.214:443: i/o timeout`; GitHub OIDC token minting and the Infisical
+  CLI installation had already succeeded.
+- **Root cause:** The hosted runner could not establish the HTTPS connection
+  needed to exchange its GitHub OIDC token at Infisical's login endpoint. The
+  application, nutrition changes, and Expo build had not executed. Infisical
+  documents this token-exchange flow:
+  <https://infisical.com/docs/documentation/platform/identities/oidc-auth/github>.
+- **Fix / mitigation:** Trigger replacement CI on a new hosted runner. No
+  retry, timeout, fallback secret path, or workflow behavior was added.
+- **Validation:** Local lint, all package typechecks, 13,516 unit/mobile tests,
+  and 15 real-Postgres food integration tests pass. Replacement CI must
+  complete secret loading and mobile-preview publication before merge.
+- **Remaining risk / follow-up:** This is a second independently observed
+  runner-to-Infisical timeout. If another independent runner fails at the same
+  endpoint, investigate provider availability and runner egress before
+  changing authentication workflow behavior.
+
 ## 2026-07-25 — Mobile Preview Object Upload Returned InternalError
 
 - **Status:** Resolved after the external upload service recovered; replacement
@@ -17269,3 +17363,110 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   validation pass without ad-hoc waits. Replacement CI must pass before merge.
 - **Remaining risk / follow-up:** None beyond completing replacement CI; the
   compiler now enforces future fixture parity with the canonical DTO.
+
+## 2026-07-25 — Concurrent Local ClickHouse Stack Restarted During Validation
+
+- **Status:** Reproduced local Docker capacity incident; focused validation
+  passed after completed issue stacks were stopped, while CI remains the
+  independent broad validation gate.
+- **Symptoms:** The broad cycling repository integration fixture lost its
+  ClickHouse HTTP connection while rebuilding `analytics.v_activity`.
+- **User impact:** No production users were affected. One local validation
+  suite stopped before executing its four tests.
+- **Evidence:** The exact failed command was
+  `pnpm test:integration -- src/db/daily-body-measurement-read-model.integration.test.ts packages/server/src/repositories/cycling-analytics-repository.integration.test.ts`.
+  Its first fatal line was `socket hang up` during the fixture's
+  `INSERT INTO ... v_activity`. Docker then reported restart count 1 for
+  `issue-1769-clickhouse-1`, with the prior process ending at
+  `2026-07-25T22:12:18Z` and the replacement starting four seconds later.
+  The container log ended without a ClickHouse query exception. The same
+  restart recurred twice during the later focused lifecycle run: the first
+  fatal line was again `socket hang up`, restart count advanced to 1, and
+  Docker again retained `OOMKilled=false`. At the time, four other workspace
+  ClickHouse containers and two k3d servers were also running in the Docker
+  VM's 7.653 GiB memory allocation. On recurrence, the persisted ClickHouse
+  error log recorded `MEMORY_LIMIT_EXCEEDED` while flushing
+  `system.metric_log`: current RSS was 2.40 GiB against a 2.44 GiB process
+  limit immediately before exit 137.
+- **Root cause:** The reused issue-1769 ClickHouse test volume consumed the
+  process memory limit during system-log maintenance while the Docker VM was
+  already running four other ClickHouse instances. The process exited and
+  Compose restarted it; Docker did not attribute that inner-process exit as
+  `OOMKilled=true`.
+- **Fix / mitigation:** No retry, timeout, memory-limit, or application
+  workaround was added. Completed issue stacks were stopped through the
+  workspace Compose wrapper, and the issue-1769 Postgres, Redis, and Redpanda
+  services were stopped while the focused ClickHouse-only validation ran.
+  When the persisted test volume reproduced the failure, only issue-1769's
+  disposable Compose volumes were removed and a fresh ClickHouse volume was
+  created.
+- **Validation:** The lifecycle integration test passed update, deletion,
+  tombstone, downstream-exclusion, and refresh-snapshot watermark assertions
+  on the stable real ClickHouse process. The focused 39-test unit suite,
+  analytics policy, targeted SQLFluff, root typecheck, and Biome also passed.
+  The fresh-volume lifecycle run also passed the production
+  `weekly_healthspan` update and deletion propagation assertions. The broad
+  cycling fixture and CI remain the independent validation gates.
+- **Remaining risk / follow-up:** Capture Docker daemon or VM-level kill events
+  if this recurs, and reduce concurrent disposable workspace stacks before
+  repeating broad local ClickHouse validation. Docker documents container
+  memory constraints and out-of-memory behavior at
+  <https://docs.docker.com/engine/containers/resource_constraints/#understand-the-risks-of-running-out-of-memory>.
+
+## 2026-07-25 — Fresh E2E Migration Assumed a dbt-Owned Table Existed
+
+- **Status:** Root cause fixed and validated locally; replacement CI pending on
+  PR #1966.
+- **Symptoms:** The fresh E2E migration job failed while applying ClickHouse
+  migration `0056_daily_body_measurement_lifecycle`.
+- **User impact:** No production users were affected. PR #1966 was blocked from
+  merge.
+- **Evidence:** The exact failing step ran the E2E migration service. Its first
+  fatal line was `Could not find table: daily_body_measurement`. The migration
+  ran before dbt had created `analytics.daily_body_measurement`, while the same
+  table can exist in upgraded environments.
+- **Root cause:** Migration 0055 unconditionally altered a dbt-owned serving
+  table, but a fresh environment applies tracked migrations before dbt creates
+  that table.
+- **Fix / mitigation:** Query `system.tables` and run both lifecycle-column
+  alterations only when the existing serving table is present. Fresh
+  environments skip the upgrade and let dbt create the final schema; upgraded
+  environments retain the required alteration path.
+- **Validation:** Focused migration tests cover both absent and present table
+  states, root typecheck and Biome pass, and a fresh E2E migration run applied
+  all 46 migrations through 0055 successfully without an ad-hoc wait.
+- **Remaining risk / follow-up:** The first local rerun experienced a separate
+  ClickHouse exit 137 while several workspace stacks shared Docker memory.
+  After stopping only completed issue stacks, the same fresh migration run
+  passed. Continue capturing Docker VM-level kill evidence if that capacity
+  failure recurs.
+## 2026-07-25 — Local ClickHouse OOM During Concurrent Validation
+
+- **Status:** Resolved by ending the concurrent full-suite workload; no
+  repository resilience change was made.
+- **Symptoms:** The issue-1729 SQLFluff lint process lost its local ClickHouse
+  HTTP connection while several workspaces were validating concurrently.
+- **User impact:** No production or CI users were affected. Local PR validation
+  was delayed.
+- **Evidence:** The exact failing command was `pnpm lint`, in the
+  `lint:analytics-sql` step. Its first fatal line was
+  `dbt tried to connect to the database and failed`, followed by
+  `RemoteDisconnected('Remote end closed connection without response')`.
+  `docker inspect issue-1729-clickhouse-1` reported `"OOMKilled": true`, and
+  `docker stats --no-stream` showed five other workspace ClickHouse containers
+  active within the same 7.65 GiB Docker VM.
+- **Root cause:** Running the repository-wide Vitest suite and SQL lint while
+  multiple workspaces also ran ClickHouse exhausted the shared Docker VM
+  memory, so Docker killed the issue-1729 ClickHouse process. Docker documents
+  that containers can be killed when the host runs out of memory:
+  <https://docs.docker.com/engine/containers/resource_constraints/#understand-the-risks-of-running-out-of-memory>.
+- **Fix / mitigation:** Let the concurrent full-suite process finish and keep
+  subsequent validation serial and scoped to this workspace. No retry,
+  timeout, fallback, or memory-limit change was added.
+- **Validation:** Typecheck, 346 issue-focused unit tests, 26 focused
+  integration tests, the 35-model analytics build, and the isolated 39-test
+  mobile teardown suite pass. CI remains the authoritative full-matrix gate.
+- **Remaining risk / follow-up:** Concurrent workspaces can still exhaust the
+  shared Docker VM. Schedule ClickHouse-heavy local validation serially when
+  several workspaces are active; do not stop or prune another workspace's
+  resources.

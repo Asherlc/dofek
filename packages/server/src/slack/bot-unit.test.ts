@@ -1297,7 +1297,7 @@ describe("bot.ts — registerHandlers", () => {
         },
       ]);
       // load calorie goal
-      mockExecute.mockResolvedValueOnce([{ value: 2000 }]);
+      mockExecute.mockResolvedValueOnce([{ key: "calorieGoal", value: 2000 }]);
       // load confirmed calories for the entry date
       mockExecute.mockResolvedValueOnce([{ calories_consumed: 80 }]);
       const ack = vi.fn();
