@@ -234,11 +234,13 @@ describe("fetchWithRateLimitHandling", () => {
     const result = rateLimitFetch("https://api.example.com/data").catch(
       (caughtError: unknown) => caughtError,
     );
-    timeoutController.abort(new DOMException("Timed out", "TimeoutError"));
+    const timeoutReason = new DOMException("Timed out", "TimeoutError");
+    timeoutController.abort(timeoutReason);
     const error = await result;
 
     expect(timeoutSpy).toHaveBeenCalledWith(PROVIDER_HTTP_REQUEST_TIMEOUT_MS);
     expect(error).toBeInstanceOf(ProviderRequestTimeoutError);
+    expect(error).toHaveProperty("cause", timeoutReason);
     expect(error).toMatchObject({
       code: "ETIMEDOUT",
       providerId: "example",
