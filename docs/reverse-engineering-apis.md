@@ -76,14 +76,14 @@ jadx-gui app.apk
 
 **Dealing with app bundles (AAB/split APKs):**
 - Modern apps use Android App Bundles — APKMirror provides these as `.apks` (XAPK) bundles
-- Use [SAI](https://github.com/nicejjin/SAI) or `bundletool` to merge split APKs
+- Use [SAI](https://github.com/Aefyr/SAI) or `bundletool` to install or inspect split APKs
 - Or just download the universal APK variant when available
 
 **Example — Eight Sleep:**
 ```
 # Found in decompiled APK:
-CLIENT_ID = "0894c7f33bb94800a03f1f4df13a4f38"
-CLIENT_SECRET = "f0954a3ed5763ba3d06834c73731a32f15f168f47d4f164751275def86db0c76"
+CLIENT_ID = "<redacted>"
+CLIENT_SECRET = "<redacted>"
 AUTH_BASE = "https://auth-api.8slp.net/v1"
 API_BASE = "https://client-api.8slp.net/v1"
 ```

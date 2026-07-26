@@ -1,8 +1,9 @@
 # Metric Stream Redpanda and R2 Runbook
 
-Use this for the Redpanda metric-stream replay path. HealthKit quantity
-metric-stream samples and provider metric-stream samples publish through
-Redpanda first. Postgres no longer stores the metric stream.
+Use this for Redpanda ingest, ClickHouse sink, and R2 archive operations, plus
+planning a bounded replay implementation. HealthKit quantity metric-stream
+samples and provider metric-stream samples publish through Redpanda first.
+Postgres no longer stores the metric stream.
 
 ## Purpose
 
@@ -10,17 +11,18 @@ Metric-stream is high-volume sensor data. It is intentionally not stored in
 Postgres; Redpanda is the hot ingest log, R2 is the durable archive, and
 ClickHouse is the analytics serving copy.
 
-The target durable path is:
+The current archive path is:
 
 ```text
 provider/mobile import
   -> Redpanda topic metric-stream-v1
-  -> ClickHouse sink -> postgres_fitness.metric_stream
+  -> ClickHouse sink -> ingest.metric_stream
   -> Redpanda Connect archive -> Cloudflare R2
 ```
 
-R2 is the long-term replay store for metric-stream events, and ClickHouse is the
-analytics serving copy; both are rebuildable from Redpanda/R2 for bounded ranges.
+R2 is the long-term archive for metric-stream events, and ClickHouse is the
+analytics serving copy. A checked-in R2-to-ClickHouse replay command does not
+yet exist, so the archive is not currently an operator-ready recovery path.
 Metric-stream samples are no longer written back into `fitness.metric_stream` from
 Redpanda. Historical Postgres rows were archived to R2 before the Postgres table
 was retired. Postgres remains canonical for users, providers, activities,
@@ -43,7 +45,7 @@ tokens, settings, food, and other app state.
 | Service | Purpose |
 | --- | --- |
 | `redpanda` | Kafka-compatible hot ingest log. |
-| `metric-stream-clickhouse-sink` | Consumes `metric-stream-v1` and writes non-IMU rows to `postgres_fitness.metric_stream`. |
+| `metric-stream-clickhouse-sink` | Consumes `metric-stream-v1` and writes non-IMU rows to `ingest.metric_stream`. |
 | `metric-stream-r2-archive` | Redpanda Connect pipeline that writes immutable batches to R2. |
 | `analytics-worker` | Rebuilds dbt-owned ClickHouse analytics read models from ClickHouse source tables. |
 
@@ -70,43 +72,32 @@ Archive objects use partitioned prefixes:
 metric-stream/v1/date=YYYY-MM-DD/hour=HH/<topic>-<partition>-<first-offset>-<last-offset>.jsonl.gz
 ```
 
-Each object contains newline-delimited JSON events. Every event must validate
-against `MetricStreamEventV1` from `src/metric-stream/events.ts`.
+Each object contains newline-delimited JSON records. Every record must validate
+against `metricStreamRedpandaEventSchema` in `src/metric-stream/events.ts`.
+Current producers emit:
 
-Event fields:
+- version 2 row events with `operationRevision`, `generation`, row identity,
+  timestamps, ownership, channel, and scalar/vector/point payload fields;
+- version 3 delete events with `eventId`, `operationRevision`, a bounded
+  `scope`, and `partitionKey`;
+- version 1 batch-completion events with `operationId`, `batchId`,
+  `datasetKeys`, `expectedEventCount`, and `partitionKey`.
 
-Required:
-
-- `version`
-- `id`
-- `recordedAt`
-- `userId`
-- `providerId`
-- `sourceType`
-- `channel`
-
-Optional:
-
-- `externalId`
-- `deviceId`
-- `activityId`
-- `scalar`
-- `vector`
-- `point`
-- `metadata`
+The union still accepts older archived row and delete versions for replay
+compatibility. Validate the exact record variant before interpreting its fields.
 
 Use `null` for absent optional values. Do not write empty strings as absent
 values.
 
-Delete events use the same topic and schema version with
+Delete events use the same topic with
 `eventType: "metric_stream_deleted"`. They carry a bounded `scope` such as an
 `activityId` or `{ userId, providerId, recordedAtStart }`, plus a `partitionKey`.
 Replacement writers must publish the delete event and replacement row events on
 that same partition key so Redpanda preserves delete-before-insert order.
 
-The ClickHouse sink applies delete events by marking matching
-`postgres_fitness.metric_stream` rows with `_peerdb_is_deleted = 1` before
-inserting replacement row events.
+The ClickHouse sink applies delete events by inserting newer matching
+`ingest.metric_stream` rows with `is_deleted = 1` before inserting replacement
+row events.
 
 ## Redpanda Connect Archive Expectations
 
@@ -189,7 +180,7 @@ Check ClickHouse freshness:
 
 ```bash
 docker exec -i "$(docker ps --filter name=dofek_clickhouse -q | head -n1)" \
-  sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "select max(recorded_at) from postgres_fitness.metric_stream"'
+  sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "select max(recorded_at) from ingest.metric_stream"'
 ```
 
 Check archive service logs for recent R2 write failures:
@@ -204,20 +195,21 @@ The freshness checks must cover:
 - `metric-stream-clickhouse-sink` consumer lag.
 - `metric-stream-r2-archive` consumer lag.
 - Newest R2 archive object age.
-- Newest `postgres_fitness.metric_stream.recorded_at` in ClickHouse.
+- Newest `ingest.metric_stream.recorded_at` in ClickHouse.
 - Newest dbt analytics rows that depend on metric stream, especially
   `analytics.daily_activity_load` and `analytics.daily_strain`.
 
-Treat R2 archive staleness as a production durability incident. Do not cut over
-writers to Redpanda-first unless the R2 archive is fresh.
+Treat R2 archive staleness as a production durability incident. Writers are
+already Redpanda-first; restore the archive before deploying writer changes or
+allowing required Redpanda offsets to expire.
 
 ## Historical Postgres Backfill
 
 The one-time `fitness.metric_stream` to R2 historical backfill has completed and
 the exporter code has been removed. Do not introduce a new Postgres-to-Redpanda
 or Postgres-to-R2 backfill path without a fresh migration plan and explicit
-operator approval. Future repairs should replay bounded R2 prefixes into
-ClickHouse or rebuild ClickHouse analytics from the Redpanda-fed source table.
+operator approval. A future repair may replay bounded R2 prefixes only after a
+checked-in command validates the target range, row counts, and checksums.
 
 Provider replacement syncs must use the scoped replacement publisher path so
 ClickHouse and R2 see the same delete/replacement sequence.
@@ -228,29 +220,39 @@ Replay must always be bounded by time or explicit R2 prefix. Do not run an
 unbounded archive replay.
 
 R2 replay automation is not shipped yet. Until `scripts/replay-metric-stream-from-r2.ts`
-exists, do not use R2 replay as an incident mitigation path. Use the existing
-bounded ClickHouse repair runbooks and scripts for ClickHouse-only repair, or
-implement the replay script before cutting over any additional metric-stream
-writers to Redpanda-first.
+exists, do not claim R2 replay as an available incident mitigation path and do
+not substitute the retired Postgres catch-up script. If the required Redpanda
+offsets have expired, implement and validate the bounded replay command before
+attempting recovery.
 
-After any bounded ClickHouse repair, rebuild the dependent analytics models:
+After a recent repair, local validation can run the repository analytics build:
 
 ```bash
-dbt build --project-dir analytics --profiles-dir analytics --threads 1 \
-  --select sensor_scalar_sample deduped_sensor activity_sensor_sample activity_summary_rows daily_activity_load daily_strain
+pnpm analytics:build
 ```
 
-## Cutover Checklist
+This uses the local `dev` target. Production read models advance through the
+deployed `analytics-worker`; verify a successful worker cycle after repairing
+the production source.
 
-Do not switch production writers to Redpanda-first until all checks pass:
+Historical model repair must use explicit `--event-time-start` and
+`--event-time-end` bounds from the
+[analytics backfill procedure](../analytics/README.md#microbatch-start-bounds-and-historical-backfills);
+do not invoke bare `dbt build`.
+
+## Durability Invariants
+
+Production writers are already Redpanda-first. Keep these invariants true:
 
 1. `redpanda` is healthy.
 2. ClickHouse sink can insert duplicate events idempotently.
 3. Redpanda Connect archive writes fresh R2 objects.
-4. A bounded R2 replay into a temporary ClickHouse table matches row counts and
-   checksums from the original archive.
-5. Recent Redpanda-sourced ClickHouse rows match the corresponding R2 archive
+4. Recent Redpanda-sourced ClickHouse rows match the corresponding R2 archive
    rows over a bounded recent window when validating replay behavior.
+
+Bounded R2 replay automation remains an explicit recovery gap. Do not describe
+the archive as operator-replayable until a checked-in replay command validates
+row counts and checksums against a temporary ClickHouse table.
 
 All provider and mobile metric-stream writers should use `writeMetricStreamRows()`
 or the scoped replacement helpers.
@@ -264,14 +266,18 @@ If strain, activity load, or other metric-stream analytics go stale:
 
    ```sql
    SELECT max(recorded_at)
-   FROM postgres_fitness.metric_stream
-   WHERE _peerdb_is_deleted = 0;
+   FROM ingest.metric_stream FINAL
+   WHERE is_deleted = 0;
    ```
 
-3. If Redpanda and R2 are fresh but ClickHouse is stale, replay the bounded
-   affected R2 prefix to ClickHouse and rebuild dependent dbt models.
-4. If R2 is stale, treat it as a canonical backup failure. Fix the archive
-   service before continuing ingestion cutover.
+3. If Redpanda and R2 are fresh but ClickHouse is stale, inspect the sink's
+   consumer lag and first fatal log line. If the required offsets remain in
+   Redpanda, fix the sink failure and let the same consumer group catch up.
+   If the offsets have expired, stop: bounded R2 replay automation is not
+   shipped, so an approved implementation is required before recovery.
+4. If R2 is stale, treat it as a durability failure. Fix the archive service
+   before relying on archive recovery or allowing the needed Redpanda offsets
+   to expire.
 5. Record the incident in `docs/production-incident-baseline.md`.
 
 ## References

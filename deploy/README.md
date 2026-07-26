@@ -4,7 +4,10 @@ Infrastructure-as-code and deployment configuration for Dofek.
 
 ## Architecture
 
-Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle Cloud Infrastructure (OCI) Always Free with **Cloudflare** for DNS, R2 storage, and CDN. Hetzner-backed production, staging, and PR review-app infrastructure has been retired.
+Dofek production is deployed as a **single-node Docker Swarm** stack on an
+Oracle Cloud Infrastructure (OCI) Ampere A1 host, with **Cloudflare** for DNS,
+R2 storage, and CDN. Hetzner-backed production, staging, and PR review-app
+infrastructure has been retired.
 
 - **Compute**: Production runs on an OCI Ampere A1 ARM64 host provisioned by `deploy/oracle-free/` and addressed through the `ORACLE_SERVER_HOST` GitHub Actions variable. The server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
@@ -14,9 +17,15 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
   - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service for lower-volume raw fitness tables into `postgres_fitness.*`.
   - **Volume**: Production uses the OCI data volume mounted at `/mnt/dofek-data`.
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
-  - **Databasus state path**: The `databasus` service bind-mounts its internal state to `/mnt/dofek-data/databasus` so backup schedules and storage config survive Docker volume churn.
-  - **CloudBeaver state path**: The `cloudbeaver` service bind-mounts its workspace to `/mnt/dofek-data/cloudbeaver`, including the Terraform-synced preconfigured Postgres and ClickHouse datasource file.
-  - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), private direct file imports (`dofek-imports`), web build assets (`dofek-web-assets`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), DB backups (`dofek-db-backups`), and canonical metric-stream replay archives (`dofek-metric-stream-archive`).
+  - **Disabled UI state**: Bind-mount directories for Databasus and
+    CloudBeaver remain provisioned, but the Oracle production override scales
+    both services to zero.
+  - **S3 (R2)**: Cloudflare R2 buckets for training data
+    (`dofek-training-data`), private direct file imports (`dofek-imports`), web
+    build assets (`dofek-web-assets`), OTA updates (`dofek-ota`), Storybook
+    (`dofek-storybook`), a currently unwritten DB-backup bucket
+    (`dofek-db-backups`), and the durable metric-stream archive
+    (`dofek-metric-stream-archive`).
 - **Networking**:
   - **Firewall**: OCI security lists allow production SSH/HTTP/HTTPS.
   - **DNS**: Cloudflare manages multiple zones: `dofek.fit`, `dofek.live`, and subdomains on `asherlc.com`.
@@ -37,14 +46,19 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
     identifier to match the SDK event:
     [Sentry Release Action](https://github.com/getsentry/action-release#usage),
     [Create a Deploy API](https://docs.sentry.io/api/releases/create-a-deploy/).
-  - **Netdata**: Real-time server health and performance monitoring.
+  - **Netdata**: Defined in the base stack but disabled by the Oracle
+    production override. Host and application telemetry must be inspected
+    through the active collector/Axiom path or direct diagnostics.
 - **Secrets**: Managed via **Infisical**. CI logs in with OIDC machine identity, renders `.github/templates/infisical-dotenv.tmpl` via `infisical export --template`, and writes a temporary environment-specific `.env.<env>` file on the runner for `docker stack deploy`. The server never stores secrets on disk.
 
 ## Implementation Details
 
 ### Terraform (`*.tf`)
 - `oracle-free/`: Separate Terraform root for the OCI production host. The reserved public IP is copied into the `ORACLE_SERVER_HOST` GitHub Actions variable and into the main `deploy/` root as `var.oracle_server_host`.
-- `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
+- `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`,
+  `dofek.live`) are proxied (CDN enabled). DNS records for management
+  subdomains still exist, although the corresponding services are disabled in
+  Oracle production.
 - `storage.tf`: Manages Cloudflare R2 buckets, lifecycle rules, the `assets.dofek.fit` bucket-level custom domain, and the CORS policy required for browser module loads from that cross-origin asset hostname. Cloudflare documents R2 custom domains as bucket-level domain bindings, not ordinary origin `CNAME` records, and documents that custom domains return CORS headers only when the bucket has a matching CORS policy: https://developers.cloudflare.com/r2/buckets/public-buckets/#custom-domains and https://developers.cloudflare.com/r2/buckets/cors/#use-cors-with-a-custom-domain. The `storybook.dofek.fit` custom domain is still configured manually in the Cloudflare dashboard.
   It also manages the private `dofek-imports` bucket. Its CORS policy permits only
   production application origins to make `PUT` requests and exposes `ETag` for
@@ -61,11 +75,18 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 ### Server Configuration (`server/`)
 - `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), and idempotently runs `docker swarm init`. No deploy helpers, no Infisical CLI.
 
-### Swarm Stack (`stack.yml`)
-- Single file defining all services: `web`, `worker`, `analytics-worker`, `cdc-health`, `traefik`, `db`, `clickhouse`, `redpanda`, `metric-stream-clickhouse-sink`, `metric-stream-r2-archive`, `redis`, `collector`, `ota`, `databasus`, `cloudbeaver`, `pgadmin`, `portainer`, `netdata`.
+### Swarm Stack (`stack.yml` + `stack.oracle.yml`)
+- `stack.yml` defines the complete application, storage, ingest, PeerDB,
+  Temporal, observability, OTA, and optional management-service topology.
+  Production always applies `stack.oracle.yml` on top of it.
 - Traefik consumes the swarm provider and routes traffic from labels declared on stack services.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
-- The worker healthcheck calls the worker process's loopback-only `/readyz` endpoint on port 3001. That endpoint verifies every existing BullMQ Worker's running state and Redis clients; the healthcheck must not start a second Node runtime or construct fresh queue clients inside the worker's 400 MiB cgroup. See the [Docker healthcheck reference](https://docs.docker.com/reference/compose-file/services/#healthcheck) and [BullMQ Worker API](https://api.docs.bullmq.io/classes/v5.Worker.html).
+- The worker healthcheck calls the worker process's loopback-only `/readyz`
+  endpoint on port 3001. That endpoint verifies every existing BullMQ Worker's
+  running state and Redis clients; the healthcheck must not start a second Node
+  runtime or construct fresh queue clients inside the worker's 512 MiB cgroup.
+  See the [Docker healthcheck reference](https://docs.docker.com/reference/compose-file/services/#healthcheck)
+  and [BullMQ Worker API](https://api.docs.bullmq.io/classes/v5.Worker.html).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
 - PostgreSQL runs `timescale/timescaledb-ha:pg18.3-ts2.26.4-all` so TimescaleDB and PostGIS are both available. It is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, `max_locks_per_transaction=4096` for large Timescale chunk scans, and logical replication settings needed by ClickHouse change-data capture. Production keeps six logical slots/senders and caps each slot at 64 GiB of retained WAL so PeerDB has recovery headroom without allowing an inactive slot to retain unbounded WAL.
@@ -83,7 +104,9 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
 - The historical Postgres `fitness.metric_stream` hypertable has been retired; metric-stream durability is Redpanda plus the R2 archive, and ClickHouse is the serving copy. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
 - Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
-- Management UIs (Portainer, Databasus, CloudBeaver, pgAdmin, PeerDB UI, Netdata) are exposed on dedicated subdomains with TLS termination through Traefik. Protect them at the network layer or with each tool's built-in auth.
+- The Oracle override scales Portainer, Databasus, CloudBeaver, pgAdmin,
+  PeerDB UI, and Netdata to zero. Their base-stack routes and DNS records do
+  not make them available in production.
 
 ### Monitoring (`otel-collector-config.yaml`)
 - Uses `filelog` receiver to tail Docker logs from `/var/lib/docker/containers/*/*.log`.
@@ -229,7 +252,11 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       https://developers.cloudflare.com/r2/buckets/cors/#use-cors-with-a-custom-domain.
       Cloudflare documents R2 lifecycle object expiration rules here:
       https://developers.cloudflare.com/r2/buckets/object-lifecycles/.
-   6. Apply the stack configuration before migrations with a non-prune,
+   6. Validate required host bind-mount directories before the first stack
+      apply. This fails before `docker stack deploy` if paths such as
+      `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with
+      missing bind sources.
+   7. Apply the stack configuration before migrations with a non-prune,
       detached `docker stack deploy` and the temporary ClickHouse-consumer
       quiesce overlay. On existing stacks this uses the currently deployed app
       image tag, so database, ClickHouse, network, config, and resource-limit
@@ -242,12 +269,11 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       overlay still applied. The deploy workflow waits explicitly for Postgres
       and ClickHouse instead of keeping a long-lived Docker-over-SSH stack-deploy
       wait open while the single-node host restarts services.
-   7. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
-   8. Run **schema migrations** as a one-shot container attached to the swarm overlay network:
+   8. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
+   9. Run **schema migrations** as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.
       When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
       analytics migrations before the stack update.
-   9. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
    10. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
    11. Run the resumable `provider-connection-cutover` one-shot command after
@@ -260,7 +286,7 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
        rows. PostgreSQL documents the staged `NOT VALID` and `VALIDATE
        CONSTRAINT` operations used by this cutover:
        <https://www.postgresql.org/docs/current/sql-altertable.html>.
-   12. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
+   12. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the fitness-raw, provider-inventory, and sensor-priority mirrors.
    13. Run the final `docker stack deploy -c deploy/stack.yml ...` to restore
        `analytics-worker` and `metric-stream-clickhouse-sink` only when every
        post-quiesce readiness step and ClickHouse CDC setup succeeds. If a
@@ -345,12 +371,17 @@ PR preview object cleanup:
 - `.github/workflows/cleanup-pr-r2.yml` deletes `pr-<number>/` objects from `dofek-storybook` and `dofek-ota` when a PR closes.
 - R2 lifecycle rules in `deploy/storage.tf` also expire preview prefixes after 14 days as a safety net if a workflow-run cleanup is missed.
 
-Databasus backup state:
+Postgres backup status:
 
-- Databasus stores its own users, storage targets, database definitions, schedules, and backup history in `/mnt/dofek-data/databasus`.
-- Terraform creates that directory and performs a one-time copy from the legacy `databasus_data` Docker volume when the bind-mount path is still empty.
-- If that path is empty or replaced, Databasus comes up as a fresh install and scheduled DB backups stop even if the `dofek-db-backups` bucket still exists.
-- After any Databasus storage or deploy change, verify the latest object in `dofek-db-backups` is less than 24 hours old.
+- Oracle production scales Databasus to zero.
+- Terraform still provisions the `dofek-db-backups` R2 bucket and the
+  `/mnt/dofek-data/databasus` state directory, but no checked-in production
+  service currently writes database backups to that bucket.
+- Do not claim successful database-backup coverage from the existence of the
+  bucket or directory. Provisioning and validating an active Postgres backup
+  owner is unresolved operational work.
+- The metric-stream R2 archive is active durability for metric-stream events;
+  it is not a backup of relational Postgres state.
 
 Required Infisical keys for mobile pipelines:
 
@@ -389,21 +420,19 @@ This preserves migration gating while remaining safe for both warm updates and s
 
 ### Deployment Runbook: Traefik Subdomain 404
 
-If management subdomains return `404 page not found`, use:
+For a `404 page not found` on an active Traefik route, use:
 
 - `docs/traefik-subdomain-404-runbook.md`
 
 ### Deployment Runbook: Stale ClickHouse Body Measurements
 
-If yesterday's or today's body weight exists in Postgres but is missing from
-ClickHouse-backed body measurement reads, use:
+If a recent body measurement is missing from ClickHouse-backed reads, use:
 
 - `docs/clickhouse-body-measurement-staleness-runbook.md`
 
 ## Management UIs
-- **Portainer**: `https://portainer.dofek.asherlc.com`
-- **Netdata**: `https://netdata.dofek.asherlc.com`
-- **Databasus**: `https://databasus.dofek.asherlc.com` (DB management + backups)
-- **CloudBeaver**: `https://cloudbeaver.dofek.asherlc.com` (Postgres + ClickHouse UI)
-- **pgAdmin**: `https://pgadmin.dofek.asherlc.com` (Postgres UI)
-- **PeerDB**: `https://peerdb.dofek.asherlc.com` (CDC mirror dashboard)
+
+The base stack defines Portainer, Netdata, Databasus, CloudBeaver, pgAdmin, and
+PeerDB UI services and routes. `deploy/stack.oracle.yml` sets every one of
+those services to zero replicas in production. A DNS response or Traefik 404
+for one of their historical hostnames does not mean the UI should be running.

@@ -98,19 +98,19 @@ owned by Redpanda, the Redpanda Connect R2 archive, and
 [`docs/metric-stream-redpanda-r2-runbook.md`](./metric-stream-redpanda-r2-runbook.md)
 for freshness checks and replay planning.
 
-The legacy `pnpm catch-up:metric-stream` command is only for bounded historical
-ClickHouse repair from existing Postgres rows. It is not a forward ingestion
-path and does not restore durability for new metric-stream events.
+Do not run the retired Postgres catch-up script during CDC recovery. It reads
+the removed `fitness.metric_stream` path and cannot repair current Redpanda
+ingestion.
 
 ## Recovery
 
 1. Identify the affected mirror and destination tables:
 
-	   | PeerDB mirror | Postgres source tables | ClickHouse destination tables |
-	   | --- | --- | --- |
-	   | `dofek_fitness_raw_analytics` | `fitness.activity`, `fitness.sleep_session`, `fitness.sleep_stage`, `fitness.daily_metrics`, `fitness.provider`, `fitness.provider_priority`, `fitness.device_priority`, `fitness.processing_flow_marker`, `fitness.user_profile` | `postgres_fitness.activity`, `postgres_fitness.sleep_session`, `postgres_fitness.sleep_stage`, `postgres_fitness.daily_metrics`, `postgres_fitness.provider`, `postgres_fitness.provider_priority`, `postgres_fitness.device_priority`, `postgres_fitness.processing_flow_marker`, `postgres_fitness.user_profile` |
-	   | `dofek_provider_inventory_raw_analytics` | `fitness.food_entry`, `fitness.health_event`, `fitness.lab_panel`, `fitness.lab_result`, `fitness.journal_entry`, `fitness.processing_flow_marker` | `postgres_fitness.food_entry`, `postgres_fitness.health_event`, `postgres_fitness.lab_panel`, `postgres_fitness.lab_result`, `postgres_fitness.journal_entry`, `postgres_fitness.processing_flow_marker_provider_inventory` |
-	   | `dofek_sensor_priority_raw_analytics` | `fitness.sensor_provider_priority`, `fitness.sensor_device_priority` | `postgres_fitness.sensor_provider_priority`, `postgres_fitness.sensor_device_priority` |
+   | PeerDB mirror | Postgres source tables | ClickHouse destination tables |
+   | --- | --- | --- |
+   | `dofek_fitness_raw_analytics` | `fitness.activity`, `fitness.sleep_session`, `fitness.sleep_stage`, `fitness.daily_metrics`, `fitness.provider`, `fitness.provider_connection`, `fitness.provider_priority`, `fitness.device_priority`, `fitness.processing_flow_marker`, `fitness.user_profile` | `postgres_fitness.activity`, `postgres_fitness.sleep_session`, `postgres_fitness.sleep_stage`, `postgres_fitness.daily_metrics`, `postgres_fitness.provider`, `postgres_fitness.provider_connection`, `postgres_fitness.provider_priority`, `postgres_fitness.device_priority`, `postgres_fitness.processing_flow_marker`, `postgres_fitness.user_profile` |
+   | `dofek_provider_inventory_raw_analytics` | `fitness.food_entry`, `fitness.health_event`, `fitness.lab_panel`, `fitness.lab_result`, `fitness.journal_entry`, `fitness.processing_flow_marker` | `postgres_fitness.food_entry`, `postgres_fitness.health_event`, `postgres_fitness.lab_panel`, `postgres_fitness.lab_result`, `postgres_fitness.journal_entry`, `postgres_fitness.processing_flow_marker_provider_inventory` |
+   | `dofek_sensor_priority_raw_analytics` | `fitness.sensor_provider_priority`, `fitness.sensor_device_priority` | `postgres_fitness.sensor_provider_priority`, `postgres_fitness.sensor_device_priority` |
 
    This mapping matches `src/db/peerdb/metric-stream-cdc.sql` and
    `src/db/clickhouse-cdc.ts`.
@@ -125,41 +125,61 @@ path and does not restore durability for new metric-stream events.
    Postgres:
 
    ```sql
-	   SELECT pg_drop_replication_slot('peerflow_slot_dofek_fitness_raw_analytics')
-	   WHERE EXISTS (
-	     SELECT 1
-	     FROM pg_replication_slots
-	     WHERE slot_name = 'peerflow_slot_dofek_fitness_raw_analytics'
-	       AND active = false
-	   );
-	   ```
+   SELECT pg_drop_replication_slot('peerflow_slot_dofek_fitness_raw_analytics')
+   WHERE EXISTS (
+     SELECT 1
+     FROM pg_replication_slots
+     WHERE slot_name = 'peerflow_slot_dofek_fitness_raw_analytics'
+       AND active = false
+   );
+   ```
 
 4. Truncate only destination tables that will be safely resnapshotted by the
    recreated mirror.
-5. Run the checked-in setup path:
+5. Re-run CDC setup through the canonical production deploy workflow. The
+   branch or tag passed to `--ref` must resolve exactly to the validated image's
+   `SENTRY_RELEASE` commit, not merely contain that commit; the workflow runs
+   the setup image inside the Swarm network with production PeerDB, Postgres,
+   and ClickHouse endpoints:
 
    ```bash
-   pnpm tsx scripts/with-env.ts -- tsx src/db/setup-clickhouse-cdc.ts
+   gh workflow run deploy-web.yml \
+     --ref '<branch-or-tag-at-exact-image-commit>' \
+     -f environment=production \
+     -f image_tag='<validated-image-tag>'
    ```
 
+   Do not use local `pnpm clickhouse-cdc` for production recovery. Its default
+   PeerDB endpoint is `127.0.0.1:9900`. GitHub documents source-ref selection
+   for manual workflow runs in the
+   [`gh workflow run` manual](https://cli.github.com/manual/gh_workflow_run).
+
 6. If setup claims the mirror exists but PeerDB catalog does not list it, check
-   Temporal for an orphaned workflow:
-
-	   ```bash
-	   temporal --address peerdb-temporal:7233 --namespace default \
-	     workflow list --query "WorkflowId = 'dofek_fitness_raw_analytics-peerflow'"
-	   ```
-
-   Terminate the orphaned workflow before rerunning setup:
+   Temporal for the exact orphaned workflow from a one-shot admin container on
+   the production Swarm network:
 
    ```bash
-	   temporal --address peerdb-temporal:7233 --namespace default \
-	     workflow terminate \
-	     --workflow-id dofek_fitness_raw_analytics-peerflow \
-	     --reason "recover lost Postgres replication slot"
-	   ```
+   docker --context prod run --rm --network dofek_default \
+     --entrypoint temporal temporalio/admin-tools:1.29 \
+     --address peerdb-temporal:7233 --namespace default --color never \
+     workflow list \
+     --query "WorkflowId = 'dofek_fitness_raw_analytics-peerflow'"
+   ```
 
-7. Rerun `pnpm check:clickhouse-cdc` and verify the user-facing read model.
+   After confirming that exact workflow is orphaned, terminate it before
+   rerunning the canonical deploy:
+
+   ```bash
+   docker --context prod run --rm --network dofek_default \
+     --entrypoint temporal temporalio/admin-tools:1.29 \
+     --address peerdb-temporal:7233 --namespace default --color never \
+     workflow terminate \
+     --workflow-id dofek_fitness_raw_analytics-peerflow \
+     --reason "recover lost Postgres replication slot"
+   ```
+
+7. Inspect the next `cdc-health` report, verify the recreated mirror's row
+   freshness, and confirm the user-facing read model.
 
 ## Follow-Up
 

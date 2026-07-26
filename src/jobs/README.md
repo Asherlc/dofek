@@ -10,7 +10,6 @@ This directory contains background job processing logic using BullMQ and Redis.
 - **Scheduled Sync**: High-level orchestrator for triggering periodic syncs based on tiers.
 - **Post-Sync**: Downstream tasks (e.g., recomputing metrics, cache invalidation) triggered after a successful sync.
 - **Activity Delete Analytics**: Rebuilds ClickHouse activity read models after user-initiated deletes.
-- **Training Export**: Incremental data export for machine learning models.
 
 ## Architecture
 
@@ -24,4 +23,8 @@ This directory contains background job processing logic using BullMQ and Redis.
 
 - **Provider Tiers**: Sync frequency and priority are defined in `provider-queue-config.ts`.
 - **Concurrency**: Per-queue concurrency limits for rate-limiting API calls.
-- **Retry Logic**: BullMQ handles retries with exponential backoff.
+- **Retry Logic**: Sync and post-sync jobs use a fixed five-minute backoff;
+  provider-deletion and activity-analytics jobs use a fixed 30-second backoff.
+  Other queues declare retry options at their enqueue sites. BullMQ documents
+  fixed backoff and attempt handling in
+  [retrying failing jobs](https://docs.bullmq.io/guide/retrying-failing-jobs).
