@@ -7,6 +7,71 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-25: Locked-device workout route queries generated Sentry errors
+
+### Symptoms
+
+Sentry issue `DOFEK-MOBILE-1A` recorded three handled production errors at
+`2026-07-25T16:52:46Z`. Each error came from
+`queryWorkoutRoutes.lookupWorkout(...)` and reported
+`HEALTHKIT_DATABASE_INACCESSIBLE` with native HealthKit error
+`com.apple.healthkit:6`.
+
+### User Impact
+
+One backgrounded iOS user was affected. Three workout-route lookups did not
+return GPS data during that sync pass; the rest of the HealthKit sync was
+allowed to continue. A later catch-up sync can query those routes again while
+they remain inside its sync window.
+
+### Evidence
+
+All three events came from the same physical iPhone, release
+`com.dofek.app@1.0.0+1784919398`, and production OTA update. Sentry recorded
+`app.in_foreground=false`, the same timestamp to the second, and three distinct
+workout UUIDs. The first fatal operation was
+`queryWorkoutRoutes.lookupWorkout(<uuid>)`, and the native error text was
+`Protected health data is inaccessible (com.apple.healthkit:6)`.
+
+Apple documents `HKError.Code.errorDatabaseInaccessible` as the expected result
+when an app queries protected HealthKit data while the device is locked:
+<https://developer.apple.com/documentation/healthkit/hkerror/code/errordatabaseinaccessible>.
+
+### Root Cause
+
+The background-sync boundary already classifies
+`HEALTHKIT_DATABASE_INACCESSIBLE` as a transient locked-device condition and
+does not report it to Sentry. The bounded-concurrency workout-route loop catches
+route-query failures internally, however, and reports every caught error before
+returning a non-fatal sync result. That internal catch prevents this specific
+HealthKit error from reaching the existing background classification. Three
+parallel route workers therefore emitted three Sentry events for one lock-state
+transition.
+
+### Fix or Mitigation
+
+Added one shared TypeScript classifier for the native
+`HEALTHKIT_DATABASE_INACCESSIBLE` code. The workout-route loop now rethrows
+that typed transient error before its normal non-fatal reporting path, allowing
+the existing background-sync boundary to log the locked state without sending
+it to Sentry and to mark the observer batch unsuccessful. Other route-query
+errors remain non-fatal and continue to be reported with workout context.
+
+### Validation
+
+The regression tests failed before the implementation because the route error
+was captured and the sync resolved successfully. After the fix, the focused
+HealthKit suites pass all 47 tests, the complete mobile project passes, and
+mobile TypeScript, Biome, and the handled-error telemetry policy all pass
+without retries or relaxed checks.
+
+### Remaining Risk
+
+The locked-device behavior cannot be reproduced in Simulator and still needs
+confirmation from a production physical-device background delivery after the
+mobile update ships. The affected route data remains dependent on a later
+successful catch-up within the configured sync window.
+
 ## 2026-07-21: Provider availability mutation shard lacked router coverage
 
 ### Symptoms

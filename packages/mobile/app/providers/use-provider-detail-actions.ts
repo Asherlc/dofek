@@ -3,6 +3,10 @@ import { useCallback, useRef, useState } from "react";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
+import {
+  HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE,
+  isHealthKitDatabaseInaccessible,
+} from "../../lib/health-kit-errors";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 
@@ -261,11 +265,16 @@ export function useProviderDetailActions(
         if (!jobId) return;
         await pollSyncJob(jobId);
       } catch (error: unknown) {
-        captureException(error, {
-          context: providerId === "apple_health" ? "healthkit-manual-sync" : "provider-sync-start",
-        });
         setIsSyncing(false);
-        setSyncMessage("Failed to start sync");
+        if (!isHealthKitDatabaseInaccessible(error)) {
+          captureException(error, {
+            context:
+              providerId === "apple_health" ? "healthkit-manual-sync" : "provider-sync-start",
+          });
+          setSyncMessage("Failed to start sync");
+          return;
+        }
+        setSyncMessage(HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE);
       }
     },
     [appleHealth, invalidateProviderData, isSyncing, pollSyncJob, providerId, syncMutation],
