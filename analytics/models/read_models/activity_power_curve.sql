@@ -43,6 +43,7 @@ existing_activity_state AS (
         user_id,
         max(refreshed_at) AS refreshed_at
     FROM {{ this }} FINAL
+    WHERE is_deleted = 0
     GROUP BY
         activity_id,
         user_id
@@ -143,9 +144,9 @@ power_sample_groups AS (
         arraySort(
             sample -> sample.1,
             groupArray((sensor.recorded_at, toFloat64(assumeNotNull(sensor.scalar))))
-        ) AS samples
+    ) AS samples
     FROM activity_bounds AS am
-    INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor
+    INNER JOIN {{ ref('activity_sensor_sample') }} FINAL AS sensor
         ON sensor.activity_id = am.activity_id
         AND sensor.user_id = am.user_id
         AND sensor.channel = 'power'
@@ -272,7 +273,7 @@ duration_windows AS (
             - start_sample.cumulative_discontinuities AS discontinuity_count
     FROM power_sample_endpoints AS start_sample
     CROSS JOIN duration_values
-    ANY INNER JOIN power_sample_endpoints AS end_sample
+    INNER JOIN power_sample_endpoints AS end_sample
         ON end_sample.activity_id = start_sample.activity_id
         AND end_sample.user_id = start_sample.user_id
         AND end_sample.recorded_at = addSeconds(

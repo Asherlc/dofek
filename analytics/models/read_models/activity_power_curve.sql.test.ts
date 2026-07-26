@@ -13,6 +13,7 @@ describe("activity_power_curve model", () => {
 
   it("limits incremental power work to changed activities with valid power samples", () => {
     const currentPowerActivitySql = extractCteSql(modelSql, "current_power_activity");
+    const existingActivityStateSql = extractCteSql(modelSql, "existing_activity_state");
     const dirtyKeysSql = extractCteSql(modelSql, "source_dirty_activity_keys");
     const powerSampleGroupsSql = extractCteSql(modelSql, "power_sample_groups");
 
@@ -23,6 +24,7 @@ describe("activity_power_curve model", () => {
     expect(modelSql).not.toContain("current_power_state AS (");
     expect(modelSql).toContain("'join_use_nulls': 1");
     expect(modelSql).toContain("max(refreshed_at) AS refreshed_at");
+    expect(existingActivityStateSql).toContain("WHERE is_deleted = 0");
     expect(dirtyKeysSql).toContain(
       "source_refreshed_at > existing_activity_state.refreshed_at",
     );
@@ -33,13 +35,17 @@ describe("activity_power_curve model", () => {
     expect(modelSql).toContain("LIMIT {{ power_curve_dirty_key_batch_size }}");
     expect(powerSampleGroupsSql).toContain("WHERE (sensor.user_id, sensor.activity_id) IN (");
     expect(powerSampleGroupsSql).toContain("FROM activity_bounds");
+    expect(powerSampleGroupsSql).toContain(
+      "INNER JOIN {{ ref('activity_sensor_sample') }} FINAL AS sensor",
+    );
   });
 
   it("computes duration candidates from materialized endpoints and cumulative state", () => {
     expect(modelSql).toContain("power_sample_groups AS (");
     expect(modelSql).toContain("power_sample_endpoints AS materialized (");
     expect(modelSql).toContain("cumulative_discontinuities");
-    expect(modelSql).toContain("ANY INNER JOIN power_sample_endpoints AS end_sample");
+    expect(modelSql).toContain("INNER JOIN power_sample_endpoints AS end_sample");
+    expect(modelSql).not.toContain("ANY INNER JOIN power_sample_endpoints AS end_sample");
     expect(modelSql).not.toContain("arrayFirstIndex(");
     expect(modelSql).not.toContain("arraySlice(");
   });
