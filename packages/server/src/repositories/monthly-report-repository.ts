@@ -1,8 +1,6 @@
 import { z } from "zod";
-import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -116,30 +114,22 @@ export class MonthRow {
 export class MonthlyReportRepository {
   readonly #userId: string;
   readonly #sensorStore: ActivitySensorStore;
-  readonly #timezone: string;
 
-  constructor(userId: string, sensorStore: ActivitySensorStore, timezone = "UTC") {
+  constructor(userId: string, sensorStore: ActivitySensorStore) {
     this.#userId = userId;
     this.#sensorStore = sensorStore;
-    this.#timezone = timezone;
   }
 
   async getReport(months: number): Promise<MonthlyReportResult> {
-    const today = new Date().toISOString().slice(0, 10);
-    const rhrWindowStart = dateWindowStartString(today, months * 31 + 31);
     const rows = await this.#sensorStore.query(
       monthRowSchema,
-      `WITH ${restingHeartRateClickHouseCte()},
-      per_activity AS (
+      `WITH per_activity AS (
         SELECT
           toDate(asum.started_at) AS date,
           dateDiff('second', asum.started_at, asum.ended_at) / 3600.0 AS hours,
           dateDiff('second', asum.started_at, asum.ended_at) / 60.0
             * asum.avg_hr / nullIf(toFloat64(asum.max_hr), 0) AS load
           FROM analytics.activity_summary asum
-          INNER JOIN analytics.v_activity va
-            ON va.id = asum.activity_id
-           AND va.user_id = asum.user_id
           WHERE asum.user_id = {userId:UUID}
             AND asum.started_at >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
             AND asum.ended_at IS NOT NULL
@@ -151,11 +141,11 @@ export class MonthlyReportRepository {
         GROUP BY date
       ),
       sleep_raw AS (
-        SELECT toDate(started_at) AS date, duration_minutes
-        FROM analytics.v_sleep
+        SELECT date, duration_minutes
+        FROM analytics.daily_sleep FINAL
         WHERE user_id = {userId:UUID}
-          AND is_nap = false
-          AND started_at >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
+          AND is_deleted = 0
+          AND date >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
       ),
       sleep_daily AS (
         SELECT date, max(duration_minutes) AS duration_minutes
@@ -164,14 +154,13 @@ export class MonthlyReportRepository {
       ),
       metrics_daily AS (
         SELECT
-          dm.date AS date,
-          drhr.resting_hr AS resting_hr,
-          dm.hrv AS hrv
-        FROM analytics.v_daily_metrics AS dm
-        LEFT JOIN resting_heart_rate AS drhr
-          ON drhr.date = toString(dm.date)
-        WHERE dm.user_id = {userId:UUID}
-          AND dm.date >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
+          recovery.date AS date,
+          recovery.resting_hr AS resting_hr,
+          recovery.hrv AS hrv
+        FROM analytics.daily_recovery AS recovery FINAL
+        WHERE recovery.user_id = {userId:UUID}
+          AND recovery.is_deleted = 0
+          AND recovery.date >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
       ),
       date_series AS (
         SELECT toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH + INTERVAL number DAY AS date
@@ -191,7 +180,7 @@ export class MonthlyReportRepository {
       LEFT JOIN metrics_daily m ON m.date = d.date
       GROUP BY toStartOfMonth(d.date)
       ORDER BY month_start ASC`,
-      { userId: this.#userId, timezone: this.#timezone, months, rhrEndDate: today, rhrWindowStart },
+      { userId: this.#userId, months },
     );
 
     const monthRows = rows.map((row) => new MonthRow(row));

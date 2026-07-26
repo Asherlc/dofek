@@ -17961,3 +17961,53 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge through normal CI, deploy the corrected
   parser, observe a complete analytics cycle, then resolve
   `DOFEK-SERVER-5D` if it does not recur on the fixed release.
+
+## 2026-07-26 — Monthly Report Timed Out on Recursive Analytics Views
+
+- **Status:** Direct fix validated locally and against production data; merge
+  and production deployment pending.
+- **Symptoms:** Monthly report requests repeatedly raised ClickHouse client
+  timeouts in
+  [Sentry issue DOFEK-SERVER-5C](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5C).
+- **User impact:** The monthly report could not load before the request's
+  120-second execution deadline.
+- **Evidence:** The exact parameterized production repository query timed out
+  after 120.012 seconds while reading 3,777,652 rows and 995.16 MiB, with a
+  1.04 GiB peak (`system.query_log` query
+  `0d06d6a2-85ac-4307-b9d3-f7e5da89f1f3`). The equivalent aggregation over the compact
+  `activity_summary`, `daily_sleep`, and `daily_recovery` serving models
+  completed against the same production data in 0.101 seconds
+  (`system.query_log` query `f077c95b-74ee-444f-b293-462d55824277`), reading
+  8,146 rows and 244.61 KiB with a 7.87 MiB peak. The physical
+  serving tables contained only 3,653 activity-summary rows, 330 daily-sleep
+  rows, and 119 daily-recovery rows.
+- **Classification:** Following the
+  [loading-performance runbook](performance/loading-performance-runbook.md),
+  this is a request-time query-shape bottleneck for
+  `monthlyReport.report`, supported by Sentry trace
+  `e3a2fe258e538c23a152e01cddc739e5` and the production ClickHouse query-log
+  records above. Axiom could not be queried because the connected user token
+  had expired, so the exact Sentry and ClickHouse records are the checked-in
+  equivalent evidence required by the runbook.
+- **Root cause:** The request path joined `analytics.v_activity` and read
+  `analytics.v_sleep`, `analytics.v_daily_metrics`, and the resting-heart-rate
+  view, forcing global recursive deduplication and sensor aggregation for a
+  small user-and-month result that already existed in compact dbt-owned
+  serving models.
+- **Fix / mitigation:** Read current activities from
+  `analytics.activity_summary`, daily sleep from `analytics.daily_sleep FINAL`,
+  and daily vitals from `analytics.daily_recovery FINAL`. Preserve the
+  monthly response shape and calculations without adding a timeout, retry, or
+  cache fallback. ClickHouse documents `FINAL` as the query modifier that
+  applies an engine's merge logic to the selected data:
+  <https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier>.
+- **Validation:** A real-ClickHouse regression test first failed after its
+  recursive test views were removed, reproducing the old repository's hard
+  dependency on `v_activity`. It now seeds only the three compact serving
+  models and verifies the complete monthly report result with those recursive
+  views absent. The focused integration test passes.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy the query,
+  invoke the production monthly report, confirm sub-second completion in
+  ClickHouse query history, and resolve `DOFEK-SERVER-5C` if no fixed-release
+  event recurs. The weekly report contains a similar recursive query and should
+  be investigated separately rather than silently expanded into this fix.
