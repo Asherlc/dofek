@@ -1421,11 +1421,11 @@ describe("recoveryRouter.strainTarget", () => {
     });
   }
 
-  it("omits the strain target when no recovery summary exists", async () => {
+  it("returns null when no recovery summary exists", async () => {
     const caller = setup({ readinessRows: [] });
     const result = await caller.strainTarget({});
 
-    expect(result).toBeUndefined();
+    expect(result).toBeNull();
   });
 
   it("reads daily loads from the compact activity load read model", async () => {
