@@ -115,7 +115,7 @@ function AuthGate() {
   );
 
   return (
-    <UnitProvider settingsEnabled={Boolean(user)}>
+    <UnitProvider key={user?.id ?? "signed-out"} settingsEnabled={Boolean(user)}>
       <DashboardLayoutProvider settingsEnabled={Boolean(user)}>
         {routedContent}
       </DashboardLayoutProvider>

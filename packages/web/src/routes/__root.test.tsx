@@ -394,6 +394,53 @@ describe("AuthGate", () => {
     expect(view.getByTestId("dashboard-layout-provider").dataset.settingsEnabled).toBe("false");
   });
 
+  it("remounts user settings contexts when the auth identity changes", () => {
+    mockUseAuth.mockReturnValue({
+      user: { id: "user-1", name: "Alice", email: null },
+      isLoading: false,
+      logout: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({ pathname: "/" });
+
+    const { getByTestId, queryClient, rerender } = renderAuthGate();
+    const userOneUnitProvider = getByTestId("unit-provider");
+    const userOneLayoutProvider = getByTestId("dashboard-layout-provider");
+    const Component = captured.component;
+    if (!Component) throw new Error("Component not captured from createRootRoute");
+
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <Component />
+      </QueryClientProvider>,
+    );
+
+    const publicUnitProvider = getByTestId("unit-provider");
+    const publicLayoutProvider = getByTestId("dashboard-layout-provider");
+    expect(publicUnitProvider).not.toBe(userOneUnitProvider);
+    expect(publicLayoutProvider).not.toBe(userOneLayoutProvider);
+    expect(publicUnitProvider.dataset.settingsEnabled).toBe("false");
+
+    mockUseAuth.mockReturnValue({
+      user: { id: "user-2", name: "Bob", email: null },
+      isLoading: false,
+      logout: vi.fn(),
+    });
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <Component />
+      </QueryClientProvider>,
+    );
+
+    expect(getByTestId("unit-provider")).not.toBe(publicUnitProvider);
+    expect(getByTestId("dashboard-layout-provider")).not.toBe(publicLayoutProvider);
+  });
+
   it("clears in-memory query data when the active user changes", () => {
     mockUseAuth.mockReturnValue({
       user: { id: "user-1", name: "Alice", email: null },
