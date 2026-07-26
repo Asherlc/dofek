@@ -605,7 +605,7 @@ export const recoveryRouter = router({
    */
   strainTarget: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
-    .query(async ({ ctx, input }): Promise<StrainTargetResult | undefined> => {
+    .query(async ({ ctx, input }): Promise<StrainTargetResult | null> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.strainTarget");
       const recoveryAccessWindowClause =
         ctx.accessWindow?.kind === "limited"
@@ -678,7 +678,7 @@ export const recoveryRouter = router({
       );
 
       const readinessMetrics = readinessRows[0];
-      if (!readinessMetrics) return undefined;
+      if (!readinessMetrics) return null;
 
       const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
       const components: ReadinessComponents = {
