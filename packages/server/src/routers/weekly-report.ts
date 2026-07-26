@@ -17,9 +17,6 @@ export const weeklyReportRouter = router({
   report: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ weeks: z.number().min(1).max(52).default(12), endDate: endDateSchema }))
     .query(({ ctx, input }) =>
-      new WeeklyReportRepository(ctx.userId, ctx.timezone, ctx.sensorStore).getReport(
-        input.weeks,
-        input.endDate,
-      ),
+      new WeeklyReportRepository(ctx.userId, ctx.sensorStore).getReport(input.weeks, input.endDate),
     ),
 });

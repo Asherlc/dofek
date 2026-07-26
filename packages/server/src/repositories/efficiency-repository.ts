@@ -3,7 +3,7 @@ import {
   buildTreffPolarizationWeek,
   type TreffPolarizationWeek,
 } from "@dofek/training/training-distribution";
-import { computePolarizationIndex, HEART_RATE_ZONES, POLARIZATION_ZONES } from "@dofek/zones/zones";
+import { computePolarizationIndex, HEART_RATE_ZONES } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -25,17 +25,7 @@ function requireHeartRateZone(zoneNumber: number) {
   return zone;
 }
 
-function requirePolarizationZone(zoneNumber: number) {
-  const zone = POLARIZATION_ZONES.find((zoneDefinition) => zoneDefinition.zone === zoneNumber);
-  if (!zone) {
-    throw new Error(`Polarization zone ${zoneNumber} definition is required`);
-  }
-  return zone;
-}
-
 const aerobicEfficiencyZone = requireHeartRateZone(2);
-const polarizationZone2 = requirePolarizationZone(2);
-const polarizationZone3 = requirePolarizationZone(3);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -551,15 +541,13 @@ export class EfficiencyRepository extends BaseRepository {
    * Polarization Index trend per week using Treff 3-zone model.
    * PI = log10((f1 / (f2 * f3)) * 100) where f = fraction of total training time.
    * PI > 2.0 indicates a well-polarized training distribution.
-   * Reads from the pre-computed activity_polarization_zones read model when available.
+   * Reads from the pre-computed activity_polarization_zones read model.
    */
   async getPolarizationTrend(range: ChartRange): Promise<PolarizationTrendResult> {
     const lowerBoundPredicate = range.clickHouseTimestampAfter("started_at");
-    const activitySummaryLowerBoundPredicate = range.clickHouseTimestampAfter("asum.started_at");
     const rangeParams = range.clickHouseParams();
 
-    // Try pre-computed read model first (avoids expensive deduped_sensor scan)
-    const readModelRows = await this.#sensorStore.query(
+    const rows = await this.#sensorStore.query(
       polarizationRowSchema,
       `SELECT
         any(max_hr) AS max_hr,
@@ -579,74 +567,6 @@ export class EfficiencyRepository extends BaseRepository {
         timezone: this.timezone,
         ...rangeParams,
         activityTypes: CYCLING_TYPES,
-      },
-    );
-
-    if (readModelRows.length > 0) {
-      const firstRow = readModelRows[0];
-      const maxHr = firstRow ? Number(firstRow.max_hr) : null;
-      const weeks: PolarizationWeek[] = readModelRows.map((row) => {
-        const z1 = Number(row.z1_seconds);
-        const z2 = Number(row.z2_seconds);
-        const z3 = Number(row.z3_seconds);
-        return buildTreffPolarizationWeek({
-          week: String(row.week),
-          z1Seconds: z1,
-          z2Seconds: z2,
-          z3Seconds: z3,
-          polarizationIndex: computePolarizationIndex(z1, z2, z3),
-        });
-      });
-      return { ...POLARIZATION_RESULT_METADATA, maxHr, weeks };
-    }
-
-    // Fall back to live deduped_sensor computation
-    const polZ1 = polarizationZone2.minPctHrmax;
-    const polZ2 = polarizationZone3.minPctHrmax;
-
-    const rows = await this.#sensorStore.query(
-      polarizationRowSchema,
-      `WITH activity_meta AS (
-        SELECT
-          asum.activity_id AS id,
-          asum.user_id AS user_id,
-          asum.started_at AS started_at,
-          asum.ended_at AS ended_at,
-          toDate(toTimeZone(asum.started_at, {timezone:String})) AS activity_date,
-          up.max_hr AS max_hr
-        FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity va
-          ON va.id = asum.activity_id
-         AND va.user_id = asum.user_id
-        INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-        WHERE asum.user_id = {userId:UUID}
-          AND has({activityTypes:Array(String)}, asum.activity_type)
-          ${activitySummaryLowerBoundPredicate}
-          AND up.max_hr IS NOT NULL
-      )
-      SELECT
-        any(am.max_hr) AS max_hr,
-        toString(toMonday(am.activity_date)) AS week,
-        toInt32(countIf(ds.scalar < am.max_hr * {p1:Float64})) AS z1_seconds,
-        toInt32(countIf(ds.scalar >= am.max_hr * {p1:Float64}
-                       AND ds.scalar < am.max_hr * {p2:Float64})) AS z2_seconds,
-        toInt32(countIf(ds.scalar >= am.max_hr * {p2:Float64})) AS z3_seconds
-      FROM analytics.deduped_sensor ds
-      INNER JOIN activity_meta am
-        ON ds.user_id = am.user_id
-       AND ds.recorded_at >= am.started_at
-       AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
-      WHERE ds.channel = 'heart_rate'
-        AND ds.is_deleted = 0
-      GROUP BY am.max_hr, toMonday(am.activity_date)
-      ORDER BY week`,
-      {
-        userId: this.userId,
-        timezone: this.timezone,
-        ...rangeParams,
-        activityTypes: CYCLING_TYPES,
-        p1: polZ1,
-        p2: polZ2,
       },
     );
 
