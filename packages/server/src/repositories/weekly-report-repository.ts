@@ -225,7 +225,6 @@ export class WeeklyReportRepository {
         LEFT JOIN sleep_daily sl ON sl.date = d.date
         LEFT JOIN metrics_daily m ON m.date = d.date
         GROUP BY toStartOfWeek(d.date, 0)
-        ORDER BY week_start ASC
       ),
       weekly_with_report_presence AS (
         SELECT
@@ -244,7 +243,8 @@ export class WeeklyReportRepository {
         avg(avg_daily_load) OVER (ORDER BY week_start ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS chronic_avg_load,
         avg(avg_sleep_min) OVER (ORDER BY week_start ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING) AS prev_3wk_avg_sleep
       FROM weekly_with_report_presence
-      WHERE report_has_data`,
+      WHERE report_has_data
+      ORDER BY week_start ASC`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
