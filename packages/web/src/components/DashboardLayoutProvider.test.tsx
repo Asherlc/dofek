@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
     mutate: vi.fn(),
     query,
     setData: vi.fn(),
+    useQuery: vi.fn(),
   };
 });
 
@@ -28,7 +29,7 @@ vi.mock("../lib/telemetry.ts", () => ({ captureException: mocks.captureException
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     settings: {
-      get: { useQuery: () => mocks.query },
+      get: { useQuery: mocks.useQuery },
       set: { useMutation: () => ({ mutate: mocks.mutate }) },
     },
     useUtils: () => ({
@@ -59,7 +60,7 @@ function LayoutConsumer() {
 
 function renderProvider() {
   return render(
-    <DashboardLayoutProvider>
+    <DashboardLayoutProvider settingsEnabled={true}>
       <LayoutConsumer />
     </DashboardLayoutProvider>,
   );
@@ -72,8 +73,30 @@ describe("DashboardLayoutProvider", () => {
     mocks.invalidate.mockReset();
     mocks.mutate.mockReset();
     mocks.setData.mockReset();
+    mocks.useQuery.mockReset();
+    mocks.useQuery.mockReturnValue(mocks.query);
     mocks.query.data = undefined;
     mocks.query.error = null;
+  });
+
+  it("does not load protected settings when server settings are disabled", () => {
+    render(
+      <DashboardLayoutProvider settingsEnabled={false}>
+        <LayoutConsumer />
+      </DashboardLayoutProvider>,
+    );
+
+    expect(mocks.useQuery).toHaveBeenCalledWith({ key: "dashboardLayout" }, { enabled: false });
+  });
+
+  it("loads protected settings when server settings are enabled", () => {
+    render(
+      <DashboardLayoutProvider settingsEnabled={true}>
+        <LayoutConsumer />
+      </DashboardLayoutProvider>,
+    );
+
+    expect(mocks.useQuery).toHaveBeenCalledWith({ key: "dashboardLayout" }, { enabled: true });
   });
 
   it("safely rejects a corrupt legacy layout string without crashing", async () => {
@@ -97,7 +120,7 @@ describe("DashboardLayoutProvider", () => {
     const readError = new Error("Dashboard settings are temporarily unavailable.");
     mocks.query.error = readError;
     view.rerender(
-      <DashboardLayoutProvider>
+      <DashboardLayoutProvider settingsEnabled={true}>
         <LayoutConsumer />
       </DashboardLayoutProvider>,
     );

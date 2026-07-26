@@ -33,13 +33,19 @@ function normalizeLayout(layout: DashboardLayout): DashboardLayout {
   return { order, hidden, collapsed };
 }
 
-export function DashboardLayoutProvider({ children }: { children: React.ReactNode }) {
+export function DashboardLayoutProvider({
+  children,
+  settingsEnabled,
+}: {
+  children: React.ReactNode;
+  settingsEnabled: boolean;
+}) {
   const [layout, setLayoutState] = useState<DashboardLayout>(DEFAULT_LAYOUT);
   const [writeError, setWriteError] = useState<string | null>(null);
   const lastReadError = useRef<unknown>(null);
   const lastInvalidValue = useRef<unknown>(null);
 
-  const setting = trpc.settings.get.useQuery({ key: SETTINGS_KEY });
+  const setting = trpc.settings.get.useQuery({ key: SETTINGS_KEY }, { enabled: settingsEnabled });
   const mutation = trpc.settings.set.useMutation();
   const utils = trpc.useUtils();
 

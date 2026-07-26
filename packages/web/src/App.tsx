@@ -1,9 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { useState } from "react";
-import { DashboardLayoutProvider } from "./components/DashboardLayoutProvider.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
-import { UnitProvider } from "./components/UnitProvider.tsx";
 import { FetchingProvider } from "./lib/FetchingContext.tsx";
 import { capturePageView, initPostHog } from "./lib/posthog.ts";
 import { createAppQueryClient } from "./lib/query-client.ts";
@@ -33,11 +31,7 @@ export function App() {
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
           <FetchingProvider>
-            <UnitProvider>
-              <DashboardLayoutProvider>
-                <RouterProvider router={router} />
-              </DashboardLayoutProvider>
-            </UnitProvider>
+            <RouterProvider router={router} />
           </FetchingProvider>
         </QueryClientProvider>
       </trpc.Provider>

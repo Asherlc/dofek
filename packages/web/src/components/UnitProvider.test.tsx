@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
     mutate: vi.fn(),
     query,
     setData: vi.fn(),
+    useQuery: vi.fn(),
   };
 });
 
@@ -28,7 +29,7 @@ vi.mock("../lib/telemetry.ts", () => ({ captureException: mocks.captureException
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     settings: {
-      get: { useQuery: () => mocks.query },
+      get: { useQuery: mocks.useQuery },
       set: { useMutation: () => ({ mutate: mocks.mutate }) },
     },
     useUtils: () => ({
@@ -59,7 +60,7 @@ function UnitConsumer() {
 
 function renderProvider() {
   return render(
-    <UnitProvider>
+    <UnitProvider settingsEnabled={true}>
       <UnitConsumer />
     </UnitProvider>,
   );
@@ -72,8 +73,30 @@ describe("UnitProvider", () => {
     mocks.invalidate.mockReset();
     mocks.mutate.mockReset();
     mocks.setData.mockReset();
+    mocks.useQuery.mockReset();
+    mocks.useQuery.mockReturnValue(mocks.query);
     mocks.query.data = undefined;
     mocks.query.error = null;
+  });
+
+  it("does not load protected settings when server settings are disabled", () => {
+    render(
+      <UnitProvider settingsEnabled={false}>
+        <UnitConsumer />
+      </UnitProvider>,
+    );
+
+    expect(mocks.useQuery).toHaveBeenCalledWith({ key: "unitSystem" }, { enabled: false });
+  });
+
+  it("loads protected settings when server settings are enabled", () => {
+    render(
+      <UnitProvider settingsEnabled={true}>
+        <UnitConsumer />
+      </UnitProvider>,
+    );
+
+    expect(mocks.useQuery).toHaveBeenCalledWith({ key: "unitSystem" }, { enabled: true });
   });
 
   it("preserves the loaded unit system and displays an exact background read error", async () => {
@@ -84,7 +107,7 @@ describe("UnitProvider", () => {
     const readError = new Error("Unit settings could not be loaded.");
     mocks.query.error = readError;
     view.rerender(
-      <UnitProvider>
+      <UnitProvider settingsEnabled={true}>
         <UnitConsumer />
       </UnitProvider>,
     );
