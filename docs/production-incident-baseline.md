@@ -18199,15 +18199,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   a Swarm update pauses. Apply a shared two-minute provider HTTP deadline with
   composed caller cancellation and retryable timeout classification. Process
   provider deletion as deterministic, idempotent 1,000-row continuation jobs,
-  retaining the existing generation fence and checkpoint. Node.js documents
-  the native timeout and signal-composition primitives:
+  retaining the existing generation fence and checkpoint, and keep the durable
+  deletion-request state authoritative so a completed batch job cannot report
+  the overall operation complete while its continuation remains active.
+  Node.js documents the native timeout and signal-composition primitives:
   <https://nodejs.org/api/globals.html#class-abortsignal>.
 - **Validation:** The timeout regression failed before implementation. After
   the fix, 205 focused unit tests passed, the root TypeScript typecheck and
   targeted Biome checks passed, and all five real-ClickHouse provider-deletion
   integration cases passed, including multiple continuation batches and
-  bounded projection reads. No stall-count increase, forced retry, temporary
-  flag, or incident-only shutdown branch was added.
+  bounded projection reads. A focused operation-status regression also verifies
+  that a dispatched deletion remains running after its root batch completes.
+  No stall-count increase, forced retry, temporary flag, or incident-only
+  shutdown branch was added.
 - **Remaining risk / follow-up:** Merge through normal CI, deploy, confirm the
   old worker reaches `Shutdown complete` without exit 137, verify the timed-out
   Strava job retries and completes, observe no fixed-release 4N/2K events
