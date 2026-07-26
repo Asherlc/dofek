@@ -9,6 +9,11 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Populates the main web and mobile review surfaces while keeping generated data deterministic across runs.
   - Automatically applies migrations when needed and verifies representative row counts before reporting success.
   - Usage: `DATABASE_URL=... pnpm seed`
+- `seed-review-clickhouse.ts`: Refreshes review-user relational tables in
+  ClickHouse without replacing canonical `ingest.metric_stream` rows. Postgres
+  is no longer a metric-stream source; see the
+  [metric-stream retirement record](../docs/metric-stream-postgres-retirement.md).
+  - Usage: `pnpm review:seed-clickhouse`
 - `migrate-raw.mjs`: Utility for running raw SQL migrations or manual data fixes.
 
 ## Environment & Secrets
