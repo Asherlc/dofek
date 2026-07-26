@@ -48,7 +48,10 @@ function renderMetricStreamRefreshSql(metricStreamTable: string): {
     forceProviderProjection,
     sql: metricStreamRefreshSql
       .replace(/\{\{\s*source\('ingest',\s*'metric_stream'\)\s*\}\}/g, metricStreamTable)
-      .replace(/\s+SETTINGS force_optimize_projection_name = 'by_provider_generation'/, ""),
+      .replace(
+        `SETTINGS force_optimize_projection_name = '${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION}'`,
+        "",
+      ),
   };
 }
 

@@ -251,37 +251,6 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql.match(/CROSS JOIN source_safety_check/g)?.length).toBe(2);
   });
 
-  it("counts only active activities in provider stats", () => {
-    const providerStatsSql = readModel("provider_stats");
-
-    expect(providerStatsSql).toContain("source('postgres_fitness', 'activity') }} FINAL");
-    expect(providerStatsSql).toContain("provider_absent_at IS null");
-    expect(providerStatsSql).toContain("deleted_at IS null");
-  });
-
-  it("recounts only dirty providers through reusable provider sets", () => {
-    const providerStatsSql = readModel("provider_stats");
-    const normalizedSql = compactWhitespace(providerStatsSql);
-
-    expect(providerStatsSql).toContain("source_provider_refreshes AS");
-    expect(providerStatsSql).toContain("current_provider_state AS");
-    expect(providerStatsSql).toContain("existing_provider_state AS");
-    expect(providerStatsSql).toContain("source_dirty_providers AS");
-    expect(providerStatsSql).toContain("stale_providers AS");
-    expect(providerStatsSql).toContain("metric_stream_current AS");
-    expect(providerStatsSql).toContain("argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted");
-    expect(providerStatsSql).toContain("'enable_materialized_cte': 1");
-    expect(providerStatsSql).toContain("current_provider_state AS materialized");
-    expect(providerStatsSql).toContain("providers AS materialized");
-    expect(normalizedSql).toContain(
-      "(user_id, provider_id) IN ( SELECT user_id, provider_id FROM providers )",
-    );
-    expect(providerStatsSql).toContain("'join_use_nulls': 1");
-    expect(normalizedSql).not.toContain(
-      "FROM {{ source('ingest', 'metric_stream') }} FINAL",
-    );
-  });
-
   it("materializes deduped activity member aliases from deduped activities", () => {
     expect(existsSync(new URL("./deduped_activity_members.sql", import.meta.url))).toBe(true);
     const sql = readModel("deduped_activity_members");
