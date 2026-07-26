@@ -28,7 +28,7 @@ describe("seed-review-clickhouse", () => {
       "INSERT INTO ingest.metric_stream (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, activity_id, scalar, point, id, _peerdb_synced_at",
     );
     expect(statements.join("\n")).toContain(
-      "WHERE user_id = '00000000-0000-0000-0000-000000000001'",
+      "WHERE user_id = '00000000-0000-4000-8000-000000000001'",
     );
     expect(statements.join("\n")).toContain("readWKBPoint");
   });

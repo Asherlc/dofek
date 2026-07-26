@@ -1,4 +1,5 @@
-const TEST_USER_ID = "e2e00000-0000-0000-0000-000000000001";
+import { TEST_USER_ID } from "./test-user";
+
 const TEST_SESSION_ID = "e2e-test-session-token-cypress";
 
 declare global {
