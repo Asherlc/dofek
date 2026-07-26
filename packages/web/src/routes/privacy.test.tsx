@@ -18,6 +18,7 @@ describe("PrivacyPage", () => {
     expect(screen.getByText(/ClickHouse/)).toBeInTheDocument();
     expect(screen.getByText(/Redpanda/)).toBeInTheDocument();
     expect(screen.getByText(/Cloudflare R2/)).toBeInTheDocument();
+    expect(screen.getByText(/Redis/)).toBeInTheDocument();
     expect(screen.queryByText(/All data is stored in .*PostgreSQL/)).not.toBeInTheDocument();
   });
 });
