@@ -18552,12 +18552,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   resource limit, or worker health budget changed.
 - **Validation:** Both model-structure regressions failed before
   implementation. A real ClickHouse provider regression then reproduced the
-  exact production code `117` when the projection was unavailable and passed
-  after the model regained its base-table fallback. After the fix, all 45
-  focused SQL/helper unit tests and all six real-ClickHouse provider/sleep
-  integration cases pass, including bounded incremental sleep, complete full
-  refresh, lifecycle tombstones, current metric-stream versions, and
-  projection-unavailable refresh aggregation.
+  exact production code `117` when the named projection existed but was not
+  materialized over the fixture rows, and passed after the model regained its
+  base-table fallback. After the fix, all 45 focused SQL/helper unit tests and
+  all six real-ClickHouse provider/sleep integration cases pass, including
+  bounded incremental sleep, complete full refresh, lifecycle tombstones,
+  current metric-stream versions, and unmaterialized-projection fallback.
 - **Remaining risk / follow-up:** Merge through normal CI, deploy without
   changing the four-minute query ceiling, observe a complete production dbt
   cycle in which both models succeed, verify downstream cache warming, then
