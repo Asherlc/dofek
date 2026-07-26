@@ -913,12 +913,12 @@ jobs:
               replicas="$(
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
-              task_id="$(
+              task_ids="$(
                 docker service ps "$service_name" \
                   --filter desired-state=running \
-                  --format '{{.ID}}' \
-                  | head -n 1
+                  --format '{{.ID}}'
               )"
+              task_id="${task_ids%%$'\n'*}"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none} task_id=${task_id:-none}"
               if [ "$desired_replicas" != "1" ]; then
                 docker service ps "$service_name" --no-trunc

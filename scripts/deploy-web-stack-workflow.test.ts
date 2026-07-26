@@ -17,6 +17,11 @@ interface ConsumerScenarios {
   readonly metricStreamClickhouseSink: readonly ServiceObservation[];
 }
 
+interface DeployConsumerOptions {
+  readonly failTaskInspection?: boolean;
+  readonly sleepSeconds?: number;
+}
+
 const MOCK_DOCKER = `#!/usr/bin/env bash
 set -euo pipefail
 
@@ -82,6 +87,10 @@ if [ "$1" = "service" ] && [ "$2" = "ps" ]; then
   service_name="$3"
   case " $* " in
     *" --format "*)
+      if [ "$FAIL_TASK_INSPECTION" = "1" ]; then
+        printf '%s\\n' "mock task inspection failed" >&2
+        exit 64
+      fi
       read_observation "$service_name"
       printf '%s\\n' "$task_id"
       printf '%s\\n' "$((observation_index + 1))" > "$state_file"
@@ -119,7 +128,7 @@ function serializeScenario(observations: readonly ServiceObservation[]): string 
     .join("\n")}\n`;
 }
 
-function runDeployConsumers(scenarios: ConsumerScenarios, sleepSeconds = 10) {
+function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsumerOptions = {}) {
   const temporaryDirectory = mkdtempSync(join(tmpdir(), "dofek-deploy-consumers-"));
   const scenarioDirectory = join(temporaryDirectory, "scenarios");
   const stateDirectory = join(temporaryDirectory, "state");
@@ -157,7 +166,8 @@ ${deployConsumersRunScript()}`,
         env: {
           ...process.env,
           PATH: `${temporaryDirectory}:${process.env.PATH ?? ""}`,
-          MOCK_SLEEP_SECONDS: sleepSeconds.toString(),
+          FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
+          MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
           RUNNER_TEMP: temporaryDirectory,
           SCENARIO_DIR: scenarioDirectory,
           STACK_NAME: "dofek",
@@ -271,10 +281,24 @@ describe("deploy-web-stack workflow", () => {
         analyticsWorker: [{ replicas: "0/1", taskId: "starting-task", updateState: "updating" }],
         metricStreamClickhouseSink: [STABLE_OBSERVATION],
       },
-      1200,
+      { sleepSeconds: 1200 },
     );
 
     expect(result.status).toBe(124);
     expect(result.stdout).toContain("dofek_analytics-worker did not converge before timeout");
+  });
+
+  it("fails immediately when Swarm task inspection fails", () => {
+    const result = runDeployConsumers(
+      {
+        analyticsWorker: [STABLE_OBSERVATION],
+        metricStreamClickhouseSink: [STABLE_OBSERVATION],
+      },
+      { failTaskInspection: true, sleepSeconds: 1200 },
+    );
+
+    expect(result.status).toBe(64);
+    expect(result.stderr).toContain("mock task inspection failed");
+    expect(result.stdout).not.toContain("did not converge before timeout");
   });
 });
