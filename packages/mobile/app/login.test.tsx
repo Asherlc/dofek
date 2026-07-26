@@ -264,6 +264,32 @@ describe("LoginScreen", () => {
     expect(mockRouterReplace).toHaveBeenCalledWith("/onboarding");
   });
 
+  it("visually distinguishes disabled email sign-in from the enabled state", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    const signInButton = await screen.findByRole("button", {
+      name: "Sign in with email",
+    });
+    expect(signInButton).toHaveProperty("disabled", true);
+    expect(signInButton.style.opacity).toBe("0.5");
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "password123" },
+    });
+
+    expect(signInButton).toHaveProperty("disabled", false);
+    expect(signInButton.style.opacity).toBe("");
+  });
+
   it("shows error when login fails", async () => {
     mockFetchConfiguredProviders.mockResolvedValue({
       identity: ["google"],

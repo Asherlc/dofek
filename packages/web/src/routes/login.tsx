@@ -252,7 +252,7 @@ function LoginPage() {
                       ) : null}
                       <button
                         type="submit"
-                        disabled={submitting}
+                        disabled={submitting || !email.trim() || !password}
                         className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
                       >
                         {submitting
