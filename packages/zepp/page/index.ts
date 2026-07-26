@@ -46,6 +46,7 @@ import {
   resetSessionFile,
   writeSessionMetaFile,
 } from "../src/session-file.ts";
+import { createSessionProgressHandler } from "../src/session-progress.ts";
 import {
   AUTO_TRANSFER_SAMPLE_COUNT,
   FLUSH_SAMPLE_THRESHOLD,
@@ -336,7 +337,10 @@ Page(
             enableGyro: this.state.enableGyro,
             requestedFreqModeIndex: this.state.freqModeIndex,
             onSample: (sample) => this.handleSample(sample),
-            onStatus: (stats) => this.handleRate(stats),
+            onStatus: createSessionProgressHandler({
+              updateWatch: (stats) => this.handleRate(stats),
+              publishHostStatus: () => this.publishSessionStatus("logging"),
+            }),
           },
           { Accelerometer, Gyroscope, checkSensor },
         );
