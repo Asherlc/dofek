@@ -17961,3 +17961,42 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge through normal CI, deploy the corrected
   parser, observe a complete analytics cycle, then resolve
   `DOFEK-SERVER-5D` if it does not recur on the fixed release.
+
+## 2026-07-26 — Monthly Report Recomputed Recursive Analytics Views
+
+- **Status:** Direct fix validated locally and against production data; merge
+  and production deployment pending.
+- **Symptoms:** Monthly report requests repeatedly raised ClickHouse client
+  timeouts in
+  [Sentry issue DOFEK-SERVER-5C](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5C).
+- **User impact:** The monthly report could not load before the request's
+  120-second execution deadline.
+- **Evidence:** The exact parameterized production repository query timed out
+  after 120.012 seconds while reading 3,777,652 rows and 995.16 MiB, with a
+  1.04 GiB peak. The equivalent aggregation over the compact
+  `activity_summary`, `daily_sleep`, and `daily_recovery` serving models
+  completed against the same production data in 0.101 seconds. The physical
+  serving tables contained only 3,653 activity-summary rows, 330 daily-sleep
+  rows, and 119 daily-recovery rows.
+- **Root cause:** The request path joined `analytics.v_activity` and read
+  `analytics.v_sleep`, `analytics.v_daily_metrics`, and the resting-heart-rate
+  view, forcing global recursive deduplication and sensor aggregation for a
+  small user-and-month result that already existed in compact dbt-owned
+  serving models.
+- **Fix / mitigation:** Read current activities from
+  `analytics.activity_summary`, daily sleep from `analytics.daily_sleep FINAL`,
+  and daily vitals from `analytics.daily_recovery FINAL`. Preserve the
+  monthly response shape and calculations without adding a timeout, retry, or
+  cache fallback. ClickHouse documents `FINAL` as the query modifier that
+  applies an engine's merge logic to the selected data:
+  <https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier>.
+- **Validation:** A real-ClickHouse regression test first failed after its
+  recursive test views were removed, reproducing the old repository's hard
+  dependency on `v_activity`. It now seeds only the three compact serving
+  models and verifies the complete monthly report result with those recursive
+  views absent. The focused integration test passes.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy the query,
+  invoke the production monthly report, confirm sub-second completion in
+  ClickHouse query history, and resolve `DOFEK-SERVER-5C` if no fixed-release
+  event recurs. The weekly report contains a similar recursive query and should
+  be investigated separately rather than silently expanded into this fix.
