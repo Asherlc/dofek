@@ -236,6 +236,7 @@ export async function loadMobileTrainingTab(
         recovery.respiratory_rate_score AS respiratory_rate_score
       FROM analytics.daily_recovery AS recovery FINAL
       WHERE recovery.user_id = {userId:UUID}
+        AND recovery.is_deleted = 0
         AND recovery.date > toDate({windowStart:String})
         AND recovery.date <= toDate({endDate:String})
         ${recoveryAccessClause(ctx.accessWindow)}

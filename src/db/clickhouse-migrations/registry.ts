@@ -53,7 +53,8 @@ import { createMigration as createMigration0053 } from "./0053_daily_sleep_lifec
 import { createMigration as createMigration0054 } from "./0054_activity_load_lifecycle.ts";
 import { createMigration as createMigration0055 } from "./0055_provider_connection_catalog.ts";
 import { createMigration as createMigration0056 } from "./0056_daily_body_measurement_lifecycle.ts";
-import { createMigration as createMigration0057 } from "./0057_migrate_body_measurement_to_dbt.ts";
+import { createMigration as createMigration0057 } from "./0057_daily_recovery_lifecycle.ts";
+import { createMigration as createMigration0058 } from "./0058_migrate_body_measurement_to_dbt.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -113,6 +114,7 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0055,
   createMigration0056,
   createMigration0057,
+  createMigration0058,
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

@@ -689,6 +689,7 @@ SELECT
   inputs_with_baselines.hrv_sd_60d AS hrv_sd_60d,
   inputs_with_baselines.rhr_mean_60d AS rhr_mean_60d,
   inputs_with_baselines.rhr_sd_60d AS rhr_sd_60d,
+  0 AS is_deleted,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
 FROM inputs_with_baselines

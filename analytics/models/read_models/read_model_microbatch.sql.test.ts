@@ -760,12 +760,17 @@ describe("production analytics read-model build", () => {
   it("materializes daily recovery inputs from compact daily and sleep sources", () => {
     const sql = readModel("daily_recovery_inputs");
 
+    expect(sql).toContain("{% if is_incremental() %}");
+    expect(sql).toContain("existing_rows AS");
+    expect(sql).toContain("dirty_keys AS");
+    expect(sql).toContain("IS DISTINCT FROM tuple(");
     expect(sql).toContain("analytics.v_daily_metrics");
     expect(sql).toContain("analytics.v_sleep");
     expect(sql).toContain("argMax(efficiency_pct, tuple(duration_minutes, started_at))");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("hrv_mean_60d");
     expect(sql).toContain("rhr_mean_60d");
+    expect(sql).toContain("if(inputs_with_baselines.user_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
     expect(sql).not.toContain("ref('deduped_sensor')");
   });
@@ -777,10 +782,13 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("{% if is_incremental() %}");
-    expect(sql).toContain("existing_dates AS");
-    expect(sql).toContain("latest_materialized_refreshed_at");
-    expect(normalizedSql).toContain("recovery_inputs.refreshed_at > existing_dates.latest_materialized_refreshed_at");
-    expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 60 DAY");
+    expect(sql).toContain("changed_users AS");
+    expect(sql).toContain("existing_keys AS");
+    expect(normalizedSql).toContain("WHERE recovery_inputs.is_deleted = 0");
+    expect(normalizedSql).toContain(
+      "recovery_inputs.refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+    );
+    expect(sql).toContain("if(sigmoid_scores.user_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).toContain("ref('daily_recovery_inputs')");
     expect(sql).toContain("hrv_score");
     expect(sql).toContain("resting_hr_score");
