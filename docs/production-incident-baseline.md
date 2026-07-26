@@ -18385,7 +18385,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   client repeatedly executing `GET`, `WATCH`, and `GET` for the Strava
   admission key about every 4.5 seconds without ever reaching `MULTI`/`EXEC`.
   The 4.5-second interval exactly matched
-  `ceil(15 minutes / (200 - 1))`.
+  `ceil(15 minutes / (200 - 1))`; Strava documents the default 200-request
+  short limit, its 15-minute window, and the quota headers:
+  <https://developers.strava.com/docs/rate-limits/>.
 - **Root cause:** Docker Swarm's default 10-second stop grace was incompatible
   with BullMQ's graceful close contract, which waits for active jobs, while
   provider HTTP requests had no deadline and provider deletion processed every

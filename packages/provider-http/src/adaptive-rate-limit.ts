@@ -115,9 +115,20 @@ export function slideAdaptiveWindow(
   state: ProviderAdaptiveRateState,
   nowMs: number,
 ): ProviderAdaptiveRateState {
-  if (nowMs - state.windowStartMs < ADAPTIVE_RATE_WINDOW_MS) return state;
+  const lastRequestMs = state.lastRequestMs === null ? null : Math.min(state.lastRequestMs, nowMs);
+  if (nowMs < state.windowStartMs) {
+    return {
+      ...state,
+      lastRequestMs,
+      windowStartMs: nowMs,
+    };
+  }
+  if (nowMs - state.windowStartMs < ADAPTIVE_RATE_WINDOW_MS) {
+    return lastRequestMs === state.lastRequestMs ? state : { ...state, lastRequestMs };
+  }
   return {
     ...state,
+    lastRequestMs,
     windowStartMs: nowMs,
     requestCount: 0,
   };
@@ -183,7 +194,7 @@ function remainingIntervalDelayMs(
   intervalMs: number,
   nowMs: number,
 ): number {
-  if (lastRequestMs == null) return intervalMs;
+  if (lastRequestMs == null) return 0;
   return Math.max(0, intervalMs - Math.max(0, nowMs - lastRequestMs));
 }
 
@@ -198,7 +209,8 @@ function budgetAdmissionDelayMs(state: ProviderAdaptiveRateState, nowMs: number)
     ? Math.max(1, Math.floor(softCap / httpRequestsPerSyncJob(state.providerId)))
     : softCap;
   if (effectiveRequestCount >= effectiveSoftCap) {
-    return Math.max(0, state.windowStartMs + ADAPTIVE_RATE_WINDOW_MS - nowMs);
+    const elapsedMs = Math.max(0, nowMs - state.windowStartMs);
+    return Math.max(0, ADAPTIVE_RATE_WINDOW_MS - elapsedMs);
   }
 
   return 0;

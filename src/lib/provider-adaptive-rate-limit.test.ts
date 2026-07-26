@@ -380,13 +380,37 @@ describe("RedisAdaptiveRateLimitStore", () => {
       "X-RateLimit-Usage": "95,400",
     });
 
+    const beforeSuccessMs = Date.now();
     await store.recordSuccess("strava", "provider", null, headers);
+    const afterSuccessMs = Date.now();
 
     const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
     expect(saved.stravaShortLimit).toBe(100);
     expect(saved.stravaShortUsage).toBe(95);
     expect(saved.stravaDailyLimit).toBe(1000);
     expect(saved.stravaDailyUsage).toBe(400);
+    expect(saved.lastRequestMs).toBeGreaterThanOrEqual(beforeSuccessMs);
+    expect(saved.lastRequestMs).toBeLessThanOrEqual(afterSuccessMs);
+  });
+
+  it("preserves the admitted request timestamp when recording Strava quota", async () => {
+    const { store, setCalls, values } = createMockRedisAdaptiveStore();
+    values.set(
+      "provider-adaptive-rate:strava:provider",
+      JSON.stringify({
+        ...createInitialAdaptiveState("strava", "provider", null, 0),
+        lastRequestMs: 1_234,
+      }),
+    );
+    const headers = new Headers({
+      "X-RateLimit-Limit": "100,1000",
+      "X-RateLimit-Usage": "95,400",
+    });
+
+    await store.recordSuccess("strava", "provider", null, headers);
+
+    const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.lastRequestMs).toBe(1_234);
   });
 
   it("uses user-scoped keys when scope is user", async () => {
@@ -646,8 +670,33 @@ describe("RedisAdaptiveRateLimitStore", () => {
     );
 
     const admission = mock.store.awaitAdmission("strava", "provider", null);
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(20_000);
     await admission;
+
+    expect(mock.execAttempts).toBe(1);
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it("completes atomic Strava admission with quota state but no prior request timestamp", async () => {
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.useFakeTimers();
+    vi.setSystemTime(20_000);
+    const mock = createMockRedisAdaptiveStore({ atomic: true });
+    mock.values.set(
+      "provider-adaptive-rate:strava:provider",
+      JSON.stringify({
+        ...createInitialAdaptiveState("strava", "provider", null, 0),
+        lastRequestMs: null,
+        stravaShortLimit: 200,
+        stravaShortUsage: 1,
+        stravaDailyLimit: 2_000,
+        stravaDailyUsage: 38,
+      }),
+    );
+
+    await mock.store.awaitAdmission("strava", "provider", null);
 
     expect(mock.execAttempts).toBe(1);
     vi.useRealTimers();
