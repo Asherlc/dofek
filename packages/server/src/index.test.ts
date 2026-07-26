@@ -293,6 +293,17 @@ describe("createApp", () => {
     expect(res.body).not.toContain("<!doctype html>");
   });
 
+  it("does not serve the SPA shell for missing Slack routes", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    const res = await request(app, "GET", "/slack/nonexistent");
+
+    expect(res.status).toBe(404);
+    expect(res.body).not.toContain("<!doctype html>");
+  });
+
   it("registers the ingest route using createIngestZosHealthRouter", async () => {
     const { createIngestZosHealthRouter } = await import("./routes/ingest-zos-health.ts");
     const { createDatabaseFromEnv } = await import("dofek/db");
