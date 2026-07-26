@@ -17767,7 +17767,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `@dofek/training/training`, `@dofek/scoring`, and `@dofek/zones` modules.
   The same checkout also reported the unlisted `swift` binary from the WHOOP
   BLE npm manifest and a Node 26 `module.register()` deprecation emitted by the
-  older `tsx` CLI.
+  older `tsx` CLI. A later Knip job failed at `pnpm knip` with
+  `Unused devDependencies (1): supports-color package.json:270:6`.
 - **Root cause:** The new package `exports` maps pointed at ignored compiled
   `dist` or `build` directories. Those directories existed in the development
   workspace, masking the defect, but were absent from a clean CI checkout.
@@ -17776,16 +17777,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   JavaScript and declarations. pnpm owns packing and publishing; Lerna remains
   only for independent changed-package versioning. The WHOOP BLE manifest no
   longer exposes Swift as an npm lifecycle binary, and `tsx` was updated to its
-  current stable release. pnpm documents that supported `publishConfig` fields
-  replace their development values during packing:
-  <https://pnpm.io/package_json#publishconfig>.
+  current stable release. The root `supports-color` dependency makes pnpm
+  resolve one shared Sentry peer context across the root and server workspaces;
+  it is declared in Knip's `ignoreDependencies` because its use occurs during
+  dependency resolution rather than through a source import. pnpm documents
+  that supported `publishConfig` fields replace their development values
+  during packing, and Knip documents `ignoreDependencies` for dependencies
+  whose use static analysis cannot observe:
+  <https://pnpm.io/package_json#publishconfig> and
+  <https://knip.dev/guides/handling-issues>.
 - **Validation:** With all 15 generated package-output directories temporarily
   removed, root typechecking and 1,091 public-package tests passed. All 15
   packages then built and packed; every tarball contained compiled output,
   exposed no source paths, and contained no unresolved `workspace:` protocol.
   The full Docker-free suite passed 13,758 tests. A frozen pnpm 11 install, 117
   Swift tests, Swift manifest resolution from outside the package directory,
-  and release-workflow linting also passed.
+  release-workflow linting, the corrected Knip check, and all 7 cache-module
+  peer-context tests also passed.
 - **Remaining risk / follow-up:** Replacement GitHub Actions checks must pass on
   Node 26 before merge. Future public-package changes should validate both a
   clean source checkout and the packed manifest, because either half alone can
