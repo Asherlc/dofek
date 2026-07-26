@@ -16,7 +16,7 @@ const boundaryUserId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const activityId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const boundaryActivityId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const boundaryActivityStartedAt = "2026-07-19 05:30:00";
-const boundaryRequestTimezone = "Pacific/Kiritimati";
+const boundaryRequestTimezone = "Asia/Tokyo";
 const endDate = "2026-07-25";
 
 describe("WeeklyReportRepository ClickHouse read models", () => {
