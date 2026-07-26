@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("clickHouseMigrations", () => {
   afterEach(() => {
-    vi.doUnmock("./0056_migrate_body_measurement_to_dbt.ts");
+    vi.doUnmock("./0057_migrate_body_measurement_to_dbt.ts");
     vi.resetModules();
   });
 
@@ -76,8 +76,17 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection"),
       ]),
     });
+    expect(
+      migrations.find((migration) => migration.id === "0056_daily_body_measurement_lifecycle"),
+    ).toMatchObject({
+      id: "0056_daily_body_measurement_lifecycle",
+      statements: expect.arrayContaining([
+        expect.stringContaining("ADD COLUMN IF NOT EXISTS is_deleted"),
+        expect.stringContaining("ADD COLUMN IF NOT EXISTS source_synced_at"),
+      ]),
+    });
     expect(migrations.at(-1)).toMatchObject({
-      id: "0056_migrate_body_measurement_to_dbt",
+      id: "0057_migrate_body_measurement_to_dbt",
       statements: expect.arrayContaining([
         expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.body_measurement"),
         expect.stringContaining("INSERT INTO analytics.body_measurement"),
@@ -89,7 +98,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects duplicate migration ids", async () => {
-    vi.doMock("./0056_migrate_body_measurement_to_dbt.ts", () => ({
+    vi.doMock("./0057_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "0043_activity_stream_lifecycle_columns",
         statements: [],
@@ -103,7 +112,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects migration ids without a four digit prefix", async () => {
-    vi.doMock("./0056_migrate_body_measurement_to_dbt.ts", () => ({
+    vi.doMock("./0057_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "body_measurement_view",
         statements: [],
@@ -117,7 +126,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects migration ids with non-numeric four character prefixes", async () => {
-    vi.doMock("./0056_migrate_body_measurement_to_dbt.ts", () => ({
+    vi.doMock("./0057_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "abcd_body_measurement_view",
         statements: [],
@@ -131,7 +140,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects migration ids with embedded numeric prefixes", async () => {
-    vi.doMock("./0056_migrate_body_measurement_to_dbt.ts", () => ({
+    vi.doMock("./0057_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "x0044_body_measurement_view",
         statements: [],
@@ -145,7 +154,7 @@ describe("clickHouseMigrations", () => {
   });
 
   it("rejects out-of-order migration ids", async () => {
-    vi.doMock("./0056_migrate_body_measurement_to_dbt.ts", () => ({
+    vi.doMock("./0057_migrate_body_measurement_to_dbt.ts", () => ({
       createMigration: () => ({
         id: "0042_body_measurement_view",
         statements: [],

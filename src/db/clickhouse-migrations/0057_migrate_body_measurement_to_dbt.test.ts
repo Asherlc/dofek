@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMigration } from "./0056_migrate_body_measurement_to_dbt.ts";
+import { createMigration } from "./0057_migrate_body_measurement_to_dbt.ts";
 
-describe("0056_migrate_body_measurement_to_dbt", () => {
+describe("0057_migrate_body_measurement_to_dbt", () => {
   it("bootstraps the dbt table before replacing the existing serving view", async () => {
     const command = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockReturnValue({
@@ -11,7 +11,7 @@ describe("0056_migrate_body_measurement_to_dbt", () => {
 
     await migration.run?.({ command, query }, "postgres://test");
 
-    expect(migration.id).toBe("0056_migrate_body_measurement_to_dbt");
+    expect(migration.id).toBe("0057_migrate_body_measurement_to_dbt");
     expect(query).toHaveBeenCalledWith({
       query: `SELECT count() AS count
 FROM system.tables

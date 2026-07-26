@@ -38,7 +38,7 @@ vi.mock("./telemetry", () => ({
   },
 }));
 
-import { queryWorkouts } from "../modules/health-kit";
+import { queryWorkoutRoutes, queryWorkouts } from "../modules/health-kit";
 import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
@@ -236,9 +236,57 @@ describe("initBackgroundHealthKitSync", () => {
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);
     await vi.runAllTimersAsync();
+    await vi.waitFor(() => {
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "bg-healthkit-sync",
+        expect.stringContaining("Sync complete:"),
+      );
+    });
     mockCaptureException.mockClear();
     mockCompleteObserverUpdates.mockClear();
     vi.mocked(queryWorkouts).mockRejectedValueOnce(
+      Object.assign(new Error("HealthKit data is unavailable while the device is locked"), {
+        code: "HEALTHKIT_DATABASE_INACCESSIBLE",
+      }),
+    );
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-healthkit-sync",
+      "Device locked, skipping sync",
+    );
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+    vi.useRealTimers();
+  });
+
+  it("does not report locked-device route errors and marks the observer sync unsuccessful", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockCaptureException.mockClear();
+    mockCompleteObserverUpdates.mockClear();
+    vi.mocked(queryWorkouts).mockResolvedValueOnce([
+      {
+        uuid: "workout-1",
+        activityType: 1,
+        startDate: "2026-03-22T10:00:00Z",
+        endDate: "2026-03-22T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+      },
+    ]);
+    vi.mocked(queryWorkoutRoutes).mockRejectedValueOnce(
       Object.assign(new Error("HealthKit data is unavailable while the device is locked"), {
         code: "HEALTHKIT_DATABASE_INACCESSIBLE",
       }),
