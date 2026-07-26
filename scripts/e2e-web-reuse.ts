@@ -19,7 +19,16 @@ function dockerCompose(args: string[]): void {
 }
 
 function dockerComposeOutput(args: string[]): string {
-  return output("pnpm", ["compose", "--", "--project-suffix", "e2e", "-f", composeFile, ...args]);
+  return output("pnpm", [
+    "--silent",
+    "compose",
+    "--",
+    "--project-suffix",
+    "e2e",
+    "-f",
+    composeFile,
+    ...args,
+  ]);
 }
 
 function runOneShotService(service: string): void {
