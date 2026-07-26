@@ -41,10 +41,10 @@ import { collectHealthData } from "../src/health-collector.ts";
 import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import {
+  createSessionCall,
   drainManualExportQueue,
   getSessionAction,
   handleSessionCall,
-  SESSION_COMMAND,
   SESSION_STATE,
   type SessionState,
 } from "../src/session-control.ts";
@@ -217,11 +217,12 @@ Page(
           const action = getSessionAction(
             this.state.logging ? SESSION_STATE.RECORDING : SESSION_STATE.IDLE,
           );
-          if (action.command === SESSION_COMMAND.START) {
-            this.startLogging();
-          } else {
-            this.stopLogging();
-          }
+          this.onCall(
+            createSessionCall(action.command, {
+              enableGyro: this.state.enableGyro,
+              freqModeIndex: this.state.freqModeIndex,
+            }),
+          );
         },
       });
 
@@ -647,7 +648,7 @@ Page(
         path: this.activeFilePath(),
         sampleCount: this.state.sampleCount,
         observedHzX100: this.state.observedHzX100,
-        failedSlot: null,
+        failedSlot: this.state.activeFile,
       });
     },
 
@@ -750,9 +751,14 @@ Page(
           logging: this.state.logging,
           transferInProgress: Boolean(this.state.transferTask),
           failedTransferPending: Boolean(this.state.failedTransfer),
+          pendingManualExport: this.state.pendingManualExport,
           applyStartPreferences: (params) => {
             this.state.enableGyro = params?.enableGyro === true;
             this.state.freqModeIndex = Number(params?.freqModeIndex ?? this.state.freqModeIndex);
+          },
+          handleBlockedStart: () => {
+            showToast({ content: "Transfer session before starting" });
+            renderHint("Finish session transfer\nbefore starting");
           },
           startLogging: () => this.startLogging(),
           stopLogging: () => this.stopLogging(),

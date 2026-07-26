@@ -22,7 +22,7 @@ describe("Zepp session control", () => {
   it("offers an explicit stop action while recording", () => {
     expect(getSessionAction(SESSION_STATE.RECORDING)).toEqual({
       command: SESSION_COMMAND.STOP,
-      label: "Stop & finalize",
+      label: "Stop & transfer",
     });
   });
 
@@ -96,19 +96,78 @@ describe("Zepp session control", () => {
     expect(startLogging).toHaveBeenCalledOnce();
   });
 
-  it("stops an active session on an explicit stop call", () => {
-    const stopLogging = vi.fn();
+  it("stops and transfers an active session on an explicit stop call", () => {
+    const events: string[] = [];
 
     expect(
       handleSessionCall(
         { method: "logging.stop" },
         makeSessionCallHandlers({
           logging: true,
-          stopLogging,
+          stopLogging: () => events.push("stop"),
+          transferStoppedSession: () => events.push("transfer"),
         }),
       ),
     ).toBe(true);
-    expect(stopLogging).toHaveBeenCalledOnce();
+    expect(events).toEqual(["stop", "transfer"]);
+  });
+
+  it("queues an explicit stop behind an active automatic transfer", () => {
+    const events: string[] = [];
+
+    expect(
+      handleSessionCall(
+        { method: "logging.stop" },
+        makeSessionCallHandlers({
+          logging: true,
+          transferInProgress: true,
+          stopLogging: () => events.push("stop"),
+          queueManualExport: () => events.push("queue"),
+          transferStoppedSession: () => events.push("transfer"),
+        }),
+      ),
+    ).toBe(true);
+    expect(events).toEqual(["stop", "queue"]);
+  });
+
+  it.each([
+    {
+      name: "a transfer is active",
+      transferInProgress: true,
+      failedTransferPending: false,
+      pendingManualExport: false,
+    },
+    {
+      name: "a failed transfer awaits retry",
+      transferInProgress: false,
+      failedTransferPending: true,
+      pendingManualExport: false,
+    },
+    {
+      name: "the finalized session is queued",
+      transferInProgress: false,
+      failedTransferPending: false,
+      pendingManualExport: true,
+    },
+  ])("blocks a new session while $name", (state) => {
+    const applyStartPreferences = vi.fn();
+    const handleBlockedStart = vi.fn();
+    const startLogging = vi.fn();
+
+    expect(
+      handleSessionCall(
+        { method: "logging.start", params: { enableGyro: true, freqModeIndex: 2 } },
+        makeSessionCallHandlers({
+          ...state,
+          applyStartPreferences,
+          handleBlockedStart,
+          startLogging,
+        }),
+      ),
+    ).toBe(true);
+    expect(handleBlockedStart).toHaveBeenCalledOnce();
+    expect(applyStartPreferences).not.toHaveBeenCalled();
+    expect(startLogging).not.toHaveBeenCalled();
   });
 
   it("stops and immediately transfers when no transfer is active", () => {

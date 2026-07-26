@@ -31,7 +31,9 @@ export interface SessionCallHandlers {
   logging: boolean;
   transferInProgress: boolean;
   failedTransferPending: boolean;
+  pendingManualExport: boolean;
   applyStartPreferences(params: Record<string, unknown> | undefined): void;
+  handleBlockedStart(): void;
   startLogging(): void;
   stopLogging(): void;
   queueManualExport(): void;
@@ -56,7 +58,7 @@ const SESSION_ACTIONS: Record<SessionState, SessionAction> = {
   },
   [SESSION_STATE.RECORDING]: {
     command: SESSION_COMMAND.STOP,
-    label: "Stop & finalize",
+    label: "Stop & transfer",
   },
 };
 
@@ -90,6 +92,15 @@ export function handleSessionCall(
   handlers: SessionCallHandlers,
 ): boolean {
   if (payload?.method === "logging.start") {
+    if (
+      !handlers.logging &&
+      (handlers.transferInProgress ||
+        handlers.failedTransferPending ||
+        handlers.pendingManualExport)
+    ) {
+      handlers.handleBlockedStart();
+      return true;
+    }
     if (!handlers.logging) {
       handlers.applyStartPreferences(payload.params);
     }
@@ -98,26 +109,30 @@ export function handleSessionCall(
   }
 
   if (payload?.method === "logging.stop") {
-    handlers.stopLogging();
+    finalizeAndTransfer(handlers);
     return true;
   }
 
   if (payload?.method === "transfer.start") {
-    if (handlers.logging) {
-      handlers.stopLogging();
-    }
-    if (handlers.transferInProgress) {
-      handlers.queueManualExport();
-      return true;
-    }
-    if (handlers.failedTransferPending) {
-      handlers.queueManualExport();
-    }
-    handlers.transferStoppedSession();
+    finalizeAndTransfer(handlers);
     return true;
   }
 
   return false;
+}
+
+function finalizeAndTransfer(handlers: SessionCallHandlers): void {
+  if (handlers.logging) {
+    handlers.stopLogging();
+  }
+  if (handlers.transferInProgress) {
+    handlers.queueManualExport();
+    return;
+  }
+  if (handlers.failedTransferPending) {
+    handlers.queueManualExport();
+  }
+  handlers.transferStoppedSession();
 }
 
 export function drainManualExportQueue(
