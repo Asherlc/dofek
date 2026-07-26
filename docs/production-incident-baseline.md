@@ -17841,3 +17841,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   existing 240-second execution ceiling. Do not resolve the aggregate dbt
   Sentry issue until the independent sleep and provider-stat queries also
   complete successfully.
+
+## 2026-07-25 — SAST Runner Could Not Pull the Pinned Semgrep Image
+
+- **Status:** External registry failure cleared; unchanged SAST rerun passed.
+- **Symptoms:** PR 2012's replacement CI run failed before static analysis
+  started.
+- **User impact:** No production impact. The infrastructure failure delayed
+  validation and merge of the activity power-curve fix.
+- **Evidence:** The exact failing command was `docker pull
+  semgrep/semgrep:1.170.0@sha256:c98f8829eea377274ee4b10656458b078b88232469b2ff913f091c2317347c9d`.
+  Its first fatal response was `Get "https://registry-1.docker.io/v2/":
+  context deadline exceeded`; the hosted runner repeated the pull three times
+  and then emitted `Docker pull failed with exit code 1`. Docker documents
+  `docker image pull` as the registry download operation:
+  <https://docs.docker.com/reference/cli/docker/image/pull/>.
+- **Root cause:** The GitHub-hosted runner could not reach Docker Hub before
+  its registry request deadline, so it never created the pinned Semgrep job
+  container.
+- **Fix / mitigation:** Reran the failed SAST job unchanged after the registry
+  recovered. No repository retry, timeout, fallback, or warn-and-continue
+  behavior was added.
+- **Validation:** The unchanged rerun completed successfully, including the
+  Semgrep scan.
+- **Remaining risk / follow-up:** Treat a future identical pre-container pull
+  failure as external registry availability after confirming the digest and
+  command are unchanged; investigate separately if pulls fail persistently.
