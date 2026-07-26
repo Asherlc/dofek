@@ -17884,6 +17884,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   heart-rate rows while leaving `activity_polarization_zones` empty; the
   pre-fix repository returned a computed week with `maxHr: 190`, proving that
   it queried the raw-derived models after the serving query returned no rows.
+- **Classification:** Following the
+  [loading-performance runbook](performance/loading-performance-runbook.md),
+  this was a request-time query-shape bottleneck: an empty analytics serving
+  model caused synchronous aggregation over raw-derived sensor rows. The exact
+  production timeout timestamps and local ClickHouse measurements are recorded
+  in [issue #1997](https://github.com/Asherlc/dofek/issues/1997).
 - **Root cause:** The repository treated an empty
   `activity_polarization_zones` result as a cache miss and synchronously
   recomputed the trend from `activity_summary` and `deduped_sensor`.
