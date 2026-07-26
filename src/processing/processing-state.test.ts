@@ -278,7 +278,7 @@ describe("deriveProcessingState", () => {
     });
   });
 
-  it("keeps stale nonterminal operations waiting for downstream work", () => {
+  it("keeps stale non-terminal operations waiting for downstream work", () => {
     const state = deriveProcessingState({
       datasetKeys: ["activity"],
       outputManifest: { activity: ["relational"] },
