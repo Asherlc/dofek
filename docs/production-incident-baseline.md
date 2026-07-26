@@ -17828,3 +17828,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Deploy the fixed image, confirm the sink task
   remains stable, and verify the accumulated Redpanda events flow into
   ClickHouse.
+
+## 2026-07-26 — Mutation Prep Selected Cypress Test Harness Files
+
+- **Status:** Root cause fixed locally; replacement CI pending.
+- **Symptoms:** PR `#2033` failed both generated Stryker shards even though the
+  unit, integration, and serialized full test suites passed.
+- **User impact:** The valid review-seed UUID repair was blocked from merging;
+  no production runtime was affected.
+- **Evidence:** The exact failing step was `Run Stryker`. Its two
+  `MUTATE_FILES` values were `cypress/support/commands.ts:1-2` and
+  `cypress/support/test-user.ts:1-1`. The first fatal line in both jobs was
+  `No tests were executed. Stryker will exit prematurely.` The preceding log
+  stated that Vitest found no tests related to either selected file.
+- **Root cause:** Mutation prep excluded Cypress spec files but still treated
+  support modules used only by those specs as application runtime files. The
+  configured mutation Vitest project intentionally does not run Cypress, so
+  Stryker could not establish a dry-run test set for either shard. Stryker
+  documents this exact related-test failure mode:
+  <https://stryker-mutator.io/docs/stryker-js/troubleshooting/#vitest-failed-to-find-test-files-related-to-mutated-files>.
+- **Fix / mitigation:** Exclude the complete `cypress/` test harness from
+  changed-line mutation candidate discovery. Production TypeScript remains
+  subject to the existing strict mutation threshold; no threshold, timeout,
+  retry, or test skip was changed.
+- **Validation:** The exact candidate-discovery pipeline no longer emits either
+  Cypress support file, while the focused review-seed unit and real-Postgres
+  integration tests, full lint, root/server/web typechecks, and all 13,741
+  Docker-free unit/mobile tests remain green. Replacement CI is pending.
+- **Remaining risk / follow-up:** Confirm replacement CI emits no mutation
+  shards for this Cypress-only support change and that all other required gates
+  complete successfully.
