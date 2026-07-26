@@ -69,6 +69,26 @@ From repo root:
 - `pnpm test:mobile -- packages/mobile/lib/health-kit-sync.test.ts`
 - `pnpm test:mobile -- packages/mobile/lib/background-health-kit-sync.test.ts`
 
+## Physical-Device Observer Validation
+
+For changes to background observer delivery, complete this acceptance check on
+a physical iPhone with a Release build:
+
+1. Grant HealthKit read access, background the app, lock the device, and create
+   or import a sample for an observed HealthKit type.
+2. Confirm the native update ID and sample type reach JavaScript, then verify
+   that the query, upload, post-sync callback, and overall observer logs include
+   monotonic durations and item context.
+3. Verify JavaScript acknowledges the update ID before the 25-second native
+   expiration and that no `com.dofek.healthkit-observer` expiration event is
+   reported.
+4. Repeat with multiple sample types delivered together and confirm every
+   update ID is completed exactly once after the coalesced sync.
+
+Apple requires the observer completion handler to run after the app finishes
+processing the delivered data:
+<https://developer.apple.com/documentation/healthkit/executing-observer-queries>.
+
 ## Common Failure Modes
 
 - Entitlement missing: native authorization request throws with HealthKit entitlement text.

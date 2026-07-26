@@ -39,13 +39,13 @@ function createStageTelemetry() {
       }
     | undefined;
 
-  function complete(outcome: "succeeded" | "failed"): void {
+  function complete(outcome: "completed" | "failed"): void {
     if (!active) {
       return;
     }
     logger.info(TAG, "Sync stage completed", {
       ...active.stage,
-      durationMs: Math.max(0, Date.now() - active.startedAt),
+      durationMs: performance.now() - active.startedAt,
       outcome,
     });
     active = undefined;
@@ -53,10 +53,10 @@ function createStageTelemetry() {
 
   return {
     start(stage: BackgroundHealthKitSyncStage): void {
-      complete("succeeded");
+      complete("completed");
       active = {
         stage,
-        startedAt: Date.now(),
+        startedAt: performance.now(),
       };
       logger.info(TAG, "Sync stage started", { ...stage });
     },
@@ -67,7 +67,7 @@ async function performHealthKitSync(
   trpcClient: SyncTrpcClient,
   onSyncComplete?: () => void | Promise<void>,
 ): Promise<boolean> {
-  const startedAt = Date.now();
+  const startedAt = performance.now();
   const stageTelemetry = createStageTelemetry();
   logger.info(TAG, "Starting sync");
   let result: Awaited<ReturnType<AppleHealthSyncService["sync"]>>;
@@ -91,9 +91,9 @@ async function performHealthKitSync(
     return false;
   }
 
-  stageTelemetry.complete("succeeded");
+  stageTelemetry.complete("completed");
   logger.info(TAG, `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`, {
-    durationMs: Math.max(0, Date.now() - startedAt),
+    durationMs: performance.now() - startedAt,
     errorCount: result.errors.length,
     inserted: result.inserted,
   });
@@ -101,7 +101,7 @@ async function performHealthKitSync(
     if (onSyncComplete) {
       stageTelemetry.start({ operation: "postSyncCallback" });
       await onSyncComplete();
-      stageTelemetry.complete("succeeded");
+      stageTelemetry.complete("completed");
     }
   } catch (error) {
     stageTelemetry.complete("failed");
@@ -110,7 +110,7 @@ async function performHealthKitSync(
     captureException(error, { source: TAG });
   }
   logger.info(TAG, "Observer processing complete", {
-    durationMs: Math.max(0, Date.now() - startedAt),
+    durationMs: performance.now() - startedAt,
   });
   return true;
 }
