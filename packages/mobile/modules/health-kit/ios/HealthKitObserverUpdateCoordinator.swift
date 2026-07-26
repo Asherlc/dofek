@@ -1,14 +1,23 @@
 import Foundation
 
+struct HealthKitObserverUpdateExpiration {
+    let updateId: String
+    let typeIdentifier: String
+    let ageMilliseconds: Int
+}
+
 final class HealthKitObserverUpdateCoordinator {
     private struct PendingUpdate {
         let completion: () -> Void
         let expiration: DispatchWorkItem
+        let registeredAt: TimeInterval
+        let typeIdentifier: String
     }
 
+    private let currentUptime: () -> TimeInterval
     private let expirationQueue: DispatchQueue
     private let lock = NSLock()
-    private let reportExpiration: (String) -> Void
+    private let reportExpiration: (HealthKitObserverUpdateExpiration) -> Void
     private let timeout: TimeInterval
     private var pendingUpdates: [String: PendingUpdate] = [:]
 
@@ -17,14 +26,18 @@ final class HealthKitObserverUpdateCoordinator {
         expirationQueue: DispatchQueue = DispatchQueue(
             label: "com.dofek.healthkit-observer-expiration"
         ),
-        reportExpiration: @escaping (String) -> Void = { _ in }
+        currentUptime: @escaping () -> TimeInterval = {
+            ProcessInfo.processInfo.systemUptime
+        },
+        reportExpiration: @escaping (HealthKitObserverUpdateExpiration) -> Void = { _ in }
     ) {
         self.timeout = timeout
         self.expirationQueue = expirationQueue
+        self.currentUptime = currentUptime
         self.reportExpiration = reportExpiration
     }
 
-    func register(completion: @escaping () -> Void) -> String {
+    func register(typeIdentifier: String, completion: @escaping () -> Void) -> String {
         let updateId = UUID().uuidString
         let expiration = DispatchWorkItem { [weak self] in
             self?.expire(updateId: updateId)
@@ -33,7 +46,9 @@ final class HealthKitObserverUpdateCoordinator {
         lock.withLock {
             pendingUpdates[updateId] = PendingUpdate(
                 completion: completion,
-                expiration: expiration
+                expiration: expiration,
+                registeredAt: currentUptime(),
+                typeIdentifier: typeIdentifier
             )
         }
 
@@ -73,7 +88,16 @@ final class HealthKitObserverUpdateCoordinator {
         guard let update else {
             return
         }
-        reportExpiration(updateId)
+        let ageMilliseconds = Int(
+            max(0, currentUptime() - update.registeredAt) * 1_000
+        )
+        reportExpiration(
+            HealthKitObserverUpdateExpiration(
+                updateId: updateId,
+                typeIdentifier: update.typeIdentifier,
+                ageMilliseconds: ageMilliseconds
+            )
+        )
         update.completion()
     }
 

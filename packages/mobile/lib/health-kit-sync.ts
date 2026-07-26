@@ -120,6 +120,7 @@ export interface SyncOptions {
   /** Number of days to sync, or null for all-time */
   syncRangeDays: number | null;
   onProgress?: (message: string) => void;
+  onStage?: (stage: HealthKitSyncStage) => void;
 }
 
 export interface SyncResult {
@@ -127,12 +128,29 @@ export interface SyncResult {
   errors: string[];
 }
 
+export interface HealthKitSyncStage {
+  operation:
+    | "queryDailyStatistics"
+    | "queryQuantitySamples"
+    | "pushQuantitySamples"
+    | "queryWorkouts"
+    | "pushWorkouts"
+    | "queryWorkoutRoutes"
+    | "pushWorkoutRoutes"
+    | "querySleepSamples"
+    | "pushSleepSamples";
+  typeIdentifier?: string;
+  batchIndex?: number;
+  batchCount?: number;
+  itemCount?: number;
+}
+
 /**
  * Core HealthKit sync logic extracted from the health screen component.
  * Queries all HealthKit types and pushes them to the server via tRPC.
  */
 export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncResult> {
-  const { trpcClient, healthKit, syncRangeDays, onProgress } = options;
+  const { trpcClient, healthKit, syncRangeDays, onProgress, onStage } = options;
 
   const startDate = syncWindowStart(syncRangeDays);
   const endDate = new Date().toISOString();
@@ -145,6 +163,10 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   for (const typeId of ADDITIVE_QUANTITY_TYPES) {
     const shortName = typeId.replace("HKQuantityTypeIdentifier", "");
     onProgress?.(`Querying ${shortName}... (${typeIndex + 1}/${totalTypes})`);
+    onStage?.({
+      operation: "queryDailyStatistics",
+      typeIdentifier: typeId,
+    });
 
     let dailyStats: DailyStatistic[];
     try {
@@ -174,6 +196,10 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   for (const typeId of NON_ADDITIVE_QUANTITY_TYPES) {
     const shortName = typeId.replace("HKQuantityTypeIdentifier", "");
     onProgress?.(`Querying ${shortName}... (${typeIndex + 1}/${totalTypes})`);
+    onStage?.({
+      operation: "queryQuantitySamples",
+      typeIdentifier: typeId,
+    });
 
     const samples = await healthKit.queryQuantitySamples(typeId, startDate, endDate);
     allSamples.push(...samples);
@@ -186,8 +212,15 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   // Push quantity samples in batches
   if (allSamples.length > 0) {
     onProgress?.(`Pushing ${allSamples.length} samples...`);
-    for (let i = 0; i < allSamples.length; i += BATCH_SIZE) {
-      const batch = allSamples.slice(i, i + BATCH_SIZE);
+    const batchCount = Math.ceil(allSamples.length / BATCH_SIZE);
+    for (let batchOffset = 0; batchOffset < allSamples.length; batchOffset += BATCH_SIZE) {
+      const batch = allSamples.slice(batchOffset, batchOffset + BATCH_SIZE);
+      onStage?.({
+        operation: "pushQuantitySamples",
+        batchIndex: batchOffset / BATCH_SIZE + 1,
+        batchCount,
+        itemCount: batch.length,
+      });
       const result = await trpcClient.healthKitSync.pushQuantitySamples.mutate({ samples: batch });
       totalInserted += result.inserted;
       errors.push(...result.errors);
@@ -196,8 +229,13 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
 
   // Sync workouts
   onProgress?.("Querying workouts...");
+  onStage?.({ operation: "queryWorkouts" });
   const workouts = (await healthKit.queryWorkouts(startDate, endDate)).map(normalizeWorkout);
   {
+    onStage?.({
+      operation: "pushWorkouts",
+      itemCount: workouts.length,
+    });
     const result = await trpcClient.healthKitSync.pushWorkouts.mutate({
       workouts,
       windowStart: startDate,
@@ -207,6 +245,10 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
 
     // Fetch GPS routes for each workout (parallel with bounded concurrency, non-fatal errors)
     onProgress?.("Querying workout routes...");
+    onStage?.({
+      operation: "queryWorkoutRoutes",
+      itemCount: workouts.length,
+    });
     const routeQueryConcurrency = Math.min(4, workouts.length);
     const routeGroups = await Promise.all(
       Array.from({ length: routeQueryConcurrency }, async (_, workerIndex) => {
@@ -248,6 +290,10 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
 
     if (workouts.length > 0 && routes.length > 0) {
       onProgress?.(`Pushing ${routes.length} workout routes...`);
+      onStage?.({
+        operation: "pushWorkoutRoutes",
+        itemCount: routes.length,
+      });
       try {
         const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });
         totalInserted += routeResult.inserted;
@@ -264,8 +310,13 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
 
   // Sync sleep
   onProgress?.("Querying sleep...");
+  onStage?.({ operation: "querySleepSamples" });
   const sleepSamples = await healthKit.querySleepSamples(startDate, endDate);
   if (sleepSamples.length > 0) {
+    onStage?.({
+      operation: "pushSleepSamples",
+      itemCount: sleepSamples.length,
+    });
     const result = await trpcClient.healthKitSync.pushSleepSamples.mutate({
       samples: sleepSamples,
     });

@@ -148,12 +148,14 @@ export class AppleHealthSyncService {
   async sync(options: {
     syncRangeDays: number | null;
     onProgress?: (message: string) => void;
+    onStage?: SyncOptions["onStage"];
   }): Promise<SyncResult> {
     return this.#syncFunction({
       trpcClient: this.#trpcClient,
       healthKit: this.#healthKit,
       syncRangeDays: options.syncRangeDays,
       onProgress: options.onProgress,
+      onStage: options.onStage,
     });
   }
 }

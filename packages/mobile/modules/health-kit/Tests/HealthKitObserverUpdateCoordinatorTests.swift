@@ -5,7 +5,7 @@ final class HealthKitObserverUpdateCoordinatorTests: XCTestCase {
     func testCompletesRegisteredUpdateExactlyOnce() {
         var completionCount = 0
         let coordinator = HealthKitObserverUpdateCoordinator(timeout: 60)
-        let updateId = coordinator.register {
+        let updateId = coordinator.register(typeIdentifier: "HKQuantityTypeIdentifierStepCount") {
             completionCount += 1
         }
 
@@ -17,10 +17,10 @@ final class HealthKitObserverUpdateCoordinatorTests: XCTestCase {
     func testCompletesCoalescedUpdatesTogether() {
         var completed: [String] = []
         let coordinator = HealthKitObserverUpdateCoordinator(timeout: 60)
-        let firstId = coordinator.register {
+        let firstId = coordinator.register(typeIdentifier: "HKQuantityTypeIdentifierStepCount") {
             completed.append("first")
         }
-        let secondId = coordinator.register {
+        let secondId = coordinator.register(typeIdentifier: "HKQuantityTypeIdentifierHeartRate") {
             completed.append("second")
         }
 
@@ -32,22 +32,24 @@ final class HealthKitObserverUpdateCoordinatorTests: XCTestCase {
         let completed = expectation(description: "completion called")
         let expired = expectation(description: "expiration reported")
         var completionCount = 0
-        var expiredId: String?
+        var expiration: HealthKitObserverUpdateExpiration?
         let coordinator = HealthKitObserverUpdateCoordinator(
             timeout: 0.01,
-            reportExpiration: { updateId in
-                expiredId = updateId
+            reportExpiration: { updateExpiration in
+                expiration = updateExpiration
                 expired.fulfill()
             }
         )
-        let updateId = coordinator.register {
+        let updateId = coordinator.register(typeIdentifier: "HKQuantityTypeIdentifierHeartRate") {
             completionCount += 1
             completed.fulfill()
         }
 
         wait(for: [completed, expired], timeout: 1)
 
-        XCTAssertEqual(expiredId, updateId)
+        XCTAssertEqual(expiration?.updateId, updateId)
+        XCTAssertEqual(expiration?.typeIdentifier, "HKQuantityTypeIdentifierHeartRate")
+        XCTAssertGreaterThanOrEqual(expiration?.ageMilliseconds ?? 0, 10)
         XCTAssertEqual(coordinator.complete(updateIds: [updateId]), 0)
         XCTAssertEqual(completionCount, 1)
     }
@@ -55,10 +57,10 @@ final class HealthKitObserverUpdateCoordinatorTests: XCTestCase {
     func testTeardownCompletesEveryPendingUpdateExactlyOnce() {
         var completionCount = 0
         let coordinator = HealthKitObserverUpdateCoordinator(timeout: 60)
-        let firstId = coordinator.register {
+        let firstId = coordinator.register(typeIdentifier: "HKQuantityTypeIdentifierStepCount") {
             completionCount += 1
         }
-        let secondId = coordinator.register {
+        let secondId = coordinator.register(typeIdentifier: "HKQuantityTypeIdentifierHeartRate") {
             completionCount += 1
         }
 

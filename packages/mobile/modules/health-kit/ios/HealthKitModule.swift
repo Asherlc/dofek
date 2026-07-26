@@ -41,7 +41,7 @@ public class HealthKitModule: Module {
     private let hasEverAuthorizedKey = "healthkit_has_ever_authorized"
     private let observerUpdateCoordinator = HealthKitObserverUpdateCoordinator(
         timeout: 25,
-        reportExpiration: { updateId in
+        reportExpiration: { expiration in
             SentrySDK.capture(
                 error: NSError(
                     domain: "com.dofek.healthkit-observer",
@@ -49,7 +49,9 @@ public class HealthKitModule: Module {
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "HealthKit observer update expired before JavaScript sync completed",
-                        "updateId": updateId,
+                        "updateId": expiration.updateId,
+                        "typeIdentifier": expiration.typeIdentifier,
+                        "ageMilliseconds": expiration.ageMilliseconds,
                     ]
                 )
             )
@@ -804,6 +806,7 @@ public class HealthKitModule: Module {
                     }
 
                     let updateId = self.observerUpdateCoordinator.register(
+                        typeIdentifier: sampleType.identifier,
                         completion: completionHandler
                     )
                     MainThreadEventEmitter.emit(

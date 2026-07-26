@@ -38,7 +38,7 @@ vi.mock("./telemetry", () => ({
   },
 }));
 
-import { queryWorkoutRoutes, queryWorkouts } from "../modules/health-kit";
+import { queryDailyStatistics, queryWorkoutRoutes, queryWorkouts } from "../modules/health-kit";
 import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
@@ -115,6 +115,46 @@ describe("initBackgroundHealthKitSync", () => {
     await vi.waitFor(() => {
       expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("logs monotonic structured stage duration and context", async () => {
+    vi.useFakeTimers();
+    const firstStage = createDeferred<[]>();
+    vi.mocked(queryDailyStatistics).mockReturnValueOnce(firstStage.promise);
+    const wallClock = vi.spyOn(Date, "now");
+
+    try {
+      await initBackgroundHealthKitSync(createMockClient());
+
+      expect(mockLoggerInfo).toHaveBeenCalledWith("bg-healthkit-sync", "Sync stage started", {
+        operation: "queryDailyStatistics",
+        typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      });
+
+      wallClock.mockReturnValue(0);
+      await vi.advanceTimersByTimeAsync(250);
+      firstStage.resolve([]);
+      await vi.waitFor(() => {
+        expect(mockLoggerInfo).toHaveBeenCalledWith(
+          "bg-healthkit-sync",
+          "Sync stage completed",
+          expect.objectContaining({
+            operation: "queryDailyStatistics",
+            typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+            outcome: "completed",
+          }),
+        );
+      });
+      const completion = mockLoggerInfo.mock.calls.find(
+        ([, message, data]) =>
+          message === "Sync stage completed" &&
+          data?.typeIdentifier === "HKQuantityTypeIdentifierStepCount",
+      );
+      expect(completion?.[2]?.durationMs).toBeGreaterThanOrEqual(250);
+    } finally {
+      wallClock.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("sets up sync even when the legacy authorization flag is false", async () => {
@@ -240,6 +280,10 @@ describe("initBackgroundHealthKitSync", () => {
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         "bg-healthkit-sync",
         expect.stringContaining("Sync complete:"),
+        expect.objectContaining({
+          errorCount: 0,
+          inserted: 0,
+        }),
       );
     });
     mockCaptureException.mockClear();
@@ -307,6 +351,59 @@ describe("initBackgroundHealthKitSync", () => {
       "Device locked, skipping sync",
     );
     expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+    vi.useRealTimers();
+  });
+
+  it("reports partial sync errors without labeling completed stages as succeeded", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.runAllTimersAsync();
+    mockLoggerInfo.mockClear();
+    vi.mocked(queryWorkouts).mockResolvedValueOnce([
+      {
+        uuid: "workout-1",
+        activityType: 1,
+        startDate: "2026-03-22T10:00:00Z",
+        endDate: "2026-03-22T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+      },
+    ]);
+    vi.mocked(queryWorkoutRoutes).mockRejectedValueOnce(new Error("Route permission denied"));
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-healthkit-sync",
+      "Sync stage completed",
+      expect.objectContaining({
+        operation: "queryWorkoutRoutes",
+        outcome: "completed",
+      }),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-healthkit-sync",
+      expect.stringContaining("1 errors"),
+      expect.objectContaining({
+        errorCount: 1,
+      }),
+    );
+    expect(mockLoggerInfo).not.toHaveBeenCalledWith(
+      "bg-healthkit-sync",
+      "Sync stage completed",
+      expect.objectContaining({
+        outcome: "succeeded",
+      }),
+    );
     vi.useRealTimers();
   });
 

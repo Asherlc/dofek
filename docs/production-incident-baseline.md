@@ -17431,6 +17431,56 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `InternalError`, correlate the OTA service and object-storage logs before
   changing workflow behavior.
 
+## 2026-07-25 — HealthKit Observer Sync Exceeded Its Completion Deadline
+
+- **Status:** Root cause confirmed and diagnostic instrumentation implemented;
+  production physical-device evidence is pending.
+- **Symptoms:** Sentry issue
+  [`DOFEK-MOBILE-1C`](https://east-bay-software.sentry.io/issues/7633118736/)
+  recorded 19 handled `com.dofek.healthkit-observer: Code: 1` events between
+  `2026-07-25T20:16:37Z` and `20:16:47Z`. All events came from one physical
+  iPhone running iOS 26.5.2 while Dofek was in the background.
+- **User impact:** Nineteen observer callbacks reached the native expiration
+  path before JavaScript acknowledged them, so HealthKit can redeliver those
+  updates. The associated sync itself succeeded and reported 1,324 inserted
+  rows with zero errors, so this event does not show data loss or an app crash.
+- **Evidence:** The exact failing boundary was the native observer coordinator's
+  25-second expiration, whose first fatal event was
+  `com.dofek.healthkit-observer: Code: 1`. Sentry breadcrumbs show sample
+  deliveries beginning at `20:16:12.383Z`, JavaScript logging `Starting sync`
+  at `20:16:13.021Z`, and `Sync complete: 1324 inserted, 0 errors` only at
+  `20:16:45.055Z`, approximately 32 seconds later. The native stack captured
+  `HealthKitObserverUpdateCoordinator.register` and its expiration reporter.
+  Code inspection confirmed that
+  [`HealthKitModule.swift`](../packages/mobile/modules/health-kit/ios/HealthKitModule.swift)
+  expires each retained callback after 25 seconds, while
+  [`background-health-kit-sync.ts`](../packages/mobile/lib/background-health-kit-sync.ts)
+  acknowledges the batch only after the complete one-day query-and-upload
+  operation settles. Apple requires apps to call the observer completion
+  handler after processing the delivered data in its
+  [observer-query guidance](https://developer.apple.com/documentation/healthkit/executing-observer-queries).
+- **Root cause:** A successful one-day HealthKit query-and-upload cycle took
+  about 32 seconds, but the native bridge expired every observer callback after
+  25 seconds, making expiration inevitable before JavaScript could acknowledge
+  the completed work.
+- **Fix / mitigation:** Added structured start/completion telemetry around each
+  HealthKit query, upload batch, workout route, sleep operation, and post-sync
+  callback, including duration and batch/item context. Native expiration events
+  now include the update ID, HealthKit sample type, and monotonic callback age.
+  The 25-second deadline and observer acknowledgement behavior are unchanged;
+  increasing the timeout would hide the measured slow critical path rather
+  than fix it.
+- **Validation:** The focused mobile Vitest suite passed 58 tests, the native
+  Swift package passed 72 tests, mobile TypeScript typechecking passed, and
+  focused Biome and strict SwiftLint checks passed with zero violations. The
+  `ExpoHealthKit` native target also compiled successfully in the generated iOS
+  application workspace.
+- **Remaining risk / follow-up:** The new duration and batch-size
+  instrumentation must ship before it can identify the slow stage on a
+  physical device. Use that production evidence to remove the identified slow
+  or redundant work from the observer completion critical path, then validate
+  that every callback completes before expiration without increasing the
+  deadline.
 ## 2026-07-25 — Expected HealthKit Authorization State Reported as an Error
 
 - **Status:** Fixed in source; pending a native iOS release.
@@ -17465,7 +17515,6 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   through an OTA JavaScript update. Verify it on physical hardware after the
   next native iOS build, then confirm the Sentry issue does not recur while
   unexpected observer failures retain their new diagnostic tags.
-
 ## 2026-07-25 — Story Fixtures Lagged the Canonical Polarization DTO
 
 - **Status:** Direct fix validated locally; replacement CI pending on PR #1958.
@@ -17741,3 +17790,47 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Node 26 before merge. Future public-package changes should validate both a
   clean source checkout and the packed manifest, because either half alone can
   hide an export-path regression.
+
+## 2026-07-25 — Provider-Connection Migration Failed on Legacy Production Shapes
+
+- **Status:** Root causes fixed; replacement main CI and production deployment
+  pending.
+- **Symptoms:** Deploy Web run `30183265419` failed twice in its `Run
+  migrations` step while rolling out provider-connection ownership.
+- **User impact:** The requested main release did not reach the application
+  rollout or provider-connection cutover. Existing production services
+  continued running the prior image.
+- **Evidence:** The first attempt's fatal line was `Migration
+  0057_provider_connection.sql failed`, followed by `could not create unique
+  index "webhook_subscription_app_provider_name_idx"`. Production contained
+  two active legacy Withings rows with the same callback and external
+  subscription ID. The sole current Withings OAuth token was created within 20
+  milliseconds of the newer row. After the stale row was made inactive, the
+  PostgreSQL migration applied, and the rerun exposed the next first fatal
+  line: `ALTER of key column user_id from type UUID to type Nullable` in
+  ClickHouse migration `0055_provider_connection_catalog`. `SHOW CREATE TABLE
+  postgres_fitness.provider` confirmed the production mirror still used
+  `ORDER BY (user_id, id)`.
+- **Root cause:** The legacy webhook upsert used nullable `provider_id` as its
+  conflict key, allowing a reconnect to create a duplicate because PostgreSQL
+  treats nulls as distinct. Separately, ClickHouse migration 0055 attempted to
+  change the type of `user_id` in place even though that legacy column remained
+  part of the MergeTree sorting key, which ClickHouse rejects.
+- **Fix / mitigation:** Marked only the stale April Withings subscription
+  inactive, preserving the row for audit. Replaced the ClickHouse in-place
+  alteration with a restart-safe table rebuild: create the canonical nullable
+  provider table ordered by provider ID, copy the legacy rows, atomically
+  rename the old and new tables, copy once more from the backup to cover
+  concurrent CDC writes, then remove the backup. ClickHouse documents atomic
+  table exchange/rename as the supported pattern for primary-key changes:
+  <https://clickhouse.com/docs/use-cases/observability/clickstack/managing/performance_tuning>.
+- **Validation:** A real-ClickHouse integration test reproduces the production
+  `ORDER BY (user_id, id)` table, applies migration 0055, and verifies the row
+  is preserved, `user_id` becomes nullable and leaves the sorting key, and the
+  provider-connection mirror exists. The focused integration test and eight
+  related unit tests pass.
+- **Remaining risk / follow-up:** Merge the migration repair through normal
+  main CI, observe the resulting production deployment, attach the surviving
+  legacy Withings webhook row to its backfilled provider connection, and
+  verify the ClickHouse migration record, canonical table shape, provider
+  foreign keys, and service convergence.

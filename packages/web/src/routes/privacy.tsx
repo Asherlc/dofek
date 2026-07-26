@@ -5,7 +5,7 @@ function PrivacyPage() {
     <div className="min-h-screen bg-page text-foreground">
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-3xl font-bold text-foreground mb-2">Privacy Policy</h1>
-        <p className="text-subtle text-sm mb-10">Last updated: March 12, 2026</p>
+        <p className="text-subtle text-sm mb-10">Last updated: July 25, 2026</p>
 
         <div className="space-y-8 text-sm leading-relaxed">
           <section>
@@ -76,10 +76,16 @@ function PrivacyPage() {
               4. Data Storage and Security
             </h2>
             <ul className="list-disc pl-6 space-y-1.5">
+              <li>Account data and most health records are stored in PostgreSQL (TimescaleDB)</li>
               <li>
-                All data is stored in an encrypted PostgreSQL (TimescaleDB) database on
-                infrastructure we control
+                High-volume sensor records and derived analytics are stored in ClickHouse; Redpanda
+                buffers sensor events during ingestion
               </li>
+              <li>
+                Cloudflare R2 stores durable sensor archives and files uploaded or generated for
+                imports and exports
+              </li>
+              <li>Redis holds short-lived job-processing and cache data</li>
               <li>The application is served over HTTPS with TLS encryption in transit</li>
               <li>
                 Access to the platform requires authentication — unauthenticated users cannot access
