@@ -26,12 +26,14 @@ const gappedActivityStartedAt = testTimestamp(3600);
 const varyingPowerStartedAt = testTimestamp(7200);
 const finalGapActivityStartedAt = testTimestamp(10_800);
 const unalignedActivityStartedAt = testTimestamp(14_400);
+const planActivityStartedAt = testTimestamp(18_000);
 const unchangedActivityId = randomUUID();
 const regularActivityId = randomUUID();
 const gappedActivityId = randomUUID();
 const varyingActivityId = randomUUID();
 const finalGapActivityId = randomUUID();
 const unalignedActivityId = randomUUID();
+const planActivityId = randomUUID();
 const readModelRowSchema = z.object({
   activity_id: z.string(),
   duration_seconds: z.coerce.number(),
@@ -42,6 +44,8 @@ const readModelRowSchema = z.object({
 function renderActivityPowerCurveSql(isIncremental: boolean, targetTable?: string): string {
   const renderedSql = readModelSql("activity_power_curve.sql")
     .replace(/^\{\{ config\([\s\S]*?\n\) \}\}\s*/, "")
+    .replace(/\{%\s*set power_curve_dirty_key_batch_size[\s\S]*?%\}\s*/, "")
+    .replace(/\{\{\s*power_curve_dirty_key_batch_size\s*\}\}/g, "32")
     .replace(
       /\{\{\s*ref\('activity_summary_rows'\)\s*\}\} FINAL/g,
       `(SELECT
@@ -176,6 +180,36 @@ describe("activity_power_curve read model", () => {
     }
   });
 
+  it("keeps power-window computation memory bounded", async () => {
+    await insertActivity(
+      testContext,
+      planActivityId,
+      "power-plan",
+      planActivityStartedAt,
+      testTimestamp(21_600),
+    );
+    await seedClickHouseMetricStreamRows(
+      testContext,
+      powerSampleRows(
+        planActivityId,
+        planActivityStartedAt,
+        Array.from({ length: 3601 }, (_, offsetSeconds) => ({ offsetSeconds, power: 200 })),
+      ),
+    );
+    await syncClickHouseTestActivitySensorStore(testContext);
+    const client = getClickHouseTestClient(testContext);
+    const result = await client.query({
+      query: `SELECT count()
+        FROM (${renderNonIncrementalActivityPowerCurveSql()})
+        WHERE activity_id = {activityId:UUID}
+        SETTINGS max_memory_usage = 536870912, use_query_cache = 0`,
+      query_params: { activityId: planActivityId },
+      format: "JSONEachRow",
+    });
+
+    await expect(result.json()).resolves.toEqual([{ "count()": 12 }]);
+  });
+
   it("uses elapsed timestamp duration instead of sample count for power windows", async () => {
     const renderedSql = renderNonIncrementalActivityPowerCurveSql();
 
@@ -193,7 +227,6 @@ describe("activity_power_curve read model", () => {
       gappedActivityStartedAt,
       testTimestamp(3630),
     );
-    await syncClickHouseTestActivitySensorStore(testContext);
     await seedClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(regularActivityId, regularActivityStartedAt, [
         { offsetSeconds: 0, power: 200 },
@@ -212,6 +245,7 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 22, power: 500 },
       ]),
     ]);
+    await syncClickHouseTestActivitySensorStore(testContext);
 
     const rows = await sensorStore.query(
       readModelRowSchema,
@@ -248,7 +282,6 @@ describe("activity_power_curve read model", () => {
       varyingPowerStartedAt,
       testTimestamp(7206),
     );
-    await syncClickHouseTestActivitySensorStore(testContext);
     await seedClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(varyingActivityId, varyingPowerStartedAt, [
         { offsetSeconds: 0, power: 100 },
@@ -259,6 +292,7 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 5, power: 300 },
       ]),
     ]);
+    await syncClickHouseTestActivitySensorStore(testContext);
 
     const rows = await sensorStore.query(
       readModelRowSchema,
@@ -295,7 +329,6 @@ describe("activity_power_curve read model", () => {
       finalGapActivityStartedAt,
       testTimestamp(10_820),
     );
-    await syncClickHouseTestActivitySensorStore(testContext);
     await seedClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(finalGapActivityId, finalGapActivityStartedAt, [
         { offsetSeconds: 0, power: 200 },
@@ -304,6 +337,7 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 15, power: 200 },
       ]),
     ]);
+    await syncClickHouseTestActivitySensorStore(testContext);
 
     const rows = await sensorStore.query(
       readModelRowSchema,
@@ -332,7 +366,6 @@ describe("activity_power_curve read model", () => {
       unalignedActivityStartedAt,
       testTimestamp(14_410),
     );
-    await syncClickHouseTestActivitySensorStore(testContext);
     await seedClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(unalignedActivityId, unalignedActivityStartedAt, [
         { offsetSeconds: 0, power: 200 },
@@ -343,6 +376,7 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 5.1, power: 200 },
       ]),
     ]);
+    await syncClickHouseTestActivitySensorStore(testContext);
 
     const rows = await sensorStore.query(
       readModelRowSchema,
