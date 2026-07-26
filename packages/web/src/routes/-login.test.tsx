@@ -92,6 +92,31 @@ describe("Login route", () => {
     expect(screen.getByRole("button", { name: "Sign in with email" })).toBeTruthy();
   });
 
+  it("enables email sign-in only after required credentials are entered", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    const signInButton = await screen.findByRole("button", {
+      name: "Sign in with email",
+    });
+    expect(signInButton).toHaveProperty("disabled", true);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "password123" },
+    });
+
+    expect(signInButton).toHaveProperty("disabled", false);
+  });
+
   it("shows forgot password in email sign-in mode", async () => {
     mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
     mockFetchConfiguredProviders.mockResolvedValue({

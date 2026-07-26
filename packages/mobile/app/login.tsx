@@ -145,6 +145,8 @@ export default function LoginScreen() {
     : [];
   const showPasswordAuth = providers?.password ?? false;
   const showOAuthProviders = allProviders.length > 0 || useNativeApple;
+  const passwordResetDisabled = loggingIn || !email.trim();
+  const passwordAuthDisabled = loggingIn || !email.trim() || !password;
 
   return (
     <View style={styles.container}>
@@ -180,14 +182,17 @@ export default function LoginScreen() {
                       editable={!loggingIn}
                     />
                     <TouchableOpacity
-                      style={styles.passwordButton}
+                      style={[
+                        styles.passwordButton,
+                        passwordResetDisabled && styles.passwordButtonDisabled,
+                      ]}
                       onPress={handlePasswordReset}
-                      disabled={loggingIn || !email.trim()}
+                      disabled={passwordResetDisabled}
                       accessibilityRole="button"
                       accessibilityLabel="Send reset link"
                       accessibilityState={{
                         busy: loggingIn,
-                        disabled: loggingIn || !email.trim(),
+                        disabled: passwordResetDisabled,
                       }}
                     >
                       <Text style={styles.passwordButtonText}>
@@ -303,16 +308,19 @@ export default function LoginScreen() {
                       </TouchableOpacity>
                     ) : null}
                     <TouchableOpacity
-                      style={styles.passwordButton}
+                      style={[
+                        styles.passwordButton,
+                        passwordAuthDisabled && styles.passwordButtonDisabled,
+                      ]}
                       onPress={handlePasswordAuth}
-                      disabled={loggingIn || !email.trim() || !password}
+                      disabled={passwordAuthDisabled}
                       accessibilityRole="button"
                       accessibilityLabel={
                         authMode === "register" ? "Create account" : "Sign in with email"
                       }
                       accessibilityState={{
                         busy: loggingIn,
-                        disabled: loggingIn || !email.trim() || !password,
+                        disabled: passwordAuthDisabled,
                       }}
                     >
                       <Text style={styles.passwordButtonText}>
@@ -453,6 +461,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 16,
+  },
+  passwordButtonDisabled: {
+    opacity: 0.5,
   },
   passwordButtonText: {
     color: colors.background,

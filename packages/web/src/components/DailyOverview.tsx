@@ -31,7 +31,7 @@ interface DailyOverviewProps {
   readiness: ReadinessRow[] | undefined;
   workloadRatio: WorkloadRatioResult | undefined;
   sleepPerformance: SleepPerformanceInfo | null | undefined;
-  strainTarget?: StrainTargetResult | undefined;
+  strainTarget?: StrainTargetResult | null;
   readinessLoading?: boolean;
   workloadLoading?: boolean;
   strainTargetLoading?: boolean;
@@ -217,7 +217,7 @@ function StrainBreakdown({
   strainTarget,
 }: {
   workloadRatio: WorkloadRatioResult;
-  strainTarget?: StrainTargetResult;
+  strainTarget?: StrainTargetResult | null;
 }) {
   const today = workloadRatio.timeSeries[workloadRatio.timeSeries.length - 1];
   const acuteLoad = today?.acuteLoad ?? 0;

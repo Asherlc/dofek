@@ -11,9 +11,7 @@ const mockWriteText = vi.hoisted(() => vi.fn());
 
 const captured = vi.hoisted<{
   component: (() => ReactElement) | null;
-  validateSearch:
-    | ((search: Record<string, unknown>) => { token: string | null | undefined })
-    | null;
+  validateSearch: ((search: Record<string, unknown>) => { token?: string | null }) | null;
 }>(() => ({
   component: null,
   validateSearch: null,
@@ -24,9 +22,7 @@ vi.mock("@tanstack/react-router", () => ({
     () =>
     (options: {
       component: () => ReactElement;
-      validateSearch?: (search: Record<string, unknown>) => {
-        token: string | null | undefined;
-      };
+      validateSearch?: (search: Record<string, unknown>) => { token?: string | null };
     }) => {
       captured.component = options.component;
       captured.validateSearch = options.validateSearch ?? null;
@@ -121,7 +117,7 @@ describe("health report search validation", () => {
   }
 
   it("distinguishes owner management, malformed links, and valid tokens", () => {
-    expect(validate({})).toEqual({ token: undefined });
+    expect(validate({})).toStrictEqual({});
     expect(validate({ token: "" })).toEqual({ token: null });
     expect(validate({ token: "   " })).toEqual({ token: null });
     expect(validate({ token: " shared-token " })).toEqual({ token: "shared-token" });

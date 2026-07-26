@@ -46,6 +46,7 @@ import {
   resetSessionFile,
   writeSessionMetaFile,
 } from "../src/session-file.ts";
+import { createSessionProgressHandler, type SessionProgress } from "../src/session-progress.ts";
 import {
   AUTO_TRANSFER_SAMPLE_COUNT,
   FLUSH_SAMPLE_THRESHOLD,
@@ -336,7 +337,10 @@ Page(
             enableGyro: this.state.enableGyro,
             requestedFreqModeIndex: this.state.freqModeIndex,
             onSample: (sample) => this.handleSample(sample),
-            onStatus: (stats) => this.handleRate(stats),
+            onStatus: createSessionProgressHandler({
+              updateWatch: (stats) => this.handleRate(stats),
+              publishHostStatus: (stats) => this.publishSessionStatus("logging", stats),
+            }),
           },
           { Accelerometer, Gyroscope, checkSensor },
         );
@@ -680,14 +684,14 @@ Page(
       );
     },
 
-    publishSessionStatus(state: string) {
+    publishSessionStatus(state: string, progress?: SessionProgress) {
       this.request({
         method: "imu.publishStatus",
         params: {
           state,
           freqModeIndex: this.state.freqModeIndex,
-          sampleCount: this.state.sampleCount,
-          observedHzX100: this.state.observedHzX100,
+          sampleCount: progress?.sampleCount ?? this.state.sampleCount,
+          observedHzX100: progress?.observedHzX100 ?? this.state.observedHzX100,
           hasGyro: this.state.hasGyro,
           sessionFile: this.activeFilePath(),
         },

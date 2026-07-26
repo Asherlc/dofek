@@ -11,13 +11,19 @@ function getDefaultUnitSystem(): UnitSystem {
   return detectUnitSystem(locale);
 }
 
-export function UnitProvider({ children }: { children: React.ReactNode }) {
+export function UnitProvider({
+  children,
+  settingsEnabled,
+}: {
+  children: React.ReactNode;
+  settingsEnabled: boolean;
+}) {
   const [unitSystem, setUnitSystemState] = useState<UnitSystem>(getDefaultUnitSystem);
   const [writeError, setWriteError] = useState<string | null>(null);
   const currentUnitSystem = useRef(unitSystem);
   const lastReadError = useRef<unknown>(null);
 
-  const setting = trpc.settings.get.useQuery({ key: SETTINGS_KEY });
+  const setting = trpc.settings.get.useQuery({ key: SETTINGS_KEY }, { enabled: settingsEnabled });
   const mutation = trpc.settings.set.useMutation();
   const utils = trpc.useUtils();
 
