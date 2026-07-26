@@ -158,6 +158,9 @@ export const providerDataDeletionJobDataSchema = z.object({
 });
 
 export type ProviderDataDeletionJobData = z.infer<typeof providerDataDeletionJobDataSchema>;
+export type ProviderDataDeletionContinuationJobData = ProviderDataDeletionJobData & {
+  checkpoint: NonNullable<ProviderDataDeletionJobData["checkpoint"]>;
+};
 
 export interface ProviderDataDeletionQueue {
   add(name: string, data: ProviderDataDeletionJobData, options?: JobsOptions): Promise<unknown>;
@@ -199,6 +202,16 @@ const PROVIDER_DELETE_ANALYTICS_JOB_NAME = "provider-delete-analytics-refresh";
 const PROVIDER_DATA_DELETION_JOB_NAME = "provider-data-deletion";
 const DATA_EXPORT_JOB_NAME = "export";
 const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
+
+function providerDataDeletionJobOptions(jobId: string): JobsOptions {
+  return {
+    attempts: 20,
+    backoff: { type: "fixed", delay: 30_000 },
+    jobId,
+    removeOnComplete: { age: 604_800, count: 1_000 },
+    removeOnFail: { age: 2_592_000, count: 1_000 },
+  };
+}
 
 function activityRecomputeAnalyticsJobId(userId: string, activityIds: string[]): string {
   const activitySetHash = createHash("sha256")
@@ -461,13 +474,18 @@ export async function enqueueProviderDataDeletion(
       providerId: request.providerId,
       userId: request.userId,
     },
-    {
-      attempts: 20,
-      backoff: { type: "fixed", delay: 30_000 },
-      jobId: request.eventId,
-      removeOnComplete: { age: 604_800, count: 1_000 },
-      removeOnFail: { age: 2_592_000, count: 1_000 },
-    },
+    providerDataDeletionJobOptions(request.eventId),
+  );
+}
+
+export async function enqueueProviderDataDeletionContinuation(
+  data: ProviderDataDeletionContinuationJobData,
+  queue: ProviderDataDeletionQueue = getProviderDataDeletionQueue(),
+): Promise<void> {
+  await queue.add(
+    PROVIDER_DATA_DELETION_JOB_NAME,
+    data,
+    providerDataDeletionJobOptions(`${data.eventId}-batch-${data.checkpoint.batches}`),
   );
 }
 

@@ -17798,8 +17798,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-25 — Activity Power-Curve Build Still Exceeded the Analytics Budget
 
-- **Status:** Power-curve and refit fixes validated locally; production
-  deployment and post-deploy observation pending. The separate
+- **Status:** Power-curve and refit fixes merged and deployed. The production
+  `activity_power_curve` build completed in 20.10 seconds. The separate
   `sleep_heart_rate_sample` and `provider_stats` failures remain unresolved.
 - **Symptoms:** The current production analytics worker continued failing its
   serial dbt cycle after the earlier array-based power-curve change was
@@ -17836,11 +17836,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   integration cases pass, including a 3,601-sample activity under a 512 MiB
   query cap, exact-duration alignment, discontinuity rejection, varying power,
   tombstone behavior, and unchanged incremental state.
-- **Remaining risk / follow-up:** Merge and deploy the fix, then verify bounded
-  power-curve batches drain the 268-activity backlog and complete below the
-  existing 240-second execution ceiling. Do not resolve the aggregate dbt
-  Sentry issue until the independent sleep and provider-stat queries also
-  complete successfully.
+- **Remaining risk / follow-up:** Do not resolve the aggregate dbt Sentry issue
+  until the independent sleep and provider-stat queries also complete
+  successfully.
 
 ## 2026-07-25 — SAST Runner Could Not Pull the Pinned Semgrep Image
 
@@ -17903,7 +17901,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-26 — WHOOP BLE Initialization Ran While the App Was Backgrounded
 
-- **Status:** Direct fix validated locally; merge and mobile rollout pending.
+- **Status:** Direct fix merged, deployed, and resolved in Sentry.
 - **Symptoms:** Sentry issue `DOFEK-MOBILE-1D` recorded a `DISCONNECTED` error
   from the `whoop-ble-init-sync` path while the app was not in the foreground.
 - **User impact:** WHOOP streaming could fail to initialize until a later sync
@@ -17924,18 +17922,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   connection and lifecycle races, then all 47 focused WHOOP BLE sync tests
   passed after the fix.
   Targeted Biome checks and the mobile TypeScript typecheck also pass.
-- **Remaining risk / follow-up:** Merge through normal CI and release the
-  mobile change. Because the Simulator cannot exercise Bluetooth hardware
+- **Remaining risk / follow-up:** Because the Simulator cannot exercise Bluetooth hardware
   ([Expo simulator limitations](https://docs.expo.dev/workflow/ios-simulator/#limitations)),
   validate on a physical device by enabling WHOOP sync, backgrounding during
   initialization, confirming no `whoop-ble-init-sync` error, then foregrounding
-  and confirming streaming resumes. Resolve `DOFEK-MOBILE-1D` after confirming
-  no recurrence on the fixed release.
+  and confirming streaming resumes.
 
 ## 2026-07-26 — Current dbt Run Statuses Failed Artifact Validation
 
-- **Status:** Direct fix validated locally; merge and production deployment
-  pending.
+- **Status:** Direct fix merged, deployed, and resolved in Sentry. A production
+  analytics cycle parsed current dbt outcomes without the prior Zod error.
 - **Symptoms:** The production analytics worker completed a dbt invocation but
   then raised a Zod validation error while parsing `run_results.json` in
   [Sentry issue DOFEK-SERVER-5D](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5D).
@@ -17958,14 +17954,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   for all three omitted statuses. The focused artifact suite now passes all
   seven tests, targeted Biome checks report no findings, and the root
   TypeScript typecheck passes.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy the corrected
-  parser, observe a complete analytics cycle, then resolve
-  `DOFEK-SERVER-5D` if it does not recur on the fixed release.
+- **Remaining risk / follow-up:** Keep the runtime schema aligned when the
+  pinned dbt artifact contract changes.
 
 ## 2026-07-26 — Monthly Report Timed Out on Recursive Analytics Views
 
-- **Status:** Direct fix validated locally and against production data; merge
-  and production deployment pending.
+- **Status:** Direct fix merged, deployed, validated against production data,
+  and resolved in Sentry.
 - **Symptoms:** Monthly report requests repeatedly raised ClickHouse client
   timeouts in
   [Sentry issue DOFEK-SERVER-5C](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5C).
@@ -18006,8 +18001,60 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   dependency on `v_activity`. It now seeds only the three compact serving
   models and verifies the complete monthly report result with those recursive
   views absent. The focused integration test passes.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy the query,
-  invoke the production monthly report, confirm sub-second completion in
-  ClickHouse query history, and resolve `DOFEK-SERVER-5C` if no fixed-release
-  event recurs. The weekly report contains a similar recursive query and should
-  be investigated separately rather than silently expanded into this fix.
+- **Remaining risk / follow-up:** The exact production report query completed
+  in 74 milliseconds after deployment. The weekly report contains a similar
+  recursive query and should be investigated separately rather than silently
+  expanded into this fix.
+
+## 2026-07-26 — Worker Deployments Stalled Active BullMQ Jobs
+
+- **Status:** Direct fixes validated locally and with real Redis/ClickHouse
+  behavior; merge and production deployment pending.
+- **Symptoms:** Sentry issues
+  [DOFEK-SERVER-4N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4N)
+  and
+  [DOFEK-SERVER-2K](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-2K)
+  repeatedly reported active BullMQ jobs as stalled and eventually failed them
+  with `job stalled more than allowable limit`.
+- **User impact:** Provider sync, post-sync, file import, analytics cleanup, and
+  provider-deletion jobs could repeat work or fail terminally when a production
+  rollout replaced the worker that owned their Redis lock.
+- **Evidence:** The exact failing lifecycle was a Swarm rollout sending the old
+  task `SIGTERM`, the worker logging `Shutting down gracefully...`, and Docker
+  killing the task with exit code 137 about 10 seconds later before
+  `Worker.close()` could finish active work. Sentry then recorded the same
+  Strava and WHOOP job IDs as stalled on successive releases. Live Redis
+  inspection also showed the current one-day Strava job had recorded exactly
+  one HTTP admission at `2026-07-26T14:00:02Z` and received no response for
+  more than 16 minutes; the shared provider fetch path supplied no abort
+  signal. Historical completed-job evidence showed ordinary imports can take
+  about 22 minutes, while the old provider-deletion loop could run for more
+  than two hours. Axiom could not be queried because its connected user token
+  had expired, so Sentry, Docker task state/logs, and Redis metadata supplied
+  the causal evidence.
+- **Root cause:** Docker Swarm's default 10-second stop grace was incompatible
+  with BullMQ's graceful close contract, which waits for active jobs, while
+  provider HTTP requests had no deadline and provider deletion processed every
+  checkpoint batch inside one multi-hour job. Docker documents the 10-second
+  default before `SIGKILL`, and BullMQ documents that `Worker.close()` waits for
+  active work:
+  <https://docs.docker.com/reference/compose-file/services/#stop_grace_period>
+  and <https://docs.bullmq.io/guide/workers/graceful-shutdown>.
+- **Fix / mitigation:** Give the worker a durable 30-minute stop grace and the
+  initial deploy a 35-minute convergence bound; fail rather than continue when
+  a Swarm update pauses. Apply a shared two-minute provider HTTP deadline with
+  composed caller cancellation and retryable timeout classification. Process
+  provider deletion as deterministic, idempotent 1,000-row continuation jobs,
+  retaining the existing generation fence and checkpoint. Node.js documents
+  the native timeout and signal-composition primitives:
+  <https://nodejs.org/api/globals.html#class-abortsignal>.
+- **Validation:** The timeout regression failed before implementation. After
+  the fix, 205 focused unit tests passed, the root TypeScript typecheck and
+  targeted Biome checks passed, and all five real-ClickHouse provider-deletion
+  integration cases passed, including multiple continuation batches and
+  bounded projection reads. No stall-count increase, forced retry, temporary
+  flag, or incident-only shutdown branch was added.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy, confirm the
+  old worker reaches `Shutdown complete` without exit 137, verify the timed-out
+  Strava job retries and completes, observe no fixed-release 4N/2K events
+  across a subsequent rollout, then resolve both Sentry issues.

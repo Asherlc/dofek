@@ -238,6 +238,7 @@ vi.mock("./queues.ts", () => ({
   ACTIVITY_DELETE_ANALYTICS_QUEUE: "activity-delete-analytics-queue",
   PROVIDER_DATA_DELETION_QUEUE: "provider-data-deletion-queue",
   enqueueProviderDeleteAnalyticsRefresh: vi.fn(() => Promise.resolve()),
+  enqueueProviderDataDeletionContinuation: vi.fn(() => Promise.resolve()),
   getProviderDataDeletionQueue: vi.fn(() => ({})),
   closeAllQueueResources: vi.fn(() => Promise.resolve()),
 }));
@@ -1306,7 +1307,8 @@ describe("worker module", () => {
     const { processProviderDataDeletionJob } = await import(
       "./process-provider-data-deletion-job.ts"
     );
-    const { enqueueProviderDeleteAnalyticsRefresh } = await import("./queues.ts");
+    const { enqueueProviderDeleteAnalyticsRefresh, enqueueProviderDataDeletionContinuation } =
+      await import("./queues.ts");
     vi.mocked(markProviderDataDeletionCompleted).mockClear();
     vi.mocked(processProviderDataDeletionJob).mockClear();
 
@@ -1323,11 +1325,30 @@ describe("worker module", () => {
       expect.objectContaining({
         clickHouseClient: mockClickHouseClient,
         enqueueAnalyticsRefresh: enqueueProviderDeleteAnalyticsRefresh,
+        enqueueContinuation: expect.any(Function),
         markCompleted: expect.any(Function),
       }),
     );
     const dependencies = vi.mocked(processProviderDataDeletionJob).mock.calls[0]?.[1];
     if (!dependencies) throw new Error("provider deletion dependencies were not passed");
+    await dependencies.enqueueContinuation({
+      type: "provider-data-deletion",
+      eventId: "30000000-0000-4000-8000-000000000003",
+      generation: 2,
+      providerId: "garmin",
+      userId: "00000000-0000-4000-8000-000000000004",
+      checkpoint: {
+        batches: 1,
+        deletedRows: 1_000,
+        examinedRows: 1_000,
+        lastGeneration: 1,
+        lastId: "40000000-0000-4000-8000-000000000004",
+      },
+    });
+    expect(enqueueProviderDataDeletionContinuation).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "30000000-0000-4000-8000-000000000003" }),
+      expect.any(Object),
+    );
     await dependencies.markCompleted("30000000-0000-4000-8000-000000000003");
     expect(markProviderDataDeletionCompleted).toHaveBeenCalledWith(
       mockDatabase,

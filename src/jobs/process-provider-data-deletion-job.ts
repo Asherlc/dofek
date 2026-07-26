@@ -11,7 +11,10 @@ import {
   METRIC_STREAM_TABLE,
   PROVIDER_DATA_GENERATION_TABLE,
 } from "../metric-stream/clickhouse-table.ts";
-import type { ProviderDataDeletionJobData } from "./queues.ts";
+import type {
+  ProviderDataDeletionContinuationJobData,
+  ProviderDataDeletionJobData,
+} from "./queues.ts";
 
 const PROVIDER_DATA_DELETION_BATCH_SIZE = 1_000;
 const metricStreamCursorRowsSchema = z.array(
@@ -80,6 +83,7 @@ export interface ProviderDataDeletionDependencies {
     providerId: string,
     deletionEventId: string,
   ) => Promise<void>;
+  enqueueContinuation: (data: ProviderDataDeletionContinuationJobData) => Promise<void>;
   markCompleted: (eventId: string) => Promise<void>;
 }
 
@@ -281,35 +285,41 @@ export async function processProviderDataDeletionJob(
   dependencies: ProviderDataDeletionDependencies,
 ): Promise<void> {
   const { clickHouseClient } = dependencies;
-  await updateProgress(job, 0, "Advancing provider generation fence...");
-  await advanceClickHouseGenerationFence(clickHouseClient, job.data);
-  await updateProgress(job, 5, "Verifying provider deletion projection...");
-  await assertProviderGenerationProjectionReady(clickHouseClient);
+  const checkpoint = job.data.checkpoint;
+  if (!checkpoint) {
+    await updateProgress(job, 0, "Advancing provider generation fence...");
+    await advanceClickHouseGenerationFence(clickHouseClient, job.data);
+    await updateProgress(job, 5, "Verifying provider deletion projection...");
+    await assertProviderGenerationProjectionReady(clickHouseClient);
+  }
 
-  let checkpoint = job.data.checkpoint;
-  while (true) {
-    const rows = await loadNextMetricStreamBatch(clickHouseClient, job.data, checkpoint);
-    if (rows.length === 0) break;
-
+  const rows = await loadNextMetricStreamBatch(clickHouseClient, job.data, checkpoint);
+  if (rows.length > 0) {
     const deletedRows = await tombstoneMetricStreamBatch(clickHouseClient, job.data, rows);
     const lastRow = rows.at(-1);
     if (!lastRow) {
       throw new Error("Provider data deletion batch did not produce a checkpoint cursor");
     }
-    checkpoint = {
+    const nextCheckpoint = {
       batches: (checkpoint?.batches ?? 0) + 1,
       deletedRows: (checkpoint?.deletedRows ?? 0) + deletedRows,
       examinedRows: (checkpoint?.examinedRows ?? 0) + rows.length,
       lastGeneration: lastRow.generation,
       lastId: lastRow.id,
     };
-    await job.updateData({ ...job.data, checkpoint });
+    const continuationData: ProviderDataDeletionContinuationJobData = {
+      ...job.data,
+      checkpoint: nextCheckpoint,
+    };
+    await job.updateData(continuationData);
     await updateProgress(
       job,
       undefined,
-      `Checked ${checkpoint.examinedRows} metric stream rows; deleted ${checkpoint.deletedRows}...`,
-      checkpoint,
+      `Checked ${nextCheckpoint.examinedRows} metric stream rows; deleted ${nextCheckpoint.deletedRows}...`,
+      nextCheckpoint,
     );
+    await dependencies.enqueueContinuation(continuationData);
+    return;
   }
 
   await updateProgress(job, 90, "Acknowledging provider data deletion...", checkpoint);

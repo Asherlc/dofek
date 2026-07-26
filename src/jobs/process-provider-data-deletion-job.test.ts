@@ -65,6 +65,42 @@ function makeJob(dataOverrides: Partial<ProviderDataDeletionJobData> = {}) {
 }
 
 describe("processProviderDataDeletionJob", () => {
+  it("enqueues the next checkpoint as a separate job after one bounded batch", async () => {
+    const command = vi.fn(async () => undefined);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
+      })
+      .mockResolvedValueOnce({ json: async () => [{ generation: 0, id: firstId }] })
+      .mockResolvedValueOnce({ json: async () => [tombstoneRow(firstId, 0)] });
+    const enqueueContinuation = vi.fn(async () => undefined);
+    const enqueueAnalyticsRefresh = vi.fn(async () => undefined);
+    const markCompleted = vi.fn(async () => undefined);
+    const job = makeJob();
+
+    await processProviderDataDeletionJob(job, {
+      clickHouseClient: { command, insert: vi.fn(async () => undefined), query },
+      enqueueAnalyticsRefresh,
+      enqueueContinuation,
+      markCompleted,
+    });
+
+    expect(enqueueContinuation).toHaveBeenCalledWith({
+      ...job.data,
+      checkpoint: {
+        batches: 1,
+        deletedRows: 1,
+        examinedRows: 1,
+        lastGeneration: 0,
+        lastId: firstId,
+      },
+    });
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(enqueueAnalyticsRefresh).not.toHaveBeenCalled();
+    expect(markCompleted).not.toHaveBeenCalled();
+  });
+
   it("advances the ClickHouse generation fence, checkpoints bounded batches, then acknowledges", async () => {
     const command = vi.fn(
       async (_options: { query: string; query_params?: Record<string, unknown> }) => undefined,
@@ -86,12 +122,20 @@ describe("processProviderDataDeletionJob", () => {
       .mockResolvedValueOnce({ json: async () => [] });
     const insert = vi.fn(async () => undefined);
     const enqueueAnalyticsRefresh = vi.fn(async () => undefined);
+    const enqueueContinuation = vi.fn(async () => undefined);
     const markCompleted = vi.fn(async () => undefined);
     const job = makeJob();
 
     await processProviderDataDeletionJob(job, {
       clickHouseClient: { command, insert, query },
       enqueueAnalyticsRefresh,
+      enqueueContinuation,
+      markCompleted,
+    });
+    await processProviderDataDeletionJob(job, {
+      clickHouseClient: { command, insert, query },
+      enqueueAnalyticsRefresh,
+      enqueueContinuation,
       markCompleted,
     });
 
@@ -140,6 +184,17 @@ describe("processProviderDataDeletionJob", () => {
       query_params: { event_id: job.data.eventId },
     });
     expect(job.updateData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        checkpoint: {
+          batches: 1,
+          deletedRows: 2,
+          examinedRows: 2,
+          lastGeneration: 1,
+          lastId: secondId,
+        },
+      }),
+    );
+    expect(enqueueContinuation).toHaveBeenCalledWith(
       expect.objectContaining({
         checkpoint: {
           batches: 1,
@@ -217,6 +272,7 @@ describe("processProviderDataDeletionJob", () => {
       processProviderDataDeletionJob(makeJob(), {
         clickHouseClient: { command, insert, query },
         enqueueAnalyticsRefresh,
+        enqueueContinuation: vi.fn(async () => undefined),
         markCompleted,
       }),
     ).rejects.toThrow("ClickHouse batch failed");
@@ -240,6 +296,7 @@ describe("processProviderDataDeletionJob", () => {
       processProviderDataDeletionJob(makeJob(), {
         clickHouseClient: { command, query },
         enqueueAnalyticsRefresh: vi.fn(async () => undefined),
+        enqueueContinuation: vi.fn(async () => undefined),
         markCompleted: vi.fn(async () => undefined),
       }),
     ).rejects.toThrow("Provider data deletion requires an insert-capable ClickHouse client");
@@ -249,12 +306,7 @@ describe("processProviderDataDeletionJob", () => {
 
   it("resumes with keyset pagination over the provider-generation projection", async () => {
     const command = vi.fn(async () => undefined);
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
-      })
-      .mockResolvedValueOnce({ json: async () => [] });
+    const query = vi.fn().mockResolvedValueOnce({ json: async () => [] });
     const insert = vi.fn(async () => undefined);
     const checkpoint = {
       batches: 4,
@@ -266,10 +318,11 @@ describe("processProviderDataDeletionJob", () => {
     await processProviderDataDeletionJob(makeJob({ checkpoint }), {
       clickHouseClient: { command, insert, query },
       enqueueAnalyticsRefresh: vi.fn(async () => undefined),
+      enqueueContinuation: vi.fn(async () => undefined),
       markCompleted: vi.fn(async () => undefined),
     });
 
-    expect(query.mock.calls[1]?.[0]).toEqual({
+    expect(query.mock.calls[0]?.[0]).toEqual({
       query: expect.stringContaining(
         "OR (generation = {last_generation:UInt64} AND id > {last_id:UUID})",
       ),
@@ -294,6 +347,7 @@ describe("processProviderDataDeletionJob", () => {
       processProviderDataDeletionJob(makeJob(), {
         clickHouseClient: { command, insert, query },
         enqueueAnalyticsRefresh,
+        enqueueContinuation: vi.fn(async () => undefined),
         markCompleted,
       }),
     ).rejects.toThrow(
@@ -323,6 +377,7 @@ describe("processProviderDataDeletionJob", () => {
     await processProviderDataDeletionJob(job, {
       clickHouseClient: { command, query },
       enqueueAnalyticsRefresh,
+      enqueueContinuation: vi.fn(async () => undefined),
       markCompleted,
     });
 

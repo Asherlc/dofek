@@ -33,6 +33,7 @@ import {
   closeAllQueueResources,
   EXPORT_QUEUE,
   type ExportJobData,
+  enqueueProviderDataDeletionContinuation,
   enqueueProviderDeleteAnalyticsRefresh,
   FIT_FILE_IMPORT_BATCH_QUEUE,
   FIT_FILE_IMPORT_QUEUE,
@@ -216,6 +217,8 @@ const providerDataDeletionWorker = new Worker<ProviderDataDeletionJobData>(
       processProviderDataDeletionJob(job, {
         clickHouseClient: getClickHouseClient(),
         enqueueAnalyticsRefresh: enqueueProviderDeleteAnalyticsRefresh,
+        enqueueContinuation: (data) =>
+          enqueueProviderDataDeletionContinuation(data, getProviderDataDeletionQueue()),
         markCompleted: (eventId) => markProviderDataDeletionCompleted(db, eventId),
       }),
     );
