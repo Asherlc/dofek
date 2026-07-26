@@ -76,7 +76,7 @@ describe("AppHeader", () => {
     const signOutActions = screen.getAllByRole("button", { name: "Sign out" });
     expect(signOutActions).toHaveLength(2);
     for (const signOutAction of signOutActions) {
-      expect(signOutAction.className).toContain("text-muted");
+      expect(signOutAction.classList.contains("text-muted")).toBe(true);
     }
     expect(contrastRatio(textColors.secondary, surfaceColors.background)).toBeGreaterThanOrEqual(
       4.5,
