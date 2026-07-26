@@ -17298,3 +17298,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   validation pass without ad-hoc waits. Replacement CI must pass before merge.
 - **Remaining risk / follow-up:** None beyond completing replacement CI; the
   compiler now enforces future fixture parity with the canonical DTO.
+
+## 2026-07-25 — Local ClickHouse OOM During Concurrent Validation
+
+- **Status:** Resolved by ending the concurrent full-suite workload; no
+  repository resilience change was made.
+- **Symptoms:** The issue-1729 SQLFluff lint process lost its local ClickHouse
+  HTTP connection while several workspaces were validating concurrently.
+- **User impact:** No production or CI users were affected. Local PR validation
+  was delayed.
+- **Evidence:** The exact failing command was `pnpm lint`, in the
+  `lint:analytics-sql` step. Its first fatal line was
+  `dbt tried to connect to the database and failed`, followed by
+  `RemoteDisconnected('Remote end closed connection without response')`.
+  `docker inspect issue-1729-clickhouse-1` reported `"OOMKilled": true`, and
+  `docker stats --no-stream` showed five other workspace ClickHouse containers
+  active within the same 7.65 GiB Docker VM.
+- **Root cause:** Running the repository-wide Vitest suite and SQL lint while
+  multiple workspaces also ran ClickHouse exhausted the shared Docker VM
+  memory, so Docker killed the issue-1729 ClickHouse process. Docker documents
+  that containers can be killed when the host runs out of memory:
+  <https://docs.docker.com/engine/containers/resource_constraints/#understand-the-risks-of-running-out-of-memory>.
+- **Fix / mitigation:** Let the concurrent full-suite process finish and keep
+  subsequent validation serial and scoped to this workspace. No retry,
+  timeout, fallback, or memory-limit change was added.
+- **Validation:** Typecheck, 346 issue-focused unit tests, 26 focused
+  integration tests, the 35-model analytics build, and the isolated 39-test
+  mobile teardown suite pass. CI remains the authoritative full-matrix gate.
+- **Remaining risk / follow-up:** Concurrent workspaces can still exhaust the
+  shared Docker VM. Schedule ClickHouse-heavy local validation serially when
+  several workspaces are active; do not stop or prune another workspace's
+  resources.

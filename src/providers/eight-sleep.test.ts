@@ -353,14 +353,12 @@ describe("EightSleepProvider.sync()", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("not connected");
-    expect(spies.insert).toHaveBeenCalledTimes(1);
+    expect(spies.execute).toHaveBeenCalled();
   });
 
   it("fails loudly when the provider row cannot be ensured", async () => {
-    const { db } = createMockDatabase({
-      insertErrorAfterCalls: 0,
-      insertError: new Error("provider table unavailable"),
-    });
+    const { db, spies } = createMockDatabase();
+    spies.execute.mockRejectedValueOnce(new Error("provider table unavailable"));
     const provider = new EightSleepProvider(async () => {
       throw new Error("fetch should not be called when provider setup fails");
     });
@@ -554,7 +552,7 @@ describe("EightSleepProvider.sync()", () => {
   it("captures sleep and daily metric row persistence failures", async () => {
     const { db } = createMockDatabase({
       tokensResult: [validEightSleepTokenRow()],
-      insertErrorAfterCalls: 1,
+      insertErrorAfterCalls: 0,
       insertError: new Error("database unavailable"),
     });
     const provider = new EightSleepProvider(
@@ -678,9 +676,7 @@ describe("EightSleepProvider.sync()", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toBe("getTrends: Eight Sleep API error (500): upstream down");
-    expect(spies.values).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "eight-sleep", name: "Eight Sleep" }),
-    );
+    expect(spies.execute).toHaveBeenCalled();
     expect(spies.values).not.toHaveBeenCalledWith(
       expect.objectContaining({ externalId: "eightsleep-2026-03-01" }),
     );

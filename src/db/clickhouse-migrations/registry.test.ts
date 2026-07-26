@@ -58,11 +58,20 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("FROM ingest.metric_stream"),
       ]),
     });
-    expect(migrations.at(-1)).toMatchObject({
+    expect(
+      migrations.find((migration) => migration.id === "0054_activity_load_lifecycle"),
+    ).toMatchObject({
       id: "0054_activity_load_lifecycle",
       statements: expect.arrayContaining([
         expect.stringContaining("ALTER TABLE analytics.daily_activity_load"),
         expect.stringContaining("ALTER TABLE analytics.daily_strain"),
+      ]),
+    });
+    expect(migrations.at(-1)).toMatchObject({
+      id: "0055_provider_connection_catalog",
+      statements: expect.arrayContaining([
+        expect.stringContaining("MODIFY COLUMN user_id Nullable(UUID)"),
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection"),
       ]),
     });
   });

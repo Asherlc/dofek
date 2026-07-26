@@ -40,6 +40,7 @@
     "peerdb",
     "peerflow",
     "pgcrypto",
+    "fkey",
     "hashtext",
     "xact",
     "btrim",

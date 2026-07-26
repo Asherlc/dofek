@@ -20,6 +20,7 @@ import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { Router, raw } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
@@ -72,6 +73,17 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
   const router = Router();
   const webhookSubscriptionRepository = new WebhookSubscriptionRepository(db);
 
+  router.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: 60,
+      standardHeaders: "draft-7",
+      legacyHeaders: false,
+      skipSuccessfulRequests: true,
+      message: "Too many rejected webhook requests — please try again later",
+    }),
+  );
+
   // Use raw body parser for all webhook routes — needed for HMAC signature verification.
   // Must come before any json() middleware.
   router.use(raw({ type: "*/*", limit: "1mb" }));
@@ -96,20 +108,29 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
         return;
       }
 
-      if (!provider.handleValidationChallenge) {
+      const handleValidationChallenge = provider.handleValidationChallenge;
+      if (!handleValidationChallenge) {
         res.status(200).send("OK");
         return;
       }
 
-      const sub = await webhookSubscriptionRepository.getActiveByProviderName(providerName);
-      if (!sub) {
+      const query = Object.fromEntries(Object.entries(req.query).map(([k, v]) => [k, String(v)]));
+      let subscriptionFound = false;
+      let response: ReturnType<typeof handleValidationChallenge> = null;
+      for await (const subscription of webhookSubscriptionRepository.iterateActiveByProviderName(
+        providerName,
+      )) {
+        subscriptionFound = true;
+        response = handleValidationChallenge(query, subscription.verifyToken);
+        if (response !== null) {
+          break;
+        }
+      }
+      if (!subscriptionFound) {
         logger.warn(`[webhook] No active subscription for ${providerName} challenge`);
         res.status(404).send("No subscription");
         return;
       }
-
-      const query = Object.fromEntries(Object.entries(req.query).map(([k, v]) => [k, String(v)]));
-      const response = provider.handleValidationChallenge(query, sub.verifyToken);
 
       if (response === null) {
         res.status(400).send("Challenge failed");
@@ -145,18 +166,29 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
         return;
       }
 
-      const sub = await webhookSubscriptionRepository.getActiveByProviderName(providerName);
-      if (!sub) {
+      const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body));
+      let subscriptionFound = false;
+      let signatureIsValid: boolean | undefined;
+      for await (const subscription of webhookSubscriptionRepository.iterateActiveByProviderName(
+        providerName,
+      )) {
+        subscriptionFound = true;
+        signatureIsValid = provider.verifyWebhookSignature(
+          rawBody,
+          req.headers,
+          subscription.signingSecret ?? subscription.verifyToken,
+        );
+        if (signatureIsValid) {
+          break;
+        }
+      }
+      if (!subscriptionFound) {
         logger.warn(`[webhook] No active subscription for ${providerName}`);
         res.status(404).send("No subscription");
         return;
       }
 
-      // Verify signature if provider has a signing secret
-      const signingSecret = sub.signingSecret ?? sub.verifyToken;
-      const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body));
-
-      if (!provider.verifyWebhookSignature(rawBody, req.headers, signingSecret)) {
+      if (!signatureIsValid) {
         logger.warn(`[webhook] Invalid signature for ${providerName}`);
         res.status(401).send("Invalid signature");
         return;
@@ -290,6 +322,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
 export async function registerWebhookForProvider(
   db: import("dofek/db").Database,
   provider: WebhookProvider,
+  userId: string,
 ): Promise<void> {
   const webhookSubscriptionRepository = new WebhookSubscriptionRepository(db);
   const publicUrl = process.env.PUBLIC_URL ?? "https://dofek.asherlc.com";
@@ -308,7 +341,10 @@ export async function registerWebhookForProvider(
 
   const verifyToken = randomBytes(32).toString("hex");
   const result = await provider.registerWebhook(callbackUrl, verifyToken);
+  const userScoped = provider.webhookScope === "user";
   await webhookSubscriptionRepository.upsertActiveSubscription({
+    userId: userScoped ? userId : null,
+    providerId: userScoped ? provider.id : null,
     providerName: provider.id,
     subscriptionExternalId: result.subscriptionId,
     verifyToken,

@@ -9,6 +9,7 @@ import {
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
 const PROVIDER_ID = "dofek";
 const BATCH_SIZE = 500;
@@ -58,11 +59,12 @@ export class ActivityRecordingRepository {
 
   /** Ensure the "dofek" provider row exists. */
   async ensureProvider(): Promise<void> {
-    await this.#db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${PROVIDER_ID}, 'Dofek', ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#db,
+      providerId: PROVIDER_ID,
+      providerName: "Dofek",
+      userId: this.#userId,
+    });
   }
 
   /** Insert or upsert an activity with GPS samples, returning the activity ID. */

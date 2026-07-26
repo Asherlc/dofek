@@ -1,19 +1,23 @@
 import { providerLabel } from "@dofek/providers/providers";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
+import { ensureProvider } from "dofek/db/tokens";
 
 export async function ensurePushProvider({
   database,
   providerId,
+  providerName,
   userId,
 }: {
   database: Pick<Database, "execute">;
   providerId: string;
+  providerName?: string;
   userId: string;
 }): Promise<void> {
-  await database.execute(
-    sql`INSERT INTO fitness.provider (id, name, user_id)
-        VALUES (${providerId}, ${providerLabel(providerId)}, ${userId})
-        ON CONFLICT (id) DO NOTHING`,
+  await ensureProvider(
+    database,
+    providerId,
+    providerName ?? providerLabel(providerId),
+    undefined,
+    userId,
   );
 }

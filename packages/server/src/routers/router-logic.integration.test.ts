@@ -43,8 +43,13 @@ describe("Router transformation logic", () => {
 
     // Insert a test provider (needed for FK constraints)
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES ('test-provider', 'Test Provider', ${TEST_USER_ID})
+      sql`INSERT INTO fitness.provider (id, name)
+          VALUES ('test-provider', 'Test Provider')
+          ON CONFLICT DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider_connection (user_id, provider_id)
+          VALUES (${TEST_USER_ID}, 'test-provider')
           ON CONFLICT DO NOTHING`,
     );
 
@@ -511,8 +516,12 @@ describe("Router transformation logic", () => {
       await testCtx.db.execute(sql`DELETE FROM fitness.sync_log WHERE provider_id = ${providerId}`);
       await testCtx.db.execute(sql`DELETE FROM fitness.provider WHERE id = ${providerId}`);
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.provider (id, name, user_id)
-            VALUES (${providerId}, 'Cache invalidation provider', ${TEST_USER_ID})`,
+        sql`INSERT INTO fitness.provider (id, name)
+            VALUES (${providerId}, 'Cache invalidation provider')`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider_connection (user_id, provider_id)
+            VALUES (${TEST_USER_ID}, ${providerId})`,
       );
       await testCtx.db.execute(
         sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)
@@ -546,8 +555,12 @@ describe("Router transformation logic", () => {
             ON CONFLICT (id) DO NOTHING`,
       );
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.provider (id, name, user_id)
-            VALUES (${providerId}, 'Cache invalidation delete provider', ${providerDeleteUserId})`,
+        sql`INSERT INTO fitness.provider (id, name)
+            VALUES (${providerId}, 'Cache invalidation delete provider')`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider_connection (user_id, provider_id)
+            VALUES (${providerDeleteUserId}, ${providerId})`,
       );
       await testCtx.db.execute(
         sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)

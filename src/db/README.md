@@ -11,7 +11,8 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 ## Key Tables
 
 - `user_profile`: User profiles and settings.
-- `provider`: Registered data providers linked to users.
+- `provider`: Global catalog of registered data provider types.
+- `provider_connection`: Authoritative per-user provider connections.
 - `oauth_token`: OAuth credentials for provider APIs.
 - `activity`: Cardio/endurance workout sessions.
 - `daily_metrics`: Aggregated daily health data (HRV, Resting HR, steps).

@@ -129,6 +129,19 @@ async function insertVerificationPrerequisites(): Promise<void> {
       SET name = EXCLUDED.name,
           user_id = EXCLUDED.user_id
   `;
+  await sql`
+    INSERT INTO fitness.provider_connection (user_id, provider_id)
+    SELECT ${USER_ID}, id
+    FROM fitness.provider
+    WHERE id IN (
+      'manual_review',
+      'verification-2',
+      'verification-3',
+      'verification-4',
+      'verification-5'
+    )
+    ON CONFLICT (user_id, provider_id) DO NOTHING
+  `;
 
   await sql`
     INSERT INTO fitness.daily_metrics (date, provider_id, user_id)

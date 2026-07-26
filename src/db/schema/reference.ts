@@ -1,7 +1,9 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -45,13 +47,30 @@ export const provider = fitness.table(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     apiBaseUrl: text("api_base_url"),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
+    /** @deprecated Legacy owner cleared during migration. Ownership lives in provider_connection. */
+    userId: uuid("user_id").references(() => userProfile.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("provider_user_name_idx").on(table.userId, table.name)],
+);
+
+export const providerConnection = fitness.table(
+  "provider_connection",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.providerId] }),
+    index("provider_connection_provider_idx").on(table.providerId),
+  ],
 );
 
 export const providerPriority = fitness.table("provider_priority", {
@@ -181,6 +200,11 @@ export const oauthToken = fitness.table(
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.providerId] }),
+    foreignKey({
+      columns: [table.userId, table.providerId],
+      foreignColumns: [providerConnection.userId, providerConnection.providerId],
+      name: "oauth_token_provider_connection_fkey",
+    }).onDelete("cascade"),
     index("oauth_token_provider_idx").on(table.providerId),
     index("oauth_token_user_idx").on(table.userId),
   ],
@@ -194,7 +218,9 @@ export const webhookSubscription = fitness.table(
   "webhook_subscription",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    /** Provider ID (e.g., "strava", "fitbit"). For app-level webhooks, provider_id is NULL. */
+    /** User owner for per-user subscriptions. App-level subscriptions leave this NULL. */
+    userId: uuid("user_id"),
+    /** Provider ID for per-user subscriptions. App-level subscriptions leave this NULL. */
     providerId: text("provider_id").references(() => provider.id),
     /** Provider name for app-level subscriptions where there's no per-user provider row */
     providerName: text("provider_name").notNull(),
@@ -214,7 +240,19 @@ export const webhookSubscription = fitness.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("webhook_subscription_provider_id_idx").on(table.providerId),
+    foreignKey({
+      columns: [table.userId, table.providerId],
+      foreignColumns: [providerConnection.userId, providerConnection.providerId],
+      name: "webhook_subscription_provider_connection_fkey",
+    }).onDelete("cascade"),
+    uniqueIndex("webhook_subscription_app_provider_name_idx")
+      .on(table.providerName)
+      .where(sql`${table.userId} IS NULL AND ${table.status} = 'active'`),
+    uniqueIndex("webhook_subscription_user_provider_idx")
+      .on(table.userId, table.providerId)
+      .where(
+        sql`${table.userId} IS NOT NULL AND ${table.providerId} IS NOT NULL AND ${table.status} = 'active'`,
+      ),
     index("webhook_subscription_provider_name_idx").on(table.providerName),
   ],
 );

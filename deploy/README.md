@@ -164,6 +164,8 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> wait for postgres writable
               -> migrate (one-shot container on <stack>_default)
               -> prune deploy <stack> with requested app image tag
+              -> backfill and validate provider connections
+              -> configure CDC and restore consumers
 ```
 
 1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`), because `Deploy Web` is triggered by the successful `CI` `workflow_run` for `main` and deploys that tag. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
@@ -248,8 +250,18 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
    9. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
    10. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
-   11. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
-   12. Run the final `docker stack deploy -c deploy/stack.yml ...` to restore
+   11. Run the resumable `provider-connection-cutover` one-shot command after
+       every requested app service has converged. It backfills
+       `fitness.provider_connection` from legacy provider owners, OAuth tokens,
+       and child-table ownership, then validates the OAuth/webhook composite
+       foreign keys and removes the obsolete application-wide webhook index.
+       The additive migration intentionally does not enforce those foreign keys
+       before rollout because the old application does not create connection
+       rows. PostgreSQL documents the staged `NOT VALID` and `VALIDATE
+       CONSTRAINT` operations used by this cutover:
+       <https://www.postgresql.org/docs/current/sql-altertable.html>.
+   12. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
+   13. Run the final `docker stack deploy -c deploy/stack.yml ...` to restore
        `analytics-worker` and `metric-stream-clickhouse-sink` only when every
        post-quiesce readiness step and ClickHouse CDC setup succeeds. If a
        prerequisite fails, the workflow leaves both consumers at zero replicas
@@ -257,7 +269,7 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
        deployment. GitHub applies `success()` to successful prior steps, while
        `always()` runs even after failures, so critical deploy steps must not use
        `always()` as their status gate ([GitHub Actions status check functions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)).
-   13. After the final production stack converges, record the image's full
+   14. After the final production stack converges, record the image's full
        `SENTRY_RELEASE` commit SHA as deployed to `production` for
        `dofek-web` and `dofek-server`. Failed, rolled-back, or quiesced
        rollouts never reach this step. The official action requires its
