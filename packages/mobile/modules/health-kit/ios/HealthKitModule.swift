@@ -782,6 +782,13 @@ public class HealthKitModule: Module {
                     }
                     if let error {
                         if !HealthKitErrorDetails.shouldReportObserverError(error) {
+                            let breadcrumb = Breadcrumb(
+                                level: .info,
+                                category: "healthkit.observer"
+                            )
+                            breadcrumb.message =
+                                "Authorization not determined for \(sampleType.identifier)"
+                            SentrySDK.addBreadcrumb(breadcrumb)
                             completionHandler()
                             return
                         }

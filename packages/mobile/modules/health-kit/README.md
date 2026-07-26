@@ -73,9 +73,10 @@ From repo root:
 - Permission drift after adding new types: `getRequestStatus()` returns `shouldRequest`.
 - `com.apple.healthkit` code 5 is `errorAuthorizationNotDetermined`, an expected
   observer-registration state for types whose permission prompt has not
-  completed. Complete that observer callback without reporting an exception;
-  continue reporting unexpected observer errors with the operation and sample
-  type attached. Apple documents the code and required authorization flow:
+  completed. Record an informational breadcrumb and complete that observer
+  callback without reporting an exception; continue reporting unexpected
+  observer errors with the operation and sample type attached. Apple documents
+  the code and required authorization flow:
   <https://developer.apple.com/documentation/healthkit/hkerror/code/errorauthorizationnotdetermined>.
 - `com.apple.healthkit` code 6 is `errorDatabaseInaccessible`, a transient query
   failure while protected HealthKit data is unavailable on a locked device:

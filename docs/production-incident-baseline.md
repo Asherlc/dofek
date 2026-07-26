@@ -17266,9 +17266,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   though the query and background-delivery paths already handled that state as
   permission drift.
 - **Fix / mitigation:** Centralize HealthKit error classification, complete
-  authorization-not-determined observer callbacks without reporting them, and
-  continue capturing every unexpected observer error with operation and sample
-  type tags. No timeout, retry, fallback, or authorization gate was added.
+  authorization-not-determined observer callbacks with an informational Sentry
+  breadcrumb instead of an error event, and continue capturing every unexpected
+  observer error with operation and sample type tags. No timeout, retry,
+  fallback, or authorization gate was added.
 - **Validation:** The new Swift regression test first failed because the
   observer reporting policy did not exist. After the fix, all 74 HealthKit
   Swift tests, strict SwiftLint, and all 965 mobile tests passed without
