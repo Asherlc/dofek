@@ -270,6 +270,8 @@ async function syncOnForeground(
   // the sync before findWhoop() can even run. Instead, we let findWhoop()
   // handle unavailable Bluetooth by returning null (it checks state internally
   // after the manager has had time to initialize).
+  if (!shouldContinueUploading()) return;
+
   if (!connected) {
     logger.info(LOG_CATEGORY, "not connected, searching for WHOOP strap");
     const device = await whoopDeps.findWhoop();
@@ -282,6 +284,7 @@ async function syncOnForeground(
       });
       return;
     }
+    if (!shouldContinueUploading()) return;
 
     const deviceLabel = device.name ?? device.id;
     logger.info(LOG_CATEGORY, `connecting to ${deviceLabel}`);
@@ -291,6 +294,11 @@ async function syncOnForeground(
       level: "info",
     });
     await whoopDeps.connect(device.id);
+    if (!shouldContinueUploading()) {
+      whoopDeps.disconnect();
+      connected = false;
+      return;
+    }
     logger.info(LOG_CATEGORY, "connected, sending TOGGLE_IMU_MODE");
     // Send TOGGLE_IMU_MODE to keep IMU data flowing even when the WHOOP
     // app isn't actively syncing. R21 data also flows passively during
@@ -302,6 +310,11 @@ async function syncOnForeground(
       captureException(error, { source: "whoop-ble-start-streaming" });
       // Best-effort — passive data may still flow without the command
       logger.warn(LOG_CATEGORY, `startImuStreaming failed (passive data may still work): ${error}`);
+    }
+    if (!shouldContinueUploading()) {
+      whoopDeps.disconnect();
+      connected = false;
+      return;
     }
     connected = true;
     logger.info(LOG_CATEGORY, "listening for IMU data");

@@ -17920,9 +17920,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `AppState.currentState` is `active`; otherwise defer it to the existing
   foreground transition listener. The explicit native background-refresh path
   remains unchanged.
-- **Validation:** A regression test first reproduced the unwanted background
-  connection, then all 43 focused WHOOP BLE sync tests passed after the fix.
+- **Validation:** Regression tests first reproduced the unwanted background
+  connection and lifecycle races, then all 47 focused WHOOP BLE sync tests
+  passed after the fix.
   Targeted Biome checks and the mobile TypeScript typecheck also pass.
-- **Remaining risk / follow-up:** Merge through normal CI, release the mobile
-  change, and resolve `DOFEK-MOBILE-1D` after confirming no recurrence on the
-  fixed release.
+- **Remaining risk / follow-up:** Merge through normal CI and release the
+  mobile change. Because the Simulator cannot exercise Bluetooth hardware
+  ([Expo simulator limitations](https://docs.expo.dev/workflow/ios-simulator/#limitations)),
+  validate on a physical device by enabling WHOOP sync, backgrounding during
+  initialization, confirming no `whoop-ble-init-sync` error, then foregrounding
+  and confirming streaming resumes. Resolve `DOFEK-MOBILE-1D` after confirming
+  no recurrence on the fixed release.
