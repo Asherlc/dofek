@@ -221,6 +221,36 @@ describe("BreathworkPage", () => {
     expect(screen.getByText("History refresh failed.")).toBeTruthy();
   });
 
+  it("paginates recent sessions", () => {
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        description: "Calming pattern",
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+      },
+    ];
+    state.history.data = Array.from({ length: 21 }, (_, index) => ({
+      id: `session-${index + 1}`,
+      techniqueId: "box-breathing",
+      rounds: index + 1,
+      durationSeconds: 60,
+      startedAt: "2026-07-24T12:00:00.000Z",
+    }));
+
+    renderBreathworkPage();
+
+    expect(screen.getByText("1 rounds / 1m")).toBeTruthy();
+    expect(screen.queryByText("21 rounds / 1m")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next sessions page" }));
+
+    expect(screen.queryByText("1 rounds / 1m")).toBeNull();
+    expect(screen.getByText("21 rounds / 1m")).toBeTruthy();
+  });
+
   it("reports a completed-session save failure and keeps a retry action", () => {
     vi.useFakeTimers();
     const saveError = new Error("Session could not be saved. Please retry.");

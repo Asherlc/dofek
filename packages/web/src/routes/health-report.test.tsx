@@ -265,6 +265,26 @@ describe("health report route", () => {
     expect(screen.queryByText(/No shared reports yet/)).toBeNull();
   });
 
+  it("paginates shared reports", () => {
+    mockMyReports.mockReturnValue({
+      data: Array.from({ length: 21 }, (_, index) => ({
+        ...weeklyReport,
+        id: `report-${index + 1}`,
+        shareToken: `token-${index + 1}`,
+      })),
+      error: null,
+      isLoading: false,
+    });
+
+    renderRoute(undefined);
+
+    expect(screen.getAllByRole("button", { name: "Copy Link" })).toHaveLength(20);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next reports page" }));
+
+    expect(screen.getAllByRole("button", { name: "Copy Link" })).toHaveLength(1);
+  });
+
   it("shows copied only after the clipboard write succeeds", async () => {
     let completeWrite = () => {};
     mockWriteText.mockReturnValue(

@@ -121,7 +121,11 @@ export function SleepPage() {
           title="Data Sources"
           subtitle="Which provider and device supplied each night's sleep data"
         >
-          <SleepDataSourcesTable rows={sourceRows} loading={sleepData.isLoading} />
+          <SleepDataSourcesTable
+            key={days ?? "all"}
+            rows={sourceRows}
+            loading={sleepData.isLoading}
+          />
         </PageSection>
 
         {/* Last Night Hypnogram */}

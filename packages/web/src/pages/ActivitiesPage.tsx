@@ -12,6 +12,7 @@ import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { ActivityCardContent, type ActivityCardData } from "../components/ActivityCardContent.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { PaginationControls } from "../components/PaginationControls.tsx";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
@@ -19,6 +20,7 @@ import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
 const DEFAULT_WEEKS = 4;
+const ACTIVITY_PAGE_SIZE = 20;
 const ALL_ACTIVITY_TYPES = "all";
 const DATE_RANGE_OPTIONS = [
   { value: 4, label: "4 weeks" },
@@ -35,6 +37,7 @@ export function ActivitiesPage() {
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
   const [deletedActivityIds, setDeletedActivityIds] = useState<Set<string>>(new Set());
+  const [activityPage, setActivityPage] = useState(0);
   const endDate = useMemo(() => formatDateYmd(), []);
   const units = useUnitConverter();
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
@@ -107,6 +110,33 @@ export function ActivitiesPage() {
     return ids;
   }, [dayGroups]);
   const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
+  const activityCount = dayGroups?.reduce((total, day) => total + day.activities.length, 0) ?? 0;
+  const totalActivityPages = Math.ceil(activityCount / ACTIVITY_PAGE_SIZE);
+  const currentActivityPage = Math.min(activityPage, Math.max(totalActivityPages - 1, 0));
+  const visibleDayGroups = useMemo(() => {
+    if (!dayGroups) return undefined;
+    const visibleActivities = dayGroups
+      .flatMap((day) =>
+        day.activities.map((activity) => ({
+          date: day.date,
+          activity,
+        })),
+      )
+      .slice(
+        currentActivityPage * ACTIVITY_PAGE_SIZE,
+        (currentActivityPage + 1) * ACTIVITY_PAGE_SIZE,
+      );
+    const grouped = new Map<string, typeof visibleActivities>();
+    for (const entry of visibleActivities) {
+      const existing = grouped.get(entry.date) ?? [];
+      existing.push(entry);
+      grouped.set(entry.date, existing);
+    }
+    return [...grouped.entries()].map(([date, entries]) => ({
+      date,
+      activities: entries.map((entry) => entry.activity),
+    }));
+  }, [currentActivityPage, dayGroups]);
   const selectedCount = selectedActivityIds.size;
   const selectedHiddenCount = [...selectedActivityIds].filter((id) =>
     hiddenActivityIds.has(id),
@@ -149,16 +179,19 @@ export function ActivitiesPage() {
 
   const updateActivityType = (nextActivityType: string) => {
     setActivityType(nextActivityType);
+    setActivityPage(0);
     cancelSelection();
   };
 
   const updateWeeks = (nextWeeks: number) => {
     setWeeks(nextWeeks);
+    setActivityPage(0);
     cancelSelection();
   };
 
   const updateShowHidden = (nextShowHidden: boolean) => {
     setShowHidden(nextShowHidden);
+    setActivityPage(0);
     cancelSelection();
   };
 
@@ -228,7 +261,7 @@ export function ActivitiesPage() {
       ) : (
         <div className="space-y-7">
           {query.isError ? <QueryStatePanel error={query.error} height={72} /> : null}
-          {dayGroups.map((day) => (
+          {visibleDayGroups?.map((day) => (
             <section key={day.date}>
               <div className="mb-2 flex items-center gap-3">
                 <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">
@@ -250,6 +283,13 @@ export function ActivitiesPage() {
               </div>
             </section>
           ))}
+          <PaginationControls
+            page={currentActivityPage}
+            pageSize={ACTIVITY_PAGE_SIZE}
+            totalItems={activityCount}
+            itemLabel="activities"
+            onPageChange={setActivityPage}
+          />
         </div>
       )}
     </PageLayout>
