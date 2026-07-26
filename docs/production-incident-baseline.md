@@ -17814,7 +17814,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   for a 100% mutation score. The Peloton error shard ran 19 related tests and
   killed all 9 non-static mutants for a 100% mutation score. The Peloton auth
   shard improved from 45.03% to 82.46%; the client and parsing shards improved
-  from 55.77% and 54.72% to above 96%.
+  from 55.77% and 54.72% to above 96%. Root-provider assertions for auth
+  causes, sync-window boundaries, metric slugs, values, and timestamps raised
+  its affected mutation shard from 62.16% to 94.59%.
 - **Remaining risk / follow-up:** Replacement GitHub Actions checks must pass on
   Node 26 before merge. Future public-package changes should validate both a
   clean source checkout and the packed manifest, because either half alone can

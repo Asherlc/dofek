@@ -909,7 +909,12 @@ function makeSyncPerformanceGraph(slugs: string[] = ["heart_rate"]): object {
     metrics: slugs.map((slug) => ({
       display_name: slug,
       slug,
-      values: [130, 145, 160],
+      values:
+        slug === "heart_rate"
+          ? [130, 145, 160]
+          : slug === "output"
+            ? [180, 200, 220]
+            : [80, 85, 90],
       average_value: 145,
       max_value: 160,
     })),
@@ -976,14 +981,17 @@ describe("PelotonProvider.sync — authentication failures", () => {
       new Response("Unauthorized", { status: 401 });
     const provider = new PelotonProvider(mockFetch);
 
-    await expect(
-      provider.sync(
+    const error = await provider
+      .sync(
         new SyncRun({
           db: createMockDb(),
           window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
         }),
-      ),
-    ).rejects.toBeInstanceOf(AccessTokenExpiredError);
+      )
+      .catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(AccessTokenExpiredError);
+    expect(error.cause).toBeInstanceOf(PelotonAuthenticationError);
   });
 
   it("classifies a rejected performance graph request as an expired access token", async () => {
@@ -1005,6 +1013,7 @@ describe("PelotonProvider.sync — authentication failures", () => {
     );
 
     expect(result.errors[0]?.cause).toBeInstanceOf(AccessTokenExpiredError);
+    expect(result.errors[0]?.cause?.cause).toBeInstanceOf(PelotonAuthenticationError);
   });
 });
 
@@ -1076,6 +1085,24 @@ describe("PelotonProvider.sync — workout filtering", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("includes workouts exactly at the since boundary", async () => {
+    const workout = makeSyncWorkout();
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph(["heart_rate"])));
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({ since: new Date(workout.start_time * 1000) }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBeGreaterThan(0);
   });
 
   it("continues pagination when an older workout is not COMPLETE", async () => {
@@ -1302,11 +1329,48 @@ describe("PelotonProvider.sync — performance graph error handling", () => {
     expect(result.recordsSynced).toBeGreaterThan(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("Performance graph for workout-123");
+    expect(result.errors[0]?.cause).not.toBeInstanceOf(AccessTokenExpiredError);
     expect(mockDb.delete).not.toHaveBeenCalled();
   });
 });
 
 describe("PelotonProvider.sync — metric stream deletion and insertion", () => {
+  it("maps heart rate, power, cadence, and sample timestamps by slug", async () => {
+    const workout = makeSyncWorkout();
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+      .mockResolvedValueOnce(
+        Response.json(makeSyncPerformanceGraph(["output", "cadence", "heart_rate"])),
+      );
+    const provider = new PelotonProvider(mockFetch);
+    await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({ since: new Date((workout.start_time - 1) * 1000) }),
+      }),
+    );
+
+    expect(
+      publishedMetricStreamBatches[0]?.map(({ channel, scalar, recordedAt }) => ({
+        channel,
+        scalar,
+        recordedAt,
+      })),
+    ).toEqual([
+      { channel: "heart_rate", scalar: 130, recordedAt: "2024-03-01T08:00:00.000Z" },
+      { channel: "power", scalar: 180, recordedAt: "2024-03-01T08:00:00.000Z" },
+      { channel: "cadence", scalar: 80, recordedAt: "2024-03-01T08:00:00.000Z" },
+      { channel: "heart_rate", scalar: 145, recordedAt: "2024-03-01T08:00:05.000Z" },
+      { channel: "power", scalar: 200, recordedAt: "2024-03-01T08:00:05.000Z" },
+      { channel: "cadence", scalar: 85, recordedAt: "2024-03-01T08:00:05.000Z" },
+      { channel: "heart_rate", scalar: 160, recordedAt: "2024-03-01T08:00:10.000Z" },
+      { channel: "power", scalar: 220, recordedAt: "2024-03-01T08:00:10.000Z" },
+      { channel: "cadence", scalar: 90, recordedAt: "2024-03-01T08:00:10.000Z" },
+    ]);
+  });
+
   it("deletes existing metric_stream rows and inserts new ones in batches", async () => {
     const workout = makeSyncWorkout();
 
