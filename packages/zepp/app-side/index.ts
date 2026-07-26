@@ -1,7 +1,7 @@
 import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
-import { parseSessionCommand, SESSION_COMMAND } from "../src/session-control.ts";
+import { createSessionCall, parseSessionCommand } from "../src/session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 import { summarizeZeppFetchResponse, type ZeppFetchResponse } from "../src/zepp-fetch.ts";
 
@@ -105,10 +105,7 @@ AppSideService(
         if (!command) {
           return;
         }
-        this.call({
-          method: command === SESSION_COMMAND.START ? "logging.start" : "logging.stop",
-          params: command === SESSION_COMMAND.START ? this.getPreferences() : {},
-        });
+        this.call(createSessionCall(command, this.getPreferences()));
         settings.settingsStorage.removeItem(STORAGE_KEYS.CMD_LOGGING);
         return;
       }

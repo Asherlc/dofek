@@ -41,7 +41,9 @@ import { collectHealthData } from "../src/health-collector.ts";
 import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import {
+  drainManualExportQueue,
   getSessionAction,
+  handleSessionCall,
   SESSION_COMMAND,
   SESSION_STATE,
   type SessionState,
@@ -170,6 +172,7 @@ Page(
       hasGyro: false,
       transferTask: nullable<TransferTask>(),
       failedTransfer: nullable<FailedTransfer>(),
+      pendingManualExport: false,
       sampleCount: 0,
       observedHzX100: 0,
       activeFile: initialActiveFile(),
@@ -681,6 +684,19 @@ Page(
           if (failedSlot && this.state.failedTransfer?.slot === failedSlot) {
             this.state.failedTransfer = null;
           }
+          drainManualExportQueue(
+            {
+              pendingManualExport: this.state.pendingManualExport,
+              logging: this.state.logging,
+              failedTransferPending: Boolean(this.state.failedTransfer),
+            },
+            {
+              clearManualExportQueue: () => {
+                this.state.pendingManualExport = false;
+              },
+              transferStoppedSession: () => this.transferStoppedSession(),
+            },
+          );
           this.request({
             method: "imu.transferComplete",
             params: { sampleCount },
@@ -729,30 +745,27 @@ Page(
     },
 
     onCall(payload: { method: string; params?: Record<string, unknown> } | null) {
-      const { method, params = {} } = payload ?? { method: "", params: {} };
-
-      if (method === "logging.start") {
-        if (!this.state.logging) {
-          this.state.enableGyro = params.enableGyro === true;
-          this.state.freqModeIndex = Number(params.freqModeIndex ?? this.state.freqModeIndex);
-        }
-        this.startLogging();
+      if (
+        handleSessionCall(payload, {
+          logging: this.state.logging,
+          transferInProgress: Boolean(this.state.transferTask),
+          failedTransferPending: Boolean(this.state.failedTransfer),
+          applyStartPreferences: (params) => {
+            this.state.enableGyro = params?.enableGyro === true;
+            this.state.freqModeIndex = Number(params?.freqModeIndex ?? this.state.freqModeIndex);
+          },
+          startLogging: () => this.startLogging(),
+          stopLogging: () => this.stopLogging(),
+          queueManualExport: () => {
+            this.state.pendingManualExport = true;
+          },
+          transferStoppedSession: () => this.transferStoppedSession(),
+        })
+      ) {
         return;
       }
 
-      if (method === "logging.stop") {
-        this.stopLogging();
-        return;
-      }
-
-      if (method === "transfer.start") {
-        if (this.state.logging) {
-          this.stopLogging();
-        }
-        this.transferStoppedSession();
-        return;
-      }
-
+      const method = payload?.method;
       if (method === "health.collect") {
         const watchSummary = collectHealthData({
           HeartRate,
