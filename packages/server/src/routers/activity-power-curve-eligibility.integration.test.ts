@@ -62,6 +62,7 @@ describe("activity power-curve eligibility", () => {
       query: `CREATE TABLE ${targetTable} (
         activity_id UUID,
         user_id UUID,
+        is_deleted UInt8,
         refreshed_at DateTime64(9, 'UTC')
       ) ENGINE = ReplacingMergeTree(refreshed_at)
       ORDER BY (user_id, activity_id)`,
