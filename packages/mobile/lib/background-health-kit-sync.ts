@@ -11,11 +11,8 @@ import type { HealthKitSyncStage, SyncTrpcClient } from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";
-const DEBOUNCE_MS = 500;
 
 let subscription: EventSubscription | null = null;
-let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-let observerSyncReady: true | undefined;
 let pendingCatchUp:
   | {
       onSyncComplete?: () => void | Promise<void>;
@@ -138,14 +135,13 @@ async function drainSyncQueue(
   const catchUp = pendingCatchUp;
   if (catchUp) {
     pendingCatchUp = undefined;
-  } else if (!observerSyncReady) {
+  } else if (pendingUpdateIds.size === 0) {
     return;
   }
 
   const updateIds = catchUp ? [] : Array.from(pendingUpdateIds);
   if (!catchUp) {
     pendingUpdateIds.clear();
-    observerSyncReady = undefined;
   }
 
   syncing = true;
@@ -161,22 +157,10 @@ async function drainSyncQueue(
   await drainSyncQueue(trpcClient, onSyncComplete);
 }
 
-function scheduleObserverSync(
-  trpcClient: SyncTrpcClient,
-  onSyncComplete?: () => void | Promise<void>,
-): void {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => {
-    debounceTimer = undefined;
-    observerSyncReady = true;
-    void drainSyncQueue(trpcClient, onSyncComplete);
-  }, DEBOUNCE_MS);
-}
-
 /**
  * Initialize background HealthKit sync.
  * Sets up observer queries that fire when new health samples arrive,
- * then debounces and syncs the last 24 hours of data to the server.
+ * then serializes syncs of the last 24 hours of data to the server.
  *
  * Call this once after authentication is established.
  */
@@ -199,9 +183,9 @@ export async function initBackgroundHealthKitSync(
   // Listen before registering native observers so an immediate HealthKit
   // delivery can never race ahead of the JavaScript callback.
   subscription = addSampleUpdateListener((event) => {
-    logger.info(TAG, "Sample update event received, debouncing");
+    logger.info(TAG, "Sample update event received, queueing sync");
     pendingUpdateIds.add(event.updateId);
-    scheduleObserverSync(trpcClient, onSyncComplete);
+    void drainSyncQueue(trpcClient, onSyncComplete);
   });
 
   try {
@@ -228,9 +212,6 @@ export function teardownBackgroundHealthKitSync() {
     subscription.remove();
     subscription = null;
   }
-  clearTimeout(debounceTimer);
-  debounceTimer = undefined;
-  observerSyncReady = undefined;
   pendingCatchUp = undefined;
   pendingUpdateIds.clear();
   try {

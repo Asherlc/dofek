@@ -28,10 +28,12 @@ This module provides the iOS-native HealthKit bridge used by the mobile app to:
 ## Background Observer Completion
 
 Each native observer delivery receives a unique update ID. The native module
-retains HealthKit's completion callback while JavaScript debounces the delivery
-for 500 ms, runs one coalesced sync, and reports the batch result through
-`completeObserverUpdates`. Re-registration, JavaScript teardown, and Expo module
-destruction stop the queries and complete every callback still pending.
+retains HealthKit's completion callback while JavaScript immediately places the
+delivery in a single-flight sync queue and reports the batch result through
+`completeObserverUpdates`. Updates delivered during a running sync remain
+pending for the next serialized sync. Re-registration, JavaScript teardown, and
+Expo module destruction stop the queries and complete every callback still
+pending.
 
 A native 25-second expiration completes an update exactly once and reports the
 expired update ID, HealthKit sample type, and monotonic callback age to Sentry
