@@ -17799,6 +17799,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   clean source checkout and the packed manifest, because either half alone can
   hide an export-path regression.
 
+## 2026-07-25 — Semgrep Runner Could Not Pull Its Container
+
+- **Status:** Resolved on the second workflow attempt.
+- **Symptoms:** The Semgrep workflow failed while GitHub Actions initialized
+  the pinned Semgrep job container, before repository checkout or analysis.
+- **User impact:** No production impact and no security finding. The pull
+  request's SAST merge gate could not complete on its first attempt.
+- **Evidence:** The exact failing step was `Initialize containers`. Each of its
+  three `docker pull` attempts failed, with the first fatal line
+  `Get "https://registry-1.docker.io/v2/": context deadline exceeded`.
+- **Root cause:** The hosted runner could not reach Docker Hub within the
+  container-pull deadline; no repository command or source file had executed.
+- **Fix / mitigation:** Rerun the failed workflow attempt against the same
+  commit and pinned image after identifying the external registry timeout.
+- **Validation:** The preceding Semgrep run passed on the parent commit, and
+  the replacement attempt completed successfully against the affected commit
+  with the same pinned image.
+- **Remaining risk / follow-up:** If the same registry timeout repeats, treat
+  Docker Hub availability as an external CI dependency and investigate a
+  controlled image mirror before changing scan behavior.
+
 ## 2026-07-25 — Provider-Connection Migration Failed on Legacy Production Shapes
 
 - **Status:** Root causes fixed; replacement main CI and production deployment
