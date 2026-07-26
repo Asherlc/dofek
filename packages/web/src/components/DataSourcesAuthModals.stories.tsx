@@ -4,7 +4,12 @@ import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { type ReactNode, useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
-import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
+import {
+  CredentialAuthModal,
+  GarminAuthModal,
+  TokenAuthModal,
+  WhoopAuthModal,
+} from "./DataSourcesAuthModals.tsx";
 
 function createMockLink(): TRPCLink<AppRouter> {
   return () => () =>
@@ -76,4 +81,17 @@ export const Garmin: Story = {
 
 export const Whoop: Story = {
   render: () => <WhoopAuthModal onClose={() => {}} onSuccess={() => {}} />,
+};
+
+export const PersonalToken: Story = {
+  render: () => (
+    <TokenAuthModal
+      providerId="wger"
+      providerName="Wger"
+      tokenLabel="JWT refresh token"
+      instructionsUrl="https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens"
+      onClose={() => {}}
+      onSuccess={() => {}}
+    />
+  ),
 };

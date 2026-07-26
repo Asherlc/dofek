@@ -18,6 +18,8 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./t
 // ============================================================
 
 const BODYSPEC_API_BASE = "https://app.bodyspec.com";
+const BODYSPEC_PUBLIC_CLIENT_ID = "bodyspec-api-ext-v1";
+const BODYSPEC_OIDC_BASE = "https://auth.bodyspec.com/realms/bodyspec/protocol/openid-connect";
 
 const bodyRegionSchema = z.object({
   fat_mass_kg: z.number(),
@@ -214,17 +216,14 @@ export async function catchNotFound<T>(promise: Promise<T>): Promise<T | null> {
 // BodySpec OAuth
 // ============================================================
 
-function bodySpecOAuthConfig(host?: string): OAuthConfig | null {
-  const clientId = process.env.BODYSPEC_CLIENT_ID;
-  const clientSecret = process.env.BODYSPEC_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
+function bodySpecOAuthConfig(host?: string): OAuthConfig {
   return {
-    clientId,
-    clientSecret,
-    authorizeUrl: `${BODYSPEC_API_BASE}/oauth/authorize`,
-    tokenUrl: `${BODYSPEC_API_BASE}/oauth/token`,
+    clientId: BODYSPEC_PUBLIC_CLIENT_ID,
+    authorizeUrl: `${BODYSPEC_OIDC_BASE}/auth`,
+    tokenUrl: `${BODYSPEC_OIDC_BASE}/token`,
     redirectUri: getOAuthRedirectUri(host),
-    scopes: ["read:results"],
+    scopes: ["openid", "profile", "email"],
+    usePkce: true,
   };
 }
 
@@ -291,17 +290,19 @@ export class BodySpecProvider implements SyncProvider {
   }
 
   validate(): string | null {
-    if (!process.env.BODYSPEC_CLIENT_ID) return "BODYSPEC_CLIENT_ID is not set";
-    if (!process.env.BODYSPEC_CLIENT_SECRET) return "BODYSPEC_CLIENT_SECRET is not set";
     return null;
   }
 
-  authSetup(options?: { host?: string }): ProviderAuthSetup | undefined {
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = bodySpecOAuthConfig(options?.host);
-    if (!config) return undefined;
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code, this.#fetchFn),
+      exchangeCode: async (code, codeVerifier) => {
+        if (!codeVerifier) {
+          throw new Error("BodySpec PKCE verifier is missing");
+        }
+        return await exchangeCodeForTokens(config, code, this.#fetchFn, { codeVerifier });
+      },
       apiBaseUrl: BODYSPEC_API_BASE,
     };
   }

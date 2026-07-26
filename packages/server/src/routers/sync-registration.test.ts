@@ -164,4 +164,20 @@ describe("ensureProvidersRegistered failure path", () => {
 
     expect(mockRegisterProvider).toHaveBeenCalledWith({ id: "kaya-export" });
   });
+
+  it("registers self-service providers but omits externally gated providers", async () => {
+    const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
+
+    await ensureProvidersRegistered();
+
+    const registeredIds = mockRegisterProvider.mock.calls.map(
+      ([provider]: [{ id: string }]) => provider.id,
+    );
+    expect(registeredIds).toEqual(
+      expect.arrayContaining(["bodyspec", "cycling-analytics", "ultrahuman", "wger"]),
+    );
+    expect(registeredIds).not.toEqual(
+      expect.arrayContaining(["fitbit", "suunto", "coros", "komoot", "decathlon", "mapmyfitness"]),
+    );
+  });
 });

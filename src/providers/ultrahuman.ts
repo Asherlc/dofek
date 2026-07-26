@@ -3,8 +3,9 @@ import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { ProviderTokenRejectedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
-import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Ultrahuman Partner API types
@@ -109,17 +110,25 @@ export function parseUltrahumanMetrics(
 
 export class UltrahumanClient {
   #token: string;
-  #email: string;
+  #email: string | undefined;
   #fetchFn: typeof globalThis.fetch;
 
-  constructor(token: string, email: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+  constructor(
+    token: string,
+    email: string | undefined,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  ) {
     this.#token = token;
     this.#email = email;
     this.#fetchFn = createProviderRateLimitFetch("ultrahuman", fetchFn);
   }
 
   async getDailyMetrics(date: string): Promise<UltrahumanDailyMetricsResponse> {
-    const url = `${ULTRAHUMAN_API_BASE}/partner/daily_metrics?email=${encodeURIComponent(this.#email)}&date=${date}`;
+    const url = new URL(`${ULTRAHUMAN_API_BASE}/partner/daily_metrics`);
+    if (this.#email) {
+      url.searchParams.set("email", this.#email);
+    }
+    url.searchParams.set("date", date);
     const response = await this.#fetchFn(url, {
       headers: {
         Authorization: this.#token,
@@ -158,9 +167,45 @@ export class UltrahumanProvider implements SyncProvider {
   }
 
   validate(): string | null {
-    if (!process.env.ULTRAHUMAN_API_TOKEN) return "ULTRAHUMAN_API_TOKEN is not set";
-    if (!process.env.ULTRAHUMAN_EMAIL) return "ULTRAHUMAN_EMAIL is not set";
     return null;
+  }
+
+  authSetup(): ProviderAuthSetup {
+    const fetchFn = this.#fetchFn;
+    return {
+      manualToken: {
+        label: "Personal API token",
+        instructionsUrl: "https://vision.ultrahuman.com/developer-docs",
+        exchangeToken: async (token) => {
+          const date = formatDate(new Date());
+          const response = await fetchFn(
+            `${ULTRAHUMAN_API_BASE}/partner/daily_metrics?date=${date}`,
+            {
+              headers: {
+                Authorization: token,
+                Accept: "application/json",
+              },
+            },
+          );
+          if (response.status === 401 || response.status === 403 || response.status === 404) {
+            throw new ProviderTokenRejectedError(
+              this.name,
+              "Create a new personal API token in Ultrahuman Vision and try again.",
+            );
+          }
+          if (!response.ok) {
+            throw new Error(`Ultrahuman token validation failed (${response.status}). Try again.`);
+          }
+          return {
+            accessToken: token,
+            refreshToken: null,
+            expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+            scopes: "self",
+          };
+        },
+      },
+      apiBaseUrl: ULTRAHUMAN_API_BASE,
+    };
   }
 
   async sync(run: SyncRun): Promise<SyncResult> {
@@ -174,16 +219,13 @@ export class UltrahumanProvider implements SyncProvider {
 
     let client: UltrahumanClient;
     try {
-      // Try loading from stored tokens first (set via auth command)
       const stored = await loadTokens(db, this.id);
-      const token = stored?.accessToken ?? process.env.ULTRAHUMAN_API_TOKEN;
-      const emailMatch = stored?.scopes?.match(/email:(\S+)/);
-      const email = emailMatch?.[1] ?? process.env.ULTRAHUMAN_EMAIL;
-
-      if (!token || !email) {
-        throw new Error("Ultrahuman API token and email required");
+      if (!stored) {
+        throw new Error(
+          "No Ultrahuman personal API token found. Connect Ultrahuman in Data Sources.",
+        );
       }
-      client = new UltrahumanClient(token, email, this.#fetchFn);
+      client = new UltrahumanClient(stored.accessToken, undefined, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

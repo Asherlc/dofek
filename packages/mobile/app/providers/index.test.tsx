@@ -283,6 +283,7 @@ const mockInvalidateActiveSyncs = vi.fn();
 const mockInvalidateActiveImports = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockCredentialSignIn = vi.fn();
+const mockTokenConnect = vi.fn();
 const mockGarminSignIn = vi.fn();
 const mockWhoopSignIn = vi.fn();
 const mockWhoopVerifyCode = vi.fn();
@@ -312,6 +313,9 @@ vi.mock("../../lib/trpc", () => ({
     },
     credentialAuth: {
       signIn: { useMutation: () => ({ mutateAsync: mockCredentialSignIn }) },
+    },
+    tokenAuth: {
+      connect: { useMutation: () => ({ mutateAsync: mockTokenConnect }) },
     },
     garminAuth: {
       signIn: { useMutation: () => ({ mutateAsync: mockGarminSignIn }) },
@@ -371,6 +375,19 @@ const credentialProvider = {
   id: "eight-sleep",
   name: "Eight Sleep",
   authType: "credential",
+  authorized: false,
+  importOnly: false,
+  lastSyncedAt: null,
+};
+
+const tokenProvider = {
+  id: "wger",
+  name: "Wger",
+  authType: "token",
+  tokenAuth: {
+    label: "JWT refresh token",
+    instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+  },
   authorized: false,
   importOnly: false,
   lastSyncedAt: null,
@@ -941,6 +958,7 @@ describe("ProvidersScreen", () => {
     mockSyncStatusFetch.mockReset();
     mockUseRefresh.mockClear();
     mockCredentialSignIn.mockReset();
+    mockTokenConnect.mockReset();
     mockGarminSignIn.mockReset();
     mockWhoopSignIn.mockReset();
     mockWhoopVerifyCode.mockReset();
@@ -1747,6 +1765,47 @@ describe("ProvidersScreen", () => {
         providerId: "eight-sleep",
         username: "user@test.com",
         password: "secret123",
+      });
+    });
+  });
+
+  it("opens the server-described personal token flow", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [tokenProvider],
+      isLoading: false,
+    });
+
+    await renderProvidersScreen();
+
+    const providerCard = within(screen.getByTestId("provider-card-wger"));
+    fireEvent.click(providerCard.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Connect Wger")).toBeTruthy();
+      expect(screen.getByPlaceholderText("JWT refresh token")).toBeTruthy();
+    });
+  });
+
+  it("personal token auth calls the token connection mutation", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [tokenProvider],
+      isLoading: false,
+    });
+    mockTokenConnect.mockResolvedValue({ success: true });
+    await renderProvidersScreen();
+
+    fireEvent.click(within(screen.getByTestId("provider-card-wger")).getByText("Connect"));
+    fireEvent.change(screen.getByPlaceholderText("JWT refresh token"), {
+      target: { value: "personal-refresh" },
+    });
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Connect Wger" }),
+    );
+
+    await waitFor(() => {
+      expect(mockTokenConnect).toHaveBeenCalledWith({
+        providerId: "wger",
+        token: "personal-refresh",
       });
     });
   });

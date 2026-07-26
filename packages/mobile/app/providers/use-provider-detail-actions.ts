@@ -14,6 +14,7 @@ interface ProviderRecord {
   id: string;
   name: string;
   authType: string;
+  tokenAuth?: { label: string; instructionsUrl: string } | null;
   authorized: boolean;
   importOnly: boolean;
   pushOnly: boolean;
@@ -25,6 +26,7 @@ export interface DisplayProvider {
   id: string;
   name: string;
   authType: string;
+  tokenAuth?: { label: string; instructionsUrl: string } | null;
   authorized: boolean;
   importOnly: boolean;
   pushOnly: boolean;
@@ -36,14 +38,22 @@ interface CredentialAuthProvider {
   name: string;
 }
 
-interface ProviderDetailModals {
+interface TokenAuthProvider extends CredentialAuthProvider {
+  label: string;
+  instructionsUrl: string;
+}
+
+export interface ProviderDetailModals {
   credentialAuthProvider: CredentialAuthProvider | null;
+  tokenAuthProvider: TokenAuthProvider | null;
   whoopAuthOpen: boolean;
   garminAuthOpen: boolean;
   closeCredentialAuth: () => void;
+  closeTokenAuth: () => void;
   closeWhoopAuth: () => void;
   closeGarminAuth: () => void;
   handleCredentialSuccess: () => void;
+  handleTokenSuccess: () => void;
   handleWhoopSuccess: () => void;
   handleGarminSuccess: () => void;
 }
@@ -79,6 +89,7 @@ export function useProviderDetailActions(
   const [syncProgress, setSyncProgress] = useState<number | null>(null);
   const [credentialAuthProvider, setCredentialAuthProvider] =
     useState<CredentialAuthProvider | null>(null);
+  const [tokenAuthProvider, setTokenAuthProvider] = useState<TokenAuthProvider | null>(null);
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
   const [garminAuthOpen, setGarminAuthOpen] = useState(false);
 
@@ -228,6 +239,16 @@ export function useProviderDetailActions(
       case "credential":
         setCredentialAuthProvider({ id: displayProvider.id, name: displayProvider.name });
         break;
+      case "token":
+        if (displayProvider.tokenAuth) {
+          setTokenAuthProvider({
+            id: displayProvider.id,
+            name: displayProvider.name,
+            label: displayProvider.tokenAuth.label,
+            instructionsUrl: displayProvider.tokenAuth.instructionsUrl,
+          });
+        }
+        break;
       case "custom:whoop":
         setWhoopAuthOpen(true);
         break;
@@ -311,6 +332,10 @@ export function useProviderDetailActions(
     setCredentialAuthProvider(null);
   }, []);
 
+  const closeTokenAuth = useCallback(() => {
+    setTokenAuthProvider(null);
+  }, []);
+
   const closeWhoopAuth = useCallback(() => {
     setWhoopAuthOpen(false);
   }, []);
@@ -321,6 +346,11 @@ export function useProviderDetailActions(
 
   const handleCredentialSuccess = useCallback(() => {
     setCredentialAuthProvider(null);
+    trpcUtils.sync.providers.invalidate();
+  }, [trpcUtils]);
+
+  const handleTokenSuccess = useCallback(() => {
+    setTokenAuthProvider(null);
     trpcUtils.sync.providers.invalidate();
   }, [trpcUtils]);
 
@@ -354,12 +384,15 @@ export function useProviderDetailActions(
     handleFullSync,
     modals: {
       credentialAuthProvider,
+      tokenAuthProvider,
       whoopAuthOpen,
       garminAuthOpen,
       closeCredentialAuth,
+      closeTokenAuth,
       closeWhoopAuth,
       closeGarminAuth,
       handleCredentialSuccess,
+      handleTokenSuccess,
       handleWhoopSuccess,
       handleGarminSuccess,
     },

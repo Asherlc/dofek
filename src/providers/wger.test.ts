@@ -55,6 +55,7 @@ vi.mock("../db/tokens.ts", () => ({
     scopes: null,
   })),
   saveTokens: vi.fn(async () => {}),
+  deleteTokens: vi.fn(async () => {}),
 }));
 
 vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
@@ -71,13 +72,17 @@ vi.mock("../db/metric-stream-writer.ts", () => ({
 }));
 
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { loadTokens } from "../db/tokens.ts";
-import {
-  parseWgerWeightEntry,
-  parseWgerWorkoutSession,
-  WgerProvider,
-  wgerOAuthConfig,
-} from "./wger.ts";
+import { loadTokens, saveTokens } from "../db/tokens.ts";
+import { createMockDatabase } from "./test-helpers.ts";
+import { parseWgerWeightEntry, parseWgerWorkoutSession, WgerProvider } from "./wger.ts";
+
+function fakeJwt(expirationEpochSeconds: number): string {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ exp: expirationEpochSeconds })).toString(
+    "base64url",
+  );
+  return `${header}.${payload}.signature`;
+}
 
 describe("parseWgerWorkoutSession", () => {
   it("parses a session with comment", () => {
@@ -136,27 +141,14 @@ describe("parseWgerWeightEntry", () => {
     const parsed = parseWgerWeightEntry({ id: 1, date: "2026-03-01", weight: "80" });
     expect(parsed.weightKg).toBe(80);
   });
-});
 
-describe("wgerOAuthConfig", () => {
-  const originalEnv = { ...process.env };
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns null when env vars missing", () => {
-    delete process.env.WGER_CLIENT_ID;
-    delete process.env.WGER_CLIENT_SECRET;
-    expect(wgerOAuthConfig()).toBeNull();
-  });
-
-  it("returns config when set", () => {
-    process.env.WGER_CLIENT_ID = "id";
-    process.env.WGER_CLIENT_SECRET = "secret";
-    const config = wgerOAuthConfig();
-    expect(config?.clientId).toBe("id");
-    expect(config?.authorizeUrl).toContain("wger.de");
-    expect(config?.scopes).toContain("read");
+  it("preserves decimal precision", () => {
+    const parsed = parseWgerWeightEntry({
+      id: 200,
+      date: "2026-03-01",
+      weight: "82.123456",
+    });
+    expect(parsed.weightKg).toBeCloseTo(82.123456);
   });
 });
 
@@ -166,28 +158,34 @@ describe("WgerProvider", () => {
     process.env = { ...originalEnv };
   });
 
-  it("validate checks env vars", () => {
+  it("is available without deployment OAuth credentials", () => {
     delete process.env.WGER_CLIENT_ID;
     delete process.env.WGER_CLIENT_SECRET;
-    expect(new WgerProvider().validate()).toContain("WGER_CLIENT_ID");
-    process.env.WGER_CLIENT_ID = "id";
-    expect(new WgerProvider().validate()).toContain("WGER_CLIENT_SECRET");
-    process.env.WGER_CLIENT_SECRET = "secret";
     expect(new WgerProvider().validate()).toBeNull();
   });
 
-  it("authSetup returns config", () => {
-    process.env.WGER_CLIENT_ID = "id";
-    process.env.WGER_CLIENT_SECRET = "secret";
-    const setup = new WgerProvider().authSetup();
-    expect(setup.oauthConfig?.clientId).toBe("id");
-    expect(setup.apiBaseUrl).toContain("wger.de");
-  });
+  it("exchanges a user-minted refresh token for a rotating JWT pair", async () => {
+    const expiresAtSeconds = Math.floor(Date.now() / 1000) + 600;
+    const access = fakeJwt(expiresAtSeconds);
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      expect(String(input)).toBe("https://wger.de/api/v2/token/refresh");
+      expect(init?.method).toBe("POST");
+      expect(new URLSearchParams(String(init?.body)).get("refresh")).toBe("personal-refresh");
+      return Response.json({ access, refresh: "rotated-refresh" });
+    });
+    const setup = new WgerProvider(mockFetch).authSetup();
 
-  it("authSetup throws when env vars missing", () => {
-    delete process.env.WGER_CLIENT_ID;
-    delete process.env.WGER_CLIENT_SECRET;
-    expect(() => new WgerProvider().authSetup()).toThrow();
+    expect(setup.oauthConfig).toBeUndefined();
+    expect(setup.manualToken).toMatchObject({
+      label: "JWT refresh token",
+      instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+    });
+    await expect(setup.manualToken?.exchangeToken("personal-refresh")).resolves.toEqual({
+      accessToken: access,
+      refreshToken: "rotated-refresh",
+      expiresAt: new Date(expiresAtSeconds * 1000),
+      scopes: "read",
+    });
   });
 
   it("sync returns error when no tokens", async () => {
@@ -221,6 +219,45 @@ describe("WgerProvider", () => {
     );
     expect(result.errors.length).toBeGreaterThan(0);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("rotates an expired stored refresh token before syncing", async () => {
+    const expiresAtSeconds = Math.floor(Date.now() / 1000) + 600;
+    const access = fakeJwt(expiresAtSeconds);
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "expired-access",
+      refreshToken: "stored-refresh",
+      expiresAt: new Date("2020-01-01T00:00:00Z"),
+      scopes: "read",
+    });
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      if (String(input).endsWith("/token/refresh")) {
+        expect(new URLSearchParams(String(init?.body)).get("refresh")).toBe("stored-refresh");
+        return Response.json({ access, refresh: "rotated-refresh" });
+      }
+      if (String(input).includes("/workoutsession/")) {
+        return Response.json({ count: 0, next: null, previous: null, results: [] });
+      }
+      if (String(input).includes("/weightentry/")) {
+        return Response.json({ count: 0, next: null, previous: null, results: [] });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const { db } = createMockDatabase();
+
+    const result = await new WgerProvider(mockFetch).sync(
+      new SyncRun({ db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(saveTokens).toHaveBeenCalledWith(
+      db,
+      "wger",
+      expect.objectContaining({
+        accessToken: access,
+        refreshToken: "rotated-refresh",
+      }),
+    );
   });
 
   it("skips workout sessions after the sync window end", async () => {
@@ -556,17 +593,15 @@ describe("WgerProvider — rate-limit aware fetch wiring", () => {
   });
 
   it("surfaces a 429 as a ProviderRateLimitError tagged with providerId 'wger'", async () => {
-    process.env.WGER_CLIENT_ID = "test-id";
-    process.env.WGER_CLIENT_SECRET = "test-secret";
-
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> =>
       new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } });
 
     const provider = new WgerProvider(mockFetch);
     const setup = provider.authSetup();
-    expect(setup.exchangeCode).toBeTypeOf("function");
-    if (!setup.exchangeCode) throw new Error("expected exchangeCode");
-    const err = await setup.exchangeCode("any-code").catch((caught: unknown) => caught);
+    if (!setup.manualToken) throw new Error("expected manualToken");
+    const err = await setup.manualToken
+      .exchangeToken("refresh-token")
+      .catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
     if (err instanceof ProviderRateLimitError) {
       expect(err.providerId).toBe("wger");

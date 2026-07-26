@@ -8,6 +8,7 @@ export class ProviderModel {
   readonly name: string;
   readonly importOnly: boolean;
   readonly authType: string;
+  readonly tokenAuth: { label: string; instructionsUrl: string } | null;
   readonly isConnected: boolean;
   readonly lastSyncedAt: string | null;
 
@@ -25,6 +26,7 @@ export class ProviderModel {
     this.id = provider.id;
     this.name = provider.name;
     this.importOnly = provider.importOnly === true;
+    this.tokenAuth = null;
 
     let authType = "none";
     if (this.importOnly) {
@@ -39,6 +41,20 @@ export class ProviderModel {
             authType = "oauth1";
           } else if ("oauthConfig" in setup && setup.oauthConfig) {
             authType = "oauth";
+          } else if (
+            "manualToken" in setup &&
+            typeof setup.manualToken === "object" &&
+            setup.manualToken !== null &&
+            "label" in setup.manualToken &&
+            typeof setup.manualToken.label === "string" &&
+            "instructionsUrl" in setup.manualToken &&
+            typeof setup.manualToken.instructionsUrl === "string"
+          ) {
+            authType = "token";
+            this.tokenAuth = {
+              label: setup.manualToken.label,
+              instructionsUrl: setup.manualToken.instructionsUrl,
+            };
           }
         }
       } catch {

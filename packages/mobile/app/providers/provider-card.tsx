@@ -17,6 +17,7 @@ export interface Provider {
   enabled: boolean;
   authStatus: AuthStatus;
   authType: string;
+  tokenAuth?: { label: string; instructionsUrl: string } | null;
   lastSyncAt: string | null;
   importOnly: boolean;
   pushOnly: boolean;

@@ -475,7 +475,8 @@ describe("cyclingAnalyticsOAuthConfig", () => {
     expect(config).not.toBeNull();
     expect(config?.clientId).toBe("test-id");
     expect(config?.clientSecret).toBe("test-secret");
-    expect(config?.scopes).toEqual([]);
+    expect(config?.scopes).toEqual(["read_rides"]);
+    expect(config?.scopeSeparator).toBe(",");
   });
 
   it("uses custom OAUTH_REDIRECT_URI when set", () => {
@@ -501,21 +502,9 @@ describe("CyclingAnalyticsProvider", () => {
     process.env = { ...originalEnv };
   });
 
-  it("validate returns error when CYCLING_ANALYTICS_CLIENT_ID is missing", () => {
+  it("is available without deployment OAuth credentials", () => {
     delete process.env.CYCLING_ANALYTICS_CLIENT_ID;
     delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
-    expect(new CyclingAnalyticsProvider().validate()).toContain("CYCLING_ANALYTICS_CLIENT_ID");
-  });
-
-  it("validate returns error when CYCLING_ANALYTICS_CLIENT_SECRET is missing", () => {
-    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
-    delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
-    expect(new CyclingAnalyticsProvider().validate()).toContain("CYCLING_ANALYTICS_CLIENT_SECRET");
-  });
-
-  it("validate returns null when both are set", () => {
-    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
-    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
     expect(new CyclingAnalyticsProvider().validate()).toBeNull();
   });
 
@@ -528,10 +517,26 @@ describe("CyclingAnalyticsProvider", () => {
     expect(setup.apiBaseUrl).toContain("cyclinganalytics.com");
   });
 
-  it("authSetup throws when env vars are missing", () => {
+  it("offers a personal access token flow when deployment OAuth is not configured", async () => {
     delete process.env.CYCLING_ANALYTICS_CLIENT_ID;
     delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
-    expect(() => new CyclingAnalyticsProvider().authSetup()).toThrow("CYCLING_ANALYTICS_CLIENT_ID");
+    const fetchFn = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      expect(String(input)).toBe("https://www.cyclinganalytics.com/api/me/rides?limit=1");
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer personal-token");
+      return Response.json({ rides: [] });
+    });
+    const setup = new CyclingAnalyticsProvider(fetchFn).authSetup();
+
+    expect(setup.oauthConfig).toBeUndefined();
+    expect(setup.manualToken).toMatchObject({
+      label: "Personal API token",
+      instructionsUrl: "https://www.cyclinganalytics.com/developer/api/authentication",
+    });
+    await expect(setup.manualToken?.exchangeToken("personal-token")).resolves.toMatchObject({
+      accessToken: "personal-token",
+      refreshToken: null,
+      scopes: "read_rides",
+    });
   });
 
   it("sync returns error when no tokens", async () => {

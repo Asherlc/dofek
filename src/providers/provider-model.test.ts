@@ -49,6 +49,30 @@ describe("ProviderModel", () => {
     expect(model.isConnected).toBe(false);
   });
 
+  it("exposes manual token connection metadata", () => {
+    const model = new ProviderModel(
+      {
+        id: "personal-token-provider",
+        name: "Personal Token Provider",
+        authSetup: () => ({
+          manualToken: {
+            label: "Refresh token",
+            instructionsUrl: "https://example.com/settings/api-key",
+            exchangeToken: async () => ({}),
+          },
+        }),
+      },
+      new Set(),
+    );
+
+    expect(model.authType).toBe("token");
+    expect(model.isConnected).toBe(false);
+    expect(model.tokenAuth).toEqual({
+      label: "Refresh token",
+      instructionsUrl: "https://example.com/settings/api-key",
+    });
+  });
+
   it("applies customAuthOverrides when provided", () => {
     const model = new ProviderModel(
       { id: "whoop", name: "WHOOP", authSetup: () => undefined },

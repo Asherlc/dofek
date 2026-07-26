@@ -46,6 +46,12 @@ const syncProviderRowOutputSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   authType: z.string(),
+  tokenAuth: z
+    .object({
+      label: z.string(),
+      instructionsUrl: z.url(),
+    })
+    .nullable(),
   authorized: z.boolean(),
   lastSyncedAt: z.string().nullable(),
   importOnly: z.boolean(),
@@ -224,6 +230,7 @@ const syncRouterProcedures = {
           id: model.id,
           name: model.name,
           authType: model.authType,
+          tokenAuth: model.tokenAuth,
           importOnly: model.importOnly,
         };
       })
@@ -272,6 +279,7 @@ const syncRouterProcedures = {
             name: model.name,
             description: null,
             authType: model.authType,
+            tokenAuth: model.tokenAuth,
             authorized: model.isConnected,
             lastSyncedAt: model.lastSyncedAt,
             importOnly: model.importOnly,
@@ -286,6 +294,7 @@ const syncRouterProcedures = {
           name: provider.name,
           description: provider.description,
           authType: provider.authType,
+          tokenAuth: null,
           authorized: connectionSet.has(provider.id),
           lastSyncedAt: null,
           importOnly: false,

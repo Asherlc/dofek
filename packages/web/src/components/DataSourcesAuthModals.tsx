@@ -123,6 +123,117 @@ export function CredentialAuthModal({
   );
 }
 
+// -- Personal Token Auth Modal --
+
+export function TokenAuthModal({
+  providerId,
+  providerName,
+  tokenLabel,
+  instructionsUrl,
+  onClose,
+  onSuccess,
+}: {
+  providerId: string;
+  providerName: string;
+  tokenLabel: string;
+  instructionsUrl: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [token, setToken] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const tokenRef = useRef<HTMLInputElement>(null);
+  const connectMutation = trpc.tokenAuth.connect.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+
+  const handleConnect = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setError("");
+      setLoading(true);
+      try {
+        await connectMutation.mutateAsync({ providerId, token });
+        onSuccess();
+      } catch (caught: unknown) {
+        captureException(caught, {
+          operation: "tokenAuth.connect",
+          providerId,
+        });
+        setError(caught instanceof Error ? caught.message : "Token connection failed");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [connectMutation, onSuccess, providerId, token],
+  );
+
+  return (
+    <ModalDialog
+      open
+      onClose={onClose}
+      initialFocusRef={tokenRef}
+      contentClassName="bg-surface-solid border border-border-strong rounded-xl p-6 w-[calc(100%-2rem)] max-w-sm shadow-2xl"
+    >
+      <div className="flex items-center justify-between mb-4">
+        <ModalDialogTitle className="text-sm font-semibold text-foreground">
+          Connect {providerName}
+        </ModalDialogTitle>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-subtle hover:text-foreground text-lg leading-none p-1"
+          aria-label="Close"
+        >
+          &times;
+        </button>
+      </div>
+
+      <p className="mb-3 text-xs text-muted">
+        <a
+          href={instructionsUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="text-accent hover:underline"
+        >
+          Create a {tokenLabel}
+        </a>{" "}
+        in {providerName}, then paste it below.
+      </p>
+
+      {error && (
+        <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">{error}</div>
+      )}
+
+      <form onSubmit={handleConnect} className="space-y-3">
+        <div>
+          <label htmlFor={`${providerId}-token`} className="block text-xs text-muted mb-1">
+            {tokenLabel}
+          </label>
+          <input
+            ref={tokenRef}
+            id={`${providerId}-token`}
+            type="password"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            required
+            autoComplete="off"
+            className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+        >
+          {loading ? "Connecting..." : "Connect"}
+        </button>
+      </form>
+    </ModalDialog>
+  );
+}
+
 // -- Garmin Auth Modal --
 
 export function GarminAuthModal({

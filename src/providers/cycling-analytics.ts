@@ -13,6 +13,7 @@ import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
 import type { SyncDegradation } from "../sync/sync-degradation.ts";
+import { ProviderTokenRejectedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -116,7 +117,8 @@ export function cyclingAnalyticsOAuthConfig(host?: string): OAuthConfig | null {
     authorizeUrl: "https://www.cyclinganalytics.com/api/auth",
     tokenUrl: "https://www.cyclinganalytics.com/api/token",
     redirectUri: getOAuthRedirectUri(host),
-    scopes: [],
+    scopes: ["read_rides"],
+    scopeSeparator: ",",
   };
 }
 
@@ -134,9 +136,6 @@ export class CyclingAnalyticsProvider implements SyncProvider {
   }
 
   validate(): string | null {
-    if (!process.env.CYCLING_ANALYTICS_CLIENT_ID) return "CYCLING_ANALYTICS_CLIENT_ID is not set";
-    if (!process.env.CYCLING_ANALYTICS_CLIENT_SECRET)
-      return "CYCLING_ANALYTICS_CLIENT_SECRET is not set";
     return null;
   }
 
@@ -146,11 +145,48 @@ export class CyclingAnalyticsProvider implements SyncProvider {
 
   authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = cyclingAnalyticsOAuthConfig(options?.host);
-    if (!config) throw new Error("CYCLING_ANALYTICS_CLIENT_ID and CLIENT_SECRET required");
     const fetchFn = this.#fetchFn;
+    const manualToken = {
+      label: "Personal API token",
+      instructionsUrl: "https://www.cyclinganalytics.com/developer/api/authentication",
+      exchangeToken: async (token: string): Promise<TokenSet> => {
+        const response = await fetchFn(`${CYCLING_ANALYTICS_API_BASE}/me/rides?limit=1`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        });
+        if (response.status === 401 || response.status === 403) {
+          throw new ProviderTokenRejectedError(
+            this.name,
+            "Create a personal token with read_rides permission and try again.",
+          );
+        }
+        if (!response.ok) {
+          throw new Error(
+            `Cycling Analytics token validation failed (${response.status}). Try again.`,
+          );
+        }
+        return {
+          accessToken: token,
+          refreshToken: null,
+          expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+          scopes: "read_rides",
+        };
+      },
+    };
+
+    if (!config) {
+      return {
+        manualToken,
+        apiBaseUrl: CYCLING_ANALYTICS_API_BASE,
+      };
+    }
+
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      manualToken,
       apiBaseUrl: CYCLING_ANALYTICS_API_BASE,
     };
   }

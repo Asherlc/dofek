@@ -29,7 +29,6 @@ async function doRegisterProviders() {
       () => import("../providers/strong-csv.ts").then((m) => new m.StrongCsvProvider()),
     ],
     ["polar", () => import("../providers/polar/provider.ts").then((m) => new m.PolarProvider())],
-    ["fitbit", () => import("../providers/fitbit/provider.ts").then((m) => new m.FitbitProvider())],
     ["garmin", () => import("../providers/garmin/provider.ts").then((m) => new m.GarminProvider())],
     [
       "garmin-dump",
@@ -56,14 +55,7 @@ async function doRegisterProviders() {
       "ultrahuman",
       () => import("../providers/ultrahuman.ts").then((m) => new m.UltrahumanProvider()),
     ],
-    [
-      "mapmyfitness",
-      () => import("../providers/mapmyfitness.ts").then((m) => new m.MapMyFitnessProvider()),
-    ],
-    ["suunto", () => import("../providers/suunto.ts").then((m) => new m.SuuntoProvider())],
-    ["coros", () => import("../providers/coros.ts").then((m) => new m.CorosProvider())],
     ["concept2", () => import("../providers/concept2.ts").then((m) => new m.Concept2Provider())],
-    ["komoot", () => import("../providers/komoot.ts").then((m) => new m.KomootProvider())],
     ["xert", () => import("../providers/xert.ts").then((m) => new m.XertProvider())],
     [
       "cycling-analytics",
@@ -71,7 +63,6 @@ async function doRegisterProviders() {
         import("../providers/cycling-analytics.ts").then((m) => new m.CyclingAnalyticsProvider()),
     ],
     ["wger", () => import("../providers/wger.ts").then((m) => new m.WgerProvider())],
-    ["decathlon", () => import("../providers/decathlon.ts").then((m) => new m.DecathlonProvider())],
     ["velohero", () => import("../providers/velohero.ts").then((m) => new m.VeloHeroProvider())],
     [
       "auto-supplements",

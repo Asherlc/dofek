@@ -2,12 +2,10 @@ import { CUSTOM_AUTH_SYNC_PROVIDER_IDS } from "../lib/custom-auth-providers.ts";
 import type { Provider, ProviderAuthSetup, ProviderAuthType } from "./types.ts";
 
 /**
- * Sync providers that predated the per-user auth requirement and still use
- * deployment-wide user credentials (env vars) instead of a Connect flow.
- *
- * Do not add new provider IDs here — implement authSetup() instead.
+ * No provider may use deployment-wide user credentials. Keep this exported
+ * empty set while downstream policy checks migrate away from the legacy name.
  */
-export const LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS = new Set(["ultrahuman"]);
+export const LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS = new Set<string>();
 
 /**
  * Sync providers that read/write user-owned data without an external account.
@@ -32,6 +30,7 @@ function getAuthTypeFromSetup(setup: ProviderAuthSetup): ProviderAuthType | "non
   if (setup.automatedLogin) return "credential";
   if (setup.oauth1Flow) return "oauth1";
   if (setup.oauthConfig && setup.exchangeCode) return "oauth";
+  if (setup.manualToken) return "token";
   return "none";
 }
 

@@ -217,41 +217,18 @@ describe("UltrahumanProvider", () => {
   });
 
   describe("validate()", () => {
-    it("returns error when ULTRAHUMAN_API_TOKEN is missing", () => {
+    it("does not require deployment-wide user credentials", () => {
       delete process.env.ULTRAHUMAN_API_TOKEN;
       delete process.env.ULTRAHUMAN_EMAIL;
-      const provider = new UltrahumanProvider();
-      expect(provider.validate()).toContain("ULTRAHUMAN_API_TOKEN");
-    });
-
-    it("returns error when ULTRAHUMAN_EMAIL is missing", () => {
-      process.env.ULTRAHUMAN_API_TOKEN = "test-token";
-      delete process.env.ULTRAHUMAN_EMAIL;
-      const provider = new UltrahumanProvider();
-      expect(provider.validate()).toContain("ULTRAHUMAN_EMAIL");
-    });
-
-    it("returns null when both env vars are set", () => {
-      process.env.ULTRAHUMAN_API_TOKEN = "test-token";
-      process.env.ULTRAHUMAN_EMAIL = "user@example.com";
       const provider = new UltrahumanProvider();
       expect(provider.validate()).toBeNull();
-    });
-
-    it("checks ULTRAHUMAN_API_TOKEN before ULTRAHUMAN_EMAIL", () => {
-      delete process.env.ULTRAHUMAN_API_TOKEN;
-      delete process.env.ULTRAHUMAN_EMAIL;
-      const provider = new UltrahumanProvider();
-      const result = provider.validate();
-      expect(result).toContain("ULTRAHUMAN_API_TOKEN");
-      expect(result).not.toContain("ULTRAHUMAN_EMAIL");
     });
   });
 
   describe("auth", () => {
-    it("does not have authSetup (uses server-side env var auth)", () => {
+    it("uses per-user personal token auth", () => {
       const provider = new UltrahumanProvider();
-      expect("authSetup" in provider).toBe(false);
+      expect(provider.authSetup().manualToken?.label).toBe("Personal API token");
     });
 
     it("accepts custom fetch function", () => {

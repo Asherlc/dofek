@@ -58,7 +58,6 @@ async function doRegisterProviders() {
       () => import("dofek/providers/strong-csv").then((m) => new m.StrongCsvProvider()),
     ],
     ["polar", () => import("dofek/providers/polar").then((m) => new m.PolarProvider())],
-    ["fitbit", () => import("dofek/providers/fitbit").then((m) => new m.FitbitProvider())],
     ["garmin", () => import("dofek/providers/garmin").then((m) => new m.GarminProvider())],
     [
       "garmin-dump",
@@ -92,14 +91,7 @@ async function doRegisterProviders() {
           (amazfitZeppModule) => new amazfitZeppModule.AmazfitZeppProvider(),
         ),
     ],
-    [
-      "mapmyfitness",
-      () => import("dofek/providers/mapmyfitness").then((m) => new m.MapMyFitnessProvider()),
-    ],
-    ["suunto", () => import("dofek/providers/suunto").then((m) => new m.SuuntoProvider())],
-    ["coros", () => import("dofek/providers/coros").then((m) => new m.CorosProvider())],
     ["concept2", () => import("dofek/providers/concept2").then((m) => new m.Concept2Provider())],
-    ["komoot", () => import("dofek/providers/komoot").then((m) => new m.KomootProvider())],
     ["xert", () => import("dofek/providers/xert").then((m) => new m.XertProvider())],
     [
       "cycling-analytics",
@@ -107,7 +99,6 @@ async function doRegisterProviders() {
         import("dofek/providers/cycling-analytics").then((m) => new m.CyclingAnalyticsProvider()),
     ],
     ["wger", () => import("dofek/providers/wger").then((m) => new m.WgerProvider())],
-    ["decathlon", () => import("dofek/providers/decathlon").then((m) => new m.DecathlonProvider())],
     ["velohero", () => import("dofek/providers/velohero").then((m) => new m.VeloHeroProvider())],
     [
       "auto-supplements",

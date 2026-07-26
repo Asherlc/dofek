@@ -131,6 +131,17 @@ describe("UltrahumanClient", () => {
     const result = await client.getDailyMetrics("2026-03-01");
     expect(result.status).toBe(200);
   });
+
+  it("omits the email query for the token owner's own data", async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      expect(String(input)).toBe(
+        "https://partner.ultrahuman.com/api/v1/partner/daily_metrics?date=2026-03-01",
+      );
+      return Response.json({ data: { metrics: {} }, error: null, status: 200 });
+    });
+
+    await new UltrahumanClient("token", undefined, mockFetch).getDailyMetrics("2026-03-01");
+  });
 });
 
 describe("UltrahumanProvider", () => {
@@ -139,19 +150,31 @@ describe("UltrahumanProvider", () => {
     process.env = { ...originalEnv };
   });
 
-  it("validate checks env vars", () => {
+  it("is available without deployment-wide user credentials", () => {
     delete process.env.ULTRAHUMAN_API_TOKEN;
     delete process.env.ULTRAHUMAN_EMAIL;
-    expect(new UltrahumanProvider().validate()).toContain("ULTRAHUMAN_API_TOKEN");
-    process.env.ULTRAHUMAN_API_TOKEN = "token";
-    expect(new UltrahumanProvider().validate()).toContain("ULTRAHUMAN_EMAIL");
-    process.env.ULTRAHUMAN_EMAIL = "email@test.com";
     expect(new UltrahumanProvider().validate()).toBeNull();
   });
 
-  it("does not have authSetup (uses server-side env var auth)", () => {
-    const provider = new UltrahumanProvider();
-    expect("authSetup" in provider).toBe(false);
+  it("validates and stores a personal API token for its owner", async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      expect(String(input)).toMatch(
+        /^https:\/\/partner\.ultrahuman\.com\/api\/v1\/partner\/daily_metrics\?date=\d{4}-\d{2}-\d{2}$/,
+      );
+      expect(new Headers(init?.headers).get("Authorization")).toBe("personal-token");
+      return Response.json({ data: { metrics: {} }, error: null, status: 200 });
+    });
+    const setup = new UltrahumanProvider(mockFetch).authSetup();
+
+    expect(setup.manualToken).toMatchObject({
+      label: "Personal API token",
+      instructionsUrl: "https://vision.ultrahuman.com/developer-docs",
+    });
+    await expect(setup.manualToken?.exchangeToken("personal-token")).resolves.toMatchObject({
+      accessToken: "personal-token",
+      refreshToken: null,
+      scopes: "self",
+    });
   });
 
   it("sync returns error when no tokens or env vars", async () => {

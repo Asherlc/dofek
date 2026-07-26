@@ -239,6 +239,7 @@ const mockSettingsGetGetData = vi.fn();
 const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
 const mockCaptureException = vi.fn();
+const mockTokenConnect = vi.fn();
 const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
   refreshing: false,
   onRefresh: vi.fn(),
@@ -278,6 +279,9 @@ vi.mock("../../lib/trpc", () => ({
     settings: {
       get: { useQuery: (...args: unknown[]) => mockSettingsGetQuery(...args) },
       set: { useMutation: () => ({ mutate: mockSettingsSetMutate, isPending: false }) },
+    },
+    tokenAuth: {
+      connect: { useMutation: () => ({ mutateAsync: mockTokenConnect }) },
     },
     useUtils: () => ({
       client: {},
@@ -341,6 +345,20 @@ const unauthorizedProvider = {
   id: "strava",
   name: "Strava",
   authType: "oauth",
+  authorized: false,
+  importOnly: false,
+  lastSyncedAt: null,
+  needsReauth: false,
+};
+
+const tokenProvider = {
+  id: "wger",
+  name: "Wger",
+  authType: "token",
+  tokenAuth: {
+    label: "JWT refresh token",
+    instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+  },
   authorized: false,
   importOnly: false,
   lastSyncedAt: null,
@@ -417,6 +435,7 @@ describe("ProviderDetailScreen", () => {
     mockPush.mockReset();
     mockUseLocalSearchParams.mockReturnValue({ id: "wahoo" });
     mockSyncMutateAsync.mockReset();
+    mockTokenConnect.mockReset();
     mockDataHealthQuery.mockReset();
     mockDisconnectMutateAsync.mockReset();
     mockDeletionStatusQuery.mockClear();
@@ -771,6 +790,27 @@ describe("ProviderDetailScreen", () => {
         expect(mockOpenBrowserAsync).toHaveBeenCalledWith(
           "https://test.example.com/auth/provider/strava?code=provider-handoff-code",
         );
+      });
+    });
+
+    it("opens and submits personal token auth for a token provider", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "wger" });
+      mockProvidersQuery.mockReturnValue({ data: [tokenProvider], isLoading: false });
+      mockTokenConnect.mockResolvedValue({ success: true });
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Connect"));
+      fireEvent.change(screen.getByPlaceholderText("JWT refresh token"), {
+        target: { value: "personal-refresh" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Connect Wger" }));
+
+      await waitFor(() => {
+        expect(mockTokenConnect).toHaveBeenCalledWith({
+          providerId: "wger",
+          token: "personal-refresh",
+        });
       });
     });
 

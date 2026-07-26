@@ -317,6 +317,46 @@ describe("syncRouter", () => {
   });
 
   describe("providers", () => {
+    it("returns manual token connection metadata", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "wger",
+          name: "Wger",
+          validate: () => null,
+          authSetup: () => ({
+            manualToken: {
+              label: "JWT refresh token",
+              instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+              exchangeToken: vi.fn(),
+            },
+          }),
+        },
+      ]);
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+      const wger = result.find((provider: { id: string }) => provider.id === "wger");
+
+      expect(wger).toMatchObject({
+        authType: "token",
+        authorized: false,
+        tokenAuth: {
+          label: "JWT refresh token",
+          instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+        },
+      });
+    });
+
     it("returns provider list with enabled/auth status", async () => {
       mockGetAllProviders.mockReturnValue([
         {
