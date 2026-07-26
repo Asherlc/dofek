@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { markProviderDataDeletionCompleted } from "../db/provider-data-deletion.ts";
 import { createProviderDataDeletionDependencies } from "./provider-data-deletion-dependencies.ts";
+import type { ProviderDataDeletionContinuationJobData } from "./queues.ts";
 import {
   enqueueProviderDataDeletionContinuation,
   enqueueProviderDeleteAnalyticsRefresh,
@@ -25,7 +26,7 @@ describe("createProviderDataDeletionDependencies", () => {
       query: vi.fn(async () => ({ json: async () => [] })),
     };
     const continuation = {
-      type: "provider-data-deletion" as const,
+      type: "provider-data-deletion",
       eventId: "30000000-0000-4000-8000-000000000003",
       generation: 2,
       providerId: "garmin",
@@ -37,7 +38,7 @@ describe("createProviderDataDeletionDependencies", () => {
         lastGeneration: 1,
         lastId: "10000000-0000-4000-8000-000000000001",
       },
-    };
+    } satisfies ProviderDataDeletionContinuationJobData;
 
     const dependencies = createProviderDataDeletionDependencies(database, clickHouseClient);
     await dependencies.enqueueContinuation(continuation);
