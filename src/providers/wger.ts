@@ -1,7 +1,6 @@
 import type { CanonicalActivityType } from "@dofek/training/training";
-import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
-import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
+import { z } from "zod";
+import type { TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import {
@@ -10,9 +9,10 @@ import {
 } from "../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider } from "../db/tokens.ts";
+import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
+import { ProviderTokenRejectedError, RefreshTokenRevokedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -21,7 +21,7 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./t
 // ============================================================
 
 const WGER_API_BASE = "https://wger.de/api/v2";
-const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const WGER_REFRESH_URL = `${WGER_API_BASE}/token/refresh`;
 
 interface WgerWorkoutSession {
   id: number;
@@ -44,6 +44,15 @@ interface WgerPaginatedResponse<T> {
   previous: string | null;
   results: T[];
 }
+
+const wgerRefreshResponseSchema = z.object({
+  access: z.string().min(1),
+  refresh: z.string().min(1),
+});
+
+const jwtPayloadSchema = z.object({
+  exp: z.number().int().positive(),
+});
 
 // ============================================================
 // Parsed types
@@ -91,22 +100,68 @@ export function parseWgerWeightEntry(entry: WgerWeightEntry): ParsedWgerWeightEn
 }
 
 // ============================================================
-// OAuth configuration
+// Personal token authentication
 // ============================================================
 
-export function wgerOAuthConfig(host?: string): OAuthConfig | null {
-  const clientId = process.env.WGER_CLIENT_ID;
-  const clientSecret = process.env.WGER_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
+function jwtExpiration(token: string): Date {
+  const encodedPayload = token.split(".")[1];
+  if (!encodedPayload) {
+    throw new Error("Wger returned an access token without a JWT payload");
+  }
 
+  let payload: unknown;
+  try {
+    payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+  } catch (error: unknown) {
+    throw new Error("Wger returned an invalid access-token JWT payload", { cause: error });
+  }
+  const parsed = jwtPayloadSchema.parse(payload);
+  return new Date(parsed.exp * 1000);
+}
+
+async function exchangeWgerRefreshToken(
+  refreshToken: string,
+  fetchFn: typeof globalThis.fetch,
+): Promise<TokenSet> {
+  const response = await fetchFn(WGER_REFRESH_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: new URLSearchParams({ refresh: refreshToken }).toString(),
+  });
+  if (response.status === 400 || response.status === 401 || response.status === 403) {
+    throw new ProviderTokenRejectedError(
+      "Wger",
+      "Create a new JWT refresh token in Wger's API key settings and try again.",
+    );
+  }
+  if (!response.ok) {
+    throw new Error(`Wger token refresh failed (${response.status}). Try again.`);
+  }
+
+  const body: unknown = await response.json();
+  const parsed = wgerRefreshResponseSchema.parse(body);
   return {
-    clientId,
-    clientSecret,
-    authorizeUrl: "https://wger.de/en/user/authorize",
-    tokenUrl: "https://wger.de/api/v2/token",
-    redirectUri: getOAuthRedirectUri(host),
-    scopes: ["read"],
+    accessToken: parsed.access,
+    refreshToken: parsed.refresh,
+    expiresAt: jwtExpiration(parsed.access),
+    scopes: "read",
   };
+}
+
+async function assertWgerDataResponse(response: Response): Promise<void> {
+  if (response.status === 401 || response.status === 403) {
+    throw new ProviderTokenRejectedError(
+      "Wger",
+      "Create a new JWT refresh token in Wger's API key settings and reconnect.",
+    );
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Wger API error (${response.status}): ${text}`);
+  }
 }
 
 // ============================================================
@@ -123,30 +178,48 @@ export class WgerProvider implements SyncProvider {
   }
 
   validate(): string | null {
-    if (!process.env.WGER_CLIENT_ID) return "WGER_CLIENT_ID is not set";
-    if (!process.env.WGER_CLIENT_SECRET) return "WGER_CLIENT_SECRET is not set";
     return null;
   }
 
-  authSetup(options?: { host?: string }): ProviderAuthSetup {
-    const config = wgerOAuthConfig(options?.host);
-    if (!config) throw new Error("WGER_CLIENT_ID and CLIENT_SECRET required");
+  authSetup(): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
-      oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      manualToken: {
+        label: "JWT refresh token",
+        instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+        exchangeToken: (token) => exchangeWgerRefreshToken(token, fetchFn),
+      },
       apiBaseUrl: WGER_API_BASE,
     };
   }
 
   async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    return resolveOAuthTokens({
-      db,
-      providerId: this.id,
-      providerName: this.name,
-      getOAuthConfig: () => wgerOAuthConfig(),
-      fetchFn: this.#fetchFn,
-    });
+    const tokens = await loadTokens(db, this.id);
+    if (!tokens) {
+      throw new Error(`No tokens found for ${this.name}. Connect ${this.name} in Data Sources.`);
+    }
+    if (tokens.expiresAt > new Date()) {
+      return tokens;
+    }
+    if (!tokens.refreshToken) {
+      throw new RefreshTokenRevokedError(this.name);
+    }
+
+    try {
+      const refreshed = await exchangeWgerRefreshToken(tokens.refreshToken, this.#fetchFn);
+      // Persist before using the rotated access token. If this write fails, the
+      // provider may already have blacklisted the prior refresh token; surface
+      // the failure and leave the stale row intact so a later rejected refresh
+      // records the normal reconnect-required state.
+      await saveTokens(db, this.id, refreshed);
+      return refreshed;
+    } catch (error: unknown) {
+      if (error instanceof ProviderTokenRejectedError) {
+        await deleteTokens(db, this.id);
+        throw new RefreshTokenRevokedError(this.name, { cause: error });
+      }
+      throw error;
+    }
   }
 
   async sync(run: SyncRun): Promise<SyncResult> {
@@ -191,10 +264,7 @@ export class WgerProvider implements SyncProvider {
                   Accept: "application/json",
                 },
               });
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`Wger API error (${response.status}): ${text}`);
-              }
+              await assertWgerDataResponse(response);
               const data: WgerPaginatedResponse<WgerWorkoutSession> = await response.json();
               return {
                 items: data.results ?? [],
@@ -283,10 +353,7 @@ export class WgerProvider implements SyncProvider {
                   Accept: "application/json",
                 },
               });
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`Wger API error (${response.status}): ${text}`);
-              }
+              await assertWgerDataResponse(response);
               const data: WgerPaginatedResponse<WgerWeightEntry> = await response.json();
               return {
                 items: data.results ?? [],

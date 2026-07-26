@@ -416,16 +416,38 @@ All credentials are stored in Infisical. The login page auto-discovers which pro
 
 ## Provider Configuration
 
-Each provider is enabled by adding its credentials to Infisical. OAuth providers also require a one-time browser authorization via the Data Sources page.
+Production registers provider flows only when users can complete the connection without unfinished
+vendor onboarding. App-level OAuth credentials belong in Infisical; personal tokens and account
+credentials are entered in Data Sources and stored per user.
 
-### Implemented Data Sources (31)
+### Provider Implementations Not Registered in Production
 
-The server registry currently has 30 providers in `packages/server/src/routers/sync-helpers.ts`. Apple Health is an additional upload/import data source exposed through the web and iOS clients rather than a registered scheduled provider.
+Provider IDs and modules remain available for historical data and future onboarding, but production
+does not register these integrations:
+
+- Fitbit must be rebuilt for the Google Health API before the legacy Fitbit Web API is turned down
+  in September 2026 ([Google Health API migration overview](https://developers.google.com/health/about)).
+- Suunto requires organization/partner approval and development and production subscriptions
+  ([Suunto API Zone onboarding](https://apizone.suunto.com/how-to-start)).
+- COROS issues credentials after developer onboarding
+  ([COROS API application](https://support.coros.com/hc/en-us/articles/17085887816340-Submitting-an-API-Application)).
+- Komoot does not offer a public API and selects integration partners
+  ([Komoot API support policy](https://support.komoot.com/hc/en-us/articles/10331570510618-komoot-API)).
+- MapMyFitness limits personal API access to paid MVP accounts and up to ten users
+  ([MapMyFitness developer portal](https://developer.mapmyfitness.com/)).
+- Decathlon requires an approved application registration before issuing client credentials
+  ([Decathlon login authorization guide](https://login-doc.decathlon.com/authorization.html)).
+
+### Production Data Sources (29)
+
+The server and worker registries currently load 28 providers. Apple Health is an additional
+upload/import data source exposed through the web and iOS clients rather than a registered scheduled
+provider.
 
 | Provider | Auth Type | Data Types | Required `.env` Variables |
 |----------|-----------|------------|--------------------------|
 | Apple Health | File import | HR, HRV, sleep, workouts, body, glucose, nutrition, walking, labs | None (upload `.zip`/`.xml` via web UI or share to iOS app) |
-| BodySpec | OAuth 2.0 | DEXA scans (body composition, bone density, visceral fat, RMR) | `BODYSPEC_CLIENT_ID`, `BODYSPEC_CLIENT_SECRET` |
+| [BodySpec](https://app.bodyspec.com/docs) | OAuth 2.0 with PKCE | DEXA scans (body composition, bone density, visceral fat, RMR) | None (BodySpec public client) |
 | Wahoo | OAuth 2.0 | Activities with FIT file parsing (GPS, power, HR, cadence, running dynamics) | `WAHOO_CLIENT_ID`, `WAHOO_CLIENT_SECRET` |
 | WHOOP | RE'd (Cognito) | Sleep, recovery, workouts, 6s HR streams, journal, strength sets | None (credentials entered in UI modal) |
 | Peloton | Automated login | Workouts with performance metrics | None (credentials entered in UI modal) |
@@ -435,25 +457,23 @@ The server registry currently has 30 providers in `packages/server/src/routers/s
 | Polar | OAuth 2.0 | Exercises, sleep, HR, Nightly Recharge | `POLAR_CLIENT_ID`, `POLAR_CLIENT_SECRET` |
 | Garmin | RE'd (SSO) | Activities, sleep, daily metrics, body battery, stress, HRV, training | `GARMIN_EMAIL`, `GARMIN_PASSWORD` |
 | Strava | OAuth 2.0 | Activities | `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET` |
-| Fitbit | OAuth 2.0 | HR, sleep, SpO2, HRV, temperature, VO2 max, activity | `FITBIT_CLIENT_ID`, `FITBIT_CLIENT_SECRET` |
 | Oura | OAuth 2.0 | Sleep, readiness, activity, SpO2, VO2 max, workouts, stress, resilience | `OURA_CLIENT_ID`, `OURA_CLIENT_SECRET` |
 | Eight Sleep | RE'd (hardcoded creds) | Sleep trends (HR, HRV, respiratory, temperature, stages) | `EIGHT_SLEEP_EMAIL`, `EIGHT_SLEEP_PASSWORD` |
 | Zwift | RE'd (Keycloak) | Activities with power/HR/cadence, FTP | `ZWIFT_USERNAME`, `ZWIFT_PASSWORD` |
 | TrainerRoad | RE'd (CSRF cookies) | Activities with power data, career stats | `TRAINERROAD_USERNAME`, `TRAINERROAD_PASSWORD` |
-| Suunto | OAuth 2.0 | Workouts | `SUUNTO_CLIENT_ID`, `SUUNTO_CLIENT_SECRET`, `SUUNTO_SUBSCRIPTION_KEY` |
-| COROS | OAuth 2.0 | Activities | `COROS_CLIENT_ID`, `COROS_CLIENT_SECRET` |
 | Concept2 | OAuth 2.0 | Rowing results | `CONCEPT2_CLIENT_ID`, `CONCEPT2_CLIENT_SECRET` |
-| Komoot | OAuth 2.0 | Tours | `KOMOOT_CLIENT_ID`, `KOMOOT_CLIENT_SECRET` |
-| MapMyFitness | OAuth 2.0 | Workouts | `MAPMYFITNESS_CLIENT_ID`, `MAPMYFITNESS_CLIENT_SECRET` |
-| Ultrahuman | RE'd | Sleep, activity, daily metrics | `ULTRAHUMAN_EMAIL`, `ULTRAHUMAN_PASSWORD` |
+| [Ultrahuman](https://vision.ultrahuman.com/developer-docs) | Personal API token | Sleep, activity, daily metrics | None (token entered in UI) |
 | Amazfit/Zepp | RE'd | Steps, distance, sleep, minute-level heart rate | None (credentials entered in UI modal; optional `ZEPP_API_BASE_URL`) |
 | VeloHero | RE'd (SSO) | Workouts with HR/power/cadence | `VELOHERO_SSO_KEY` |
 | Xert | OAuth 2.0 | Activities | `XERT_CLIENT_ID`, `XERT_CLIENT_SECRET` |
-| Cycling Analytics | OAuth 2.0 | Rides | `CYCLING_ANALYTICS_CLIENT_ID`, `CYCLING_ANALYTICS_CLIENT_SECRET` |
-| Wger | OAuth 2.0 | Workouts | `WGER_CLIENT_ID`, `WGER_CLIENT_SECRET` |
-| Decathlon | OAuth 2.0 | Activities | `DECATHLON_CLIENT_ID`, `DECATHLON_CLIENT_SECRET` |
+| [Cycling Analytics](https://www.cyclinganalytics.com/developer/api/authentication) | Personal API token; optional OAuth 2.0 | Rides | None (token entered in UI); optional `CYCLING_ANALYTICS_CLIENT_ID`, `CYCLING_ANALYTICS_CLIENT_SECRET` |
+| [Wger](https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens) | JWT refresh token | Workouts | None (token entered in UI) |
 | Strong | File import | Strength training history | None (upload `.csv` via web UI or share to iOS app) |
 | Cronometer | File import | Nutrition | None (upload `.csv` via web UI or share to iOS app) |
+| Garmin account export | File import | Activities and body measurements | None (upload Garmin export archive) |
+| FIT file | File import | Activities and sensor streams | None (upload `.fit`) |
+| Kaya | File import | Climbing activities and grades | None (upload `.csv`) |
+| Zepp OS App | File import | Watch inertial measurement sessions | None (upload app export) |
 | Auto-Supplements | Config-based | Daily supplement entries | None (configured in UI) |
 
 OAuth providers also need a callback URL env var pointing at your deployment's `/callback` route (for example `https://dofek.asherlc.com/callback`). Set `OAUTH_REDIRECT_URI` in Infisical. After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
