@@ -117,7 +117,7 @@ vi.mock("dofek/providers/concept2", () => ({
 vi.mock("dofek/providers/komoot", () => ({ KomootProvider: vi.fn(() => ({ id: "komoot" })) }));
 vi.mock("dofek/providers/xert", () => ({ XertProvider: vi.fn(() => ({ id: "xert" })) }));
 vi.mock("dofek/providers/cycling-analytics", () => ({
-  CyclingAnalyticsProvider: vi.fn(() => ({ id: "cycling-analytics" })),
+  CyclingAnalyticsProvider: vi.fn(() => ({ id: "cycling_analytics" })),
 }));
 vi.mock("dofek/providers/wger", () => ({ WgerProvider: vi.fn(() => ({ id: "wger" })) }));
 vi.mock("dofek/providers/decathlon", () => ({
@@ -163,5 +163,21 @@ describe("ensureProvidersRegistered failure path", () => {
     await ensureProvidersRegistered();
 
     expect(mockRegisterProvider).toHaveBeenCalledWith({ id: "kaya-export" });
+  });
+
+  it("registers self-service providers but omits externally gated providers", async () => {
+    const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
+
+    await ensureProvidersRegistered();
+
+    const registeredIds = mockRegisterProvider.mock.calls.map(
+      ([provider]: [{ id: string }]) => provider.id,
+    );
+    expect(registeredIds).toEqual(
+      expect.arrayContaining(["bodyspec", "cycling_analytics", "ultrahuman", "wger"]),
+    );
+    expect(registeredIds).not.toEqual(
+      expect.arrayContaining(["fitbit", "suunto", "coros", "komoot", "decathlon", "mapmyfitness"]),
+    );
   });
 });

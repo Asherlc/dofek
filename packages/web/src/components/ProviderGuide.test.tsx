@@ -73,4 +73,21 @@ describe("ProviderGuide", () => {
     // Strava should appear in Activity Tracking
     expect(screen.getByText("Strava")).toBeTruthy();
   });
+
+  it("shows restored providers under their matching categories", () => {
+    render(
+      <ProviderGuide
+        onDismiss={vi.fn()}
+        providers={[
+          { id: "cycling_analytics", name: "Cycling Analytics", authorized: false },
+          { id: "bodyspec", name: "BodySpec", authorized: false },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Cycling Analytics")).toBeTruthy();
+    expect(screen.getByText("BodySpec")).toBeTruthy();
+    expect(screen.getByText("Activity Tracking")).toBeTruthy();
+    expect(screen.getByText("Body Composition")).toBeTruthy();
+  });
 });
