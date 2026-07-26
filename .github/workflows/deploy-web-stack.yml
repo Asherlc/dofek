@@ -657,7 +657,7 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 2100))
-          for service in web worker analytics-worker metric-stream-clickhouse-sink clickhouse; do
+          for service in web worker analytics-worker metric-stream-clickhouse-sink clickhouse databasus; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(
@@ -937,6 +937,19 @@ jobs:
               sleep 10
             done
           done
+
+      - name: Verify database backup freshness
+        if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          docker run --rm \
+            --env-file "$INFISICAL_ENV_FILE" \
+            --entrypoint node \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            --experimental-strip-types \
+            --enable-source-maps \
+            scripts/check-database-backup-freshness.ts
 
       - name: Record Sentry production release
         if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
