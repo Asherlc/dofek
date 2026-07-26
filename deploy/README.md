@@ -17,13 +17,13 @@ infrastructure has been retired.
   - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service for lower-volume raw fitness tables into `postgres_fitness.*`.
   - **Volume**: Production uses the OCI data volume mounted at `/mnt/dofek-data`.
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
-  - **Disabled UI state**: Bind-mount directories for Databasus and
-    CloudBeaver remain provisioned, but the Oracle production override scales
-    both services to zero.
+  - **Operational UI state**: Databasus remains enabled because it owns the
+    PostgreSQL backup schedule. CloudBeaver and the other optional management
+    UIs are scaled to zero by the Oracle production override.
   - **S3 (R2)**: Cloudflare R2 buckets for training data
     (`dofek-training-data`), private direct file imports (`dofek-imports`), web
     build assets (`dofek-web-assets`), OTA updates (`dofek-ota`), Storybook
-    (`dofek-storybook`), a currently unwritten DB-backup bucket
+    (`dofek-storybook`), scheduled PostgreSQL backups
     (`dofek-db-backups`), and the durable metric-stream archive
     (`dofek-metric-stream-archive`).
 - **Networking**:
@@ -57,8 +57,8 @@ infrastructure has been retired.
 - `oracle-free/`: Separate Terraform root for the OCI production host. The reserved public IP is copied into the `ORACLE_SERVER_HOST` GitHub Actions variable and into the main `deploy/` root as `var.oracle_server_host`.
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`,
   `dofek.live`) are proxied (CDN enabled). DNS records for management
-  subdomains still exist, although the corresponding services are disabled in
-  Oracle production.
+  subdomains still exist. Databasus remains active for backup operations; the
+  other management services are disabled in Oracle production.
 - `storage.tf`: Manages Cloudflare R2 buckets, lifecycle rules, the `assets.dofek.fit` bucket-level custom domain, and the CORS policy required for browser module loads from that cross-origin asset hostname. Cloudflare documents R2 custom domains as bucket-level domain bindings, not ordinary origin `CNAME` records, and documents that custom domains return CORS headers only when the bucket has a matching CORS policy: https://developers.cloudflare.com/r2/buckets/public-buckets/#custom-domains and https://developers.cloudflare.com/r2/buckets/cors/#use-cors-with-a-custom-domain. The `storybook.dofek.fit` custom domain is still configured manually in the Cloudflare dashboard.
   It also manages the private `dofek-imports` bucket. Its CORS policy permits only
   production application origins to make `PUT` requests and exposes `ETag` for
@@ -81,12 +81,8 @@ infrastructure has been retired.
   Production always applies `stack.oracle.yml` on top of it.
 - Traefik consumes the swarm provider and routes traffic from labels declared on stack services.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
-- The worker healthcheck calls the worker process's loopback-only `/readyz`
-  endpoint on port 3001. That endpoint verifies every existing BullMQ Worker's
-  running state and Redis clients; the healthcheck must not start a second Node
-  runtime or construct fresh queue clients inside the worker's 512 MiB cgroup.
-  See the [Docker healthcheck reference](https://docs.docker.com/reference/compose-file/services/#healthcheck)
-  and [BullMQ Worker API](https://api.docs.bullmq.io/classes/v5.Worker.html).
+- The BullMQ worker has a 30-minute stop grace period. BullMQ's graceful `Worker.close()` stops accepting new jobs and waits for active jobs, while Docker otherwise sends `SIGKILL` after a 10-second default. Provider HTTP calls have a shared two-minute deadline, and provider-data deletion advances through one durable 1,000-row continuation job per batch, so the grace period covers bounded work instead of masking unbounded requests or multi-hour loops. The initial rollout convergence deadline is 35 minutes so CI can observe the full graceful-drain result. See [BullMQ graceful shutdown](https://docs.bullmq.io/guide/workers/graceful-shutdown), [Docker `stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period), and [Node.js `AbortSignal.timeout()`](https://nodejs.org/api/globals.html#static-method-abortsignaltimeoutdelay).
+- The worker healthcheck calls the worker process's loopback-only `/readyz` endpoint on port 3001. That endpoint verifies every existing BullMQ Worker's running state and Redis clients; the healthcheck must not start a second Node runtime or construct fresh queue clients inside the worker's 512 MiB cgroup. See the [Docker healthcheck reference](https://docs.docker.com/reference/compose-file/services/#healthcheck) and [BullMQ Worker API](https://api.docs.bullmq.io/classes/v5.Worker.html).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
 - PostgreSQL runs `timescale/timescaledb-ha:pg18.3-ts2.26.4-all` so TimescaleDB and PostGIS are both available. It is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, `max_locks_per_transaction=4096` for large Timescale chunk scans, and logical replication settings needed by ClickHouse change-data capture. Production keeps six logical slots/senders and caps each slot at 64 GiB of retained WAL so PeerDB has recovery headroom without allowing an inactive slot to retain unbounded WAL.
@@ -104,9 +100,9 @@ infrastructure has been retired.
 - Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
 - The historical Postgres `fitness.metric_stream` hypertable has been retired; metric-stream durability is Redpanda plus the R2 archive, and ClickHouse is the serving copy. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
 - Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
-- The Oracle override scales Portainer, Databasus, CloudBeaver, pgAdmin,
-  PeerDB UI, and Netdata to zero. Their base-stack routes and DNS records do
-  not make them available in production.
+- The Oracle override scales Portainer, CloudBeaver, pgAdmin, PeerDB UI, and
+  Netdata to zero. Databasus remains at one replica because it owns the backup
+  schedule; its base-stack route is active for backup operations.
 
 ### Monitoring (`otel-collector-config.yaml`)
 - Uses `filelog` receiver to tail Docker logs from `/var/lib/docker/containers/*/*.log`.
@@ -274,7 +270,7 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.
       When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
       analytics migrations before the stack update.
-   10. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
+   10. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this initial wait at 35 minutes so the worker's 30-minute graceful-drain contract can complete while a wedged Swarm rollback still fails CI. The final ClickHouse-consumer-only rollout remains bounded at 20 minutes.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
    11. Run the resumable `provider-connection-cutover` one-shot command after
        every requested app service has converged. It backfills
@@ -373,15 +369,19 @@ PR preview object cleanup:
 
 Postgres backup status:
 
-- Oracle production scales Databasus to zero.
-- Terraform still provisions the `dofek-db-backups` R2 bucket and the
-  `/mnt/dofek-data/databasus` state directory, but no checked-in production
-  service currently writes database backups to that bucket.
-- Do not claim successful database-backup coverage from the existence of the
-  bucket or directory. Provisioning and validating an active Postgres backup
-  owner is unresolved operational work.
-- The metric-stream R2 archive is active durability for metric-stream events;
-  it is not a backup of relational Postgres state.
+- Databasus is an always-on operational service in production, not an optional
+  management UI: its process owns the configured backup schedule.
+- Databasus stores its own users, storage targets, database definitions, schedules, and backup history in `/mnt/dofek-data/databasus`.
+- Terraform creates that directory and performs a one-time copy from the legacy `databasus_data` Docker volume when the bind-mount path is still empty.
+- If that path is empty or replaced, Databasus comes up as a fresh install and scheduled DB backups stop even if the `dofek-db-backups` bucket still exists.
+- The scheduled `Database Backup Freshness` workflow and the production deploy
+  workflow fail when the latest object in `dofek-db-backups` is not less than
+  24 hours old. Cloudflare documents R2's S3 `ListObjectsV2` support, including
+  continuation tokens:
+  <https://developers.cloudflare.com/r2/api/s3/api/#implemented-object-level-operations>.
+- After any Databasus storage or deploy change, verify both freshness and a
+  real isolated restore by following
+  [the database backup recovery runbook](../docs/database-backup-recovery-runbook.md).
 
 Required Infisical keys for mobile pipelines:
 
@@ -433,6 +433,7 @@ If a recent body measurement is missing from ClickHouse-backed reads, use:
 ## Management UIs
 
 The base stack defines Portainer, Netdata, Databasus, CloudBeaver, pgAdmin, and
-PeerDB UI services and routes. `deploy/stack.oracle.yml` sets every one of
-those services to zero replicas in production. A DNS response or Traefik 404
-for one of their historical hostnames does not mean the UI should be running.
+PeerDB UI services and routes. Databasus remains active because it owns the
+PostgreSQL backup schedule. `deploy/stack.oracle.yml` sets the other management
+services to zero replicas in production, so a DNS response or Traefik 404 for
+one of their historical hostnames does not mean that UI should be running.

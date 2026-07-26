@@ -26,6 +26,8 @@ training sources to a shared data model served by web and iOS clients.
   bounded builds.
 - [Processing-status runbook](docs/processing-status-runbook.md): end-to-end
   ingestion and analytics evidence.
+- [Database backup runbook](docs/database-backup-recovery-runbook.md):
+  Databasus health, R2 freshness, and isolated restore verification.
 
 ## Architecture
 

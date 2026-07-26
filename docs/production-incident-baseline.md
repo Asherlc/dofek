@@ -17902,8 +17902,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-25 — Activity Power-Curve Build Still Exceeded the Analytics Budget
 
-- **Status:** Power-curve and refit fixes validated locally; production
-  deployment and post-deploy observation pending. The separate
+- **Status:** Power-curve and refit fixes merged and deployed. The production
+  `activity_power_curve` build completed in 20.10 seconds. The separate
   `sleep_heart_rate_sample` and `provider_stats` failures remain unresolved.
 - **Symptoms:** The current production analytics worker continued failing its
   serial dbt cycle after the earlier array-based power-curve change was
@@ -17940,11 +17940,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   integration cases pass, including a 3,601-sample activity under a 512 MiB
   query cap, exact-duration alignment, discontinuity rejection, varying power,
   tombstone behavior, and unchanged incremental state.
-- **Remaining risk / follow-up:** Merge and deploy the fix, then verify bounded
-  power-curve batches drain the 268-activity backlog and complete below the
-  existing 240-second execution ceiling. Do not resolve the aggregate dbt
-  Sentry issue until the independent sleep and provider-stat queries also
-  complete successfully.
+- **Remaining risk / follow-up:** Do not resolve the aggregate dbt Sentry issue
+  until the independent sleep and provider-stat queries also complete
+  successfully.
 
 ## 2026-07-25 — SAST Runner Could Not Pull the Pinned Semgrep Image
 
@@ -17971,6 +17969,103 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Treat a future identical pre-container pull
   failure as external registry availability after confirming the digest and
   command are unchanged; investigate separately if pulls fail persistently.
+
+## 2026-07-26 — Swift Coverage Artifact Upload Timed Out After Tests Passed
+
+- **Status:** Resolved by an unchanged failed-job rerun.
+- **Symptoms:** The `Test / Swift Tests` job failed after both Swift test
+  packages and the coverage gate passed.
+- **User impact:** PR #2036 remained blocked on a red required check; there was
+  no product or production impact.
+- **Evidence:** In the
+  [initial job](https://github.com/Asherlc/dofek/actions/runs/30207624183/job/89808551536),
+  74 HealthKit tests and eight watch-transfer tests passed, line coverage was
+  93.22%, and function coverage was 100%. The first fatal line came from
+  `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`:
+  `Failed to CreateArtifact: Unable to make request: ETIMEDOUT`.
+- **Root cause:** The runner's `CreateArtifact` request reached its transport
+  deadline after all repository tests and coverage checks had completed; no
+  Swift assertion, build, or coverage threshold failed.
+- **Fix / mitigation:** Reran only the failed Swift job unchanged after the
+  original workflow completed. No repository retry, timeout, fallback, or
+  warn-and-continue behavior was added.
+- **Validation:** The
+  [attempt-two job](https://github.com/Asherlc/dofek/actions/runs/30207624183/job/89810786050)
+  passed both Swift test commands, the coverage gate, and the same pinned
+  artifact-upload step.
+- **Remaining risk / follow-up:** Treat a future identical post-test artifact
+  transport timeout as external only after confirming the test and coverage
+  gates passed; investigate the runner-to-GitHub path if it recurs.
+
+## 2026-07-26 — Persisted Test State Exhausted Workspace ClickHouse Memory
+
+- **Status:** Resolved for the issue-1997 workspace.
+- **Symptoms:** A focused router integration rerun failed in `beforeAll` while
+  rebuilding `v_sleep`; its first fatal line reported `memory limit exceeded`
+  with 1.98 GiB RSS against a 1.95 GiB limit. Restarting the process alone led
+  to the same failure while rebuilding `v_activity`.
+- **User impact:** Local regression validation was blocked; production and
+  every other workspace were unaffected.
+- **Evidence:** The failures occurred before the selected test ran. The second
+  attempt still reported 1.96 GiB RSS after a process restart. Re-creating only
+  the four `issue-1997_*` Compose volumes reduced the ClickHouse container to
+  850.4 MiB before the next run.
+- **Root cause:** Persisted ClickHouse state in the current workspace kept the
+  server at its query memory ceiling across a process-only restart.
+- **Fix / mitigation:** Used the repository Compose wrapper to run
+  `down --remove-orphans --volumes` for the resolved `issue-1997` project, then
+  recreated its Postgres, Redis, ClickHouse, and Redpanda dependencies. This
+  removed only disposable state owned by the current workspace, consistent
+  with Docker's documented
+  [`down --volumes` scope](https://docs.docker.com/reference/cli/docker/compose/down/).
+  No memory limit, timeout, or retry was changed.
+- **Validation:** From the fresh dependencies, both focused real-ClickHouse
+  router polarization tests passed: one test in `router.integration.test.ts`
+  and one test in `router-data.integration.test.ts`.
+- **Remaining risk / follow-up:** A failed integration `beforeAll` can leave
+  workspace-scoped ClickHouse state behind. If the same evidence recurs, clear
+  only that workspace's disposable Compose state rather than raising resource
+  limits.
+
+## 2026-07-26 — Empty Polarization Model Triggered a Live Sensor Scan
+
+- **Status:** Direct fix validated locally; PR CI and production deployment
+  pending.
+- **Symptoms:** `efficiency.polarizationTrend` repeatedly reached the
+  120-second production query timeout. The Endurance page kept the
+  Polarization Index card in its loading state while the request remained
+  active.
+- **User impact:** Users could not view either polarization data or the
+  no-data state for the selected range.
+- **Evidence:** The production route timed out repeatedly during the audit.
+  The TDD unit reproduction reported `expected "spy" to be called 1 times, but
+  got 2 times`. A real-ClickHouse fixture then populated three deduped
+  heart-rate rows while leaving `activity_polarization_zones` empty; the
+  pre-fix repository returned a computed week with `maxHr: 190`, proving that
+  it queried the raw-derived models after the serving query returned no rows.
+- **Classification:** Following the
+  [loading-performance runbook](performance/loading-performance-runbook.md),
+  this was a request-time query-shape bottleneck: an empty analytics serving
+  model caused synchronous aggregation over raw-derived sensor rows. The exact
+  production timeout timestamps and local ClickHouse measurements are recorded
+  in [issue #1997](https://github.com/Asherlc/dofek/issues/1997).
+- **Root cause:** The repository treated an empty
+  `activity_polarization_zones` result as a cache miss and synchronously
+  recomputed the trend from `activity_summary` and `deduped_sensor`.
+- **Fix / mitigation:** Make `activity_polarization_zones` the sole request-time
+  source and return `{ maxHr: null, weeks: [] }` when it is empty. No retry,
+  timeout, fallback, or resource limit was added.
+- **Validation:** The focused repository and router unit suites pass. The
+  real-ClickHouse regression fixture verifies three raw sensor rows, zero
+  serving rows, an empty response, and exactly one serving-model query. The
+  clean CI run then exposed two router fixtures that still assumed the removed
+  fallback populated their results; both now seed the canonical serving table
+  and pass as focused real-ClickHouse tests. Full lint and root/server/web
+  typechecks also pass.
+- **Remaining risk / follow-up:** Complete PR CI, deploy the fix, confirm route
+  latency remains bounded, and monitor the asynchronous analytics build so a
+  stale serving model is diagnosed out of band rather than recomputed in a
+  request.
 
 ## 2026-07-25 — Metric-Stream Sink Failed on a CommonJS Named Import
 
@@ -18007,7 +18102,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-26 — WHOOP BLE Initialization Ran While the App Was Backgrounded
 
-- **Status:** Direct fix validated locally; merge and mobile rollout pending.
+- **Status:** Direct fix merged, deployed, and resolved in Sentry.
 - **Symptoms:** Sentry issue `DOFEK-MOBILE-1D` recorded a `DISCONNECTED` error
   from the `whoop-ble-init-sync` path while the app was not in the foreground.
 - **User impact:** WHOOP streaming could fail to initialize until a later sync
@@ -18028,18 +18123,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   connection and lifecycle races, then all 47 focused WHOOP BLE sync tests
   passed after the fix.
   Targeted Biome checks and the mobile TypeScript typecheck also pass.
-- **Remaining risk / follow-up:** Merge through normal CI and release the
-  mobile change. Because the Simulator cannot exercise Bluetooth hardware
+- **Remaining risk / follow-up:** Because the Simulator cannot exercise Bluetooth hardware
   ([Expo simulator limitations](https://docs.expo.dev/workflow/ios-simulator/#limitations)),
   validate on a physical device by enabling WHOOP sync, backgrounding during
   initialization, confirming no `whoop-ble-init-sync` error, then foregrounding
-  and confirming streaming resumes. Resolve `DOFEK-MOBILE-1D` after confirming
-  no recurrence on the fixed release.
+  and confirming streaming resumes.
 
 ## 2026-07-26 — Current dbt Run Statuses Failed Artifact Validation
 
-- **Status:** Direct fix validated locally; merge and production deployment
-  pending.
+- **Status:** Direct fix merged, deployed, and resolved in Sentry. A production
+  analytics cycle parsed current dbt outcomes without the prior Zod error.
 - **Symptoms:** The production analytics worker completed a dbt invocation but
   then raised a Zod validation error while parsing `run_results.json` in
   [Sentry issue DOFEK-SERVER-5D](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5D).
@@ -18062,14 +18155,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   for all three omitted statuses. The focused artifact suite now passes all
   seven tests, targeted Biome checks report no findings, and the root
   TypeScript typecheck passes.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy the corrected
-  parser, observe a complete analytics cycle, then resolve
-  `DOFEK-SERVER-5D` if it does not recur on the fixed release.
+- **Remaining risk / follow-up:** Keep the runtime schema aligned when the
+  pinned dbt artifact contract changes.
 
 ## 2026-07-26 — Monthly Report Timed Out on Recursive Analytics Views
 
-- **Status:** Direct fix validated locally and against production data; merge
-  and production deployment pending.
+- **Status:** Direct fix merged, deployed, validated against production data,
+  and resolved in Sentry.
 - **Symptoms:** Monthly report requests repeatedly raised ClickHouse client
   timeouts in
   [Sentry issue DOFEK-SERVER-5C](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5C).
@@ -18110,8 +18202,114 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   dependency on `v_activity`. It now seeds only the three compact serving
   models and verifies the complete monthly report result with those recursive
   views absent. The focused integration test passes.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy the query,
-  invoke the production monthly report, confirm sub-second completion in
-  ClickHouse query history, and resolve `DOFEK-SERVER-5C` if no fixed-release
-  event recurs. The weekly report contains a similar recursive query and should
-  be investigated separately rather than silently expanded into this fix.
+- **Remaining risk / follow-up:** The exact production report query completed
+  in 74 milliseconds after deployment. The weekly report contains a similar
+  recursive query and should be investigated separately rather than silently
+  expanded into this fix.
+
+## 2026-07-25 — Oracle Override Disabled the Database Backup Scheduler
+
+- **Status:** Root cause confirmed; direct source fix and external freshness
+  monitor implemented. Production deployment, a fresh backup, and isolated
+  restore verification remain pending.
+- **Symptoms:** The `dofek-db-backups` R2 bucket contained only four objects,
+  and its newest object was last modified at `2026-06-09T18:47:00Z`, more than
+  46 days before discovery.
+- **User impact:** Production had no current PostgreSQL recovery point and
+  violated the documented requirement that the newest backup be less than 24
+  hours old.
+- **Evidence:** Production `dofek_databasus` had a clean desired state of
+  `0/0`, no current or previous tasks, and no application crash line. Its
+  persistent state was last written on 2026-06-07. Deploy run
+  [27097059759](https://github.com/Asherlc/dofek/actions/runs/27097059759)
+  ran `docker stack deploy` with `deploy/stack.oracle.yml`, logged
+  `Updating service dofek_databasus`, and then removed the service endpoint.
+  The exact causal configuration was
+  `services.databasus.deploy.replicas: 0`; the lack of a fatal Databasus log is
+  expected because Swarm was applying the declared desired state. Docker
+  documents service tasks as the mechanism by which Swarm maintains a
+  service's desired state:
+  <https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling>.
+- **Root cause:** The Oracle override misclassified Databasus as an optional
+  management UI and scaled it to zero on every production deployment, stopping
+  the process that owned the backup schedule. No independent R2 freshness
+  monitor detected the gap.
+- **Fix / mitigation:** Remove only the Databasus zero-replica override, require
+  the service to converge during production deploys, and add a fail-loud
+  paginated R2 freshness checker that runs every six hours and after production
+  deployment. Add the
+  [database backup recovery runbook](database-backup-recovery-runbook.md) for
+  scheduler triage and real restore verification. No retry, timeout increase,
+  fallback, or warning-only behavior was added.
+- **Validation:** Unit tests first reproduced empty-bucket, missing-timestamp,
+  stale-boundary, newest-object, and pagination failures. The focused checker
+  suite passes after implementation. A read-only run against production R2
+  then rejected the known newest recovery point as 1,123.47 hours old. The
+  rendered Oracle stack resolves Databasus to one replica. Repository lint,
+  root/server/web typechecks, the new workflow's Actionlint validation, and
+  comparison of the deploy workflow against its existing Actionlint findings
+  all pass. The full Docker-free suite remains a serialized pre-merge check.
+- **Remaining risk / follow-up:** Deploy the source fix, confirm Databasus
+  retained its database, schedule, R2 target, and encryption key, trigger a
+  fresh backup, require the checker to pass, and restore that backup into an
+  isolated database. Protect and verify recovery of Databasus's `secret.key`;
+  the official manual recovery path requires it alongside the backup and
+  metadata objects:
+  <https://databasus.com/how-to-recover-without-databasus>.
+
+## 2026-07-26 — Worker Deployments Stalled Active BullMQ Jobs
+
+- **Status:** Direct fixes validated locally and with real Redis/ClickHouse
+  behavior; merge and production deployment pending.
+- **Symptoms:** Sentry issues
+  [DOFEK-SERVER-4N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4N)
+  and
+  [DOFEK-SERVER-2K](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-2K)
+  repeatedly reported active BullMQ jobs as stalled and eventually failed them
+  with `job stalled more than allowable limit`.
+- **User impact:** Provider sync, post-sync, file import, analytics cleanup, and
+  provider-deletion jobs could repeat work or fail terminally when a production
+  rollout replaced the worker that owned their Redis lock.
+- **Evidence:** The exact failing lifecycle was a Swarm rollout sending the old
+  task `SIGTERM`, the worker logging `Shutting down gracefully...`, and Docker
+  killing the task with exit code 137 about 10 seconds later before
+  `Worker.close()` could finish active work. Sentry then recorded the same
+  Strava and WHOOP job IDs as stalled on successive releases. Live Redis
+  inspection also showed the current one-day Strava job had recorded exactly
+  one HTTP admission at `2026-07-26T14:00:02Z` and received no response for
+  more than 16 minutes; the shared provider fetch path supplied no abort
+  signal. Historical completed-job evidence showed ordinary imports can take
+  about 22 minutes, while the old provider-deletion loop could run for more
+  than two hours. Axiom could not be queried because its connected user token
+  had expired, so Sentry, Docker task state/logs, and Redis metadata supplied
+  the causal evidence.
+- **Root cause:** Docker Swarm's default 10-second stop grace was incompatible
+  with BullMQ's graceful close contract, which waits for active jobs, while
+  provider HTTP requests had no deadline and provider deletion processed every
+  checkpoint batch inside one multi-hour job. Docker documents the 10-second
+  default before `SIGKILL`, and BullMQ documents that `Worker.close()` waits for
+  active work:
+  <https://docs.docker.com/reference/compose-file/services/#stop_grace_period>
+  and <https://docs.bullmq.io/guide/workers/graceful-shutdown>.
+- **Fix / mitigation:** Give the worker a durable 30-minute stop grace and the
+  initial deploy a 35-minute convergence bound; fail rather than continue when
+  a Swarm update pauses. Apply a shared two-minute provider HTTP deadline with
+  composed caller cancellation and retryable timeout classification. Process
+  provider deletion as deterministic, idempotent 1,000-row continuation jobs,
+  retaining the existing generation fence and checkpoint, and keep the durable
+  deletion-request state authoritative so a completed batch job cannot report
+  the overall operation complete while its continuation remains active.
+  Node.js documents the native timeout and signal-composition primitives:
+  <https://nodejs.org/api/globals.html#class-abortsignal>.
+- **Validation:** The timeout regression failed before implementation. After
+  the fix, 205 focused unit tests passed, the root TypeScript typecheck and
+  targeted Biome checks passed, and all five real-ClickHouse provider-deletion
+  integration cases passed, including multiple continuation batches and
+  bounded projection reads. A focused operation-status regression also verifies
+  that a dispatched deletion remains running after its root batch completes.
+  No stall-count increase, forced retry, temporary flag, or incident-only
+  shutdown branch was added.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy, confirm the
+  old worker reaches `Shutdown complete` without exit 137, verify the timed-out
+  Strava job retries and completes, observe no fixed-release 4N/2K events
+  across a subsequent rollout, then resolve both Sentry issues.

@@ -1,8 +1,8 @@
 # @dofek/provider-http
 
-Fetch-compatible HTTP helpers for provider integrations that need typed rate-limit
-and service-unavailable errors, `Retry-After` parsing, and optional adaptive
-request admission.
+Fetch-compatible HTTP helpers for provider integrations that need typed
+rate-limit, service-unavailable, and request-timeout errors; `Retry-After`
+parsing; and optional adaptive request admission.
 
 ## Install
 
@@ -19,6 +19,7 @@ Requires Node.js 22.14 or newer and its built-in
 import {
   createRateLimitAwareFetch,
   ProviderRateLimitError,
+  ProviderRequestTimeoutError,
 } from "@dofek/provider-http";
 
 const providerFetch = createRateLimitAwareFetch(fetch, {
@@ -34,6 +35,8 @@ try {
 } catch (error) {
   if (error instanceof ProviderRateLimitError) {
     console.log(`Retry after ${error.retryAfterSeconds ?? "an unknown number of"} seconds`);
+  } else if (error instanceof ProviderRequestTimeoutError) {
+    console.log(`Request exceeded ${error.timeoutMs}ms`);
   } else {
     throw error;
   }
@@ -44,7 +47,7 @@ try {
 
 | Import | Main exports |
 | --- | --- |
-| `@dofek/provider-http` | `createRateLimitAwareFetch`, `fetchWithRateLimitHandling`, `parseRetryAfterHeader`, `isServiceUnavailableStatus`, `ProviderRateLimitError`, `ProviderServiceUnavailableError`, and their option/store types |
+| `@dofek/provider-http` | `createRateLimitAwareFetch`, `fetchWithRateLimitHandling`, `parseRetryAfterHeader`, `isServiceUnavailableStatus`, `PROVIDER_HTTP_REQUEST_TIMEOUT_MS`, `ProviderRateLimitError`, `ProviderRequestTimeoutError`, `ProviderServiceUnavailableError`, and their option/store types |
 | `@dofek/provider-http/rate-limit` | Alias of the root rate-limit API |
 | `@dofek/provider-http/adaptive-rate-limit` | Adaptive budget state, serialization, admission-delay calculations, Strava quota parsing, defaults, constants, and `AdaptiveRateLimitStore` |
 
@@ -55,12 +58,22 @@ coordination appropriate to their runtime.
 
 - HTTP `429` throws `ProviderRateLimitError`.
 - HTTP `502`, `503`, and `504` throw `ProviderServiceUnavailableError`.
-- Both errors expose the provider, status, response body, scope, optional user,
-  and parsed `retryAfterSeconds`.
+- Every request made through `createRateLimitAwareFetch` has a shared two-minute
+  deadline. The wrapper composes its timeout signal with a caller-provided
+  signal and throws
+  `ProviderRequestTimeoutError` with code `ETIMEDOUT` only when that deadline
+  wins; caller cancellation remains the caller's error.
+- HTTP errors expose the provider, status, response body, scope, optional user,
+  and parsed `retryAfterSeconds`. Timeout errors expose the provider, scope,
+  optional user, deadline, and original cause.
 - Other HTTP error responses are returned unchanged, so callers must check
   `response.ok`.
 - These helpers do not retry automatically. The caller decides whether and when
   to retry; an adaptive store can delay admission before a request.
+
+The deadline uses Node's
+[`AbortSignal.timeout()` and `AbortSignal.any()`](https://nodejs.org/api/globals.html#class-abortsignal)
+APIs.
 
 No authentication or environment variables are required by this package.
 

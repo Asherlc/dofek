@@ -6,10 +6,11 @@ Use this when an active production route returns Traefik's:
 404 page not found
 ```
 
-The active Oracle production routes are the main application hosts and the OTA
-host. Portainer, Netdata, Databasus, CloudBeaver, pgAdmin, and PeerDB UI are
-defined in the base stack but intentionally scaled to zero by
-`deploy/stack.oracle.yml`; their historical hostnames are not expected to work.
+The active Oracle production routes are the main application hosts, the OTA
+host, and Databasus, which remains enabled because it owns the PostgreSQL backup
+schedule. Portainer, Netdata, CloudBeaver, pgAdmin, and PeerDB UI are defined in
+the base stack but intentionally scaled to zero by `deploy/stack.oracle.yml`;
+their historical hostnames are not expected to work.
 
 ## 1. Confirm the Failure Shape
 
@@ -31,6 +32,7 @@ docker --context prod service ls --format 'table {{.Name}}\t{{.Replicas}}'
 docker --context prod service ps dofek_traefik --no-trunc
 docker --context prod service ps dofek_web --no-trunc
 docker --context prod service ps dofek_ota --no-trunc
+docker --context prod service ps dofek_databasus --no-trunc
 ```
 
 Record the first failed task and its error. Do not redeploy before distinguishing
@@ -40,7 +42,7 @@ a missing router from an unhealthy upstream.
 
 ```bash
 docker --context prod service logs --since 30m dofek_traefik 2>&1 | \
-  rg -i 'error|router|provider|middleware|dofek|ota'
+  rg -i 'error|router|provider|middleware|dofek|ota|databasus'
 ```
 
 Inspect the deployed service labels rather than assuming the checked-in labels
@@ -51,12 +53,15 @@ docker --context prod service inspect dofek_web \
   --format '{{json .Spec.Labels}}'
 docker --context prod service inspect dofek_ota \
   --format '{{json .Spec.Labels}}'
+docker --context prod service inspect dofek_databasus \
+  --format '{{json .Spec.Labels}}'
 ```
 
 Then compare them with the canonical base-stack rules:
 
 ```bash
-rg -n 'traefik.http.routers.(web|ota)|loadbalancer.server.port' deploy/stack.yml
+rg -n 'traefik.http.routers.(web|ota|databasus)|loadbalancer.server.port' \
+  deploy/stack.yml
 ```
 
 Verify:
@@ -101,9 +106,11 @@ Do not run a direct `docker stack deploy -c deploy/stack.yml`: that omits
 ```bash
 curl -fsSI https://dofek.asherlc.com/ | sed -n '1,8p'
 curl -fsSI https://ota.dofek.asherlc.com/ | sed -n '1,8p'
+curl -sSI https://databasus.dofek.asherlc.com/ | sed -n '1,8p'
 docker --context prod service inspect dofek_traefik --pretty
 docker --context prod service inspect dofek_web --pretty
 docker --context prod service inspect dofek_ota --pretty
+docker --context prod service inspect dofek_databasus --pretty
 ```
 
 If the route still fails, preserve the request output, deployed labels,

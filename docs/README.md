@@ -23,7 +23,8 @@ the exact section.
 - [exercise-metadata.md](exercise-metadata.md): Free Exercise DB source file, Dofek exercise metadata overrides, and update workflow.
 - [testing.md](testing.md): testing patterns that come up repeatedly in this codebase.
 - [processing-status-runbook.md](processing-status-runbook.md): durable processing evidence, deployment order, and stage diagnosis.
-- [roadmap.md](roadmap.md): product-level roadmap notes and planned user-facing improvements.
+- [roadmap.md](roadmap.md): product strategy, release gates, Daily Brief,
+  experiments, goals, and trust roadmap.
 
 ## Architecture And Product Flows
 
@@ -40,7 +41,7 @@ the exact section.
 | [file-upload-architecture.md](file-upload-architecture.md) | Durable browser import uploads, R2 object verification, transactional outbox delivery, and recovery. |
 | [app-password-auth.md](app-password-auth.md) | Email/password login, password reset, and Settings password management. |
 | [credential-encryption.md](credential-encryption.md) | Stored credential encryption, required key material, context binding, and rotation boundary. |
-| [roadmap.md](roadmap.md) | Product-level roadmap notes, including first-run and onboarding opportunities. |
+| [roadmap.md](roadmap.md) | Product strategy and release gates across the Daily Brief, experiments, goals, trust, and onboarding. |
 | [apple-health.md](apple-health.md) | Apple Health import model and type mapping. |
 | [apple-watch-accelerometer.md](apple-watch-accelerometer.md) | Notes on Apple Watch accelerometer capture and interpretation. |
 
@@ -94,10 +95,11 @@ Cross-provider reverse-engineering references:
 | [staging.md](staging.md) | Disabled staging environment notes and re-enable requirements. |
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
 | [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and volume expansion notes for OCI production. |
+| [database-backup-recovery-runbook.md](database-backup-recovery-runbook.md) | Databasus service health, R2 freshness monitoring, and isolated restore verification. |
 | [oracle-cutover.md](oracle-cutover.md) | Current Oracle production cutover status and deploy targeting notes. |
 | [sync-checkpoint-retries.md](sync-checkpoint-retries.md) | Durable provider sync retry checkpoints and retryable infrastructure failure scope. |
 | [sentry.md](sentry.md) | Investigating Sentry issues and stack traces from terminal. |
-| [traefik-subdomain-404-runbook.md](traefik-subdomain-404-runbook.md) | Diagnosing active Traefik routes; production management UIs are disabled. |
+| [traefik-subdomain-404-runbook.md](traefik-subdomain-404-runbook.md) | Diagnosing active Traefik routes, including the Databasus backup service. |
 
 ## Historical Records
 

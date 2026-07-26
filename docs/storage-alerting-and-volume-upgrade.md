@@ -34,15 +34,18 @@ Also alert on storage-specific early warning signals:
   buffer, not the long-term metric-stream archive;
 - unexpected growth under `/mnt/dofek-data/peerdb-catalog` or
   `/mnt/dofek-data/peerdb-minio`;
+- unexpected growth under `/mnt/dofek-data/databasus` or stale objects in the
+  `dofek-db-backups` R2 bucket;
 - stale `dofek-metric-stream-archive` R2 objects or lagging Redpanda archive
   consumption;
 - long-running ClickHouse analytics builds, mutations, or backfills.
 
-The Oracle production override scales Databasus to zero. Although Terraform
-still provisions `dofek-db-backups`, no checked-in production service currently
-writes relational Postgres backups to it. Treat the missing active Postgres
-backup owner as an operational gap, not as a passing alert state. The
-metric-stream R2 archive protects metric-stream events only.
+Oracle production runs Databasus as the PostgreSQL backup scheduler. The
+scheduled workflow and each successful production deploy require the newest
+`dofek-db-backups` R2 object to be less than 24 hours old. Freshness does not
+prove restorability; after backup-system changes or incidents, complete the
+isolated restore procedure in the
+[database backup recovery runbook](database-backup-recovery-runbook.md).
 
 ## Upgrade Notes
 

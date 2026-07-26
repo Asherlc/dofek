@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createRateLimitAwareFetch,
   fetchWithRateLimitHandling,
+  PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
   ProviderRateLimitError,
+  ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
   parseRetryAfterHeader,
 } from "./rate-limit.ts";
@@ -207,6 +209,73 @@ describe("fetchWithRateLimitHandling", () => {
     expect(error).toHaveProperty("scope", "user");
     expect(error).toHaveProperty("userId", "user-2");
     expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts a provider request at the canonical deadline", async () => {
+    const timeoutController = new AbortController();
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutController.signal);
+    const fetchFn = vi.fn<typeof globalThis.fetch>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            reject(new Error("Expected provider request timeout signal"));
+            return;
+          }
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      scope: "user",
+      userId: "user-2",
+    });
+
+    const result = rateLimitFetch("https://api.example.com/data").catch(
+      (caughtError: unknown) => caughtError,
+    );
+    const timeoutReason = new DOMException("Timed out", "TimeoutError");
+    timeoutController.abort(timeoutReason);
+    const error = await result;
+
+    expect(timeoutSpy).toHaveBeenCalledWith(PROVIDER_HTTP_REQUEST_TIMEOUT_MS);
+    expect(error).toBeInstanceOf(ProviderRequestTimeoutError);
+    expect(error).toHaveProperty("cause", timeoutReason);
+    expect(error).toMatchObject({
+      code: "ETIMEDOUT",
+      providerId: "example",
+      scope: "user",
+      timeoutMs: PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
+      userId: "user-2",
+    });
+  });
+
+  it("preserves caller cancellation instead of reporting a provider timeout", async () => {
+    const timeoutController = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutController.signal);
+    const fetchFn = vi.fn<typeof globalThis.fetch>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            reject(new Error("Expected combined provider request signal"));
+            return;
+          }
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+    });
+    const callerController = new AbortController();
+    const callerError = new DOMException("Caller cancelled", "AbortError");
+
+    const result = rateLimitFetch("https://api.example.com/data", {
+      signal: callerController.signal,
+    }).catch((caughtError: unknown) => caughtError);
+    callerController.abort(callerError);
+
+    await expect(result).resolves.toBe(callerError);
   });
 
   it("treats 502, 503, and 504 as service-unavailable responses", async () => {

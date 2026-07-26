@@ -78,11 +78,12 @@ reusable-workflow `with:`). The primary `deploy/` root reads it as
 pass it as `server_host` with `ssh_user: ubuntu` and
 `stack_override: deploy/stack.oracle.yml`.
 
-`deploy/stack.oracle.yml` disables the operator/admin UIs (pgAdmin,
-CloudBeaver, Databasus, Portainer, Netdata, PeerDB UI) that a
-single-user deployment does not need. This keeps the optional UIs from
-competing with the core app, PeerDB CDC, ClickHouse, Postgres, and Redpanda on
-the single host.
+`deploy/stack.oracle.yml` disables the operator/admin UIs that perform no
+background work (pgAdmin, CloudBeaver, Portainer, Netdata, and PeerDB UI).
+Databasus remains enabled because it owns the production PostgreSQL backup
+schedule. Follow the
+[database backup recovery runbook](../../docs/database-backup-recovery-runbook.md)
+for freshness and isolated restore verification.
 
 The historical Hetzner-to-Oracle migration notes live in
 [`docs/oracle-migration.md`](../../docs/oracle-migration.md).

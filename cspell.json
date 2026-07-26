@@ -80,6 +80,7 @@
     "readyz",
     "healthcheck",
     "healthchecked",
+    "llms",
     "biomejs",
     "vitest",
     "venv",

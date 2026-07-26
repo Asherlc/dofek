@@ -20,7 +20,8 @@ Read [README.md](./README.md) first for the package contract and usage.
 ## Tests
 
 - `src/rate-limit.test.ts` covers Fetch passthrough, status classification,
-  typed errors, adaptive-store callbacks, and wrapper idempotence.
+  typed errors, the two-minute deadline and caller-signal composition,
+  adaptive-store callbacks, and wrapper idempotence.
 - `src/adaptive-rate-limit.test.ts` covers pacing, quota learning, state
   transitions, storage keys, and serialization.
 - Add the failing colocated unit test first, then implement the behavior. Run
