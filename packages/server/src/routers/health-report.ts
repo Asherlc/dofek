@@ -50,9 +50,7 @@ export const healthReportRouter = router({
               input.weeks,
               input.endDate,
             )
-          : await new MonthlyReportRepository(ctx.userId, ctx.sensorStore, ctx.timezone).getReport(
-              input.months,
-            );
+          : await new MonthlyReportRepository(ctx.userId, ctx.sensorStore).getReport(input.months);
 
       if (!reportData.current) {
         throw new TRPCError({
