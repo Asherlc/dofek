@@ -17858,3 +17858,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm replacement CI emits no mutation
   shards for this Cypress-only support change and that all other required gates
   complete successfully.
+
+## 2026-07-26 — Docker Disk Pressure Stalled Local Integration Validation
+
+- **Status:** Resolved; the unchanged focused integration test passes after
+  scoped cleanup.
+- **Symptoms:** Three local runs of
+  `src/db/seed-dev-db.integration.test.ts` failed before executing either test
+  because Testcontainers reported `Port 5432/tcp not bound after 60000ms`.
+- **User impact:** Local validation of PR `#2033` was blocked. CI and production
+  services were unaffected.
+- **Evidence:** A debug run showed Docker publishing the random host port
+  immediately while PostgreSQL remained inside `initdb` past the 60-second
+  startup window. A Compose status read took roughly 54 seconds,
+  `docker system df` did not complete within 90 seconds, and the macOS data
+  volume had 12 GiB free at 99% utilization. A direct random-port probe proved
+  the image and port publishing path were otherwise sound.
+- **Root cause:** Rebuildable Docker builder cache consumed enough of the
+  nearly-full host data volume to create severe Docker Desktop storage latency;
+  PostgreSQL initialization could not finish inside the existing strict
+  Testcontainers startup window.
+- **Fix / mitigation:** Removed only the `issue-1984` disposable Compose
+  containers, network, and volumes, then ran `docker builder prune -af` as
+  prescribed by the
+  [Docker disk recovery runbook](testing.md#docker-disk-recovery). This
+  reclaimed 5.022 GB, increased free host space to 18 GiB, and reduced
+  `docker ps` latency to roughly 0.13 seconds. No timeout or retry setting was
+  changed.
+- **Validation:** The same focused `pnpm test:integration` invocation for
+  `src/db/seed-dev-db.integration.test.ts` then passed both real-Postgres tests
+  in 93 seconds, and its workspace Compose state was removed afterward.
+- **Remaining risk / follow-up:** The host data volume remains highly utilized,
+  and later Docker builds will recreate cache. Continue preserving other
+  workspaces' running containers and named volumes while applying Docker's
+  [builder-cache pruning guidance](https://docs.docker.com/build/cache/garbage-collection/)
+  when disk pressure recurs.
