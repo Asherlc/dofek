@@ -44,7 +44,9 @@ Cypress runs `cy.task()` handlers in the Node process rather than in the browser
 
 ## Configuration
 
-- `E2E_DATABASE_URL` defaults to `postgres://health:health@localhost:5436/health`.
+- `E2E_DATABASE_URL` defaults to the workspace E2E PostgreSQL service on
+  `localhost:5436`; set it explicitly when using a different isolated test
+  database.
 - `E2E_SERVER_URL` defaults to `http://localhost:3100`.
 - Specs match `cypress/e2e/**/*.cy.ts`; `cypress/support/e2e.ts` is the support file.
 - Headless runs retry a failed test once; interactive runs do not retry. Cypress documents the two retry modes in its [test retries guide](https://docs.cypress.io/app/guides/test-retries).
