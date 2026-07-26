@@ -14,19 +14,12 @@
 ) }}
 
 WITH
-body_view_state AS (
+body_user_state AS (
     SELECT
-        toDateTime64(
-            coalesce(
-                max(last_success_time),
-                toDateTime('1970-01-01 00:00:00', 'UTC')
-            ),
-            9,
-            'UTC'
-        ) AS last_success_time
-    FROM system.view_refreshes
-    WHERE database = 'analytics'
-        AND view = 'v_body_measurement'
+        user_id,
+        max(refreshed_at) AS source_synced_at
+    FROM {{ ref('body_measurement') }} FINAL
+    GROUP BY user_id
 ),
 
 {% if is_incremental() %}
@@ -39,27 +32,17 @@ target_user_state AS (
 ),
 {% endif %}
 
-source_changes AS (
-    SELECT
-        source.user_id AS user_id,
-        source._peerdb_synced_at AS source_synced_at
-    FROM analytics.body_measurement_sample AS source FINAL
-    CROSS JOIN body_view_state
-    WHERE source._peerdb_synced_at <= body_view_state.last_success_time
-),
-
 changed_user_watermarks AS (
     SELECT
-        source_changes.user_id AS user_id,
-        max(source_changes.source_synced_at) AS source_synced_at
-    FROM source_changes
+        body_user_state.user_id AS user_id,
+        body_user_state.source_synced_at AS source_synced_at
+    FROM body_user_state
     {% if is_incremental() %}
     LEFT JOIN target_user_state
-        ON target_user_state.user_id = source_changes.user_id
+        ON target_user_state.user_id = body_user_state.user_id
     WHERE target_user_state.user_id IS NULL
-        OR source_changes.source_synced_at > target_user_state.last_source_synced_at
+        OR body_user_state.source_synced_at > target_user_state.last_source_synced_at
     {% endif %}
-    GROUP BY source_changes.user_id
 ),
 
 live_body AS (
@@ -70,11 +53,12 @@ live_body AS (
         body.recorded_at AS recorded_at,
         body.weight_kg AS weight_kg,
         body.body_fat_pct AS body_fat_pct
-    FROM analytics.v_body_measurement AS body
+    FROM {{ ref('body_measurement') }} AS body FINAL
     INNER JOIN changed_user_watermarks
         ON changed_user_watermarks.user_id = body.user_id
     WHERE body.weight_kg IS NOT NULL
         AND body.weight_kg > 0
+        AND body.is_deleted = 0
 ),
 
 existing_rows AS (

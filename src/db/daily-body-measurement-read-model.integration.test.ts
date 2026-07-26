@@ -17,10 +17,6 @@ const measurementRowSchema = z.object({
 const weeklyWeightRowSchema = z.object({
   weight_kg: z.coerce.number().nullable(),
 });
-const viewRefreshStateSchema = z.object({
-  last_refresh_time: z.string(),
-  last_success_time: z.string(),
-});
 
 describe("daily_body_measurement read-model lifecycle", () => {
   let client: ClickHouseClient | undefined;
@@ -44,7 +40,6 @@ describe("daily_body_measurement read-model lifecycle", () => {
   it("updates and tombstones historical measurements from source change timestamps", async () => {
     const activeClient = requireClient(client);
     await seedFixture(activeClient, targetSchema);
-    await refreshBodyView(activeClient, targetSchema);
     await materializeDailyBodyMeasurement(activeClient, targetSchema, false);
     await materializeWeeklyHealthspan(activeClient, targetSchema, false);
 
@@ -56,7 +51,6 @@ describe("daily_body_measurement read-model lifecycle", () => {
     ]);
 
     await appendHistoricalVersion(activeClient, targetSchema, 75, false, 2, "2026-02-01 00:00:00");
-    await refreshBodyView(activeClient, targetSchema);
     await materializeDailyBodyMeasurement(activeClient, targetSchema, true);
     await materializeWeeklyHealthspan(activeClient, targetSchema, true);
 
@@ -68,7 +62,6 @@ describe("daily_body_measurement read-model lifecycle", () => {
     ]);
 
     await appendHistoricalVersion(activeClient, targetSchema, 75, true, 3, "2026-02-02 00:00:00");
-    await refreshBodyView(activeClient, targetSchema);
     await materializeDailyBodyMeasurement(activeClient, targetSchema, true);
     await materializeWeeklyHealthspan(activeClient, targetSchema, true);
 
@@ -79,20 +72,12 @@ describe("daily_body_measurement read-model lifecycle", () => {
     ]);
   }, 180_000);
 
-  it("does not advance the source watermark past the successful body view snapshot", async () => {
+  it("processes a historical measurement after the upstream body model refreshes", async () => {
     const activeClient = requireClient(client);
     await seedFixture(activeClient, targetSchema);
-    await refreshBodyView(activeClient, targetSchema);
     await materializeDailyBodyMeasurement(activeClient, targetSchema, false);
-    const refreshState = await readBodyViewRefreshState(activeClient, targetSchema);
+    await appendLaggedMeasurement(activeClient, targetSchema, "2026-02-03 00:00:00");
 
-    expect(Date.parse(`${refreshState.last_refresh_time}Z`)).toBeGreaterThan(
-      Date.parse(`${refreshState.last_success_time}Z`),
-    );
-    await appendLaggedMeasurement(activeClient, targetSchema, refreshState.last_refresh_time);
-
-    await materializeDailyBodyMeasurement(activeClient, targetSchema, true);
-    await refreshBodyView(activeClient, targetSchema);
     await materializeDailyBodyMeasurement(activeClient, targetSchema, true);
 
     await expect(readMeasurement(activeClient, targetSchema, laggedMeasurementId)).resolves.toEqual(
@@ -153,9 +138,7 @@ function renderModelSelectSql(targetSchema: string, isIncremental: boolean): str
         isIncremental ? incrementalSql : (initialSql ?? ""),
     )
     .replaceAll("{{ this }}", `${targetSchema}.daily_body_measurement`)
-    .replaceAll("analytics.body_measurement_sample", `${targetSchema}.body_measurement_sample`)
-    .replaceAll("analytics.v_body_measurement", `${targetSchema}.v_body_measurement`)
-    .replaceAll("database = 'analytics'", `database = '${targetSchema}'`)
+    .replaceAll("{{ ref('body_measurement') }}", `${targetSchema}.body_measurement`)
     .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1");
 }
 
@@ -213,11 +196,6 @@ ${renderWeeklyHealthspanSelectSql(targetSchema, isIncremental)}`,
   });
 }
 
-async function refreshBodyView(client: ClickHouseClient, targetSchema: string): Promise<void> {
-  await client.command({ query: `SYSTEM REFRESH VIEW ${targetSchema}.v_body_measurement` });
-  await client.command({ query: `SYSTEM WAIT VIEW ${targetSchema}.v_body_measurement` });
-}
-
 async function readHistoricalMeasurement(
   client: ClickHouseClient,
   targetSchema: string,
@@ -247,23 +225,6 @@ async function readMeasurement(
     format: "JSONEachRow",
   });
   return z.array(measurementRowSchema).parse(await result.json<unknown>());
-}
-
-async function readBodyViewRefreshState(
-  client: ClickHouseClient,
-  targetSchema: string,
-): Promise<z.infer<typeof viewRefreshStateSchema>> {
-  const result = await client.query({
-    query: `SELECT
-        toString(last_refresh_time) AS last_refresh_time,
-        toString(last_success_time) AS last_success_time
-      FROM system.view_refreshes
-      WHERE database = {database:String}
-        AND view = 'v_body_measurement'`,
-    query_params: { database: targetSchema },
-    format: "JSONEachRow",
-  });
-  return viewRefreshStateSchema.parse((await result.json<unknown>())[0]);
 }
 
 async function readHistoricalTombstone(
@@ -301,22 +262,21 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
     `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
     `CREATE DATABASE ${targetSchema}`,
     createSourceTableSql(targetSchema),
-    createBodyViewSql(targetSchema),
     createDailyBodyTableSql(targetSchema),
     ...createWeeklyHealthspanDependencyTablesSql(targetSchema),
     createWeeklyHealthspanTableSql(targetSchema),
   ]);
   await appendHistoricalVersion(client, targetSchema, 80, false, 1, "2026-01-02 00:00:00");
   await client.command({
-    query: `INSERT INTO ${targetSchema}.body_measurement_sample VALUES (
+    query: `INSERT INTO ${targetSchema}.body_measurement VALUES (
       '${recentMeasurementId}',
       '${testUserId}',
       toDateTime64('2026-01-20 08:00:00', 6, 'UTC'),
       82,
       20,
-      toDateTime64('2026-01-20 09:00:00', 9, 'UTC'),
       0,
-      1
+      1,
+      toDateTime64('2026-01-20 09:00:00', 9, 'UTC')
     )`,
   });
 }
@@ -330,15 +290,15 @@ async function appendHistoricalVersion(
   sourceSyncedAt: string,
 ): Promise<void> {
   await client.command({
-    query: `INSERT INTO ${targetSchema}.body_measurement_sample VALUES (
+    query: `INSERT INTO ${targetSchema}.body_measurement VALUES (
       '${historicalMeasurementId}',
       '${testUserId}',
       toDateTime64('2026-01-01 08:00:00', 6, 'UTC'),
       ${weightKg},
       21,
-      toDateTime64('${sourceSyncedAt}', 9, 'UTC'),
       ${isDeleted ? 1 : 0},
-      ${version}
+      ${version},
+      toDateTime64('${sourceSyncedAt}', 9, 'UTC')
     )`,
   });
 }
@@ -349,15 +309,15 @@ async function appendLaggedMeasurement(
   sourceSyncedAt: string,
 ): Promise<void> {
   await client.command({
-    query: `INSERT INTO ${targetSchema}.body_measurement_sample VALUES (
+    query: `INSERT INTO ${targetSchema}.body_measurement VALUES (
       '${laggedMeasurementId}',
       '${testUserId}',
       toDateTime64('2026-01-25 08:00:00', 6, 'UTC'),
       70,
       19,
-      toDateTime64({sourceSyncedAt:String}, 9, 'UTC'),
       0,
-      1
+      1,
+      toDateTime64({sourceSyncedAt:String}, 9, 'UTC')
     )`,
     query_params: { sourceSyncedAt },
   });
@@ -370,34 +330,18 @@ async function runStatements(client: ClickHouseClient, statements: string[]): Pr
 }
 
 function createSourceTableSql(targetSchema: string): string {
-  return `CREATE TABLE ${targetSchema}.body_measurement_sample (
+  return `CREATE TABLE ${targetSchema}.body_measurement (
     id UUID,
     user_id UUID,
     recorded_at DateTime64(6, 'UTC'),
     weight_kg Nullable(Float64),
     body_fat_pct Nullable(Float64),
-    _peerdb_synced_at DateTime64(9, 'UTC'),
-    _peerdb_is_deleted UInt8,
-    _peerdb_version UInt64
+    is_deleted UInt8,
+    refresh_version UInt64,
+    refreshed_at DateTime64(9, 'UTC')
   )
-  ENGINE = ReplacingMergeTree(_peerdb_version)
+  ENGINE = ReplacingMergeTree(refresh_version)
   ORDER BY (user_id, id)`;
-}
-
-function createBodyViewSql(targetSchema: string): string {
-  return `CREATE MATERIALIZED VIEW ${targetSchema}.v_body_measurement
-    REFRESH EVERY 1 HOUR
-    ENGINE = MergeTree
-    ORDER BY (user_id, recorded_at)
-    AS SELECT
-      id,
-      user_id,
-      recorded_at,
-      weight_kg,
-      body_fat_pct,
-      sleep(1) AS refresh_delay
-    FROM ${targetSchema}.body_measurement_sample FINAL
-    WHERE _peerdb_is_deleted = 0`;
 }
 
 function createDailyBodyTableSql(targetSchema: string): string {

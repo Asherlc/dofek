@@ -2,15 +2,221 @@
     materialized='incremental',
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
-    order_by='(user_id, provider_id)'
+    order_by='(user_id, provider_id)',
+    query_settings={
+        'max_threads': 1,
+        'join_use_nulls': 1
+    }
 ) }}
 
-WITH current_providers AS (
+WITH source_provider_refreshes AS (
+    SELECT
+        user_id,
+        id AS provider_id,
+        max(_peerdb_synced_at) AS source_refreshed_at
+    FROM {{ source('postgres_fitness', 'provider') }} FINAL
+    GROUP BY user_id, id
+
+    UNION ALL
+    SELECT
+        user_id,
+        provider_id,
+        max(_peerdb_synced_at) AS source_refreshed_at
+    FROM {{ source('postgres_fitness', 'activity') }} FINAL
+    GROUP BY user_id, provider_id
+
+    UNION ALL
+    SELECT
+        user_id,
+        provider_id,
+        max(_peerdb_synced_at) AS source_refreshed_at
+    FROM {{ source('postgres_fitness', 'daily_metrics') }} FINAL
+    GROUP BY user_id, provider_id
+
+    UNION ALL
+    SELECT
+        user_id,
+        provider_id,
+        max(_peerdb_synced_at) AS source_refreshed_at
+    FROM {{ source('postgres_fitness', 'sleep_session') }} FINAL
+    GROUP BY user_id, provider_id
+
+    UNION ALL
+    SELECT
+        user_id,
+        provider_id,
+        max(ingested_at) AS source_refreshed_at
+    FROM (
+        SELECT
+            user_id,
+            provider_id,
+            ingested_at
+        FROM {{ source('ingest', 'metric_stream') }}
+        SETTINGS force_optimize_projection_name = 'by_provider_generation'
+    )
+    GROUP BY user_id, provider_id
+
+    UNION ALL
+    SELECT
+        user_id,
+        provider_id,
+        max(_peerdb_synced_at) AS source_refreshed_at
+    FROM analytics.body_measurement_sample FINAL
+    GROUP BY user_id, provider_id
+
+    UNION ALL
+    SELECT
+        user_id,
+        provider_id,
+        max(_peerdb_synced_at) AS source_refreshed_at
+    FROM {{ source('postgres_fitness', 'food_entry') }} FINAL
+    GROUP BY user_id, provider_id
+
+    UNION ALL
+    SELECT
+        user_id,
+        provider_id,
+        max(_peerdb_synced_at) AS source_refreshed_at
+    FROM {{ source('postgres_fitness', 'health_event') }} FINAL
+    GROUP BY user_id, provider_id
+
+    UNION ALL
+    SELECT
+        user_id,
+        provider_id,
+        max(_peerdb_synced_at) AS source_refreshed_at
+    FROM {{ source('postgres_fitness', 'lab_panel') }} FINAL
+    GROUP BY user_id, provider_id
+
+    UNION ALL
+    SELECT
+        user_id,
+        provider_id,
+        max(_peerdb_synced_at) AS source_refreshed_at
+    FROM {{ source('postgres_fitness', 'lab_result') }} FINAL
+    GROUP BY user_id, provider_id
+
+    UNION ALL
+    SELECT
+        user_id,
+        provider_id,
+        max(_peerdb_synced_at) AS source_refreshed_at
+    FROM {{ source('postgres_fitness', 'journal_entry') }} FINAL
+    GROUP BY user_id, provider_id
+),
+
+current_provider_state AS (
+    SELECT
+        user_id,
+        provider_id,
+        max(source_refreshed_at) AS source_refreshed_at
+    FROM source_provider_refreshes
+    GROUP BY user_id, provider_id
+),
+
+{% if is_incremental() %}
+existing_provider_state AS (
+    SELECT
+        user_id,
+        provider_id,
+        max(refreshed_at) AS refreshed_at
+    FROM {{ this }} FINAL
+    GROUP BY user_id, provider_id
+),
+{% endif %}
+
+source_dirty_providers AS (
+    SELECT
+        current_provider_state.user_id AS user_id,
+        current_provider_state.provider_id AS provider_id
+    FROM current_provider_state
+    {% if is_incremental() %}
+    LEFT JOIN existing_provider_state
+        ON existing_provider_state.user_id = current_provider_state.user_id
+        AND existing_provider_state.provider_id = current_provider_state.provider_id
+    WHERE existing_provider_state.provider_id IS NULL
+        OR current_provider_state.source_refreshed_at > existing_provider_state.refreshed_at
+    {% endif %}
+),
+
+{% if is_incremental() %}
+stale_providers AS (
+    SELECT
+        existing_provider_state.user_id AS user_id,
+        existing_provider_state.provider_id AS provider_id
+    FROM existing_provider_state
+    LEFT JOIN current_provider_state
+        ON current_provider_state.user_id = existing_provider_state.user_id
+        AND current_provider_state.provider_id = existing_provider_state.provider_id
+    WHERE current_provider_state.provider_id IS NULL
+),
+{% endif %}
+
+providers AS (
+    SELECT
+        user_id,
+        provider_id
+    FROM source_dirty_providers
+    {% if is_incremental() %}
+    UNION DISTINCT
+    SELECT
+        user_id,
+        provider_id
+    FROM stale_providers
+    {% endif %}
+),
+
+metric_stream_current AS (
+    SELECT
+        user_id,
+        provider_id,
+        id,
+        argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted
+    FROM (
+        SELECT
+            user_id,
+            provider_id,
+            id,
+            is_deleted,
+            version,
+            ingested_at
+        FROM {{ source('ingest', 'metric_stream') }}
+        SETTINGS force_optimize_projection_name = 'by_provider_generation'
+    )
+    WHERE (user_id, provider_id) IN (
+        SELECT
+            user_id,
+            provider_id
+        FROM providers
+    )
+    GROUP BY
+        user_id,
+        provider_id,
+        id
+),
+
+metric_stream_counts AS (
+    SELECT
+        user_id,
+        provider_id,
+        count() AS count
+    FROM metric_stream_current
+    WHERE is_deleted = 0
+    GROUP BY user_id, provider_id
+),
+
+current_providers AS (
     SELECT DISTINCT
         user_id,
         provider_id
     FROM {{ source('postgres_fitness', 'provider_connection') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
 
     UNION DISTINCT
 
@@ -21,7 +227,12 @@ WITH current_providers AS (
     WHERE _peerdb_is_deleted = 0
         AND provider_absent_at IS null
         AND deleted_at IS null
-
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
     UNION DISTINCT
 
     SELECT DISTINCT
@@ -29,6 +240,12 @@ WITH current_providers AS (
         provider_id
     FROM {{ source('postgres_fitness', 'daily_metrics') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
 
     UNION DISTINCT
 
@@ -37,14 +254,46 @@ WITH current_providers AS (
         provider_id
     FROM {{ source('postgres_fitness', 'sleep_session') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
 
     UNION DISTINCT
 
+    SELECT
+        user_id,
+        provider_id
+    FROM metric_stream_counts
+
+    UNION DISTINCT
     SELECT DISTINCT
         user_id,
         provider_id
-    FROM {{ source('ingest', 'metric_stream') }} FINAL
-    WHERE is_deleted = 0
+    FROM analytics.body_measurement_sample FINAL
+    WHERE _peerdb_is_deleted = 0
+        AND channel IN (
+            'body_weight',
+            'body_fat_percentage',
+            'muscle_mass',
+            'bone_mass',
+            'body_water_percentage',
+            'body_mass_index',
+            'height',
+            'waist_circumference',
+            'systolic_blood_pressure',
+            'diastolic_blood_pressure',
+            'heart_pulse',
+            'body_temperature'
+        )
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
 
     UNION DISTINCT
 
@@ -53,6 +302,12 @@ WITH current_providers AS (
         provider_id
     FROM {{ source('postgres_fitness', 'food_entry') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
 
     UNION DISTINCT
 
@@ -61,6 +316,12 @@ WITH current_providers AS (
         provider_id
     FROM {{ source('postgres_fitness', 'health_event') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
 
     UNION DISTINCT
 
@@ -69,6 +330,12 @@ WITH current_providers AS (
         provider_id
     FROM {{ source('postgres_fitness', 'lab_panel') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
 
     UNION DISTINCT
 
@@ -77,6 +344,12 @@ WITH current_providers AS (
         provider_id
     FROM {{ source('postgres_fitness', 'lab_result') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
 
     UNION DISTINCT
 
@@ -85,30 +358,12 @@ WITH current_providers AS (
         provider_id
     FROM {{ source('postgres_fitness', 'journal_entry') }} FINAL
     WHERE _peerdb_is_deleted = 0
-),
-
-{% if is_incremental() %}
-existing_providers AS (
-    SELECT DISTINCT
-        user_id,
-        provider_id
-    FROM {{ this }} FINAL
-    WHERE is_deleted = 0
-),
-{% endif %}
-
-providers AS (
-    SELECT
-        user_id,
-        provider_id
-    FROM current_providers
-    {% if is_incremental() %}
-    UNION DISTINCT
-    SELECT
-        user_id,
-        provider_id
-    FROM existing_providers
-    {% endif %}
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
 ),
 
 activity_counts AS (
@@ -120,6 +375,12 @@ activity_counts AS (
     WHERE _peerdb_is_deleted = 0
         AND provider_absent_at IS null
         AND deleted_at IS null
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
     GROUP BY user_id, provider_id
 ),
 
@@ -130,6 +391,12 @@ daily_metric_counts AS (
         count() AS count
     FROM {{ source('postgres_fitness', 'daily_metrics') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
     GROUP BY user_id, provider_id
 ),
 
@@ -140,6 +407,12 @@ sleep_session_counts AS (
         count() AS count
     FROM {{ source('postgres_fitness', 'sleep_session') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
     GROUP BY user_id, provider_id
 ),
 
@@ -167,16 +440,12 @@ body_measurement_counts AS (
             'heart_pulse',
             'body_temperature'
         )
-    GROUP BY user_id, provider_id
-),
-
-metric_stream_counts AS (
-    SELECT
-        user_id,
-        provider_id,
-        count() AS count
-    FROM {{ source('ingest', 'metric_stream') }} FINAL
-    WHERE is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
     GROUP BY user_id, provider_id
 ),
 
@@ -187,6 +456,12 @@ food_entry_counts AS (
         count() AS count
     FROM {{ source('postgres_fitness', 'food_entry') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
     GROUP BY user_id, provider_id
 ),
 
@@ -197,6 +472,12 @@ health_event_counts AS (
         count() AS count
     FROM {{ source('postgres_fitness', 'health_event') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
     GROUP BY user_id, provider_id
 ),
 
@@ -207,6 +488,12 @@ nutrition_daily_counts AS (
         uniqExact(date) AS count
     FROM {{ source('postgres_fitness', 'food_entry') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
     GROUP BY user_id, provider_id
 ),
 
@@ -217,6 +504,12 @@ lab_panel_counts AS (
         count() AS count
     FROM {{ source('postgres_fitness', 'lab_panel') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
     GROUP BY user_id, provider_id
 ),
 
@@ -227,6 +520,12 @@ lab_result_counts AS (
         count() AS count
     FROM {{ source('postgres_fitness', 'lab_result') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
     GROUP BY user_id, provider_id
 ),
 
@@ -237,6 +536,12 @@ journal_entry_counts AS (
         count() AS count
     FROM {{ source('postgres_fitness', 'journal_entry') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND (user_id, provider_id) IN (
+            SELECT
+                user_id,
+                provider_id
+            FROM providers
+        )
     GROUP BY user_id, provider_id
 ),
 

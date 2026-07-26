@@ -11,13 +11,20 @@ describe("activity_power_curve model", () => {
     expect(activityBoundsSql).toContain("is_deleted = 0");
   });
 
-  it("limits incremental power work to changed activity summaries", () => {
+  it("limits incremental power work to changed activities with valid power samples", () => {
+    const currentPowerStateSql = extractCteSql(modelSql, "current_power_state");
+    const currentPowerActivitySql = extractCteSql(modelSql, "current_power_activity");
     const dirtyKeysSql = extractCteSql(modelSql, "source_dirty_activity_keys");
     const powerSamplesSql = extractCteSql(modelSql, "power_samples");
 
+    expect(currentPowerStateSql).toContain("channel = 'power'");
+    expect(currentPowerStateSql).toContain("scalar > 0");
+    expect(currentPowerStateSql).toContain("is_deleted = 0");
+    expect(currentPowerActivitySql).toContain("INNER JOIN current_power_state");
+    expect(modelSql).toContain("'join_use_nulls': 1");
     expect(modelSql).toContain("max(refreshed_at) AS refreshed_at");
     expect(dirtyKeysSql).toContain(
-      "current_activity.refreshed_at > existing_activity_state.refreshed_at",
+      "source_refreshed_at > existing_activity_state.refreshed_at",
     );
     expect(powerSamplesSql).toContain("WHERE (sensor.user_id, sensor.activity_id) IN (");
     expect(powerSamplesSql).toContain("FROM activity_bounds");

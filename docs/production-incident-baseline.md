@@ -17197,6 +17197,70 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   fetch the Alpine index, investigate mirror availability and hosted-runner
   network evidence before changing the build.
 
+## 2026-07-25 — Analytics Builds Exceeded the ClickHouse Query Ceiling
+
+- **Status:** Root cause fixed in code; production deployment and full-cycle
+  validation pending.
+- **Symptoms:** Sentry issue
+  [`DOFEK-SERVER-5A`](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5A)
+  recorded a failed production analytics-worker cycle at
+  `2026-07-25T15:08:03.447Z`. Swarm subsequently replaced two unhealthy
+  analytics-worker tasks while later retries continued failing.
+- **User impact:** Downstream activity, cycling, sleep, recovery, training,
+  body, and healthspan models were skipped in failed cycles and can remain
+  stale. The background event had no directly affected Sentry user.
+- **Evidence:** The exact failing path was
+  `scripts/run-analytics-worker.ts` → `scripts/run-analytics-build.ts` → the
+  production 36-model dbt build. The first fatal model line was
+  `sleep_heart_rate_sample ... Timeout exceeded: elapsed 240019.146628 ms,
+  maximum: 240000 ms`; `activity_power_curve` then failed at
+  `240001.790284 ms`. ClickHouse `system.query_log` showed the failed sleep
+  insert reading 53,806,563 rows / 1.62 GiB and the failed power-curve insert
+  reading 130,111,265 rows / 827.67 MiB. Later retries also timed out
+  `provider_stats`, whose successful cycle already read 275,256,146 rows /
+  21.50 GiB in 216 seconds. The separate
+  `analytics.v_body_measurement` refreshable materialized view runs every 15
+  minutes; its recursive full refresh read 10.4–15.7 million intermediate rows
+  / 2.58–4.28 GiB per attempt, occupied the ClickHouse service's single CPU,
+  and also began timing out. `system.query_log` history showed power-curve
+  timeouts since at least July 20 and sleep-heart-rate timeouts since July 23,
+  before the release that added Sentry-backed analytics health reporting.
+  ClickHouse documents that refreshable materialized views periodically execute
+  their query over the full dataset and that incremental materialization
+  typically scales better:
+  <https://clickhouse.com/docs/concepts/features/materialized-views/refreshable-materialized-view>.
+- **Root cause:** Several scheduled analytics workloads expand or rescan
+  production-scale history on the same single-CPU ClickHouse service. Their
+  required inserts exceed the configured four-minute `max_execution_time`;
+  failed cycles do not advance their incremental state, so retries repeat the
+  same backlog. The new health worker correctly surfaced and restarted the
+  previously hidden failure loop; it did not create the expensive queries.
+- **Fix / mitigation:** The code fix moves body-measurement transformation into
+  a dbt-owned incremental model that rebuilds only dirty users, uses per-user
+  ordered five-minute gap clustering, and preserves deletions with lifecycle
+  tombstones; `analytics.v_body_measurement` is now only the active-row serving
+  projection over that canonical table. It also recomputes provider counts only
+  for dirty provider keys through the covering metric-stream projection, limits
+  incremental sleep builds to 32 dirty keys while leaving operator-requested
+  full refreshes complete, and schedules power-curve work only for activities
+  with current valid power samples read from the replacing table with `FINAL`.
+  No timeout, retry, or resource-limit setting changed.
+- **Validation:** Sentry, Swarm logs, `system.view_refreshes`,
+  `system.query_log`, and a live `docker stats` sample all agreed on the
+  240-second failures and CPU saturation. Focused ClickHouse integration tests
+  now execute the replacement body grouping, projected provider count, bounded
+  sleep lifecycle, and power eligibility queries successfully. A fresh
+  ClickHouse migration run, full-refresh and incremental body dbt builds, dbt
+  compilation, analytics policy lint, and TypeScript typechecking also pass.
+  Production validation still must show a complete 36-model cycle below the
+  existing query ceiling, followed by cache warming and a stable healthy
+  analytics-worker task.
+- **Remaining risk / follow-up:** Production continues running the prior model
+  definitions until this change is deployed. After deployment, verify the body
+  model migration completes, observe at least one full analytics cycle, compare
+  model read rows/bytes and duration in `system.query_log`, and confirm the
+  analytics-worker remains healthy without changing the four-minute ceiling.
+
 ## 2026-07-25 — Failed Deploy Left ClickHouse Consumers Quiesced
 
 - **Status:** Unresolved; the affected [Deploy Web
@@ -17434,8 +17498,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   on the stable real ClickHouse process. The focused 39-test unit suite,
   analytics policy, targeted SQLFluff, root typecheck, and Biome also passed.
   The fresh-volume lifecycle run also passed the production
-  `weekly_healthspan` update and deletion propagation assertions. The broad
-  cycling fixture and CI remain the independent validation gates.
+  `weekly_healthspan` update and deletion propagation assertions. After the
+  body model moved to dbt ownership, the same lifecycle test uses the
+  canonical body table's per-user `refreshed_at` watermark instead of
+  `system.view_refreshes`. The broad cycling fixture and CI remain the
+  independent validation gates.
 - **Remaining risk / follow-up:** Capture Docker daemon or VM-level kill events
   if this recurs, and reduce concurrent disposable workspace stacks before
   repeating broad local ClickHouse validation. Docker documents container
