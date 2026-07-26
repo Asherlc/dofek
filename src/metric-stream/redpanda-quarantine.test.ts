@@ -17,7 +17,14 @@ describe("KafkaMetricStreamQuarantineWriter", () => {
     const moduleUrl = new URL("./redpanda-quarantine.ts", import.meta.url);
     const result = spawnSync(
       process.execPath,
-      ["--input-type=module", "--eval", `await import(${JSON.stringify(moduleUrl.href)})`],
+      [
+        "--experimental-strip-types",
+        "--enable-source-maps",
+        "--disable-warning=ExperimentalWarning",
+        "--input-type=module",
+        "--eval",
+        `await import(${JSON.stringify(moduleUrl.href)})`,
+      ],
       { encoding: "utf8" },
     );
 
