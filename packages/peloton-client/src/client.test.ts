@@ -115,6 +115,45 @@ describe("PelotonClient", () => {
     await expect(unavailable.getWorkouts()).rejects.toBeInstanceOf(PelotonServiceError);
   });
 
+  it("accepts observed nullable workout fields and missing instructor IDs", async () => {
+    const response = {
+      data: [
+        {
+          id: "workout-1",
+          status: "COMPLETE",
+          fitness_discipline: "cycling",
+          title: null,
+          created_at: 1_709_280_000,
+          start_time: 1_709_280_000,
+          end_time: null,
+          total_work: 0,
+          is_total_work_personal_record: false,
+          metrics_type: null,
+          peloton_id: null,
+          strava_id: null,
+          ride: {
+            id: "ride-1",
+            title: "Recovery Ride",
+            duration: 1_800,
+            instructor: { name: "Coach" },
+          },
+        },
+      ],
+      total: 1,
+      count: 1,
+      page: 0,
+      limit: 20,
+      page_count: 1,
+      sort_by: "-created_at",
+      show_next: false,
+      show_previous: false,
+    };
+    const responses = [Response.json({ id: "user-123" }), Response.json(response)];
+    const client = new PelotonClient("secret", async () => responses.shift() ?? Response.error());
+
+    await expect(client.getWorkouts()).resolves.toEqual(response);
+  });
+
   it("requests and validates performance graphs", async () => {
     const graph = {
       duration: 5,
