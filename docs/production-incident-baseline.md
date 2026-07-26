@@ -18306,10 +18306,53 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   metadata objects:
   <https://databasus.com/how-to-recover-without-databasus>.
 
+## 2026-07-26 — Superseded Deploy Left ClickHouse Consumers Quiesced
+
+- **Status:** Production consumers restored manually; durable workflow fix
+  validated locally, with merge and deployment pending.
+- **Symptoms:** The production deploy for commit `d423e595a` was cancelled
+  during `Deploy stack without ClickHouse consumers`, leaving
+  `dofek_analytics-worker` and `dofek_metric-stream-clickhouse-sink` at `0/0`.
+- **User impact:** ClickHouse analytics refreshes and metric-stream ingestion
+  stopped until both services were restored to one replica.
+- **Evidence:** Deploy run
+  [30209214450](https://github.com/Asherlc/dofek/actions/runs/30209214450)
+  completed migrations and applied the quiesced stack, then GitHub cancelled
+  the active stack step at `2026-07-26T16:01:03Z`. At the same time, a newer
+  `Deploy Web` workflow run entered the same concurrency group even though its
+  production job was skipped because the triggering CI run had not succeeded.
+  Live Swarm state then showed both ClickHouse consumers at `0/0` on image
+  `sha-a0b134f`.
+- **Root cause:** The dispatcher used workflow-level
+  `cancel-in-progress: true`. Any newer `workflow_run`, including one whose
+  production job would be skipped, could therefore terminate an active
+  production deploy after its intentional quiesce phase but before the
+  compensating consumer redeploy.
+- **Fix / mitigation:** Restore both consumers to one replica as an explicit
+  operator action, then make production web deployments non-cancellable and
+  serialized. The reusable stack deployment already has
+  `cancel-in-progress: false`; the dispatcher now matches that contract and
+  gives automatic and manual production triggers one concurrency key so a
+  newer run waits instead of interrupting a partially applied deployment.
+  Before an automatic run enters that concurrency group, an eligibility job
+  checks the live `main` commit through the GitHub API and admits the run only
+  when its successful CI commit is still current. This prevents stale or failed
+  CI completions from displacing a valid pending deploy or later rolling
+  production back.
+  GitHub documents that `cancel-in-progress: true` cancels an already running
+  job or workflow in the same concurrency group:
+  <https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency>.
+- **Validation:** Both production services converged at `1/1`; the analytics
+  readiness endpoint started and the metric sink rejoined its consumer group.
+  Actionlint and direct workflow-diff validation remain pre-merge gates.
+- **Remaining risk / follow-up:** Merge the workflow fix, complete one normal
+  deployment without cancellation, verify both consumers remain `1/1`, and
+  confirm the target application release is running.
+
 ## 2026-07-26 — Worker Deployments Stalled Active BullMQ Jobs
 
-- **Status:** Direct fixes validated locally and with real Redis/ClickHouse
-  behavior; merge and production deployment pending.
+- **Status:** Direct fixes merged after full CI; production deployment remains
+  pending because the first rollout was superseded during the incident above.
 - **Symptoms:** Sentry issues
   [DOFEK-SERVER-4N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4N)
   and

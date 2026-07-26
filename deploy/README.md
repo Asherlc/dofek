@@ -169,14 +169,32 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> configure CDC and restore consumers
 ```
 
+Production web deployments are serialized and never cancel an in-progress
+deployment. Automatic and manual triggers share the same production concurrency
+group. A rollout intentionally quiesces ClickHouse consumers before migrations
+and restores them only after the final stack converges, so a newer run must
+wait rather than interrupt that state transition. Automatic runs also deploy
+only when an eligibility job confirms through the GitHub commits API that their
+successful CI commit is still the current `main` commit. Only eligible runs
+enter the production job's concurrency group, so an older success that finishes
+out of order cannot displace a valid pending deployment and is skipped before
+Terraform instead of rolling production back. GitHub documents both the
+commits endpoint and that concurrency groups retain at most one running and one
+pending job, with `cancel-in-progress` controlling whether a running job is
+terminated:
+<https://docs.github.com/en/rest/commits/commits#get-a-commit>,
+<https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency>.
+
 1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`), because `Deploy Web` is triggered by the successful `CI` `workflow_run` for `main` and deploys that tag. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
    Automatic deploys also check out the successful CI run's full commit SHA
    before rendering stack configuration. GitHub documents that a
    `workflow_run` workflow's `GITHUB_SHA` is the last commit on the default
    branch rather than necessarily the triggering workflow's commit, so using
-   `github.event.workflow_run.head_sha` keeps image code, healthchecks,
-   entrypoints, and stack configuration from different revisions from being
-   mixed:
+   a live API result as the freshness boundary and
+   `github.event.workflow_run.head_sha` as the deploy commit prevents a queued
+   stale success from rolling production backward while keeping image code,
+   healthchecks, entrypoints, and stack configuration from different revisions
+   from being mixed:
    <https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run>.
    Manual image-tag deploys must dispatch the workflow with `--ref` set to the
    full source commit for that image. After pulling the app image, the workflow
