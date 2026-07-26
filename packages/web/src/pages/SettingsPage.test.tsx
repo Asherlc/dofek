@@ -87,7 +87,7 @@ describe("SettingsPage", () => {
     mockMutation.mutate.mockReset();
   });
 
-  it("reserves the resolved billing height while subscription status loads", () => {
+  it("reserves the resolved billing height across subscription states", () => {
     mockBillingStatusQuery.mockReturnValue({
       data: undefined,
       error: null,
@@ -115,8 +115,9 @@ describe("SettingsPage", () => {
     rerender(<SettingsPage />);
 
     expect(screen.getByText("You currently have full access to your data.")).toBeTruthy();
-    expect(screen.getByRole("region", { name: "Billing" }).firstElementChild).toBe(
-      loadingContainer,
-    );
+    const resolvedContainer = screen.getByRole("region", { name: "Billing" }).firstElementChild;
+    expect(resolvedContainer?.className).toContain("min-h-44");
+    expect(resolvedContainer?.className).toContain("sm:min-h-32");
+    expect(resolvedContainer?.className).toContain("lg:min-h-28");
   });
 });

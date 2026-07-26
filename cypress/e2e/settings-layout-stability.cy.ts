@@ -16,6 +16,7 @@ interface RecordedLayoutShift {
 
 interface LayoutShiftMeasurement {
   readonly entries: RecordedLayoutShift[];
+  observer: PerformanceObserver | null;
   supported: boolean;
 }
 
@@ -45,6 +46,7 @@ function sourceLabel(win: Window, source: LayoutShiftSource): string | null {
 function installLayoutShiftObserver(win: Window): void {
   const measurement: LayoutShiftMeasurement = {
     entries: [],
+    observer: null,
     supported: win.PerformanceObserver?.supportedEntryTypes.includes("layout-shift") ?? false,
   };
   win.__dofekLayoutShiftMeasurement = measurement;
@@ -52,19 +54,28 @@ function installLayoutShiftObserver(win: Window): void {
   if (!measurement.supported) return;
 
   const observer = new win.PerformanceObserver((list) => {
-    for (const entry of list.getEntries()) {
-      if (!isLayoutShiftEntry(entry) || entry.hadRecentInput) continue;
-
-      measurement.entries.push({
-        sourceLabels: (entry.sources ?? [])
-          .map((source) => sourceLabel(win, source))
-          .filter((label): label is string => label !== null),
-        startTime: entry.startTime,
-        value: entry.value,
-      });
-    }
+    recordLayoutShifts(win, measurement, list.getEntries());
   });
+  measurement.observer = observer;
   observer.observe({ type: "layout-shift", buffered: true });
+}
+
+function recordLayoutShifts(
+  win: Window,
+  measurement: LayoutShiftMeasurement,
+  entries: readonly PerformanceEntry[],
+): void {
+  for (const entry of entries) {
+    if (!isLayoutShiftEntry(entry) || entry.hadRecentInput) continue;
+
+    measurement.entries.push({
+      sourceLabels: (entry.sources ?? [])
+        .map((source) => sourceLabel(win, source))
+        .filter((label): label is string => label !== null),
+      startTime: entry.startTime,
+      value: entry.value,
+    });
+  }
 }
 
 function maximumLayoutShiftSession(entries: readonly RecordedLayoutShift[]): number {
@@ -111,6 +122,69 @@ function waitForPaint(win: Window): Promise<void> {
       win.requestAnimationFrame(() => resolve());
     });
   });
+}
+
+function waitForPendingPageResources(win: Window): Promise<void> {
+  const imageLoads = Array.from(win.document.images)
+    .filter((image) => !image.complete)
+    .map(
+      (image) =>
+        new Promise<void>((resolve) => {
+          image.addEventListener("load", () => resolve(), { once: true });
+          image.addEventListener("error", () => resolve(), { once: true });
+        }),
+    );
+  const resourcesReady = Promise.all([win.document.fonts.ready, ...imageLoads]).then(
+    () => undefined,
+  );
+
+  return new Promise((resolve) => {
+    const timeoutId = win.setTimeout(resolve, 2_000);
+    resourcesReady.then(() => {
+      win.clearTimeout(timeoutId);
+      resolve();
+    });
+  });
+}
+
+function waitForLayoutShiftQuietWindow(win: Window): Promise<void> {
+  const measurement = win.__dofekLayoutShiftMeasurement;
+  if (!measurement) throw new Error("Layout shift measurement was not installed");
+
+  const observer = measurement.observer;
+  if (!observer) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    const startedAt = win.performance.now();
+    let quietSince = startedAt;
+    let recordedEntryCount = measurement.entries.length;
+
+    const checkForQuietWindow = () => {
+      recordLayoutShifts(win, measurement, observer.takeRecords());
+
+      const now = win.performance.now();
+      if (measurement.entries.length !== recordedEntryCount) {
+        recordedEntryCount = measurement.entries.length;
+        quietSince = now;
+      }
+
+      if (now - quietSince >= 500 || now - startedAt >= 3_000) {
+        observer.disconnect();
+        resolve();
+        return;
+      }
+
+      win.setTimeout(checkForQuietWindow, 50);
+    };
+
+    win.setTimeout(checkForQuietWindow, 50);
+  });
+}
+
+async function waitForStableLayout(win: Window): Promise<void> {
+  await waitForPendingPageResources(win);
+  await waitForPaint(win);
+  await waitForLayoutShiftQuietWindow(win);
 }
 
 describe("Settings layout stability", () => {
@@ -162,7 +236,7 @@ describe("Settings layout stability", () => {
 
       cy.wait("@providerInventory");
       cy.contains("main", "Apple Health").should("exist");
-      cy.window().then(waitForPaint);
+      cy.window().then(waitForStableLayout);
 
       cy.contains("main section h3", "Linked Accounts").then(($heading) => {
         const heading = $heading.get(0);

@@ -269,7 +269,9 @@ describe("DataSourcesPanel", () => {
     });
     rerender(<DataSourcesPanel />);
 
-    expect(screen.getByRole("region", { name: "Available data sources" })).toBe(loadingRegion);
+    const resolvedRegion = screen.getByRole("region", { name: "Available data sources" });
+    expect(resolvedRegion).toBe(loadingRegion);
+    expect(resolvedRegion.getAttribute("aria-busy")).toBe("false");
     expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
   });
 
