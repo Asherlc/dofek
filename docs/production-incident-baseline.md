@@ -17768,10 +17768,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   The same checkout also reported the unlisted `swift` binary from the WHOOP
   BLE npm manifest and a Node 26 `module.register()` deprecation emitted by the
   older `tsx` CLI. A later Knip job failed at `pnpm knip` with
-  `Unused devDependencies (1): supports-color package.json:270:6`.
+  `Unused devDependencies (1): supports-color package.json:270:6`. The final
+  mutation matrix then failed at `packages/peloton-client/src/types.ts:1-102`
+  with `No tests were executed`.
 - **Root cause:** The new package `exports` maps pointed at ignored compiled
   `dist` or `build` directories. Those directories existed in the development
   workspace, masking the defect, but were absent from a clean CI checkout.
+  Separately, the mutation Vitest project omitted the newly extracted Peloton
+  and Xert test directories.
 - **Fix / mitigation:** Local workspace exports now resolve canonical source
   files, while `publishConfig` rewrites npm tarball exports to compiled
   JavaScript and declarations. pnpm owns packing and publishing; Lerna remains
@@ -17780,7 +17784,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   current stable release. The root `supports-color` dependency makes pnpm
   resolve one shared Sentry peer context across the root and server workspaces;
   it is declared in Knip's `ignoreDependencies` because its use occurs during
-  dependency resolution rather than through a source import. pnpm documents
+  dependency resolution rather than through a source import. The canonical
+  mutation test project now includes both newly extracted Peloton and Xert
+  packages, allowing Vitest's related-test analysis to discover their
+  colocated tests. pnpm documents
   that supported `publishConfig` fields replace their development values
   during packing, and Knip documents `ignoreDependencies` for dependencies
   whose use static analysis cannot observe:
@@ -17793,7 +17800,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   The full Docker-free suite passed 13,758 tests. A frozen pnpm 11 install, 117
   Swift tests, Swift manifest resolution from outside the package directory,
   release-workflow linting, the corrected Knip check, and all 7 cache-module
-  peer-context tests also passed.
+  peer-context tests also passed. The previously failing Peloton mutation shard
+  discovered and ran 6 related tests; its 7 schema object mutants were
+  intentionally static and ignored by the existing `ignoreStatic` policy. An
+  Xert parsing shard ran 13 related tests and killed all 7 non-static mutants
+  for a 100% mutation score.
 - **Remaining risk / follow-up:** Replacement GitHub Actions checks must pass on
   Node 26 before merge. Future public-package changes should validate both a
   clean source checkout and the packed manifest, because either half alone can
