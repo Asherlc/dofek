@@ -63,3 +63,10 @@ export const providerDataDeletesTotal = new Counter({
   labelNames: ["provider_id"] as const,
   registers: [registry],
 });
+
+export const predictorLinearFitFallbacksTotal = new Counter({
+  name: "predictor_linear_fit_fallbacks_total",
+  help: "Total number of linear predictor fit failures that fell back to tree predictions",
+  labelNames: ["prediction_target"] as const,
+  registers: [registry],
+});

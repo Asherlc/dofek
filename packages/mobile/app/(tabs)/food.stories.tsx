@@ -19,14 +19,8 @@ function createSeededProviders() {
   });
   const todayDate = localDateString();
 
-  queryClient.setQueryData(
-    [["settings", "get"], { input: { key: "calorieGoal" }, type: "query" }],
-    { key: "calorieGoal", value: 2200 },
-  );
-
-  queryClient.setQueryData(
-    [["food", "byDate"], { input: { date: todayDate }, type: "query" }],
-    [
+  queryClient.setQueryData([["food", "byDate"], { input: { date: todayDate }, type: "query" }], {
+    entries: [
       {
         id: "food-1",
         food_name: "Overnight oats",
@@ -78,7 +72,28 @@ function createSeededProviders() {
         fat_g: 28,
       },
     ],
-  );
+    summary: {
+      calories: 2220,
+      mealCalories: {
+        breakfast: 630,
+        lunch: 640,
+        dinner: 710,
+        snack: 240,
+        other: 0,
+      },
+      calorieGoal: {
+        target: 2200,
+        remaining: 0,
+        over: 20,
+        progressPercentage: 100,
+      },
+      macros: {
+        protein: { grams: 162, calories: 648, percentage: 29 },
+        carbs: { grams: 202, calories: 808, percentage: 36 },
+        fat: { grams: 71, calories: 639, percentage: 29 },
+      },
+    },
+  });
 
   return { queryClient };
 }

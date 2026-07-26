@@ -18,7 +18,7 @@ export function createMigration(): ClickHouseMigration {
   ];
 
   return {
-    id: "0055_daily_body_measurement_lifecycle",
+    id: "0056_daily_body_measurement_lifecycle",
     statements,
     run: async (client) => {
       if (!client.query) {

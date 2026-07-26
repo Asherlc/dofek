@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { z } from "zod";
+import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
@@ -77,12 +78,20 @@ export default function SupplementsScreen() {
   const stack = trpc.supplements.list.useQuery();
   const saveMutation = trpc.supplements.save.useMutation({
     onSuccess: () => utils.supplements.list.invalidate(),
-    onError: (error) => Alert.alert("Error", error.message),
+    onError: (error) => {
+      captureException(error, { operation: "supplements.save" });
+      Alert.alert("Error", error.message);
+    },
+    meta: { errorReportedLocally: true },
   });
 
   const supplements = z.array(supplementSchema).parse(stack.data ?? []);
+  const hasCanonicalStack = stack.data !== undefined;
 
   function handleSave(updated: Supplement[]) {
+    if (!hasCanonicalStack) {
+      return;
+    }
     saveMutation.mutate({ supplements: updated });
   }
 
@@ -126,22 +135,31 @@ export default function SupplementsScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Supplements</Text>
         <TouchableOpacity
-          style={styles.addButton}
+          style={[styles.addButton, !hasCanonicalStack && styles.buttonDisabled]}
           onPress={() => setShowForm(!showForm)}
+          disabled={!hasCanonicalStack}
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel={showForm ? "Cancel adding supplement" : "Add Supplement"}
-          accessibilityState={{ expanded: showForm }}
+          accessibilityState={{ disabled: !hasCanonicalStack, expanded: showForm }}
         >
           <Text style={styles.addButtonText}>{showForm ? "Cancel" : "+ Add Supplement"}</Text>
         </TouchableOpacity>
       </View>
 
-      {showForm && <AddSupplementForm onSubmit={handleAdd} loading={saveMutation.isPending} />}
+      {showForm && hasCanonicalStack && (
+        <AddSupplementForm onSubmit={handleAdd} loading={saveMutation.isPending} />
+      )}
 
-      {stack.isLoading && <Text style={styles.loadingText}>Loading...</Text>}
+      {stack.isLoading && !hasCanonicalStack && <Text style={styles.loadingText}>Loading...</Text>}
 
-      {supplements.length === 0 && !stack.isLoading && (
+      {stack.error && (
+        <Text style={styles.errorText}>
+          {hasCanonicalStack ? `Refresh failed: ${stack.error.message}` : stack.error.message}
+        </Text>
+      )}
+
+      {supplements.length === 0 && !stack.isLoading && !stack.error && (
         <Text style={styles.emptyText}>
           No supplements configured. Add your daily stack and it will be synced as nutrition data.
         </Text>
@@ -336,6 +354,7 @@ const styles = StyleSheet.create({
     borderColor: colors.surfaceSecondary,
   },
   addButtonText: { fontSize: 14, fontWeight: "600", color: colors.accent },
+  buttonDisabled: { opacity: 0.5 },
   deleteButton: { paddingHorizontal: 12, paddingVertical: 6 },
   deleteButtonText: { fontSize: 13, color: colors.danger, fontWeight: "500" },
   saveButton: {

@@ -9,8 +9,7 @@ const meta = {
   args: {
     label: "Protein",
     grams: formatGrams(150),
-    caloriesFromMacro: 600,
-    totalCalories: 2000,
+    percentage: 30,
     color: "blue",
   },
 } satisfies Meta<typeof MacroBar>;
@@ -25,8 +24,7 @@ export const Carbs: Story = {
   args: {
     label: "Carbs",
     grams: formatGrams(250),
-    caloriesFromMacro: 1000,
-    totalCalories: 2000,
+    percentage: 50,
     color: "amber",
   },
 };
@@ -35,8 +33,7 @@ export const Fat: Story = {
   args: {
     label: "Fat",
     grams: formatGrams(44),
-    caloriesFromMacro: 400,
-    totalCalories: 2000,
+    percentage: 20,
     color: "red",
   },
 };

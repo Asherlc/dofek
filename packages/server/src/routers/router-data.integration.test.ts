@@ -863,29 +863,29 @@ describe("Router data coverage", () => {
   describe("settings", () => {
     it("set creates a setting and get retrieves it", async () => {
       const setResult = await mutate<{ key: string; value: unknown }>("settings.set", {
-        key: "theme",
-        value: "dark",
+        key: "unitSystem",
+        value: "metric",
       });
-      expect(setResult.key).toBe("theme");
+      expect(setResult.key).toBe("unitSystem");
 
       await queryCache.invalidateAll();
 
       const getResult = await query<{ key: string; value: unknown } | null>("settings.get", {
-        key: "theme",
+        key: "unitSystem",
       });
       expect(getResult).not.toBeNull();
-      expect(getResult?.key).toBe("theme");
-      expect(getResult?.value).toBe("dark");
+      expect(getResult?.key).toBe("unitSystem");
+      expect(getResult?.value).toBe("metric");
     });
 
     it("set upserts an existing setting", async () => {
-      await mutate("settings.set", { key: "theme", value: "light" });
+      await mutate("settings.set", { key: "unitSystem", value: "imperial" });
       await queryCache.invalidateAll();
 
       const result = await query<{ key: string; value: unknown } | null>("settings.get", {
-        key: "theme",
+        key: "unitSystem",
       });
-      expect(result?.value).toBe("light");
+      expect(result?.value).toBe("imperial");
     });
 
     it("get returns null for missing key", async () => {
@@ -895,15 +895,15 @@ describe("Router data coverage", () => {
 
     it("getAll returns all settings", async () => {
       // Set a second setting
-      await mutate("settings.set", { key: "locale", value: "en-US" });
+      await mutate("settings.set", { key: "whoop.wearLocation", value: "wrist" });
       await queryCache.invalidateAll();
 
       const result = await query<{ key: string; value: unknown }[]>("settings.getAll");
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBeGreaterThanOrEqual(2);
       const keys = result.map((r) => r.key);
-      expect(keys).toContain("theme");
-      expect(keys).toContain("locale");
+      expect(keys).toContain("unitSystem");
+      expect(keys).toContain("whoop.wearLocation");
     });
 
     it("slackStatus returns configured and connected booleans", async () => {
@@ -1006,9 +1006,9 @@ describe("Router data coverage", () => {
     it("update modifies a food entry", async () => {
       // Get a food entry id
       const today = new Date().toISOString().slice(0, 10);
-      const entries = await query<{ id: string }[]>("food.byDate", { date: today });
-      expect(entries.length).toBeGreaterThan(0);
-      const entryId = entries[0]?.id;
+      const result = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
+      expect(result.entries.length).toBeGreaterThan(0);
+      const entryId = result.entries[0]?.id;
       expect(entryId).toBeTruthy();
 
       const updated = await mutate<{ id: string; calories: number } | null>("food.update", {
@@ -1021,8 +1021,8 @@ describe("Router data coverage", () => {
 
     it("update with date field modification", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const entries = await query<{ id: string }[]>("food.byDate", { date: today });
-      const entryId = entries[0]?.id;
+      const result = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
+      const entryId = result.entries[0]?.id;
 
       // Update date and set some fields to null (covers null-clearing branches)
       const updated = await mutate<{ id: string } | null>("food.update", {
@@ -1036,25 +1036,27 @@ describe("Router data coverage", () => {
 
     it("update with no fields returns null", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const entries = await query<{ id: string }[]>("food.byDate", { date: today });
-      const entryId = entries[0]?.id;
+      const selectedDate = await query<{ entries: { id: string }[] }>("food.byDate", {
+        date: today,
+      });
+      const entryId = selectedDate.entries[0]?.id;
       const result = await mutate<null>("food.update", { id: entryId });
       expect(result).toBeNull();
     });
 
     it("delete removes a food entry", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const before = await query<{ id: string }[]>("food.byDate", { date: today });
-      const countBefore = before.length;
+      const before = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
+      const countBefore = before.entries.length;
       expect(countBefore).toBeGreaterThan(0);
 
-      const entryId = before[0]?.id;
+      const entryId = before.entries[0]?.id;
       const deleteResult = await mutate<{ success: boolean }>("food.delete", { id: entryId });
       expect(deleteResult.success).toBe(true);
 
       await queryCache.invalidateAll();
-      const after = await query<{ id: string }[]>("food.byDate", { date: today });
-      expect(after.length).toBe(countBefore - 1);
+      const after = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
+      expect(after.entries.length).toBe(countBefore - 1);
     });
 
     it("dailyTotals aggregates calories and macros by day", async () => {

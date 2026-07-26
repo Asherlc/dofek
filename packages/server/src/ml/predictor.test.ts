@@ -1,7 +1,31 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DailyFeatureRow, ExtractedDataset } from "./features.ts";
 import { PREDICTION_TARGETS } from "./features.ts";
 import { trainFromDataset, trainHrvPredictor, trainPredictor } from "./predictor.ts";
+
+const telemetryMocks = vi.hoisted(() => ({
+  captureException: vi.fn(),
+  incrementLinearFitFallback: vi.fn(),
+  logError: vi.fn(),
+}));
+
+vi.mock("@sentry/node", () => ({ captureException: telemetryMocks.captureException }));
+vi.mock("../lib/metrics.ts", () => ({
+  predictorLinearFitFallbacksTotal: {
+    inc: telemetryMocks.incrementLinearFitFallback,
+  },
+}));
+vi.mock("../logger.ts", () => ({
+  logger: {
+    error: telemetryMocks.logError,
+  },
+}));
+
+beforeEach(() => {
+  telemetryMocks.captureException.mockReset();
+  telemetryMocks.incrementLinearFitFallback.mockReset();
+  telemetryMocks.logError.mockReset();
+});
 
 function mulberry32(seed: number): () => number {
   let s = seed;
@@ -380,6 +404,56 @@ describe("trainFromDataset", () => {
       expect(importance.linearImportance).toBe(0);
       expect(importance.linearCoefficient).toBe(0);
     }
+
+    expect(telemetryMocks.captureException).toHaveBeenCalledOnce();
+    expect(telemetryMocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: {
+        component: "predictor",
+        operation: "linear-fit",
+        predictionTarget: "cardio_power",
+      },
+      extra: {
+        featureCount: 3,
+        sampleCount: 24,
+      },
+    });
+    const capturedError = telemetryMocks.captureException.mock.calls[0]?.[0];
+    expect(capturedError).toBeInstanceOf(Error);
+    expect(telemetryMocks.logError).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: "predictor.linear_fit_fallback",
+        featureCount: 3,
+        predictionTarget: "cardio_power",
+        sampleCount: 24,
+        errorMessage: capturedError instanceof Error ? capturedError.message : "",
+        errorName: capturedError instanceof Error ? capturedError.name : "",
+        errorStack: capturedError instanceof Error ? capturedError.stack : undefined,
+      }),
+    );
+    expect(telemetryMocks.incrementLinearFitFallback).toHaveBeenCalledWith({
+      prediction_target: "cardio_power",
+    });
+  });
+
+  it("does not report telemetry when linear regression fits successfully", () => {
+    const featureNames = ["x"];
+    const featureMatrix = Array.from({ length: 24 }, (_, index) => [index + 1]);
+    const targets = featureMatrix.map(([featureValue]) => (featureValue ?? 0) * 2 + 1);
+    const dates = featureMatrix.map((_, index) =>
+      new Date(2024, 0, 1 + index).toISOString().slice(0, 10),
+    );
+
+    const result = trainFromDataset(
+      { featureNames, X: featureMatrix, y: targets, dates },
+      "cardio_power",
+      "Cardio Power Output",
+      "W",
+    );
+
+    expect(result.diagnostics.linearFallbackUsed).toBe(false);
+    expect(telemetryMocks.captureException).not.toHaveBeenCalled();
+    expect(telemetryMocks.logError).not.toHaveBeenCalled();
+    expect(telemetryMocks.incrementLinearFitFallback).not.toHaveBeenCalled();
   });
 
   it("computes non-zero cross-validation at the 25-sample boundary", () => {

@@ -39,11 +39,11 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: SyncDat
   await ensureProvidersRegistered();
 
   await updateScheduledSyncProgress(job, 10, "Loading connected providers...");
-  // Find all users who have at least one connected (non-import-only) provider
+  // Find every explicit user/provider connection. Non-sync sources are filtered below.
   const rows = await db.execute(
     sql`
-      SELECT DISTINCT ot.user_id, ot.provider_id
-      FROM fitness.oauth_token ot
+      SELECT pc.user_id, pc.provider_id
+      FROM fitness.provider_connection pc
     `,
   );
 
@@ -84,8 +84,8 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: SyncDat
   for (const [userId, providerIds] of userProviders) {
     for (const providerId of providerIds) {
       const provider = getProvider(providerId);
-      if (provider && !isSyncEligibleProvider(provider)) {
-        logger.info(`[scheduled-sync] Skipping CSV provider ${providerId}`);
+      if (!provider || !isSyncEligibleProvider(provider)) {
+        logger.info(`[scheduled-sync] Skipping non-sync provider ${providerId}`);
         processedConnections++;
         await reportDispatchProgress();
         continue;

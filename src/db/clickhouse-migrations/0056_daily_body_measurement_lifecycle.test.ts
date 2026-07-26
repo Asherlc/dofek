@@ -9,7 +9,7 @@ vi.mock("./statement-runner.ts", () => ({
   runClickHouseMigrationStatement: mockRunClickHouseMigrationStatement,
 }));
 
-import { createMigration } from "./0055_daily_body_measurement_lifecycle.ts";
+import { createMigration } from "./0056_daily_body_measurement_lifecycle.ts";
 
 type QueryOptions = Parameters<NonNullable<ClickHouseCommandClient["query"]>>[0];
 
@@ -27,14 +27,14 @@ class TestClickHouseClient implements ClickHouseCommandClient {
   }
 }
 
-describe("0055_daily_body_measurement_lifecycle", () => {
+describe("0056_daily_body_measurement_lifecycle", () => {
   beforeEach(() => {
     mockRunClickHouseMigrationStatement.mockReset();
   });
 
   it("adds lifecycle and source-watermark columns to the existing serving table", () => {
     expect(createMigration()).toMatchObject({
-      id: "0055_daily_body_measurement_lifecycle",
+      id: "0056_daily_body_measurement_lifecycle",
       statements: [
         `ALTER TABLE analytics.daily_body_measurement
         ADD COLUMN IF NOT EXISTS is_deleted UInt8 DEFAULT 0 AFTER body_fat_pct`,

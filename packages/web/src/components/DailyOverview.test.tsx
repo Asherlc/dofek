@@ -97,6 +97,71 @@ describe("DailyOverview", () => {
     expect(container.innerHTML).toBe("");
   });
 
+  it.each([
+    ["readiness", { readinessError: new Error("Readiness unavailable") }],
+    ["workload", { workloadError: new Error("Workload unavailable") }],
+    ["strain target", { strainTargetError: new Error("Strain target unavailable") }],
+    ["sleep", { sleepError: new Error("Sleep performance unavailable") }],
+  ])("shows the exact %s query failure instead of hiding the summary", (_name, errorProps) => {
+    render(
+      <DailyOverview
+        readiness={undefined}
+        workloadRatio={undefined}
+        sleepPerformance={undefined}
+        readinessLoading={false}
+        workloadLoading={false}
+        strainTargetLoading={false}
+        sleepLoading={false}
+        {...errorProps}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Daily health summary" })).toBeTruthy();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      Object.values(errorProps)[0]?.message ?? "",
+    );
+    expect(screen.getByTestId("query-state-error")).toBeTruthy();
+  });
+
+  it("shows all core query failures together", () => {
+    render(
+      <DailyOverview
+        readiness={undefined}
+        workloadRatio={undefined}
+        sleepPerformance={undefined}
+        readinessError={new Error("Readiness unavailable")}
+        workloadError={new Error("Workload unavailable")}
+        strainTargetError={new Error("Strain target unavailable")}
+        sleepError={new Error("Sleep performance unavailable")}
+      />,
+    );
+
+    expect(screen.getByText("Readiness unavailable")).toBeTruthy();
+    expect(screen.getByText("Workload unavailable")).toBeTruthy();
+    expect(screen.getByText("Strain target unavailable")).toBeTruthy();
+    expect(screen.getByText("Sleep performance unavailable")).toBeTruthy();
+  });
+
+  it("keeps cached ring data visible during background failures", () => {
+    render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessError={new Error("Readiness refresh unavailable")}
+        workloadError={new Error("Workload refresh unavailable")}
+        strainTargetError={new Error("Strain target refresh unavailable")}
+        sleepError={new Error("Sleep refresh unavailable")}
+      />,
+    );
+
+    expect(screen.getByText("75")).toBeTruthy();
+    expect(screen.getByText("Readiness refresh unavailable")).toBeTruthy();
+    expect(screen.getByText("Workload refresh unavailable")).toBeTruthy();
+    expect(screen.getByText("Strain target refresh unavailable")).toBeTruthy();
+    expect(screen.getByText("Sleep refresh unavailable")).toBeTruthy();
+  });
+
   it("renders recovery ring with score", () => {
     render(
       <DailyOverview
@@ -260,7 +325,7 @@ describe("DailyOverview", () => {
     fireEvent.click(findButton(screen.getByText("Recovery")));
 
     // Should show an explanation of what data is needed
-    expect(screen.getByText(/Recovery score needs HRV/)).toBeTruthy();
+    expect(screen.getByText(/Recovery score needs heart rate variability/)).toBeTruthy();
   });
 
   it("shows explanation when empty sleep ring is clicked", () => {

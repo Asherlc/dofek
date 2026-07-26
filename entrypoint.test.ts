@@ -20,3 +20,12 @@ describe("entrypoint cdc-health mode", () => {
     expect(cdcHealthBlock).toContain('sleep "$interval_seconds"');
   });
 });
+
+describe("entrypoint provider connection cutover mode", () => {
+  it("runs the resumable connection backfill as a one-shot command", () => {
+    const entrypoint = readEntrypoint();
+
+    expect(entrypoint).toContain(`provider-connection-cutover)
+    exec $NODE scripts/backfill-provider-connections.ts`);
+  });
+});

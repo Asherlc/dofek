@@ -1,11 +1,17 @@
 import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   DailyMetricsRepository,
   HRV_BASELINE_WARMUP_DAYS,
+  trendsRowSchema,
 } from "../repositories/daily-metrics-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
+import {
+  buildDailyMetricHealthStatuses,
+  healthStatusMetricSchema,
+} from "../services/health-status.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export type { HrvBaselineRow } from "../repositories/daily-metrics-repository.ts";
@@ -66,7 +72,13 @@ export const dailyMetricsRouter = router({
         endDate: input.endDate,
         days: range.days,
       });
-      return repo.getTrends(range.days, input.endDate, restingHeartRateCte);
+      const trends = await repo.getTrends(range.days, input.endDate, restingHeartRateCte);
+      return trends ? { ...trends, healthStatus: buildDailyMetricHealthStatuses(trends) } : null;
+    },
+    {
+      outputSchema: trendsRowSchema
+        .extend({ healthStatus: z.array(healthStatusMetricSchema) })
+        .nullable(),
     },
   ),
 });

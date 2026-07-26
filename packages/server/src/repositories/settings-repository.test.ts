@@ -65,6 +65,30 @@ describe("SettingsRepository", () => {
     });
   });
 
+  describe("getCalorieGoal", () => {
+    it("returns a positive numeric calorie goal", async () => {
+      const { repo } = makeRepository([{ key: "calorieGoal", value: 2350 }]);
+
+      await expect(repo.getCalorieGoal()).resolves.toBe(2350);
+    });
+
+    it("accepts the existing numeric-string setting format", async () => {
+      const { repo } = makeRepository([{ key: "calorieGoal", value: "2150" }]);
+
+      await expect(repo.getCalorieGoal()).resolves.toBe(2150);
+    });
+
+    it.each([
+      { rows: [] },
+      { rows: [{ key: "calorieGoal", value: 0 }] },
+      { rows: [{ key: "calorieGoal", value: "invalid" }] },
+    ])("falls back to 2000 when the setting is absent or invalid", async ({ rows }) => {
+      const { repo } = makeRepository(rows);
+
+      await expect(repo.getCalorieGoal()).resolves.toBe(2000);
+    });
+  });
+
   describe("set", () => {
     it("returns the upserted setting", async () => {
       const { repo } = makeRepository([{ key: "theme", value: "dark" }]);

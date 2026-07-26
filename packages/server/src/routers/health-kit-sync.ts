@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/node";
+import { ensureProvider as ensureProviderConnection } from "dofek/db/tokens";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
@@ -34,11 +34,7 @@ import { processSleepSamples } from "./health-kit-sync-sleep.ts";
 
 /** Ensure the apple_health provider row exists */
 async function ensureProvider(db: Database, userId: string) {
-  await db.execute(
-    sql`INSERT INTO fitness.provider (id, name, user_id)
-        VALUES (${PROVIDER_ID}, 'Apple Health', ${userId})
-        ON CONFLICT (id) DO NOTHING`,
-  );
+  await ensureProviderConnection(db, PROVIDER_ID, "Apple Health", undefined, userId);
 }
 
 /** Route a sample to its destination category */

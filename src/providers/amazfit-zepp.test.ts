@@ -658,7 +658,7 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.recordsSynced).toBe(4);
-    expect(spies.onConflictDoUpdate).toHaveBeenCalledTimes(3);
+    expect(spies.onConflictDoUpdate).toHaveBeenCalledTimes(2);
     expect(spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
         date: "2026-02-06",

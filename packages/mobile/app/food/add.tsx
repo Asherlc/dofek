@@ -123,8 +123,8 @@ export default function AddFoodScreen() {
           return null;
         }),
     ]).then(([todayData, yesterdayData]) => {
-      const todayRaw: unknown[] = todayData?.[0]?.result?.data ?? [];
-      const yesterdayRaw: unknown[] = yesterdayData?.[0]?.result?.data ?? [];
+      const todayRaw: unknown[] = todayData?.[0]?.result?.data?.entries ?? [];
+      const yesterdayRaw: unknown[] = yesterdayData?.[0]?.result?.data?.entries ?? [];
 
       const todayEntries = todayRaw.flatMap((item) => {
         const parsed = FoodEntrySchema.safeParse(item);

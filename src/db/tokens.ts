@@ -1,11 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { TokenSet } from "../auth/oauth.ts";
 import {
   decryptCredentialValue,
   encryptCredentialValue,
 } from "../security/credential-encryption.ts";
 import type { SyncDatabase } from "./index.ts";
-import { oauthToken, provider } from "./schema/reference.ts";
+import { oauthToken } from "./schema/reference.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 function resolveUserId(userId?: string): string {
@@ -38,19 +38,28 @@ function oauthTokenContext(
  * Ensure a provider row exists. Idempotent — does nothing if already present.
  */
 export async function ensureProvider(
-  db: SyncDatabase,
+  db: Pick<SyncDatabase, "execute">,
   id: string,
   name: string,
   apiBaseUrl?: string,
   userId?: string,
 ): Promise<string> {
   const resolvedUserId = resolveUserId(userId);
-  const values = { id, name, apiBaseUrl, userId: resolvedUserId };
   try {
-    await db.insert(provider).values(values).onConflictDoUpdate({
-      target: provider.id,
-      set: { name, apiBaseUrl },
-    });
+    await db.execute(
+      sql`WITH ensured_provider AS (
+            INSERT INTO fitness.provider (id, name, api_base_url, user_id)
+            VALUES (${id}, ${name}, ${apiBaseUrl ?? null}, NULL)
+            ON CONFLICT (id) DO UPDATE
+              SET name = EXCLUDED.name,
+                  api_base_url = EXCLUDED.api_base_url
+            RETURNING id
+          )
+          INSERT INTO fitness.provider_connection (user_id, provider_id)
+          SELECT ${resolvedUserId}, id
+          FROM ensured_provider
+          ON CONFLICT (user_id, provider_id) DO NOTHING`,
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`ensureProvider(${id}) failed for user ${resolvedUserId}: ${message}`, {

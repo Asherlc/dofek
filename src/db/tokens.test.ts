@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import {
   encryptCredentialValue,
@@ -7,12 +7,6 @@ import {
 import { TEST_USER_ID } from "./schema/core.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
 
-// Mock drizzle's query builder helpers
-vi.mock("drizzle-orm", () => ({
-  eq: vi.fn((col, val) => ({ column: col, value: val })),
-  and: vi.fn((...conditions) => ({ conditions })),
-}));
-
 describe("ensureProvider", () => {
   let mock: ReturnType<typeof createMockDatabase>;
 
@@ -20,7 +14,7 @@ describe("ensureProvider", () => {
     mock = createMockDatabase();
   });
 
-  it("inserts a provider with id, name, and apiBaseUrl", async () => {
+  it("atomically ensures the provider catalog row and user connection", async () => {
     const result = await ensureProvider(
       mock.db,
       "wahoo",
@@ -30,25 +24,24 @@ describe("ensureProvider", () => {
     );
 
     expect(result).toBe("wahoo");
-    expect(mock.spies.insert).toHaveBeenCalled();
-    expect(mock.spies.values).toHaveBeenCalledWith({
-      id: "wahoo",
-      name: "Wahoo",
-      apiBaseUrl: "https://api.wahoo.com",
-      userId: TEST_USER_ID,
-    });
-    expect(mock.spies.onConflictDoUpdate).toHaveBeenCalled();
+    expect(mock.spies.execute).toHaveBeenCalledOnce();
+    const query = mock.spies.execute.mock.calls[0]?.[0];
+    const serializedQuery = JSON.stringify(query);
+    expect(serializedQuery).toContain("INSERT INTO fitness.provider");
+    expect(serializedQuery).toContain("INSERT INTO fitness.provider_connection");
+    expect(serializedQuery).toContain("ON CONFLICT (user_id, provider_id) DO NOTHING");
+    expect(serializedQuery).toContain("https://api.wahoo.com");
+    expect(serializedQuery).toContain(TEST_USER_ID);
   });
 
-  it("includes userId when provided", async () => {
+  it("never writes the connection owner into the legacy provider owner column", async () => {
     await ensureProvider(mock.db, "whoop", "WHOOP", undefined, "user-123");
 
-    expect(mock.spies.values).toHaveBeenCalledWith({
-      id: "whoop",
-      name: "WHOOP",
-      apiBaseUrl: undefined,
-      userId: "user-123",
-    });
+    const query = mock.spies.execute.mock.calls[0]?.[0];
+    const serializedQuery = JSON.stringify(query);
+    expect(serializedQuery).toContain("VALUES");
+    expect(serializedQuery).toContain("NULL");
+    expect(serializedQuery).toContain("user-123");
   });
 
   it("throws when userId is not provided and context is absent", async () => {
@@ -70,6 +63,16 @@ describe("ensureProvider", () => {
   it("returns the provider id", async () => {
     const result = await ensureProvider(mock.db, "test-id", "Test", undefined, TEST_USER_ID);
     expect(result).toBe("test-id");
+  });
+
+  it("includes provider and user context when the atomic write fails", async () => {
+    mock.spies.execute.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(
+      ensureProvider(mock.db, "wahoo", "Wahoo", undefined, TEST_USER_ID),
+    ).rejects.toThrow(
+      `ensureProvider(wahoo) failed for user ${TEST_USER_ID}: database unavailable`,
+    );
   });
 });
 

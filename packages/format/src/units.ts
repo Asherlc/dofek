@@ -133,6 +133,18 @@ export class UnitConverter {
     return this.system === "imperial" ? "°F" : "°C";
   }
 
+  get percentageLabel(): string {
+    return "%";
+  }
+
+  get calorieLabel(): string {
+    return "kcal";
+  }
+
+  get caloriesPerDayLabel(): string {
+    return `${this.calorieLabel}/day`;
+  }
+
   get speedLabel(): string {
     return this.system === "imperial" ? "mph" : "km/h";
   }

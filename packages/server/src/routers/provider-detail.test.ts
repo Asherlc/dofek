@@ -338,8 +338,8 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 16 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(16);
+    it("contains 17 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(17);
     });
 
     it("includes all required child tables", () => {
@@ -359,11 +359,12 @@ describe("providerDetailRouter", () => {
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sync_log");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.activity");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.oauth_token");
+      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.provider_connection");
     });
 
-    it("ends with activity then oauth_token (FK order)", () => {
+    it("ends with OAuth token then provider connection (FK order)", () => {
       const lastTwo = DISCONNECT_CHILD_TABLES.slice(-2);
-      expect(lastTwo).toEqual(["fitness.activity", "fitness.oauth_token"]);
+      expect(lastTwo).toEqual(["fitness.oauth_token", "fitness.provider_connection"]);
     });
 
     it("deletes lab_result before lab_panel (FK order)", () => {
@@ -1051,7 +1052,7 @@ describe("providerDetailRouter", () => {
       // Verify ownership check SQL contains correct table and conditions
       const ownerSql = mockExecute.mock.calls[0][0];
       const ownerText = extractSqlText(ownerSql);
-      expect(ownerText).toContain("fitness.oauth_token");
+      expect(ownerText).toContain("fitness.provider_connection");
       expect(ownerText).toContain("SELECT");
     });
 

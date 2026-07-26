@@ -143,36 +143,30 @@ describe("Token storage (integration)", () => {
     });
   });
 
-  it("ensureProvider keeps existing owner when upserting from another user", async () => {
-    const testUserId = "33333333-3333-3333-3333-333333333333";
+  it("creates independent connections when two users connect the same provider", async () => {
+    const firstUserId = "33333333-3333-3333-3333-333333333333";
+    const secondUserId = "44444444-4444-4444-4444-444444444444";
     await ctx.db.execute(
-      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${testUserId}, 'Test User') ON CONFLICT DO NOTHING`,
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES
+            (${firstUserId}, 'First Provider User'),
+            (${secondUserId}, 'Second Provider User')
+          ON CONFLICT DO NOTHING`,
     );
 
-    await ensureProvider(ctx.db, "user-test-provider", "Test Provider", undefined, TEST_USER_ID);
-    await ensureProvider(
-      ctx.db,
-      "user-test-provider",
-      "Test Provider Updated",
-      undefined,
-      testUserId,
-    );
+    await ensureProvider(ctx.db, "shared-oauth-provider", "Shared OAuth", undefined, firstUserId);
+    await ensureProvider(ctx.db, "shared-oauth-provider", "Shared OAuth", undefined, secondUserId);
 
-    const rows = await ctx.db.execute<{ user_id: string; name: string }>(
-      sql`SELECT user_id, name FROM fitness.provider WHERE id = 'user-test-provider'`,
+    const catalogRows = await ctx.db.execute<{ id: string; name: string }>(
+      sql`SELECT id, name FROM fitness.provider WHERE id = 'shared-oauth-provider'`,
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.user_id).toBe(TEST_USER_ID);
-    expect(rows[0]?.name).toBe("Test Provider Updated");
-  });
-
-  it("ensureProvider stores explicit user owner", async () => {
-    await ensureProvider(ctx.db, "scoped-provider", "Scoped Provider", undefined, TEST_USER_ID);
-
-    const rows = await ctx.db.execute<{ user_id: string }>(
-      sql`SELECT user_id FROM fitness.provider WHERE id = 'scoped-provider'`,
+    const connectionRows = await ctx.db.execute<{ user_id: string }>(
+      sql`SELECT user_id
+          FROM fitness.provider_connection
+          WHERE provider_id = 'shared-oauth-provider'
+          ORDER BY user_id`,
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.user_id).toBe(TEST_USER_ID);
+    expect(catalogRows).toEqual([{ id: "shared-oauth-provider", name: "Shared OAuth" }]);
+    expect(connectionRows).toEqual([{ user_id: firstUserId }, { user_id: secondUserId }]);
   });
 });

@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 type MockInsightsQueryResult = {
   data: unknown[] | undefined;
   isLoading: boolean;
+  isFetched: boolean;
   error: Error | null;
 };
 
@@ -62,22 +63,32 @@ const mockHeartRateBaselineQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
 const mockInsightsQuery = vi.hoisted(() =>
-  vi.fn<() => MockInsightsQueryResult>(() => ({ data: [], isLoading: false, error: null })),
+  vi.fn<() => MockInsightsQueryResult>(() => ({
+    data: [],
+    isLoading: false,
+    isFetched: true,
+    error: null,
+  })),
 );
 const mockDataHealthQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
 const mockDashboardEvidenceOverview = vi.hoisted(() => vi.fn());
+const mockDailyOverview = vi.hoisted(() => vi.fn());
 
 vi.mock("../components/DailyOverview.tsx", () => ({
-  DailyOverview: () => <section aria-label="Daily health summary">Daily overview</section>,
+  DailyOverview: (props: Record<string, unknown>) => {
+    mockDailyOverview(props);
+    return <section aria-label="Daily health summary">Daily overview</section>;
+  },
 }));
 
 vi.mock("../components/DashboardEvidenceOverview.tsx", () => ({
-  DashboardEvidenceOverview: (props: { insightError?: ReactNode }) => {
+  DashboardEvidenceOverview: (props: { healthMonitor?: ReactNode; insightError?: ReactNode }) => {
     mockDashboardEvidenceOverview(props);
     return (
       <section aria-label="Dashboard overview">
+        {props.healthMonitor}
         {props.insightError ?? <div>Sleep consistency + Heart Rate Variability</div>}
       </section>
     );
@@ -192,9 +203,15 @@ describe("Dashboard", () => {
     });
     mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockHeartRateBaselineQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
-    mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockInsightsQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isFetched: true,
+      error: null,
+    });
     mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockDashboardEvidenceOverview.mockClear();
+    mockDailyOverview.mockClear();
   });
 
   it("shows data readiness when dashboard summaries are stale", () => {
@@ -278,6 +295,8 @@ describe("Dashboard", () => {
       expect.anything(),
       expect.objectContaining({ enabled: false }),
     );
+    expect(screen.queryByText("No insights yet.")).toBeNull();
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
   });
 
   it("enables insights after core dashboard queries settle successfully", () => {
@@ -289,7 +308,7 @@ describe("Dashboard", () => {
     );
   });
 
-  it("enables insights after core dashboard queries settle, including on error", () => {
+  it("does not enable insights when a core dashboard prerequisite fails without data", () => {
     mockReadinessQuery.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -301,12 +320,77 @@ describe("Dashboard", () => {
 
     expect(mockInsightsQuery).toHaveBeenCalledWith(
       expect.anything(),
+      expect.objectContaining({ enabled: false }),
+    );
+    expect(screen.queryByText("No insights yet.")).toBeNull();
+    expect(screen.getByText("Insights unavailable until dashboard data loads.")).toBeTruthy();
+  });
+
+  it("enables insights when a failed background refresh retains prerequisite data", () => {
+    mockReadinessQuery.mockReturnValue({
+      data: coreDashboardQueryData.readiness,
+      isLoading: false,
+      isFetched: true,
+      error: new Error("Readiness refresh unavailable"),
+    });
+
+    render(<Dashboard />);
+
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({ enabled: true }),
     );
   });
 
+  it("passes every core dashboard query error into the daily summary", () => {
+    const readinessError = new Error("Readiness unavailable");
+    const workloadError = new Error("Workload unavailable");
+    const strainTargetError = new Error("Strain target unavailable");
+    const sleepError = new Error("Sleep performance unavailable");
+    mockReadinessQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: readinessError,
+    });
+    mockWorkloadQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: workloadError,
+    });
+    mockStrainTargetQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: strainTargetError,
+    });
+    mockSleepPerformanceQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: sleepError,
+    });
+
+    render(<Dashboard />);
+
+    expect(mockDailyOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        readinessError,
+        workloadError,
+        strainTargetError,
+        sleepError,
+      }),
+    );
+  });
+
   it("uses a loading panel while insights are loading", () => {
-    mockInsightsQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    mockInsightsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetched: false,
+      error: null,
+    });
 
     render(<Dashboard />);
 
@@ -344,6 +428,7 @@ describe("Dashboard", () => {
         stddev_hrv: 7.5,
         stddev_resting_hr: 3.1,
         stddev_spo2: null,
+        stddev_steps: null,
         stddev_skin_temp: null,
         latest_hrv: 48,
         latest_resting_hr: 55,
@@ -351,6 +436,7 @@ describe("Dashboard", () => {
         latest_steps: null,
         latest_skin_temp: null,
         latest_date: "2026-05-27",
+        healthStatus: [],
       },
       isLoading: false,
       error: null,
@@ -400,27 +486,58 @@ describe("Dashboard", () => {
       }),
     );
   });
+
+  it("keeps cached health status visible during a background refresh error", () => {
+    mockTrendsQuery.mockReturnValue({
+      data: {
+        avg_hrv: 43.8,
+        avg_resting_hr: 56.2,
+        avg_spo2: null,
+        avg_steps: null,
+        avg_skin_temp: null,
+        stddev_hrv: 7.5,
+        stddev_resting_hr: 3.1,
+        stddev_spo2: null,
+        stddev_steps: null,
+        stddev_skin_temp: null,
+        latest_hrv: 48,
+        latest_resting_hr: 55,
+        latest_spo2: null,
+        latest_steps: null,
+        latest_skin_temp: null,
+        latest_date: "2026-05-27",
+        healthStatus: [],
+      },
+      isLoading: false,
+      error: new Error("Health status refresh failed."),
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByText("Health status bar")).toBeTruthy();
+    expect(screen.getByText("Health status refresh failed.")).toBeTruthy();
+  });
 });
 
 describe("isCoreDashboardReady", () => {
-  it("returns false while any core dashboard query is still in flight", () => {
+  it("returns false while any core dashboard prerequisite is not ready", () => {
     expect(
       isCoreDashboardReady({
-        readinessSettled: false,
-        workloadRatioSettled: true,
-        strainTargetSettled: true,
-        sleepPerformanceSettled: true,
+        readinessReady: false,
+        workloadRatioReady: true,
+        strainTargetReady: true,
+        sleepPerformanceReady: true,
       }),
     ).toBe(false);
   });
 
-  it("returns true once all core dashboard queries have settled", () => {
+  it("returns true once all core dashboard prerequisites are ready", () => {
     expect(
       isCoreDashboardReady({
-        readinessSettled: true,
-        workloadRatioSettled: true,
-        strainTargetSettled: true,
-        sleepPerformanceSettled: true,
+        readinessReady: true,
+        workloadRatioReady: true,
+        strainTargetReady: true,
+        sleepPerformanceReady: true,
       }),
     ).toBe(true);
   });
@@ -476,23 +593,23 @@ describe("buildSkinTempSeries", () => {
 });
 
 describe("spo2TempSectionConfig", () => {
-  it("returns combined title and dual axes when both SpO2 and skin temp are present", () => {
+  it("returns combined title and dual axes when both blood oxygen and skin temp are present", () => {
     const config = spo2TempSectionConfig(true, true, new UnitConverter("imperial"));
-    expect(config.title).toBe("SpO2 & Skin Temperature");
+    expect(config.title).toBe("Blood Oxygen Saturation (SpO2) & Skin Temperature");
     expect(config.subtitle).toContain("oxygen");
     expect(config.subtitle).toContain("skin");
     expect(config.yAxis).toHaveLength(2);
-    expect(config.yAxis[0]?.name).toBe("SpO2 (%)");
+    expect(config.yAxis[0]?.name).toBe("Blood Oxygen Saturation (%)");
     expect(config.yAxis[1]?.name).toBe("°F");
   });
 
-  it("returns SpO2-only title and single axis when only SpO2 data exists", () => {
+  it("returns blood-oxygen-only title and single axis when only blood oxygen data exists", () => {
     const config = spo2TempSectionConfig(true, false, new UnitConverter("metric"));
-    expect(config.title).toBe("Blood Oxygen (SpO2)");
+    expect(config.title).toBe("Blood Oxygen Saturation (SpO2)");
     expect(config.subtitle).toContain("oxygen");
     expect(config.subtitle).not.toContain("skin");
     expect(config.yAxis).toHaveLength(1);
-    expect(config.yAxis[0]?.name).toBe("SpO2 (%)");
+    expect(config.yAxis[0]?.name).toBe("Blood Oxygen Saturation (%)");
   });
 
   it("returns skin temp-only title and single axis when only skin temp exists", () => {
@@ -517,35 +634,41 @@ describe("healthMonitorSubtitle", () => {
 });
 
 describe("buildHealthMetrics", () => {
-  it("includes resting heart rate as a lower-is-better health metric", () => {
-    const metrics = buildHealthMetrics(
-      {
-        avg_hrv: 43.8,
-        avg_resting_hr: 56.2,
-        avg_spo2: null,
-        avg_steps: null,
-        avg_skin_temp: null,
-        stddev_hrv: 7.5,
-        stddev_resting_hr: 3.1,
-        stddev_spo2: null,
-        stddev_skin_temp: null,
-        latest_hrv: 48,
-        latest_resting_hr: 55,
-        latest_spo2: null,
-        latest_steps: null,
-        latest_skin_temp: null,
-        latest_date: "2025-03-15",
-      },
-      new UnitConverter("metric"),
-    );
-
-    expect(metrics).toContainEqual({
+  it("passes through the canonical server health status without recalculating it", () => {
+    const restingHeartRateStatus = {
+      metric: "resting_heart_rate" as const,
       label: "Resting Heart Rate",
       value: 55,
-      avg: 56.2,
-      stddev: 3.1,
-      unit: "bpm",
-      lowerBetter: true,
+      baseline: 56.2,
+      sampleDeviation: 3.1,
+      deviation: -0.39,
+      direction: "below" as const,
+      intent: "lower" as const,
+      statusToken: "moving_as_intended" as const,
+      statusColor: "positive" as const,
+      statusLabel: "Moving as intended",
+      explanation: "Resting Heart Rate is below your baseline.",
+    };
+    const metrics = buildHealthMetrics({
+      avg_hrv: 43.8,
+      avg_resting_hr: 56.2,
+      avg_spo2: null,
+      avg_steps: null,
+      avg_skin_temp: null,
+      stddev_hrv: 7.5,
+      stddev_resting_hr: 3.1,
+      stddev_spo2: null,
+      stddev_steps: null,
+      stddev_skin_temp: null,
+      latest_hrv: 48,
+      latest_resting_hr: 55,
+      latest_spo2: null,
+      latest_steps: null,
+      latest_skin_temp: null,
+      latest_date: "2025-03-15",
+      healthStatus: [restingHeartRateStatus],
     });
+
+    expect(metrics).toEqual([restingHeartRateStatus]);
   });
 });

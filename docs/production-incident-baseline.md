@@ -188,6 +188,93 @@ metric-stream detail can still time out or fail under ClickHouse memory
 pressure. The 24-hour window contained no samples for several historical
 loading suspects, so their current behavior remains unclassified.
 
+## 2026-07-25: Fresh integration stack started tests during Postgres initialization
+
+### Symptoms
+
+The focused settings integration suite skipped all tests after setup failed with
+`Error: Connection terminated unexpectedly`.
+
+### User Impact
+
+There was no production or end-user impact. The failure affected local
+integration validation in a newly created workspace Compose project.
+
+### Evidence
+
+`pnpm test:integration -- packages/server/src/routers/settings.integration.test.ts`
+started Vitest while the new database container still reported
+`health: starting`. The database log then recorded its initialization-time
+`received fast shutdown request` at `2026-07-25 21:52:54 UTC`, at the same time
+the test connection terminated. After the container reported healthy, the same
+test file passed all 11 tests with the generated `.env.local` loaded.
+
+### Root Cause
+
+The local integration wrapper launched Vitest before the fresh Timescale image
+completed initialization and its expected final Postgres restart.
+
+### Fix or Mitigation
+
+No product code or resilience delay was added. Validation resumed only after the
+existing database healthcheck passed, consistent with Docker Compose's
+documented health-based startup controls:
+<https://docs.docker.com/compose/how-tos/startup-order/>.
+
+### Remaining Risk
+
+A brand-new workspace can reproduce this local validation race because the
+wrapper does not currently wait for all generated Compose services to become
+healthy before launching Vitest. A dedicated testing-infrastructure change
+should make health readiness part of the wrapper rather than relying on a
+manual rerun.
+
+## 2026-07-25: Concurrent local stacks exhausted ClickHouse headroom
+
+### Symptoms
+
+The broader `router-data.integration.test.ts` setup failed while rebuilding the
+ClickHouse `v_sleep` fixture with `Error: socket hang up`, and all 51 tests were
+skipped.
+
+### User Impact
+
+There was no production or end-user impact. The failure affected proportional
+local validation in a Docker Desktop environment shared by many active
+workspace stacks.
+
+### Evidence
+
+At the failure timestamp, the ClickHouse container restarted once and its
+healthcheck exited with code 137. Before the restart, ClickHouse reduced its
+reported available-memory hard limit repeatedly until only 95.80 MiB remained.
+`docker stats` showed several other workspace ClickHouse, Postgres, Redpanda,
+and Kubernetes containers concurrently sharing the 7.653 GiB Docker VM. The
+issue-specific settings integration file did not rebuild the full analytics
+fixture and passed all 11 tests.
+
+### Root Cause
+
+The shared Docker VM ran out of practical memory headroom while the broad router
+fixture rebuilt ClickHouse analytics tables, causing the workspace ClickHouse
+process to restart and terminate the client connection.
+
+### Fix or Mitigation
+
+No application change, retry, or timeout was added. The focused real-database
+suite remained the local validation for this settings-only change; the broad
+suite remains a CI gate in an isolated runner. Docker documents that container
+resource demand is constrained by Docker Desktop's VM resource allocation:
+<https://docs.docker.com/desktop/settings-and-maintenance/settings/#resources>.
+
+### Remaining Risk
+
+Running heavyweight integration suites while many workspace stacks and local
+Kubernetes clusters are active can reproduce this local ClickHouse restart.
+Future local validation should stop disposable services owned by the current
+workspace and avoid overlapping broad ClickHouse suites; it must not remove
+other workspaces' resources.
+
 ## 2026-07-08: Migration hardening PR CI follow-up
 
 ### Symptoms
@@ -17128,6 +17215,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   against Infisical, investigate provider availability and runner egress using
   the captured endpoint evidence before changing workflow behavior.
 
+## 2026-07-25 — Mobile Preview Secret Load Timeout Recurred
+
+- **Status:** External runner-egress failure identified on PR #1961;
+  replacement CI pending.
+- **Symptoms:** `Publish Mobile Preview OTA` failed before Expo export or
+  publication began.
+- **User impact:** No production users were affected. PR #1961 was temporarily
+  blocked from merge.
+- **Evidence:** The exact failed step in [workflow run
+  30175976190](https://github.com/Asherlc/dofek/actions/runs/30175976190) was
+  `Load mobile preview secrets from Infisical`. Its first causal fatal line was
+  `Post "https://app.infisical.com/api/v1/auth/oidc-auth/login": dial tcp
+  100.49.202.214:443: i/o timeout`; GitHub OIDC token minting and the Infisical
+  CLI installation had already succeeded.
+- **Root cause:** The hosted runner could not establish the HTTPS connection
+  needed to exchange its GitHub OIDC token at Infisical's login endpoint. The
+  application, nutrition changes, and Expo build had not executed. Infisical
+  documents this token-exchange flow:
+  <https://infisical.com/docs/documentation/platform/identities/oidc-auth/github>.
+- **Fix / mitigation:** Trigger replacement CI on a new hosted runner. No
+  retry, timeout, fallback secret path, or workflow behavior was added.
+- **Validation:** Local lint, all package typechecks, 13,516 unit/mobile tests,
+  and 15 real-Postgres food integration tests pass. Replacement CI must
+  complete secret loading and mobile-preview publication before merge.
+- **Remaining risk / follow-up:** This is a second independently observed
+  runner-to-Infisical timeout. If another independent runner fails at the same
+  endpoint, investigate provider availability and runner egress before
+  changing authentication workflow behavior.
+
 ## 2026-07-25 — Mobile Preview Object Upload Returned InternalError
 
 - **Status:** Resolved after the external upload service recovered; replacement
@@ -17237,7 +17353,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Status:** Root cause fixed and validated locally; replacement CI pending on
   PR #1966.
 - **Symptoms:** The fresh E2E migration job failed while applying ClickHouse
-  migration `0055_daily_body_measurement_lifecycle`.
+  migration `0056_daily_body_measurement_lifecycle`.
 - **User impact:** No production users were affected. PR #1966 was blocked from
   merge.
 - **Evidence:** The exact failing step ran the E2E migration service. Its first
@@ -17259,3 +17375,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   After stopping only completed issue stacks, the same fresh migration run
   passed. Continue capturing Docker VM-level kill evidence if that capacity
   failure recurs.
+## 2026-07-25 — Local ClickHouse OOM During Concurrent Validation
+
+- **Status:** Resolved by ending the concurrent full-suite workload; no
+  repository resilience change was made.
+- **Symptoms:** The issue-1729 SQLFluff lint process lost its local ClickHouse
+  HTTP connection while several workspaces were validating concurrently.
+- **User impact:** No production or CI users were affected. Local PR validation
+  was delayed.
+- **Evidence:** The exact failing command was `pnpm lint`, in the
+  `lint:analytics-sql` step. Its first fatal line was
+  `dbt tried to connect to the database and failed`, followed by
+  `RemoteDisconnected('Remote end closed connection without response')`.
+  `docker inspect issue-1729-clickhouse-1` reported `"OOMKilled": true`, and
+  `docker stats --no-stream` showed five other workspace ClickHouse containers
+  active within the same 7.65 GiB Docker VM.
+- **Root cause:** Running the repository-wide Vitest suite and SQL lint while
+  multiple workspaces also ran ClickHouse exhausted the shared Docker VM
+  memory, so Docker killed the issue-1729 ClickHouse process. Docker documents
+  that containers can be killed when the host runs out of memory:
+  <https://docs.docker.com/engine/containers/resource_constraints/#understand-the-risks-of-running-out-of-memory>.
+- **Fix / mitigation:** Let the concurrent full-suite process finish and keep
+  subsequent validation serial and scoped to this workspace. No retry,
+  timeout, fallback, or memory-limit change was added.
+- **Validation:** Typecheck, 346 issue-focused unit tests, 26 focused
+  integration tests, the 35-model analytics build, and the isolated 39-test
+  mobile teardown suite pass. CI remains the authoritative full-matrix gate.
+- **Remaining risk / follow-up:** Concurrent workspaces can still exhaust the
+  shared Docker VM. Schedule ClickHouse-heavy local validation serially when
+  several workspaces are active; do not stop or prune another workspace's
+  resources.
