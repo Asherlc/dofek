@@ -18116,6 +18116,45 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   event recurs. The weekly report contains a similar recursive query and should
   be investigated separately rather than silently expanded into this fix.
 
+### Follow-up: Weekly Report Used the Same Recursive Request Path
+
+- **Status:** Direct fix validated against real Postgres and ClickHouse test
+  instances; merge and production deployment pending.
+- **Symptoms:** `weeklyReport.report` took 61,806 ms and 120,030 ms before
+  timing out in production. The same route ran for approximately 106–123
+  seconds in the local no-data reproduction while the shared ClickHouse
+  container was OOM-killed.
+- **User impact:** Weekly reports remained in a loading state instead of
+  returning report data or the existing no-data UI.
+- **Evidence:** [GitHub issue #1980](https://github.com/Asherlc/dofek/issues/1980)
+  records the production timings and local reproduction. The executable
+  regression first failed with
+  `Unknown table expression identifier 'analytics_test_...v_activity'` after
+  the recursive test views were removed, proving the repository's request-time
+  dependency.
+- **Root cause:** The weekly query joined `analytics.v_activity`, read
+  `analytics.v_sleep` and `analytics.v_daily_metrics`, and expanded the
+  resting-heart-rate calculation even though compact activity, daily-sleep,
+  and daily-recovery serving models already held the required values.
+- **Fix / mitigation:** Read activities from `analytics.activity_summary`,
+  sleep from `analytics.daily_sleep FINAL`, and vitals from
+  `analytics.daily_recovery FINAL`, with explicit user and report-window
+  bounds. Preserve empty calendar periods when a report has data, but return
+  the established `{ current: null, history: [] }` result when none of those
+  serving models has a row for the user. The monthly repository now applies
+  the same no-data rule. ClickHouse documents `FINAL` as applying an engine's
+  merge logic during selection:
+  <https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier>.
+- **Validation:** The real-database weekly regression passes both the
+  serving-model lifecycle case and an empty-user case with the recursive views
+  absent. The monthly real-database regression also passes its existing
+  lifecycle case and the new empty-user case. Focused repository and router
+  suites pass 101 tests.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy the weekly
+  query, invoke both reports with populated and empty production accounts, and
+  confirm bounded completion in ClickHouse query history. No timeout, retry,
+  or cache fallback was added.
+
 ## 2026-07-25 — Oracle Override Disabled the Database Backup Scheduler
 
 - **Status:** Root cause confirmed; direct source fix and external freshness

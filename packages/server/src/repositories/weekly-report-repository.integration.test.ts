@@ -8,31 +8,32 @@ import {
   getClickHouseTestClient,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { MonthlyReportRepository } from "./monthly-report-repository.ts";
+import { WeeklyReportRepository } from "./weekly-report-repository.ts";
 
-const userId = "77777777-7777-4777-8777-777777777777";
-const emptyUserId = "66666666-6666-4666-8666-666666666666";
-const activityId = "88888888-8888-4888-8888-888888888888";
+const userId = "99999999-9999-4999-8999-999999999999";
+const emptyUserId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const activityId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const endDate = "2026-07-25";
 
-describe("MonthlyReportRepository ClickHouse read models", () => {
+describe("WeeklyReportRepository ClickHouse read models", () => {
   let testContext: TestContext;
   let sensorStore: ActivitySensorStore;
-  let monthStart: string;
+  let weekStart: string;
 
   beforeAll(async () => {
     testContext = await setupTestDatabase();
     sensorStore = await createClickHouseTestActivitySensorStore(testContext);
-    const monthResult = await getClickHouseTestClient(testContext).query({
-      query: "SELECT toString(toStartOfMonth(today())) AS month_start",
+    const weekResult = await getClickHouseTestClient(testContext).query({
+      query: `SELECT toString(toStartOfWeek(toDate('${endDate}'), 0)) AS week_start`,
       format: "JSONEachRow",
     });
-    const [monthRow] = z
-      .array(z.object({ month_start: dateStringSchema }))
-      .parse(await monthResult.json());
-    if (!monthRow) {
-      throw new Error("ClickHouse did not return its current month");
+    const [weekRow] = z
+      .array(z.object({ week_start: dateStringSchema }))
+      .parse(await weekResult.json());
+    if (!weekRow) {
+      throw new Error("ClickHouse did not return the report week");
     }
-    monthStart = monthRow.month_start;
+    weekStart = weekRow.week_start;
 
     await executeClickHouseTestCommand(
       testContext,
@@ -48,8 +49,8 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         toUUID('${activityId}'),
         toUUID('${userId}'),
         'cycling',
-        toDateTime64(toDate('${monthStart}') + INTERVAL 5 DAY, 6, 'UTC'),
-        toDateTime64(toDate('${monthStart}') + INTERVAL 5 DAY + INTERVAL 1 HOUR, 6, 'UTC'),
+        toDateTime64(toDate('${endDate}') - INTERVAL 2 DAY, 6, 'UTC'),
+        toDateTime64(toDate('${endDate}') - INTERVAL 2 DAY + INTERVAL 1 HOUR, 6, 'UTC'),
         100,
         200
       )`,
@@ -67,36 +68,36 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         refreshed_at
       ) VALUES (
         toUUID('${userId}'),
-        toDate('${monthStart}') + INTERVAL 5 DAY,
+        toDate('${endDate}') - INTERVAL 2 DAY,
         'test-provider',
-        toDateTime64(toDate('${monthStart}') + INTERVAL 5 DAY, 6, 'UTC'),
+        toDateTime64(toDate('${endDate}') - INTERVAL 2 DAY, 6, 'UTC'),
         300,
         1,
         0,
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate('${monthStart}') + INTERVAL 5 DAY,
+        toDate('${endDate}') - INTERVAL 2 DAY,
         'test-provider',
-        toDateTime64(toDate('${monthStart}') + INTERVAL 5 DAY, 6, 'UTC'),
+        toDateTime64(toDate('${endDate}') - INTERVAL 2 DAY, 6, 'UTC'),
         480,
         2,
         0,
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate('${monthStart}') + INTERVAL 6 DAY,
+        toDate('${endDate}') - INTERVAL 1 DAY,
         'test-provider',
-        toDateTime64(toDate('${monthStart}') + INTERVAL 6 DAY, 6, 'UTC'),
+        toDateTime64(toDate('${endDate}') - INTERVAL 1 DAY, 6, 'UTC'),
         600,
         1,
         0,
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate('${monthStart}') + INTERVAL 6 DAY,
+        toDate('${endDate}') - INTERVAL 1 DAY,
         'test-provider',
-        toDateTime64(toDate('${monthStart}') + INTERVAL 6 DAY, 6, 'UTC'),
+        toDateTime64(toDate('${endDate}') - INTERVAL 1 DAY, 6, 'UTC'),
         600,
         2,
         1,
@@ -115,7 +116,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         refreshed_at
       ) VALUES (
         toUUID('${userId}'),
-        toDate('${monthStart}') + INTERVAL 5 DAY,
+        toDate('${endDate}') - INTERVAL 2 DAY,
         40,
         60,
         0,
@@ -123,7 +124,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate('${monthStart}') + INTERVAL 5 DAY,
+        toDate('${endDate}') - INTERVAL 2 DAY,
         60,
         50,
         0,
@@ -131,7 +132,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate('${monthStart}') + INTERVAL 6 DAY,
+        toDate('${endDate}') - INTERVAL 1 DAY,
         80,
         45,
         0,
@@ -139,7 +140,7 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
         now64(9)
       ), (
         toUUID('${userId}'),
-        toDate('${monthStart}') + INTERVAL 6 DAY,
+        toDate('${endDate}') - INTERVAL 1 DAY,
         80,
         45,
         1,
@@ -148,7 +149,12 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
       )`,
     );
 
-    for (const recursiveView of ["v_activity", "v_sleep", "v_daily_metrics"]) {
+    for (const recursiveView of [
+      "v_activity",
+      "v_sleep",
+      "v_daily_metrics",
+      "resting_heart_rate_sleep_window",
+    ]) {
       await executeClickHouseTestCommand(testContext, `DROP TABLE analytics.${recursiveView} SYNC`);
     }
   }, 120_000);
@@ -158,24 +164,29 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
   });
 
   it("builds the report from compact serving models without recursive views", async () => {
-    const report = await new MonthlyReportRepository(userId, sensorStore).getReport(12);
+    const report = await new WeeklyReportRepository(userId, "UTC", sensorStore).getReport(
+      1,
+      endDate,
+    );
 
-    expect(report.current).toEqual({
-      monthStart,
-      trainingHours: 1,
-      activityCount: 1,
-      avgDailyStrain: 30,
-      avgSleepMinutes: 480,
-      avgRestingHr: 50,
-      avgHrv: 60,
-      trainingHoursTrend: null,
-      avgSleepTrend: null,
-    });
-    expect(report.history).toHaveLength(12);
+    expect(report.current).toEqual(
+      expect.objectContaining({
+        weekStart,
+        trainingHours: 1,
+        activityCount: 1,
+        avgSleepMinutes: 480,
+        avgRestingHr: 50,
+        avgHrv: 60,
+      }),
+    );
+    expect(report.history).toEqual([]);
   });
 
   it("returns the no-data result for an empty user", async () => {
-    const report = await new MonthlyReportRepository(emptyUserId, sensorStore).getReport(12);
+    const report = await new WeeklyReportRepository(emptyUserId, "UTC", sensorStore).getReport(
+      1,
+      endDate,
+    );
 
     expect(report).toEqual({ current: null, history: [] });
   });
