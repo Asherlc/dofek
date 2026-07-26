@@ -72,9 +72,10 @@ describe("clickHouseMigrations", () => {
     ).toMatchObject({
       id: "0055_provider_connection_catalog",
       statements: expect.arrayContaining([
-        expect.stringContaining("MODIFY COLUMN user_id Nullable(UUID)"),
+        expect.stringContaining("user_id Nullable(UUID)"),
         expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection"),
       ]),
+      run: expect.any(Function),
     });
     expect(
       migrations.find((migration) => migration.id === "0056_daily_body_measurement_lifecycle"),
