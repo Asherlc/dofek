@@ -67,11 +67,20 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("ALTER TABLE analytics.daily_strain"),
       ]),
     });
-    expect(migrations.at(-1)).toMatchObject({
+    expect(
+      migrations.find((migration) => migration.id === "0055_provider_connection_catalog"),
+    ).toMatchObject({
       id: "0055_provider_connection_catalog",
       statements: expect.arrayContaining([
         expect.stringContaining("MODIFY COLUMN user_id Nullable(UUID)"),
         expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.provider_connection"),
+      ]),
+    });
+    expect(migrations.at(-1)).toMatchObject({
+      id: "0056_daily_body_measurement_lifecycle",
+      statements: expect.arrayContaining([
+        expect.stringContaining("ADD COLUMN IF NOT EXISTS is_deleted"),
+        expect.stringContaining("ADD COLUMN IF NOT EXISTS source_synced_at"),
       ]),
     });
   });
