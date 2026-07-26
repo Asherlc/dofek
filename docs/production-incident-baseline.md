@@ -18405,3 +18405,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   old worker reaches `Shutdown complete` without exit 137, verify the timed-out
   Strava job retries and completes, observe no fixed-release 4N/2K events
   across a subsequent rollout, then resolve both Sentry issues.
+
+## 2026-07-26 — Peloton Workout Response Drift Blocked Sync
+
+- **Status:** Direct source fix validated locally; merge and production
+  deployment pending.
+- **Symptoms:** Scheduled Peloton syncs failed at the client response boundary
+  in
+  [Sentry issue DOFEK-SERVER-5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E).
+- **User impact:** The affected Peloton connection could not import any workout
+  page because validation rejected the complete page before parsing began.
+- **Evidence:** Five consecutive production events from `14:30` through
+  `16:30` UTC reported the same response drift. Peloton returned `null` for
+  workout `title`, `end_time`, `metrics_type`, `peloton_id`, and `strava_id`,
+  and omitted `ride.instructor.id`; the runtime schema accepted only omitted
+  optional strings and required a numeric end time and instructor ID.
+- **Root cause:** The client boundary modeled several optional upstream fields
+  as undefined-only even though the observed API payload uses both JSON `null`
+  and omission for absence. The schema therefore rejected valid unfinished and
+  partially linked workouts before the provider could normalize them.
+- **Fix / mitigation:** Accept only the observed nullability and omission:
+  nullable title and source-link fields, nullable-but-present `end_time`, and
+  an optional instructor ID. Keep every other identity and timestamp field
+  required, preserve the upstream nulls in the client response, and normalize
+  a null end time to the existing unfinished-workout behavior only in the
+  parsed provider DTO.
+- **Validation:** A production-shaped regression first failed with the exact
+  six Zod paths reported by Sentry. After the schema correction, all 17 focused
+  client and parsing tests pass, the root TypeScript typecheck passes, targeted
+  Biome checks report no findings, and the changed parser kills all 13
+  generated mutants.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy, observe a
+  successful scheduled Peloton sync on the fixed release, and then resolve
+  DOFEK-SERVER-5E.

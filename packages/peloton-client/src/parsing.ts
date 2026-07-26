@@ -34,7 +34,8 @@ export interface ParsedPelotonWorkout {
 
 export function parseWorkout(workout: PelotonWorkout): ParsedPelotonWorkout {
   const startedAt = new Date(workout.start_time * 1000);
-  const endedAt = workout.end_time > 0 ? new Date(workout.end_time * 1000) : undefined;
+  const endTime = workout.end_time ?? 0;
+  const endedAt = endTime > 0 ? new Date(endTime * 1000) : undefined;
   const stravaId = workout.strava_id && workout.strava_id !== "-1" ? workout.strava_id : undefined;
 
   return {
