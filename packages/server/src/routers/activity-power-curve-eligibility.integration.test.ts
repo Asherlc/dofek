@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   extractCteSql,
@@ -16,7 +16,6 @@ function renderDirtyActivityKeysSql(analyticsDatabase: string, targetTable: stri
   const modelSql = readModelSql("activity_power_curve.sql");
   const cteNames = [
     "current_activity",
-    "current_power_state",
     "current_power_activity",
     "existing_activity_state",
     "source_dirty_activity_keys",
@@ -26,10 +25,6 @@ function renderDirtyActivityKeysSql(analyticsDatabase: string, targetTable: stri
       .replace(
         /\{\{\s*ref\('activity_summary_rows'\)\s*\}\}/g,
         `${analyticsDatabase}.activity_summary_rows`,
-      )
-      .replace(
-        /\{\{\s*ref\('activity_sensor_sample'\)\s*\}\}/g,
-        `${analyticsDatabase}.activity_sensor_sample`,
       )
       .replace(/\{\{\s*this\s*\}\}/g, targetTable);
     return `${name} AS (${sql})`;
@@ -44,6 +39,7 @@ SETTINGS join_use_nulls = 1`;
 
 describe("activity power-curve eligibility", () => {
   const analyticsDatabase = `analytics_power_${randomUUID().replaceAll("-", "")}`;
+  const targetTable = `${analyticsDatabase}.activity_power_curve`;
   let client: ClickHouseClient;
 
   beforeAll(async () => {
@@ -57,21 +53,24 @@ describe("activity power-curve eligibility", () => {
         started_at DateTime64(6, 'UTC'),
         ended_at Nullable(DateTime64(6, 'UTC')),
         is_deleted UInt8,
+        power_sample_count Nullable(UInt64),
         refreshed_at DateTime64(9, 'UTC')
       ) ENGINE = ReplacingMergeTree(refreshed_at)
       ORDER BY (user_id, activity_id)`,
     });
     await client.command({
-      query: `CREATE TABLE ${analyticsDatabase}.activity_sensor_sample (
+      query: `CREATE TABLE ${targetTable} (
         activity_id UUID,
         user_id UUID,
-        channel String,
-        scalar Nullable(Float32),
-        is_deleted UInt8,
         refreshed_at DateTime64(9, 'UTC')
       ) ENGINE = ReplacingMergeTree(refreshed_at)
-      ORDER BY (user_id, activity_id, channel)`,
+      ORDER BY (user_id, activity_id)`,
     });
+  });
+
+  beforeEach(async () => {
+    await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.activity_summary_rows` });
+    await client.command({ query: `TRUNCATE TABLE ${targetTable}` });
   });
 
   afterAll(async () => {
@@ -82,33 +81,18 @@ describe("activity power-curve eligibility", () => {
     const userId = randomUUID();
     const poweredActivityId = randomUUID();
     const noPowerActivityId = randomUUID();
-    const targetTable = `${analyticsDatabase}.activity_power_curve`;
 
-    await client.command({
-      query: `CREATE TABLE ${targetTable} (
-        activity_id UUID,
-        user_id UUID,
-        refreshed_at DateTime64(9, 'UTC')
-      ) ENGINE = ReplacingMergeTree(refreshed_at)
-      ORDER BY (user_id, activity_id)`,
-    });
     await client.command({
       query: `INSERT INTO ${analyticsDatabase}.activity_summary_rows VALUES
         (
           {poweredActivityId:UUID}, {userId:UUID}, 'cycling',
-          now64(6) - INTERVAL 1 HOUR, now64(6), 0, now64(9)
+          now64(6) - INTERVAL 1 HOUR, now64(6), 0, 2, now64(9)
         ),
         (
           {noPowerActivityId:UUID}, {userId:UUID}, 'cycling',
-          now64(6) - INTERVAL 2 HOUR, now64(6) - INTERVAL 1 HOUR, 0, now64(9)
+          now64(6) - INTERVAL 2 HOUR, now64(6) - INTERVAL 1 HOUR, 0, 0, now64(9)
         )`,
       query_params: { noPowerActivityId, poweredActivityId, userId },
-    });
-    await client.command({
-      query: `INSERT INTO ${analyticsDatabase}.activity_sensor_sample VALUES (
-        {poweredActivityId:UUID}, {userId:UUID}, 'power', 200, 0, now64(9)
-      )`,
-      query_params: { poweredActivityId, userId },
     });
 
     const result = await client.query({
@@ -121,26 +105,20 @@ describe("activity power-curve eligibility", () => {
     ]);
   });
 
-  it("does not schedule an activity whose latest power sample is a tombstone", async () => {
+  it("does not schedule an activity whose latest summary has no valid power", async () => {
     const userId = randomUUID();
     const activityId = randomUUID();
-    const targetTable = `${analyticsDatabase}.activity_power_curve`;
 
     await client.command({
-      query: `INSERT INTO ${analyticsDatabase}.activity_summary_rows VALUES (
-        {activityId:UUID}, {userId:UUID}, 'cycling',
-        now64(6) - INTERVAL 1 HOUR, now64(6), 0, now64(9)
-      )`,
-      query_params: { activityId, userId },
-    });
-    await client.command({
-      query: `INSERT INTO ${analyticsDatabase}.activity_sensor_sample VALUES
+      query: `INSERT INTO ${analyticsDatabase}.activity_summary_rows VALUES
         (
-          {activityId:UUID}, {userId:UUID}, 'power', 200, 0,
+          {activityId:UUID}, {userId:UUID}, 'cycling',
+          now64(6) - INTERVAL 1 HOUR, now64(6), 0, 2,
           toDateTime64('2026-07-25 00:00:00', 9, 'UTC')
         ),
         (
-          {activityId:UUID}, {userId:UUID}, 'power', 200, 1,
+          {activityId:UUID}, {userId:UUID}, 'cycling',
+          now64(6) - INTERVAL 1 HOUR, now64(6), 0, 0,
           toDateTime64('2026-07-25 00:01:00', 9, 'UTC')
         )`,
       query_params: { activityId, userId },
