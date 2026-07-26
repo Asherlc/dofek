@@ -1,8 +1,147 @@
 # Roadmap
 
-Roadmap notes for planned Dofek improvements. Product-level outcomes live under "Near-Term Product Opportunities"; implementation-level backlog items live under "Technical Backlog".
+Roadmap notes for planned Dofek improvements. Product-level outcomes live under "Product Strategy"; implementation-level backlog items live under "Technical Backlog".
 
-## Near-Term Product Opportunities
+## Product Strategy
+
+Dofek already has broad provider coverage and deep health, recovery, training, nutrition, body, and behavior analytics. The next product phase should turn that data into a trustworthy daily decision and a measurable feedback loop.
+
+The primary product loop should be:
+
+1. Connect enough data to establish a trustworthy personal baseline.
+2. Receive one evidence-backed action for today.
+3. Accept, modify, or dismiss the action.
+4. Record the outcome with minimal effort.
+5. Learn which actions help over time.
+
+New work should strengthen this loop. More providers, scores, charts, and standalone dashboards are not priorities unless user evidence shows that they are required to complete it.
+
+### Now: Trust and Measurement Release Gate
+
+Resolve public-facing trust problems and add product measurement before launching the next flagship feature.
+
+- [ ] Remove provider-estimated workout calories and active-energy values from marketing, Storybook fixtures, review data, screenshots, and other user-visible examples. Nutrition intake and expenditure inferred from observed body-weight change remain valid product concepts.
+- [ ] Regenerate the iOS App Store screenshots with internally consistent seeded data, correct layout coverage, and no blank or mostly-black assets; see [`app-store/screenshots`](../packages/mobile/app-store/screenshots).
+- [ ] Audit statistical fixtures so sample size, coefficients, significance, confidence language, and charts agree. Insufficient datasets must not imply that a relationship was measured; see [`2026-07-20-correlation-insufficient-statistics.md`](superpowers/plans/2026-07-20-correlation-insufficient-statistics.md).
+- [ ] Show the actual subscription price, billing period, trial or limited-access behavior, and cancellation terms on the landing page before signup; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx).
+- [ ] Update product documentation when implemented capabilities make known-gap statements stale, including medication-dose tracking.
+- [ ] Make the reproducible iOS runtime-audit prerequisite explicit: either generate the ignored Xcode workspace before an audit or document the canonical command that creates it.
+- [ ] Add equivalent web and mobile product events for onboarding completion, source connection, first useful insight, Daily Brief engagement, journal or experiment engagement, subscription conversion, and relevant failure states. Web page views alone are not sufficient product measurement; see [`posthog.ts`](../packages/web/src/lib/posthog.ts).
+- [ ] Establish an automated web/mobile product-surface parity review for every user-facing feature. Platform-specific hardware and administrative features may differ intentionally, but user outcomes should remain equivalent.
+- [ ] Publish and maintain a product-surface matrix covering route discoverability, web/mobile parity, fixture coverage, and release evidence.
+- [ ] Resolve or intentionally retire low-discoverability product surfaces, including behavior impact, breathwork, cycle tracking, reports, predictions, and insights that exist but are absent from primary navigation.
+- [ ] Prioritize mobile parity for journal and life events, body and goal-weight context, behavior impact, breathwork, and user-facing prediction or sport-detail outcomes. Hardware capture may remain mobile-only; administrative MCP and Slack configuration may remain web-only.
+
+This gate is complete when the acquisition surfaces make no contradictory or prohibited claims, a seeded review account can be audited on both platforms, and the team can measure activation and retention without relying only on page views.
+
+### Next: Daily Brief and Today Plan
+
+Make one personalized, trustworthy action the center of the web and mobile home experiences.
+
+- [ ] Generate one primary action from server-owned metric and recommendation logic. The client renders the decision and must not independently calculate its health meaning.
+- [ ] Tie the action to the goal selected during onboarding and the user's current recovery, sleep, training, nutrition, health, schedule, and data-availability context.
+- [ ] Explain the recommendation with two or three concise supporting facts.
+- [ ] Show the contributing sources, freshness, missing-data caveats, and confidence.
+- [ ] Let the user accept, modify, or dismiss the action and optionally state why.
+- [ ] Add a lightweight end-of-day outcome check-in.
+- [ ] Include equivalent web and mobile behavior from the first release.
+- [ ] Start with deterministic, testable recommendation rules. Conversational AI may explain established recommendations later but must not be the unverified source of health decisions.
+- [ ] Avoid medical diagnosis and prescriptive treatment. Surface specific, actionable errors when required data is unavailable.
+
+The category increasingly centers the home experience on timely guidance rather than passive dashboards: [Oura Today](https://support.ouraring.com/hc/en-us/articles/360058599753-How-to-Use-the-Oura-App), [Garmin Training Readiness](https://www.garmin.com/en-US/garmin-technology/running-science/physiological-measurements/training-readiness/), [WHOOP Coach](https://www.whoop.com/us/en/thelocker/whoop-unveils-the-new-whoop-coach-powered-by-openai/), [Athlytic](https://athlyticapp.com/), and [Bevel](https://help.bevel.health/en/articles/11194113). Dofek should differentiate through provider-agnostic inputs, transparent evidence, and user control rather than a generic chat interface.
+
+This outcome is successful when a newly activated user can receive a credible action within 24 hours of connecting sufficient data, and returning users regularly engage with or intentionally dismiss the Brief.
+
+### Next: Personal Experiments
+
+Turn correlations, journal entries, life events, medication-dose events, and behavior impact into guided N-of-1 experiments.
+
+- [ ] Let a user choose a question or hypothesis, outcome, intervention, and practical experiment duration.
+- [ ] Record a baseline, adherence, outcome check-ins, and obvious confounders.
+- [ ] Support relevant time lags instead of assuming only same-day effects.
+- [ ] Report effect direction, magnitude, sample size, uncertainty, missing data, and limitations without claiming causality.
+- [ ] Recommend extending or stopping an experiment when evidence is insufficient rather than manufacturing a conclusion.
+- [ ] Make journal and life-event capture available on mobile so context can be recorded when it happens.
+- [ ] Feed completed experiments into future Daily Brief recommendations only when the evidence contract permits it.
+
+[Exist](https://exist.io/) combines automatic data, manual tracking, goals, experiments, correlations, and weekly summaries, and documents that it requires several weeks of data before producing correlations in its [correlation FAQ](https://exist.io/page/faqs/). [Bearable's Factor Effect Report](https://bearable.app/support/howto/the-factor-effect-report/) connects behaviors and interventions to symptoms, mood, and sleep. Dofek can build a stronger version by using its broader provider data and explicit provenance.
+
+### Next: Goals, Calendar, and Plan Compliance
+
+Connect each daily decision to a longer-term outcome.
+
+- [ ] Persist the goal selected during onboarding and allow it to be changed.
+- [ ] Support an event date or ongoing outcome target such as race preparation, sleep consistency, strength progression, or weight trend.
+- [ ] Present planned and completed work in a shared web/mobile calendar.
+- [ ] Explain plan deviations using recovery, availability, and completed-work evidence without moral judgment.
+- [ ] Adjust future recommendations when the user accepts a change or repeatedly dismisses a type of action.
+- [ ] Prefer importing existing structured plans and device calendars before building a broad custom plan-authoring system.
+
+[TrainingPeaks](https://www.trainingpeaks.com/) demonstrates the complete plan-calendar-device-compliance loop, including structured plans and workouts that sync to compatible devices in its [training-plan catalog](https://www.trainingpeaks.com/training-plans/). Dofek's opportunity is to combine that planning loop with cross-provider recovery, nutrition, and behavior evidence.
+
+### Later: Native Retention Surfaces
+
+Distribute the Daily Brief after the core recommendation loop proves useful.
+
+- [ ] Add an optional morning Daily Brief notification.
+- [ ] Add iOS home-screen and lock-screen widgets for the day's action, its status, and critical data freshness.
+- [ ] Add a Watch glance for the accepted action and relevant target.
+- [ ] Notify users when a required source becomes stale or disconnected and provide direct remediation.
+- [ ] Support optional medication reminders with clear logging state.
+- [ ] If a streak is tested, tie it to a low-pressure action such as reviewing the Brief or recording a check-in. Never reward exercise volume, weight change, calorie restriction, or a “perfect” recovery score.
+
+Duolingo's product research found that reducing the minimum daily commitment improved retention in its [streak experiments](https://blog.duolingo.com/improving-the-streak/). Its [widget design](https://blog.duolingo.com/widget-feature/) focuses on reminding the user of one meaningful action. Dofek should apply the habit principle without importing unsafe health gamification.
+
+### Later: Health Story, Reports, and Controlled Sharing
+
+Make long-term progress understandable and selectively shareable.
+
+- [ ] Create weekly, monthly, and annual narratives covering meaningful improvements, milestones, behaviors associated with better outcomes, source changes, and data completeness.
+- [ ] End each recap with one lesson or action for the next period.
+- [ ] Generate privacy-safe share cards that exclude health-sensitive fields by default.
+- [ ] Allow a user to create a time-limited report for a coach, clinician, family member, or other trusted recipient.
+- [ ] Let the user select domains and date ranges instead of sharing the full account.
+- [ ] Include sources, coverage, uncertainty, and raw-data appendices when appropriate.
+
+Personalized stories can create both reflection and organic distribution; Spotify's 2025 Wrapped added personalized data stories and share cards, and Spotify reported more than 620 million Wrapped shares during 2025 in its [2026 Investor Day recap](https://newsroom.spotify.com/2026-05-21/investor-day-recap/). For health-specific sharing, Apple documents granular [Health sharing](https://www.apple.com/newsroom/2021/06/apple-advances-personal-health-by-introducing-secure-sharing-and-new-insights/), and Exist added configurable [PDF health exports](https://exist.io/blog/pdf-export/) in response to user requests for clinician and family sharing.
+
+### Later: Data Trust Center
+
+Turn the existing source-attribution, processing-status, freshness, and deduplication infrastructure into an explicit user-facing capability.
+
+- [ ] Explain which sources contributed to a displayed number.
+- [ ] Show last successful sync, expected freshness, and coverage gaps.
+- [ ] Explain source conflicts and the priority or deduplication decision that resolved them.
+- [ ] Answer “Why did this number change?” using versioned source and calculation evidence.
+- [ ] Provide direct remediation for stale, disconnected, or incomplete sources.
+- [ ] Let users inspect processing history without exposing infrastructure jargon by default.
+
+The trust center should extend the existing processing-status and source-attribution work rather than create another data-health implementation. An adjacent model is [Monarch Money](https://www.monarchmoney.com/BEGINNERS), which combines broad connectivity with disconnection notifications, goals, customization, and controlled collaboration.
+
+### Product Success Measures
+
+Instrument and review these measures before expanding the roadmap:
+
+- **Activation:** the user connects sufficient data and receives the first credible Daily Brief within 24 hours.
+- **Time to value:** elapsed time between account creation and the first explanation or recommendation based on real user data.
+- **Data readiness:** percentage of active users with enough fresh data to generate a Brief, plus the leading causes of insufficient data.
+- **Brief usefulness:** accept, modify, intentional-dismiss, and outcome-check-in rates.
+- **Experiment completion:** percentage of started experiments that collect enough adherent observations to report a result or a justified insufficient-data outcome.
+- **Retention:** day 7, day 30, and rolling four-week retention segmented by activation and Brief engagement.
+- **Conversion:** subscription conversion segmented by source count, goal, first insight, and Brief engagement.
+- **Trust:** source-remediation success, report corrections, support contacts about incorrect metrics, and user-reported recommendation confidence.
+
+### Explicitly Not Now
+
+- More provider integrations without user-demand, retention, or revenue evidence.
+- A generic AI health-chat surface without a deterministic evidence and recommendation contract.
+- Additional composite scores or standalone dashboards that do not change a user decision.
+- A Strava-style social feed, segment network, or broad challenge platform. Strava already provides routes, goals, segments, challenges, and community features; see [Strava Features](https://www.strava.com/features).
+- A broad clinical-record or diagnosis platform.
+- Heavy gamification tied to training load, exercise volume, weight, nutrition restriction, calorie expenditure, or recovery scores.
+- Duplicate implementations of analytics or health-data calculations in clients.
+
+## Completed Product Foundations
 
 ### Getting Started Flow
 
