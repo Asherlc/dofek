@@ -8,6 +8,7 @@ import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts
 import { trpc } from "../lib/trpc.ts";
 import { AddJournalEntryModal } from "./AddJournalEntryModal.tsx";
 import { ChartRangeProvider } from "./DofekChart.tsx";
+import { PaginationControls } from "./PaginationControls.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 import { TimeRangeSelector } from "./TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "./TimeSeriesChart.tsx";
@@ -75,7 +76,11 @@ export function JournalPanel() {
           <TimeRangeSelector days={days} onChange={setDays} />
         </div>
 
-        {tab === "log" ? <JournalLog days={days} /> : <JournalTrends days={days} />}
+        {tab === "log" ? (
+          <JournalLog key={days ?? "all"} days={days} />
+        ) : (
+          <JournalTrends days={days} />
+        )}
       </div>
     </ChartRangeProvider>
   );
@@ -98,9 +103,11 @@ const entrySchema = z.object({
 });
 
 type JournalEntry = z.infer<typeof entrySchema>;
+const JOURNAL_PAGE_SIZE = 20;
 
 function JournalLog({ days }: { days: TimeRangeDays }) {
   const [showModal, setShowModal] = useState(false);
+  const [page, setPage] = useState(0);
   const utils = trpc.useUtils();
   const entriesQuery = trpc.journal.entries.useQuery(selectedRangeQueryInput(days));
   const deleteMutation = trpc.journal.delete.useMutation({
@@ -116,16 +123,26 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
     return z.array(entrySchema).parse(entriesQuery.data);
   }, [entriesQuery.data]);
 
-  // Group entries by date
+  const totalPages = Math.ceil(entries.length / JOURNAL_PAGE_SIZE);
+  const currentPage = Math.min(page, Math.max(totalPages - 1, 0));
+  const visibleEntries = useMemo(
+    () =>
+      [...entries]
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(currentPage * JOURNAL_PAGE_SIZE, (currentPage + 1) * JOURNAL_PAGE_SIZE),
+    [currentPage, entries],
+  );
+
+  // Group visible entries by date.
   const grouped = useMemo(() => {
     const map = new Map<string, JournalEntry[]>();
-    for (const entry of entries) {
+    for (const entry of visibleEntries) {
       const existing = map.get(entry.date) ?? [];
       existing.push(entry);
       map.set(entry.date, existing);
     }
     return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
-  }, [entries]);
+  }, [visibleEntries]);
 
   return (
     <div>
@@ -175,6 +192,14 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
           onDelete={(id) => deleteMutation.mutate({ id })}
         />
       ))}
+
+      <PaginationControls
+        page={currentPage}
+        pageSize={JOURNAL_PAGE_SIZE}
+        totalItems={entries.length}
+        itemLabel="journal entries"
+        onPageChange={setPage}
+      />
 
       {deleteMutation.error ? (
         <p className="text-xs text-red-400 mt-3">{deleteMutation.error.message}</p>

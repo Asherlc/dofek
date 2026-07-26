@@ -103,4 +103,30 @@ describe("AlertsScreen", () => {
 
     expect(screen.getByText("Nothing needs your attention")).toBeTruthy();
   });
+
+  it("paginates active alerts", () => {
+    const baseAlert = mockAlertsQuery().data.alerts[0];
+    mockAlertsQuery.mockReturnValue({
+      data: {
+        generatedAt: "2026-07-24T12:00:00.000Z",
+        alerts: Array.from({ length: 21 }, (_, index) => ({
+          ...baseAlert,
+          id: `alert-${index + 1}`,
+          title: `Alert ${index + 1}`,
+        })),
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<AlertsScreen />);
+
+    expect(screen.getByText("Alert 1")).toBeTruthy();
+    expect(screen.queryByText("Alert 21")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next alerts page" }));
+
+    expect(screen.queryByText("Alert 1")).toBeNull();
+    expect(screen.getByText("Alert 21")).toBeTruthy();
+  });
 });

@@ -117,6 +117,28 @@ describe("JournalPanel", () => {
     expect(screen.getByText("Journal refresh failed")).toBeDefined();
   });
 
+  it("paginates journal entries", () => {
+    mocks.entriesQuery.mockReturnValue({
+      data: Array.from({ length: 21 }, (_, index) => ({
+        ...entry,
+        id: `entry-${index + 1}`,
+        display_name: `Entry ${index + 1}`,
+      })),
+      error: null,
+      isLoading: false,
+    });
+
+    render(<JournalPanel />);
+
+    expect(screen.getByText("Entry 1")).toBeDefined();
+    expect(screen.queryByText("Entry 21")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next journal entries page" }));
+
+    expect(screen.queryByText("Entry 1")).toBeNull();
+    expect(screen.getByText("Entry 21")).toBeDefined();
+  });
+
   it("shows and reports delete failures while keeping the entry available to retry", () => {
     const deleteError = new Error("Journal entry could not be deleted");
     let onError: ((error: unknown) => void) | undefined;
