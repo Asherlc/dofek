@@ -371,12 +371,12 @@ describe("activity_power_curve read model", () => {
     const rows = await sensorStore.query(
       readModelRowSchema,
       `SELECT
-        toString(activity_id) AS activity_id,
+        toString(power_curve.activity_id) AS activity_id,
         duration_seconds,
         best_power,
         is_deleted
       FROM (${renderedSql}) AS power_curve
-      WHERE activity_id = {activityId:UUID}
+      WHERE power_curve.activity_id = {activityId:UUID}
         AND duration_seconds = 5`,
       { activityId: duplicateVersionActivityId },
     );
@@ -427,6 +427,43 @@ describe("activity_power_curve read model", () => {
     });
 
     try {
+      await client.command({
+        query: `INSERT INTO ${targetTable}
+          SELECT
+            activity_id,
+            user_id,
+            NULL,
+            NULL,
+            toUInt32(5),
+            toNullable(toInt32(1)),
+            toUInt8(0),
+            toUInt64(2),
+            toDateTime64('2100-01-01 00:00:00', 9, 'UTC')
+          FROM analytics.activity_summary
+          WHERE activity_id != {activityId:UUID}
+            AND ended_at IS NOT NULL
+            AND power_sample_count > 1
+            AND activity_type IN (
+              'cycling',
+              'road_cycling',
+              'mountain_biking',
+              'gravel_cycling',
+              'indoor_cycling',
+              'virtual_cycling',
+              'e_bike_cycling',
+              'cyclocross',
+              'track_cycling',
+              'bmx',
+              'hand_cycling',
+              'running',
+              'swimming',
+              'walking',
+              'hiking'
+            )`,
+        query_params: {
+          activityId: starvationActivityId,
+        },
+      });
       await client.command({
         query: `INSERT INTO ${targetTable} VALUES (
           {activityId:UUID}, {userId:UUID}, NULL, NULL, 5, NULL, 1, 2, now64(9)
