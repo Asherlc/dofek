@@ -240,6 +240,50 @@ describe("syncHealthKitToServer", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
+  it("reports structured sync stages with quantity batch sizes", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const samples = Array.from({ length: 750 }, (_, sampleIndex) => ({
+      type: "HKQuantityTypeIdentifierHeartRate",
+      value: 72,
+      unit: "count/min",
+      startDate: `2026-03-21T${String(sampleIndex % 24).padStart(2, "0")}:00:00Z`,
+      endDate: `2026-03-21T${String(sampleIndex % 24).padStart(2, "0")}:00:00Z`,
+      sourceName: "Apple Watch",
+      sourceBundle: "com.apple.health",
+      uuid: `sample-${sampleIndex}`,
+    }));
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockImplementation(async (typeIdentifier: string) =>
+      typeIdentifier === "HKQuantityTypeIdentifierHeartRate" ? samples : [],
+    );
+    const onStage = vi.fn();
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+      onStage,
+    });
+
+    expect(onStage).toHaveBeenCalledWith({
+      operation: "queryDailyStatistics",
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+    });
+    expect(onStage).toHaveBeenCalledWith({
+      operation: "pushQuantitySamples",
+      batchIndex: 1,
+      batchCount: 2,
+      itemCount: 500,
+    });
+    expect(onStage).toHaveBeenCalledWith({
+      operation: "pushQuantitySamples",
+      batchIndex: 2,
+      batchCount: 2,
+      itemCount: 250,
+    });
+  });
+
   it("returns errors from the server", async () => {
     const client = createMockClient();
     client.healthKitSync.pushQuantitySamples.mutate.mockResolvedValue({
