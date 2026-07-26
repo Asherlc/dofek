@@ -18434,8 +18434,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-26 — Peloton Workout Response Drift Blocked Sync
 
-- **Status:** Direct source fix validated locally; merge and production
-  deployment pending.
+- **Status:** Resolved after the direct source fix deployed in
+  `ef6798d6ca982f5421cdbbc1b52294c1e77b3dc2`.
 - **Symptoms:** Scheduled Peloton syncs failed at the client response boundary
   in
   [Sentry issue DOFEK-SERVER-5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E).
@@ -18461,8 +18461,44 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** A production-shaped regression first failed with the exact
   six Zod paths reported by Sentry. After the schema correction, all 17 focused
   client and parsing tests pass, the root TypeScript typecheck passes, targeted
-  Biome checks report no findings, and the changed parser kills all 13
-  generated mutants.
+  Biome checks report no findings, and the changed parser kills all 13 generated
+  mutants. PR #2044 passed the full CI suite and deployed as `ef6798d`; the
+  first scheduled production sync on that release parsed two workouts at
+  `2026-07-26T18:30:04Z` with no fixed-release recurrence.
+- **Remaining risk / follow-up:** None for the workout-list contract.
+
+## 2026-07-26 — Peloton Performance Summary Type Drift Blocked Sync
+
+- **Status:** Direct source fix reproduced and validated locally; merge and
+  production deployment pending.
+- **Symptoms:** The first post-deploy scheduled Peloton sync reported
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F)
+  while validating performance graphs.
+- **User impact:** The affected connection could load its workout list but
+  could not complete the sync because each workout's performance graph was
+  rejected before metric parsing.
+- **Evidence:** Both production events on release `ef6798d` reported the same
+  Zod failure: `average_summaries[*].value` and `summaries[*].value` were JSON
+  numbers, while the runtime boundary required strings. The exact field paths,
+  release, and stack are preserved in
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F).
+- **Root cause:** The newly extracted reusable Peloton client encoded summary
+  values as strings without a production-shaped non-empty summary fixture. The
+  observed response uses numeric values, as captured in
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F),
+  so the schema rejected a valid graph even though downstream parsing consumes
+  only its numeric metric series.
+- **Fix / mitigation:** Model summary values as numbers at the Zod response
+  boundary and retain the upstream values unchanged. Do not coerce them or
+  accept a string-or-number union: neither would describe the observed numeric
+  contract recorded in
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F),
+  and both would preserve an unnecessary compatibility path.
+- **Validation:** The production-shaped performance-graph regression failed
+  first with the exact two Zod paths reported by Sentry. After correcting the
+  canonical schema, 129 focused client/provider unit tests and all 12 Peloton
+  sync integration tests pass; the root TypeScript typecheck and targeted
+  Biome checks also pass.
 - **Remaining risk / follow-up:** Merge through normal CI, deploy, observe a
   successful scheduled Peloton sync on the fixed release, and then resolve
-  DOFEK-SERVER-5E.
+  DOFEK-SERVER-5F.
