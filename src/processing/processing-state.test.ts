@@ -245,6 +245,71 @@ describe("deriveProcessingState", () => {
     expect(state.overallStatus).toBe("waiting");
   });
 
+  it("keeps a terminal operation without processing facts waiting", () => {
+    const state = deriveProcessingState({
+      datasetKeys: ["activity"],
+      outputManifest: { activity: ["relational"] },
+      events: [],
+      operationStatus: "succeeded",
+      now,
+      delayedAfterMs: 300_000,
+    });
+
+    expect(state.datasets[0]).toMatchObject({
+      currentStage: "ingest",
+      status: "waiting",
+      lastAdvancedAt: null,
+    });
+  });
+
+  it("keeps a terminal operation waiting at the exact delay boundary", () => {
+    const state = deriveProcessingState({
+      datasetKeys: ["activity"],
+      outputManifest: { activity: ["relational"] },
+      events: [event(1, "ingest", "succeeded", "activity", new Date(now.getTime() - 300_000))],
+      operationStatus: "succeeded",
+      now,
+      delayedAfterMs: 300_000,
+    });
+
+    expect(state.datasets[0]).toMatchObject({
+      currentStage: "canonical_commit",
+      status: "waiting",
+    });
+  });
+
+  it("keeps stale nonterminal operations waiting for downstream work", () => {
+    const state = deriveProcessingState({
+      datasetKeys: ["activity"],
+      outputManifest: { activity: ["relational"] },
+      events: [event(1, "ingest", "succeeded", "activity", new Date(now.getTime() - 300_001))],
+      operationStatus: "running",
+      now,
+      delayedAfterMs: 300_000,
+    });
+
+    expect(state.datasets[0]).toMatchObject({
+      currentStage: "canonical_commit",
+      status: "waiting",
+    });
+  });
+
+  it("blocks stale failed operations that omit downstream work", () => {
+    const state = deriveProcessingState({
+      datasetKeys: ["activity"],
+      outputManifest: { activity: ["relational"] },
+      events: [event(1, "ingest", "succeeded", "activity", new Date(now.getTime() - 300_001))],
+      operationStatus: "failed",
+      now,
+      delayedAfterMs: 300_000,
+    });
+
+    expect(state.datasets[0]).toMatchObject({
+      currentStage: "canonical_commit",
+      status: "blocked",
+    });
+  });
+
   it("derives blocked when a terminal operation omits a required stage past the delay budget", () => {
     const state = deriveProcessingState({
       datasetKeys: ["activity"],
