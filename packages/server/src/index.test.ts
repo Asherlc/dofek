@@ -1,4 +1,5 @@
 import http from "node:http";
+import { TRPCError } from "@trpc/server";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +20,7 @@ const mockCreateExpressMiddleware = vi.fn(
     createContext: (input: {
       req: { headers: Record<string, string | string[] | undefined> };
     }) => Promise<{ metricStreamPublisher?: unknown }>;
+    onError?: (input: { error: TRPCError; path?: string }) => void;
   }) => express.Router(),
 );
 const mockFitFileImportQueue = { ...mockQueue, name: "fit-file-import" };
@@ -314,6 +316,24 @@ describe("createApp", () => {
 
     expect(createCompanionPairingRouter).toHaveBeenCalledWith({ db: fakeDb });
     expect(createCompanionTokenHttpRouter).toHaveBeenCalledWith({ db: fakeDb });
+  });
+
+  it("reports the original cause of unexpected tRPC failures", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    createApp(createDatabaseFromEnv(), makeMockSensorStore());
+    const middlewareOptions = mockCreateExpressMiddleware.mock.calls.at(-1)?.[0];
+    const databaseError = new Error(
+      "Failed query: SELECT user_id FROM fitness.session WHERE id = $1",
+    );
+
+    middlewareOptions?.onError?.({
+      error: new TRPCError({ code: "INTERNAL_SERVER_ERROR", cause: databaseError }),
+      path: "weeklyReport.get",
+    });
+
+    expect(mockSentryCaptureException).toHaveBeenCalledWith(databaseError, {
+      tags: { trpcPath: "weeklyReport.get" },
+    });
   });
 
   it("returns ready when Postgres, ClickHouse, and queues are reachable", async () => {

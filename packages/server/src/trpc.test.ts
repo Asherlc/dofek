@@ -1,5 +1,84 @@
+import { TRPCError } from "@trpc/server";
+import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CacheTTL, requestCacheKey, requestCacheTtl } from "./trpc.ts";
+import { z } from "zod";
+import { CacheTTL, publicProcedure, requestCacheKey, requestCacheTtl, router } from "./trpc.ts";
+
+const safeInternalErrorMessage =
+  "We couldn't complete this request. Please try again. If the problem continues, contact support.";
+
+async function serializeTransportError(error: unknown) {
+  const observedErrors: TRPCError[] = [];
+  const testRouter = router({
+    fail: publicProcedure.query(() => "unreachable"),
+  });
+  const response = await fetchRequestHandler({
+    endpoint: "/api/trpc",
+    req: new Request("http://localhost/api/trpc/fail"),
+    router: testRouter,
+    createContext: () => {
+      throw error;
+    },
+    onError: ({ error: observedError }) => {
+      observedErrors.push(observedError);
+    },
+  });
+
+  return {
+    body: await response.text(),
+    observedError: observedErrors[0],
+    status: response.status,
+  };
+}
+
+describe("tRPC error serialization", () => {
+  it("hides raw SQL and parameters while keeping the original error observable", async () => {
+    const databaseError = new Error(
+      "Failed query: SELECT user_id FROM fitness.session WHERE id = $1\nparams: private-session",
+    );
+
+    const result = await serializeTransportError(databaseError);
+
+    expect(result.status).toBe(500);
+    expect(result.body).toContain(safeInternalErrorMessage);
+    expect(result.body).not.toContain("SELECT user_id");
+    expect(result.body).not.toContain("private-session");
+    expect(result.body).not.toContain("params:");
+    expect(result.observedError?.cause).toBe(databaseError);
+  });
+
+  it("hides Zod issue details from unexpected internal failures", async () => {
+    const validationResult = z.uuid().safeParse("rejected-user-id");
+    if (validationResult.success) {
+      throw new Error("expected the fixture to fail UUID validation");
+    }
+
+    const result = await serializeTransportError(validationResult.error);
+
+    expect(result.body).toContain(safeInternalErrorMessage);
+    expect(result.body).not.toContain("invalid_format");
+    expect(result.body).not.toContain("rejected-user-id");
+    expect(result.body).not.toContain("pattern");
+    expect(result.observedError?.cause).toBe(validationResult.error);
+  });
+
+  it("preserves explicit actionable internal error messages", async () => {
+    const rootCause = new Error("private upstream response");
+    const explicitError = new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "The report snapshot could not be created. Please try again.",
+      cause: rootCause,
+    });
+
+    const result = await serializeTransportError(explicitError);
+
+    expect(result.body).toContain("The report snapshot could not be created. Please try again.");
+    expect(result.body).not.toContain(safeInternalErrorMessage);
+    expect(result.body).not.toContain(rootCause.message);
+    expect(result.observedError).toBe(explicitError);
+    expect(result.observedError?.cause).toBe(rootCause);
+  });
+});
 
 describe("requestCacheKey", () => {
   it("keeps the user and route path prefix stable for invalidation", () => {
