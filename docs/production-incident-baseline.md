@@ -17770,12 +17770,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   older `tsx` CLI. A later Knip job failed at `pnpm knip` with
   `Unused devDependencies (1): supports-color package.json:270:6`. The final
   mutation matrix then failed at `packages/peloton-client/src/types.ts:1-102`
-  with `No tests were executed`.
+  with `No tests were executed`. After package discovery was corrected, the
+  Peloton error shard exposed five uncovered `PelotonAuthFlowError` mutants and
+  failed with a 44.44% mutation score.
 - **Root cause:** The new package `exports` maps pointed at ignored compiled
   `dist` or `build` directories. Those directories existed in the development
   workspace, masking the defect, but were absent from a clean CI checkout.
   Separately, the mutation Vitest project omitted the newly extracted Peloton
-  and Xert test directories.
+  and Xert test directories. Once discovered, the extracted Peloton tests did
+  not exercise authorization failure branches, API method error paths, or
+  optional raw-workout fields deeply enough to satisfy the mutation gate.
 - **Fix / mitigation:** Local workspace exports now resolve canonical source
   files, while `publishConfig` rewrites npm tarball exports to compiled
   JavaScript and declarations. pnpm owns packing and publishing; Lerna remains
@@ -17787,10 +17791,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   dependency resolution rather than through a source import. The canonical
   mutation test project now includes both newly extracted Peloton and Xert
   packages, allowing Vitest's related-test analysis to discover their
-  colocated tests. pnpm documents
-  that supported `publishConfig` fields replace their development values
-  during packing, and Knip documents `ignoreDependencies` for dependencies
-  whose use static analysis cannot observe:
+  colocated tests. The Peloton error tests now exercise authorization-flow
+  diagnostics both with and without optional upstream details; its auth,
+  client, and parsing tests now cover redirect and cookie behavior, upstream
+  failure paths, schema validation, and present or absent optional metadata.
+  pnpm documents that supported `publishConfig` fields replace their
+  development values during packing, and Knip documents `ignoreDependencies`
+  for dependencies whose use static analysis cannot observe:
   <https://pnpm.io/package_json#publishconfig> and
   <https://knip.dev/guides/handling-issues>.
 - **Validation:** With all 15 generated package-output directories temporarily
@@ -17804,7 +17811,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   discovered and ran 6 related tests; its 7 schema object mutants were
   intentionally static and ignored by the existing `ignoreStatic` policy. An
   Xert parsing shard ran 13 related tests and killed all 7 non-static mutants
-  for a 100% mutation score.
+  for a 100% mutation score. The Peloton error shard ran 19 related tests and
+  killed all 9 non-static mutants for a 100% mutation score. The Peloton auth
+  shard improved from 45.03% to 82.46%; the client and parsing shards improved
+  from 55.77% and 54.72% to above 96%.
 - **Remaining risk / follow-up:** Replacement GitHub Actions checks must pass on
   Node 26 before merge. Future public-package changes should validate both a
   clean source checkout and the packed manifest, because either half alone can

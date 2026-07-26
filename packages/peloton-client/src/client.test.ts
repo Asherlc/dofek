@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { PelotonClient } from "./client.ts";
 import { PelotonAuthenticationError, PelotonResponseError, PelotonServiceError } from "./errors.ts";
@@ -60,7 +63,10 @@ describe("PelotonClient", () => {
   it("uses a typed service error for other failed API responses", async () => {
     const client = new PelotonClient("secret", async () => new Response("gone", { status: 404 }));
 
-    await expect(client.getUserId()).rejects.toBeInstanceOf(PelotonServiceError);
+    const error = await client.getUserId().catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(PelotonServiceError);
+    expect(error).not.toBeInstanceOf(PelotonAuthenticationError);
+    expect(error).toMatchObject({ statusCode: 404, responseBody: "gone" });
   });
 
   it("validates successful API responses with Zod", async () => {
@@ -75,6 +81,78 @@ describe("PelotonClient", () => {
       async () => new Response("slow down", { status: 429 }),
     );
 
-    await expect(client.getUserId()).rejects.toBeInstanceOf(ProviderRateLimitError);
+    const error = await client.getUserId().catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toMatchObject({ providerId: "peloton", statusCode: 429 });
+  });
+
+  it("uses provider-http service-unavailable handling", async () => {
+    const client = new PelotonClient(
+      "secret",
+      async () => new Response("offline", { status: 503 }),
+    );
+
+    await expect(client.getUserId()).rejects.toBeInstanceOf(ProviderServiceUnavailableError);
+  });
+
+  it("validates workout responses and preserves upstream errors", async () => {
+    const responses = [Response.json({ id: "user-123" }), Response.json({ invalid: true })];
+    const client = new PelotonClient("secret", async () => responses.shift() ?? Response.error());
+    await expect(client.getWorkouts()).rejects.toBeInstanceOf(PelotonResponseError);
+
+    const unauthorized = new PelotonClient("secret", async (input) =>
+      String(input).endsWith("/api/me")
+        ? Response.json({ id: "user-123" })
+        : new Response("expired", { status: 401 }),
+    );
+    await expect(unauthorized.getWorkouts()).rejects.toBeInstanceOf(PelotonAuthenticationError);
+
+    const unavailable = new PelotonClient("secret", async (input) =>
+      String(input).endsWith("/api/me")
+        ? Response.json({ id: "user-123" })
+        : new Response("gone", { status: 404 }),
+    );
+    await expect(unavailable.getWorkouts()).rejects.toBeInstanceOf(PelotonServiceError);
+  });
+
+  it("requests and validates performance graphs", async () => {
+    const graph = {
+      duration: 5,
+      is_class_plan_shown: false,
+      segment_list: [],
+      average_summaries: [],
+      summaries: [],
+      metrics: [],
+    };
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(graph));
+    const client = new PelotonClient("secret", fetchFn);
+
+    await expect(client.getPerformanceGraph("workout-1", 10)).resolves.toEqual(graph);
+    expect(String(fetchFn.mock.calls[0]?.[0])).toContain(
+      "/api/workout/workout-1/performance_graph?every_n=10",
+    );
+  });
+
+  it("validates performance graph errors", async () => {
+    const malformed = new PelotonClient("secret", async () => Response.json({ invalid: true }));
+    await expect(malformed.getPerformanceGraph("workout-1")).rejects.toBeInstanceOf(
+      PelotonResponseError,
+    );
+
+    const unauthorized = new PelotonClient(
+      "secret",
+      async () => new Response("expired", { status: 401 }),
+    );
+    await expect(unauthorized.getPerformanceGraph("workout-1")).rejects.toBeInstanceOf(
+      PelotonAuthenticationError,
+    );
+
+    const unavailable = new PelotonClient(
+      "secret",
+      async () => new Response("gone", { status: 404 }),
+    );
+    await expect(unavailable.getPerformanceGraph("workout-1")).rejects.toBeInstanceOf(
+      PelotonServiceError,
+    );
   });
 });
