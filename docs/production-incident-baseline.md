@@ -18351,8 +18351,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-26 — Worker Deployments Stalled Active BullMQ Jobs
 
-- **Status:** Direct fixes merged after full CI; production deployment remains
-  pending because the first rollout was superseded during the incident above.
+- **Status:** Initial lifecycle fixes merged and deployed; a follow-up provider
+  admission root cause was confirmed from the fixed-release rollout, with its
+  direct fix validated locally and pending PR/deployment.
 - **Symptoms:** Sentry issues
   [DOFEK-SERVER-4N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4N)
   and
@@ -18374,7 +18375,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   about 22 minutes, while the old provider-deletion loop could run for more
   than two hours. Axiom could not be queried because its connected user token
   had expired, so Sentry, Docker task state/logs, and Redis metadata supplied
-  the causal evidence.
+  the causal evidence. During the serialized `d627cd8` rollout, the reclaimed
+  one-day Strava job emitted a new
+  [DOFEK-SERVER-4N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4N)
+  event at `17:18:17Z`, remained at zero percent, and continued renewing its
+  lock. PostgreSQL had no active application query. Its persisted adaptive
+  state contained a `200`-request short limit, usage `1`, and one admitted
+  request at `17:30:21Z`. A 20-second Redis command trace then showed the same
+  client repeatedly executing `GET`, `WATCH`, and `GET` for the Strava
+  admission key about every 4.5 seconds without ever reaching `MULTI`/`EXEC`.
+  The 4.5-second interval exactly matched
+  `ceil(15 minutes / (200 - 1))`; Strava documents the default 200-request
+  short limit, its 15-minute window, and the quota headers:
+  <https://developers.strava.com/docs/rate-limits/>.
 - **Root cause:** Docker Swarm's default 10-second stop grace was incompatible
   with BullMQ's graceful close contract, which waits for active jobs, while
   provider HTTP requests had no deadline and provider deletion processed every
@@ -18382,7 +18395,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   default before `SIGKILL`, and BullMQ documents that `Worker.close()` waits for
   active work:
   <https://docs.docker.com/reference/compose-file/services/#stop_grace_period>
-  and <https://docs.bullmq.io/guide/workers/graceful-shutdown>.
+  and <https://docs.bullmq.io/guide/workers/graceful-shutdown>. The follow-up
+  Strava hang was caused by `admissionDelayMs()` returning a full quota pacing
+  interval on every atomic claim recheck instead of the time remaining since
+  the last request. The delay could therefore never reach zero, so the
+  `WATCH` claim loop slept and retried forever. The inferred-budget soft-cap
+  branch had the same fixed-delay defect.
 - **Fix / mitigation:** Give the worker a durable 30-minute stop grace and the
   initial deploy a 35-minute convergence bound; fail rather than continue when
   a Swarm update pauses. Apply a shared two-minute provider HTTP deadline with
@@ -18392,7 +18410,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deletion-request state authoritative so a completed batch job cannot report
   the overall operation complete while its continuation remains active.
   Node.js documents the native timeout and signal-composition primitives:
-  <https://nodejs.org/api/globals.html#class-abortsignal>.
+  <https://nodejs.org/api/globals.html#class-abortsignal>. The follow-up fix
+  makes every admission result a remaining eligibility delay: Strava quota
+  pacing subtracts elapsed time since `lastRequestMs`, and an exhausted
+  adaptive budget waits only for the remainder of its rolling window. This is
+  shared provider admission behavior, with no Strava-job bypass or
+  incident-only flag.
 - **Validation:** The timeout regression failed before implementation. After
   the fix, 205 focused unit tests passed, the root TypeScript typecheck and
   targeted Biome checks passed, and all five real-ClickHouse provider-deletion
@@ -18400,11 +18423,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   bounded projection reads. A focused operation-status regression also verifies
   that a dispatched deletion remains running after its root batch completes.
   No stall-count increase, forced retry, temporary flag, or incident-only
-  shutdown branch was added.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy, confirm the
-  old worker reaches `Shutdown complete` without exit 137, verify the timed-out
-  Strava job retries and completes, observe no fixed-release 4N/2K events
-  across a subsequent rollout, then resolve both Sentry issues.
+  shutdown branch was added. The admission regression failed against the
+  previous implementation; after the fix, 82 focused package/application tests
+  pass, including an atomic Redis-store case that advances through the exact
+  persisted production quota shape.
+- **Remaining risk / follow-up:** Merge and deploy the admission fix, verify the
+  reclaimed Strava job completes and subsequent jobs make bounded progress,
+  observe no fixed-release 4N/2K events across another rollout, then resolve
+  both Sentry issues.
 
 ## 2026-07-26 — Peloton Workout Response Drift Blocked Sync
 
