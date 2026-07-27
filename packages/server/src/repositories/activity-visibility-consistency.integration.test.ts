@@ -16,6 +16,7 @@ const AUTHORIZED_WALK_ID = "22222222-2222-4222-8222-222222222222";
 const UNAUTHORIZED_RIDE_ID = "33333333-3333-4333-8333-333333333333";
 const BEFORE_LOCAL_ACCESS_ID = "44444444-4444-4444-8444-444444444444";
 const BEFORE_LOCAL_END_ID = "55555555-5555-4555-8555-555555555555";
+const BOUNDARY_USER_ID = "60606060-6060-4060-8060-606060606060";
 const ACCESS_WINDOW: AccessWindow = {
   kind: "limited",
   paid: false,
@@ -35,6 +36,14 @@ describe("activity visibility consistency", () => {
           VALUES ('issue_2060', 'Issue 2060', ${TEST_USER_ID})`,
     );
     await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES (${BOUNDARY_USER_ID}, 'Issue 2060 Boundary User')`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('issue_2060_boundary', 'Issue 2060 Boundary', ${BOUNDARY_USER_ID})`,
+    );
+    await testContext.db.execute(
       sql`INSERT INTO fitness.activity (
             id, provider_id, user_id, external_id, activity_type, started_at, ended_at, name
           ) VALUES
@@ -49,6 +58,16 @@ describe("activity visibility consistency", () => {
           (
             ${UNAUTHORIZED_RIDE_ID}, 'issue_2060', ${TEST_USER_ID}, 'unauthorized-ride', 'cycling',
             '2026-02-15T10:00:00Z', '2026-02-15T11:30:00Z', 'Unauthorized Ride'
+          ),
+          (
+            ${BEFORE_LOCAL_ACCESS_ID}, 'issue_2060_boundary', ${BOUNDARY_USER_ID},
+            'before-local-access', 'running',
+            '2026-03-10T06:30:00Z', '2026-03-10T06:45:00Z', 'Before Local Access'
+          ),
+          (
+            ${BEFORE_LOCAL_END_ID}, 'issue_2060_boundary', ${BOUNDARY_USER_ID},
+            'before-local-end', 'running',
+            '2026-03-17T06:30:00Z', '2026-03-17T06:45:00Z', 'Before Local End'
           )`,
     );
     sensorStore = await createClickHouseTestActivitySensorStore(testContext);
@@ -152,23 +171,9 @@ describe("activity visibility consistency", () => {
   });
 
   it("interprets access-window boundaries in the user's timezone", async () => {
-    await testContext.db.execute(
-      sql`INSERT INTO fitness.activity (
-            id, provider_id, user_id, external_id, activity_type, started_at, ended_at, name
-          ) VALUES
-          (
-            ${BEFORE_LOCAL_ACCESS_ID}, 'issue_2060', ${TEST_USER_ID}, 'before-local-access',
-            'running', '2026-03-10T06:30:00Z', '2026-03-10T06:45:00Z', 'Before Local Access'
-          ),
-          (
-            ${BEFORE_LOCAL_END_ID}, 'issue_2060', ${TEST_USER_ID}, 'before-local-end',
-            'running', '2026-03-17T06:30:00Z', '2026-03-17T06:45:00Z', 'Before Local End'
-          )`,
-    );
-
     const repository = new ActivityRepository(
       testContext.db,
-      TEST_USER_ID,
+      BOUNDARY_USER_ID,
       "America/Los_Angeles",
       ACCESS_WINDOW,
       sensorStore,

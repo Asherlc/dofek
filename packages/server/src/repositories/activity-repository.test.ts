@@ -136,8 +136,12 @@ describe("ActivityRepository", () => {
       await repo.resolveVisibleActivityIds(["activity-1", "activity-2"]);
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
-      expect(compiledQuery.sql).toContain("started_at >= ($4::date AT TIME ZONE $5)");
-      expect(compiledQuery.sql).toContain("started_at < ($6::date AT TIME ZONE $7)");
+      expect(compiledQuery.sql).toContain(
+        "started_at >= (CAST($4::date AS timestamp without time zone) AT TIME ZONE $5)",
+      );
+      expect(compiledQuery.sql).toContain(
+        "started_at < (CAST($6::date AS timestamp without time zone) AT TIME ZONE $7)",
+      );
       expect(compiledQuery.params).toEqual([
         "user-1",
         "activity-1",
@@ -163,8 +167,12 @@ describe("ActivityRepository", () => {
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql).toContain("started_at >= ($2::date AT TIME ZONE $3)");
-      expect(compiledQuery.sql).toContain("started_at >= ($4::date AT TIME ZONE $5)");
-      expect(compiledQuery.sql).toContain("started_at < ($6::date AT TIME ZONE $7)");
+      expect(compiledQuery.sql).toContain(
+        "started_at >= (CAST($4::date AS timestamp without time zone) AT TIME ZONE $5)",
+      );
+      expect(compiledQuery.sql).toContain(
+        "started_at < (CAST($6::date AS timestamp without time zone) AT TIME ZONE $7)",
+      );
       expect(compiledQuery.params).toEqual([
         "user-1",
         "2026-02-01",
@@ -219,8 +227,12 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.sql).not.toContain("CURRENT_TIMESTAMP -");
       expect(compiledQuery.sql).toContain("AND ended_at IS NOT NULL");
       expect(compiledQuery.sql).toContain("AND activity_type IN");
-      expect(compiledQuery.sql).toContain("AND started_at >= ($3::date AT TIME ZONE $4)");
-      expect(compiledQuery.sql).toContain("AND started_at < ($5::date AT TIME ZONE $6)");
+      expect(compiledQuery.sql).toContain(
+        "AND started_at >= (CAST($3::date AS timestamp without time zone) AT TIME ZONE $4)",
+      );
+      expect(compiledQuery.sql).toContain(
+        "AND started_at < (CAST($5::date AS timestamp without time zone) AT TIME ZONE $6)",
+      );
       expect(compiledQuery.params).toEqual([
         "user-1",
         "cycling",

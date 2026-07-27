@@ -58,7 +58,7 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
     accessWindow: AccessWindow = this.accessWindow,
   ): SQL {
     if (accessWindow.kind === "full") return sql``;
-    return sql`AND ${column} >= (${accessWindow.startDate}::date AT TIME ZONE ${this.timezone})
-               AND ${column} < (${accessWindow.endDateExclusive}::date AT TIME ZONE ${this.timezone})`;
+    return sql`AND ${column} >= (CAST(${accessWindow.startDate}::date AS timestamp without time zone) AT TIME ZONE ${this.timezone})
+               AND ${column} < (CAST(${accessWindow.endDateExclusive}::date AS timestamp without time zone) AT TIME ZONE ${this.timezone})`;
   }
 }

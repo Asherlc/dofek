@@ -19022,3 +19022,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   and ClickHouse integration regression and seed grant assertion on a runner
   with available Docker storage before merge. Local database validation
   remains unresolved until Docker storage is restored.
+
+## 2026-07-27 — Issue 2060 CI exposed ambiguous date timezone coercion
+
+- **Status:** Root cause confirmed in exact-head CI; corrected implementation
+  and retry-safe fixture validation pending on the next CI head.
+- **Symptoms:** The real-PostgreSQL timezone-boundary regression selected the
+  activity before the local access start and rejected the activity before the
+  local end. Vitest retries then failed with a duplicate activity primary key.
+- **User impact:** No production change had shipped. If merged, limited users
+  outside the database session timezone could have seen an activity from the
+  previous local day or lost one from the final entitled local day.
+- **Evidence:** The exact failing job was `Test / Integration Tests (2/4)` in
+  workflow run `30303258217`, job `90101781039`. The first fatal assertion was
+  `expected Set{ '44444444-...' } to deeply equal Set{ '55555555-...' }`.
+  The retry then reported PostgreSQL error `23505` for duplicate key
+  `44444444-4444-4444-8444-444444444444`.
+- **Root cause:** Applying `AT TIME ZONE` directly to a `date` left PostgreSQL
+  to choose a timestamp overload through implicit coercion. The observed result
+  retained session-UTC boundary behavior instead of interpreting midnight in
+  `America/Los_Angeles`. PostgreSQL documents distinct `timestamp without time
+  zone` and `timestamp with time zone` operator variants:
+  <https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-ZONECONVERT>.
+  The test also inserted fixed IDs inside the retried test body, so a failed
+  first attempt contaminated its retry.
+- **Fix / mitigation:** Cast each local date explicitly to `timestamp without
+  time zone` before `AT TIME ZONE`, producing an unambiguous `timestamptz`
+  boundary. Seed the boundary activities once in `beforeAll` under a dedicated
+  user so retries are read-only and cannot collide.
+- **Validation:** Updated compiled-SQL tests, root/server TypeScript checks,
+  Biome, and the 51 focused unit tests pass on Node 26.5.0. The preceding exact
+  changed-line mutation run killed 5/5 mutants, and the full Docker-free suite
+  passed 14,133 tests before this final explicit-cast correction.
+- **Remaining risk / follow-up:** The new exact-head CI must pass the real
+  PostgreSQL boundary test, every integration shard, and mutation testing
+  before merge.
