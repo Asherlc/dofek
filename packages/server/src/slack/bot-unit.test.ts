@@ -1299,7 +1299,14 @@ describe("bot.ts — registerHandlers", () => {
       // load calorie goal
       mockExecute.mockResolvedValueOnce([{ key: "calorieGoal", value: 2000 }]);
       // load confirmed calories for the entry date
-      mockExecute.mockResolvedValueOnce([{ calories_consumed: 80 }]);
+      mockExecute.mockResolvedValueOnce([
+        {
+          calories_consumed: 80,
+          resolution_status: "available",
+          resolution_message: "Totals use the only available nutrition source.",
+          source_labels: ["dofek"],
+        },
+      ]);
       const ack = vi.fn();
       const chatUpdate = vi.fn().mockResolvedValue({});
 

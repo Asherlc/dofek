@@ -30,5 +30,17 @@ export const selectedDateNutritionSummarySchema = z.object({
   }),
 });
 
+export const nutritionSourceResolutionSchema = z.object({
+  status: z.enum(["available", "source_conflict"]),
+  message: z.string().min(1),
+  sourceProviders: z.array(z.string()),
+  contributingProviders: z.array(z.string()),
+  excludedProviders: z.array(z.string()),
+  sourceLabels: z.array(z.string()),
+  contributingSourceLabels: z.array(z.string()),
+  excludedSourceLabels: z.array(z.string()),
+});
+
 export type MacroNutritionSummary = z.infer<typeof macroNutritionSummarySchema>;
 export type SelectedDateNutritionSummary = z.infer<typeof selectedDateNutritionSummarySchema>;
+export type NutritionSourceResolution = z.infer<typeof nutritionSourceResolutionSchema>;

@@ -68,7 +68,7 @@ async function queryDailyNutritionFromView(db: TestContext["db"]) {
   return db.execute<z.infer<typeof dailyNutritionRowSchema>>(
     sql`
       SELECT date, calories, protein_g, carbs_g, fat_g
-      FROM fitness.v_nutrition_daily
+      FROM fitness.v_nutrition_provider_daily
       WHERE provider_id = ${CRONOMETER_PROVIDER_ID}
     `,
   );

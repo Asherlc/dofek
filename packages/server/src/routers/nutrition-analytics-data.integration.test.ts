@@ -65,11 +65,12 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, external_id, food_name, source_name, confirmed
+                user_id, provider_id, date, external_id, nutrition_grain, food_name, source_name,
+                confirmed
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true
+                ${`daily-nutrition-${i}`}, 'daily_aggregate', NULL, 'Fixture', true
               ) RETURNING id
             )
             INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
@@ -109,11 +110,11 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                'breakfast', 'Fortified Oatmeal', true
+                'itemized', 'breakfast', 'Fortified Oatmeal', true
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -144,11 +145,11 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                'lunch', 'Chicken Salad Bowl', true
+                'itemized', 'lunch', 'Chicken Salad Bowl', true
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -179,11 +180,11 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                'dinner', 'Salmon with Vegetables', true
+                'itemized', 'dinner', 'Salmon with Vegetables', true
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -215,11 +216,11 @@ describe("Nutrition analytics data coverage", () => {
         await testCtx.db.execute(
           sql`WITH new_entry AS (
                 INSERT INTO fitness.food_entry (
-                  user_id, provider_id, date, meal, food_name, confirmed
+                  user_id, provider_id, date, nutrition_grain, meal, food_name, confirmed
                 ) VALUES (
                   ${TEST_USER_ID}, 'dofek',
                   CURRENT_DATE - ${i}::int,
-                  'snack', 'Unconfirmed Snack', false
+                  'itemized', 'snack', 'Unconfirmed Snack', false
               ) RETURNING id
             ),
             new_nutrition AS (

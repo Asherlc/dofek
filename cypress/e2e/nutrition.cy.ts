@@ -29,13 +29,17 @@ describe("Nutrition page", () => {
     cy.task("runQuery", {
       query: `
         WITH fe1 AS (
-          INSERT INTO fitness.food_entry (user_id, provider_id, date, food_name, meal)
-          VALUES ('${TEST_USER_ID}', 'dofek', '${today}', 'Chicken breast', 'lunch')
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, date, food_name, meal, nutrition_grain
+          )
+          VALUES ('${TEST_USER_ID}', 'dofek', '${today}', 'Chicken breast', 'lunch', 'itemized')
           RETURNING id
         ),
         fe2 AS (
-          INSERT INTO fitness.food_entry (user_id, provider_id, date, food_name, meal)
-          VALUES ('${TEST_USER_ID}', 'dofek', '${today}', 'Mystery food', 'dinner')
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, date, food_name, meal, nutrition_grain
+          )
+          VALUES ('${TEST_USER_ID}', 'dofek', '${today}', 'Mystery food', 'dinner', 'itemized')
           RETURNING id
         )
         INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)

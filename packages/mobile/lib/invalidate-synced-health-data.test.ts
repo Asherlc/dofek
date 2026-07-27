@@ -12,7 +12,7 @@ describe("invalidateSyncedHealthData", () => {
       [["calendar", "weekList"], { type: "query" }],
       [["calendar", "activityOverview"], { type: "query" }],
       [["activity", "list"], { type: "query" }],
-      [["food", "byDate"], { type: "query" }],
+      [["food", "byDateV2"], { type: "query" }],
       [["processing", "status"], { type: "query" }],
       [["nutritionAnalytics", "adaptiveTdee"], { type: "query" }],
       [["nutritionAnalytics", "macroRatios"], { type: "query" }],
