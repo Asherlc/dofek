@@ -95,51 +95,6 @@ export function scoreDescription(score: number): string {
   return "Recovery is low. Focus on rest and keep today's effort light.";
 }
 
-/** Strain zone classification with display properties. */
-export class StrainZone {
-  readonly zone: string;
-  constructor(zone: string) {
-    this.zone = zone;
-  }
-
-  get color(): string {
-    if (this.zone === "optimal") return statusColors.positive;
-    if (this.zone === "overreaching") return statusColors.danger;
-    if (this.zone === "restoring") return statusColors.info;
-    return textColors.secondary;
-  }
-
-  get label(): string {
-    if (this.zone === "optimal") return "Optimal";
-    if (this.zone === "overreaching") return "Overreaching";
-    if (this.zone === "restoring") return "Restoring";
-    return this.zone;
-  }
-}
-
-/** Workload ratio (ACWR) with display classification. */
-export class WorkloadRatio {
-  readonly value: number | null;
-  constructor(value: number | null) {
-    this.value = value;
-  }
-
-  get color(): string {
-    if (this.value == null) return textColors.secondary;
-    if (this.value >= 0.8 && this.value <= 1.3) return statusColors.positive;
-    if (this.value >= 0.5 && this.value <= 1.5) return statusColors.warning;
-    return statusColors.danger;
-  }
-
-  get hint(): string | null {
-    if (this.value == null) return null;
-    if (this.value >= 0.8 && this.value <= 1.3) return "Optimal training zone";
-    if (this.value < 0.8) return "Detraining risk - increase load gradually";
-    if (this.value <= 1.5) return "High load - monitor recovery closely";
-    return "Injury risk zone - consider rest";
-  }
-}
-
 export interface WeekSummary {
   week: string;
   hours: number;

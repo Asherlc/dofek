@@ -76,7 +76,6 @@ const weeklyReport = {
       weekStart: "2026-07-19",
       trainingHours: 5,
       activityCount: 3,
-      strainZone: "optimal",
       avgDailyLoad: 4,
       avgSleepMinutes: 450,
       sleepPerformancePct: 100,

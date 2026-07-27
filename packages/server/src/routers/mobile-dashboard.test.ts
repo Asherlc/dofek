@@ -959,6 +959,13 @@ describe("mobileDashboard.training", () => {
     const loadSpy = vi.spyOn(mobileTrainingTab, "loadMobileTrainingTab").mockResolvedValue({
       workloadRatio: {
         timeSeries: [],
+        context: {
+          label: "Recent-to-baseline workload ratio",
+          description:
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+          recentDays: 7,
+          baselineDays: 28,
+        },
         displayedStrain: 0,
         displayedDate: null,
       },
@@ -1028,6 +1035,13 @@ describe("mobileDashboard.training", () => {
     const loadSpy = vi.spyOn(mobileTrainingTab, "loadMobileTrainingTab").mockResolvedValue({
       workloadRatio: {
         timeSeries: [],
+        context: {
+          label: "Recent-to-baseline workload ratio",
+          description:
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+          recentDays: 7,
+          baselineDays: 28,
+        },
         displayedStrain: 0,
         displayedDate: null,
       },

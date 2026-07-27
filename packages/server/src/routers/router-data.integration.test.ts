@@ -1490,7 +1490,7 @@ describe("Router data coverage", () => {
       expect(result.length).toBeGreaterThan(0);
     });
 
-    it("workloadRatio returns acute/chronic ratio with displayed strain", async () => {
+    it("workloadRatio returns the recent-to-baseline ratio with displayed strain", async () => {
       const result = await query<{
         timeSeries: {
           date: string;
@@ -1500,6 +1500,12 @@ describe("Router data coverage", () => {
           chronicLoad: number;
           workloadRatio: number | null;
         }[];
+        context: {
+          label: "Recent-to-baseline workload ratio";
+          description: "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.";
+          recentDays: 7;
+          baselineDays: 28;
+        };
         displayedStrain: number;
         displayedDate: string | null;
       }>("recovery.workloadRatio", { days: 90 });

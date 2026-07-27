@@ -6,6 +6,13 @@ import { trpc } from "../../lib/trpc";
 import StrainScreen from "./strain";
 
 const mockWorkloadData = {
+  context: {
+    label: "Recent-to-baseline workload ratio",
+    description:
+      "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+    recentDays: 7,
+    baselineDays: 28,
+  },
   displayedStrain: 12.5,
   displayedDate: "2026-03-31",
   timeSeries: [
@@ -66,7 +73,7 @@ function createSeededProviders(activities: unknown[] = []) {
       strainTarget: {
         targetStrain: 13.5,
         currentStrain: 12.5,
-        currentStrainSource: "daily_strain",
+        currentStrainSource: "activity",
         currentPhysiologyLoad: 450,
         progressPercent: 93,
         zone: "Push",

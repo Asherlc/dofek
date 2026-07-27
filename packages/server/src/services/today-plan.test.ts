@@ -276,7 +276,7 @@ describe("loadTodayPlan", () => {
     expect(plan.missingInputs).toContain("sleep");
     expect(plan.confidence).not.toBe("high");
     expect(plan.freshness.sleepDate).toBeNull();
-    expect(plan.supportingFacts[1]?.label).toBe("Workload ratio");
+    expect(plan.supportingFacts[1]?.label).toBe("Recent-to-baseline workload ratio");
     expect(plan.supportingFacts[1]?.value).toBe("4");
   });
 });

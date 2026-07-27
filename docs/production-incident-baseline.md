@@ -19058,6 +19058,77 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   UI returns the documented clean-grant retry guidance before resolving
   DOFEK-SERVER-5H.
 
+## 2026-07-27 — Issue 2060 integration validation blocked by Docker disk exhaustion
+
+- **Status:** Local database validation blocked; Docker-free validation passed
+  and exact-head CI follow-up pending.
+- **Symptoms:** The targeted PostgreSQL and ClickHouse integration command
+  failed while starting this worktree's isolated Compose dependencies, before
+  Vitest collected the activity-visibility or review-seed tests.
+- **User impact:** No production user impact. The local agent could not execute
+  the new real-database regression before publication.
+- **Evidence:** The exact failing command was
+  `pnpm test:integration -- packages/server/src/repositories/activity-visibility-consistency.integration.test.ts scripts/seed/core.integration.test.ts`.
+  The first fatal line during the Redpanda image pull was
+  `write /var/lib/docker/image/overlay2/.tmp-repositories.json2323163154: no space left on device`.
+  After scoped cleanup, the single retry failed creating
+  `/var/lib/docker/volumes/issue-2060_db_data` with
+  `mkdir ...: no space left on device`.
+- **Root cause:** The shared Docker VM had no free storage for this worktree's
+  image metadata or isolated database volume; the failure occurred before
+  application code or database assertions ran.
+- **Fix / mitigation:** Removed only the `issue-2060` Compose resources through
+  `pnpm compose -- down --remove-orphans --volumes`, then pruned rebuildable
+  builder cache with `docker builder prune -af`. The cache prune reclaimed
+  zero bytes. After the one permitted retry reproduced the capacity failure,
+  Docker retries stopped and the attempted `issue-2060` network was removed.
+  No other workspace's containers or volumes were deleted.
+- **Validation:** Root, server, and web TypeScript checks pass; all 883
+  Docker-free unit/mobile files pass with 14,132 tests and 21 expected skips.
+  Repository lint passed through Biome, suppression, workflow-download, and
+  exact-version checks. Analytics SQL lint alone could not connect to the same
+  unavailable local ClickHouse instance; the remaining analytics policy,
+  mobile telemetry, and web story checks pass.
+- **Remaining risk / follow-up:** Required CI must execute the new PostgreSQL
+  and ClickHouse integration regression and seed grant assertion on a runner
+  with available Docker storage before merge. Local database validation
+  remains unresolved until Docker storage is restored.
+
+## 2026-07-27 — Issue 2060 CI exposed ambiguous date timezone coercion
+
+- **Status:** Root cause confirmed in exact-head CI; corrected implementation
+  and retry-safe fixture validation pending on the next CI head.
+- **Symptoms:** The real-PostgreSQL timezone-boundary regression selected the
+  activity before the local access start and rejected the activity before the
+  local end. Vitest retries then failed with a duplicate activity primary key.
+- **User impact:** No production change had shipped. If merged, limited users
+  outside the database session timezone could have seen an activity from the
+  previous local day or lost one from the final entitled local day.
+- **Evidence:** The exact failing job was `Test / Integration Tests (2/4)` in
+  workflow run `30303258217`, job `90101781039`. The first fatal assertion was
+  `expected Set{ '44444444-...' } to deeply equal Set{ '55555555-...' }`.
+  The retry then reported PostgreSQL error `23505` for duplicate key
+  `44444444-4444-4444-8444-444444444444`.
+- **Root cause:** Applying `AT TIME ZONE` directly to a `date` left PostgreSQL
+  to choose a timestamp overload through implicit coercion. The observed result
+  retained session-UTC boundary behavior instead of interpreting midnight in
+  `America/Los_Angeles`. PostgreSQL documents distinct `timestamp without time
+  zone` and `timestamp with time zone` operator variants:
+  <https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-ZONECONVERT>.
+  The test also inserted fixed IDs inside the retried test body, so a failed
+  first attempt contaminated its retry.
+- **Fix / mitigation:** Cast each local date explicitly to `timestamp without
+  time zone` before `AT TIME ZONE`, producing an unambiguous `timestamptz`
+  boundary. Seed the boundary activities once in `beforeAll` under a dedicated
+  user so retries are read-only and cannot collide.
+- **Validation:** Updated compiled-SQL tests, root/server TypeScript checks,
+  Biome, and the 51 focused unit tests pass on Node 26.5.0. The preceding exact
+  changed-line mutation run killed 5/5 mutants, and the full Docker-free suite
+  passed 14,133 tests before this final explicit-cast correction.
+- **Remaining risk / follow-up:** The new exact-head CI must pass the real
+  PostgreSQL boundary test, every integration shard, and mutation testing
+  before merge.
+
 ## 2026-07-27 — Issue #2059 local database validation blocked by Docker disk exhaustion
 
 - **Status:** Application fix and executable PostgreSQL regression are ready;
@@ -19193,3 +19264,41 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   path, repeat the exact production plan and dashboard request, confirm all
   three Sentry issues remain quiet, and resolve them only after the deployed
   query no longer exhausts a web process's five-connection pool.
+
+## 2026-07-27 — Weekly report query-window mutants survived CI
+
+- **Status:** Root cause confirmed; focused regression and exact mutation
+  validation prepared on PR #2222.
+- **Symptoms:** CI run
+  [30306020715](https://github.com/Asherlc/dofek/actions/runs/30306020715)
+  failed `Test / Stryker (5)` in job
+  [90110762516](https://github.com/Asherlc/dofek/actions/runs/30306020715/job/90110762516).
+- **User impact:** No production impact. PR #2222 could not merge because the
+  strict mutation gate detected missing behavioral coverage.
+- **Evidence:** The exact failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  The first fatal line was
+  `Final mutation score 0.00 under breaking threshold 75`. The report identified
+  two surviving arithmetic mutants at
+  `weekly-report-repository.ts:123`: `weeks * 7 + 28` changed to
+  `weeks / 7 + 28` and `weeks * 7 - 28`.
+- **Root cause:** Existing repository and router tests asserted report parsing
+  but not the ClickHouse query parameters. They therefore could not distinguish
+  the intended requested-week window plus 28 days of rolling sleep history from
+  either mutated window.
+- **Fix / mitigation:** Add a public `WeeklyReportRepository.getReport`
+  regression that requests two weeks ending 2026-03-28 and verifies the exact
+  query parameters: 42 total days and a 2026-02-14 window start. No mutation
+  threshold, query formula, timeout, retry, or CI configuration changed.
+  Stryker documents surviving mutants as changes not detected by the test suite:
+  <https://stryker-mutator.io/docs/mutation-testing-elements/survived/>.
+- **Validation:** All 25 focused repository tests pass. The exact changed-line
+  Stryker run killed both arithmetic mutants for a 100% mutation score without
+  changing the 75% breaking threshold. Server TypeScript and repository-wide
+  Biome checks pass. Full local lint reached SQLFluff, then stopped before
+  analysis because no ClickHouse service was listening on
+  `127.0.0.1:8123`; the prior exact PR head's CI lint passed, and the
+  corrective exact head remains the database-aware lint gate.
+- **Remaining risk / follow-up:** After PR #2220 merges, merge the exact current
+  `origin/main` into #2222, rerun exact-head CI, and merge only with every
+  required check green and zero unresolved review threads.
