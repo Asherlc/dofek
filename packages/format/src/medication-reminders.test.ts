@@ -5,6 +5,7 @@ import {
   medicationReminderSchema,
   medicationRemindersSchema,
   parseLocalTime,
+  parseMedicationReminders,
 } from "./medication-reminders.ts";
 
 describe("medication reminders settings", () => {
@@ -64,6 +65,28 @@ describe("medication reminders settings", () => {
     expect(parseLocalTime("23:05")).toEqual({ hour: 23, minute: 5 });
   });
 
+  it("parses nullish settings values as an empty reminder list", () => {
+    expect(parseMedicationReminders(null)).toEqual([]);
+    expect(parseMedicationReminders(undefined)).toEqual([]);
+    expect(
+      parseMedicationReminders([
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          medicationName: "Vitamin D3",
+          localTime: "08:30",
+          enabled: true,
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        medicationName: "Vitamin D3",
+        localTime: "08:30",
+        enabled: true,
+      },
+    ]);
+  });
+
   it("finds the latest matching imported dose logging state", () => {
     const loggingState = findLatestDoseLoggingState("Vitamin D3", [
       {
@@ -91,5 +114,25 @@ describe("medication reminders settings", () => {
       recordedAt: "2026-07-25T16:00:00.000Z",
     });
     expect(findLatestDoseLoggingState("Unknown", [])).toBeNull();
+  });
+
+  it("trims whitespace when matching medication names for logging state", () => {
+    expect(findLatestDoseLoggingState("   ", [])).toBeNull();
+    expect(
+      findLatestDoseLoggingState("  Vitamin D3  ", [
+        {
+          id: "event-1",
+          providerId: "apple_health",
+          medicationName: "  vitamin d3 ",
+          medicationConceptId: null,
+          doseStatus: "taken",
+          recordedAt: "2026-07-25T16:00:00.000Z",
+          sourceName: "Apple Health",
+        },
+      ]),
+    ).toEqual({
+      doseStatus: "taken",
+      recordedAt: "2026-07-25T16:00:00.000Z",
+    });
   });
 });
