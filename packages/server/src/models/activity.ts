@@ -5,8 +5,18 @@ import {
   type SourceExternalIdEntry,
   type SourceLink,
 } from "./activity-source-attribution.ts";
+import {
+  type ActivitySourceDecisionDetail,
+  buildActivitySourceDecision,
+} from "./activity-source-decision.ts";
 
-export type { ActivitySource, ProviderLookup, SourceExternalIdEntry, SourceLink };
+export type {
+  ActivitySource,
+  ActivitySourceDecisionDetail,
+  ProviderLookup,
+  SourceExternalIdEntry,
+  SourceLink,
+};
 
 export interface ActivityDetail {
   id: string;
@@ -19,6 +29,7 @@ export interface ActivityDetail {
   subsource: string | null;
   sourceProviders: string[];
   sourceLinks: SourceLink[];
+  sourceDecision: ActivitySourceDecisionDetail | null;
   avgHr: number | null;
   maxHr: number | null;
   avgPower: number | null;
@@ -166,6 +177,15 @@ export class Activity {
     return this.#row.provider_absent_at ? String(this.#row.provider_absent_at) : null;
   }
 
+  get sourceDecision(): ActivitySourceDecisionDetail | null {
+    return buildActivitySourceDecision(
+      this.providerId,
+      this.subsource,
+      this.sourceLinks,
+      this.#lookupProvider,
+    );
+  }
+
   /** Serialize to the ActivityDetail shape consumed by API clients. */
   toDetail(): ActivityDetail {
     return {
@@ -179,6 +199,7 @@ export class Activity {
       subsource: this.subsource,
       sourceProviders: this.sourceProviders,
       sourceLinks: this.sourceLinks,
+      sourceDecision: this.sourceDecision,
       avgHr: this.avgHr,
       maxHr: this.maxHr,
       avgPower: this.avgPower,
