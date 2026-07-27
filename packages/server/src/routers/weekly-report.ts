@@ -4,7 +4,6 @@ import { WeeklyReportRepository } from "../repositories/weekly-report-repository
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export type {
-  StrainZone,
   WeeklyReportResult,
   WeekSummary,
 } from "../repositories/weekly-report-repository.ts";
@@ -12,7 +11,7 @@ export type {
 export const weeklyReportRouter = router({
   /**
    * Weekly Performance Report — mirrors Whoop's Weekly Performance Assessment.
-   * Aggregates strain balance, sleep performance, readiness, and key vitals per Sunday-start week.
+   * Aggregates training load, sleep performance, readiness, and key vitals per Sunday-start week.
    */
   report: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ weeks: z.number().min(1).max(52).default(12), endDate: endDateSchema }))

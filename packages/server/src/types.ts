@@ -92,7 +92,6 @@ export type {
 } from "./routers/stress.ts";
 // Weekly report router types
 export type {
-  StrainZone,
   WeeklyReportResult,
   WeekSummary,
 } from "./routers/weekly-report.ts";

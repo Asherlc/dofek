@@ -65,8 +65,8 @@ Every public module is imported as `@dofek/training/<subpath>`.
 
 ### Workout recommendations
 
-`recommendNextWorkout` combines recent activity, readiness, workload ratio,
-muscle-group freshness, and intensity distribution. Its low/moderate/high
+`recommendNextWorkout` combines recent activity, readiness, muscle-group
+freshness, and intensity distribution. Its low/moderate/high
 distribution model is informed by the three-zone observations in
 [Seiler and Kjerland (2006)](https://pubmed.ncbi.nlm.nih.gov/16430681/);
 the exact readiness gates, recovery windows, and recommendation rules are Dofek

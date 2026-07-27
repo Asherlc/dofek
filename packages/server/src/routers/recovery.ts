@@ -5,7 +5,6 @@ import {
 } from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
-import { selectRecentDailyLoad } from "@dofek/training/training";
 import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -28,7 +27,12 @@ import {
   type StrainTargetResult,
   strainTargetResultSchema,
 } from "../services/strain-target-result.ts";
-import type { WorkloadRatioResult, WorkloadRatioRow } from "../services/workload-ratio.ts";
+import {
+  buildWorkloadRatioResult,
+  type WorkloadRatioResult,
+  type WorkloadRatioRow,
+  workloadRatioResultSchema,
+} from "../services/workload-ratio.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export type { StrainTargetResult, WorkloadRatioResult, WorkloadRatioRow };
@@ -233,10 +237,10 @@ export const recoveryRouter = router({
   ),
 
   /**
-   * Acute:Chronic Workload Ratio.
-   * Reads from activity_summary rollup for per-activity load.
-   * Daily load = sum of (duration_min * avg_hr / max_hr) per activity.
-   * Acute = 7-day sum, Chronic = 28-day average of daily load.
+   * Descriptive recent-to-baseline workload ratio.
+   * Reads the dbt-owned daily_strain model after its full 28-day window is available.
+   * The numerator is the latest 7-day load; the denominator is an equivalent
+   * 7-day baseline derived from the latest 28 days.
    */
   workloadRatio: selectedChartDateRangeQuery(
     "recovery.workloadRatio",
@@ -304,13 +308,9 @@ export const recoveryRouter = router({
         };
       });
 
-      const displayed = selectRecentDailyLoad(timeSeries);
-      return {
-        timeSeries,
-        displayedStrain: displayed?.strain ?? 0,
-        displayedDate: displayed?.date ?? null,
-      };
+      return buildWorkloadRatioResult(timeSeries);
     },
+    { outputSchema: workloadRatioResultSchema },
   ),
 
   /**

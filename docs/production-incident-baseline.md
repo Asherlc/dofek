@@ -19264,3 +19264,41 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   path, repeat the exact production plan and dashboard request, confirm all
   three Sentry issues remain quiet, and resolve them only after the deployed
   query no longer exhausts a web process's five-connection pool.
+
+## 2026-07-27 — Weekly report query-window mutants survived CI
+
+- **Status:** Root cause confirmed; focused regression and exact mutation
+  validation prepared on PR #2222.
+- **Symptoms:** CI run
+  [30306020715](https://github.com/Asherlc/dofek/actions/runs/30306020715)
+  failed `Test / Stryker (5)` in job
+  [90110762516](https://github.com/Asherlc/dofek/actions/runs/30306020715/job/90110762516).
+- **User impact:** No production impact. PR #2222 could not merge because the
+  strict mutation gate detected missing behavioral coverage.
+- **Evidence:** The exact failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  The first fatal line was
+  `Final mutation score 0.00 under breaking threshold 75`. The report identified
+  two surviving arithmetic mutants at
+  `weekly-report-repository.ts:123`: `weeks * 7 + 28` changed to
+  `weeks / 7 + 28` and `weeks * 7 - 28`.
+- **Root cause:** Existing repository and router tests asserted report parsing
+  but not the ClickHouse query parameters. They therefore could not distinguish
+  the intended requested-week window plus 28 days of rolling sleep history from
+  either mutated window.
+- **Fix / mitigation:** Add a public `WeeklyReportRepository.getReport`
+  regression that requests two weeks ending 2026-03-28 and verifies the exact
+  query parameters: 42 total days and a 2026-02-14 window start. No mutation
+  threshold, query formula, timeout, retry, or CI configuration changed.
+  Stryker documents surviving mutants as changes not detected by the test suite:
+  <https://stryker-mutator.io/docs/mutation-testing-elements/survived/>.
+- **Validation:** All 25 focused repository tests pass. The exact changed-line
+  Stryker run killed both arithmetic mutants for a 100% mutation score without
+  changing the 75% breaking threshold. Server TypeScript and repository-wide
+  Biome checks pass. Full local lint reached SQLFluff, then stopped before
+  analysis because no ClickHouse service was listening on
+  `127.0.0.1:8123`; the prior exact PR head's CI lint passed, and the
+  corrective exact head remains the database-aware lint gate.
+- **Remaining risk / follow-up:** After PR #2220 merges, merge the exact current
+  `origin/main` into #2222, rerun exact-head CI, and merge only with every
+  required check green and zero unresolved review threads.
