@@ -408,6 +408,46 @@ describe("FoodRepository", () => {
   });
 
   describe("nutritionSummaryByDate", () => {
+    it("returns an explicit empty available summary when no source reported data", async () => {
+      const { repo } = makeRepository([]);
+
+      const result = await repo.nutritionByDate("2024-06-15", 2000);
+
+      expect(result).toEqual({
+        summary: {
+          calories: 0,
+          mealCalories: {
+            breakfast: 0,
+            lunch: 0,
+            dinner: 0,
+            snack: 0,
+            other: 0,
+          },
+          calorieGoal: {
+            target: 2000,
+            remaining: 2000,
+            over: 0,
+            progressPercentage: 0,
+          },
+          macros: {
+            protein: { grams: 0, calories: 0, percentage: 0 },
+            carbs: { grams: 0, calories: 0, percentage: 0 },
+            fat: { grams: 0, calories: 0, percentage: 0 },
+          },
+        },
+        resolution: {
+          status: "available",
+          message: "No nutrition sources have reported data for this date.",
+          sourceProviders: [],
+          contributingProviders: [],
+          excludedProviders: [],
+          sourceLabels: [],
+          contributingSourceLabels: [],
+          excludedSourceLabels: [],
+        },
+      });
+    });
+
     it("returns server-computed daily, meal, goal, and macro metrics", async () => {
       const { repo } = makeRepository([
         {
@@ -566,6 +606,10 @@ describe("FoodRepository", () => {
       expect(result[0]?.fiberGrams).toBe(32);
       expect(result[0]?.mealCount).toBe(4);
       expect(result[0]?.sourceProviders).toEqual(["fatsecret"]);
+      expect(result[0]?.resolutionStatus).toBe("available");
+      expect(result[0]?.resolutionMessage).toBe(availableResolutionRow.resolution_message);
+      expect(result[0]?.contributingProviders).toEqual(["dofek"]);
+      expect(result[0]?.excludedProviders).toEqual([]);
     });
   });
 
@@ -1306,6 +1350,13 @@ describe("FoodRepository", () => {
       expect(insertQuery).toContain("350"); // calories
       expect(insertQuery).toContain("10"); // proteinG
       expect(insertQuery).toContain("45"); // carbsG
+      const query = execute.mock.calls[1]?.[0];
+      const queryChunks =
+        typeof query === "object" && query !== null ? Reflect.get(query, "queryChunks") : undefined;
+      expect(Array.isArray(queryChunks)).toBe(true);
+      if (!Array.isArray(queryChunks)) throw new Error("Expected SQL query chunks");
+      expect(queryChunks).toContain("grain");
+      expect(queryChunks).toContain(2);
       expect(result).not.toBeNull();
     });
 
@@ -1348,6 +1399,32 @@ describe("FoodRepository", () => {
   });
 
   describe("create — optional field null coalescing", () => {
+    it("preserves provided optional values when no nutrient rows are inserted", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "entry-1" }])
+        .mockResolvedValueOnce([foodRow]);
+      const repo = new FoodRepository({ execute }, "user-1", "UTC");
+
+      await repo.create({
+        date: "2024-06-15",
+        foodName: "Food",
+        category: "grain",
+        numberOfUnits: 2,
+        nutrients: {},
+      });
+
+      const query = execute.mock.calls[1]?.[0];
+      const queryChunks =
+        typeof query === "object" && query !== null ? Reflect.get(query, "queryChunks") : undefined;
+      expect(Array.isArray(queryChunks)).toBe(true);
+      if (!Array.isArray(queryChunks)) throw new Error("Expected SQL query chunks");
+      expect(queryChunks).toContain("grain");
+      expect(queryChunks).toContain(2);
+    });
+
     it("passes explicit null for meal when set to null", async () => {
       const foodRow = makeFoodEntryRow();
       const execute = vi
