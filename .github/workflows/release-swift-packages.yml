@@ -117,12 +117,20 @@ jobs:
         if: steps.current.outputs.should_release == 'true'
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Resolve SwiftPM distribution repository name
+      - name: Resolve SwiftPM distribution repository
         if: steps.current.outputs.should_release == 'true'
         id: mirror
         env:
           REPOSITORY: ${{ matrix.repository }}
-        run: echo "name=${REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
+        run: |
+          OWNER=${REPOSITORY%%/*}
+          NAME=${REPOSITORY#*/}
+          if [ -z "$OWNER" ] || [ -z "$NAME" ] || [ "$OWNER" = "$REPOSITORY" ]; then
+            echo "matrix.repository must be an <owner>/<repo> string, got: $REPOSITORY" >&2
+            exit 1
+          fi
+          echo "owner=$OWNER" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
       - name: Mint SwiftPM distribution token
         if: steps.current.outputs.should_release == 'true'
@@ -131,7 +139,7 @@ jobs:
         with:
           app-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          owner: ${{ steps.mirror.outputs.owner }}
           repositories: ${{ steps.mirror.outputs.name }}
 
       - name: Check out SwiftPM distribution repository

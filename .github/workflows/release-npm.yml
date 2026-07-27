@@ -85,18 +85,18 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          CREATED=0
+          CREATED_TAGS=()
           while read -r TAG; do
             [ -n "$TAG" ] || continue
             if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
               continue
             fi
             git tag "$TAG"
-            CREATED=$((CREATED + 1))
+            CREATED_TAGS+=("refs/tags/$TAG")
           done < <(pnpm exec lerna list --json --loglevel silent | jq -r '.[] | "\(.name)@\(.version)"')
-          if [ "$CREATED" -eq 0 ]; then
+          if [ "${#CREATED_TAGS[@]}" -eq 0 ]; then
             echo "All package versions are already tagged."
           else
-            git push origin --tags
-            echo "Pushed $CREATED release tag(s)."
+            git push origin "${CREATED_TAGS[@]}"
+            echo "Pushed ${#CREATED_TAGS[@]} release tag(s)."
           fi

@@ -18621,7 +18621,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   between `18:38:07Z` and `18:38:20Z` by the Infisical sync. Comparing the
   Infisical `prod` key list against the repository secret list left an empty
   "in GitHub but not in Infisical" set, showing the sync is authoritative and
-  removes keys it does not own.
+  removes keys it does not own. Infisical documents Secret Syncs as the source
+  of truth for connected third-party services and that destination secrets not
+  present in Infisical are overwritten
+  (<https://infisical.com/docs/integrations/secret-syncs/overview>); GitHub Sync
+  "Overwrite Destination Secrets" removes any destination secrets not present
+  in Infisical
+  (<https://infisical.com/docs/integrations/secret-syncs/github>).
 - **Root cause:** `ZEPP_RELEASE_TOKEN` existed only as a manually created
   GitHub secret and was never added to Infisical, so the sync pruned it. A
   single token named for Zepp also gated the unrelated npm and Swift release
