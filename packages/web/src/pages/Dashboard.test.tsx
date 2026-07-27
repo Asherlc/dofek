@@ -56,6 +56,14 @@ const mockSleepPerformanceQuery = vi.hoisted(() =>
     error: null,
   })),
 );
+const mockTodayPlanQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<unknown>>(() => ({
+    data: undefined,
+    isLoading: false,
+    isFetched: false,
+    error: null,
+  })),
+);
 const mockTrendsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
@@ -120,6 +128,9 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     sleepNeed: {
       performance: { useQuery: mockSleepPerformanceQuery },
+    },
+    todayPlan: {
+      get: { useQuery: mockTodayPlanQuery },
     },
     dailyMetrics: {
       trends: { useQuery: mockTrendsQuery },
@@ -197,6 +208,28 @@ describe("Dashboard", () => {
     });
     mockSleepPerformanceQuery.mockReturnValue({
       data: coreDashboardQueryData.sleepPerformance,
+      isLoading: false,
+      isFetched: true,
+      error: null,
+    });
+    mockTodayPlanQuery.mockReturnValue({
+      data: {
+        status: "ready",
+        date: "2026-05-27",
+        action: {
+          id: "strain_target",
+          title: "Keep a steady training day — aim for 12 strain",
+          summary: "Stay in range",
+          zone: "Maintain",
+        },
+        supportingFacts: [
+          { label: "Recovery", value: "60/100" },
+          { label: "Strain target", value: "12" },
+        ],
+        confidence: "moderate",
+        freshness: { recoveryDate: "2026-05-27", sleepDate: null },
+        missingInputs: ["sleep"],
+      },
       isLoading: false,
       isFetched: true,
       error: null,

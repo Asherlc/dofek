@@ -22,6 +22,7 @@
     "./colors": "./src/colors.ts",
     "./tokens": "./src/tokens.ts",
     "./strain-target": "./src/strain-target.ts",
+    "./today-plan": "./src/today-plan.ts",
     "./sleep-performance": "./src/sleep-performance.ts",
     "./healthspan-years": "./src/healthspan-years.ts",
     "./menstrual-cycle": "./src/menstrual-cycle.ts",
@@ -47,6 +48,10 @@
       "./strain-target": {
         "types": "./dist/strain-target.d.ts",
         "import": "./dist/strain-target.js"
+      },
+      "./today-plan": {
+        "types": "./dist/today-plan.d.ts",
+        "import": "./dist/today-plan.js"
       },
       "./sleep-performance": {
         "types": "./dist/sleep-performance.d.ts",
