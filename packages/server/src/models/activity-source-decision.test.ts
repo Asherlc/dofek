@@ -137,7 +137,12 @@ describe("buildActivitySourceDecision", () => {
 
   it("falls back to the provider source label when lookup has no name for the primary", () => {
     expect(
-      buildActivitySourceDecision("unknown_provider", null, [wahooLink, stravaLink], () => undefined),
+      buildActivitySourceDecision(
+        "unknown_provider",
+        null,
+        [wahooLink, stravaLink],
+        () => undefined,
+      ),
     ).toEqual({
       sourceCount: 2,
       primarySourceLabel: "unknown_provider",
@@ -147,9 +152,7 @@ describe("buildActivitySourceDecision", () => {
   });
 
   it("uses the subsource-aware provider label when the primary has a subsource but no matching link", () => {
-    expect(
-      buildActivitySourceDecision("apple_health", "Strong", [wahooLink, stravaLink]),
-    ).toEqual({
+    expect(buildActivitySourceDecision("apple_health", "Strong", [wahooLink, stravaLink])).toEqual({
       sourceCount: 2,
       primarySourceLabel: "Strong (via Apple Health)",
       explanation:
