@@ -18605,3 +18605,63 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   physical-device observer delivery that `Starting sync` follows the update
   immediately and no fixed-update expiration is reported before resolving
   DOFEK-MOBILE-1C.
+
+## 2026-07-26 — Secret Sync Pruned a Release Token and Exposed an Impossible npm Pipeline
+
+- **Symptoms:** Three release workflows began failing on every `main` push.
+  `Release npm Packages` and `Release Swift Packages` failed in
+  `actions/checkout` with `Input required and not supplied: token`;
+  `Release Dofek Zepp` failed its own guard with
+  `ZEPP_RELEASE_TOKEN is not configured`. `Deploy Web`, `Deploy OTA`, and
+  `Deploy iOS` were unaffected.
+- **User impact:** None externally. No Zepp GitHub release, Swift package
+  mirror update, or npm publish could be produced.
+- **Evidence:** The last successful Zepp release ran at `18:04:36Z` and the
+  first failure at `19:12:48Z`. All 78 GitHub Actions secrets were rewritten
+  between `18:38:07Z` and `18:38:20Z` by the Infisical sync. Comparing the
+  Infisical `prod` key list against the repository secret list left an empty
+  "in GitHub but not in Infisical" set, showing the sync is authoritative and
+  removes keys it does not own. Infisical documents Secret Syncs as the source
+  of truth for connected third-party services and that destination secrets not
+  present in Infisical are overwritten
+  (<https://infisical.com/docs/integrations/secret-syncs/overview>); GitHub Sync
+  "Overwrite Destination Secrets" removes any destination secrets not present
+  in Infisical
+  (<https://infisical.com/docs/integrations/secret-syncs/github>).
+- **Root cause:** `ZEPP_RELEASE_TOKEN` existed only as a manually created
+  GitHub secret and was never added to Infisical, so the sync pruned it. A
+  single token named for Zepp also gated the unrelated npm and Swift release
+  pipelines.
+- **Secondary finding:** `Release npm Packages` had never completed a release —
+  no `chore(release): publish` commit exists in history. `lerna.json` set the
+  version commit message to `chore(release): publish [skip ci]` and pushed it
+  directly to `main`, while both branch rulesets ("Required CI checks" and
+  "Copilot review for default branch") carry an empty `bypass_actors` list.
+  No credential, including a repository-admin token, could have satisfied the
+  required checks for that commit, so restoring the deleted token would not
+  have fixed npm.
+- **Fix / mitigation:** Zepp now uses `GITHUB_TOKEN` with a job-scoped
+  `contents: write`, which is all a same-repository release needs. The Swift
+  mirror mints a short-lived GitHub App installation token scoped to the
+  mirror repository. npm versioning moved to an auto-merging pull request that
+  runs the required checks instead of bypassing them; publishing is OIDC
+  trusted publishing with release tags pushed after a successful publish. A
+  guard skips versioning while any package version remains untagged so the
+  version and publish workflows cannot bump on top of each other.
+  GitHub documents that pull requests opened with `GITHUB_TOKEN` do not
+  trigger workflows, which is why the App token is required to open the
+  version pull request:
+  <https://docs.github.com/actions/security-for-github-actions/security-guides/automatic-token-authentication>.
+- **Validation:** `actionlint` passes on all four workflows, every `run` block
+  passes `bash -n`, and the tagging loop was exercised against the 15 real
+  packages and created zero duplicate tags. The App private key was verified
+  to sign a valid JWT resolving to app `dofek-release` (id 4402060) with
+  exactly `contents: write` and `pull_requests: write`.
+- **Remaining risk / follow-up:** The app installation is currently
+  `repository_selection: all` rather than limited to `dofek` and
+  `whoop-ble-swift`; narrowing it would reduce blast radius. The
+  "Copilot review for default branch" ruleset combined with
+  `required_conversation_resolution` could stall auto-merge if Copilot
+  comments on a version pull request, which has not yet been observed. Any
+  future credential must be created in Infisical, never with `gh secret set`,
+  or the next sync will prune it the same way.
