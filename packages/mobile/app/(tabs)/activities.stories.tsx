@@ -219,7 +219,7 @@ function createMockObservable(
       } else if (path === "processing.status") {
         observer.next?.({ result: { data: storyData.processingStatus } });
       } else {
-        observer.next?.({ result: { data: null } });
+        throw new Error(`Unhandled activities story tRPC operation: ${path}`);
       }
       observer.complete?.();
       return { unsubscribe: () => {} };
