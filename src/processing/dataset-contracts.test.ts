@@ -12,7 +12,7 @@ import {
 
 describe("dataset contracts", () => {
   it("assigns every production dbt model exactly once", () => {
-    expect(PRODUCTION_DBT_MODELS).toHaveLength(36);
+    expect(PRODUCTION_DBT_MODELS).toHaveLength(38);
     expect(() => validateDatasetContracts(DATASET_CONTRACTS, PRODUCTION_DBT_MODELS)).not.toThrow();
 
     const assignedModels = DATASET_CONTRACTS.flatMap((contract) => contract.analyticsModels);
@@ -142,6 +142,9 @@ describe("dataset contracts", () => {
     const providers = DATASET_CONTRACTS.find((contract) => contract.key === "providers");
     if (!providers) throw new Error("Missing providers dataset contract");
 
+    expect(
+      providers.outputPaths.find((outputPath) => outputPath.path === "relational")?.sources,
+    ).toContain("provider_connection");
     expect(requiredCdcEvidence(providers, ["relational"])).toEqual([
       { kind: "peerdb_marker", flowName: "dofek_fitness_raw_analytics" },
       { kind: "peerdb_marker", flowName: "dofek_provider_inventory_raw_analytics" },
