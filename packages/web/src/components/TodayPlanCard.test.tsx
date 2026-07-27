@@ -1,0 +1,80 @@
+/** @vitest-environment jsdom */
+
+import type { TodayPlanResult } from "@dofek/scoring/today-plan";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { TodayPlanCard } from "./TodayPlanCard.tsx";
+
+const readyPlan: TodayPlanResult = {
+  status: "ready",
+  date: "2026-07-26",
+  action: {
+    id: "strain_target",
+    title: "Train hard today — aim for 16.2 strain",
+    summary: "Recovery is strong (82). Push for a high-strain day to build fitness.",
+    zone: "Push",
+  },
+  supportingFacts: [
+    { label: "Recovery", value: "82/100" },
+    { label: "Sleep performance", value: "88 (Good)" },
+  ],
+  confidence: "high",
+  freshness: {
+    recoveryDate: "2026-07-26",
+    sleepDate: "2026-07-26",
+  },
+  missingInputs: [],
+};
+
+const insufficientPlan: TodayPlanResult = {
+  status: "insufficient_data",
+  date: "2026-07-26",
+  action: null,
+  supportingFacts: [],
+  confidence: "low",
+  freshness: {
+    recoveryDate: null,
+    sleepDate: null,
+  },
+  missingInputs: ["recovery"],
+  message:
+    "Connect a recovery source and wait for today's recovery score before a training plan can be generated.",
+};
+
+describe("TodayPlanCard", () => {
+  it("renders the server action and supporting facts", () => {
+    render(<TodayPlanCard plan={readyPlan} />);
+
+    expect(screen.getByText("Today Plan")).toBeTruthy();
+    expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
+    expect(screen.getByText(/Recovery is strong/)).toBeTruthy();
+    expect(screen.getByText("Recovery")).toBeTruthy();
+    expect(screen.getByText("82/100")).toBeTruthy();
+    expect(screen.getByText("Sleep performance")).toBeTruthy();
+    expect(screen.getByText("88 (Good)")).toBeTruthy();
+    expect(screen.getByText("High confidence")).toBeTruthy();
+    expect(screen.getByText(/Recovery data from 2026-07-26/)).toBeTruthy();
+  });
+
+  it("renders the insufficient-data message from the server", () => {
+    render(<TodayPlanCard plan={insufficientPlan} />);
+
+    expect(screen.getByText("Today Plan")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Connect a recovery source and wait for today's recovery score before a training plan can be generated.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Train hard today — aim for 16.2 strain")).toBeNull();
+  });
+
+  it("renders a loading state", () => {
+    render(<TodayPlanCard plan={undefined} loading />);
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+  });
+
+  it("renders a server error message", () => {
+    render(<TodayPlanCard plan={undefined} error={new Error("Today plan unavailable")} />);
+    expect(screen.getByText("Today plan unavailable")).toBeTruthy();
+  });
+});

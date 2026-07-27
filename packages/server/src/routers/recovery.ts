@@ -5,7 +5,6 @@ import {
 } from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
-import { computeStrainTarget } from "@dofek/scoring/strain-target";
 import { selectRecentDailyLoad } from "@dofek/training/training";
 import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
@@ -14,7 +13,6 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateAccessPredicate } from "../billing/entitlement.ts";
 import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
-import { computeCurrentStrain } from "../lib/current-strain.ts";
 import {
   clickHouseWindowStartPredicate,
   dateWindowEnd,
@@ -25,7 +23,15 @@ import {
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { fetchSleepNights } from "../repositories/clickhouse-sleep-repository.ts";
+import {
+  buildStrainTargetResult,
+  type StrainTargetResult,
+  strainTargetReadinessRowSchema,
+  strainTargetResultSchema,
+} from "../services/strain-target-result.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+export type { StrainTargetResult };
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -128,31 +134,6 @@ export interface ReadinessRow {
   components: ReadinessComponents;
   weights: ReadinessWeights;
 }
-
-const strainTargetResultSchema = z.object({
-  targetStrain: z.number(),
-  currentStrain: z.number(),
-  currentStrainSource: z.enum(["activity", "none"]).optional(),
-  currentPhysiologyLoad: z.number().nullable().optional(),
-  progressPercent: z.number(),
-  zone: z.enum(["Push", "Maintain", "Recovery"]),
-  explanation: z.string(),
-  dailyLoad: z.number().optional(),
-  acuteLoad: z.number().optional(),
-  chronicLoad: z.number().optional(),
-  workloadRatio: z.number().nullable().optional(),
-  readinessScore: z.number().optional(),
-});
-
-export type StrainTargetResult = z.infer<typeof strainTargetResultSchema>;
-
-const strainTargetReadinessRowSchema = z.object({
-  date: dateStringSchema,
-  hrv_score: z.coerce.number().nullable(),
-  resting_hr_score: z.coerce.number().nullable(),
-  sleep_score: z.coerce.number().nullable(),
-  respiratory_rate_score: z.coerce.number().nullable(),
-});
 
 export const recoveryRouter = router({
   /**
@@ -680,63 +661,12 @@ export const recoveryRouter = router({
         { priority: "dashboard" },
       );
 
-      const readinessMetrics = readinessRows[0];
-      if (!readinessMetrics) return null;
-
       const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
-      const components: ReadinessComponents = {
-        hrvScore: Math.round(readinessMetrics.hrv_score ?? 62),
-        restingHrScore: Math.round(readinessMetrics.resting_hr_score ?? 62),
-        sleepScore: Math.round(readinessMetrics.sleep_score ?? 62),
-        respiratoryRateScore: Math.round(readinessMetrics.respiratory_rate_score ?? 62),
-      };
-      const weights = params.readinessWeights;
-      const readinessScore = new ReadinessScore(components, weights).score;
-
-      // Compute acute and chronic loads
-      const today = input.endDate;
-      const acuteWindow = 7;
-      const chronicWindow = 28;
-      let acuteLoadTotal = 0;
-      let chronicLoad = 0;
-
-      for (const row of loads) {
-        const daysAgo = Math.floor(
-          (new Date(today).getTime() - new Date(row.date).getTime()) / 86400000,
-        );
-        if (daysAgo < acuteWindow) acuteLoadTotal += row.daily_load;
-        if (daysAgo < chronicWindow) chronicLoad += row.daily_load;
-      }
-      const acuteLoad = acuteLoadTotal / acuteWindow;
-      chronicLoad /= chronicWindow;
-
-      const target = computeStrainTarget(readinessScore, chronicLoad, acuteLoad);
-      const todayLoadRow = loads.find((row) => row.date === today);
-      const todayLoad = todayLoadRow?.daily_load ?? 0;
-      const currentStrain = computeCurrentStrain({
-        fallbackActivityLoad: todayLoad,
+      return buildStrainTargetResult({
+        endDate: input.endDate,
+        readinessMetrics: readinessRows[0],
+        loads,
+        readinessWeights: params.readinessWeights,
       });
-      const roundedCurrentStrain = Math.round(currentStrain.currentStrain * 10) / 10;
-      const roundedAcuteLoad = Math.round(acuteLoad * 10) / 10;
-      const roundedChronicLoad = Math.round(chronicLoad * 10) / 10;
-      const workloadRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
-
-      return {
-        targetStrain: target.targetStrain,
-        currentStrain: roundedCurrentStrain,
-        currentStrainSource: currentStrain.currentStrainSource,
-        currentPhysiologyLoad: currentStrain.currentPhysiologyLoad,
-        progressPercent:
-          target.targetStrain > 0
-            ? Math.round((roundedCurrentStrain / target.targetStrain) * 100)
-            : 0,
-        zone: target.zone,
-        explanation: target.explanation,
-        dailyLoad: Math.round(todayLoad * 10) / 10,
-        acuteLoad: roundedAcuteLoad,
-        chronicLoad: roundedChronicLoad,
-        workloadRatio: workloadRatio != null ? Math.round(workloadRatio * 100) / 100 : null,
-        readinessScore,
-      };
     }),
 });

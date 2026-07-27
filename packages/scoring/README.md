@@ -39,6 +39,7 @@ console.log({
 | `@dofek/scoring/colors` | Semantic, chart, surface, text, sleep-stage, and activity colors |
 | `@dofek/scoring/tokens` | Framework-neutral typography, spacing, radius, animation, and chart tokens |
 | `@dofek/scoring/strain-target` | Daily strain-target calculation and result types |
+| `@dofek/scoring/today-plan` | Deterministic Today Plan action, supporting facts, and confidence rules |
 | `@dofek/scoring/sleep-performance` | Sleep-performance components, tiers, and recommended-bedtime calculation |
 | `@dofek/scoring/healthspan-years` | Score-to-years mapping and formatting |
 | `@dofek/scoring/menstrual-cycle` | Cycle-phase estimation and display metadata |
