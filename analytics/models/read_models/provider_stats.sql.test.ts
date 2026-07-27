@@ -1,11 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { compactWhitespace } from "./read-model-sql-test-helpers.ts";
 
 const modelSql = readFileSync(new URL("./provider_stats.sql", import.meta.url), "utf8");
-
-function compactWhitespace(value: string): string {
-  return value.replace(/\s+/g, " ");
-}
 
 describe("provider_stats model", () => {
   it("counts only active activities", () => {

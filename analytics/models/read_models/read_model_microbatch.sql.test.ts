@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { compactWhitespace } from "./read-model-sql-test-helpers.ts";
 
 function readProjectFile(path: string): string {
   const projectFileUrl = new URL(`../../../${path}`, import.meta.url);
@@ -21,10 +22,6 @@ function readModel(name: string): string {
   const sql = readFileSync(modelUrl, "utf8");
   expect(sql.length).toBeGreaterThan(0);
   return sql;
-}
-
-function compactWhitespace(value: string): string {
-  return value.replace(/\s+/g, " ");
 }
 
 describe("production analytics read-model build", () => {

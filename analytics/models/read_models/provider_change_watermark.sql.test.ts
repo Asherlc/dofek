@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { readModelSql } from "./read-model-sql-test-helpers.ts";
+import { compactWhitespace, readModelSql } from "./read-model-sql-test-helpers.ts";
 
 const modelSql = readModelSql("provider_change_watermark.sql");
-
-function compactWhitespace(value: string): string {
-  return value.replace(/\s+/g, " ");
-}
 
 describe("provider_change_watermark model", () => {
   it("materializes incremental watermarks from compact insert-time state", () => {
