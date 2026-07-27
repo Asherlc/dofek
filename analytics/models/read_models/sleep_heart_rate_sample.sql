@@ -64,18 +64,6 @@ activity_source AS (
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
 ),
 
-active_activity AS (
-    SELECT
-        id,
-        user_id,
-        started_at,
-        ended_at
-    FROM activity_source
-    WHERE _peerdb_is_deleted = 0
-        AND provider_absent_at IS NULL
-        AND deleted_at IS NULL
-),
-
 heart_rate_refreshes AS (
     SELECT
         active_sleep.user_id AS user_id,
@@ -261,10 +249,13 @@ current_samples AS (
         ON active_dirty_sleep.user_id = samples.user_id
         AND samples.recorded_at >= active_dirty_sleep.started_at
         AND samples.recorded_at <= active_dirty_sleep.ended_at
-    LEFT JOIN active_activity
-        ON active_activity.user_id = active_dirty_sleep.user_id
-        AND samples.recorded_at >= active_activity.started_at
-        AND samples.recorded_at <= active_activity.ended_at
+    LEFT JOIN activity_source AS overlapping_activity
+        ON overlapping_activity.user_id = active_dirty_sleep.user_id
+        AND overlapping_activity.started_at <= samples.recorded_at
+        AND overlapping_activity.ended_at >= samples.recorded_at
+        AND overlapping_activity._peerdb_is_deleted = 0
+        AND overlapping_activity.provider_absent_at IS NULL
+        AND overlapping_activity.deleted_at IS NULL
     WHERE samples.channel = 'heart_rate'
         AND (samples.user_id, samples.recorded_date) IN (
             SELECT
@@ -272,7 +263,7 @@ current_samples AS (
                 recorded_date
             FROM dirty_sleep_dates
         )
-        AND active_activity.id IS NULL
+        AND overlapping_activity.id IS NULL
 ),
 
 existing_samples AS (
