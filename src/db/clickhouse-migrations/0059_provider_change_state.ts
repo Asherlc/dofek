@@ -8,68 +8,70 @@ interface ProviderSource {
   viewName: string;
 }
 
-const providerSources: readonly ProviderSource[] = [
-  {
-    providerIdColumn: "id",
-    sourceTable: "postgres_fitness.provider",
-    viewName: "provider",
-  },
-  {
-    providerIdColumn: "provider_id",
-    sourceTable: "postgres_fitness.provider_connection",
-    viewName: "provider_connection",
-  },
-  {
-    providerIdColumn: "provider_id",
-    sourceTable: "postgres_fitness.activity",
-    viewName: "activity",
-  },
-  {
-    providerIdColumn: "provider_id",
-    sourceTable: "postgres_fitness.daily_metrics",
-    viewName: "daily_metrics",
-  },
-  {
-    providerIdColumn: "provider_id",
-    sourceTable: "postgres_fitness.sleep_session",
-    viewName: "sleep_session",
-  },
-  {
-    providerIdColumn: "provider_id",
-    sourceTable: "ingest.metric_stream",
-    viewName: "metric_stream",
-  },
-  {
-    providerIdColumn: "provider_id",
-    sourceTable: "analytics.body_measurement_sample",
-    viewName: "body_measurement_sample",
-  },
-  {
-    providerIdColumn: "provider_id",
-    sourceTable: "postgres_fitness.food_entry",
-    viewName: "food_entry",
-  },
-  {
-    providerIdColumn: "provider_id",
-    sourceTable: "postgres_fitness.health_event",
-    viewName: "health_event",
-  },
-  {
-    providerIdColumn: "provider_id",
-    sourceTable: "postgres_fitness.lab_panel",
-    viewName: "lab_panel",
-  },
-  {
-    providerIdColumn: "provider_id",
-    sourceTable: "postgres_fitness.lab_result",
-    viewName: "lab_result",
-  },
-  {
-    providerIdColumn: "provider_id",
-    sourceTable: "postgres_fitness.journal_entry",
-    viewName: "journal_entry",
-  },
-];
+function getProviderSources(): readonly ProviderSource[] {
+  return [
+    {
+      providerIdColumn: "id",
+      sourceTable: "postgres_fitness.provider",
+      viewName: "provider",
+    },
+    {
+      providerIdColumn: "provider_id",
+      sourceTable: "postgres_fitness.provider_connection",
+      viewName: "provider_connection",
+    },
+    {
+      providerIdColumn: "provider_id",
+      sourceTable: "postgres_fitness.activity",
+      viewName: "activity",
+    },
+    {
+      providerIdColumn: "provider_id",
+      sourceTable: "postgres_fitness.daily_metrics",
+      viewName: "daily_metrics",
+    },
+    {
+      providerIdColumn: "provider_id",
+      sourceTable: "postgres_fitness.sleep_session",
+      viewName: "sleep_session",
+    },
+    {
+      providerIdColumn: "provider_id",
+      sourceTable: "ingest.metric_stream",
+      viewName: "metric_stream",
+    },
+    {
+      providerIdColumn: "provider_id",
+      sourceTable: "analytics.body_measurement_sample",
+      viewName: "body_measurement_sample",
+    },
+    {
+      providerIdColumn: "provider_id",
+      sourceTable: "postgres_fitness.food_entry",
+      viewName: "food_entry",
+    },
+    {
+      providerIdColumn: "provider_id",
+      sourceTable: "postgres_fitness.health_event",
+      viewName: "health_event",
+    },
+    {
+      providerIdColumn: "provider_id",
+      sourceTable: "postgres_fitness.lab_panel",
+      viewName: "lab_panel",
+    },
+    {
+      providerIdColumn: "provider_id",
+      sourceTable: "postgres_fitness.lab_result",
+      viewName: "lab_result",
+    },
+    {
+      providerIdColumn: "provider_id",
+      sourceTable: "postgres_fitness.journal_entry",
+      viewName: "journal_entry",
+    },
+  ];
+}
 
 function buildChangeViewSql(source: ProviderSource): string {
   const nullableUserFilter =
@@ -104,6 +106,8 @@ GROUP BY user_id, provider_id`;
 }
 
 export function createMigration(): ClickHouseMigration {
+  const providerSources = getProviderSources();
+
   return {
     id: "0059_provider_change_state",
     statements: [
