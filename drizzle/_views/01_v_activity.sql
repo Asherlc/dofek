@@ -146,30 +146,39 @@ clusterable AS (
     COALESCE(t.ended_at, t.started_at + interval '1 hour') AS ended_at
   FROM effective_tombstoned t
 ),
-pairs AS (
-  SELECT c1.id AS id1, c2.id AS id2
+pair_metrics AS (
+  SELECT
+    c1.id AS id1,
+    c2.id AS id2,
+    c1.provider_id AS provider_id1,
+    c2.provider_id AS provider_id2,
+    c1.activity_type AS activity_type1,
+    c2.activity_type AS activity_type2,
+    EXTRACT(EPOCH FROM (
+      LEAST(c1.ended_at, c2.ended_at) - GREATEST(c1.started_at, c2.started_at)
+    )) AS overlap_seconds,
+    EXTRACT(EPOCH FROM (
+      GREATEST(c1.ended_at, c2.ended_at) - LEAST(c1.started_at, c2.started_at)
+    )) AS union_seconds,
+    LEAST(
+      EXTRACT(EPOCH FROM (c1.ended_at - c1.started_at)),
+      EXTRACT(EPOCH FROM (c2.ended_at - c2.started_at))
+    ) AS shorter_duration_seconds
   FROM clusterable c1
   JOIN clusterable c2
     ON c1.user_id = c2.user_id
     AND c1.id < c2.id
-  CROSS JOIN LATERAL (
-    SELECT
-      EXTRACT(EPOCH FROM (
-        LEAST(c1.ended_at, c2.ended_at) - GREATEST(c1.started_at, c2.started_at)
-      )) AS overlap_seconds,
-      EXTRACT(EPOCH FROM (
-        GREATEST(c1.ended_at, c2.ended_at) - LEAST(c1.started_at, c2.started_at)
-      )) AS union_seconds,
-      LEAST(
-        EXTRACT(EPOCH FROM (c1.ended_at - c1.started_at)),
-        EXTRACT(EPOCH FROM (c2.ended_at - c2.started_at))
-      ) AS shorter_duration_seconds
-  ) o
-  WHERE o.overlap_seconds / NULLIF(o.union_seconds, 0) > 0.8
+    AND c1.started_at < c2.ended_at
+    AND c1.ended_at > c2.started_at
+),
+pairs AS (
+  SELECT id1, id2
+  FROM pair_metrics
+  WHERE overlap_seconds / NULLIF(union_seconds, 0) > 0.8
     OR (
-      c1.provider_id <> c2.provider_id
-      AND c1.activity_type = c2.activity_type
-      AND o.overlap_seconds / NULLIF(o.shorter_duration_seconds, 0) > 0.8
+      provider_id1 <> provider_id2
+      AND activity_type1 = activity_type2
+      AND overlap_seconds / NULLIF(shorter_duration_seconds, 0) > 0.8
     )
 ),
 edges AS (
