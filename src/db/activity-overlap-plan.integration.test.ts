@@ -27,6 +27,33 @@ function collectPlanStrings(value: unknown): string[] {
   return typeof value === "string" ? [value] : [];
 }
 
+function hasBidirectionalOverlapGuards(planText: string): boolean {
+  const directions: Array<{ endAlias: string; startAlias: string }> = [];
+  const comparisonPattern =
+    /\b([a-zA-Z_]\w*)\.(started_at|ended_at)\s*([<>])\s*([a-zA-Z_]\w*)\.(started_at|ended_at)\b/g;
+
+  for (const match of planText.matchAll(comparisonPattern)) {
+    const leftAlias = match[1];
+    const leftColumn = match[2];
+    const operator = match[3];
+    const rightAlias = match[4];
+    const rightColumn = match[5];
+    if (!(leftAlias && rightAlias) || leftAlias === rightAlias) continue;
+
+    if (leftColumn === "started_at" && operator === "<" && rightColumn === "ended_at") {
+      directions.push({ startAlias: leftAlias, endAlias: rightAlias });
+    } else if (leftColumn === "ended_at" && operator === ">" && rightColumn === "started_at") {
+      directions.push({ startAlias: rightAlias, endAlias: leftAlias });
+    }
+  }
+
+  return directions.some(({ startAlias, endAlias }) =>
+    directions.some(
+      (candidate) => candidate.startAlias === endAlias && candidate.endAlias === startAlias,
+    ),
+  );
+}
+
 describe("activity overlap query plan", () => {
   let testCtx: TestContext | undefined;
 
@@ -86,7 +113,9 @@ describe("activity overlap query plan", () => {
           ORDER BY started_at`,
     );
 
-    expect(rows.map((row) => row.member_activity_ids.length).sort()).toEqual([1, 2]);
+    expect(
+      rows.map((row) => row.member_activity_ids.length).sort((left, right) => left - right),
+    ).toEqual([1, 2]);
 
     const explainRows = await executeWithSchema(
       testCtx.db,
@@ -98,7 +127,6 @@ describe("activity overlap query plan", () => {
     );
     const planText = collectPlanStrings(explainRows[0]?.["QUERY PLAN"]).join(" ");
 
-    expect(planText).toMatch(/c1\.started_at < c2\.ended_at|c2\.ended_at > c1\.started_at/);
-    expect(planText).toMatch(/c2\.started_at < c1\.ended_at|c1\.ended_at > c2\.started_at/);
+    expect(hasBidirectionalOverlapGuards(planText)).toBe(true);
   });
 });
