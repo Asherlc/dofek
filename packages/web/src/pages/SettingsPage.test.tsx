@@ -4,11 +4,26 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockNavigate = vi.fn();
-let mockSearch: {
+type SettingsSearch = {
   tab?: "general" | "health" | "connections" | "account";
   zeppPair?: string;
-} = {};
+};
+
+type SettingsNavigation = {
+  search: SettingsSearch | ((previous: SettingsSearch) => SettingsSearch);
+  replace?: boolean;
+};
+
+const mockNavigate = vi.fn<(options: SettingsNavigation) => void>();
+let mockSearch: SettingsSearch = {};
+
+function applySearch(
+  navigation: SettingsNavigation | undefined,
+  previous: SettingsSearch,
+): SettingsSearch {
+  if (!navigation) throw new Error("Expected navigation options");
+  return typeof navigation.search === "function" ? navigation.search(previous) : navigation.search;
+}
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="/support">{children}</a>,
@@ -141,20 +156,47 @@ describe("SettingsPage tabs", () => {
     expect(screen.queryByText("Billing")).toBeNull();
   });
 
-  it("writes tab changes and Zepp deep links to route search state", async () => {
+  it("writes Zepp deep links to route search state without retaining the pairing code", async () => {
     mockSearch = { zeppPair: "ABC234" };
     const { SettingsPage } = await import("./SettingsPage.tsx");
 
     render(<SettingsPage />);
 
-    await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith({
-        search: { tab: "connections" },
-        replace: true,
-      }),
+    expect(screen.getByRole("tab", { name: "Connections" }).getAttribute("aria-selected")).toBe(
+      "true",
     );
+    expect(screen.getByText("Data Sources")).toBeTruthy();
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+    const pairingNavigation = mockNavigate.mock.calls[0]?.[0];
+    expect(pairingNavigation?.replace).toBe(true);
+    expect(applySearch(pairingNavigation, { zeppPair: "ABC234" })).toEqual({
+      tab: "connections",
+      zeppPair: undefined,
+    });
+  });
+
+  it("preserves other search state when changing tabs", async () => {
+    mockSearch = { tab: "connections" };
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
 
     fireEvent.click(screen.getByRole("tab", { name: "Account" }));
-    expect(mockNavigate).toHaveBeenCalledWith({ search: { tab: "account" } });
+    const tabNavigation = mockNavigate.mock.calls[0]?.[0];
+    expect(applySearch(tabNavigation, { tab: "connections", zeppPair: "ABC234" })).toEqual({
+      tab: "account",
+      zeppPair: "ABC234",
+    });
+  });
+
+  it("associates every tab with the rendered tab panel", async () => {
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    const panel = screen.getByRole("tabpanel");
+    for (const tab of screen.getAllByRole("tab")) {
+      expect(tab.getAttribute("aria-controls")).toBe(panel.id);
+    }
   });
 });

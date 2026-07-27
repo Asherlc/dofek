@@ -41,7 +41,7 @@ function getSignupWeekLabel(startDate: string, endDateExclusive: string): string
 export function SettingsPage() {
   const search = useSearch({ from: "/settings" });
   const navigate = useNavigate({ from: "/settings" });
-  const activeTab = search.tab ?? "general";
+  const activeTab = search.zeppPair ? "connections" : (search.tab ?? "general");
   const { layout, toggleHidden, resetLayout } = useDashboardLayout();
   const trpcUtils = trpc.useUtils();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -73,7 +73,14 @@ export function SettingsPage() {
     const pairingCode = search.zeppPair;
     if (pairingCode) {
       setZeppPairingCode(pairingCode);
-      void navigate({ search: { tab: "connections" }, replace: true });
+      void navigate({
+        search: (previous) => ({
+          ...previous,
+          tab: "connections",
+          zeppPair: undefined,
+        }),
+        replace: true,
+      });
     }
   }, [navigate, search.zeppPair]);
 
@@ -99,8 +106,12 @@ export function SettingsPage() {
               type="button"
               role="tab"
               aria-selected={isActive}
-              aria-controls={`settings-panel-${tab.id}`}
-              onClick={() => void navigate({ search: { tab: tab.id } })}
+              aria-controls="settings-panel"
+              onClick={() =>
+                void navigate({
+                  search: (previous) => ({ ...previous, tab: tab.id }),
+                })
+              }
               className={`min-w-fit flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
                 isActive
                   ? "bg-accent/15 text-foreground"
@@ -114,7 +125,7 @@ export function SettingsPage() {
       </div>
 
       <div
-        id={`settings-panel-${activeTab}`}
+        id="settings-panel"
         role="tabpanel"
         aria-labelledby={`settings-tab-${activeTab}`}
         className="space-y-6 sm:space-y-7"
