@@ -51,6 +51,8 @@ describe("TodayPlanCard", () => {
     expect(screen.getByText("Sleep performance")).toBeTruthy();
     expect(screen.getByText("88 (Good)")).toBeTruthy();
     expect(screen.getByText("High confidence")).toBeTruthy();
+    expect(screen.getByText(/Recovery data from 2026-07-26/)).toBeTruthy();
+    expect(screen.getByText(/Sleep data from 2026-07-26/)).toBeTruthy();
   });
 
   it("renders the insufficient-data message from the server", () => {
@@ -70,5 +72,12 @@ describe("TodayPlanCard", () => {
   it("renders a server error message", () => {
     render(<TodayPlanCard plan={undefined} error={new Error("Today plan unavailable")} />);
     expect(screen.getByText("Today plan unavailable")).toBeTruthy();
+  });
+
+  it("keeps cached plan visible with a background refresh error", () => {
+    render(<TodayPlanCard plan={readyPlan} error={new Error("Today plan refresh failed")} />);
+
+    expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
+    expect(screen.getByText("Today plan refresh failed")).toBeTruthy();
   });
 });

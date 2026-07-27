@@ -72,8 +72,8 @@ export function buildStrainTargetResult(
 
   for (const row of input.loads) {
     const daysAgo = Math.floor((endTime - new Date(`${row.date}T00:00:00Z`).getTime()) / 86400000);
-    if (daysAgo < acuteWindow) acuteLoadTotal += row.daily_load;
-    if (daysAgo < chronicWindow) chronicLoad += row.daily_load;
+    if (daysAgo >= 0 && daysAgo < acuteWindow) acuteLoadTotal += row.daily_load;
+    if (daysAgo >= 0 && daysAgo < chronicWindow) chronicLoad += row.daily_load;
   }
   const acuteLoad = acuteLoadTotal / acuteWindow;
   chronicLoad /= chronicWindow;

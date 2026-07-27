@@ -53,10 +53,20 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
     return null;
   }
 
+  const refreshWarning =
+    error != null ? (
+      <QueryStatePanel
+        variant="error"
+        message={getQueryErrorMessage(error, "Today plan unavailable")}
+        minHeight={48}
+      />
+    ) : null;
+
   if (plan.status === "insufficient_data") {
     return (
       <View style={styles.card} accessibilityLabel="Today Plan">
         <Text style={styles.sectionTitle}>TODAY PLAN</Text>
+        {refreshWarning}
         <Text style={styles.message}>{plan.message}</Text>
         <Text style={styles.meta}>{confidenceLabel[plan.confidence]}</Text>
       </View>
@@ -71,6 +81,7 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         <Text style={styles.sectionTitle}>TODAY PLAN</Text>
         <Text style={styles.zone}>{plan.action.zone.toUpperCase()}</Text>
       </View>
+      {refreshWarning}
       <Text style={styles.title}>{plan.action.title}</Text>
       <Text style={styles.summary}>{plan.action.summary}</Text>
       <View style={styles.factsRow}>

@@ -1,6 +1,6 @@
 # Today Plan Vertical Slice TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development before implementation. If executing this plan task-by-task, also use superpowers:executing-plans or superpowers:subagent-driven-development as appropriate. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Follow TDD. For each task: write a failing test first, run it to confirm failure, implement the smallest change that passes, re-run the focused tests, then move on. Use the checkbox (`- [ ]` / `- [x]`) syntax for tracking.
 
 **Goal:** Ship a read-only, deterministic Today Plan card on web and mobile home screens from server-owned recovery and strain-target logic.
 

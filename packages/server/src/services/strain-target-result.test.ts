@@ -45,4 +45,44 @@ describe("buildStrainTargetResult", () => {
     expect(["Push", "Maintain", "Recovery"]).toContain(result?.zone);
     expect(result?.explanation.length).toBeGreaterThan(0);
   });
+
+  it("excludes future daily loads from acute and chronic windows", () => {
+    const withoutFuture = buildStrainTargetResult({
+      endDate: "2026-07-26",
+      readinessMetrics: {
+        date: "2026-07-26",
+        hrv_score: 80,
+        resting_hr_score: 80,
+        sleep_score: 80,
+        respiratory_rate_score: 80,
+      },
+      loads: [
+        { date: "2026-07-20", daily_load: 50 },
+        { date: "2026-07-26", daily_load: 40 },
+      ],
+      readinessWeights: equalWeights,
+    });
+
+    const withFuture = buildStrainTargetResult({
+      endDate: "2026-07-26",
+      readinessMetrics: {
+        date: "2026-07-26",
+        hrv_score: 80,
+        resting_hr_score: 80,
+        sleep_score: 80,
+        respiratory_rate_score: 80,
+      },
+      loads: [
+        { date: "2026-07-20", daily_load: 50 },
+        { date: "2026-07-26", daily_load: 40 },
+        { date: "2026-07-27", daily_load: 500 },
+      ],
+      readinessWeights: equalWeights,
+    });
+
+    expect(withFuture?.acuteLoad).toBe(withoutFuture?.acuteLoad);
+    expect(withFuture?.chronicLoad).toBe(withoutFuture?.chronicLoad);
+    expect(withFuture?.workloadRatio).toBe(withoutFuture?.workloadRatio);
+    expect(withFuture?.dailyLoad).toBe(40);
+  });
 });

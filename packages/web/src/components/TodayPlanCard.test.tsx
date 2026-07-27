@@ -77,4 +77,11 @@ describe("TodayPlanCard", () => {
     render(<TodayPlanCard plan={undefined} error={new Error("Today plan unavailable")} />);
     expect(screen.getByText("Today plan unavailable")).toBeTruthy();
   });
+
+  it("keeps cached plan visible with a background refresh error", () => {
+    render(<TodayPlanCard plan={readyPlan} error={new Error("Today plan refresh failed")} />);
+
+    expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
+    expect(screen.getByText("Today plan refresh failed")).toBeTruthy();
+  });
 });

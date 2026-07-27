@@ -77,8 +77,7 @@ function resolveConfidence(
   if (recoveryAgeDays === 0 && sleepDate != null && daysBetween(endDate, sleepDate) <= 1) {
     return "high";
   }
-  if (recoveryAgeDays <= 1) return "moderate";
-  return "low";
+  return "moderate";
 }
 
 function actionTitle(zone: TodayPlanZone, targetStrain: number): string {

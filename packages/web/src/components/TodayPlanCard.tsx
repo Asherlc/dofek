@@ -47,10 +47,13 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
     return null;
   }
 
+  const refreshWarning = error != null ? <QueryStatePanel error={error} height={72} /> : null;
+
   if (plan.status === "insufficient_data") {
     return (
       <section className="card p-4 space-y-3" aria-label="Today Plan">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Today Plan</h2>
+        {refreshWarning}
         <p className="text-sm text-foreground leading-snug">{plan.message}</p>
         <p className="text-[11px] text-dim">{confidenceLabel[plan.confidence]}</p>
       </section>
@@ -67,6 +70,7 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
           {plan.action.zone}
         </span>
       </div>
+      {refreshWarning}
       <div className="space-y-1">
         <p className="text-sm font-medium text-foreground leading-snug">{plan.action.title}</p>
         <p className="text-xs text-muted leading-snug">{plan.action.summary}</p>
