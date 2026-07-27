@@ -6,6 +6,12 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { createElement, type ReactNode, useMemo } from "react";
 import { captureException } from "./telemetry";
 
+export const MOBILE_QUERY_CACHE_CONTRACT_VERSION = 2;
+
+export function mobileQueryCacheBuster(userId: string) {
+  return `${userId}:v${MOBILE_QUERY_CACHE_CONTRACT_VERSION}`;
+}
+
 function queryCacheKey(userId: string) {
   return `dofek-query-cache:${userId}`;
 }
@@ -47,7 +53,7 @@ export function MobileQueryPersistenceProvider({
       persistOptions: {
         persister,
         maxAge: QUERY_CACHE_MAX_AGE_MS,
-        buster: userId,
+        buster: mobileQueryCacheBuster(userId),
       },
       onError: () => {
         captureException(new Error("Failed to restore persisted query cache"), {

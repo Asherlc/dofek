@@ -8,7 +8,7 @@ interface MealSectionProps {
   mealName: string;
   mealKey: string;
   entries: FoodEntry[];
-  totalCalories: number;
+  totalCalories: number | null;
   onAddFood: (mealKey: string) => void;
   onDeleteFood: (id: string) => void;
   deleting: boolean;
@@ -28,7 +28,7 @@ export function MealSection({
       <View style={styles.header}>
         <Text style={styles.mealName}>{mealName}</Text>
         <Text style={styles.totalCalories}>
-          {totalCalories > 0 ? formatCalories(totalCalories) : ""}
+          {totalCalories != null && totalCalories > 0 ? formatCalories(totalCalories) : ""}
         </Text>
       </View>
 

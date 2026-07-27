@@ -282,21 +282,19 @@ export class NutritionAnalyticsRepository extends BaseRepository {
       }),
       sql`WITH daily_totals AS (
             SELECT
-              fe.date,
+              fen.date,
               n.id,
               n.display_name,
               n.unit,
               n.rda,
               SUM(fen.amount) AS daily_amount
-            FROM fitness.food_entry fe
-            JOIN fitness.food_entry_nutrient fen ON fen.food_entry_id = fe.id
+            FROM fitness.v_nutrition_canonical_nutrient fen
             JOIN fitness.nutrient n ON n.id = fen.nutrient_id
-            WHERE fe.user_id = ${this.userId}
-              AND fe.confirmed = true
-              ${currentDateRangePredicate(sql`fe.date`, days)}
+            WHERE fen.user_id = ${this.userId}
+              ${currentDateRangePredicate(sql`fen.date`, days)}
               AND n.rda IS NOT NULL
-              ${this.dateAccessPredicate(sql`fe.date`)}
-            GROUP BY fe.date, n.id, n.display_name, n.unit, n.rda
+              ${this.dateAccessPredicate(sql`fen.date`)}
+            GROUP BY fen.date, n.id, n.display_name, n.unit, n.rda
           )
           SELECT
             display_name AS nutrient,
@@ -331,12 +329,13 @@ export class NutritionAnalyticsRepository extends BaseRepository {
           date: dateStringSchema,
           calories_in: z.coerce.number(),
         }),
-        sql`SELECT date, SUM(calories) AS calories_in
+        sql`SELECT date, calories AS calories_in
             FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.userId}
+              AND resolution_status = 'available'
+              AND calories IS NOT NULL
               ${currentDateRangePredicate(sql`date`, days)}
               ${this.dateAccessPredicate(sql`date`)}
-            GROUP BY date
             ORDER BY date ASC`,
       ),
       fetchBodyWeightRows(this.#requireBodyStore(), this.userId, this.timezone, "now", days, {
@@ -379,6 +378,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
                 nd.fat_g
               FROM fitness.v_nutrition_daily nd
               WHERE nd.user_id = ${this.userId}
+                AND nd.resolution_status = 'available'
                 ${currentDateRangePredicate(sql`nd.date`, days)}
                 AND nd.calories > 0
                 ${this.dateAccessPredicate(sql`nd.date`)}
