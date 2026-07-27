@@ -133,6 +133,7 @@ describe("appRouter", () => {
       "breathwork",
       "companionPairing",
       "companionToken",
+      "personalExperiments",
       "sleep",
       "sleepNeed",
       "dailyMetrics",
