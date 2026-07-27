@@ -1,6 +1,7 @@
 import { GET_STARTED_STEPS } from "@dofek/onboarding/get-started-flow";
 import { useRouter } from "expo-router";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { colors } from "../theme";
 
 export default function OnboardingScreen() {
@@ -12,9 +13,14 @@ export default function OnboardingScreen() {
         <Text style={styles.kicker}>First-run setup</Text>
         <Text style={styles.title}>Set up Dofek with your real data</Text>
         <Text style={styles.subtitle}>
-          Dofek is useful after it has data to work with. Start by connecting the sources you
-          already use, then open the dashboard when sync has something to show.
+          Dofek is useful after it has data to work with. Start by choosing a primary goal,
+          connecting the sources you already use, then open the dashboard when sync has something to
+          show.
         </Text>
+      </View>
+
+      <View style={styles.goalCard}>
+        <PrimaryGoalSelector />
       </View>
 
       <View style={styles.stepList}>
@@ -71,6 +77,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 15,
     lineHeight: 22,
+  },
+  goalCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.surfaceSecondary,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 18,
   },
   stepList: {
     gap: 12,

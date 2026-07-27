@@ -149,8 +149,20 @@ Implemented first-run flow that helps a new user reach a useful dashboard quickl
 
 - Landing page Get started CTAs send users to login with `returnTo=/onboarding`; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx) and [`index.tsx`](../packages/web/src/routes/index.tsx).
 - Web and mobile render shared setup steps from `@dofek/onboarding`; see [`get-started-flow.ts`](../packages/onboarding/src/get-started-flow.ts), [`OnboardingPage.tsx`](../packages/web/src/pages/OnboardingPage.tsx), and [`onboarding.tsx`](../packages/mobile/app/onboarding.tsx).
+- Onboarding and settings persist a primary goal from shared options in `@dofek/onboarding/primary-goal`; see [`primary-goal.ts`](../packages/onboarding/src/primary-goal.ts), [`PrimaryGoalSelector.tsx`](../packages/web/src/components/PrimaryGoalSelector.tsx), and [`PrimaryGoalSelector.tsx`](../packages/mobile/components/PrimaryGoalSelector.tsx).
 - Web onboarding includes the public iOS TestFlight invite so Apple Health and mobile setup are first-class; see [`OnboardingPage.tsx`](../packages/web/src/pages/OnboardingPage.tsx).
 - Landing page copy frames correlations, trends, comparisons, Slack food logging, and cross-device source setup before signup; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx).
+
+### Goals, Calendar, and Plan Compliance
+
+Connect each daily decision to a longer-term outcome. First slice shipped: persist and edit primary goal. Deferred: event dates, planned/completed calendar merge, compliance explanations, recommendation adjustments, and plan import.
+
+- [x] Persist the goal selected during onboarding and allow it to be changed; see [`2026-07-26-primary-goal-selection.md`](superpowers/plans/2026-07-26-primary-goal-selection.md).
+- [ ] Support an event date or ongoing outcome target beyond the primary-goal taxonomy.
+- [ ] Present planned and completed work in a shared web/mobile calendar.
+- [ ] Explain plan deviations using recovery, availability, and completed-work evidence without moral judgment.
+- [ ] Adjust future recommendations when the user accepts a change or repeatedly dismisses a type of action.
+- [ ] Prefer importing existing structured plans and device calendars before building a broad custom plan-authoring system.
 
 ## Technical Backlog
 
