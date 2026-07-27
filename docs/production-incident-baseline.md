@@ -18100,6 +18100,50 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   remains stable, and verify the accumulated Redpanda events flow into
   ClickHouse.
 
+## 2026-07-26 — Settings Provider Inventory Caused Large Layout Shifts
+
+- **Status:** Direct web fix validated locally; CI and production deployment
+  pending.
+- **Symptoms:** Authenticated direct loads measured CLS `0.2274` on
+  `/settings` and `0.2347` on `/providers` while asynchronous Settings content
+  populated.
+- **User impact:** Sections below Data Sources moved after first paint, so
+  users could lose their reading position or target the wrong control. A good
+  CLS score is `0.1` or less at the 75th percentile, segmented by device type:
+  <https://web.dev/articles/cls#what_is_a_good_cls_score>.
+- **Evidence:** Document TTFB was only 8–21 ms. The loading state reserved one
+  desktop row with three 96 px skeletons, then replaced it with 19 provider
+  cards across seven rows. A deterministic Chrome 150 regression delayed the
+  provider tRPC batch and reproduced a 76 px downstream movement after the
+  provider viewport alone was stabilized: Billing grew 80 px and the Data
+  Sources action header grew 4 px. The Chrome DevTools connector could not
+  record a source trace because its shared browser profile was already locked;
+  the test therefore also compares section geometry independently of Layout
+  Shift API entries.
+- **Root cause:** Loading and resolved states did not share layout
+  reservations. Provider inventory height depended on provider count, the
+  Billing placeholder was shorter than its resolved content, and Data Sources
+  actions increased their header height after the provider response arrived.
+- **Fix / mitigation:** Keep provider cards inside one responsive fixed-height
+  scroll region shared by loading and resolved states, reserve Billing's
+  responsive resolved height, and reserve the Data Sources action-header
+  height. No server query, cache, timeout, or retry behavior changed.
+- **Validation:** The focused component regression failed before the provider
+  region existed and then passed. Before Settings gained tabs, Chrome 150
+  direct loads of `/settings` and redirected `/providers` reported zero
+  Billing height delta, zero Data Sources height delta, zero normalized
+  downstream movement, and CLS `0.0000`; both routes passed without retries.
+  The tab-aware regression now measures Data Sources on
+  `/settings?tab=connections` and redirected `/providers`, and Billing on
+  `/settings?tab=account`. Its post-merge local browser rerun is blocked by the
+  shared Docker disk incident recorded below; exact-head CI validation is
+  pending.
+- **Remaining risk / follow-up:** Confirm production field CLS after rollout
+  because synthetic page-load tests cannot represent every provider inventory,
+  viewport, font, or long-lived session. The provider catalog now scrolls
+  within its reserved region, so usability should also be reviewed on narrow
+  web viewports.
+
 ## 2026-07-26 — Mutation Prep Selected Cypress Test Harness Files
 
 - **Status:** Root cause fixed locally; replacement CI pending.
@@ -18164,6 +18208,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   workspaces' running containers and named volumes while applying Docker's
   [builder-cache pruning guidance](https://docs.docker.com/build/cache/garbage-collection/)
   when disk pressure recurs.
+
 ## 2026-07-26 — WHOOP BLE Initialization Ran While the App Was Backgrounded
 
 - **Status:** Direct fix merged, deployed, and resolved in Sentry.
@@ -18856,6 +18901,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge through normal CI, deploy, and observe
   a complete production analytics build plus cache-warming cycle before
   resolving DOFEK-SERVER-5A.
+
+## 2026-07-27 — Local E2E Docker Storage Exhaustion
+
+- **Status:** Unresolved shared development-environment incident; issue #1999
+  browser validation moved to exact-head CI.
+- **Symptoms:** The isolated web E2E stack could not build, so Cypress did not
+  start. Full lint also stopped when SQLFluff's dbt templater could not connect
+  to the unavailable local ClickHouse service.
+- **User impact:** No production impact. Local browser and database-aware lint
+  validation were unavailable for this worktree.
+- **Evidence:** The first image build failed during `pnpm install` with
+  `Error: database or disk is full`. After removing only this worktree's E2E
+  resources and pruning 327.5 MB of rebuildable builder cache, the retry failed
+  while creating an OverlayFS directory with `no space left on device`.
+  Pruning unused images reclaimed 0 B.
+- **Root cause:** Docker's shared storage was full; the failure occurred before
+  the application image or Cypress spec could run.
+- **Fix / mitigation:** Removed this worktree's failed E2E resources and
+  rebuildable builder cache. No application, timeout, retry, or validation
+  behavior changed, and no broader shared Docker data was deleted.
+- **Validation:** All 14,117 Docker-free unit and mobile tests, root/server/web
+  TypeScript checks, targeted Biome checks, and 27 focused Settings tests pass.
+  Exact-head CI remains responsible for the unavailable browser and
+  database-backed validation.
+- **Remaining risk / follow-up:** Reclaim or expand Docker storage outside this
+  issue worktree, then confirm the isolated E2E stack and full lint run locally.
 
 ## 2026-07-26 — Deploy Gate Accepted a Transient Swarm Task
 
