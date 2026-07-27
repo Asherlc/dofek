@@ -1,12 +1,7 @@
+import { z } from "zod";
 import { daysBefore, type SeedRandom, type Sql, timestampAt, USER_ID } from "./helpers.ts";
 
-interface FoodEntryRow {
-  id: string;
-}
-
-interface SupplementRow {
-  id: string;
-}
+const returnedIdRowSchema = z.object({ id: z.string() });
 
 export async function seedNutrition(sql: Sql, random: SeedRandom): Promise<void> {
   const today = new Date();
@@ -21,7 +16,8 @@ async function seedDailyNutrition(sql: Sql, random: SeedRandom, today: Date): Pr
     const date = daysBefore(today, daysAgo);
     const trainingDay = daysAgo % 7 !== 0;
     const calories = trainingDay ? random.int(2_250, 2_850) : random.int(1_950, 2_350);
-    const [{ id: foodEntryId }] = await sql<FoodEntryRow[]>`
+    const insertedRows = returnedIdRowSchema.array().parse(
+      await sql`
       INSERT INTO fitness.food_entry (
         provider_id, user_id, external_id, date, nutrition_grain, food_name, source_name, logged_at,
         confirmed
@@ -37,7 +33,11 @@ async function seedDailyNutrition(sql: Sql, random: SeedRandom, today: Date): Pr
             logged_at = EXCLUDED.logged_at,
             confirmed = EXCLUDED.confirmed
       RETURNING id
-    `;
+    `,
+    );
+    const insertedRow = insertedRows[0];
+    if (!insertedRow) throw new Error("Daily nutrition seed insert returned no row");
+    const foodEntryId = insertedRow.id;
 
     await sql`DELETE FROM fitness.food_entry_nutrient WHERE food_entry_id = ${foodEntryId}`;
     await sql`
@@ -88,7 +88,8 @@ async function seedFoodEntries(sql: Sql, random: SeedRandom, today: Date): Promi
     const date = daysBefore(today, daysAgo);
     for (const [mealIndex, [meal, foodName, foodDescription, category]] of meals.entries()) {
       const calories = meal === "breakfast" ? 520 : meal === "lunch" ? 760 : 840;
-      const [{ id: foodEntryId }] = await sql<FoodEntryRow[]>`
+      const insertedRows = returnedIdRowSchema.array().parse(
+        await sql`
         INSERT INTO fitness.food_entry (
           provider_id, user_id, external_id, date, meal, food_name, food_description,
           category, number_of_units, logged_at, serving_unit, serving_weight_grams,
@@ -98,7 +99,11 @@ async function seedFoodEntries(sql: Sql, random: SeedRandom, today: Date): Promi
           ${foodName}, ${foodDescription}, ${category}, 1, ${timestampAt(date, 8 + mealIndex * 5, 10)},
           'serving', ${meal === "breakfast" ? 340 : 480}, 'itemized', true
         ) RETURNING id
-      `;
+      `,
+      );
+      const insertedRow = insertedRows[0];
+      if (!insertedRow) throw new Error("Food entry seed insert returned no row");
+      const foodEntryId = insertedRow.id;
 
       await sql`DELETE FROM fitness.food_entry_nutrient WHERE food_entry_id = ${foodEntryId}`;
       await sql`
@@ -148,7 +153,8 @@ async function seedSupplements(sql: Sql): Promise<void> {
     zincMg,
     omega3Mg,
   ] of supplements) {
-    const [{ id: supplementId }] = await sql<SupplementRow[]>`
+    const insertedRows = returnedIdRowSchema.array().parse(
+      await sql`
       INSERT INTO fitness.supplement (
         user_id, name, amount, unit, form, description, meal, sort_order
       ) VALUES (
@@ -164,7 +170,11 @@ async function seedSupplements(sql: Sql): Promise<void> {
             sort_order = EXCLUDED.sort_order,
             updated_at = NOW()
       RETURNING id
-    `;
+    `,
+    );
+    const insertedRow = insertedRows[0];
+    if (!insertedRow) throw new Error("Supplement seed insert returned no row");
+    const supplementId = insertedRow.id;
 
     await sql`DELETE FROM fitness.supplement_nutrient WHERE supplement_id = ${supplementId}`;
     await sql`

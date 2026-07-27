@@ -229,6 +229,7 @@ INNER JOIN fitness.food_entry_nutrient AS nutrient
   ON classification.id = nutrient.food_entry_id
 WHERE
   resolution.resolution_status = 'available'
+  AND classification.confirmed = TRUE
   AND classification.source_key = ANY(resolution.contributing_source_keys)
   AND classification.effective_grain = resolution.contribution_grain;
 --> statement-breakpoint

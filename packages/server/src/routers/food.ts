@@ -136,7 +136,7 @@ export const foodRouter = router({
         repo.byDate(input.date),
         repo.nutritionByDate(input.date, calorieGoal),
       ]);
-      if (entries.length === 0) {
+      if (entries.length === 0 && nutrition.resolution.sourceProviders.length === 0) {
         logger.info(`[food] byDate returned 0 rows for userId=${ctx.userId} date=${input.date}`);
       }
       return {

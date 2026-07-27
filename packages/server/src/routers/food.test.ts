@@ -273,6 +273,44 @@ describe("foodRouter", () => {
         "[food] byDate returned 0 rows for userId=user-1 date=2024-01-15",
       );
     });
+
+    it("does not log an aggregate-only day as an empty-data anomaly", async () => {
+      const infoSpy = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            calories: 1800,
+            protein_g: 90,
+            carbs_g: 220,
+            fat_g: 60,
+            breakfast_calories: 0,
+            lunch_calories: 0,
+            dinner_calories: 0,
+            snack_calories: 0,
+            other_calories: 1800,
+            resolution_status: "available",
+            resolution_message: "Totals use the only available nutrition source.",
+            source_providers: ["apple-health"],
+            contributing_providers: ["apple-health"],
+            excluded_providers: [],
+            source_labels: ["Apple Health"],
+            contributing_source_labels: ["Apple Health"],
+            excluded_source_labels: [],
+          },
+        ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.byDate({ date: "2024-01-15" });
+
+      expect(infoSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe("dailyTotals", () => {

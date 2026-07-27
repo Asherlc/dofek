@@ -1,12 +1,42 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
+import { FoodRepository } from "./food-repository.ts";
 import { NutritionAnalyticsRepository } from "./nutrition-analytics-repository.ts";
 import { ProviderDetailRepository } from "./provider-detail-repository.ts";
 
 const OTHER_USER_ID = "00000000-0000-0000-0000-000000002059";
+const idRowSchema = z.object({ id: z.string() });
+const dailyNutritionRowSchema = z.object({
+  calories: z.coerce.number(),
+  protein_g: z.coerce.number(),
+  resolution_status: z.string(),
+  source_providers: z.array(z.string()),
+  contributing_providers: z.array(z.string()),
+  excluded_providers: z.array(z.string()),
+});
+const aggregateOnlyRowSchema = z.object({
+  calories: z.coerce.number(),
+  protein_g: z.coerce.number(),
+  resolution_status: z.string(),
+});
+const conflictRowSchema = z.object({
+  calories: z.coerce.number().nullable(),
+  resolution_status: z.string(),
+  contributing_providers: z.array(z.string()),
+});
+const classificationRowSchema = z.object({
+  provider_id: z.string(),
+  effective_grain: z.string(),
+});
+const calorieResolutionRowSchema = z.object({
+  calories: z.coerce.number(),
+  resolution_status: z.string(),
+});
 
 describe("canonical nutrition contribution set", () => {
   let context: TestContext;
@@ -98,19 +128,16 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { calories: 1750, protein: 90, vitamin_c: 80 },
     });
 
-    const dailyRows = await context.db.execute<{
-      calories: number;
-      protein_g: number;
-      resolution_status: string;
-      source_providers: string[];
-      contributing_providers: string[];
-      excluded_providers: string[];
-    }>(sql`
+    const dailyRows = await executeWithSchema(
+      context.db,
+      dailyNutritionRowSchema,
+      sql`
       SELECT calories, protein_g, resolution_status, source_providers,
              contributing_providers, excluded_providers
       FROM fitness.v_nutrition_daily
       WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `);
+    `,
+    );
 
     expect(dailyRows).toEqual([
       expect.objectContaining({
@@ -123,20 +150,28 @@ describe("canonical nutrition contribution set", () => {
       }),
     ]);
 
-    const canonicalEntries = await context.db.execute<{ id: string }>(sql`
+    const canonicalEntries = await executeWithSchema(
+      context.db,
+      idRowSchema,
+      sql`
       SELECT id
       FROM fitness.v_nutrition_display_entry
       WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
       ORDER BY id
-    `);
+    `,
+    );
     expect(canonicalEntries.map((row) => row.id)).toContain(breakfastId);
     expect(canonicalEntries.map((row) => row.id)).not.toContain(aggregateId);
 
-    const rawRows = await context.db.execute<{ id: string }>(sql`
+    const rawRows = await executeWithSchema(
+      context.db,
+      idRowSchema,
+      sql`
       SELECT id
       FROM fitness.food_entry
       WHERE id = ${aggregateId}
-    `);
+    `,
+    );
     expect(rawRows).toEqual([{ id: aggregateId }]);
 
     const providerRecord = await new ProviderDetailRepository(
@@ -167,15 +202,15 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { protein: 95 },
     });
 
-    const rows = await context.db.execute<{
-      calories: number;
-      protein_g: number;
-      resolution_status: string;
-    }>(sql`
+    const rows = await executeWithSchema(
+      context.db,
+      aggregateOnlyRowSchema,
+      sql`
       SELECT calories, protein_g, resolution_status
       FROM fitness.v_nutrition_daily
       WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `);
+    `,
+    );
     expect(rows).toEqual([{ calories: 1900, protein_g: 95, resolution_status: "available" }]);
   });
 
@@ -198,15 +233,15 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { calories: 800 },
     });
 
-    const rows = await context.db.execute<{
-      calories: number | null;
-      resolution_status: string;
-      contributing_providers: string[];
-    }>(sql`
+    const rows = await executeWithSchema(
+      context.db,
+      conflictRowSchema,
+      sql`
       SELECT calories, resolution_status, contributing_providers
       FROM fitness.v_nutrition_daily
       WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `);
+    `,
+    );
     expect(rows).toEqual([
       {
         calories: null,
@@ -247,7 +282,7 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { calories: 1100 },
     });
     await addEntry({
-      providerId: "nutrition-other",
+      providerId: "nutrition-itemized",
       date,
       grain: "itemized",
       foodName: "Draft",
@@ -255,26 +290,37 @@ describe("canonical nutrition contribution set", () => {
       nutrients: { calories: 1200 },
     });
 
-    const classifications = await context.db.execute<{
-      provider_id: string;
-      effective_grain: string;
-    }>(sql`
+    const classifications = await executeWithSchema(
+      context.db,
+      classificationRowSchema,
+      sql`
       SELECT provider_id, effective_grain
       FROM fitness.v_nutrition_entry_classification
       WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date AND confirmed = true
       ORDER BY provider_id
-    `);
+    `,
+    );
     expect(classifications).toEqual([
       { provider_id: "nutrition-aggregate", effective_grain: "daily_aggregate" },
       { provider_id: "nutrition-itemized", effective_grain: "itemized" },
     ]);
 
-    const rows = await context.db.execute<{ calories: number; resolution_status: string }>(sql`
+    const rows = await executeWithSchema(
+      context.db,
+      calorieResolutionRowSchema,
+      sql`
       SELECT calories, resolution_status
       FROM fitness.v_nutrition_daily
       WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
-    `);
+    `,
+    );
     expect(rows).toEqual([{ calories: 500, resolution_status: "available" }]);
+
+    const rangeTotals = await new FoodRepository(context.db, TEST_USER_ID, "UTC").dailyTotalsRange(
+      date,
+      date,
+    );
+    expect(rangeTotals[0]?.mealCount).toBe(1);
   });
 
   it("feeds micronutrient adequacy and adaptive TDEE from the same contribution set", async () => {

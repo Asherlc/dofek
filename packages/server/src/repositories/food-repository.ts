@@ -722,7 +722,9 @@ export class FoodRepository {
             daily.excluded_source_labels
           FROM fitness.v_nutrition_daily daily
           LEFT JOIN fitness.v_nutrition_display_entry display
-            ON display.user_id = daily.user_id AND display.date = daily.date
+            ON display.user_id = daily.user_id
+              AND display.date = daily.date
+              AND display.confirmed = true
           WHERE daily.user_id = ${this.#userId}
             AND daily.date >= ${startDate}::date
             AND daily.date <= ${endDate}::date
