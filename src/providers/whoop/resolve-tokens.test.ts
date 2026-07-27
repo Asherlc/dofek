@@ -155,6 +155,21 @@ describe("resolveWhoopTokens", () => {
     refreshSpy.mockRestore();
   });
 
+  it("propagates refresh failures inside the safety window", async () => {
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "stored-access",
+      refreshToken: "stored-refresh",
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      scopes: "userId:12345",
+    });
+    const refreshError = new Error("WHOOP token refresh unavailable");
+    vi.spyOn(WhoopClient, "refreshAccessToken").mockRejectedValue(refreshError);
+
+    await expect(resolveWhoopTokens({ db: makeDb(), userId: "user-1" })).rejects.toBe(refreshError);
+
+    expect(saveTokens).not.toHaveBeenCalled();
+  });
+
   it("reuses the access token when it has more than one hour remaining", async () => {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000 + 1);
     vi.mocked(loadTokens).mockResolvedValue({
