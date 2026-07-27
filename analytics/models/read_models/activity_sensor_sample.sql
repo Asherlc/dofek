@@ -24,26 +24,45 @@ WITH current_activity AS (
         user_id,
         started_at,
         ended_at,
+        greatest(
+            coalesce(ended_at, started_at + INTERVAL 12 HOUR),
+            started_at
+        ) AS effective_ended_at,
         source_synced_at
     FROM {{ ref('deduped_activities') }} FINAL
     WHERE is_deleted = 0
 ),
 
+activity_days AS (
+    SELECT
+        activity_id,
+        user_id,
+        started_at,
+        ended_at,
+        source_synced_at,
+        arrayJoin(arrayMap(
+            day_offset -> addDays(toDate(started_at), day_offset),
+            range(toUInt64(dateDiff('day', started_at, effective_ended_at)) + 1)
+        )) AS recorded_date
+    FROM current_activity
+),
+
 activity_samples AS (
     SELECT
-        current_activity.activity_id AS activity_id,
+        activity_days.activity_id AS activity_id,
         samples.user_id AS user_id,
         samples.recorded_at AS recorded_at,
         samples.recorded_date AS recorded_date,
         samples.channel AS channel,
         samples.scalar AS scalar,
         samples.is_deleted AS is_deleted,
-        greatest(samples.refreshed_at, current_activity.source_synced_at) AS source_refreshed_at
+        greatest(samples.refreshed_at, activity_days.source_synced_at) AS source_refreshed_at
     FROM {{ ref('deduped_sensor') }} AS samples
-    INNER JOIN current_activity
-        ON current_activity.user_id = samples.user_id
-        AND samples.recorded_at >= current_activity.started_at
-        AND samples.recorded_at <= coalesce(current_activity.ended_at, current_activity.started_at + INTERVAL 12 HOUR)
+    INNER JOIN activity_days
+        ON activity_days.user_id = samples.user_id
+        AND activity_days.recorded_date = samples.recorded_date
+        AND samples.recorded_at >= activity_days.started_at
+        AND samples.recorded_at <= coalesce(activity_days.ended_at, activity_days.started_at + INTERVAL 12 HOUR)
 )
 
 SELECT

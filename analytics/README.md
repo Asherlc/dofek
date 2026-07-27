@@ -48,6 +48,12 @@ sleep sample intermediary, while `activity_sensor_summary_rows` and
 `activity_location_summary_rows` aggregate the activity sample intermediaries
 before `activity_stream_points`, `activity_heart_rate_zones`, and
 `activity_summary_rows` join or aggregate those compact per-activity samples.
+`activity_sensor_sample` expands each activity into its inclusive UTC calendar
+dates and joins samples on `(user_id, recorded_date)` before applying the exact
+activity timestamp bounds. This preserves overlapping and cross-midnight
+activity membership without generating cross-day sample/activity candidates;
+ClickHouse recommends reducing the volume entering a join:
+<https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#joins>.
 The serving-facing `analytics.activity_summary` object is a thin ClickHouse view
 over `analytics.activity_summary_rows FINAL`; the expensive activity/sample
 joins belong in incremental dbt models, not in web/API requests. Complex
