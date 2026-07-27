@@ -292,6 +292,7 @@ describe("production analytics read-model build", () => {
   it("materializes activity sensor membership as a microbatch intermediary", () => {
     expect(existsSync(new URL("./activity_sensor_sample.sql", import.meta.url))).toBe(true);
     const sql = readModel("activity_sensor_sample");
+    const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("incremental_strategy='microbatch'");
     expect(sql).toContain(
@@ -302,6 +303,11 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("lookback=3");
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("ref('deduped_activities')");
+    expect(sql).toContain("activity_days AS");
+    expect(sql).toContain("arrayJoin(arrayMap(");
+    expect(normalizedSql).toContain(
+      "activity_days.recorded_date = samples.recorded_date",
+    );
     expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(sql).toContain("activity_id");
     expect(sql).toContain("source_refreshed_at AS refreshed_at");
@@ -394,7 +400,7 @@ describe("production analytics read-model build", () => {
     expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");
     expect(dedupedSensorSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activitySensorSampleSql).toContain(
-      "greatest(samples.refreshed_at, current_activity.source_synced_at) AS source_refreshed_at",
+      "greatest(samples.refreshed_at, activity_days.source_synced_at) AS source_refreshed_at",
     );
     expect(activitySensorSampleSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activityLocationSampleSql).toContain(
