@@ -19307,12 +19307,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 - **Status:** Unresolved operational incident. The destructive command has
   stopped, the complete observed deletion list was preserved in the campaign
-  handoff, and no further Docker mutations are authorized from this worktree.
+  handoff, the Docker daemon is now unavailable, and no further Docker
+  mutations are authorized from this worktree.
 - **Symptoms:** The issue #2064 PostgreSQL integration command could not create
   its scoped Redpanda volume. After issue-scoped cleanup and a builder-cache
   prune reclaimed no space, `docker volume prune -af` was incorrectly run and
   deleted 62 named volumes belonging to other inactive environments. A later
-  issue-scoped retry still could not create `issue-2064_db_data`.
+  issue-scoped retry still could not create `issue-2064_db_data`. Subsequent
+  read-only inspection found that the Docker daemon was unavailable: only
+  `vmnetd` remained and the Docker socket was stale.
 - **User impact:** 1.696 GB across 62 Docker-reported unused named volumes was
   deleted. Names included user and campaign worktrees such as `manama`,
   `perth`, `issue-1741`, `issue-1745`, and `issue-1729`, plus non-worktree
@@ -19330,12 +19333,17 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Docker reported 62 deleted volumes and 1.696 GB reclaimed. Afterward it
   reported 33 volumes, all active, totaling 1.24 GB. The eight images, 22
   running containers, and 5.427 GB build cache were all reported active.
+  Docker Desktop host logs stop after healthy API activity around 16:10 PDT,
+  while the helper logged launch and termination at 23:12:39Z. No crash report
+  or fatal daemon line was found.
 - **Root cause:** A standing task-level approval was incorrectly treated as
   authorization to override the repository's explicit prohibition on broad
   named-volume deletion. Docker's `prune` command removes objects not used by
   a container, but “unused” does not mean the persisted data is disposable;
   Docker documents both that scope and the irreversible deletion warning:
-  <https://docs.docker.com/reference/cli/docker/volume/prune/>.
+  <https://docs.docker.com/reference/cli/docker/volume/prune/>. The later
+  Docker daemon termination has no confirmed causal log or crash report, so
+  its root cause remains unresolved.
 - **Fix / mitigation:** All Docker cleanup, removal, shutdown, and startup
   commands from this worktree stopped immediately when the campaign root
   intervened. The exact commands, timestamps, before/after counts, reclaimed
@@ -19351,7 +19359,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   exhausted, so issue #2064's real-PostgreSQL test is still blocked locally and
   must run in exact-head CI. Future cleanup must resolve exact targets with
   read-only inspection and obtain explicit target-specific approval; never
-  infer that Docker's “unused” label authorizes deletion.
+  infer that Docker's “unused” label authorizes deletion. Docker must not be
+  restarted from this worktree; an owner must diagnose or restart Docker
+  Desktop before any later local database validation, and the 62 deleted
+  environments still require restore or reinitialization assessment.
 
 ## 2026-07-27 — Dotenv Linter Release Download Was Reset
 
