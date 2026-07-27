@@ -1,5 +1,6 @@
 import type {
   MacroNutritionSummary,
+  NutritionSourceResolution,
   SelectedDateNutritionSummary,
 } from "@dofek/nutrition/selected-date-summary";
 import type { Database } from "dofek/db";
@@ -78,6 +79,14 @@ const dailyTotalsRowSchema = z.object({
   carbs_g: z.coerce.number().nullable(),
   fat_g: z.coerce.number().nullable(),
   fiber_g: z.coerce.number().nullable(),
+  resolution_status: z.enum(["available", "source_conflict"]),
+  resolution_message: z.string(),
+  source_providers: z.array(z.string()),
+  contributing_providers: z.array(z.string()),
+  excluded_providers: z.array(z.string()),
+  source_labels: z.array(z.string()),
+  contributing_source_labels: z.array(z.string()),
+  excluded_source_labels: z.array(z.string()),
 });
 
 const dailyNutritionSummaryRowSchema = dailyTotalsRowSchema.extend({
@@ -86,15 +95,23 @@ const dailyNutritionSummaryRowSchema = dailyTotalsRowSchema.extend({
 });
 
 const selectedDateNutritionTotalsRowSchema = z.object({
-  calories: z.coerce.number(),
-  protein_g: z.coerce.number(),
-  carbs_g: z.coerce.number(),
-  fat_g: z.coerce.number(),
+  calories: z.coerce.number().nullable(),
+  protein_g: z.coerce.number().nullable(),
+  carbs_g: z.coerce.number().nullable(),
+  fat_g: z.coerce.number().nullable(),
   breakfast_calories: z.coerce.number(),
   lunch_calories: z.coerce.number(),
   dinner_calories: z.coerce.number(),
   snack_calories: z.coerce.number(),
   other_calories: z.coerce.number(),
+  resolution_status: z.enum(["available", "source_conflict"]),
+  resolution_message: z.string(),
+  source_providers: z.array(z.string()),
+  contributing_providers: z.array(z.string()),
+  excluded_providers: z.array(z.string()),
+  source_labels: z.array(z.string()),
+  contributing_source_labels: z.array(z.string()),
+  excluded_source_labels: z.array(z.string()),
 });
 
 const foodSearchRowSchema = z.object({
@@ -236,6 +253,22 @@ export class DailyNutritionSummary {
   get sourceProviders(): string[] {
     return this.#row.source_providers;
   }
+
+  get resolutionStatus(): "available" | "source_conflict" {
+    return this.#row.resolution_status;
+  }
+
+  get resolutionMessage(): string {
+    return this.#row.resolution_message;
+  }
+
+  get contributingProviders(): string[] {
+    return this.#row.contributing_providers;
+  }
+
+  get excludedProviders(): string[] {
+    return this.#row.excluded_providers;
+  }
 }
 
 function summarizeMacro(
@@ -255,10 +288,11 @@ function selectedDateNutritionSummary(
   row: SelectedDateNutritionTotalsRow,
   calorieGoal: number,
 ): SelectedDateNutritionSummary {
-  const remaining = Math.max(calorieGoal - row.calories, 0);
-  const over = Math.max(row.calories - calorieGoal, 0);
+  const calories = row.calories ?? 0;
+  const remaining = Math.max(calorieGoal - calories, 0);
+  const over = Math.max(calories - calorieGoal, 0);
   return {
-    calories: row.calories,
+    calories,
     mealCalories: {
       breakfast: row.breakfast_calories,
       lunch: row.lunch_calories,
@@ -270,13 +304,38 @@ function selectedDateNutritionSummary(
       target: calorieGoal,
       remaining,
       over,
-      progressPercentage: Math.min((row.calories / calorieGoal) * 100, 100),
+      progressPercentage: Math.min((calories / calorieGoal) * 100, 100),
     },
     macros: {
-      protein: summarizeMacro(row.protein_g, 4, row.calories),
-      carbs: summarizeMacro(row.carbs_g, 4, row.calories),
-      fat: summarizeMacro(row.fat_g, 9, row.calories),
+      protein: summarizeMacro(row.protein_g ?? 0, 4, calories),
+      carbs: summarizeMacro(row.carbs_g ?? 0, 4, calories),
+      fat: summarizeMacro(row.fat_g ?? 0, 9, calories),
     },
+  };
+}
+
+function nutritionSourceResolution(
+  row: Pick<
+    SelectedDateNutritionTotalsRow,
+    | "resolution_status"
+    | "resolution_message"
+    | "source_providers"
+    | "contributing_providers"
+    | "excluded_providers"
+    | "source_labels"
+    | "contributing_source_labels"
+    | "excluded_source_labels"
+  >,
+): NutritionSourceResolution {
+  return {
+    status: row.resolution_status,
+    message: row.resolution_message,
+    sourceProviders: row.source_providers,
+    contributingProviders: row.contributing_providers,
+    excludedProviders: row.excluded_providers,
+    sourceLabels: row.source_labels,
+    contributingSourceLabels: row.contributing_source_labels,
+    excludedSourceLabels: row.excluded_source_labels,
   };
 }
 
@@ -482,7 +541,7 @@ export class FoodRepository {
       const rows = await executeWithSchema(
         this.#db,
         foodEntryRowSchema,
-        sql`SELECT * FROM fitness.v_food_entry_with_nutrition
+        sql`SELECT * FROM fitness.v_nutrition_display_entry
             WHERE user_id = ${this.#userId}
               AND confirmed = true
               AND date >= ${startDate}::date
@@ -495,7 +554,7 @@ export class FoodRepository {
     const rows = await executeWithSchema(
       this.#db,
       foodEntryRowSchema,
-      sql`SELECT * FROM fitness.v_food_entry_with_nutrition
+      sql`SELECT * FROM fitness.v_nutrition_display_entry
           WHERE user_id = ${this.#userId}
             AND confirmed = true
             AND date >= ${startDate}::date
@@ -510,7 +569,7 @@ export class FoodRepository {
     const rows = await executeWithSchema(
       this.#db,
       foodEntryRowSchema,
-      sql`SELECT * FROM fitness.v_food_entry_with_nutrition
+      sql`SELECT * FROM fitness.v_nutrition_display_entry
           WHERE user_id = ${this.#userId}
             AND confirmed = true
             AND date = ${date}::date
@@ -519,32 +578,26 @@ export class FoodRepository {
     return rows.map((row) => new FoodEntry(row));
   }
 
-  /** Canonical display summary for one selected date. */
-  async nutritionSummaryByDate(
+  /** Canonical totals and source resolution for one selected date. */
+  async nutritionByDate(
     date: string,
     calorieGoal: number,
-  ): Promise<SelectedDateNutritionSummary> {
+  ): Promise<{
+    summary: SelectedDateNutritionSummary | null;
+    resolution: NutritionSourceResolution;
+  }> {
     const rows = await executeWithSchema(
       this.#db,
       selectedDateNutritionTotalsRowSchema,
-      sql`WITH daily AS (
+      sql`WITH meal_totals AS (
             SELECT
-              COALESCE(SUM(calories), 0) AS calories,
-              COALESCE(SUM(protein_g), 0) AS protein_g,
-              COALESCE(SUM(carbs_g), 0) AS carbs_g,
-              COALESCE(SUM(fat_g), 0) AS fat_g
-            FROM fitness.v_nutrition_daily
-            WHERE user_id = ${this.#userId}
-              AND date = ${date}::date
-          ),
-          meal_totals AS (
-            SELECT
-              COALESCE(meal, 'other') AS meal,
-              COALESCE(SUM(calories), 0) AS calories
-            FROM fitness.v_food_entry_with_nutrition
-            WHERE user_id = ${this.#userId}
-              AND confirmed = true
-              AND date = ${date}::date
+              COALESCE(entry.meal, 'other') AS meal,
+              COALESCE(SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'calories'), 0)
+                AS calories
+            FROM fitness.v_nutrition_canonical_nutrient nutrient
+            JOIN fitness.food_entry entry ON entry.id = nutrient.food_entry_id
+            WHERE nutrient.user_id = ${this.#userId}
+              AND nutrient.date = ${date}::date
             GROUP BY COALESCE(meal, 'other')
           ),
           meals AS (
@@ -556,15 +609,66 @@ export class FoodRepository {
               COALESCE(SUM(calories) FILTER (WHERE meal = 'other'), 0) AS other_calories
             FROM meal_totals
           )
-          SELECT daily.*, meals.*
-          FROM daily
-          CROSS JOIN meals`,
+          SELECT
+            daily.calories,
+            daily.protein_g,
+            daily.carbs_g,
+            daily.fat_g,
+            meals.*,
+            daily.resolution_status,
+            daily.resolution_message,
+            daily.source_providers,
+            daily.contributing_providers,
+            daily.excluded_providers,
+            daily.source_labels,
+            daily.contributing_source_labels,
+            daily.excluded_source_labels
+          FROM fitness.v_nutrition_daily daily
+          CROSS JOIN meals
+          WHERE daily.user_id = ${this.#userId}
+            AND daily.date = ${date}::date`,
     );
     const row = rows[0];
     if (!row) {
-      throw new Error(`Failed to aggregate nutrition summary for ${date}`);
+      const emptyRow: SelectedDateNutritionTotalsRow = {
+        calories: 0,
+        protein_g: 0,
+        carbs_g: 0,
+        fat_g: 0,
+        breakfast_calories: 0,
+        lunch_calories: 0,
+        dinner_calories: 0,
+        snack_calories: 0,
+        other_calories: 0,
+        resolution_status: "available",
+        resolution_message: "No nutrition sources have reported data for this date.",
+        source_providers: [],
+        contributing_providers: [],
+        excluded_providers: [],
+        source_labels: [],
+        contributing_source_labels: [],
+        excluded_source_labels: [],
+      };
+      return {
+        summary: selectedDateNutritionSummary(emptyRow, calorieGoal),
+        resolution: nutritionSourceResolution(emptyRow),
+      };
     }
-    return selectedDateNutritionSummary(row, calorieGoal);
+    return {
+      summary:
+        row.resolution_status === "available"
+          ? selectedDateNutritionSummary(row, calorieGoal)
+          : null,
+      resolution: nutritionSourceResolution(row),
+    };
+  }
+
+  /** Canonical display summary for one selected date. */
+  async nutritionSummaryByDate(
+    date: string,
+    calorieGoal: number,
+  ): Promise<SelectedDateNutritionSummary | null> {
+    return (await this.nutritionByDate(date, calorieGoal)).summary;
   }
 
   /** Get daily calorie/macro totals aggregated by day. */
@@ -574,16 +678,22 @@ export class FoodRepository {
       dailyTotalsRowSchema,
       sql`SELECT
             date,
-            SUM(calories) as calories,
-            SUM(protein_g)::numeric(10,1) as protein_g,
-            SUM(carbs_g)::numeric(10,1) as carbs_g,
-            SUM(fat_g)::numeric(10,1) as fat_g,
-            SUM(fiber_g)::numeric(10,1) as fiber_g
-          FROM fitness.v_food_entry_with_nutrition
+            calories,
+            protein_g::numeric(10,1) as protein_g,
+            carbs_g::numeric(10,1) as carbs_g,
+            fat_g::numeric(10,1) as fat_g,
+            fiber_g::numeric(10,1) as fiber_g,
+            resolution_status,
+            resolution_message,
+            source_providers,
+            contributing_providers,
+            excluded_providers,
+            source_labels,
+            contributing_source_labels,
+            excluded_source_labels
+          FROM fitness.v_nutrition_daily
           WHERE user_id = ${this.#userId}
-            AND confirmed = true
             AND date > CURRENT_DATE - ${days}::int
-          GROUP BY date
           ORDER BY date ASC`,
     );
     return rows.map((row) => new DailyTotals(row));
@@ -595,21 +705,36 @@ export class FoodRepository {
       this.#db,
       dailyNutritionSummaryRowSchema,
       sql`SELECT
-            date,
-            SUM(calories) AS calories,
-            SUM(protein_g)::numeric(10,1) AS protein_g,
-            SUM(carbs_g)::numeric(10,1) AS carbs_g,
-            SUM(fat_g)::numeric(10,1) AS fat_g,
-            SUM(fiber_g)::numeric(10,1) AS fiber_g,
-            COUNT(*)::int AS meal_count,
-            ARRAY_AGG(DISTINCT provider_id ORDER BY provider_id) AS source_providers
-          FROM fitness.v_food_entry_with_nutrition
-          WHERE user_id = ${this.#userId}
-            AND confirmed = true
-            AND date >= ${startDate}::date
-            AND date <= ${endDate}::date
-          GROUP BY date
-          ORDER BY date ASC`,
+            daily.date,
+            daily.calories,
+            daily.protein_g::numeric(10,1) AS protein_g,
+            daily.carbs_g::numeric(10,1) AS carbs_g,
+            daily.fat_g::numeric(10,1) AS fat_g,
+            daily.fiber_g::numeric(10,1) AS fiber_g,
+            COUNT(display.id)::int AS meal_count,
+            daily.source_providers,
+            daily.resolution_status,
+            daily.resolution_message,
+            daily.contributing_providers,
+            daily.excluded_providers,
+            daily.source_labels,
+            daily.contributing_source_labels,
+            daily.excluded_source_labels
+          FROM fitness.v_nutrition_daily daily
+          LEFT JOIN fitness.v_nutrition_display_entry display
+            ON display.user_id = daily.user_id
+              AND display.date = daily.date
+              AND display.confirmed = true
+          WHERE daily.user_id = ${this.#userId}
+            AND daily.date >= ${startDate}::date
+            AND daily.date <= ${endDate}::date
+          GROUP BY daily.date, daily.user_id, daily.calories, daily.protein_g, daily.carbs_g,
+                   daily.fat_g, daily.fiber_g, daily.source_providers,
+                   daily.resolution_status, daily.resolution_message,
+                   daily.contributing_providers, daily.excluded_providers,
+                   daily.source_labels, daily.contributing_source_labels,
+                   daily.excluded_source_labels
+          ORDER BY daily.date ASC`,
     );
     return rows.map((row) => new DailyNutritionSummary(row));
   }
@@ -624,7 +749,7 @@ export class FoodRepository {
             fe.food_name, fe.food_description, fe.category,
             fe.calories, fe.protein_g, fe.carbs_g, fe.fat_g, fe.fiber_g,
             fe.number_of_units
-          FROM fitness.v_food_entry_with_nutrition fe
+          FROM fitness.v_nutrition_display_entry fe
           WHERE fe.user_id = ${this.#userId}
             AND fe.confirmed = true
             AND fe.food_name IS NOT NULL
@@ -681,11 +806,11 @@ export class FoodRepository {
         ? sql`WITH new_entry AS (
           INSERT INTO fitness.food_entry (
             user_id, provider_id, date, meal, food_name, food_description,
-            category, number_of_units
+            category, number_of_units, nutrition_grain
           ) VALUES (
             ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
             ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
-            ${input.category ?? null}, ${input.numberOfUnits ?? null}
+            ${input.category ?? null}, ${input.numberOfUnits ?? null}, 'itemized'
           ) RETURNING id
         ),
         new_nutrients AS (
@@ -697,11 +822,11 @@ export class FoodRepository {
         SELECT id FROM new_entry`
         : sql`INSERT INTO fitness.food_entry (
             user_id, provider_id, date, meal, food_name, food_description,
-            category, number_of_units
+            category, number_of_units, nutrition_grain
           ) VALUES (
             ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
             ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
-            ${input.category ?? null}, ${input.numberOfUnits ?? null}
+            ${input.category ?? null}, ${input.numberOfUnits ?? null}, 'itemized'
           ) RETURNING id`,
     );
     const newId = idRows[0]?.id;
@@ -799,10 +924,10 @@ export class FoodRepository {
       nutrientValueClauses.length > 0
         ? sql`WITH new_entry AS (
           INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name
+            user_id, provider_id, date, meal, food_name, nutrition_grain
           ) VALUES (
             ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
-            ${input.meal}, ${input.foodName}
+            ${input.meal}, ${input.foodName}, 'itemized'
           ) RETURNING id
         ),
         new_nutrients AS (
@@ -813,10 +938,10 @@ export class FoodRepository {
         )
         SELECT id FROM new_entry`
         : sql`INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name
+            user_id, provider_id, date, meal, food_name, nutrition_grain
           ) VALUES (
             ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
-            ${input.meal}, ${input.foodName}
+            ${input.meal}, ${input.foodName}, 'itemized'
           ) RETURNING id`,
     );
     const newId = idRows[0]?.id;

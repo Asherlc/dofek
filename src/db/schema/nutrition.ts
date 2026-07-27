@@ -12,7 +12,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { fitness, resolveImplicitUserId } from "./core.ts";
-import { foodCategoryEnum, mealEnum } from "./enums.ts";
+import { foodCategoryEnum, mealEnum, nutritionEntryGrainEnum } from "./enums.ts";
 import { provider, userProfile } from "./reference.ts";
 
 // ============================================================
@@ -108,6 +108,7 @@ export const foodEntry = fitness.table(
       .references(() => userProfile.id),
     externalId: text("external_id"),
     date: date("date").notNull(),
+    nutritionGrain: nutritionEntryGrainEnum("nutrition_grain"),
     meal: mealEnum("meal"),
     foodName: text("food_name"),
     foodDescription: text("food_description"),

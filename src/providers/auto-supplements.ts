@@ -171,7 +171,8 @@ export class AutoSupplementsProvider implements SyncProvider {
           // Update food_entry metadata
           await db.execute(
             sql`UPDATE fitness.food_entry
-                SET food_name = ${entry.foodName}, food_description = ${entry.foodDescription}
+                SET food_name = ${entry.foodName}, food_description = ${entry.foodDescription},
+                    nutrition_grain = 'itemized'
                 WHERE user_id = ${entry.userId} AND provider_id = ${entry.providerId} AND external_id = ${entry.externalId}`,
           );
         } else {
@@ -183,6 +184,7 @@ export class AutoSupplementsProvider implements SyncProvider {
               externalId: entry.externalId,
               userId: entry.userId,
               date: entry.date,
+              nutritionGrain: "itemized",
               meal: entry.meal,
               foodName: entry.foodName,
               foodDescription: entry.foodDescription,

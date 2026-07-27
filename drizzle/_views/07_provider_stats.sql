@@ -17,7 +17,7 @@ WITH providers AS (
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.health_event
   UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.v_nutrition_daily
+  SELECT DISTINCT user_id, provider_id FROM fitness.v_nutrition_provider_daily
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.lab_panel
   UNION
@@ -70,7 +70,7 @@ LEFT JOIN (
 ) he ON he.user_id = p.user_id AND he.provider_id = p.provider_id
 LEFT JOIN (
   SELECT user_id, provider_id, count(*) AS cnt
-  FROM fitness.v_nutrition_daily
+  FROM fitness.v_nutrition_provider_daily
   GROUP BY user_id, provider_id
 ) nd ON nd.user_id = p.user_id AND nd.provider_id = p.provider_id
 LEFT JOIN (

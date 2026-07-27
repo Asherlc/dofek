@@ -2,7 +2,11 @@ import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { dehydrate, QueryClient } from "@tanstack/react-query";
 import { persistQueryClientRestore } from "@tanstack/react-query-persist-client";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createMobileQueryPersister, removeMobileQueryCache } from "./mobile-query-persistence";
+import {
+  createMobileQueryPersister,
+  mobileQueryCacheBuster,
+  removeMobileQueryCache,
+} from "./mobile-query-persistence";
 
 function createQueryClient() {
   return new QueryClient({
@@ -27,7 +31,7 @@ describe("mobile query persistence", () => {
       "dofek-query-cache:user-1",
       JSON.stringify({
         timestamp: Date.now(),
-        buster: "user-1",
+        buster: mobileQueryCacheBuster("user-1"),
         clientState: dehydrate(seedClient),
       }),
     );
@@ -44,7 +48,7 @@ describe("mobile query persistence", () => {
       queryClient: restoredClient,
       persister: createMobileQueryPersister("user-1"),
       maxAge: QUERY_CACHE_MAX_AGE_MS,
-      buster: "user-1",
+      buster: mobileQueryCacheBuster("user-1"),
     });
 
     expect(restoredClient.getQueryData(["dashboard"])).toEqual({ readiness: "cached" });
@@ -52,10 +56,13 @@ describe("mobile query persistence", () => {
     await refetch;
   });
 
-  it("scopes persisted data by authenticated user", async () => {
+  it("discards persisted data from the previous cache contract", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const seedClient = createQueryClient();
-    seedClient.setQueryData(["dashboard"], { readiness: "cached" });
+    seedClient.setQueryData(["food", "byDate"], {
+      entries: [],
+      summary: { calories: 1000 },
+    });
     await AsyncStorage.setItem(
       "dofek-query-cache:user-1",
       JSON.stringify({
@@ -68,9 +75,33 @@ describe("mobile query persistence", () => {
     const restoredClient = createQueryClient();
     await persistQueryClientRestore({
       queryClient: restoredClient,
+      persister: createMobileQueryPersister("user-1"),
+      maxAge: QUERY_CACHE_MAX_AGE_MS,
+      buster: mobileQueryCacheBuster("user-1"),
+    });
+
+    expect(restoredClient.getQueryData(["food", "byDate"])).toBeUndefined();
+  });
+
+  it("scopes persisted data by authenticated user", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(["dashboard"], { readiness: "cached" });
+    await AsyncStorage.setItem(
+      "dofek-query-cache:user-1",
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: mobileQueryCacheBuster("user-1"),
+        clientState: dehydrate(seedClient),
+      }),
+    );
+
+    const restoredClient = createQueryClient();
+    await persistQueryClientRestore({
+      queryClient: restoredClient,
       persister: createMobileQueryPersister("user-2"),
       maxAge: QUERY_CACHE_MAX_AGE_MS,
-      buster: "user-2",
+      buster: mobileQueryCacheBuster("user-2"),
     });
 
     expect(restoredClient.getQueryData(["dashboard"])).toBeUndefined();
@@ -84,7 +115,7 @@ describe("mobile query persistence", () => {
       "dofek-query-cache:user-1",
       JSON.stringify({
         timestamp: Date.now() - QUERY_CACHE_MAX_AGE_MS - 1,
-        buster: "user-1",
+        buster: mobileQueryCacheBuster("user-1"),
         clientState: dehydrate(seedClient),
       }),
     );
@@ -94,7 +125,7 @@ describe("mobile query persistence", () => {
       queryClient: restoredClient,
       persister: createMobileQueryPersister("user-1"),
       maxAge: QUERY_CACHE_MAX_AGE_MS,
-      buster: "user-1",
+      buster: mobileQueryCacheBuster("user-1"),
     });
 
     expect(restoredClient.getQueryData(["dashboard"])).toBeUndefined();
