@@ -18857,6 +18857,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   a complete production analytics build plus cache-warming cycle before
   resolving DOFEK-SERVER-5A.
 
+## 2026-07-26 — Deploy Gate Accepted a Transient Swarm Task
+
+- **Status:** Direct fix validated locally; replacement CI and production
+  deployment pending.
+- **Symptoms:** Deploy Web run `30187561549` completed successfully while
+  `dofek_metric-stream-clickhouse-sink` repeatedly alternated between `0/1` and
+  transient `1/1` states before its task exited with code 1.
+- **User impact:** The release was reported as successful while a required
+  metric-stream consumer was unavailable, so new events could accumulate
+  without reaching ClickHouse.
+- **Evidence:** The exact faulty step was `Deploy ClickHouse consumer services`.
+  Its convergence loop exited on the first `1/1` replica sample. The first
+  service fatal line was `SyntaxError: The requested module 'kafkajs' does not
+  provide an export named 'ConfigResourceTypes'`; Swarm replaced each failed
+  task roughly 20 seconds after its transient running state. Public health
+  endpoints remained HTTP 200 and did not cover the consumer.
+- **Root cause:** The deploy gate checked only an instantaneous replica count
+  and update state, so a crash-looping task could satisfy the gate briefly
+  before Swarm replaced it. Docker documents that a failed task terminates and
+  the orchestrator creates a new task:
+  <https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling>.
+- **Fix / mitigation:** Require the same desired-running task ID to remain at
+  `1/1` with a complete update state continuously for 60 seconds. Reset the
+  window on task replacement or replica loss, preserve immediate
+  rollback/paused failures, and retain the existing global 20-minute deadline.
+- **Validation:** Behavioral workflow tests execute the real deploy shell
+  against a mocked Swarm CLI and cover a stable task, task replacement,
+  transient `0/1`, rollback, pause, and timeout. All eight focused tests pass
+  without an ad-hoc retry or increased deployment deadline.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy, and verify
+  both restored consumers retain one task ID through the stability window and
+  continue processing after the workflow succeeds.
+
 ## 2026-07-27 — Activity sensor summary reused CTE timeout (DOFEK-SERVER-5A)
 
 - **Status:** Direct fix reproduced and validated locally; merge, deployment,
