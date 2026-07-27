@@ -41,11 +41,16 @@ describe("Training Page", () => {
         })
         .find("a")
         .should("have.length", 8)
-        .each(($link) => {
-          const bounds = $link[0].getBoundingClientRect();
-          expect(bounds.left).to.be.at.least(0);
-          expect(bounds.right).to.be.at.most(viewportWidth);
-        });
+        .each(($link) =>
+          cy
+            .wrap($link)
+            .should("be.visible")
+            .then(($visibleLink) => {
+              const bounds = $visibleLink[0].getBoundingClientRect();
+              expect(bounds.left).to.be.at.least(0);
+              expect(bounds.right).to.be.at.most(viewportWidth);
+            }),
+        );
 
       cy.document().should((document) => {
         expect(document.documentElement.scrollWidth).to.be.at.most(viewportWidth);

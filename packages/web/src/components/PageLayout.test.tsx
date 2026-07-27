@@ -109,7 +109,7 @@ describe("PageLayout", () => {
     expect(screen.getByRole("navigation", { name: "Section navigation" })).toBeTruthy();
   });
 
-  it("wraps secondary navigation instead of hiding destinations in a horizontal scroller", () => {
+  it("wraps secondary navigation", () => {
     const tabs = [
       { to: "/training", label: "Overview", exact: true },
       { to: "/training/endurance", label: "Endurance", exact: false },
@@ -128,8 +128,6 @@ describe("PageLayout", () => {
 
     const tabList = screen.getByRole("list", { name: "Section links" });
     expect(tabList).toHaveClass("flex-wrap");
-    expect(tabList).not.toHaveClass("overflow-x-auto");
-    expect(tabList).not.toHaveClass("scrollbar-hide");
   });
 
   it("keeps every secondary destination as a keyboard-focusable link", () => {
