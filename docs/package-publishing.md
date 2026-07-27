@@ -20,17 +20,25 @@ JavaScript and declarations
 
 The automatic path is:
 
-1. `.github/workflows/release-npm.yml` receives a successful `CI`
+1. `.github/workflows/version-npm.yml` receives a successful `CI`
    `workflow_run` for `main`.
-2. The workflow verifies that the tested commit is still current, builds every
-   package in `lerna.json`, and runs the public-package unit suite.
-3. `lerna version patch --yes` independently patch-bumps only changed packages,
-   updates internal package references, creates a release commit, tags each
-   package as `<name>@<version>`, and pushes the release commit and tags.
-4. `pnpm --recursive publish` publishes workspace versions that are not yet in
-   the registry. Private application workspaces are skipped.
-5. npm authenticates the workflow with a short-lived GitHub OIDC credential and
-   automatically records provenance. No npm write token is stored in GitHub.
+2. The workflow mints a short-lived GitHub App installation token, verifies
+   that the tested commit is still current, and skips when any package version
+   is still untagged (a release already in flight).
+3. `lerna version patch --yes --no-push` independently patch-bumps only changed
+   packages and updates internal package references. The resulting commit is
+   pushed on a `release/npm-*` branch; the workflow opens a squash pull request
+   and enables auto-merge so required checks run before the bump lands on
+   `main`. Tags are not created here, so an abandoned pull request leaves no
+   stray release tags.
+4. After the version pull request merges and `CI` succeeds again,
+   `.github/workflows/release-npm.yml` builds every package in `lerna.json`,
+   runs the public-package unit suite, and publishes with
+   `pnpm --recursive publish`. Private application workspaces are skipped.
+5. npm authenticates the publish job with a short-lived GitHub OIDC credential
+   and automatically records provenance. No npm write token is stored in
+   GitHub. After a successful publish, the workflow creates and pushes only the
+   `<name>@<version>` tags for packages that were not already tagged.
 
 npm requires Node 22.14 or newer, npm 11.5.1 or newer, `id-token: write`, a
 GitHub-hosted runner, and an exact trusted-publisher workflow filename. It also
@@ -38,10 +46,9 @@ requires a package to exist before its trusted publisher can be configured
 ([npm trusted publishing](https://docs.npmjs.com/trusted-publishers/),
 [`npm trust`](https://docs.npmjs.com/cli/v11/commands/npm-trust/)).
 
-The workflow recognizes a tagged release commit whose parent is the tested
-commit. This makes a failed registry upload recoverable with
-`workflow_dispatch`: pnpm can publish the versions already tagged at `HEAD`
-without creating another version.
+A failed registry upload is recoverable with `workflow_dispatch` on
+`release-npm.yml`: pnpm publishes workspace versions that are not yet in the
+registry, and the tagging step is a no-op for versions already tagged.
 
 ### Adding another npm package
 
@@ -75,15 +82,20 @@ entry declares:
 
 - a stable package ID and display name;
 - the canonical Swift package path in this repository;
-- the public distribution repository;
-- a TypeScript exporter that accepts the checked-out mirror directory; and
-- the GitHub secret name used to write to the distribution repository.
+- the public distribution repository (`<owner>/<repo>`); and
+- a TypeScript exporter that accepts the checked-out mirror directory.
+
+Write access to each distribution repository comes from a short-lived GitHub
+App installation token minted by `actions/create-github-app-token`, scoped to
+the owner and repository parsed from that entry's `repository` field. No
+per-package token secret is stored in the configuration.
 
 For each entry, the workflow:
 
 1. tests the canonical package with `swift test` on a GitHub-hosted macOS
    runner;
-2. checks out the configured distribution repository;
+2. mints an App installation token for the distribution repository owner and
+   checks out that repository;
 3. exports the canonical source while preserving the mirror's `.git`
    directory;
 4. skips the release when the exported tree is unchanged; and
@@ -103,8 +115,9 @@ documentation.
 
 ### Adding another Swift package
 
-Create or identify the public distribution repository, add an exporter that
-follows the `<target-directory>` contract, and add one entry to
-`.github/swift-packages.json`. Do not create another release workflow. The
-configured GitHub token must be able to push commits and tags and create
-releases in the distribution repository.
+Create or identify the public distribution repository, install the release
+GitHub App on that repository (or its owner), add an exporter that follows the
+`<target-directory>` contract, and add one entry to
+`.github/swift-packages.json`. Do not create another release workflow. The App
+installation must be able to push commits and tags and create releases in the
+distribution repository.

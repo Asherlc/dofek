@@ -22,7 +22,7 @@
   "command": {
     "version": {
       "allowBranch": "main",
-      "message": "chore(release): publish [skip ci]"
+      "message": "chore(release): version npm packages"
     },
     "publish": {
       "registry": "https://registry.npmjs.org/"
