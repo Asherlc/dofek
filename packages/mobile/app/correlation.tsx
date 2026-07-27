@@ -1,5 +1,6 @@
 import { formatNumber, formatSigned } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
+import { formatCorrelationComparison, formatCorrelationLagOption } from "@dofek/stats/correlation";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -25,12 +26,10 @@ const DAY_OPTIONS = [
   { label: "1y", value: 365 },
 ];
 
-const LAG_OPTIONS = [
-  { label: "Same day", value: 0 },
-  { label: "+1 day", value: 1 },
-  { label: "+2 days", value: 2 },
-  { label: "+3 days", value: 3 },
-];
+const LAG_OPTIONS = [0, 1, 2, 3].map((value) => ({
+  label: formatCorrelationLagOption(value),
+  value,
+}));
 
 const DOMAIN_ORDER = ["Recovery", "Sleep", "Nutrition", "Activity", "Body"];
 
@@ -321,9 +320,11 @@ export default function CorrelationScreen() {
       <Text style={styles.sectionLabel}>Lag</Text>
       <LagSelector lag={lag} onChange={setLag} />
       <Text style={styles.lagHint}>
-        {lag > 0
-          ? `How ${xMetric?.label ?? "X"} today relates to ${yMetric?.label ?? "Y"} ${lag === 1 ? "tomorrow" : `${lag} days later`}`
-          : "Same-day comparison"}
+        {formatCorrelationComparison({
+          xLabel: xMetric?.label ?? "X",
+          yLabel: yMetric?.label ?? "Y",
+          lag,
+        })}
       </Text>
 
       <TouchableOpacity

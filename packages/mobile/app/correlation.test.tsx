@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted<{ correlationData: Record<string, unknown> }>(() => ({
@@ -14,10 +14,16 @@ vi.mock("@dofek/format/format", () => ({
 }));
 
 vi.mock("@dofek/scoring/colors", () => ({
+  chartColors: {
+    emerald: "emerald",
+  },
   statusColors: {
     danger: "danger",
     positive: "positive",
     warning: "warning",
+  },
+  textColors: {
+    neutral: "neutral",
   },
 }));
 
@@ -122,5 +128,23 @@ describe("CorrelationScreen", () => {
     expect(screen.getByText("Pearson")).toBeTruthy();
     expect(screen.getByText("R² = 0.490")).toBeTruthy();
     expect(screen.getByText("p = 0.010")).toBeTruthy();
+  });
+
+  it("states the selected lag in calendar days and which metric leads", async () => {
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("Same day")).toBeTruthy();
+    expect(screen.getByText("+1 calendar day")).toBeTruthy();
+    expect(screen.getByText("+2 calendar days")).toBeTruthy();
+    expect(
+      screen.getByText("Protein vs Heart Rate Variability on the same calendar day"),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByText("+1 calendar day"));
+
+    expect(
+      screen.getByText("Protein today vs Heart Rate Variability 1 calendar day later"),
+    ).toBeTruthy();
   });
 });

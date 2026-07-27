@@ -77,6 +77,14 @@ export interface CorrelationInput {
 
 const MAX_DATA_POINTS = 300;
 
+function addCalendarDays(date: string, days: number): string {
+  const [yearText, monthText, dayText] = date.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
 export function downsample<T>(arr: T[], max: number): T[] {
   if (arr.length <= max) return arr;
   const step = arr.length / max;
@@ -91,13 +99,14 @@ export function downsample<T>(arr: T[], max: number): T[] {
 export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput) {
   const { metricX, metricY, lag } = input;
 
-  // Extract paired values, applying lag
+  // Pair by exact calendar date so a gap cannot turn a one-day lag into
+  // the next available observation.
   const pairs: Array<{ x: number; y: number; date: string }> = [];
+  const daysByDate = new Map(joined.map((day) => [day.date, day]));
 
-  for (let i = 0; i < joined.length; i++) {
-    const dayX = joined[i];
-    const dayY = joined[i + lag];
-    if (!dayX || !dayY) continue;
+  for (const dayX of joined) {
+    const dayY = daysByDate.get(addCalendarDays(dayX.date, lag));
+    if (!dayY) continue;
 
     const metricXValue = extractMetricValue(dayX, metricX);
     const metricYValue = extractMetricValue(dayY, metricY);

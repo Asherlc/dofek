@@ -129,6 +129,109 @@ describe("emptyStats", () => {
 // ── computeCorrelation with empty data ──────────────────────────────────
 
 describe("computeCorrelation", () => {
+  it("pairs an outcome only with the exact requested calendar date when observations have gaps", () => {
+    const joined = [
+      makeJoinedDay({ date: "2024-01-01", resting_hr: 61, hrv: 31 }),
+      makeJoinedDay({ date: "2024-01-03", resting_hr: 63, hrv: 33 }),
+      makeJoinedDay({ date: "2024-01-04", resting_hr: 64, hrv: 34 }),
+      makeJoinedDay({ date: "2024-01-05", resting_hr: 65, hrv: 35 }),
+      makeJoinedDay({ date: "2024-01-06", resting_hr: 66, hrv: 36 }),
+      makeJoinedDay({ date: "2024-01-07", resting_hr: 67, hrv: 37 }),
+      makeJoinedDay({ date: "2024-01-08", resting_hr: 68, hrv: 38 }),
+    ];
+
+    const result = computeCorrelation(joined, {
+      metricX: "resting_hr",
+      metricY: "hrv",
+      days: 90,
+      lag: 1,
+    });
+
+    expect(result.sampleCount).toBe(5);
+    expect(result.dataPoints).toEqual([
+      { x: 63, y: 34, date: "2024-01-03" },
+      { x: 64, y: 35, date: "2024-01-04" },
+      { x: 65, y: 36, date: "2024-01-05" },
+      { x: 66, y: 37, date: "2024-01-06" },
+      { x: 67, y: 38, date: "2024-01-07" },
+    ]);
+  });
+
+  it("pairs a negative lag with the exact preceding calendar date", () => {
+    const joined = [
+      makeJoinedDay({ date: "2024-03-09", resting_hr: 59, hrv: 29 }),
+      makeJoinedDay({ date: "2024-03-11", resting_hr: 61, hrv: 31 }),
+      makeJoinedDay({ date: "2024-03-12", resting_hr: 62, hrv: 32 }),
+      makeJoinedDay({ date: "2024-03-13", resting_hr: 63, hrv: 33 }),
+      makeJoinedDay({ date: "2024-03-14", resting_hr: 64, hrv: 34 }),
+      makeJoinedDay({ date: "2024-03-15", resting_hr: 65, hrv: 35 }),
+      makeJoinedDay({ date: "2024-03-16", resting_hr: 66, hrv: 36 }),
+    ];
+
+    const result = computeCorrelation(joined, {
+      metricX: "resting_hr",
+      metricY: "hrv",
+      days: 90,
+      lag: -1,
+    });
+
+    expect(result.sampleCount).toBe(5);
+    expect(result.dataPoints).toEqual([
+      { x: 62, y: 31, date: "2024-03-12" },
+      { x: 63, y: 32, date: "2024-03-13" },
+      { x: 64, y: 33, date: "2024-03-14" },
+      { x: 65, y: 34, date: "2024-03-15" },
+      { x: 66, y: 35, date: "2024-03-16" },
+    ]);
+  });
+
+  it("keeps calendar pairing stable across a leap-day month boundary", () => {
+    const joined = [
+      makeJoinedDay({ date: "2024-02-27", resting_hr: 57, hrv: 27 }),
+      makeJoinedDay({ date: "2024-02-28", resting_hr: 58, hrv: 28 }),
+      makeJoinedDay({ date: "2024-02-29", resting_hr: 59, hrv: 29 }),
+      makeJoinedDay({ date: "2024-03-01", resting_hr: 61, hrv: 31 }),
+      makeJoinedDay({ date: "2024-03-02", resting_hr: 62, hrv: 32 }),
+      makeJoinedDay({ date: "2024-03-03", resting_hr: 63, hrv: 33 }),
+    ];
+
+    const result = computeCorrelation(joined, {
+      metricX: "resting_hr",
+      metricY: "hrv",
+      days: 90,
+      lag: 1,
+    });
+
+    expect(result.sampleCount).toBe(5);
+    expect(result.dataPoints).toContainEqual({ x: 58, y: 29, date: "2024-02-28" });
+    expect(result.dataPoints).toContainEqual({ x: 59, y: 31, date: "2024-02-29" });
+  });
+
+  it("excludes an exact-date pair when the outcome metric is missing", () => {
+    const joined = Array.from({ length: 6 }, (_, index) =>
+      makeJoinedDay({
+        date: `2024-04-${String(index + 1).padStart(2, "0")}`,
+        resting_hr: 60 + index,
+        hrv: index === 3 ? null : 30 + index,
+      }),
+    );
+
+    const result = computeCorrelation(joined, {
+      metricX: "resting_hr",
+      metricY: "hrv",
+      days: 90,
+      lag: 1,
+    });
+
+    expect(result.sampleCount).toBe(4);
+    expect(result.dataPoints).toEqual([
+      { x: 60, y: 31, date: "2024-04-01" },
+      { x: 61, y: 32, date: "2024-04-02" },
+      { x: 63, y: 34, date: "2024-04-04" },
+      { x: 64, y: 35, date: "2024-04-05" },
+    ]);
+  });
+
   it.each([
     0, 1, 4,
   ])("returns no inferential statistics when only %i paired points are available", (pairCount) => {

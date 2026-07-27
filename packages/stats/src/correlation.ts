@@ -187,6 +187,33 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
   },
 ];
 
+// ── Lag wording ───────────────────────────────────────────────────────────
+
+function formatCalendarDayCount(days: number): string {
+  const absoluteDays = Math.abs(days);
+  return `${absoluteDays} calendar ${absoluteDays === 1 ? "day" : "days"}`;
+}
+
+export function formatCorrelationLagOption(lag: number): string {
+  if (lag === 0) return "Same day";
+  return `${lag > 0 ? "+" : "-"}${formatCalendarDayCount(lag)}`;
+}
+
+export function formatCorrelationComparison({
+  xLabel,
+  yLabel,
+  lag,
+}: {
+  xLabel: string;
+  yLabel: string;
+  lag: number;
+}): string {
+  if (lag === 0) return `${xLabel} vs ${yLabel} on the same calendar day`;
+  return `${xLabel} today vs ${yLabel} ${formatCalendarDayCount(lag)} ${
+    lag > 0 ? "later" : "earlier"
+  }`;
+}
+
 // ── Correlation result ───────────────────────────────────────────────────
 
 export type ConfidenceLevel = "strong" | "emerging" | "early" | "insufficient";
@@ -246,7 +273,8 @@ export class CorrelationResult {
     else strengthWord = "weakly";
 
     const direction = this.rho > 0 ? "higher" : "lower";
-    const lagText = lag === 0 ? "" : lag === 1 ? " the next day" : ` ${lag} days later`;
+    const lagText =
+      lag === 0 ? "" : ` ${formatCalendarDayCount(lag)} ${lag > 0 ? "later" : "earlier"}`;
 
     const pText = this.pValue < 0.001 ? "p < 0.001" : `p = ${this.pValue.toFixed(3)}`;
 

@@ -1,4 +1,5 @@
 import { formatNumber } from "@dofek/format/format";
+import { formatCorrelationComparison, formatCorrelationLagOption } from "@dofek/stats/correlation";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
@@ -17,12 +18,10 @@ import {
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 
-const LAG_OPTIONS = [
-  { label: "Same day", value: 0 },
-  { label: "+1 day", value: 1 },
-  { label: "+2 days", value: 2 },
-  { label: "+3 days", value: 3 },
-];
+const LAG_OPTIONS = [0, 1, 2, 3].map((value) => ({
+  label: formatCorrelationLagOption(value),
+  value,
+}));
 
 const confidenceBadge = {
   strong: {
@@ -163,9 +162,11 @@ export function CorrelationExplorerPage() {
                 ))}
               </div>
               <span className="text-[10px] text-dim ml-1">
-                {lag > 0
-                  ? `How ${xMetric?.label ?? "X"} today relates to ${yMetric?.label ?? "Y"} ${lag === 1 ? "tomorrow" : `${lag} days later`}`
-                  : "Same-day comparison"}
+                {formatCorrelationComparison({
+                  xLabel: xMetric?.label ?? "X",
+                  yLabel: yMetric?.label ?? "Y",
+                  lag,
+                })}
               </span>
             </div>
 
