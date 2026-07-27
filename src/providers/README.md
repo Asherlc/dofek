@@ -27,9 +27,20 @@ This directory contains implementations for various data providers (fitness trac
 
 The Fitbit, Suunto, COROS, Komoot, MapMyFitness, and Decathlon modules remain available for
 historical provider IDs and future vendor onboarding, but are not loaded by the production server or
-worker registries. See the root README's
-[provider inventory](../../README.md#provider-implementations-not-registered-in-production) for the
-current vendor-access constraints and primary sources.
+worker registries:
+
+- Fitbit must be rebuilt for the Google Health API before the legacy Fitbit Web API is turned down
+  in September 2026 ([Google Health API migration overview](https://developers.google.com/health/about)).
+- Suunto requires organization/partner approval and development and production subscriptions
+  ([Suunto API Zone onboarding](https://apizone.suunto.com/how-to-start)).
+- COROS issues credentials after developer onboarding
+  ([COROS API application](https://support.coros.com/hc/en-us/articles/17085887816340-Submitting-an-API-Application)).
+- Komoot does not offer a public API and selects integration partners
+  ([Komoot API support policy](https://support.komoot.com/hc/en-us/articles/10331570510618-komoot-API)).
+- MapMyFitness limits personal API access to paid MVP accounts and up to ten users
+  ([MapMyFitness developer portal](https://developer.mapmyfitness.com/)).
+- Decathlon requires an approved application registration before issuing client credentials
+  ([Decathlon login authorization guide](https://login-doc.decathlon.com/authorization.html)).
 
 ## Amazfit/Zepp
 

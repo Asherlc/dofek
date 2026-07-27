@@ -1,5 +1,7 @@
 # HealthKit Agent Notes
 
+Read [README.md](README.md) before changing this module.
+
 Scope: this directory (`packages/mobile/modules/health-kit`) and its direct app integration points.
 
 ## Expectations
