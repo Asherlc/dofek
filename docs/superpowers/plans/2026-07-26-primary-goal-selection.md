@@ -98,4 +98,4 @@
 
 - [x] Document shipped primary-goal selection under Near-Term Product Opportunities; explicitly defer calendar/compliance.
 - [x] Run `pnpm lint`, focused unit/mobile tests, and typecheck for touched packages.
-- [ ] Commit, push, open PR against `main`.
+- [x] Commit, push, open PR against `main`.
