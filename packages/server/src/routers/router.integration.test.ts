@@ -244,11 +244,12 @@ describe("Router coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, external_id, food_name, source_name, confirmed
+                user_id, provider_id, date, external_id, food_name, source_name, confirmed,
+                nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true
+                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true, 'daily_aggregate'
               ) RETURNING id
             )
             INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
@@ -292,12 +293,12 @@ describe("Router coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, meal, food_name, confirmed, nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
                 'breakfast', ${`Oatmeal ${i}`},
-                true
+                true, 'itemized'
               ) RETURNING id
             ),
             new_nutrition AS (

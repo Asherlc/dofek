@@ -19065,7 +19065,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Symptoms:** The issue-specific Compose project could not create its Postgres
   named volume. On PR #2220, integration shard 4 also returned 35 nutrition
   analytics days where the fixture expected at least 40, and integration
-  shards 1 and 4 failed the micronutrient adequacy query.
+  shards 1 and 4 failed the micronutrient adequacy query. After those causes
+  were fixed, router integration still returned no micronutrient rows.
 - **User impact:** No production impact. Local database-backed validation could
   not start in this worktree.
 - **Evidence:** `pnpm compose -- up -d --wait --wait-timeout 180 db` failed at
@@ -19074,12 +19075,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   GitHub Actions run 30302715863 showed the 35-row analytics result and the
   failing micronutrient query. Its Postgres log's first fatal line was
   `ERROR: missing FROM-clause entry for table "fe" at character 57`.
+  On exact-head run 30304798915, job 90107244740 ran
+  `pnpm exec vitest run --project integration --coverage --shard=1/4`; its
+  first fatal test line was
+  `AssertionError: expected 0 to be greater than 0` in the router's
+  micronutrient adequacy assertion.
+  In the same run, integration shard 3 job 90107244578 first failed
+  `FoodRepository.dailyTotalsRange()` with PostgreSQL error 42702:
+  `column reference "date" is ambiguous`; the query selected bare `date` after
+  joining the canonical daily and display views.
 - **Root cause:** Docker's local storage filesystem had no free capacity for the
   worktree's new database volume. Separately, the analytics fixture did not
   declare `nutrition_grain`, so legacy classification treated its multi-nutrient
   rows as ambiguous and canonical source resolution excluded 15 conflicting
   days. The micronutrient query selected `fe.date` after its canonical nutrient
-  source had been renamed to alias `fen`.
+  source had been renamed to alias `fen`. The router fixture independently
+  omitted grain semantics from 30 multi-nutrient daily totals and ten itemized
+  oatmeal rows; the daily totals therefore classified as ambiguous, making
+  their overlapping oatmeal dates unavailable to canonical micronutrient
+  analytics. `dailyTotalsRange()` also left its selected date unqualified after
+  adding a second date-bearing view to the query.
 - **Fix / mitigation:** The issue-specific Compose state was removed and the
   rebuildable builder cache was pruned using Docker's documented cleanup
   mechanism, but no reclaimable cache remained. Other workspaces' containers
@@ -19087,7 +19102,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   See [Docker's pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/).
   The analytics fixture now declares daily aggregates and itemized meals
   explicitly, and the micronutrient query consistently uses the canonical
-  nutrient alias `fen`.
+  nutrient alias `fen`. The router fixture now likewise declares daily totals
+  as `daily_aggregate` and oatmeal entries as `itemized`. Router-data fixtures
+  now declare the same semantics, and `dailyTotalsRange()` selects
+  `daily.date`.
 - **Validation:** A single retry reproduced the same volume-creation failure,
   confirming the infrastructure prerequisite rather than the test body is
   blocked. The full lint command also reached SQLFluff, then failed because its

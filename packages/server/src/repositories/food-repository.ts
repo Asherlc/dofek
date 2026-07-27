@@ -705,7 +705,7 @@ export class FoodRepository {
       this.#db,
       dailyNutritionSummaryRowSchema,
       sql`SELECT
-            date,
+            daily.date,
             daily.calories,
             daily.protein_g::numeric(10,1) AS protein_g,
             daily.carbs_g::numeric(10,1) AS carbs_g,
