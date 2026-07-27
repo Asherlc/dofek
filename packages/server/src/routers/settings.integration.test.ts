@@ -83,6 +83,7 @@ describe("Settings router", () => {
       { key: "unitSystem", value: "kelvin" },
       { key: "dashboardLayout", value: { order: [], hidden: [], collapsed: "invalid" } },
       { key: "whoop.wearLocation", value: "ankle" },
+      { key: "primaryGoal", value: "loseWeight" },
       { key: "unknownSetting", value: true },
       {
         key: "medicationReminders",
@@ -129,6 +130,26 @@ describe("Settings router", () => {
         key: "medicationReminders",
         value: reminders,
       });
+    });
+
+    it("sets and gets primaryGoal", async () => {
+      await mutate("settings.set", { key: "primaryGoal", value: "sleepConsistency" });
+
+      const result = await query("settings.get", { key: "primaryGoal" });
+      expect(result.result.data).toEqual({
+        key: "primaryGoal",
+        value: "sleepConsistency",
+      });
+    });
+
+    it("returns the updated primaryGoal after set, not a stale cached value", async () => {
+      await mutate("settings.set", { key: "primaryGoal", value: "racePreparation" });
+      const first = await query("settings.get", { key: "primaryGoal" });
+      expect(first.result.data.value).toBe("racePreparation");
+
+      await mutate("settings.set", { key: "primaryGoal", value: "weightTrend" });
+      const second = await query("settings.get", { key: "primaryGoal" });
+      expect(second.result.data.value).toBe("weightTrend");
     });
   });
 

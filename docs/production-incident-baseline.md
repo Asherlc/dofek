@@ -17970,6 +17970,103 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   failure as external registry availability after confirming the digest and
   command are unchanged; investigate separately if pulls fail persistently.
 
+## 2026-07-26 — Swift Coverage Artifact Upload Timed Out After Tests Passed
+
+- **Status:** Resolved by an unchanged failed-job rerun.
+- **Symptoms:** The `Test / Swift Tests` job failed after both Swift test
+  packages and the coverage gate passed.
+- **User impact:** PR #2036 remained blocked on a red required check; there was
+  no product or production impact.
+- **Evidence:** In the
+  [initial job](https://github.com/Asherlc/dofek/actions/runs/30207624183/job/89808551536),
+  74 HealthKit tests and eight watch-transfer tests passed, line coverage was
+  93.22%, and function coverage was 100%. The first fatal line came from
+  `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`:
+  `Failed to CreateArtifact: Unable to make request: ETIMEDOUT`.
+- **Root cause:** The runner's `CreateArtifact` request reached its transport
+  deadline after all repository tests and coverage checks had completed; no
+  Swift assertion, build, or coverage threshold failed.
+- **Fix / mitigation:** Reran only the failed Swift job unchanged after the
+  original workflow completed. No repository retry, timeout, fallback, or
+  warn-and-continue behavior was added.
+- **Validation:** The
+  [attempt-two job](https://github.com/Asherlc/dofek/actions/runs/30207624183/job/89810786050)
+  passed both Swift test commands, the coverage gate, and the same pinned
+  artifact-upload step.
+- **Remaining risk / follow-up:** Treat a future identical post-test artifact
+  transport timeout as external only after confirming the test and coverage
+  gates passed; investigate the runner-to-GitHub path if it recurs.
+
+## 2026-07-26 — Persisted Test State Exhausted Workspace ClickHouse Memory
+
+- **Status:** Resolved for the issue-1997 workspace.
+- **Symptoms:** A focused router integration rerun failed in `beforeAll` while
+  rebuilding `v_sleep`; its first fatal line reported `memory limit exceeded`
+  with 1.98 GiB RSS against a 1.95 GiB limit. Restarting the process alone led
+  to the same failure while rebuilding `v_activity`.
+- **User impact:** Local regression validation was blocked; production and
+  every other workspace were unaffected.
+- **Evidence:** The failures occurred before the selected test ran. The second
+  attempt still reported 1.96 GiB RSS after a process restart. Re-creating only
+  the four `issue-1997_*` Compose volumes reduced the ClickHouse container to
+  850.4 MiB before the next run.
+- **Root cause:** Persisted ClickHouse state in the current workspace kept the
+  server at its query memory ceiling across a process-only restart.
+- **Fix / mitigation:** Used the repository Compose wrapper to run
+  `down --remove-orphans --volumes` for the resolved `issue-1997` project, then
+  recreated its Postgres, Redis, ClickHouse, and Redpanda dependencies. This
+  removed only disposable state owned by the current workspace, consistent
+  with Docker's documented
+  [`down --volumes` scope](https://docs.docker.com/reference/cli/docker/compose/down/).
+  No memory limit, timeout, or retry was changed.
+- **Validation:** From the fresh dependencies, both focused real-ClickHouse
+  router polarization tests passed: one test in `router.integration.test.ts`
+  and one test in `router-data.integration.test.ts`.
+- **Remaining risk / follow-up:** A failed integration `beforeAll` can leave
+  workspace-scoped ClickHouse state behind. If the same evidence recurs, clear
+  only that workspace's disposable Compose state rather than raising resource
+  limits.
+
+## 2026-07-26 — Empty Polarization Model Triggered a Live Sensor Scan
+
+- **Status:** Direct fix validated locally; PR CI and production deployment
+  pending.
+- **Symptoms:** `efficiency.polarizationTrend` repeatedly reached the
+  120-second production query timeout. The Endurance page kept the
+  Polarization Index card in its loading state while the request remained
+  active.
+- **User impact:** Users could not view either polarization data or the
+  no-data state for the selected range.
+- **Evidence:** The production route timed out repeatedly during the audit.
+  The TDD unit reproduction reported `expected "spy" to be called 1 times, but
+  got 2 times`. A real-ClickHouse fixture then populated three deduped
+  heart-rate rows while leaving `activity_polarization_zones` empty; the
+  pre-fix repository returned a computed week with `maxHr: 190`, proving that
+  it queried the raw-derived models after the serving query returned no rows.
+- **Classification:** Following the
+  [loading-performance runbook](performance/loading-performance-runbook.md),
+  this was a request-time query-shape bottleneck: an empty analytics serving
+  model caused synchronous aggregation over raw-derived sensor rows. The exact
+  production timeout timestamps and local ClickHouse measurements are recorded
+  in [issue #1997](https://github.com/Asherlc/dofek/issues/1997).
+- **Root cause:** The repository treated an empty
+  `activity_polarization_zones` result as a cache miss and synchronously
+  recomputed the trend from `activity_summary` and `deduped_sensor`.
+- **Fix / mitigation:** Make `activity_polarization_zones` the sole request-time
+  source and return `{ maxHr: null, weeks: [] }` when it is empty. No retry,
+  timeout, fallback, or resource limit was added.
+- **Validation:** The focused repository and router unit suites pass. The
+  real-ClickHouse regression fixture verifies three raw sensor rows, zero
+  serving rows, an empty response, and exactly one serving-model query. The
+  clean CI run then exposed two router fixtures that still assumed the removed
+  fallback populated their results; both now seed the canonical serving table
+  and pass as focused real-ClickHouse tests. Full lint and root/server/web
+  typechecks also pass.
+- **Remaining risk / follow-up:** Complete PR CI, deploy the fix, confirm route
+  latency remains bounded, and monitor the asynchronous analytics build so a
+  stale serving model is diagnosed out of band rather than recomputed in a
+  request.
+
 ## 2026-07-25 — Metric-Stream Sink Failed on a CommonJS Named Import
 
 - **Status:** Direct fix validated locally; production deployment pending.
@@ -18110,6 +18207,55 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   recursive query and should be investigated separately rather than silently
   expanded into this fix.
 
+### Follow-up: Weekly Report Used the Same Recursive Request Path
+
+- **Status:** Direct fix validated against real Postgres and ClickHouse test
+  instances; merge and production deployment pending.
+- **Symptoms:** `weeklyReport.report` took 61,806 ms and 120,030 ms before
+  timing out in production. The same route ran for approximately 106–123
+  seconds in the local no-data reproduction while the shared ClickHouse
+  container was OOM-killed.
+- **User impact:** Weekly reports remained in a loading state instead of
+  returning report data or the existing no-data UI.
+- **Evidence:** [GitHub issue #1980](https://github.com/Asherlc/dofek/issues/1980)
+  records the production timings and local reproduction. The executable
+  regression first failed with
+  `Unknown table expression identifier 'analytics_test_...v_activity'` after
+  the recursive test views were removed, proving the repository's request-time
+  dependency. Axiom could not be queried because the connected user token had
+  expired, so the issue's production timings and the executable real-ClickHouse
+  reproduction are the alternative evidence available for this follow-up.
+- **Classification:** Following the
+  [loading-performance runbook](performance/loading-performance-runbook.md),
+  this is a request-time query-shape bottleneck for `weeklyReport.report`,
+  supported by the production timings and real-database reproduction above.
+- **Root cause:** The weekly query joined `analytics.v_activity`, read
+  `analytics.v_sleep` and `analytics.v_daily_metrics`, and expanded the
+  resting-heart-rate calculation even though compact activity, daily-sleep,
+  and daily-recovery serving models already held the required values.
+- **Fix / mitigation:** Read activities from `analytics.activity_summary`,
+  sleep from `analytics.daily_sleep FINAL`, and vitals from
+  `analytics.daily_recovery FINAL`, with explicit user and report-window
+  bounds. Preserve empty calendar periods when a report has data, but return
+  the established `{ current: null, history: [] }` result when none of those
+  serving models has a row for the user. Activity dates use the same fixed
+  six-hour health-day boundary materialized by the daily sleep and recovery
+  models, so a request timezone cannot split related data across weeks. The
+  monthly repository now applies the same no-data rule. ClickHouse documents
+  `FINAL` as applying an engine's merge logic during selection:
+  <https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier>.
+- **Validation:** The real-database weekly regression passes both the
+  serving-model lifecycle case and an empty-user case with the recursive views
+  absent. A non-UTC Sunday-boundary regression first failed because the
+  activity landed in a different week than its daily sleep and recovery rows;
+  it now passes with all three values in the serving-model health day. The
+  monthly real-database regression also passes its existing lifecycle case and
+  the new empty-user case. Focused repository and router suites pass 101 tests.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy the weekly
+  query, invoke both reports with populated and empty production accounts, and
+  confirm bounded completion in ClickHouse query history. No timeout, retry,
+  or cache fallback was added.
+
 ## 2026-07-25 — Oracle Override Disabled the Database Backup Scheduler
 
 - **Status:** Root cause confirmed; direct source fix and external freshness
@@ -18160,10 +18306,54 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   metadata objects:
   <https://databasus.com/how-to-recover-without-databasus>.
 
+## 2026-07-26 — Superseded Deploy Left ClickHouse Consumers Quiesced
+
+- **Status:** Production consumers restored manually; durable workflow fix
+  validated locally, with merge and deployment pending.
+- **Symptoms:** The production deploy for commit `d423e595a` was cancelled
+  during `Deploy stack without ClickHouse consumers`, leaving
+  `dofek_analytics-worker` and `dofek_metric-stream-clickhouse-sink` at `0/0`.
+- **User impact:** ClickHouse analytics refreshes and metric-stream ingestion
+  stopped until both services were restored to one replica.
+- **Evidence:** Deploy run
+  [30209214450](https://github.com/Asherlc/dofek/actions/runs/30209214450)
+  completed migrations and applied the quiesced stack, then GitHub cancelled
+  the active stack step at `2026-07-26T16:01:03Z`. At the same time, a newer
+  `Deploy Web` workflow run entered the same concurrency group even though its
+  production job was skipped because the triggering CI run had not succeeded.
+  Live Swarm state then showed both ClickHouse consumers at `0/0` on image
+  `sha-a0b134f`.
+- **Root cause:** The dispatcher used workflow-level
+  `cancel-in-progress: true`. Any newer `workflow_run`, including one whose
+  production job would be skipped, could therefore terminate an active
+  production deploy after its intentional quiesce phase but before the
+  compensating consumer redeploy.
+- **Fix / mitigation:** Restore both consumers to one replica as an explicit
+  operator action, then make production web deployments non-cancellable and
+  serialized. The reusable stack deployment already has
+  `cancel-in-progress: false`; the dispatcher now matches that contract and
+  gives automatic and manual production triggers one concurrency key so a
+  newer run waits instead of interrupting a partially applied deployment.
+  Before an automatic run enters that concurrency group, an eligibility job
+  checks the live `main` commit through the GitHub API and admits the run only
+  when its successful CI commit is still current. This prevents stale or failed
+  CI completions from displacing a valid pending deploy or later rolling
+  production back.
+  GitHub documents that `cancel-in-progress: true` cancels an already running
+  job or workflow in the same concurrency group:
+  <https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency>.
+- **Validation:** Both production services converged at `1/1`; the analytics
+  readiness endpoint started and the metric sink rejoined its consumer group.
+  Actionlint and direct workflow-diff validation remain pre-merge gates.
+- **Remaining risk / follow-up:** Merge the workflow fix, complete one normal
+  deployment without cancellation, verify both consumers remain `1/1`, and
+  confirm the target application release is running.
+
 ## 2026-07-26 — Worker Deployments Stalled Active BullMQ Jobs
 
-- **Status:** Direct fixes validated locally and with real Redis/ClickHouse
-  behavior; merge and production deployment pending.
+- **Status:** Resolved. The lifecycle and shared provider-admission fixes are
+  deployed, the exact stalled production job recovered without manual
+  mutation, and both Sentry issues are resolved.
 - **Symptoms:** Sentry issues
   [DOFEK-SERVER-4N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4N)
   and
@@ -18185,7 +18375,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   about 22 minutes, while the old provider-deletion loop could run for more
   than two hours. Axiom could not be queried because its connected user token
   had expired, so Sentry, Docker task state/logs, and Redis metadata supplied
-  the causal evidence.
+  the causal evidence. During the serialized `d627cd8` rollout, the reclaimed
+  one-day Strava job emitted a new
+  [DOFEK-SERVER-4N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4N)
+  event at `17:18:17Z`, remained at zero percent, and continued renewing its
+  lock. PostgreSQL had no active application query. Its persisted adaptive
+  state contained a `200`-request short limit, usage `1`, and one admitted
+  request at `17:30:21Z`. A 20-second Redis command trace then showed the same
+  client repeatedly executing `GET`, `WATCH`, and `GET` for the Strava
+  admission key about every 4.5 seconds without ever reaching `MULTI`/`EXEC`.
+  The 4.5-second interval exactly matched
+  `ceil(15 minutes / (200 - 1))`; Strava documents the default 200-request
+  short limit, its 15-minute window, and the quota headers:
+  <https://developers.strava.com/docs/rate-limits/>.
 - **Root cause:** Docker Swarm's default 10-second stop grace was incompatible
   with BullMQ's graceful close contract, which waits for active jobs, while
   provider HTTP requests had no deadline and provider deletion processed every
@@ -18193,7 +18395,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   default before `SIGKILL`, and BullMQ documents that `Worker.close()` waits for
   active work:
   <https://docs.docker.com/reference/compose-file/services/#stop_grace_period>
-  and <https://docs.bullmq.io/guide/workers/graceful-shutdown>.
+  and <https://docs.bullmq.io/guide/workers/graceful-shutdown>. The follow-up
+  Strava hang was caused by `admissionDelayMs()` returning a full quota pacing
+  interval on every atomic claim recheck instead of the time remaining since
+  the last request. The delay could therefore never reach zero, so the
+  `WATCH` claim loop slept and retried forever. The inferred-budget soft-cap
+  branch had the same fixed-delay defect.
 - **Fix / mitigation:** Give the worker a durable 30-minute stop grace and the
   initial deploy a 35-minute convergence bound; fail rather than continue when
   a Swarm update pauses. Apply a shared two-minute provider HTTP deadline with
@@ -18203,7 +18410,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deletion-request state authoritative so a completed batch job cannot report
   the overall operation complete while its continuation remains active.
   Node.js documents the native timeout and signal-composition primitives:
-  <https://nodejs.org/api/globals.html#class-abortsignal>.
+  <https://nodejs.org/api/globals.html#class-abortsignal>. The follow-up fix
+  makes every admission result a remaining eligibility delay: Strava quota
+  pacing subtracts elapsed time since `lastRequestMs`, and an exhausted
+  adaptive budget waits only for the remainder of its rolling window. This is
+  shared provider admission behavior, with no Strava-job bypass or
+  incident-only flag.
 - **Validation:** The timeout regression failed before implementation. After
   the fix, 205 focused unit tests passed, the root TypeScript typecheck and
   targeted Biome checks passed, and all five real-ClickHouse provider-deletion
@@ -18211,8 +18423,245 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   bounded projection reads. A focused operation-status regression also verifies
   that a dispatched deletion remains running after its root batch completes.
   No stall-count increase, forced retry, temporary flag, or incident-only
-  shutdown branch was added.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy, confirm the
-  old worker reaches `Shutdown complete` without exit 137, verify the timed-out
-  Strava job retries and completes, observe no fixed-release 4N/2K events
-  across a subsequent rollout, then resolve both Sentry issues.
+  shutdown branch was added. The admission regression failed against the
+  previous implementation; after the fix, 82 focused package/application tests
+  pass, including an atomic Redis-store case that advances through the exact
+  persisted production quota shape. PR #2046 deployed as release `7bc37db`;
+  the exact reclaimed Strava job
+  `sync-req-strava-f923fed7-d934-4cd9-8cb9-8e83020d0e69-11df2d47b5e2f49a237cfc5f`
+  then reached 100%, completed two activities and 6,299 metric rows, and
+  released its Redis lock. Neither issue recurred on the fixed release, and
+  DOFEK-SERVER-4N and DOFEK-SERVER-2K were resolved with this evidence attached.
+- **Remaining risk / follow-up:** None beyond normal Sentry and worker-progress
+  monitoring.
+
+## 2026-07-26 — Peloton Workout Response Drift Blocked Sync
+
+- **Status:** Resolved after the direct source fix deployed in
+  `ef6798d6ca982f5421cdbbc1b52294c1e77b3dc2`.
+- **Symptoms:** Scheduled Peloton syncs failed at the client response boundary
+  in
+  [Sentry issue DOFEK-SERVER-5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E).
+- **User impact:** The affected Peloton connection could not import any workout
+  page because validation rejected the complete page before parsing began.
+- **Evidence:** Six consecutive production events from `14:30` through
+  `17:00` UTC reported the same response drift. Peloton returned `null` for
+  workout `title`, `end_time`, `metrics_type`, `peloton_id`, and `strava_id`,
+  and omitted `ride.instructor.id`; the runtime schema accepted only omitted
+  optional strings and required a numeric end time and instructor ID. The
+  latest observed payload and exact Zod paths are preserved in
+  [Sentry issue DOFEK-SERVER-5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E).
+- **Root cause:** The client boundary modeled several optional upstream fields
+  as undefined-only even though the observed API payload uses both JSON `null`
+  and omission for absence. The schema therefore rejected valid unfinished and
+  partially linked workouts before the provider could normalize them.
+- **Fix / mitigation:** Accept only the observed nullability and omission:
+  nullable title and source-link fields, nullable-but-present `end_time`, and
+  an optional instructor ID. Keep every other identity and timestamp field
+  required, preserve the upstream nulls in the client response, and normalize
+  a null end time to the existing unfinished-workout behavior only in the
+  parsed provider DTO.
+- **Validation:** A production-shaped regression first failed with the exact
+  six Zod paths reported by Sentry. After the schema correction, all 17 focused
+  client and parsing tests pass, the root TypeScript typecheck passes, targeted
+  Biome checks report no findings, and the changed parser kills all 13 generated
+  mutants. PR #2044 passed the full CI suite and deployed as `ef6798d`; the
+  first scheduled production sync on that release parsed two workouts at
+  `2026-07-26T18:30:04Z` with no fixed-release recurrence.
+- **Remaining risk / follow-up:** None for the workout-list contract.
+
+## 2026-07-26 — Peloton Performance Summary Type Drift Blocked Sync
+
+- **Status:** Resolved after the direct source fix merged in PR #2047 and
+  deployed in release `f5b951f09ae35f3947dfd03fa0459b7d7d3a4596`.
+- **Symptoms:** The first post-deploy scheduled Peloton sync reported
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F)
+  while validating performance graphs.
+- **User impact:** The affected connection could load its workout list but
+  could not complete the sync because each workout's performance graph was
+  rejected before metric parsing.
+- **Evidence:** Both production events on release `ef6798d` reported the same
+  Zod failure: `average_summaries[*].value` and `summaries[*].value` were JSON
+  numbers, while the runtime boundary required strings. The exact field paths,
+  release, and stack are preserved in
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F).
+- **Root cause:** The newly extracted reusable Peloton client encoded summary
+  values as strings without a production-shaped non-empty summary fixture. The
+  observed response uses numeric values, as captured in
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F),
+  so the schema rejected a valid graph even though downstream parsing consumes
+  only its numeric metric series.
+- **Fix / mitigation:** Model summary values as numbers at the Zod response
+  boundary and retain the upstream values unchanged. Do not coerce them or
+  accept a string-or-number union: neither would describe the observed numeric
+  contract recorded in
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F),
+  and both would preserve an unnecessary compatibility path.
+- **Validation:** The production-shaped performance-graph regression failed
+  first with the exact two Zod paths reported by Sentry. After correcting the
+  canonical schema, 129 focused client/provider unit tests and all 12 Peloton
+  sync integration tests pass; the root TypeScript typecheck and targeted
+  Biome checks also pass. The first scheduled production sync on the fixed
+  release completed at `2026-07-26T20:00:05Z` with two workouts and 1,261
+  metric-stream rows. Sentry recorded no event after the previous release's
+  final failure at `2026-07-26T19:30:04Z`, and DOFEK-SERVER-5F was resolved
+  with that evidence attached.
+- **Remaining risk / follow-up:** None beyond normal scheduled-sync and Sentry
+  monitoring.
+
+## 2026-07-26 — Reused Analytics CTEs Recomputed and Forced Projection Failed
+
+- **Status:** Both remaining aggregate analytics failures have direct fixes
+  reproduced and validated locally; merge and production validation pending.
+- **Symptoms:** The production analytics worker continued reporting
+  [Sentry issue DOFEK-SERVER-5A](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5A)
+  after the power-curve fix deployed. Each serial dbt cycle failed
+  `provider_stats`, timed out `sleep_heart_rate_sample`, and skipped their
+  downstream models.
+- **User impact:** Provider inventory counts and sleep, recovery, training, and
+  healthspan read models could remain stale because a failed cycle never
+  reached cache warming or recorded a successful analytics refresh.
+- **Evidence:** The exact failing command remained the scheduled production
+  `dbt build`. Its first provider fatal line was ClickHouse code `117`:
+  `Projection by_provider_generation is specified in setting
+  force_optimize_projection_name but not used`. The same cycle then failed the
+  sleep model with code `159`: `Timeout exceeded: elapsed 240014.146311 ms,
+  maximum: 240000 ms`. The compiled provider query forced the covering
+  projection in both metric-stream scans, while the sleep model marked three
+  reused CTEs `AS materialized` without enabling materialized CTE execution and
+  rebuilt the heart-rate and activity refresh joins again for its dirty
+  subset. ClickHouse documents that `force_optimize_projection_name` checks
+  that the named projection is actually used at least once:
+  <https://clickhouse.com/docs/whats-new/changelog/2023>.
+- **Root cause:** `provider_stats` made an optional physical optimization a
+  correctness prerequisite, so any valid plan that could not use that
+  projection threw instead of reading the canonical base table. Separately,
+  the sleep model's shared CTE declarations were still inlined, and its
+  `active_dirty_sleep` stage explicitly repeated the already-computed refresh
+  joins. ClickHouse 26.3 introduced materialized CTEs specifically to evaluate
+  a reused CTE once in a temporary table, but requires
+  `enable_materialized_cte=1` for the clause to take effect:
+  <https://clickhouse.com/blog/clickhouse-release-26-03>.
+- **Fix / mitigation:** Keep the covering projection available to the
+  optimizer but remove the forced-projection requirement, so the canonical
+  table remains a correct fallback. Enable materialized CTE execution only for
+  these two offline dbt models; materialize the reused provider state/key set;
+  and carry sleep end, duration, and refresh state through one materialized
+  `current_sleep_state` into the dirty-key stage instead of rebuilding its
+  source joins. This follows ClickHouse's guidance to add and use projections
+  based on measured query need rather than making them speculative
+  prerequisites:
+  <https://clickhouse.com/blog/10-best-practice-tips>. No timeout, retry,
+  resource limit, or worker health budget changed.
+- **Validation:** Both model-structure regressions failed before
+  implementation. A real ClickHouse provider regression then reproduced the
+  exact production code `117` when the named projection existed but was not
+  materialized over the fixture rows, and passed after the model regained its
+  base-table fallback. After the fix, all 45 focused SQL/helper unit tests and
+  all six real-ClickHouse provider/sleep integration cases pass, including
+  bounded incremental sleep, complete full refresh, lifecycle tombstones,
+  current metric-stream versions, and unmaterialized-projection fallback.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy without
+  changing the four-minute query ceiling, observe a complete production dbt
+  cycle in which both models succeed, verify downstream cache warming, then
+  resolve DOFEK-SERVER-5A.
+
+## 2026-07-26 — HealthKit Observer Sync Waited Behind a Background Timer
+
+- **Status:** Direct source fix reproduced and validated locally; merge, OTA
+  deployment, and physical-device production validation pending.
+- **Symptoms:** The iOS native observer coordinator reported
+  [Sentry issue DOFEK-MOBILE-1C](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1C)
+  because HealthKit observer callbacks remained incomplete past their
+  25-second native failure boundary.
+- **User impact:** Background HealthKit deliveries could expire before their
+  JavaScript sync began, delaying the affected samples until a later delivery
+  or foreground catch-up.
+- **Evidence:** The latest production breadcrumb trail recorded a burst of
+  observer updates beginning at `03:17:55.677Z`; every callback logged
+  `Sample update event received, debouncing`, but `Starting sync` did not
+  appear until `03:18:25.763Z`, about 30 seconds later and after the native
+  25-second expiration. The app was backgrounded and the device was locked.
+  The timestamps, device state, and expired update ID are preserved in
+  [Sentry issue DOFEK-MOBILE-1C](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1C).
+- **Root cause:** The observer path deferred its serialized queue behind a
+  500-millisecond JavaScript `setTimeout`. In the recorded background delivery,
+  that timer did not execute for about 30 seconds while the native completion
+  deadline continued advancing.
+- **Fix / mitigation:** Remove the timer and enqueue each native delivery
+  directly into the existing single-flight queue. One sync still runs at a
+  time; update IDs delivered during it remain pending for the next serialized
+  sync and are acknowledged only after that sync settles. The native
+  25-second failure boundary remains unchanged. Apple requires observer
+  completion only after processing the delivered data:
+  <https://developer.apple.com/documentation/healthkit/executing-observer-queries>.
+- **Validation:** The regression first failed because no sync began without
+  advancing fake timers. After the direct queue fix, the regression and all 31
+  background HealthKit orchestration tests pass, including initial catch-up
+  ordering, updates delivered during an active sync, exact native
+  acknowledgements, locked-device behavior, and failure telemetry.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy the
+  JavaScript bundle through the production OTA channel, then confirm on a
+  physical-device observer delivery that `Starting sync` follows the update
+  immediately and no fixed-update expiration is reported before resolving
+  DOFEK-MOBILE-1C.
+
+## 2026-07-26 — Secret Sync Pruned a Release Token and Exposed an Impossible npm Pipeline
+
+- **Symptoms:** Three release workflows began failing on every `main` push.
+  `Release npm Packages` and `Release Swift Packages` failed in
+  `actions/checkout` with `Input required and not supplied: token`;
+  `Release Dofek Zepp` failed its own guard with
+  `ZEPP_RELEASE_TOKEN is not configured`. `Deploy Web`, `Deploy OTA`, and
+  `Deploy iOS` were unaffected.
+- **User impact:** None externally. No Zepp GitHub release, Swift package
+  mirror update, or npm publish could be produced.
+- **Evidence:** The last successful Zepp release ran at `18:04:36Z` and the
+  first failure at `19:12:48Z`. All 78 GitHub Actions secrets were rewritten
+  between `18:38:07Z` and `18:38:20Z` by the Infisical sync. Comparing the
+  Infisical `prod` key list against the repository secret list left an empty
+  "in GitHub but not in Infisical" set, showing the sync is authoritative and
+  removes keys it does not own. Infisical documents Secret Syncs as the source
+  of truth for connected third-party services and that destination secrets not
+  present in Infisical are overwritten
+  (<https://infisical.com/docs/integrations/secret-syncs/overview>); GitHub Sync
+  "Overwrite Destination Secrets" removes any destination secrets not present
+  in Infisical
+  (<https://infisical.com/docs/integrations/secret-syncs/github>).
+- **Root cause:** `ZEPP_RELEASE_TOKEN` existed only as a manually created
+  GitHub secret and was never added to Infisical, so the sync pruned it. A
+  single token named for Zepp also gated the unrelated npm and Swift release
+  pipelines.
+- **Secondary finding:** `Release npm Packages` had never completed a release —
+  no `chore(release): publish` commit exists in history. `lerna.json` set the
+  version commit message to `chore(release): publish [skip ci]` and pushed it
+  directly to `main`, while both branch rulesets ("Required CI checks" and
+  "Copilot review for default branch") carry an empty `bypass_actors` list.
+  No credential, including a repository-admin token, could have satisfied the
+  required checks for that commit, so restoring the deleted token would not
+  have fixed npm.
+- **Fix / mitigation:** Zepp now uses `GITHUB_TOKEN` with a job-scoped
+  `contents: write`, which is all a same-repository release needs. The Swift
+  mirror mints a short-lived GitHub App installation token scoped to the
+  mirror repository. npm versioning moved to an auto-merging pull request that
+  runs the required checks instead of bypassing them; publishing is OIDC
+  trusted publishing with release tags pushed after a successful publish. A
+  guard skips versioning while any package version remains untagged so the
+  version and publish workflows cannot bump on top of each other.
+  GitHub documents that pull requests opened with `GITHUB_TOKEN` do not
+  trigger workflows, which is why the App token is required to open the
+  version pull request:
+  <https://docs.github.com/actions/security-for-github-actions/security-guides/automatic-token-authentication>.
+- **Validation:** `actionlint` passes on all four workflows, every `run` block
+  passes `bash -n`, and the tagging loop was exercised against the 15 real
+  packages and created zero duplicate tags. The App private key was verified
+  to sign a valid JWT resolving to app `dofek-release` (id 4402060) with
+  exactly `contents: write` and `pull_requests: write`.
+- **Remaining risk / follow-up:** The app installation is currently
+  `repository_selection: all` rather than limited to `dofek` and
+  `whoop-ble-swift`; narrowing it would reduce blast radius. The
+  "Copilot review for default branch" ruleset combined with
+  `required_conversation_resolution` could stall auto-merge if Copilot
+  comments on a version pull request, which has not yet been observed. Any
+  future credential must be created in Infisical, never with `gh secret set`,
+  or the next sync will prune it the same way.

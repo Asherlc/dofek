@@ -1,3 +1,4 @@
+import { getSessionAction, parseSessionState, SESSION_COMMAND } from "../src/session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 
 const EMPTY_RECORD: Record<string, unknown> = {};
@@ -84,6 +85,7 @@ AppSettingsPage({
     this.loadState(props);
 
     const status = this.state.sessionStatus;
+    const sessionAction = getSessionAction(parseSessionState(status.state));
     const rate =
       status.observedHzX100 != null
         ? `${(Number(status.observedHzX100) / 100).toFixed(2)} Hz (measured)`
@@ -104,6 +106,17 @@ AppSettingsPage({
         `Delivered rate: ${rate}`,
         `Gyro in session: ${status.hasGyro ? "yes" : "no"}`,
         `Last export: ${this.state.lastExportPath ?? "none"}`,
+      ]),
+      Button({
+        label: `${sessionAction.label} on watch`,
+        color: sessionAction.command === SESSION_COMMAND.START ? "primary" : "secondary",
+        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
+        onClick: () => {
+          props.settingsStorage.setItem(STORAGE_KEYS.CMD_LOGGING, sessionAction.command);
+        },
+      }),
+      View({ style: { margin: "0 1em 1em", fontSize: "1rem", color: "#888" } }, [
+        "Keep the Dofek watch app open when starting or stopping from Settings.",
       ]),
       TextInput({
         title: "Sample rate mode (0=LOW, 1=NORMAL, 2=HIGH)",
@@ -129,7 +142,7 @@ AppSettingsPage({
         },
       }),
       Button({
-        label: "Transfer / export watch file",
+        label: "Transfer finalized session",
         color: "primary",
         style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
         onClick: () => {

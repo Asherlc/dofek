@@ -132,6 +132,7 @@ export class MonthlyReportRepository {
           FROM analytics.activity_summary asum
           WHERE asum.user_id = {userId:UUID}
             AND asum.started_at >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
+            AND asum.started_at < today() + INTERVAL 1 DAY
             AND asum.ended_at IS NOT NULL
             AND asum.avg_hr IS NOT NULL
       ),
@@ -146,6 +147,7 @@ export class MonthlyReportRepository {
         WHERE user_id = {userId:UUID}
           AND is_deleted = 0
           AND date >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
+          AND date <= today()
       ),
       sleep_daily AS (
         SELECT date, max(duration_minutes) AS duration_minutes
@@ -161,24 +163,44 @@ export class MonthlyReportRepository {
         WHERE recovery.user_id = {userId:UUID}
           AND recovery.is_deleted = 0
           AND recovery.date >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
+          AND recovery.date <= today()
       ),
       date_series AS (
         SELECT toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH + INTERVAL number DAY AS date
         FROM numbers(toUInt64(dateDiff('day', toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH, today()) + 1))
+      ),
+      monthly AS (
+        SELECT
+          toStartOfMonth(d.date) AS month_start,
+          coalesce(sum(dt.hours), 0) AS training_hours,
+          toInt32(coalesce(sum(dt.count), 0)) AS activity_count,
+          coalesce(avg(dt.load), 0) AS avg_daily_strain,
+          coalesce(avg(sl.duration_minutes), 0) AS avg_sleep_minutes,
+          avg(m.resting_hr) AS avg_resting_hr,
+          avg(m.hrv) AS avg_hrv,
+          countIf(dt.date = d.date OR sl.date = d.date OR m.date = d.date) > 0 AS has_data
+        FROM date_series AS d
+        LEFT JOIN daily_training dt ON dt.date = d.date
+        LEFT JOIN sleep_daily sl ON sl.date = d.date
+        LEFT JOIN metrics_daily m ON m.date = d.date
+        GROUP BY toStartOfMonth(d.date)
+      ),
+      monthly_with_report_presence AS (
+        SELECT
+          *,
+          max(has_data) OVER () AS report_has_data
+        FROM monthly
       )
       SELECT
-        toString(toStartOfMonth(d.date)) AS month_start,
-        coalesce(sum(dt.hours), 0) AS training_hours,
-        toInt32(coalesce(sum(dt.count), 0)) AS activity_count,
-        coalesce(avg(dt.load), 0) AS avg_daily_strain,
-        coalesce(avg(sl.duration_minutes), 0) AS avg_sleep_minutes,
-        avg(m.resting_hr) AS avg_resting_hr,
-        avg(m.hrv) AS avg_hrv
-      FROM date_series AS d
-      LEFT JOIN daily_training dt ON dt.date = d.date
-      LEFT JOIN sleep_daily sl ON sl.date = d.date
-      LEFT JOIN metrics_daily m ON m.date = d.date
-      GROUP BY toStartOfMonth(d.date)
+        toString(month_start) AS month_start,
+        training_hours,
+        activity_count,
+        avg_daily_strain,
+        avg_sleep_minutes,
+        avg_resting_hr,
+        avg_hrv
+      FROM monthly_with_report_presence
+      WHERE report_has_data
       ORDER BY month_start ASC`,
       { userId: this.#userId, months },
     );

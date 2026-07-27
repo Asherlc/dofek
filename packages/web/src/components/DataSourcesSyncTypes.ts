@@ -21,6 +21,7 @@ export interface SyncProviderSummary {
   name: string;
   description: string | null;
   authType: string;
+  tokenAuth: { label: string; instructionsUrl: string } | null;
   authorized: boolean;
   lastSyncedAt: string | null;
   importOnly: boolean;

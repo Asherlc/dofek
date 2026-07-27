@@ -79,6 +79,19 @@ vi.mock("react-native", () => {
     return React.createElement(tag, props, ...(children != null ? [children] : []));
   }
 
+  function ariaPropsFromAccessibilityState(accessibilityState: unknown): Record<string, unknown> {
+    if (typeof accessibilityState !== "object" || accessibilityState === null) {
+      return {};
+    }
+    return {
+      "aria-busy": "busy" in accessibilityState ? accessibilityState.busy : undefined,
+      "aria-checked": "checked" in accessibilityState ? accessibilityState.checked : undefined,
+      "aria-disabled": "disabled" in accessibilityState ? accessibilityState.disabled : undefined,
+      "aria-expanded": "expanded" in accessibilityState ? accessibilityState.expanded : undefined,
+      "aria-selected": "selected" in accessibilityState ? accessibilityState.selected : undefined,
+    };
+  }
+
   function createMockComponent(name: string) {
     const component = ({
       accessibilityHint,
@@ -123,30 +136,7 @@ vi.mock("react-native", () => {
       "button",
       {
         ...props,
-        "aria-busy":
-          typeof accessibilityState === "object" &&
-          accessibilityState !== null &&
-          "busy" in accessibilityState
-            ? accessibilityState.busy
-            : undefined,
-        "aria-disabled":
-          typeof accessibilityState === "object" &&
-          accessibilityState !== null &&
-          "disabled" in accessibilityState
-            ? accessibilityState.disabled
-            : undefined,
-        "aria-expanded":
-          typeof accessibilityState === "object" &&
-          accessibilityState !== null &&
-          "expanded" in accessibilityState
-            ? accessibilityState.expanded
-            : undefined,
-        "aria-selected":
-          typeof accessibilityState === "object" &&
-          accessibilityState !== null &&
-          "selected" in accessibilityState
-            ? accessibilityState.selected
-            : undefined,
+        ...ariaPropsFromAccessibilityState(accessibilityState),
         onClick: onPress,
         role: accessibilityRole ?? "presentation",
         "aria-label": accessibilityLabel,
@@ -225,32 +215,9 @@ vi.mock("react-native", () => {
       "button",
       {
         ...props,
-        "aria-busy":
-          typeof accessibilityState === "object" &&
-          accessibilityState !== null &&
-          "busy" in accessibilityState
-            ? accessibilityState.busy
-            : undefined,
+        ...ariaPropsFromAccessibilityState(accessibilityState),
         "aria-description": accessibilityHint,
-        "aria-disabled":
-          typeof accessibilityState === "object" &&
-          accessibilityState !== null &&
-          "disabled" in accessibilityState
-            ? accessibilityState.disabled
-            : undefined,
-        "aria-expanded":
-          typeof accessibilityState === "object" &&
-          accessibilityState !== null &&
-          "expanded" in accessibilityState
-            ? accessibilityState.expanded
-            : undefined,
         "aria-label": accessibilityLabel,
-        "aria-selected":
-          typeof accessibilityState === "object" &&
-          accessibilityState !== null &&
-          "selected" in accessibilityState
-            ? accessibilityState.selected
-            : undefined,
         onClick: onPress,
         role: accessibilityRole ?? "presentation",
         style: flattenStyle(style),

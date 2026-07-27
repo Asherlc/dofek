@@ -151,7 +151,7 @@ describe("sleep heart-rate sample read model", () => {
       const result = await client.query({
         query: `SELECT uniqExact(sleep_id) AS count
           FROM (${renderSleepHeartRateSql(targetTable, analyticsDatabase, postgresDatabase, true)})
-          SETTINGS join_use_nulls = 1`,
+          SETTINGS join_use_nulls = 1, enable_materialized_cte = 1`,
         format: "JSONEachRow",
       });
 
@@ -206,7 +206,7 @@ describe("sleep heart-rate sample read model", () => {
       const result = await client.query({
         query: `SELECT uniqExact(sleep_id) AS count
           FROM (${renderSleepHeartRateSql(targetTable, analyticsDatabase, postgresDatabase, false)})
-          SETTINGS join_use_nulls = 1`,
+          SETTINGS join_use_nulls = 1, enable_materialized_cte = 1`,
         format: "JSONEachRow",
       });
 
@@ -252,7 +252,7 @@ describe("sleep heart-rate sample read model", () => {
         query: `SELECT toString(sleep_id) AS sleep_id, is_deleted
           FROM (${renderSleepHeartRateSql(targetTable, analyticsDatabase, postgresDatabase, true)})
           WHERE toString(sleep_id) = {sleepId:String}
-          SETTINGS join_use_nulls = 1`,
+          SETTINGS join_use_nulls = 1, enable_materialized_cte = 1`,
         query_params: { sleepId },
         format: "JSONEachRow",
       });

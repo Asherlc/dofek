@@ -30,6 +30,17 @@ SELECT * FROM block_commented
     expect(extractCteSql(sql, "line_commented")).toContain("SELECT 2");
   });
 
+  it("matches materialized CTE headers", () => {
+    const sql = `
+WITH reusable AS materialized (
+  SELECT 1 AS value
+)
+SELECT * FROM reusable
+`;
+
+    expect(extractCteSql(sql, "reusable")).toContain("SELECT 1");
+  });
+
   it("ignores parentheses inside quotes and SQL comments", () => {
     const sql = `
 WITH commented AS (

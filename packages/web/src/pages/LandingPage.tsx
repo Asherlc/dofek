@@ -1,4 +1,4 @@
-import { formatCaloriesMeasurement, formatDateYmd } from "@dofek/format/format";
+import { formatDateYmd } from "@dofek/format/format";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
 import { trpc } from "../lib/trpc.ts";
@@ -404,7 +404,7 @@ function HealthMonitorPreview() {
     { label: "Resting Heart Rate", value: "-" },
     { label: "Blood Oxygen", value: "98%" },
     { label: "Steps", value: "7,640" },
-    { label: "Active Energy", value: formatCaloriesMeasurement(407).text },
+    { label: "Respiratory Rate", value: "14 breaths/min" },
     { label: "Skin Temperature", value: units.formatTemperature(36.2).text },
   ] as const;
 

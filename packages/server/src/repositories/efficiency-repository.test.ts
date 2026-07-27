@@ -1,5 +1,5 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
-import { computePolarizationIndex, POLARIZATION_ZONES } from "@dofek/zones/zones";
+import { computePolarizationIndex } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
@@ -24,12 +24,12 @@ function makeSensorStore(rows: unknown[]): ActivitySensorStore {
     .fn()
     .mockImplementation(
       async (schema: { parse: (row: unknown) => unknown }, queryText?: string) => {
-        // Read model queries return empty → exercises fallback to deduped_sensor
-        if (
-          queryText?.includes("activity_aerobic_efficiency") ||
-          queryText?.includes("activity_polarization_zones")
-        ) {
+        // Aerobic-efficiency tests still exercise its live fallback.
+        if (queryText?.includes("activity_aerobic_efficiency")) {
           return [];
+        }
+        if (queryText?.includes("activity_polarization_zones")) {
+          return rows.map((row) => schema.parse(row));
         }
         if (queryText?.includes("toInt32(count()) AS endurance_activities")) {
           return [
@@ -616,25 +616,21 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     });
   });
 
-  it("issues a read-model attempt plus a fallback CH query", async () => {
+  it("uses one read-model query when no rows exist", async () => {
     const { repo, sensorStore } = makeRepository([]);
     await repo.getPolarizationTrend(ChartRange.fromDays(90));
-    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(sensorStore.query).toHaveBeenCalledTimes(1);
   });
 
-  it("filters polarization read model and fallback to cycling activity types", async () => {
+  it("filters the polarization read model to cycling activity types", async () => {
     const { repo, sensorStore } = makeRepository([]);
 
     await repo.getPolarizationTrend(ChartRange.fromDays(90));
 
     const readModelQuery = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    const fallbackQuery = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
     expect(readModelQuery).toContain("has({activityTypes:Array(String)}, activity_type)");
-    expect(fallbackQuery).toContain("has({activityTypes:Array(String)}, asum.activity_type)");
     expect(readModelQuery).not.toContain("enduranceTypes");
-    expect(fallbackQuery).not.toContain("enduranceTypes");
     expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[0]?.[2]?.activityTypes);
-    expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[1]?.[2]?.activityTypes);
   });
 
   it("keeps lower-bound filters for finite day ranges", async () => {
@@ -643,11 +639,8 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     await repo.getPolarizationTrend(ChartRange.fromDays(90));
 
     const readModelCall = vi.mocked(sensorStore.query).mock.calls[0];
-    const fallbackCall = vi.mocked(sensorStore.query).mock.calls[1];
     expect(readModelCall?.[1]).toContain("started_at > now() - INTERVAL {days:Int32} DAY");
-    expect(fallbackCall?.[1]).toContain("asum.started_at > now() - INTERVAL {days:Int32} DAY");
     expect(readModelCall?.[2]).toHaveProperty("days", 90);
-    expect(fallbackCall?.[2]).toHaveProperty("days", 90);
   });
 
   it("omits lower-bound filters when days is null", async () => {
@@ -656,26 +649,8 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     await repo.getPolarizationTrend(ChartRange.fromDays(null));
 
     const readModelCall = vi.mocked(sensorStore.query).mock.calls[0];
-    const fallbackCall = vi.mocked(sensorStore.query).mock.calls[1];
     expect(readModelCall?.[1]).not.toContain("started_at > now() - INTERVAL");
-    expect(fallbackCall?.[1]).not.toContain("asum.started_at > now() - INTERVAL");
     expect(readModelCall?.[2]).not.toHaveProperty("days");
-    expect(fallbackCall?.[2]).not.toHaveProperty("days");
-  });
-
-  it("uses the canonical Treff polarization zone boundaries in the query params", async () => {
-    const { repo, sensorStore } = makeRepository([]);
-
-    await repo.getPolarizationTrend(ChartRange.fromDays(90));
-
-    expect(sensorStore.query).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.any(String),
-      expect.objectContaining({
-        p1: POLARIZATION_ZONES[1]?.minPctHrmax,
-        p2: POLARIZATION_ZONES[2]?.minPctHrmax,
-      }),
-    );
   });
 
   it("returns maxHr as number (not null) when rows.length > 0", async () => {

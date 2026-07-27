@@ -18,8 +18,8 @@ function stubProvider(overrides: Partial<Provider> = {}): Provider {
 }
 
 describe("requiresPerUserConnect", () => {
-  it("exempts legacy and internal providers", () => {
-    expect(requiresPerUserConnect("ultrahuman")).toBe(false);
+  it("only exempts internal providers", () => {
+    expect(requiresPerUserConnect("ultrahuman")).toBe(true);
     expect(requiresPerUserConnect("auto-supplements")).toBe(false);
     expect(requiresPerUserConnect("amazfit-zepp")).toBe(true);
   });
@@ -43,11 +43,6 @@ describe("checkPerUserAuthCompliance", () => {
 
   it("accepts import-only providers without authSetup", () => {
     const provider = stubProvider({ id: "strong-csv", name: "Strong", importOnly: true as const });
-    expect(checkPerUserAuthCompliance(provider)).toEqual({ ok: true });
-  });
-
-  it("accepts legacy server-side providers without authSetup", () => {
-    const provider = stubProvider({ id: "ultrahuman", name: "Ultrahuman" });
     expect(checkPerUserAuthCompliance(provider)).toEqual({ ok: true });
   });
 
@@ -143,10 +138,30 @@ describe("checkPerUserAuthCompliance", () => {
     });
     expect(checkPerUserAuthCompliance(provider)).toEqual({ ok: true });
   });
+
+  it("accepts providers with a per-user manual token flow", () => {
+    const provider = stubProvider({
+      id: "token-provider",
+      name: "Token Provider",
+      authSetup: () => ({
+        manualToken: {
+          label: "Personal API token",
+          instructionsUrl: "https://example.com/settings/token",
+          exchangeToken: async () => ({
+            accessToken: "token",
+            refreshToken: null,
+            expiresAt: new Date(),
+            scopes: "read",
+          }),
+        },
+      }),
+    });
+    expect(checkPerUserAuthCompliance(provider)).toEqual({ ok: true });
+  });
 });
 
 describe("LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS", () => {
-  it("only grandfathered ultrahuman", () => {
-    expect([...LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS]).toEqual(["ultrahuman"]);
+  it("has no grandfathered deployment-wide user credentials", () => {
+    expect([...LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS]).toEqual([]);
   });
 });

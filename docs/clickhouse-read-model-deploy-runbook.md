@@ -128,8 +128,8 @@ Fix pattern:
 Start dependencies before integration tests:
 
 ```bash
-docker compose up -d db redis clickhouse
-docker compose ps db redis clickhouse
+pnpm compose:up
+pnpm compose -- ps db redis clickhouse redpanda
 ```
 
 Run the normal gates:
@@ -137,9 +137,8 @@ Run the normal gates:
 ```bash
 pnpm lint
 pnpm test:changed
-pnpm tsc --noEmit
-cd packages/server && pnpm tsc --noEmit
-cd packages/web && pnpm tsc --noEmit
+pnpm typecheck
+pnpm test:changed:all
 ```
 
 ClickHouse-heavy integration tests create isolated raw mirror databases and

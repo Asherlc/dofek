@@ -11,6 +11,7 @@ import type { ActivitySensorStore } from "./activity-repository.ts";
 import { MonthlyReportRepository } from "./monthly-report-repository.ts";
 
 const userId = "77777777-7777-4777-8777-777777777777";
+const emptyUserId = "66666666-6666-4666-8666-666666666666";
 const activityId = "88888888-8888-4888-8888-888888888888";
 
 describe("MonthlyReportRepository ClickHouse read models", () => {
@@ -171,5 +172,11 @@ describe("MonthlyReportRepository ClickHouse read models", () => {
       avgSleepTrend: null,
     });
     expect(report.history).toHaveLength(12);
+  });
+
+  it("returns the no-data result for an empty user", async () => {
+    const report = await new MonthlyReportRepository(emptyUserId, sensorStore).getReport(12);
+
+    expect(report).toEqual({ current: null, history: [] });
   });
 });

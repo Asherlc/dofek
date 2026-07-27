@@ -10,6 +10,7 @@ import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
 import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
+import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector.tsx";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
@@ -182,6 +183,10 @@ export function SettingsPage() {
 
       <PageSection title="MCP" subtitle="Connect remote MCP clients and manage access tokens">
         <McpTokensPanel />
+      </PageSection>
+
+      <PageSection title="Primary goal" subtitle="Choose the outcome Dofek should optimize toward">
+        <PrimaryGoalSelector showHeading={false} />
       </PageSection>
 
       <PageSection title="Units" subtitle="Choose how measurements are displayed">

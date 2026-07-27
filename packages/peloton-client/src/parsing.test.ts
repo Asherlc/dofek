@@ -117,6 +117,19 @@ describe("parseWorkout", () => {
 
     expect(parsed.raw.instructor).toBeUndefined();
   });
+
+  it("treats nullable completion and source identifiers as absent", () => {
+    const parsed = parseWorkout({
+      ...workout,
+      end_time: null,
+      peloton_id: null,
+      strava_id: null,
+    });
+
+    expect(parsed.endedAt).toBeUndefined();
+    expect(parsed.stravaId).toBeUndefined();
+    expect(parsed.raw.pelotonClassId).toBeUndefined();
+  });
 });
 
 describe("parsePerformanceGraph", () => {

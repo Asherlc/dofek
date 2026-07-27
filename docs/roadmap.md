@@ -20,7 +20,7 @@ New work should strengthen this loop. More providers, scores, charts, and standa
 
 Resolve public-facing trust problems and add product measurement before launching the next flagship feature.
 
-- [ ] Remove provider-estimated workout calories and active-energy values from marketing, Storybook fixtures, review data, screenshots, and other user-visible examples. Nutrition intake and expenditure inferred from observed body-weight change remain valid product concepts.
+- [x] Remove provider-estimated workout calories and active-energy values from marketing, Storybook fixtures, review data, screenshots, and other user-visible examples. Nutrition intake and expenditure inferred from observed body-weight change remain valid product concepts. See [`2026-07-26-remove-expenditure-examples.md`](superpowers/plans/2026-07-26-remove-expenditure-examples.md).
 - [ ] Regenerate the iOS App Store screenshots with internally consistent seeded data, correct layout coverage, and no blank or mostly-black assets; see [`app-store/screenshots`](../packages/mobile/app-store/screenshots).
 - [ ] Audit statistical fixtures so sample size, coefficients, significance, confidence language, and charts agree. Insufficient datasets must not imply that a relationship was measured; see [`2026-07-20-correlation-insufficient-statistics.md`](superpowers/plans/2026-07-20-correlation-insufficient-statistics.md).
 - [ ] Show the actual subscription price, billing period, trial or limited-access behavior, and cancellation terms on the landing page before signup; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx).
@@ -111,7 +111,7 @@ Turn the existing source-attribution, processing-status, freshness, and deduplic
 
 - [ ] Explain which sources contributed to a displayed number.
 - [ ] Show last successful sync, expected freshness, and coverage gaps.
-- [ ] Explain source conflicts and the priority or deduplication decision that resolved them.
+- [x] Explain source conflicts and the priority or deduplication decision that resolved them. ([#2058](https://github.com/Asherlc/dofek/issues/2058))
 - [ ] Answer “Why did this number change?” using versioned source and calculation evidence.
 - [ ] Provide direct remediation for stale, disconnected, or incomplete sources.
 - [ ] Let users inspect processing history without exposing infrastructure jargon by default.
@@ -149,8 +149,20 @@ Implemented first-run flow that helps a new user reach a useful dashboard quickl
 
 - Landing page Get started CTAs send users to login with `returnTo=/onboarding`; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx) and [`index.tsx`](../packages/web/src/routes/index.tsx).
 - Web and mobile render shared setup steps from `@dofek/onboarding`; see [`get-started-flow.ts`](../packages/onboarding/src/get-started-flow.ts), [`OnboardingPage.tsx`](../packages/web/src/pages/OnboardingPage.tsx), and [`onboarding.tsx`](../packages/mobile/app/onboarding.tsx).
+- Onboarding and settings persist a primary goal from shared options in `@dofek/onboarding/primary-goal`; see [`primary-goal.ts`](../packages/onboarding/src/primary-goal.ts), [`PrimaryGoalSelector.tsx`](../packages/web/src/components/PrimaryGoalSelector.tsx), and [`PrimaryGoalSelector.tsx`](../packages/mobile/components/PrimaryGoalSelector.tsx).
 - Web onboarding includes the public iOS TestFlight invite so Apple Health and mobile setup are first-class; see [`OnboardingPage.tsx`](../packages/web/src/pages/OnboardingPage.tsx).
 - Landing page copy frames correlations, trends, comparisons, Slack food logging, and cross-device source setup before signup; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx).
+
+### Goals, Calendar, and Plan Compliance
+
+Connect each daily decision to a longer-term outcome. First slice shipped: persist and edit primary goal. Deferred: event dates, planned/completed calendar merge, compliance explanations, recommendation adjustments, and plan import.
+
+- [x] Persist the goal selected during onboarding and allow it to be changed; see [`2026-07-26-primary-goal-selection.md`](superpowers/plans/2026-07-26-primary-goal-selection.md).
+- [ ] Support an event date or ongoing outcome target beyond the primary-goal taxonomy.
+- [ ] Present planned and completed work in a shared web/mobile calendar.
+- [ ] Explain plan deviations using recovery, availability, and completed-work evidence without moral judgment.
+- [ ] Adjust future recommendations when the user accepts a change or repeatedly dismisses a type of action.
+- [ ] Prefer importing existing structured plans and device calendars before building a broad custom plan-authoring system.
 
 ## Technical Backlog
 

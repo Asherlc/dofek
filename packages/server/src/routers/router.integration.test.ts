@@ -8,6 +8,7 @@ import { createApp } from "../index.ts";
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
+  seedClickHouseActivityPolarizationZone,
   seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
@@ -108,6 +109,7 @@ describe("Router coverage", () => {
     }
 
     // ── Cycling activities with metric_stream (1-second intervals) ──
+    let polarizationActivity: { id: string; startedAt: string } | null = null;
     for (let actIdx = 0; actIdx < 6; actIdx++) {
       const daysAgo = 5 + actIdx * 7;
       const durationSec = 1800;
@@ -128,6 +130,12 @@ describe("Router coverage", () => {
 
       if (actId) {
         const activityStartedAt = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+        if (actIdx === 0) {
+          polarizationActivity = {
+            id: actId,
+            startedAt: activityStartedAt.toISOString(),
+          };
+        }
         for (let s = 0; s < durationSec; s++) {
           const hr = avgHr + Math.round(Math.sin(s * 0.01) * 8);
           const power = avgPower + Math.round(Math.cos(s * 0.01) * 20);
@@ -316,6 +324,18 @@ describe("Router coverage", () => {
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
     await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    if (!polarizationActivity) {
+      throw new Error("Polarization activity fixture was not created");
+    }
+    await seedClickHouseActivityPolarizationZone(testCtx, {
+      activityId: polarizationActivity.id,
+      userId: TEST_USER_ID,
+      startedAt: polarizationActivity.startedAt,
+      maxHr: 190,
+      z1Seconds: 600,
+      z2Seconds: 300,
+      z3Seconds: 900,
+    });
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -1359,6 +1379,8 @@ describe("Router coverage", () => {
     });
 
     it("polarizationTrend returns weekly zone distribution", async () => {
+      await queryCache.invalidateByPrefix(`${TEST_USER_ID}:efficiency.polarizationTrend`);
+
       const result = await query<{
         maxHr: number | null;
         weeks: {
@@ -1371,14 +1393,13 @@ describe("Router coverage", () => {
       }>("efficiency.polarizationTrend", { days: 90 });
 
       expect(result.maxHr).toBe(190);
-      expect(Array.isArray(result.weeks)).toBe(true);
-
-      for (const week of result.weeks) {
-        expect(week.week).toBeTruthy();
-        expect(week.z1Seconds).toBeGreaterThanOrEqual(0);
-        expect(week.z2Seconds).toBeGreaterThanOrEqual(0);
-        expect(week.z3Seconds).toBeGreaterThanOrEqual(0);
-      }
+      expect(result.weeks).toHaveLength(1);
+      expect(result.weeks[0]).toMatchObject({
+        z1Seconds: 600,
+        z2Seconds: 300,
+        z3Seconds: 900,
+      });
+      expect(result.weeks[0]?.week).toBeTruthy();
     });
   });
 

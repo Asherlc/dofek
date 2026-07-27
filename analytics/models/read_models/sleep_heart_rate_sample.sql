@@ -5,7 +5,8 @@
     order_by='(user_id, sleep_id, recorded_date, recorded_at)',
     query_settings={
         'max_threads': 1,
-        'join_use_nulls': 1
+        'join_use_nulls': 1,
+        'enable_materialized_cte': 1
     }
 ) }}
 
@@ -118,6 +119,8 @@ current_sleep_state AS materialized (
         active_sleep.user_id AS user_id,
         active_sleep.sleep_id AS sleep_id,
         active_sleep.started_at AS started_at,
+        active_sleep.ended_at AS ended_at,
+        active_sleep.duration_seconds AS duration_seconds,
         greatest(
             active_sleep._peerdb_synced_at,
             heart_rate_refreshes.heart_rate_refreshed_at,
@@ -218,30 +221,16 @@ dirty_keys AS materialized (
 
 active_dirty_sleep AS (
     SELECT
-        active_sleep.sleep_id AS sleep_id,
-        active_sleep.user_id AS user_id,
-        active_sleep.started_at AS started_at,
-        active_sleep.ended_at AS ended_at,
-        active_sleep.duration_seconds AS duration_seconds,
-        greatest(
-            active_sleep._peerdb_synced_at,
-            coalesce(
-                activity_refreshes.activity_refreshed_at,
-                toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
-            ),
-            heart_rate_refreshes.heart_rate_refreshed_at
-        ) AS source_refreshed_at
-    FROM active_sleep
+        current_sleep_state.sleep_id AS sleep_id,
+        current_sleep_state.user_id AS user_id,
+        current_sleep_state.started_at AS started_at,
+        current_sleep_state.ended_at AS ended_at,
+        current_sleep_state.duration_seconds AS duration_seconds,
+        current_sleep_state.source_refreshed_at AS source_refreshed_at
+    FROM current_sleep_state
     INNER JOIN dirty_keys
-        ON dirty_keys.user_id = active_sleep.user_id
-        AND dirty_keys.sleep_id = active_sleep.sleep_id
-    INNER JOIN heart_rate_refreshes
-        ON heart_rate_refreshes.user_id = active_sleep.user_id
-        AND heart_rate_refreshes.sleep_id = active_sleep.sleep_id
-    LEFT JOIN activity_refreshes
-        ON activity_refreshes.user_id = active_sleep.user_id
-        AND activity_refreshes.sleep_id = active_sleep.sleep_id
-    WHERE active_sleep.is_nap = FALSE
+        ON dirty_keys.user_id = current_sleep_state.user_id
+        AND dirty_keys.sleep_id = current_sleep_state.sleep_id
 ),
 
 dirty_sleep_dates AS (
