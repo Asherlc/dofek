@@ -28,10 +28,19 @@ activity/member aliases for downstream models. `activity_sensor_sample` and
 `activity_location_sample` are bounded microbatch intermediates over sample
 time. `body_measurement` incrementally rebuilds only users whose body samples
 or priority inputs changed, and `analytics.v_body_measurement` is a thin
-active-row view over that dbt-owned canonical table. `sleep_heart_rate_sample`
-instead advances through at most 32 dirty sleep
-keys per incremental build, including lifecycle tombstones, so one accumulated
-sleep backlog cannot monopolize a build. dbt documents incremental models as
+active-row view over that dbt-owned canonical table. Insert-triggered
+materialized views reduce provider changes to compact `(user_id, provider_id)`
+arrival markers; `provider_change_watermark` reads only that compact state, and
+`provider_stats` recounts at most one dirty provider per build so provider
+inventory work cannot monopolize a cycle. A separate insert-triggered view
+reduces heart-rate arrivals to user/day markers. `sleep_heart_rate_window`
+uses those markers to process at most 32 exact sleep windows, including
+processed-empty and lifecycle rows, before `sleep_heart_rate_sample` reads
+canonical deduped samples only for the selected sleep keys. ClickHouse
+documents that incremental materialized views process newly inserted blocks
+and shift repeated computation from query time to insert time:
+<https://clickhouse.com/docs/materialized-view/incremental-materialized-view>.
+dbt documents incremental models as
 transforming only the rows selected by the model's incremental filter:
 <https://docs.getdbt.com/docs/build/incremental-models>.
 `resting_heart_rate_sleep_window` aggregates the
@@ -78,6 +87,7 @@ recovery, stress, sleep-need, and healthspan routes.
 Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `deduped_sensor`, `activity_source_records`, `activity_duplicate_matches`,
 `activity_duplicate_groups`, `deduped_activities`, `deduped_activity_members`,
+`provider_change_watermark`, `sleep_heart_rate_window`,
 `sleep_heart_rate_sample`, `resting_heart_rate_sleep_window`,
 `daily_sleep`, `daily_recovery_inputs`, `daily_recovery`, `activity_sensor_sample`, `activity_location_sample`,
 `activity_sensor_summary_rows`, `activity_location_summary_rows`,

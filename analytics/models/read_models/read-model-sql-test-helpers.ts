@@ -9,6 +9,10 @@ export function readModelSql(modelFileName: string): string {
   }
 }
 
+export function compactWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ");
+}
+
 function skipSqlLineComment(sql: string, startIndex: number): number {
   let cursorIndex = startIndex + 2;
   while (cursorIndex < sql.length && sql[cursorIndex] !== "\n") {

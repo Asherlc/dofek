@@ -18665,3 +18665,45 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   comments on a version pull request, which has not yet been observed. Any
   future credential must be created in Infisical, never with `gh secret set`,
   or the next sync will prune it the same way.
+## 2026-07-27 — Analytics provider_stats and sleep_heart_rate_sample timeout (DOFEK-SERVER-5A)
+
+- **Status:** Direct fix validated locally; PR, deployment, and production
+  validation pending.
+- **Symptoms:** The current production release repeatedly timed out its serial
+  analytics build at the 240-second ClickHouse query ceiling in
+  `provider_stats` and `sleep_heart_rate_sample`.
+- **User impact:** Provider inventory counts and sleep, resting-heart-rate,
+  recovery, training, and healthspan read models could remain stale because
+  the failed cycle never reached downstream models or cache warming.
+- **Evidence:** The `provider_stats` failure read 141,559,912 rows / 5.82 GiB
+  and failed after 280.5 seconds. The following sleep build read 8,321,456
+  rows / 355 MiB and failed after 240.0 seconds. The provider model scanned
+  all historical source rows merely to discover dirty providers; the sleep
+  model joined sleep sessions to sample-grain heart-rate data before applying
+  its dirty-key limit.
+- **Root cause:** Dirty-key discovery was logically incremental but not
+  physically bounded by the ClickHouse sort keys, so time predicates still
+  selected most historical granules before the provider/sleep batch limits
+  could take effect.
+- **Fix / mitigation:** Insert-triggered ClickHouse materialized views now
+  record compact provider-key and heart-rate user/day arrival state. Provider
+  inventory reads only compact dirty markers and recounts one exact provider
+  per build. A state-only `sleep_heart_rate_window` processes at most 32 exact
+  sleep keys, records processed-empty and lifecycle state, and leaves sensor
+  samples canonical in `sleep_heart_rate_sample`. Initial work is bounded,
+  full refresh is disabled for the bounded targets, old rows outside bootstrap
+  remain live, and post-cutover changes to old sleeps are still admitted.
+  ClickHouse documents that incremental materialized views process only newly
+  inserted blocks:
+  <https://clickhouse.com/docs/materialized-view/incremental-materialized-view>.
+  No timeout, retry, or resource limit changed.
+- **Validation:** Focused provider and sleep unit suites pass, including 58
+  sleep-focused tests. Sixteen real-ClickHouse integration cases pass across
+  the provider and sleep paths, covering delayed arrivals, connection
+  tombstones, exact current-row counts, bounded convergence, processed-empty
+  sleeps, actual source tombstones, and old post-cutover deletion. Analytics
+  SQL lint/policy checks and `git diff --check` also pass.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy without
+  changing the four-minute ceiling, observe a complete production analytics
+  cycle with bounded row reads and downstream cache warming, then resolve
+  DOFEK-SERVER-5A.

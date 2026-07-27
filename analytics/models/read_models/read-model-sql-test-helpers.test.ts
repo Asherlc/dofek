@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { extractCteSql } from "./read-model-sql-test-helpers.ts";
+import { compactWhitespace, extractCteSql } from "./read-model-sql-test-helpers.ts";
+
+describe("compactWhitespace", () => {
+  it("collapses each whitespace run to one space", () => {
+    expect(compactWhitespace("SELECT\n  value\tFROM source")).toBe("SELECT value FROM source");
+  });
+});
 
 describe("extractCteSql", () => {
   it("matches CTE names case-insensitively with flexible whitespace", () => {

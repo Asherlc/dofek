@@ -5,6 +5,9 @@ sources:
     schema: analytics
     tables:
       - name: body_measurement_sample
+      - name: heart_rate_day_change
+      - name: provider_change_state
+      - name: sleep_heart_rate_cutover
       - name: v_activity
       - name: v_activity_members
   - name: ingest
