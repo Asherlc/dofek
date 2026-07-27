@@ -99,7 +99,7 @@ describe("production analytics read-model build", () => {
       "provider_stats",
     ]);
     expect(sleepDashboardMatch?.[1]?.split(" ")).toEqual([
-      "heart_rate_day_freshness",
+      "sleep_heart_rate_window",
       "sleep_heart_rate_sample",
       "resting_heart_rate_sleep_window",
       "daily_sleep",
@@ -127,39 +127,49 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("incremental_strategy='append'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
-    expect(sql).toContain("initial_lookback_days");
+    expect(sql).toContain("full_refresh=false");
     expect(sql).toContain("sleep_dirty_key_batch_size");
     expect(sql).toContain("existing_sleep_state AS");
-    expect(sql).toContain("current_sleep_state AS");
-    expect(sql).toContain("heart_rate_refreshes AS");
-    expect(sql).toContain("ref('heart_rate_day_freshness')");
-    expect(compactWhitespace(sql)).not.toContain(
-      "ref('deduped_sensor') }} AS samples FINAL INNER JOIN active_sleep",
-    );
-    expect(sql).toContain("activity_refreshes AS");
+    expect(sql).toContain("current_windows AS");
+    expect(sql).toContain("ref('sleep_heart_rate_window')");
+    expect(sql).toContain("ref('deduped_sensor')");
+    expect(sql).toContain("source('postgres_fitness', 'activity')");
     expect(sql).toContain("source_dirty_sleep_keys AS");
     expect(sql).toContain("stale_sleep_dirty_keys AS");
-    expect(sql).toContain("candidate_dirty_keys AS");
     expect(normalizedSql).toContain("LIMIT {{ sleep_dirty_key_batch_size }}");
-    expect(sql).toContain("current_sleep_state AS materialized");
     expect(sql).toContain("existing_sleep_state AS materialized");
     expect(sql).toContain("dirty_keys AS materialized");
     expect(sql).toContain("merged_samples AS");
     expect(sql).toContain("FULL OUTER JOIN existing_samples");
-    expect(sql).toContain("ref('deduped_sensor')");
-    expect(sql).toContain("source('postgres_fitness', 'sleep_session')");
-    expect(sql).toContain("source('postgres_fitness', 'activity')");
-    expect(sql).toContain("channel = 'heart_rate'");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(sql).toContain("assumeNotNull(sleep_id) AS sleep_id");
     expect(sql).toContain("assumeNotNull(user_id) AS user_id");
     expect(sql).toContain("assumeNotNull(recorded_at) AS recorded_at");
     expect(sql).toContain("assumeNotNull(recorded_date) AS recorded_date");
-    expect(normalizedSql).toContain("source_refreshed_at > existing_sleep_state.refreshed_at");
+    expect(normalizedSql).toContain(
+      "current_windows.refreshed_at > existing_sleep_state.refreshed_at",
+    );
     expect(normalizedSql).not.toContain("target_state AS");
     expect(normalizedSql).not.toContain("last_refreshed_at");
     expect(normalizedSql).not.toContain("incremental_strategy='microbatch'");
     expect(normalizedSql).not.toContain("lookback=");
+  });
+
+  it("materializes exact sleep windows in bounded batches", () => {
+    expect(existsSync(new URL("./sleep_heart_rate_window.sql", import.meta.url))).toBe(true);
+    const sql = readModel("sleep_heart_rate_window");
+    const normalizedSql = compactWhitespace(sql);
+
+    expect(sql).toContain("incremental_strategy='append'");
+    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("full_refresh=false");
+    expect(sql).toContain("source('analytics', 'heart_rate_day_change')");
+    expect(sql).toContain("ref('deduped_sensor')");
+    expect(sql).toContain("eligible_sample_count");
+    expect(normalizedSql).toContain("LIMIT {{ sleep_dirty_key_batch_size }}");
+    expect(normalizedSql).not.toContain(
+      "{% if is_incremental() %} LIMIT {{ sleep_dirty_key_batch_size }}",
+    );
   });
 
   it("aggregates resting heart rate from the bounded sleep intermediary", () => {

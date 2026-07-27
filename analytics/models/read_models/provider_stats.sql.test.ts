@@ -18,11 +18,12 @@ describe("provider_stats model", () => {
     const normalizedSql = compactWhitespace(modelSql);
 
     expect(modelSql).toContain("ref('provider_change_watermark')");
+    expect(modelSql).toContain("full_refresh=false");
     expect(modelSql).not.toContain("source_provider_refreshes AS");
     expect(modelSql).toContain("current_provider_state AS");
     expect(modelSql).toContain("existing_provider_state AS");
     expect(modelSql).toContain("source_dirty_providers AS");
-    expect(modelSql).toContain("stale_providers AS");
+    expect(modelSql).not.toContain("stale_providers AS");
     expect(modelSql).toContain("metric_stream_current AS");
     expect(modelSql).toContain("argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted");
     expect(modelSql).toContain("'enable_materialized_cte': 1");

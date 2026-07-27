@@ -1,8 +1,7 @@
-{% set provider_change_watermark_lookback_hours = var('provider_change_watermark_lookback_hours', 6) %}
-
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
+    full_refresh=false,
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, provider_id)',
     query_settings={
@@ -11,152 +10,39 @@
     }
 ) }}
 
-WITH
-{% if is_incremental() %}
-watermark AS (
-    SELECT max(changed_at) AS max_changed_at
-    FROM {{ this }} FINAL
+WITH source_provider_state AS (
+    SELECT
+        user_id,
+        provider_id,
+        max(changed_at) AS changed_at
+    FROM {{ source('analytics', 'provider_change_state') }}
+    GROUP BY user_id, provider_id
 ),
 
-scan_cutoff AS (
+{% if is_incremental() %}
+existing_provider_state AS (
     SELECT
-        coalesce(
-            max_changed_at,
-            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
-        ) - INTERVAL {{ provider_change_watermark_lookback_hours }} HOUR AS cutoff_at
-    FROM watermark
+        user_id,
+        provider_id,
+        max(changed_at) AS changed_at
+    FROM {{ this }} FINAL
+    GROUP BY user_id, provider_id
 ),
 {% endif %}
 
-source_provider_refreshes AS (
-    SELECT
-        user_id,
-        id AS provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'provider') }} FINAL
-    {% if is_incremental() %}
-    WHERE _peerdb_synced_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
-    GROUP BY user_id, id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    {% if is_incremental() %}
-    WHERE _peerdb_synced_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'daily_metrics') }} FINAL
-    {% if is_incremental() %}
-    WHERE _peerdb_synced_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'sleep_session') }} FINAL
-    {% if is_incremental() %}
-    WHERE _peerdb_synced_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(ingested_at) AS source_refreshed_at
-    FROM {{ source('ingest', 'metric_stream') }}
-    {% if is_incremental() %}
-    WHERE ingested_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM analytics.body_measurement_sample FINAL
-    {% if is_incremental() %}
-    WHERE _peerdb_synced_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'food_entry') }} FINAL
-    {% if is_incremental() %}
-    WHERE _peerdb_synced_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'health_event') }} FINAL
-    {% if is_incremental() %}
-    WHERE _peerdb_synced_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'lab_panel') }} FINAL
-    {% if is_incremental() %}
-    WHERE _peerdb_synced_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'lab_result') }} FINAL
-    {% if is_incremental() %}
-    WHERE _peerdb_synced_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'journal_entry') }} FINAL
-    {% if is_incremental() %}
-    WHERE _peerdb_synced_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
-    GROUP BY user_id, provider_id
-),
-
 changed_providers AS (
     SELECT
-        user_id,
-        provider_id,
-        max(source_refreshed_at) AS changed_at
-    FROM source_provider_refreshes
-    GROUP BY user_id, provider_id
+        source_provider_state.user_id AS user_id,
+        source_provider_state.provider_id AS provider_id,
+        source_provider_state.changed_at AS changed_at
+    FROM source_provider_state
+    {% if is_incremental() %}
+    LEFT JOIN existing_provider_state
+        ON existing_provider_state.user_id = source_provider_state.user_id
+        AND existing_provider_state.provider_id = source_provider_state.provider_id
+    WHERE existing_provider_state.provider_id IS NULL
+        OR source_provider_state.changed_at > existing_provider_state.changed_at
+    {% endif %}
 ),
 
 refresh_clock AS (
@@ -166,12 +52,10 @@ refresh_clock AS (
 )
 
 SELECT
-    assumeNotNull(changed_providers.user_id) AS user_id,
-    assumeNotNull(changed_providers.provider_id) AS provider_id,
+    changed_providers.user_id AS user_id,
+    changed_providers.provider_id AS provider_id,
     changed_providers.changed_at AS changed_at,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
 FROM changed_providers
 CROSS JOIN refresh_clock
-WHERE changed_providers.user_id IS NOT NULL
-    AND changed_providers.provider_id IS NOT NULL

@@ -3,6 +3,7 @@
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
+    full_refresh=false,
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, provider_id)',
     query_settings={
@@ -47,33 +48,12 @@ source_dirty_providers AS (
     {% endif %}
 ),
 
-{% if is_incremental() %}
-stale_providers AS (
-    SELECT
-        existing_provider_state.user_id AS user_id,
-        existing_provider_state.provider_id AS provider_id
-    FROM existing_provider_state
-    LEFT JOIN current_provider_state
-        ON current_provider_state.user_id = existing_provider_state.user_id
-        AND current_provider_state.provider_id = existing_provider_state.provider_id
-    WHERE current_provider_state.provider_id IS NULL
-),
-{% endif %}
-
 candidate_dirty_providers AS (
     SELECT
         source_dirty_providers.user_id AS user_id,
         source_dirty_providers.provider_id AS provider_id,
         source_dirty_providers.source_changed_at AS source_changed_at
     FROM source_dirty_providers
-    {% if is_incremental() %}
-    UNION DISTINCT
-    SELECT
-        stale_providers.user_id AS user_id,
-        stale_providers.provider_id AS provider_id,
-        toDateTime64('1970-01-01 00:00:00', 9, 'UTC') AS source_changed_at
-    FROM stale_providers
-    {% endif %}
 ),
 
 providers AS materialized (
@@ -93,8 +73,13 @@ providers AS materialized (
         candidate_dirty_providers.source_changed_at ASC,
         candidate_dirty_providers.user_id,
         candidate_dirty_providers.provider_id
-    LIMIT {{ provider_dirty_key_batch_size }}
+    {% else %}
+    ORDER BY
+        candidate_dirty_providers.source_changed_at ASC,
+        candidate_dirty_providers.user_id,
+        candidate_dirty_providers.provider_id
     {% endif %}
+    LIMIT {{ provider_dirty_key_batch_size }}
 ),
 
 metric_stream_current AS (

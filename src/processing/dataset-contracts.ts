@@ -23,7 +23,7 @@ export const PRODUCTION_DBT_MODELS = [
   "daily_cycling",
   "provider_change_watermark",
   "provider_stats",
-  "heart_rate_day_freshness",
+  "sleep_heart_rate_window",
   "sleep_heart_rate_sample",
   "resting_heart_rate_sleep_window",
   "daily_sleep",
@@ -190,7 +190,7 @@ export const DATASET_CONTRACTS = [
       },
     ],
     analyticsModels: [
-      "heart_rate_day_freshness",
+      "sleep_heart_rate_window",
       "sleep_heart_rate_sample",
       "resting_heart_rate_sleep_window",
       "daily_sleep",
@@ -298,6 +298,7 @@ export const DATASET_CONTRACTS = [
         path: "relational",
         sources: [
           "provider",
+          "provider_connection",
           "activity",
           "daily_metrics",
           "sleep_session",
