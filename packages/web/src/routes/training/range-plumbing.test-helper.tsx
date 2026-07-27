@@ -118,7 +118,27 @@ vi.mock("../../lib/trpc.ts", () => ({
       hrvVariability: { useQuery: recordQuery("recovery.hrvVariability") },
       readinessScore: { useQuery: recordQuery("recovery.readinessScore") },
       sleepAnalytics: { useQuery: recordQuery("recovery.sleepAnalytics") },
-      workloadRatio: { useQuery: recordQuery("recovery.workloadRatio") },
+      workloadRatio: {
+        useQuery: (input: unknown, options?: unknown) => {
+          state.queryCalls.push({ name: "recovery.workloadRatio", input, options });
+          return {
+            data: {
+              context: {
+                label: "Recent-to-baseline workload ratio",
+                description:
+                  "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+                recentDays: 7,
+                baselineDays: 28,
+              },
+              displayedStrain: 0,
+              displayedDate: null,
+              timeSeries: [],
+            },
+            isLoading: false,
+            error: null,
+          };
+        },
+      },
     },
     strength: {
       estimatedOneRepMax: { useQuery: recordQuery("strength.estimatedOneRepMax") },

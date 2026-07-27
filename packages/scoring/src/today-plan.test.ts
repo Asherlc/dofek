@@ -91,7 +91,7 @@ describe("buildTodayPlan", () => {
     expect(plan.action.zone).toBe("Maintain");
     expect(plan.supportingFacts).toEqual([
       { label: "Recovery", value: "60/100" },
-      { label: "Workload ratio", value: "1.12" },
+      { label: "Recent-to-baseline workload ratio", value: "1.12" },
     ]);
     expect(plan.confidence).toBe("moderate");
     expect(plan.missingInputs).toEqual(["sleep"]);

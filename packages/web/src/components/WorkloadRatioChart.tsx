@@ -1,9 +1,7 @@
 import { formatDateShort, formatNumber, formatTrainingLoad } from "@dofek/format/format";
-import { statusColors, surfaceColors } from "@dofek/scoring/colors";
-import type { WorkloadRatioRow } from "dofek-server/types";
+import type { WorkloadRatioResult, WorkloadRatioRow } from "dofek-server/types";
 import {
   chartColors,
-  chartThemeColors,
   dofekAxis,
   dofekLegend,
   dofekSeries,
@@ -14,10 +12,11 @@ import { DofekChart } from "./DofekChart.tsx";
 
 interface WorkloadRatioChartProps {
   data: WorkloadRatioRow[];
+  context?: WorkloadRatioResult["context"];
   loading?: boolean;
 }
 
-export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
+export function WorkloadRatioChart({ data, context, loading }: WorkloadRatioChartProps) {
   if (loading) {
     return <DofekChart option={{}} loading={true} height={400} />;
   }
@@ -26,7 +25,12 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
     return <DofekChart option={{}} empty={true} height={400} emptyMessage="No workload data" />;
   }
 
-  const dates = data.map((d) => d.date);
+  if (!context) {
+    throw new Error("Workload ratio context is required when chart data is present");
+  }
+
+  const recentLoadLabel = `Recent ${context.recentDays}-day Load`;
+  const baselineLoadLabel = `${context.baselineDays}-day Baseline Load`;
 
   const option = {
     tooltip: dofekTooltip({
@@ -58,7 +62,9 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
       },
     }),
     axisPointer: { link: [{ xAxisIndex: "all" }] },
-    legend: dofekLegend(true, { data: ["Workload Ratio", "Acute Load", "Chronic Load"] }),
+    legend: dofekLegend(true, {
+      data: ["Recent / baseline", recentLoadLabel, baselineLoadLabel],
+    }),
     grid: [
       { top: 40, right: 20, bottom: "55%", left: 50 },
       { top: "55%", right: 20, bottom: 30, left: 50 },
@@ -75,7 +81,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
     ],
     yAxis: [
       {
-        ...dofekAxis.value({ name: "Workload Ratio", min: 0 }),
+        ...dofekAxis.value({ name: "Recent / baseline", min: 0 }),
         gridIndex: 0,
       },
       {
@@ -87,89 +93,10 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
       },
     ],
     series: [
-      // Risk zones for Workload Ratio (top grid)
-      // Green zone: 0.8-1.3
-      {
-        name: "_zoneGreen",
-        type: "line",
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: [
-          [dates[0], 1.3],
-          [dates[dates.length - 1], 1.3],
-        ],
-        symbol: "none",
-        lineStyle: { width: 0 },
-        areaStyle: { color: statusColors.positive, opacity: 0.08, origin: "start" },
-        z: 0,
-        silent: true,
-      },
-      {
-        name: "_zoneClear",
-        type: "line",
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: [
-          [dates[0], 0.8],
-          [dates[dates.length - 1], 0.8],
-        ],
-        symbol: "none",
-        lineStyle: { width: 0 },
-        areaStyle: { color: surfaceColors.background, opacity: 1, origin: "start" },
-        z: 0,
-        silent: true,
-      },
-      // Yellow zones: 0.5-0.8 and 1.3-1.5
-      {
-        name: "_zoneYellowLow",
-        type: "line",
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: [
-          [dates[0], 0.8],
-          [dates[dates.length - 1], 0.8],
-        ],
-        symbol: "none",
-        lineStyle: { width: 0 },
-        areaStyle: { color: statusColors.warning, opacity: 0.06, origin: "start" },
-        z: 0,
-        silent: true,
-      },
-      {
-        name: "_zoneYellowHigh",
-        type: "line",
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: [
-          [dates[0], 1.5],
-          [dates[dates.length - 1], 1.5],
-        ],
-        symbol: "none",
-        lineStyle: { width: 0 },
-        areaStyle: { color: statusColors.warning, opacity: 0.06, origin: "start" },
-        z: 0,
-        silent: true,
-      },
-      // Red zone: >1.5
-      {
-        name: "_zoneRed",
-        type: "line",
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: [
-          [dates[0], 2.5],
-          [dates[dates.length - 1], 2.5],
-        ],
-        symbol: "none",
-        lineStyle: { width: 0 },
-        areaStyle: { color: statusColors.danger, opacity: 0.06, origin: "start" },
-        z: 0,
-        silent: true,
-      },
-      // Workload Ratio line (top grid)
+      // Recent-to-baseline ratio line (top grid)
       {
         ...dofekSeries.line(
-          "Workload Ratio",
+          "Recent / baseline",
           data.map((d) => [d.date, d.workloadRatio]),
           {
             color: chartColors.amber,
@@ -180,25 +107,10 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         xAxisIndex: 0,
         yAxisIndex: 0,
       },
-      // Optimal reference line at 1.0
-      {
-        name: "_optimal",
-        type: "line",
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: [
-          [dates[0], 1.0],
-          [dates[dates.length - 1], 1.0],
-        ],
-        symbol: "none",
-        lineStyle: { color: chartThemeColors.axisLabel, width: 1, type: "dashed" as const },
-        z: 1,
-        silent: true,
-      },
-      // Acute load area (bottom grid)
+      // Recent load area (bottom grid)
       {
         ...dofekSeries.line(
-          "Acute Load",
+          recentLoadLabel,
           data.map((d) => [d.date, d.acuteLoad]),
           {
             color: chartColors.pink,
@@ -209,10 +121,10 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         xAxisIndex: 1,
         yAxisIndex: 1,
       },
-      // Chronic load area (bottom grid)
+      // Baseline load area (bottom grid)
       {
         ...dofekSeries.line(
-          "Chronic Load",
+          baselineLoadLabel,
           data.map((d) => [d.date, d.chronicLoad]),
           {
             color: chartColors.blue,

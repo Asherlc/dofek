@@ -12,7 +12,6 @@ import {
   scoreLabel,
   sleepTierColor,
   sleepTierDescription,
-  WorkloadRatio,
 } from "@dofek/scoring/scoring";
 import { duration, easing } from "@dofek/scoring/tokens";
 import type {
@@ -268,47 +267,31 @@ function StrainBreakdown({
       )}
 
       {/* Load stats */}
-      {strainTarget && (
-        <div className="grid grid-cols-2 gap-2 text-center">
-          <div>
-            <p className="text-sm font-bold text-foreground tabular-nums">
-              {strainTarget.currentStrain.toFixed(1)}
-            </p>
-            <p className="text-[10px] text-subtle">Today</p>
-          </div>
-          <div>
-            <p className="text-sm font-bold text-foreground tabular-nums">
-              {strainTarget.workloadRatio != null ? strainTarget.workloadRatio.toFixed(2) : "--"}
-            </p>
-            <p className="text-[10px] text-subtle">Training Load Ratio</p>
-          </div>
-        </div>
-      )}
-
-      {/* Load stats */}
       <div className="grid grid-cols-3 gap-2 text-center">
         <div>
           <p className="text-sm font-bold text-foreground tabular-nums">
             {formatTrainingLoad(acuteLoad)}
           </p>
-          <p className="text-[10px] text-subtle">Acute (7d)</p>
+          <p className="text-[10px] text-subtle">
+            Recent {workloadRatio.context.recentDays}-day load
+          </p>
         </div>
         <div>
           <p className="text-sm font-bold text-foreground tabular-nums">
             {formatTrainingLoad(chronicLoad)}
           </p>
-          <p className="text-[10px] text-subtle">Chronic (28d)</p>
+          <p className="text-[10px] text-subtle">
+            {workloadRatio.context.baselineDays}-day baseline load
+          </p>
         </div>
         <div>
-          <p
-            className="text-sm font-bold tabular-nums"
-            style={{ color: new WorkloadRatio(ratio ?? null).color }}
-          >
+          <p className="text-sm font-bold text-foreground tabular-nums">
             {ratio != null ? ratio.toFixed(2) : "--"}
           </p>
-          <p className="text-[10px] text-subtle">Workload Ratio</p>
+          <p className="text-[10px] text-subtle">{workloadRatio.context.label}</p>
         </div>
       </div>
+      <p className="text-[11px] text-dim">{workloadRatio.context.description}</p>
     </div>
   );
 }

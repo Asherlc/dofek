@@ -57,14 +57,15 @@ function RecoveryTab() {
         </Section>
 
         <Section
-          title="Acute:Chronic Workload Ratio"
-          subtitle="7-day vs 28-day training load ratio — stay between 0.8 and 1.3"
+          title={workloadRatio.data?.context.label ?? "Training load comparison"}
+          subtitle={workloadRatio.data?.context.description}
         >
           {workloadRatio.error && !workloadRatio.data ? (
             <QueryStatePanel error={workloadRatio.error} />
           ) : (
             <WorkloadRatioChart
               data={workloadRatio.data?.timeSeries ?? []}
+              context={workloadRatio.data?.context}
               loading={workloadRatio.isLoading}
             />
           )}

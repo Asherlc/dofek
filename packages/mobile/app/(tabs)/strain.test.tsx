@@ -46,6 +46,13 @@ const mockPolarizationState: MockTrainingState = {
 function defaultMockTrainingData(): MockTrainingData {
   return {
     workloadRatio: {
+      context: {
+        label: "Recent-to-baseline workload ratio",
+        description:
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+        recentDays: 7,
+        baselineDays: 28,
+      },
       displayedStrain: 16,
       displayedDate: "2026-03-28",
       timeSeries: [
@@ -399,15 +406,14 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("71% reached")).toBeTruthy();
   });
 
-  it("shows today's load separately from the rolling training load ratio", async () => {
+  it("shows the neutral server-owned workload comparison", async () => {
     mockTrainingState.data = {
       strainTarget: {
         targetStrain: 12,
         currentStrain: 0,
         progressPercent: 0,
         zone: "Maintain",
-        explanation:
-          "Your recent training load is elevated, so today's target is capped to reduce injury risk.",
+        explanation: "Moderate recovery (50). Aim for a steady training day.",
         dailyLoad: 0,
         acuteLoad: 133,
         chronicLoad: 33,
@@ -415,6 +421,13 @@ describe("StrainScreen recent activity navigation", () => {
         readinessScore: 50,
       },
       workloadRatio: {
+        context: {
+          label: "Recent-to-baseline workload ratio",
+          description:
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+          recentDays: 5,
+          baselineDays: 20,
+        },
         displayedStrain: 0,
         displayedDate: "2026-03-28",
         timeSeries: [
@@ -436,15 +449,28 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
-    expect(screen.getAllByText("Today").length).toBeGreaterThan(0);
-    expect(screen.getByText("Training Load Ratio")).toBeTruthy();
-    expect(screen.getAllByText("4.00").length).toBeGreaterThan(0);
+    expect(screen.getByText("Recent-to-baseline workload ratio")).toBeTruthy();
+    expect(screen.getByText("Recent 5-day load")).toBeTruthy();
+    expect(screen.getByText("20-day baseline load")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("4.00")).toBeTruthy();
   });
 
   it("does not use a prior displayed strain as today's strain fallback", async () => {
     mockTrainingState.data = {
       strainTarget: undefined,
       workloadRatio: {
+        context: {
+          label: "Recent-to-baseline workload ratio",
+          description:
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+          recentDays: 7,
+          baselineDays: 28,
+        },
         displayedStrain: 13,
         displayedDate: "2026-03-27",
         timeSeries: [

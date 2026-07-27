@@ -1,5 +1,4 @@
 import { StrainScore } from "@dofek/scoring/scoring";
-import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -28,7 +27,11 @@ import {
   type StrainTargetResult,
   strainTargetReadinessRowSchema,
 } from "./strain-target-result.ts";
-import type { WorkloadRatioResult } from "./workload-ratio.ts";
+import {
+  buildWorkloadRatioResult,
+  type WorkloadRatioResult,
+  workloadRatioResultSchema,
+} from "./workload-ratio.ts";
 
 export interface MobileTrainingTabResult {
   workloadRatio: WorkloadRatioResult;
@@ -73,12 +76,7 @@ function computeWorkloadRatio(rows: z.infer<typeof strainRowSchema>[]): Workload
         row.workload_ratio != null ? Math.round(Number(row.workload_ratio) * 100) / 100 : null,
     };
   });
-  const displayed = selectRecentDailyLoad(timeSeries);
-  return {
-    timeSeries,
-    displayedStrain: displayed?.strain ?? 0,
-    displayedDate: displayed?.date ?? null,
-  };
+  return buildWorkloadRatioResult(timeSeries);
 }
 
 export async function loadMobileTrainingTab(
@@ -201,20 +199,7 @@ export async function loadMobileTrainingTab(
 }
 
 export const mobileTrainingTabOutputSchema = z.object({
-  workloadRatio: z.object({
-    timeSeries: z.array(
-      z.object({
-        date: z.string(),
-        dailyLoad: z.number(),
-        strain: z.number(),
-        acuteLoad: z.number(),
-        chronicLoad: z.number(),
-        workloadRatio: z.number().nullable(),
-      }),
-    ),
-    displayedStrain: z.number(),
-    displayedDate: z.string().nullable(),
-  }),
+  workloadRatio: workloadRatioResultSchema,
   strainTarget: z
     .object({
       targetStrain: z.number(),

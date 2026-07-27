@@ -39,7 +39,6 @@ const weekSummarySchema = z.object({
   weekStart: z.string(),
   trainingHours: z.number(),
   activityCount: z.number(),
-  strainZone: z.enum(["restoring", "optimal", "overreaching"]),
   avgDailyLoad: z.number(),
   avgSleepMinutes: z.number(),
   sleepPerformancePct: z.number(),
