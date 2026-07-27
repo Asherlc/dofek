@@ -1,5 +1,5 @@
 import { formatDateYmd } from "@dofek/format/format";
-import { PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
+import { CYCLE_TRACKING_SAFETY_NOTICE, PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Stack } from "expo-router";
 import { useState } from "react";
@@ -85,6 +85,14 @@ export default function CycleScreen() {
               minHeight={72}
             />
           ) : null}
+          <View
+            accessible
+            accessibilityLabel={`Cycle tracking safety notice. ${CYCLE_TRACKING_SAFETY_NOTICE}`}
+            style={styles.safetyNotice}
+          >
+            <Text style={styles.safetyNoticeTitle}>Tracking limitation</Text>
+            <Text style={styles.safetyNoticeText}>{CYCLE_TRACKING_SAFETY_NOTICE}</Text>
+          </View>
         </View>
 
         <View style={styles.card}>
@@ -216,6 +224,25 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: 12,
     marginTop: 2,
+  },
+  safetyNotice: {
+    backgroundColor: colors.surfaceSecondary,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+    marginTop: 12,
+    padding: 12,
+  },
+  safetyNoticeTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  safetyNoticeText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
   },
   emptyText: {
     color: colors.textTertiary,
