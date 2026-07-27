@@ -5,6 +5,7 @@ import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel.tsx";
+import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
@@ -190,6 +191,13 @@ export function SettingsPage() {
 
       <PageSection title="Units" subtitle="Choose how measurements are displayed">
         <UnitSystemToggle />
+      </PageSection>
+
+      <PageSection
+        title="Medication Reminders"
+        subtitle="Optional daily reminders with imported logging state"
+      >
+        <MedicationRemindersPanel />
       </PageSection>
 
       <PageSection title="Medication Doses" subtitle="Review imported medication dose events">

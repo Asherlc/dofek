@@ -518,6 +518,20 @@ vi.mock("expo-updates", () => ({
   isEmbeddedLaunch: true,
 }));
 
+vi.mock("expo-notifications", () => ({
+  SchedulableTriggerInputTypes: {
+    DAILY: "daily",
+  },
+  addNotificationResponseReceivedListener: vi.fn(() => ({ remove: vi.fn() })),
+  cancelScheduledNotificationAsync: vi.fn(async () => undefined),
+  getAllScheduledNotificationsAsync: vi.fn(async () => []),
+  getLastNotificationResponse: vi.fn(() => null),
+  getPermissionsAsync: vi.fn(async () => ({ status: "undetermined" })),
+  requestPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
+  scheduleNotificationAsync: vi.fn(async () => "notification-id"),
+  setNotificationHandler: vi.fn(),
+}));
+
 // ── WHOOP BLE native module mock ───────────────────────────────────
 vi.mock("./modules/whoop-ble", () => ({
   isBluetoothAvailable: vi.fn(() => false),

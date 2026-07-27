@@ -6,6 +6,7 @@
   "exports": {
     "./format": "./src/format.ts",
     "./medication-dose-events": "./src/medication-dose-events.ts",
+    "./medication-reminders": "./src/medication-reminders.ts",
     "./units": "./src/units.ts"
   },
   "dependencies": {
