@@ -214,4 +214,17 @@ describe("generateExport", () => {
     );
     expect(findArchiveEntry("user-profile.json")).toBeUndefined();
   });
+
+  it("exports raw food-entry provenance instead of the serving aggregate", async () => {
+    setupMockDb(Array.from({ length: 15 }, () => []));
+
+    await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
+
+    const execute = vi.mocked(mockDb.execute);
+    const foodEntryQuery = JSON.stringify(
+      Reflect.get(execute.mock.calls[5]?.[0] ?? {}, "queryChunks") ?? [],
+    );
+    expect(foodEntryQuery).toContain("fitness.food_entry");
+    expect(foodEntryQuery).not.toContain("fitness.v_nutrition_daily");
+  });
 });

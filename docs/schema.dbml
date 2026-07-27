@@ -174,6 +174,11 @@ enum meal {
   other
 }
 
+enum nutrition_entry_grain {
+  itemized
+  daily_aggregate
+}
+
 enum set_type {
   working
   warmup
@@ -570,6 +575,7 @@ table fitness.food_entry {
   user_id uuid [not null]
   external_id text
   date date [not null]
+  nutrition_grain nutrition_entry_grain
   meal meal
   food_name text
   food_description text

@@ -484,6 +484,13 @@
       "when": 1785100000000,
       "tag": "0058_personal_experiment",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1785180000000,
+      "tag": "0059_canonical_nutrition_contribution_set",
+      "breakpoints": true
     }
   ]
 }

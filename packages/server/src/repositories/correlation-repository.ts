@@ -271,8 +271,9 @@ export class CorrelationRepository {
         this.#db,
         nutritionRowSchema,
         sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
-            FROM fitness.v_nutrition_daily
+            FROM fitness.v_nutrition_canonical_daily
             WHERE user_id = ${this.#userId}
+              AND resolution_status = 'available'
               ${dateWindowStartPredicate(sql`date`, effectiveEndDate, days)}
               AND date <= ${effectiveEndDate}::date
             ORDER BY date ASC`,

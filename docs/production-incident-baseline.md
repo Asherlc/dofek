@@ -18916,3 +18916,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployed release is observed; if the token-limit branch occurs, confirm the
   UI returns the documented clean-grant retry guidance before resolving
   DOFEK-SERVER-5H.
+
+## 2026-07-27 — Issue #2059 local database validation blocked by Docker disk exhaustion
+
+- **Status:** Application fix and executable PostgreSQL regression are ready;
+  exact-head integration validation is pending in CI.
+- **Symptoms:** The issue-specific Compose project could not create its Postgres
+  named volume.
+- **User impact:** No production impact. Local database-backed validation could
+  not start in this worktree.
+- **Evidence:** `pnpm compose -- up -d --wait --wait-timeout 180 db` failed at
+  volume creation. The first fatal line was
+  `mkdir /var/lib/docker/volumes/issue-2059_db_data: no space left on device`.
+- **Root cause:** Docker's local storage filesystem had no free capacity for the
+  worktree's new database volume.
+- **Fix / mitigation:** The issue-specific Compose state was removed and the
+  rebuildable builder cache was pruned using Docker's documented cleanup
+  mechanism, but no reclaimable cache remained. Other workspaces' containers
+  and volumes were preserved. No retry, timeout, or test behavior changed.
+  See [Docker's pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/).
+- **Validation:** A single retry reproduced the same volume-creation failure,
+  confirming the infrastructure prerequisite rather than the test body is
+  blocked. The full lint command also reached SQLFluff, then failed because its
+  dbt adapter could not connect to this worktree's unavailable ClickHouse
+  service at `127.0.0.1:57441`; all Docker-free lint stages pass. Unit, type,
+  and static migration validation remain local gates; the real PostgreSQL test
+  and database-backed SQL lint are required on exact-head CI.
+- **Remaining risk / follow-up:** CI must execute
+  `src/db/nutrition-canonical.integration.test.ts` before merge. Local Docker
+  storage should be expanded or unused resources should be reviewed before the
+  next database-backed worktree run.

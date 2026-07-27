@@ -133,6 +133,15 @@ describe("foodRouter", () => {
             dinner_calories: 0,
             snack_calories: 0,
             other_calories: 100,
+            resolution_status: "available",
+            resolution_message:
+              "Totals use the itemized source; overlapping daily aggregate sources are preserved but excluded.",
+            source_providers: ["apple-health", "cronometer"],
+            contributing_providers: ["cronometer"],
+            excluded_providers: ["apple-health"],
+            source_labels: ["apple-health", "cronometer"],
+            contributing_source_labels: ["cronometer"],
+            excluded_source_labels: ["apple-health"],
           },
         ]);
       const caller = createCaller({
@@ -145,6 +154,17 @@ describe("foodRouter", () => {
 
       expect(result).toEqual({
         entries: [{ id: "f1", food_name: "Lunch" }],
+        resolution: {
+          status: "available",
+          message:
+            "Totals use the itemized source; overlapping daily aggregate sources are preserved but excluded.",
+          sourceProviders: ["apple-health", "cronometer"],
+          contributingProviders: ["cronometer"],
+          excludedProviders: ["apple-health"],
+          sourceLabels: ["apple-health", "cronometer"],
+          contributingSourceLabels: ["cronometer"],
+          excludedSourceLabels: ["apple-health"],
+        },
         summary: {
           calories: 1000,
           mealCalories: {
@@ -169,6 +189,51 @@ describe("foodRouter", () => {
       });
     });
 
+    it("returns an explicit conflict instead of overlapping source totals", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "f1", food_name: "Lunch" }])
+        .mockResolvedValueOnce([
+          {
+            calories: null,
+            protein_g: null,
+            carbs_g: null,
+            fat_g: null,
+            breakfast_calories: 0,
+            lunch_calories: 0,
+            dinner_calories: 0,
+            snack_calories: 0,
+            other_calories: 0,
+            resolution_status: "source_conflict",
+            resolution_message:
+              "Totals are unavailable because nutrition sources overlap and no canonical contribution set can be determined.",
+            source_providers: ["cronometer", "fatsecret"],
+            contributing_providers: [],
+            excluded_providers: ["cronometer", "fatsecret"],
+            source_labels: ["cronometer", "fatsecret"],
+            contributing_source_labels: [],
+            excluded_source_labels: ["cronometer", "fatsecret"],
+          },
+        ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.byDate({ date: "2024-01-15" });
+
+      expect(result.summary).toBeNull();
+      expect(result.resolution).toEqual(
+        expect.objectContaining({
+          status: "source_conflict",
+          sourceProviders: ["cronometer", "fatsecret"],
+          contributingProviders: [],
+        }),
+      );
+    });
+
     it("logs when no rows are returned", async () => {
       const infoSpy = vi.spyOn(logger, "info").mockImplementation(() => undefined);
       const execute = vi
@@ -186,6 +251,14 @@ describe("foodRouter", () => {
             dinner_calories: 0,
             snack_calories: 0,
             other_calories: 0,
+            resolution_status: "available",
+            resolution_message: "Totals use the only available nutrition source.",
+            source_providers: [],
+            contributing_providers: [],
+            excluded_providers: [],
+            source_labels: [],
+            contributing_source_labels: [],
+            excluded_source_labels: [],
           },
         ]);
       const caller = createCaller({

@@ -52,6 +52,16 @@ describe("selectedDateFoodSchema", () => {
   it("parses entries with the server-owned display summary", () => {
     const result = selectedDateFoodSchema.parse({
       entries: [makeEntry()],
+      resolution: {
+        status: "available",
+        message: "Totals use the only available nutrition source.",
+        sourceProviders: ["dofek"],
+        contributingProviders: ["dofek"],
+        excludedProviders: [],
+        sourceLabels: ["dofek"],
+        contributingSourceLabels: ["dofek"],
+        excludedSourceLabels: [],
+      },
       summary: {
         calories: 999,
         mealCalories: { breakfast: 777, lunch: 0, dinner: 0, snack: 0, other: 0 },
@@ -64,6 +74,9 @@ describe("selectedDateFoodSchema", () => {
       },
     });
 
+    if (result.summary === null) {
+      throw new Error("Expected an available nutrition summary");
+    }
     expect(result.summary.calories).toBe(999);
     expect(result.summary.mealCalories.breakfast).toBe(777);
   });

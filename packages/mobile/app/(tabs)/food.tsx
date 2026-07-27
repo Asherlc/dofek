@@ -85,6 +85,7 @@ export default function FoodScreen() {
       : safeParseData(FoodByDateSchema, foodResponse, "food:byDate");
   const entries = selectedDateFood.data?.entries ?? [];
   const summary = selectedDateFood.data?.summary;
+  const resolution = selectedDateFood.data?.resolution;
   const isFoodBlockingLoading = shouldShowBlockingLoading({
     data: entries,
     isFetching: foodQuery.isFetching,
@@ -363,9 +364,24 @@ export default function FoodScreen() {
           />
         )}
 
+        {resolution?.status === "source_conflict" && (
+          <View
+            style={styles.sourceConflict}
+            accessible
+            accessibilityRole="alert"
+            accessibilityLabel={`${resolution.message} Sources: ${resolution.sourceLabels.join(", ")}`}
+          >
+            <Text style={styles.sourceConflictTitle}>Nutrition source conflict</Text>
+            <Text style={styles.sourceConflictMessage}>{resolution.message}</Text>
+            <Text style={styles.sourceConflictSources}>
+              Sources: {resolution.sourceLabels.join(", ")}
+            </Text>
+          </View>
+        )}
+
         {isFoodBlockingLoading ? (
           <Text style={styles.loadingText}>Loading...</Text>
-        ) : foodQuery.isError || selectedDateFood.error || !summary ? (
+        ) : foodQuery.isError || selectedDateFood.error || !resolution ? (
           <Text style={styles.errorText}>{foodErrorMessage}</Text>
         ) : (
           MEALS.map(({ key, label }) => (
@@ -374,7 +390,7 @@ export default function FoodScreen() {
               mealName={label}
               mealKey={key}
               entries={mealGroups.get(key) ?? []}
-              totalCalories={summary.mealCalories[key]}
+              totalCalories={summary?.mealCalories[key] ?? null}
               onAddFood={handleAddFood}
               onDeleteFood={handleDeleteFood}
               deleting={deleteMutation.isPending}
@@ -407,6 +423,29 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 100,
+  },
+  sourceConflict: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: colors.surface,
+    padding: 14,
+    marginBottom: 12,
+    gap: 4,
+  },
+  sourceConflictTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  sourceConflictMessage: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  sourceConflictSources: {
+    color: colors.textTertiary,
+    fontSize: 12,
   },
   dateNav: {
     flexDirection: "row",

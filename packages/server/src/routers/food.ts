@@ -132,16 +132,16 @@ export const foodRouter = router({
       const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
       const settingsRepo = new SettingsRepository(ctx.db, ctx.userId);
       const calorieGoal = await settingsRepo.getCalorieGoal();
-      const [entries, summary] = await Promise.all([
+      const [entries, nutrition] = await Promise.all([
         repo.byDate(input.date),
-        repo.nutritionSummaryByDate(input.date, calorieGoal),
+        repo.nutritionByDate(input.date, calorieGoal),
       ]);
       if (entries.length === 0) {
         logger.info(`[food] byDate returned 0 rows for userId=${ctx.userId} date=${input.date}`);
       }
       return {
         entries: entries.map((entry) => entry.toDetail()),
-        summary,
+        ...nutrition,
       };
     }),
 

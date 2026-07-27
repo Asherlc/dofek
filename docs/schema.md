@@ -151,10 +151,14 @@ tables through ClickHouse replication.
 | `fitness.strength_workout` | Workout sessions |
 | `fitness.strength_set` | Individual sets (exercise, weight, reps, RPE) |
 | `fitness.sleep_session` | Sleep sessions with stage breakdown |
-| `fitness.food_entry` | Food items and unnamed nutrition samples from providers |
+| `fitness.food_entry` | Raw food items and nutrition samples, including their ingestion grain |
 | `fitness.food_entry_nutrient` | Row-based food-entry nutrient amounts |
 | `fitness.supplement_nutrient` | Row-based supplement nutrient amounts |
-| `fitness.v_nutrition_daily` | Daily nutrient totals derived from food-entry nutrient rows |
+| `fitness.v_nutrition_daily` | Raw per-provider daily nutrient totals for provenance and provider inspection |
+| `fitness.v_nutrition_daily_resolution` | Per-user/date canonical contribution decision and selected/excluded source provenance |
+| `fitness.v_nutrition_canonical_nutrient` | Nutrient rows from the resolved contribution set |
+| `fitness.v_nutrition_canonical_daily` | Canonical daily totals; overlapping ambiguous sources produce explicit unavailable rows |
+| `fitness.v_nutrition_display_entry` | Itemized entries shown as editable food cards; aggregate samples remain raw provider data |
 | `fitness.lab_result` | Clinical lab results (from Apple Health / FHIR) |
 | `fitness.health_event` | Generic health events catch-all |
 | `fitness.journal_entry` | Daily behavioral self-reports (WHOOP journal, etc.) |
@@ -162,15 +166,43 @@ tables through ClickHouse replication.
 
 ### Daily Nutrition vs Food Entries
 
-`fitness.food_entry` plus `fitness.food_entry_nutrient` is the source of truth for nutrition. Providers that have itemized foods store named food entries. Providers that only have nutrient samples store unnamed food entries with timestamps/source metadata and nutrient rows.
+`fitness.food_entry` plus `fitness.food_entry_nutrient` is the raw source of truth
+for nutrition. `food_entry.nutrition_grain` records whether a writer supplied
+itemized foods or a daily aggregate. Existing rows remain nullable and are
+classified conservatively from their stored shape rather than rewritten.
+Providers that have itemized foods store named food entries. Providers that
+only have nutrient samples store unnamed food entries with timestamps/source
+metadata and nutrient rows.
 
-**Apple Health** provides individual `HKQuantityType` samples (e.g., "120 calories at 12:30pm", "30g protein at 1:00pm") with source/timestamp metadata but no food name, meal type, serving size, or food identifier. These become unnamed `food_entry` rows with associated `food_entry_nutrient` rows.
+**Apple Health** provides numerical `HKQuantitySample` records with units,
+timestamps, and source revision metadata. Dofek's nutrition import has no
+itemized food identity for those samples, so they become unnamed
+`daily_aggregate` food entries with associated nutrient rows. See Apple's
+[`HKQuantitySample`](https://developer.apple.com/documentation/healthkit/hkquantitysample),
+[`HKSample`](https://developer.apple.com/documentation/healthkit/hksample), and
+[`HKSourceRevision`](https://developer.apple.com/documentation/healthkit/hksourcerevision)
+documentation.
 
-**Cronometer CSV** writes itemized foods into `food_entry` and `food_entry_nutrient`. Daily totals are derived from those rows instead of inserted separately.
+**Cronometer CSV** writes `itemized` foods into `food_entry` and
+`food_entry_nutrient`. Daily totals are derived from those rows instead of
+inserted separately.
 
-**FatSecret** writes itemized food entries through the same normalized path.
+**FatSecret**, manual food logging, Slack meal logging, and auto-supplements
+write `itemized` entries through the same normalized path.
 
-Routers that need daily nutrient totals query `fitness.v_nutrition_daily`. Routers that need entry-level or micronutrient detail query `food_entry` / `food_entry_nutrient` directly.
+Serving code reads `fitness.v_nutrition_canonical_daily` and
+`fitness.v_nutrition_canonical_nutrient`. A single itemized source is selected
+over overlapping aggregate sources. A single aggregate source is usable by
+itself. Multiple independently itemized sources, multiple aggregate sources
+without an itemized source, or mixed ambiguous legacy rows return
+`source_conflict` with null totals and selected/excluded provenance rather than
+silently double-counting or choosing by row order. PostgreSQL views provide
+these query-time projections without duplicating raw storage; see
+[PostgreSQL `CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html).
+
+Provider details, provider statistics, and exports continue to use raw
+`food_entry` / `food_entry_nutrient` data. Aggregate-only rows are excluded from
+editable unnamed food cards, but are not deleted.
 
 ## Deduplication
 

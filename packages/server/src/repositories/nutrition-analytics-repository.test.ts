@@ -292,6 +292,14 @@ describe("NutritionAnalyticsRepository", () => {
       await repo.getMicronutrientAdequacy(30);
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("reads micronutrients from the canonical contribution set", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getMicronutrientAdequacy(30);
+      expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain(
+        "fitness.v_nutrition_canonical_nutrient",
+      );
+    });
   });
 
   describe("getAdaptiveTdeeData", () => {
@@ -316,6 +324,14 @@ describe("NutritionAnalyticsRepository", () => {
       const { repo } = makeRepository([{ date: "2024-01-01", calories_in: 2300 }], []);
       const result = await repo.getAdaptiveTdeeData(90);
       expect(result[0]?.weightKg).toBeNull();
+    });
+
+    it("reads calories from canonical available days", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getAdaptiveTdeeData(90);
+      const query = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(query).toContain("fitness.v_nutrition_canonical_daily");
+      expect(query).toContain("resolution_status = 'available'");
     });
   });
 
@@ -378,6 +394,14 @@ describe("NutritionAnalyticsRepository", () => {
       );
       const result = await repo.getMacroRatios(30);
       expect(result[0]?.toDetail().proteinPerKg).toBeNull();
+    });
+
+    it("reads macro ratios from canonical available days", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getMacroRatios(30);
+      const query = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(query).toContain("fitness.v_nutrition_canonical_daily");
+      expect(query).toContain("resolution_status = 'available'");
     });
   });
 });
