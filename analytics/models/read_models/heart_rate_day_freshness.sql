@@ -51,10 +51,12 @@ refresh_clock AS (
 )
 
 SELECT
-    changed_heart_rate_days.user_id AS user_id,
-    changed_heart_rate_days.recorded_date AS recorded_date,
+    assumeNotNull(changed_heart_rate_days.user_id) AS user_id,
+    assumeNotNull(changed_heart_rate_days.recorded_date) AS recorded_date,
     changed_heart_rate_days.refreshed_at AS refreshed_at,
     changed_heart_rate_days.has_live_samples AS has_live_samples,
     refresh_clock.refresh_version AS refresh_version
 FROM changed_heart_rate_days
 CROSS JOIN refresh_clock
+WHERE changed_heart_rate_days.user_id IS NOT NULL
+    AND changed_heart_rate_days.recorded_date IS NOT NULL
