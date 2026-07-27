@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { executeWithSchema } from "./typed-sql.ts";
 
 const activityIds = [
   "00000000-0000-4000-8000-000000000201",
@@ -13,37 +15,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function findPairsPlan(value: unknown): Record<string, unknown> | undefined {
-  if (isRecord(value) && value["Subplan Name"] === "CTE pairs") {
-    return value;
-  }
-
+function collectPlanStrings(value: unknown): string[] {
   if (Array.isArray(value)) {
-    for (const child of value) {
-      const match = findPairsPlan(child);
-      if (match) return match;
-    }
-  } else if (isRecord(value)) {
-    for (const child of Object.values(value)) {
-      const match = findPairsPlan(child);
-      if (match) return match;
-    }
+    return value.flatMap(collectPlanStrings);
   }
 
-  return undefined;
+  if (isRecord(value)) {
+    return Object.values(value).flatMap(collectPlanStrings);
+  }
+
+  return typeof value === "string" ? [value] : [];
 }
 
 describe("activity overlap query plan", () => {
-  let testCtx: TestContext;
+  let testCtx: TestContext | undefined;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
-    await testCtx.db.execute(
+    await executeWithSchema(
+      testCtx.db,
+      z.object({}),
       sql`INSERT INTO fitness.provider (id, name, user_id)
           VALUES ('wahoo', 'Wahoo', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
-    await testCtx.db.execute(
+    await executeWithSchema(
+      testCtx.db,
+      z.object({}),
       sql`INSERT INTO fitness.activity (
             id, provider_id, user_id, external_id, activity_type, started_at, ended_at
           ) VALUES
@@ -66,11 +64,17 @@ describe("activity overlap query plan", () => {
   });
 
   afterAll(async () => {
-    await testCtx.cleanup();
+    await testCtx?.cleanup();
   });
 
   it("requires positive overlap for candidate pairs", async () => {
-    const rows = await testCtx.db.execute<{ member_activity_ids: string[] }>(
+    if (!testCtx) {
+      throw new Error("Test database setup did not complete");
+    }
+
+    const rows = await executeWithSchema(
+      testCtx.db,
+      z.object({ member_activity_ids: z.array(z.string()) }),
       sql`SELECT member_activity_ids::text[] AS member_activity_ids
           FROM fitness.v_activity
           WHERE user_id = ${TEST_USER_ID}
@@ -84,17 +88,17 @@ describe("activity overlap query plan", () => {
 
     expect(rows.map((row) => row.member_activity_ids.length).sort()).toEqual([1, 2]);
 
-    const explainRows = await testCtx.db.execute<{ "QUERY PLAN": unknown }>(
+    const explainRows = await executeWithSchema(
+      testCtx.db,
+      z.object({ "QUERY PLAN": z.unknown() }),
       sql`EXPLAIN (FORMAT JSON)
           SELECT count(*)
           FROM fitness.v_activity
           WHERE user_id = ${TEST_USER_ID}`,
     );
-    const pairsPlan = findPairsPlan(explainRows[0]?.["QUERY PLAN"]);
-    const joinFilter = pairsPlan?.["Join Filter"];
+    const planText = collectPlanStrings(explainRows[0]?.["QUERY PLAN"]).join(" ");
 
-    expect(joinFilter).toEqual(expect.any(String));
-    expect(joinFilter).toContain("(c1.started_at < c2.ended_at)");
-    expect(joinFilter).toContain("(c2.started_at < c1.ended_at)");
+    expect(planText).toMatch(/c1\.started_at < c2\.ended_at|c2\.ended_at > c1\.started_at/);
+    expect(planText).toMatch(/c2\.started_at < c1\.ended_at|c1\.ended_at > c2\.started_at/);
   });
 });

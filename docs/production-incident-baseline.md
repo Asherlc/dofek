@@ -18968,6 +18968,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   calls could not acquire a database connection at 17:46 UTC. At 18:35 UTC,
   insights and PMC failed while the surrounding dashboard batch took 47.7
   seconds to finish.
+- **Runbook classification:** Following the
+  [loading-performance evidence gate](./performance/loading-performance-runbook.md#evidence-gate),
+  this was a request-time query-shape slowdown in PostgreSQL. The first fatal
+  line was `timeout exceeded when trying to connect`; the named slow family was
+  `fitness.v_activity`, and the evidence below excludes client blanking,
+  ClickHouse queueing, stale statistics, disk I/O, and lock contention.
 - **Evidence:** Every Sentry event's causal error was
   `timeout exceeded when trying to connect` at the web process's unchanged
   ten-second pool acquisition boundary; the displayed SQL had not started.
