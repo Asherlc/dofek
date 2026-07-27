@@ -1,7 +1,8 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 
 const historicalActivityId = "00000000-0000-0000-0000-000000000901";
@@ -16,6 +17,8 @@ interface SensorSummaryResultRow {
   avg_power: number | null;
   power_sample_count: number;
 }
+
+const scanCountRowsSchema = z.array(z.object({ scan_count: z.number() }));
 
 describe("activity_sensor_summary_rows historical dirty keys", () => {
   let client: ClickHouseClient | undefined;
@@ -39,10 +42,12 @@ describe("activity_sensor_summary_rows historical dirty keys", () => {
   it("summarizes historical samples even after an unrelated row advanced the table watermark", async () => {
     const activeClient = requireClient(client);
     await seedHistoricalBackfillFixture(activeClient, targetSchema);
+    const queryId = `activity-sensor-summary-${randomUUID()}`;
 
     await activeClient.command({
       query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows
 ${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
+      query_id: queryId,
     });
 
     const result = await activeClient.query({
@@ -75,6 +80,22 @@ ${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
     const tombstoneRows = await tombstoneResult.json<{ tombstone_count: number }>();
 
     expect(tombstoneRows).toEqual([{ tombstone_count: 1 }]);
+
+    await activeClient.command({ query: "SYSTEM FLUSH LOGS" });
+    const scanCountResult = await activeClient.query({
+      query: `SELECT countIf(startsWith(message, 'Filtering marks')) AS scan_count
+        FROM system.text_log
+        WHERE query_id = {queryId:String}
+          AND startsWith(logger_name, {tableName:String})`,
+      query_params: {
+        queryId,
+        tableName: `${targetSchema}.activity_sensor_sample`,
+      },
+      format: "JSONEachRow",
+    });
+    const scanCountRows = scanCountRowsSchema.parse(await scanCountResult.json<unknown>());
+
+    expect(scanCountRows).toEqual([{ scan_count: 3 }]);
   }, 180_000);
 });
 
@@ -118,7 +139,7 @@ function renderActivitySensorSummaryRowsSelectSql(targetSchema: string): string 
     .replaceAll("{{ this }}", `${targetSchema}.activity_sensor_summary_rows`)
     .replaceAll("{{ ref('activity_sensor_sample') }}", `${targetSchema}.activity_sensor_sample`)
     .replaceAll("{{ source('postgres_fitness', 'activity') }}", `${targetSchema}.source_activity`)
-    .concat("\nSETTINGS join_use_nulls = 1");
+    .concat("\nSETTINGS join_use_nulls = 1, enable_materialized_cte = 1");
 }
 
 function renderIncrementalDbtModelForFixture(modelSql: string): string {
