@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 
 const historicalActivityId = "00000000-0000-0000-0000-000000000901";
@@ -17,9 +18,7 @@ interface SensorSummaryResultRow {
   power_sample_count: number;
 }
 
-interface ScanCountResultRow {
-  scan_count: number;
-}
+const scanCountRowsSchema = z.array(z.object({ scan_count: z.number() }));
 
 describe("activity_sensor_summary_rows historical dirty keys", () => {
   let client: ClickHouseClient | undefined;
@@ -94,7 +93,7 @@ ${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
       },
       format: "JSONEachRow",
     });
-    const scanCountRows = await scanCountResult.json<ScanCountResultRow>();
+    const scanCountRows = scanCountRowsSchema.parse(await scanCountResult.json<unknown>());
 
     expect(scanCountRows).toEqual([{ scan_count: 3 }]);
   }, 180_000);
