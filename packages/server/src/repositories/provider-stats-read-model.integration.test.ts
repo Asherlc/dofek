@@ -22,6 +22,7 @@ const providerSchema = z.array(
     provider_id: z.string(),
   }),
 );
+const explainSchema = z.array(z.object({ explain: z.string() }));
 
 function stripDbtModelWrapper(modelSql: string): string {
   return modelSql
@@ -95,13 +96,22 @@ function renderDirtyProviderSelectionSql(
   FROM providers`;
 }
 
-function renderMetricStreamCountSql(ingestDatabase: string): string {
+function renderMetricStreamCountSql(
+  ingestDatabase: string,
+  projectionMode: "force" | "prefer" = "force",
+): string {
   const modelSql = readModelSql("provider_stats.sql");
   const currentSql = extractCteSql(modelSql, "metric_stream_current").replace(
     /\{\{\s*source\('ingest',\s*'metric_stream'\)\s*\}\}/g,
     `${ingestDatabase}.metric_stream`,
   );
   const countsSql = extractCteSql(modelSql, "metric_stream_counts");
+
+  const projectionSettings =
+    projectionMode === "force"
+      ? `force_optimize_projection = 1,
+    force_optimize_projection_name = 'by_provider_current_state'`
+      : "preferred_optimize_projection_name = 'by_provider_current_state'";
 
   return `WITH providers AS (
     SELECT {userId:UUID} AS user_id, 'test_provider' AS provider_id
@@ -115,7 +125,11 @@ function renderMetricStreamCountSql(ingestDatabase: string): string {
   SELECT metric_stream_counts.count AS metric_stream
   FROM metric_stream_counts
   WHERE user_id = {userId:UUID}
-    AND provider_id = 'test_provider'`;
+    AND provider_id = 'test_provider'
+  SETTINGS
+    ${projectionSettings},
+    optimize_aggregation_in_order = 1,
+    max_memory_usage = 33554432`;
 }
 
 function renderProviderConnectionSql(database: string): string {
@@ -162,7 +176,7 @@ describe("provider stats read model", () => {
     await client?.command({ query: `DROP DATABASE IF EXISTS ${ingestDatabase}` });
   });
 
-  it("counts only the current live version of each metric-stream row", async () => {
+  it("counts the current live version through the provider current-state projection", async () => {
     const userId = randomUUID();
     const deletedId = randomUUID();
     const liveId = randomUUID();
@@ -183,6 +197,10 @@ describe("provider stats read model", () => {
           NULL, NULL, 'api', 60, [], '', '', now64(9), 1, 2, 0
         ),
         (
+          {deletedId:UUID}, NULL, {userId:UUID}, {recordedAt:DateTime64(6, 'UTC')}, 'heart_rate', 'test_provider',
+          NULL, NULL, 'api', 60, [], '', '', now64(9) + INTERVAL 1 SECOND, 0, 3, 0
+        ),
+        (
           {liveId:UUID}, NULL, {userId:UUID}, {recordedAt:DateTime64(6, 'UTC')}, 'heart_rate', 'test_provider',
           NULL, NULL, 'api', 61, [], '', '', now64(9), 0, 1, 0
         )`,
@@ -195,7 +213,83 @@ describe("provider stats read model", () => {
       format: "JSONEachRow",
     });
 
-    expect(providerCountSchema.parse(await result.json())).toEqual([{ metric_stream: 1 }]);
+    expect(providerCountSchema.parse(await result.json())).toEqual([{ metric_stream: 2 }]);
+  });
+
+  it("selects the provider current-state projection without making it mandatory", async () => {
+    const userId = randomUUID();
+    await client.command({
+      query: `INSERT INTO ${ingestDatabase}.metric_stream (
+          id,
+          user_id,
+          recorded_at,
+          channel,
+          provider_id,
+          source_type,
+          is_deleted,
+          version
+        ) VALUES (
+          generateUUIDv4(),
+          {userId:UUID},
+          now64(6),
+          'heart_rate',
+          'test_provider',
+          'test',
+          0,
+          1
+        )`,
+      query_params: { userId },
+    });
+    const result = await client.query({
+      query: `EXPLAIN projections = 1
+        ${renderMetricStreamCountSql(ingestDatabase, "prefer")}`,
+      query_params: { userId },
+      format: "JSONEachRow",
+    });
+
+    const explain = explainSchema
+      .parse(await result.json())
+      .map((row) => row.explain)
+      .join("\n");
+    expect(explain).toContain("ReadFromMergeTree (by_provider_current_state)");
+  });
+
+  it("keeps a high-cardinality exact recount within a bounded memory budget", async () => {
+    const userId = randomUUID();
+    await client.command({
+      query: `INSERT INTO ${ingestDatabase}.metric_stream (
+          id,
+          user_id,
+          recorded_at,
+          channel,
+          provider_id,
+          source_type,
+          is_deleted,
+          version
+        )
+        SELECT
+          toUUID(concat(
+            '00000000-0000-0000-0000-',
+            leftPad(toString(number), 12, '0')
+          )),
+          {userId:UUID},
+          now64(6),
+          'heart_rate',
+          'test_provider',
+          'test',
+          toInt8(0),
+          toInt64(1)
+        FROM numbers(50000)`,
+      query_params: { userId },
+    });
+
+    const result = await client.query({
+      query: renderMetricStreamCountSql(ingestDatabase),
+      query_params: { userId },
+      format: "JSONEachRow",
+    });
+
+    expect(providerCountSchema.parse(await result.json())).toEqual([{ metric_stream: 50000 }]);
   });
 
   it("tracks provider connection and disconnection versions by provider_id", async () => {

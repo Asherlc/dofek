@@ -24,6 +24,10 @@ describe("provider_stats model", () => {
     expect(modelSql).toContain("metric_stream_current AS");
     expect(modelSql).toContain("argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted");
     expect(modelSql).toContain("'enable_materialized_cte': 1");
+    expect(modelSql).toContain("'optimize_aggregation_in_order': 1");
+    expect(modelSql).toContain(
+      "'preferred_optimize_projection_name': 'by_provider_current_state'",
+    );
     expect(modelSql).toContain("current_provider_state AS materialized");
     expect(modelSql).toContain("providers AS materialized");
     expect(modelSql).toContain("provider_dirty_key_batch_size");

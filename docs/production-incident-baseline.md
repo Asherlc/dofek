@@ -19333,3 +19333,55 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** A second external download failure should be
   treated as an unresolved upstream transport incident rather than papered over
   with repository retry or timeout changes.
+
+## 2026-07-27 — Provider Inventory Current-State Aggregation Timed Out (DOFEK-SERVER-5A)
+
+- **Status:** Direct source fix reproduced and validated locally; deployment,
+  historical projection materialization, and production validation pending.
+- **Symptoms:** The production analytics worker on release `f423b5b` continued
+  reporting
+  [DOFEK-SERVER-5A](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5A)
+  after compact dirty-key discovery had already reduced each build to one
+  provider.
+- **User impact:** Every failed serial dbt cycle stopped before downstream
+  analytics and cache warming, so provider inventory and later dashboard,
+  sleep, recovery, training, cycling, and healthspan read models could remain
+  stale.
+- **Evidence:** The exact failing command was the scheduled production
+  `provider_stats` dbt incremental insert. Its first fatal line was ClickHouse
+  code 159: `Timeout exceeded: elapsed 243415.214164 ms, maximum: 240000 ms`.
+  Query `177a3b92-6f01-4d04-806e-8d24525a4985` read 33,818,056 rows / 1.79
+  GiB, peaked at 5.59 GiB, and spent 166.9 CPU-seconds waiting. It did select
+  `ingest.metric_stream.by_provider_generation`; the selected dirty provider
+  was `apple_motion`, whose physical metric-stream range contained 33,730,657
+  rows. A direct physical count completed quickly, isolating the failure to
+  latest-version aggregation rather than provider-range pruning.
+- **Root cause:** Dirty discovery was bounded, but exact record counting still
+  rebuilt one `argMax(is_deleted, (version, ingested_at))` hash entry for every
+  provider record ID. The covering generation projection pruned to the correct
+  provider but did not precompute that high-cardinality current-state
+  aggregation.
+- **Fix / mitigation:** Add the aggregate
+  `by_provider_current_state` projection at
+  `(user_id, provider_id, id)` grain and have `provider_stats` prefer it with
+  in-order aggregation enabled. The projection stores mergeable exact
+  `argMax` states, so tombstones and later live replacements retain the
+  existing latest-version semantics. Migration `0061` adds only the projection
+  definition; historical materialization remains an explicit operator action
+  outside deploy migrations. ClickHouse documents projections as precomputed
+  query data maintained for new inserts and requires `MATERIALIZE PROJECTION`
+  for existing parts:
+  <https://clickhouse.com/docs/data-modeling/projections>.
+- **Validation:** The regression first failed because the projection and
+  migration were absent. After the fix, focused unit and real-ClickHouse
+  integration suites pass, as do the full lint, TypeScript, and Docker-free test
+  gates (14,097 tests). The integration suite proves tombstone-then-live
+  replacement correctness across separate parts, automatic planner selection
+  without making the projection a correctness prerequisite, 50,000 exact IDs
+  within a 32 MiB query budget, and explicit materialization of parts created
+  before the projection.
+- **Remaining risk / follow-up:** Merge and deploy through the normal release
+  path, materialize `by_provider_current_state` while monitoring
+  `system.mutations`, verify zero active parts lack the projection, observe a
+  complete production analytics-plus-cache cycle below the unchanged
+  four-minute ceiling, and only then resolve DOFEK-SERVER-5A.

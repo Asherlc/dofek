@@ -9,7 +9,9 @@
     query_settings={
         'max_threads': 1,
         'join_use_nulls': 1,
-        'enable_materialized_cte': 1
+        'enable_materialized_cte': 1,
+        'optimize_aggregation_in_order': 1,
+        'preferred_optimize_projection_name': 'by_provider_current_state'
     }
 ) }}
 

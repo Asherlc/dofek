@@ -119,7 +119,17 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("FROM ingest.metric_stream"),
       ]),
     });
-    expect(migrations.at(-1)).toMatchObject({
+    expect(
+      migrations.find((migration) => migration.id === "0061_provider_current_state_projection"),
+    ).toMatchObject({
+      id: "0061_provider_current_state_projection",
+      statements: expect.arrayContaining([
+        expect.stringContaining("ADD PROJECTION IF NOT EXISTS by_provider_current_state"),
+        expect.stringContaining("argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted"),
+        expect.stringContaining("GROUP BY user_id, provider_id, id"),
+      ]),
+    });
+    expect(migrations.at(-2)).toMatchObject({
       id: "0060_heart_rate_day_change",
       statements: expect.arrayContaining([
         expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.heart_rate_day_change"),
@@ -129,6 +139,7 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.sleep_heart_rate_window"),
       ]),
     });
+    expect(migrations.at(-1)?.id).toBe("0061_provider_current_state_projection");
   });
 
   it("rejects duplicate migration ids", async () => {

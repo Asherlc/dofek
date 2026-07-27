@@ -120,6 +120,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS ingest");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS ingest.metric_stream");
+    expect(sql).toContain("PROJECTION by_provider_current_state");
     expect(sql).toContain("vector Array(Float32)");
     expect(sql).toContain("ingested_at DateTime64(9) DEFAULT now()");
     expect(sql).toContain("is_deleted Int8 DEFAULT 0");

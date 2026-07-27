@@ -32,7 +32,14 @@ active-row view over that dbt-owned canonical table. Insert-triggered
 materialized views reduce provider changes to compact `(user_id, provider_id)`
 arrival markers; `provider_change_watermark` reads only that compact state, and
 `provider_stats` recounts at most one dirty provider per build so provider
-inventory work cannot monopolize a cycle. A separate insert-triggered view
+inventory work cannot monopolize a cycle. Its exact metric-stream count uses
+the aggregate `by_provider_current_state` projection, which maintains the
+latest deletion state per provider record ID as data arrives and lets the
+recount merge precomputed `argMax` states instead of rebuilding a
+high-cardinality latest-row hash table from the raw stream. ClickHouse
+projections can precompute aggregates and are maintained automatically for new
+inserts:
+<https://clickhouse.com/docs/data-modeling/projections>. A separate insert-triggered view
 reduces heart-rate arrivals to user/day markers. `sleep_heart_rate_window`
 uses those markers to process at most 32 exact sleep windows, including
 processed-empty and lifecycle rows, before `sleep_heart_rate_sample` reads
