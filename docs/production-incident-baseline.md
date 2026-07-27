@@ -18890,6 +18890,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   both restored consumers retain one task ID through the stability window and
   continue processing after the workflow succeeds.
 
+## 2026-07-27 — Activity sensor summary reused CTE timeout (DOFEK-SERVER-5A)
+
+- **Status:** Direct fix reproduced and validated locally; merge, deployment,
+  and production validation pending.
+- **Symptoms:** After the bounded activity membership join deployed, the next
+  serial analytics build completed `activity_sensor_sample` in 18.08 seconds
+  but timed out `activity_sensor_summary_rows` at the unchanged 240-second
+  ClickHouse ceiling.
+- **User impact:** Activity summary, training-load, cycling, hiking, strain,
+  healthspan, and query-cache refreshes remained stale because their upstream
+  summary model failed.
+- **Evidence:** ClickHouse query
+  `dd9f49bb-91f6-408e-8872-2b6a003a4ad1` failed with code `159` after
+  240.004 seconds. It read 474,259,967 rows / 10.31 GiB, built 122,854,645
+  join rows, produced 258,422,173 join-result rows, used 717.91 MiB, and spent
+  146.18 seconds waiting for CPU. Server text logs recorded 29 separate reads
+  of `analytics.activity_sensor_sample` even though the build had only 250
+  dirty activity keys: 147 changed keys plus 103 lifecycle tombstones.
+- **Root cause:** ClickHouse inlined the reused `dirty_keys`,
+  `latest_sensor_samples`, and `power_cumulative` CTEs into each channel,
+  power, and climbing aggregate branch. Every latest-sample branch therefore
+  repeated both full-table dirty-key discovery reads and its own sample read.
+- **Fix / mitigation:** Enable materialized CTE execution only for this
+  offline dbt model and materialize exactly the three reused stages. ClickHouse
+  introduced materialized CTEs to evaluate a shared CTE once and requires the
+  `enable_materialized_cte` setting:
+  <https://clickhouse.com/blog/clickhouse-release-26-03>.
+  No timeout, retry, full refresh, resource limit, or serving query changed.
+- **Validation:** The real ClickHouse regression first reproduced all 29
+  sample-table scans while preserving the historical power summary and
+  lifecycle tombstone fixture. With materialization enabled, the same rendered
+  model emits the same output and opens exactly three sample-table scans. The
+  focused static model suite also verifies that no other CTE is materialized.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy, and observe
+  a complete production analytics build plus cache-warming cycle before
+  resolving DOFEK-SERVER-5A.
+
 ## 2026-07-27 — Wahoo reconnect invalidated its replacement grant (DOFEK-SERVER-5H)
 
 - **Status:** Root cause confirmed from production evidence and source fix

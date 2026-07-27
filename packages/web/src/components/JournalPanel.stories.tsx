@@ -13,6 +13,19 @@ interface JournalScenario {
 
 const entries = [
   {
+    id: "journal-alcohol",
+    date: "2026-07-24",
+    provider_id: "whoop",
+    question_slug: "alcohol",
+    display_name: "Alcohol",
+    category: "substance",
+    data_type: "boolean",
+    unit: null,
+    answer_text: null,
+    answer_numeric: 1,
+    impact_score: 0.4,
+  },
+  {
     id: "journal-energy",
     date: "2026-07-24",
     provider_id: "dofek",
