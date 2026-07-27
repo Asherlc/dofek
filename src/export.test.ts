@@ -221,9 +221,13 @@ describe("generateExport", () => {
     await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
     const execute = vi.mocked(mockDb.execute);
+    const nutritionDailyQuery = JSON.stringify(
+      Reflect.get(execute.mock.calls[4]?.[0] ?? {}, "queryChunks") ?? [],
+    );
     const foodEntryQuery = JSON.stringify(
       Reflect.get(execute.mock.calls[5]?.[0] ?? {}, "queryChunks") ?? [],
     );
+    expect(nutritionDailyQuery).toContain("fitness.v_nutrition_provider_daily");
     expect(foodEntryQuery).toContain("fitness.food_entry");
     expect(foodEntryQuery).not.toContain("fitness.v_nutrition_daily");
   });

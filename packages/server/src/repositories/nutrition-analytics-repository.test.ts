@@ -330,7 +330,7 @@ describe("NutritionAnalyticsRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.getAdaptiveTdeeData(90);
       const query = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(query).toContain("fitness.v_nutrition_canonical_daily");
+      expect(query).toContain("fitness.v_nutrition_daily");
       expect(query).toContain("resolution_status = 'available'");
     });
   });
@@ -400,7 +400,7 @@ describe("NutritionAnalyticsRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.getMacroRatios(30);
       const query = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(query).toContain("fitness.v_nutrition_canonical_daily");
+      expect(query).toContain("fitness.v_nutrition_daily");
       expect(query).toContain("resolution_status = 'available'");
     });
   });

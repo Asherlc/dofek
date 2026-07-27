@@ -154,10 +154,10 @@ tables through ClickHouse replication.
 | `fitness.food_entry` | Raw food items and nutrition samples, including their ingestion grain |
 | `fitness.food_entry_nutrient` | Row-based food-entry nutrient amounts |
 | `fitness.supplement_nutrient` | Row-based supplement nutrient amounts |
-| `fitness.v_nutrition_daily` | Raw per-provider daily nutrient totals for provenance and provider inspection |
+| `fitness.v_nutrition_provider_daily` | Raw per-provider daily nutrient totals for provenance and provider inspection |
 | `fitness.v_nutrition_daily_resolution` | Per-user/date canonical contribution decision and selected/excluded source provenance |
 | `fitness.v_nutrition_canonical_nutrient` | Nutrient rows from the resolved contribution set |
-| `fitness.v_nutrition_canonical_daily` | Canonical daily totals; overlapping ambiguous sources produce explicit unavailable rows |
+| `fitness.v_nutrition_daily` | Canonical daily totals; overlapping ambiguous sources produce explicit unavailable rows |
 | `fitness.v_nutrition_display_entry` | Itemized entries shown as editable food cards; aggregate samples remain raw provider data |
 | `fitness.lab_result` | Clinical lab results (from Apple Health / FHIR) |
 | `fitness.health_event` | Generic health events catch-all |
@@ -190,7 +190,7 @@ inserted separately.
 **FatSecret**, manual food logging, Slack meal logging, and auto-supplements
 write `itemized` entries through the same normalized path.
 
-Serving code reads `fitness.v_nutrition_canonical_daily` and
+Serving code reads `fitness.v_nutrition_daily` and
 `fitness.v_nutrition_canonical_nutrient`. A single itemized source is selected
 over overlapping aggregate sources. A single aggregate source is usable by
 itself. Multiple independently itemized sources, multiple aggregate sources

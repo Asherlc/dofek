@@ -623,7 +623,7 @@ export class FoodRepository {
             daily.source_labels,
             daily.contributing_source_labels,
             daily.excluded_source_labels
-          FROM fitness.v_nutrition_canonical_daily daily
+          FROM fitness.v_nutrition_daily daily
           CROSS JOIN meals
           WHERE daily.user_id = ${this.#userId}
             AND daily.date = ${date}::date`,
@@ -691,7 +691,7 @@ export class FoodRepository {
             source_labels,
             contributing_source_labels,
             excluded_source_labels
-          FROM fitness.v_nutrition_canonical_daily
+          FROM fitness.v_nutrition_daily
           WHERE user_id = ${this.#userId}
             AND date > CURRENT_DATE - ${days}::int
           ORDER BY date ASC`,
@@ -720,7 +720,7 @@ export class FoodRepository {
             daily.source_labels,
             daily.contributing_source_labels,
             daily.excluded_source_labels
-          FROM fitness.v_nutrition_canonical_daily daily
+          FROM fitness.v_nutrition_daily daily
           LEFT JOIN fitness.v_nutrition_display_entry display
             ON display.user_id = daily.user_id AND display.date = daily.date
           WHERE daily.user_id = ${this.#userId}

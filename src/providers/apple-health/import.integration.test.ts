@@ -849,7 +849,7 @@ describe("importAppleHealthFile — full DB integration", () => {
     }>(
       sql`
         SELECT date, calories, protein_g
-        FROM fitness.v_nutrition_daily
+        FROM fitness.v_nutrition_provider_daily
         WHERE provider_id = ${APPLE_HEALTH_PROVIDER_ID}
       `,
     );

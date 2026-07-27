@@ -108,7 +108,7 @@ describe("canonical nutrition contribution set", () => {
     }>(sql`
       SELECT calories, protein_g, resolution_status, source_providers,
              contributing_providers, excluded_providers
-      FROM fitness.v_nutrition_canonical_daily
+      FROM fitness.v_nutrition_daily
       WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
     `);
 
@@ -173,7 +173,7 @@ describe("canonical nutrition contribution set", () => {
       resolution_status: string;
     }>(sql`
       SELECT calories, protein_g, resolution_status
-      FROM fitness.v_nutrition_canonical_daily
+      FROM fitness.v_nutrition_daily
       WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
     `);
     expect(rows).toEqual([{ calories: 1900, protein_g: 95, resolution_status: "available" }]);
@@ -204,7 +204,7 @@ describe("canonical nutrition contribution set", () => {
       contributing_providers: string[];
     }>(sql`
       SELECT calories, resolution_status, contributing_providers
-      FROM fitness.v_nutrition_canonical_daily
+      FROM fitness.v_nutrition_daily
       WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
     `);
     expect(rows).toEqual([
@@ -271,7 +271,7 @@ describe("canonical nutrition contribution set", () => {
 
     const rows = await context.db.execute<{ calories: number; resolution_status: string }>(sql`
       SELECT calories, resolution_status
-      FROM fitness.v_nutrition_canonical_daily
+      FROM fitness.v_nutrition_daily
       WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
     `);
     expect(rows).toEqual([{ calories: 500, resolution_status: "available" }]);

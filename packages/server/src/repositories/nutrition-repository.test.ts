@@ -127,6 +127,6 @@ describe("NutritionRepository", () => {
 
     const query = execute.mock.calls[0]?.[0];
     const chunks = JSON.stringify(query?.queryChunks);
-    expect(chunks).toContain("fitness.v_nutrition_canonical_daily");
+    expect(chunks).toContain("fitness.v_nutrition_daily");
   });
 });

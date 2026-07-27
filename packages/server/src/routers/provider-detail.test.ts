@@ -289,7 +289,7 @@ describe("providerDetailRouter", () => {
       ["foodEntries", "fitness.food_entry", "date", "id"],
       ["healthEvents", "fitness.health_event", "start_date", "id"],
       ["metricStream", "ingest.metric_stream", "recorded_at", "id"],
-      ["nutritionDaily", "fitness.v_nutrition_daily", "date", "date"],
+      ["nutritionDaily", "fitness.v_nutrition_provider_daily", "date", "date"],
       ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
       ["labResults", "fitness.lab_result", "recorded_at", "id"],
       ["journalEntries", "fitness.journal_entry", "date", "id"],

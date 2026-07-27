@@ -330,7 +330,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
           calories_in: z.coerce.number(),
         }),
         sql`SELECT date, calories AS calories_in
-            FROM fitness.v_nutrition_canonical_daily
+            FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.userId}
               AND resolution_status = 'available'
               AND calories IS NOT NULL
@@ -376,7 +376,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
                 nd.protein_g,
                 nd.carbs_g,
                 nd.fat_g
-              FROM fitness.v_nutrition_canonical_daily nd
+              FROM fitness.v_nutrition_daily nd
               WHERE nd.user_id = ${this.userId}
                 AND nd.resolution_status = 'available'
                 ${currentDateRangePredicate(sql`nd.date`, days)}

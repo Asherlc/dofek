@@ -117,10 +117,11 @@ values with units and sample timestamps/source metadata:
 [`HKQuantitySample`](https://developer.apple.com/documentation/healthkit/hkquantitysample),
 [`HKSample`](https://developer.apple.com/documentation/healthkit/hksample), and
 [`HKSourceRevision`](https://developer.apple.com/documentation/healthkit/hksourcerevision).
-Raw per-provider totals remain available through `fitness.v_nutrition_daily`;
-application totals use `fitness.v_nutrition_canonical_daily`, which excludes an
-overlapping aggregate when one clear itemized source exists and reports other
-ambiguous overlaps instead of summing them.
+Raw per-provider totals remain available through
+`fitness.v_nutrition_provider_daily`; application totals use
+`fitness.v_nutrition_daily`, which excludes an overlapping aggregate when one
+clear itemized source exists and reports other ambiguous overlaps instead of
+summing them.
 
 ## Workout Source Attribution
 

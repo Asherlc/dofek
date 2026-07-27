@@ -535,9 +535,7 @@ describe("FoodRepository", () => {
     it("queries canonical resolved daily totals", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.dailyTotals(30);
-      expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain(
-        "fitness.v_nutrition_canonical_daily",
-      );
+      expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("fitness.v_nutrition_daily");
     });
   });
 

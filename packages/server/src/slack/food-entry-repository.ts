@@ -378,7 +378,7 @@ export class FoodEntryRepository {
             resolution_status,
             resolution_message,
             source_labels
-          FROM fitness.v_nutrition_canonical_daily
+          FROM fitness.v_nutrition_daily
           WHERE user_id = ${userId}
             AND date = ${date}::date`,
     );

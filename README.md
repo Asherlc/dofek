@@ -175,10 +175,10 @@ clients render server-computed metric values rather than recomputing them.
 - Raw records retain provider and source attribution. Deduplication happens in
   queries and read models, never by discarding records during ingestion.
 - Nutrients use row-based canonical storage in `fitness.food_entry_nutrient`
-  and `fitness.supplement_nutrient`. `fitness.v_nutrition_daily` retains raw
-  per-provider totals; serving totals derive from
-  `fitness.v_nutrition_canonical_daily`, which resolves one contribution set at
-  query time and reports ambiguous overlaps explicitly.
+  and `fitness.supplement_nutrient`. `fitness.v_nutrition_provider_daily`
+  retains raw per-provider totals; serving totals derive from
+  `fitness.v_nutrition_daily`, which resolves one contribution set at query
+  time and reports ambiguous overlaps explicitly.
 
 ## Authentication and Secrets
 

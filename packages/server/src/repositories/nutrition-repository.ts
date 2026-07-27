@@ -125,7 +125,7 @@ export class NutritionRepository {
             source_providers,
             contributing_providers,
             excluded_providers
-          FROM fitness.v_nutrition_canonical_daily
+          FROM fitness.v_nutrition_daily
           WHERE user_id = ${this.#userId}
             AND date > ${startDate}::date
           ORDER BY date ASC`,
