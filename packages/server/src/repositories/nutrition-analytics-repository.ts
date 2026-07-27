@@ -282,7 +282,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
       }),
       sql`WITH daily_totals AS (
             SELECT
-              fe.date,
+              fen.date,
               n.id,
               n.display_name,
               n.unit,

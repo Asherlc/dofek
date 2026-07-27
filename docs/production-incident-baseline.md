@@ -19063,19 +19063,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Status:** Application fix and executable PostgreSQL regression are ready;
   exact-head integration validation is pending in CI.
 - **Symptoms:** The issue-specific Compose project could not create its Postgres
-  named volume.
+  named volume. On PR #2220, integration shard 4 also returned 35 nutrition
+  analytics days where the fixture expected at least 40, and integration
+  shards 1 and 4 failed the micronutrient adequacy query.
 - **User impact:** No production impact. Local database-backed validation could
   not start in this worktree.
 - **Evidence:** `pnpm compose -- up -d --wait --wait-timeout 180 db` failed at
   volume creation. The first fatal line was
   `mkdir /var/lib/docker/volumes/issue-2059_db_data: no space left on device`.
+  GitHub Actions run 30302715863 showed the 35-row analytics result and the
+  failing micronutrient query. Its Postgres log's first fatal line was
+  `ERROR: missing FROM-clause entry for table "fe" at character 57`.
 - **Root cause:** Docker's local storage filesystem had no free capacity for the
-  worktree's new database volume.
+  worktree's new database volume. Separately, the analytics fixture did not
+  declare `nutrition_grain`, so legacy classification treated its multi-nutrient
+  rows as ambiguous and canonical source resolution excluded 15 conflicting
+  days. The micronutrient query selected `fe.date` after its canonical nutrient
+  source had been renamed to alias `fen`.
 - **Fix / mitigation:** The issue-specific Compose state was removed and the
   rebuildable builder cache was pruned using Docker's documented cleanup
   mechanism, but no reclaimable cache remained. Other workspaces' containers
   and volumes were preserved. No retry, timeout, or test behavior changed.
   See [Docker's pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/).
+  The analytics fixture now declares daily aggregates and itemized meals
+  explicitly, and the micronutrient query consistently uses the canonical
+  nutrient alias `fen`.
 - **Validation:** A single retry reproduced the same volume-creation failure,
   confirming the infrastructure prerequisite rather than the test body is
   blocked. The full lint command also reached SQLFluff, then failed because its
