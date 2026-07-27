@@ -152,12 +152,8 @@ function createSeededProviders() {
               distanceMeters: 32400,
               elevationGainM: 412,
             },
-            calories: null,
             tss: 78.4,
-            stats: [
-              { label: "Training Stress Score", value: "78.4" },
-              { label: "Calories", value: "—" },
-            ],
+            stats: [{ label: "Training Stress Score", value: "78.4" }],
           },
         ],
       },
@@ -172,12 +168,8 @@ function createSeededProviders() {
             endedAt: `${yesterday}T17:45:00Z`,
             durationMin: 45,
             location: null,
-            calories: 380,
             tss: 42.1,
-            stats: [
-              { label: "Training Stress Score", value: "42.1" },
-              { label: "Calories", value: "380 kcal" },
-            ],
+            stats: [{ label: "Training Stress Score", value: "42.1" }],
           },
         ],
       },
@@ -192,6 +184,27 @@ function createSeededProviders() {
       totalDistanceMeters: 32400,
       totalElevationGainM: 412,
       activityTypes: ["road_cycling", "strength"],
+    },
+  );
+
+  queryClient.setQueryData(
+    [["processing", "status"], { input: { datasets: ["activity"] }, type: "query" }],
+    {
+      generatedAt: `${today}T12:00:00.000Z`,
+      scope: { providerId: null, datasets: ["activity"] },
+      overallStatus: "ready",
+      datasets: [
+        {
+          key: "activity",
+          label: "Activities",
+          status: "ready",
+          currentStage: null,
+          progressPercentage: null,
+          lastAdvancedAt: null,
+          lastReadyAt: `${today}T12:00:00.000Z`,
+        },
+      ],
+      operations: [],
     },
   );
 

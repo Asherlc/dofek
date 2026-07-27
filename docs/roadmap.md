@@ -20,7 +20,7 @@ New work should strengthen this loop. More providers, scores, charts, and standa
 
 Resolve public-facing trust problems and add product measurement before launching the next flagship feature.
 
-- [ ] Remove provider-estimated workout calories and active-energy values from marketing, Storybook fixtures, review data, screenshots, and other user-visible examples. Nutrition intake and expenditure inferred from observed body-weight change remain valid product concepts.
+- [x] Remove provider-estimated workout calories and active-energy values from marketing, Storybook fixtures, review data, screenshots, and other user-visible examples. Nutrition intake and expenditure inferred from observed body-weight change remain valid product concepts. See [`2026-07-26-remove-expenditure-examples.md`](superpowers/plans/2026-07-26-remove-expenditure-examples.md).
 - [ ] Regenerate the iOS App Store screenshots with internally consistent seeded data, correct layout coverage, and no blank or mostly-black assets; see [`app-store/screenshots`](../packages/mobile/app-store/screenshots).
 - [ ] Audit statistical fixtures so sample size, coefficients, significance, confidence language, and charts agree. Insufficient datasets must not imply that a relationship was measured; see [`2026-07-20-correlation-insufficient-statistics.md`](superpowers/plans/2026-07-20-correlation-insufficient-statistics.md).
 - [ ] Show the actual subscription price, billing period, trial or limited-access behavior, and cancellation terms on the landing page before signup; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx).
