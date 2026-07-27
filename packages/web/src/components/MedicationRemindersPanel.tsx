@@ -119,11 +119,11 @@ export function MedicationRemindersPanel({
 
   return (
     <div className="space-y-4">
-      {(writeError ?? setting.error?.message) && (
+      {writeError ? (
         <p role="alert" className="text-xs text-red-400">
-          {writeError ?? setting.error?.message}
+          {writeError}
         </p>
-      )}
+      ) : null}
 
       {reminders.length === 0 ? (
         <p className="text-sm text-muted">No medication reminders yet.</p>
