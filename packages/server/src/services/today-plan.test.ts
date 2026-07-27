@@ -107,4 +107,43 @@ describe("loadTodayPlan", () => {
     expect(queryTexts.some((text) => text.includes("analytics.daily_strain"))).toBe(true);
     expect(queryTexts.some((text) => text.includes("analytics.daily_sleep"))).toBe(true);
   });
+
+  it("does not treat incomplete sleep rows as usable sleep for confidence", async () => {
+    const query = vi.fn(async (_schema: unknown, queryText: unknown) => {
+      const sqlText = String(queryText);
+      if (sqlText.includes("analytics.daily_recovery")) {
+        return [
+          {
+            date: "2026-07-26",
+            hrv_score: 80,
+            resting_hr_score: 80,
+            sleep_score: 80,
+            respiratory_rate_score: 80,
+          },
+        ];
+      }
+      if (sqlText.includes("analytics.daily_strain")) {
+        return [{ date: "2026-07-26", daily_load: 40 }];
+      }
+      if (sqlText.includes("analytics.daily_sleep")) {
+        return [{ date: "2026-07-26", duration_minutes: null, efficiency_pct: null }];
+      }
+      return [];
+    });
+
+    const plan = await loadTodayPlan(
+      {
+        db: { execute: vi.fn() },
+        userId: "00000000-0000-4000-8000-000000000001",
+        sensorStore: makeSensorStore(query),
+      },
+      "2026-07-26",
+    );
+
+    expect(plan.status).toBe("ready");
+    if (plan.status !== "ready") return;
+    expect(plan.missingInputs).toContain("sleep");
+    expect(plan.confidence).not.toBe("high");
+    expect(plan.freshness.sleepDate).toBeNull();
+  });
 });

@@ -7,6 +7,7 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { buildStrainTargetResult, strainTargetReadinessRowSchema } from "./strain-target-result.ts";
 
@@ -20,13 +21,13 @@ export interface TodayPlanContext {
 }
 
 const sleepRowSchema = z.object({
-  date: z.string(),
+  date: dateStringSchema,
   duration_minutes: z.coerce.number().nullable(),
   efficiency_pct: z.coerce.number().nullable(),
 });
 
 const strainLoadRowSchema = z.object({
-  date: z.string(),
+  date: dateStringSchema,
   daily_load: z.coerce.number(),
 });
 
@@ -173,6 +174,6 @@ export async function loadTodayPlan(
     sleepPerformanceScore: sleepPerformance?.score ?? null,
     sleepPerformanceTier: sleepPerformance?.tier ?? null,
     recoveryDate: readinessMetrics?.date ?? null,
-    sleepDate: sleepRow?.date ?? null,
+    sleepDate: sleepPerformance != null ? (sleepRow?.date ?? null) : null,
   });
 }
