@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { buildStrainTargetResult } from "./strain-target-result.ts";
+import { describe, expect, it, vi } from "vitest";
+import { buildStrainTargetResult, loadStrainTargetInputs } from "./strain-target-result.ts";
 
 const equalWeights = {
   hrv: 0.25,
@@ -7,6 +7,23 @@ const equalWeights = {
   sleep: 0.25,
   respiratoryRate: 0.25,
 } as const;
+
+type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
+
+function makeSensorStore(queryImpl: SensorStore["query"]): SensorStore {
+  return {
+    query: queryImpl,
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  };
+}
 
 describe("buildStrainTargetResult", () => {
   it("returns null when readiness metrics are missing", () => {
@@ -84,5 +101,59 @@ describe("buildStrainTargetResult", () => {
     expect(withFuture?.chronicLoad).toBe(withoutFuture?.chronicLoad);
     expect(withFuture?.workloadRatio).toBe(withoutFuture?.workloadRatio);
     expect(withFuture?.dailyLoad).toBe(40);
+  });
+});
+
+describe("loadStrainTargetInputs", () => {
+  it("loads readiness and strain rows with shared access-window clauses", async () => {
+    const query = vi.fn(
+      async (_schema: unknown, queryText: unknown, params: unknown, options: unknown) => {
+        const sqlText = String(queryText);
+        expect(options).toEqual({ priority: "dashboard" });
+        expect(params).toMatchObject({
+          userId: "00000000-0000-4000-8000-000000000001",
+          endDate: "2026-07-26",
+          accessStartDate: "2026-07-01",
+          accessEndDateExclusive: "2026-07-08",
+        });
+
+        if (sqlText.includes("analytics.daily_recovery")) {
+          expect(sqlText).toContain("AND recovery.date >= toDate({accessStartDate:String})");
+          return [
+            {
+              date: "2026-07-26",
+              hrv_score: 80,
+              resting_hr_score: 80,
+              sleep_score: 80,
+              respiratory_rate_score: 80,
+            },
+          ];
+        }
+
+        if (sqlText.includes("analytics.daily_strain")) {
+          expect(sqlText).toContain("AND strain.date >= toDate({accessStartDate:String})");
+          return [{ date: "2026-07-26", daily_load: 40 }];
+        }
+
+        return [];
+      },
+    );
+
+    const inputs = await loadStrainTargetInputs({
+      sensorStore: makeSensorStore(query),
+      userId: "00000000-0000-4000-8000-000000000001",
+      endDate: "2026-07-26",
+      accessWindow: {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-07-01",
+        endDateExclusive: "2026-07-08",
+      },
+    });
+
+    expect(inputs.readinessMetrics?.date).toBe("2026-07-26");
+    expect(inputs.loads).toEqual([{ date: "2026-07-26", daily_load: 40 }]);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 });

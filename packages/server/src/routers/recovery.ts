@@ -17,7 +17,6 @@ import {
   clickHouseWindowStartPredicate,
   dateWindowEnd,
   dateWindowStartPredicate,
-  dateWindowStartString,
   endDateSchema,
 } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
@@ -25,13 +24,14 @@ import type { ActivitySensorStore } from "../repositories/activity-repository.ts
 import { fetchSleepNights } from "../repositories/clickhouse-sleep-repository.ts";
 import {
   buildStrainTargetResult,
+  loadStrainTargetInputs,
   type StrainTargetResult,
-  strainTargetReadinessRowSchema,
   strainTargetResultSchema,
 } from "../services/strain-target-result.ts";
+import type { WorkloadRatioResult, WorkloadRatioRow } from "../services/workload-ratio.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-export type { StrainTargetResult };
+export type { StrainTargetResult, WorkloadRatioResult, WorkloadRatioRow };
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -81,21 +81,6 @@ export interface HrvVariabilityRow {
   hrv: number | null;
   rollingCoefficientOfVariation: number | null;
   rollingMean: number | null;
-}
-
-export interface WorkloadRatioRow {
-  date: string;
-  dailyLoad: number;
-  strain: number;
-  acuteLoad: number;
-  chronicLoad: number;
-  workloadRatio: number | null;
-}
-
-export interface WorkloadRatioResult {
-  timeSeries: WorkloadRatioRow[];
-  displayedStrain: number;
-  displayedDate: string | null;
 }
 
 export interface SleepNightlyRow {
@@ -591,80 +576,18 @@ export const recoveryRouter = router({
     .output(strainTargetResultSchema.nullable())
     .query(async ({ ctx, input }): Promise<StrainTargetResult | null> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.strainTarget");
-      const recoveryAccessWindowClause =
-        ctx.accessWindow?.kind === "limited"
-          ? `AND recovery.date >= toDate({accessStartDate:String})
-          AND recovery.date < toDate({accessEndDateExclusive:String})`
-          : "";
-      const readinessRows = await sensorStore.query(
-        strainTargetReadinessRowSchema,
-        `SELECT
-          toString(recovery.date) AS date,
-          recovery.hrv_score AS hrv_score,
-          recovery.resting_hr_score AS resting_hr_score,
-          recovery.sleep_score AS sleep_score,
-          recovery.respiratory_rate_score AS respiratory_rate_score
-        FROM analytics.daily_recovery AS recovery FINAL
-        WHERE recovery.user_id = {userId:UUID}
-          AND recovery.is_deleted = 0
-          AND recovery.date > toDate({windowStart:String})
-          AND recovery.date <= toDate({endDate:String})
-          ${recoveryAccessWindowClause}
-        ORDER BY recovery.date DESC
-        LIMIT 1`,
-        {
-          userId: ctx.userId,
-          windowStart: dateWindowStartString(input.endDate, input.days),
-          endDate: input.endDate,
-          ...(ctx.accessWindow?.kind === "limited"
-            ? {
-                accessStartDate: ctx.accessWindow.startDate,
-                accessEndDateExclusive: ctx.accessWindow.endDateExclusive,
-              }
-            : {}),
-        },
-        { priority: "dashboard" },
-      );
-
-      // Get daily loads for ACWR from the compact ClickHouse strain read model.
-      const accessWindowClause =
-        ctx.accessWindow?.kind === "limited"
-          ? `AND strain.date >= toDate({accessStartDate:String})
-          AND strain.date < toDate({accessEndDateExclusive:String})`
-          : "";
-      const loads = await sensorStore.query(
-        z.object({
-          date: z.string(),
-          daily_load: z.coerce.number(),
-        }),
-        `SELECT
-          toString(strain.date) AS date,
-          strain.daily_load AS daily_load
-        FROM analytics.daily_strain AS strain FINAL
-        WHERE strain.user_id = {userId:UUID}
-          AND strain.is_deleted = 0
-          AND strain.date >= toDate({windowStart:String})
-          AND strain.date <= toDate({endDate:String})
-          ${accessWindowClause}
-        ORDER BY date ASC`,
-        {
-          userId: ctx.userId,
-          windowStart: dateWindowStartString(input.endDate, input.days),
-          endDate: input.endDate,
-          ...(ctx.accessWindow?.kind === "limited"
-            ? {
-                accessStartDate: ctx.accessWindow.startDate,
-                accessEndDateExclusive: ctx.accessWindow.endDateExclusive,
-              }
-            : {}),
-        },
-        { priority: "dashboard" },
-      );
-
       const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
+      const { readinessMetrics, loads } = await loadStrainTargetInputs({
+        sensorStore,
+        userId: ctx.userId,
+        endDate: input.endDate,
+        days: input.days,
+        accessWindow: ctx.accessWindow,
+      });
+
       return buildStrainTargetResult({
         endDate: input.endDate,
-        readinessMetrics: readinessRows[0],
+        readinessMetrics,
         loads,
         readinessWeights: params.readinessWeights,
       });

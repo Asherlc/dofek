@@ -21,12 +21,14 @@ import {
   type WeeklyVolumeRow,
 } from "../repositories/training-repository.ts";
 import type { VerticalAscentRow } from "../routers/cycling-advanced.ts";
-import type { WorkloadRatioResult } from "../routers/recovery.ts";
 import {
   buildStrainTargetResult,
+  clickHouseDateAccessWindowClause,
+  clickHouseDateAccessWindowParams,
   type StrainTargetResult,
   strainTargetReadinessRowSchema,
 } from "./strain-target-result.ts";
+import type { WorkloadRatioResult } from "./workload-ratio.ts";
 
 export interface MobileTrainingTabResult {
   workloadRatio: WorkloadRatioResult;
@@ -56,38 +58,6 @@ const strainRowSchema = z.object({
   chronic_load: z.coerce.number(),
   workload_ratio: z.coerce.number().nullable(),
 });
-
-function strainAccessClause(accessWindow?: AccessWindow): string {
-  return accessWindow?.kind === "limited"
-    ? `AND strain.date >= toDate({accessStartDate:String})
-       AND strain.date < toDate({accessEndDateExclusive:String})`
-    : "";
-}
-
-function strainAccessParams(accessWindow?: AccessWindow): Record<string, string> {
-  return accessWindow?.kind === "limited"
-    ? {
-        accessStartDate: accessWindow.startDate,
-        accessEndDateExclusive: accessWindow.endDateExclusive,
-      }
-    : {};
-}
-
-function recoveryAccessClause(accessWindow?: AccessWindow): string {
-  return accessWindow?.kind === "limited"
-    ? `AND recovery.date >= toDate({accessStartDate:String})
-       AND recovery.date < toDate({accessEndDateExclusive:String})`
-    : "";
-}
-
-function recoveryAccessParams(accessWindow?: AccessWindow): Record<string, string> {
-  return accessWindow?.kind === "limited"
-    ? {
-        accessStartDate: accessWindow.startDate,
-        accessEndDateExclusive: accessWindow.endDateExclusive,
-      }
-    : {};
-}
 
 function computeWorkloadRatio(rows: z.infer<typeof strainRowSchema>[]): WorkloadRatioResult {
   const timeSeries = rows.map((row) => {
@@ -133,7 +103,7 @@ export async function loadMobileTrainingTab(
   const climbingRepo = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
 
   const windowStart = dateWindowStartString(endDate, days);
-  const accessParams = strainAccessParams(ctx.accessWindow);
+  const accessParams = clickHouseDateAccessWindowParams(ctx.accessWindow);
 
   const [storedParams, strainRows, readinessRows] = await Promise.all([
     loadPersonalizedParams(ctx.db, ctx.userId),
@@ -150,7 +120,7 @@ export async function loadMobileTrainingTab(
         AND strain.is_deleted = 0
         AND strain.date > toDate({outputWindowStart:String})
         AND strain.date <= toDate({endDate:String})
-        ${strainAccessClause(ctx.accessWindow)}
+        ${clickHouseDateAccessWindowClause(ctx.accessWindow, "strain")}
       ORDER BY date ASC`,
       {
         userId: ctx.userId,
@@ -174,14 +144,14 @@ export async function loadMobileTrainingTab(
         AND recovery.is_deleted = 0
         AND recovery.date > toDate({windowStart:String})
         AND recovery.date <= toDate({endDate:String})
-        ${recoveryAccessClause(ctx.accessWindow)}
+        ${clickHouseDateAccessWindowClause(ctx.accessWindow, "recovery")}
       ORDER BY recovery.date DESC
       LIMIT 1`,
       {
         userId: ctx.userId,
         windowStart,
         endDate,
-        ...recoveryAccessParams(ctx.accessWindow),
+        ...accessParams,
       },
       { priority: "dashboard" },
     ),

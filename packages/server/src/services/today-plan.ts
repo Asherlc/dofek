@@ -9,7 +9,12 @@ import type { AccessWindow } from "../billing/entitlement.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import { buildStrainTargetResult, strainTargetReadinessRowSchema } from "./strain-target-result.ts";
+import {
+  buildStrainTargetResult,
+  clickHouseDateAccessWindowClause,
+  clickHouseDateAccessWindowParams,
+  loadStrainTargetInputs,
+} from "./strain-target-result.ts";
 
 const DEFAULT_SLEEP_NEED_MINUTES = 480;
 
@@ -26,11 +31,6 @@ const sleepRowSchema = z.object({
   efficiency_pct: z.coerce.number().nullable(),
 });
 
-const strainLoadRowSchema = z.object({
-  date: dateStringSchema,
-  daily_load: z.coerce.number(),
-});
-
 function requireSensorStore(sensorStore: ActivitySensorStore | undefined): ActivitySensorStore {
   if (!sensorStore) {
     throw new TRPCError({
@@ -40,22 +40,6 @@ function requireSensorStore(sensorStore: ActivitySensorStore | undefined): Activ
     });
   }
   return sensorStore;
-}
-
-function accessWindowClause(accessWindow: AccessWindow | undefined, alias: string): string {
-  return accessWindow?.kind === "limited"
-    ? `AND ${alias}.date >= toDate({accessStartDate:String})
-       AND ${alias}.date < toDate({accessEndDateExclusive:String})`
-    : "";
-}
-
-function accessWindowParams(accessWindow: AccessWindow | undefined): Record<string, string> {
-  return accessWindow?.kind === "limited"
-    ? {
-        accessStartDate: accessWindow.startDate,
-        accessEndDateExclusive: accessWindow.endDateExclusive,
-      }
-    : {};
 }
 
 /**
@@ -68,54 +52,17 @@ export async function loadTodayPlan(
 ): Promise<TodayPlanResult> {
   const sensorStore = requireSensorStore(ctx.sensorStore);
   const windowStart = dateWindowStartString(endDate, days);
-  const accessParams = accessWindowParams(ctx.accessWindow);
+  const accessParams = clickHouseDateAccessWindowParams(ctx.accessWindow);
 
-  const [storedParams, readinessRows, loadRows, sleepRows] = await Promise.all([
+  const [storedParams, strainTargetInputs, sleepRows] = await Promise.all([
     loadPersonalizedParams(ctx.db, ctx.userId),
-    sensorStore.query(
-      strainTargetReadinessRowSchema,
-      `SELECT
-        toString(recovery.date) AS date,
-        recovery.hrv_score AS hrv_score,
-        recovery.resting_hr_score AS resting_hr_score,
-        recovery.sleep_score AS sleep_score,
-        recovery.respiratory_rate_score AS respiratory_rate_score
-      FROM analytics.daily_recovery AS recovery FINAL
-      WHERE recovery.user_id = {userId:UUID}
-        AND recovery.is_deleted = 0
-        AND recovery.date > toDate({windowStart:String})
-        AND recovery.date <= toDate({endDate:String})
-        ${accessWindowClause(ctx.accessWindow, "recovery")}
-      ORDER BY recovery.date DESC
-      LIMIT 1`,
-      {
-        userId: ctx.userId,
-        windowStart,
-        endDate,
-        ...accessParams,
-      },
-      { priority: "dashboard" },
-    ),
-    sensorStore.query(
-      strainLoadRowSchema,
-      `SELECT
-        toString(strain.date) AS date,
-        strain.daily_load AS daily_load
-      FROM analytics.daily_strain AS strain FINAL
-      WHERE strain.user_id = {userId:UUID}
-        AND strain.is_deleted = 0
-        AND strain.date >= toDate({windowStart:String})
-        AND strain.date <= toDate({endDate:String})
-        ${accessWindowClause(ctx.accessWindow, "strain")}
-      ORDER BY date ASC`,
-      {
-        userId: ctx.userId,
-        windowStart,
-        endDate,
-        ...accessParams,
-      },
-      { priority: "dashboard" },
-    ),
+    loadStrainTargetInputs({
+      sensorStore,
+      userId: ctx.userId,
+      endDate,
+      days,
+      accessWindow: ctx.accessWindow,
+    }),
     sensorStore.query(
       sleepRowSchema,
       `SELECT
@@ -127,7 +74,7 @@ export async function loadTodayPlan(
         AND sleep.is_deleted = 0
         AND sleep.date > toDate({windowStart:String})
         AND sleep.date <= toDate({endDate:String})
-        ${accessWindowClause(ctx.accessWindow, "sleep")}
+        ${clickHouseDateAccessWindowClause(ctx.accessWindow, "sleep")}
       ORDER BY sleep.date DESC
       LIMIT 1`,
       {
@@ -141,11 +88,11 @@ export async function loadTodayPlan(
   ]);
 
   const effective = getEffectiveParams(storedParams);
-  const readinessMetrics = readinessRows[0];
+  const readinessMetrics = strainTargetInputs.readinessMetrics;
   const strainTarget = buildStrainTargetResult({
     endDate,
     readinessMetrics,
-    loads: loadRows,
+    loads: strainTargetInputs.loads,
     readinessWeights: effective.readinessWeights,
   });
 
