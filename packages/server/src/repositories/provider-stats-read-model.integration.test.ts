@@ -39,7 +39,9 @@ function renderMetricStreamRefreshSql(metricStreamTable: string): {
     .split(/\n\s*UNION ALL\s*\n/)
     .find((branch) => branch.includes("source('ingest', 'metric_stream')"));
   if (!metricStreamRefreshSql) {
-    throw new Error("provider_change_watermark source_provider_refreshes has no metric_stream branch");
+    throw new Error(
+      "provider_change_watermark source_provider_refreshes has no metric_stream branch",
+    );
   }
 
   const forceProviderProjection = metricStreamRefreshSql.includes(
@@ -53,10 +55,7 @@ function renderMetricStreamRefreshSql(metricStreamTable: string): {
         `SETTINGS force_optimize_projection_name = '${METRIC_STREAM_PROVIDER_GENERATION_PROJECTION}'`,
         "",
       )
-      .replace(
-        /\{%\s*if is_incremental\(\)\s*%\}[\s\S]*?\{%\s*endif\s*%\}/g,
-        "",
-      ),
+      .replace(/\{%\s*if is_incremental\(\)\s*%\}[\s\S]*?\{%\s*endif\s*%\}/g, ""),
   };
 }
 
@@ -77,11 +76,11 @@ function renderProviderStatsSql(
   return stripDbtModelWrapper(readModelSql("provider_stats.sql"))
     .replaceAll("{{ provider_dirty_key_batch_size }}", String(batchSize))
     .replace(/\{\{\s*ref\('provider_change_watermark'\)\s*\}\}/g, watermarkTable)
-    .replace(/\{\{\s*source\('ingest',\s*'metric_stream'\)\s*\}\}/g, `${ingestDatabase}.metric_stream`)
     .replace(
-      /\{\{\s*source\('postgres_fitness',\s*'([^']+)'\)\s*\}\}/g,
-      `${ingestDatabase}.$1`,
+      /\{\{\s*source\('ingest',\s*'metric_stream'\)\s*\}\}/g,
+      `${ingestDatabase}.metric_stream`,
     )
+    .replace(/\{\{\s*source\('postgres_fitness',\s*'([^']+)'\)\s*\}\}/g, `${ingestDatabase}.$1`)
     .replace(
       /\{%\s*if is_incremental\(\)\s*%\}([\s\S]*?)(?:\{%\s*else\s*%\}([\s\S]*?))?\{%\s*endif\s*%\}/g,
       (_, incrementalSql: string, nonIncrementalSql: string | undefined) =>
@@ -444,7 +443,9 @@ describe("provider stats read model", () => {
         format: "JSONEachRow",
       });
 
-      expect(providerSchema.parse(await result.json())).toEqual([{ provider_id: "alpha_provider" }]);
+      expect(providerSchema.parse(await result.json())).toEqual([
+        { provider_id: "alpha_provider" },
+      ]);
     } finally {
       await client.command({ query: `DROP TABLE IF EXISTS ${targetTable}` });
       await client.command({ query: `DROP TABLE IF EXISTS ${watermarkTable}` });

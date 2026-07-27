@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { extractCteSql, readModelSql } from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
+import {
+  extractCteSql,
+  readModelSql,
+} from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
 import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
@@ -179,7 +182,9 @@ describe("sleep heart-rate sample read model", () => {
       await client.command({ query: `DROP TABLE IF EXISTS ${targetTable}` });
       await client.command({ query: `TRUNCATE TABLE ${postgresDatabase}.sleep_session` });
       await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.deduped_sensor` });
-      await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.heart_rate_day_freshness` });
+      await client.command({
+        query: `TRUNCATE TABLE ${analyticsDatabase}.heart_rate_day_freshness`,
+      });
     }
   });
 
@@ -242,7 +247,9 @@ describe("sleep heart-rate sample read model", () => {
     } finally {
       await client.command({ query: `TRUNCATE TABLE ${postgresDatabase}.sleep_session` });
       await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.deduped_sensor` });
-      await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.heart_rate_day_freshness` });
+      await client.command({
+        query: `TRUNCATE TABLE ${analyticsDatabase}.heart_rate_day_freshness`,
+      });
     }
   });
 
