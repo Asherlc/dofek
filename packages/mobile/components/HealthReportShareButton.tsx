@@ -1,3 +1,4 @@
+import { formatDateMedium } from "@dofek/format/format";
 import type { HealthReportGenerateInput } from "dofek-server/types";
 import { useState } from "react";
 import { Share, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -5,6 +6,10 @@ import { useAuth } from "../lib/auth-context";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
+
+const SHARE_EXPIRY_OPTIONS = [7, 30, 90] as const;
+type ShareExpiryDays = (typeof SHARE_EXPIRY_OPTIONS)[number];
+const DEFAULT_SHARE_EXPIRY_DAYS: ShareExpiryDays = 7;
 
 export function HealthReportShareButton({
   disabled = false,
@@ -15,6 +20,7 @@ export function HealthReportShareButton({
 }) {
   const { serverUrl } = useAuth();
   const trpcUtils = trpc.useUtils();
+  const [expiresInDays, setExpiresInDays] = useState<ShareExpiryDays>(DEFAULT_SHARE_EXPIRY_DAYS);
   const [clientError, setClientError] = useState<string | null>(null);
   const generateReport = trpc.healthReport.generate.useMutation({
     onSuccess: async (report) => {
@@ -25,8 +31,11 @@ export function HealthReportShareButton({
       }
 
       const shareUrl = `${serverUrl.replace(/\/$/, "")}/health-report?token=${report.shareToken}`;
+      const message = report.expiresAt
+        ? `${shareUrl}\nExpires ${formatDateMedium(report.expiresAt)}`
+        : shareUrl;
       try {
-        await Share.share({ message: shareUrl, url: shareUrl });
+        await Share.share({ message, url: shareUrl });
       } catch (error: unknown) {
         captureException(error, { source: "health-report-native-share" });
         setClientError("Report created, but the share sheet could not be opened.");
@@ -40,12 +49,38 @@ export function HealthReportShareButton({
 
   return (
     <View style={styles.container}>
+      <View
+        accessibilityRole="radiogroup"
+        accessibilityLabel="Share link expires in"
+        style={styles.expiryRow}
+      >
+        <Text style={styles.expiryLabel}>Expires in</Text>
+        {SHARE_EXPIRY_OPTIONS.map((days) => {
+          const selected = expiresInDays === days;
+          return (
+            <TouchableOpacity
+              key={days}
+              style={[styles.expiryOption, selected && styles.expiryOptionSelected]}
+              disabled={buttonDisabled}
+              onPress={() => setExpiresInDays(days)}
+              activeOpacity={0.7}
+              accessibilityRole="radio"
+              accessibilityLabel={`${days} days`}
+              accessibilityState={{ checked: selected, disabled: buttonDisabled }}
+            >
+              <Text style={[styles.expiryOptionText, selected && styles.expiryOptionTextSelected]}>
+                {days} days
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
       <TouchableOpacity
         style={[styles.button, buttonDisabled && styles.buttonDisabled]}
         disabled={buttonDisabled}
         onPress={() => {
           setClientError(null);
-          generateReport.mutate(input);
+          generateReport.mutate({ ...input, expiresInDays });
         }}
         activeOpacity={0.7}
         accessibilityRole="button"
@@ -66,7 +101,36 @@ export function HealthReportShareButton({
 const styles = StyleSheet.create({
   container: {
     alignItems: "flex-start",
-    gap: 6,
+    gap: 8,
+  },
+  expiryRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+  },
+  expiryLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  expiryOption: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  expiryOptionSelected: {
+    backgroundColor: colors.surfaceSecondary,
+    borderColor: colors.accent,
+  },
+  expiryOptionText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  expiryOptionTextSelected: {
+    color: colors.text,
   },
   button: {
     backgroundColor: colors.accent,
