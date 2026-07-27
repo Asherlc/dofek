@@ -97,6 +97,7 @@ describe("resolveWhoopTokens", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.resetModules();
   });
 
   it("reuses a valid access token without calling Cognito refresh", async () => {
