@@ -157,9 +157,7 @@ export function MedicationRemindersPanel({
 
   return (
     <View style={styles.container}>
-      {writeError || setting.error?.message ? (
-        <Text style={styles.errorText}>{writeError ?? setting.error?.message}</Text>
-      ) : null}
+      {writeError ? <Text style={styles.errorText}>{writeError}</Text> : null}
 
       {reminders.length === 0 ? (
         <Text style={styles.emptyText}>No medication reminders yet.</Text>
