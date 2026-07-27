@@ -1,5 +1,5 @@
 import { formatDateYmd } from "@dofek/format/format";
-import { PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
+import { CYCLE_TRACKING_SAFETY_NOTICE, PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -77,6 +77,14 @@ function CyclePage() {
           {currentPhase.data !== undefined && currentPhase.error ? (
             <QueryStatePanel error={currentPhase.error} height={72} />
           ) : null}
+          <aside
+            aria-label="Cycle tracking safety notice"
+            className="mt-4 rounded-lg border border-border bg-surface-hover p-3"
+            role="note"
+          >
+            <p className="text-sm font-medium text-foreground">Tracking limitation</p>
+            <p className="mt-1 text-sm text-muted">{CYCLE_TRACKING_SAFETY_NOTICE}</p>
+          </aside>
         </div>
 
         <div className="card p-6">

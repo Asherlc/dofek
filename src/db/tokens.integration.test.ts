@@ -2,9 +2,20 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
-import { oauthToken, providerConnection } from "./schema/reference.ts";
+import {
+  oauthToken,
+  provider,
+  providerConnection,
+  webhookSubscription,
+} from "./schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
-import { connectProviderWithTokens, ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
+import {
+  connectProviderWithTokens,
+  deleteProviderAuthorization,
+  ensureProvider,
+  loadTokens,
+  saveTokens,
+} from "./tokens.ts";
 
 describe("Token storage (integration)", () => {
   let ctx: TestContext;
@@ -214,6 +225,65 @@ describe("Token storage (integration)", () => {
     expect(isEncryptedCredentialValue(encryptedRows[0]?.accessToken ?? "")).toBe(true);
     expect(isEncryptedCredentialValue(encryptedRows[0]?.refreshToken ?? "")).toBe(true);
     await expect(loadTokens(ctx.db, providerId, TEST_USER_ID)).resolves.toEqual(tokens);
+  });
+
+  it("removes the connection and its credentials while retaining the provider", async () => {
+    const providerId = "authorization-reset-provider";
+    await connectProviderWithTokens(
+      ctx.db,
+      {
+        id: providerId,
+        name: "Authorization Reset Provider",
+        apiBaseUrl: "https://example.com/api",
+      },
+      {
+        accessToken: "reset-access-token",
+        refreshToken: "reset-refresh-token",
+        expiresAt: new Date("2026-09-01T00:00:00Z"),
+        scopes: "read",
+      },
+      TEST_USER_ID,
+    );
+    await ctx.db.insert(webhookSubscription).values({
+      userId: TEST_USER_ID,
+      providerId,
+      providerName: "Authorization Reset Provider",
+      verifyToken: "authorization-reset-verifier",
+    });
+
+    await deleteProviderAuthorization(ctx.db, providerId, TEST_USER_ID);
+
+    const connectionRows = await ctx.db
+      .select()
+      .from(providerConnection)
+      .where(
+        and(
+          eq(providerConnection.userId, TEST_USER_ID),
+          eq(providerConnection.providerId, providerId),
+        ),
+      );
+    const tokenRows = await ctx.db
+      .select()
+      .from(oauthToken)
+      .where(and(eq(oauthToken.userId, TEST_USER_ID), eq(oauthToken.providerId, providerId)));
+    const webhookRows = await ctx.db
+      .select()
+      .from(webhookSubscription)
+      .where(
+        and(
+          eq(webhookSubscription.userId, TEST_USER_ID),
+          eq(webhookSubscription.providerId, providerId),
+        ),
+      );
+    const providerRows = await ctx.db
+      .select({ id: provider.id })
+      .from(provider)
+      .where(eq(provider.id, providerId));
+
+    expect(connectionRows).toEqual([]);
+    expect(tokenRows).toEqual([]);
+    expect(webhookRows).toEqual([]);
+    expect(providerRows).toEqual([{ id: providerId }]);
   });
 
   it("rolls back a new provider connection when token persistence fails", async () => {

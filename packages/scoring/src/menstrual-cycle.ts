@@ -14,6 +14,9 @@ import { chartColors, statusColors } from "./colors.ts";
 
 export type CyclePhase = "menstrual" | "follicular" | "ovulatory" | "luteal";
 
+export const CYCLE_TRACKING_SAFETY_NOTICE =
+  "Tracking estimates only. Do not use for birth control or diagnosis.";
+
 /**
  * Compute the cycle phase for a given day within a cycle.
  * @param dayOfCycle 1-based day number within the cycle

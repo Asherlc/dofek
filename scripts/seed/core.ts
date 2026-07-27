@@ -7,52 +7,13 @@ import {
   USER_ID,
 } from "./helpers.ts";
 
+const REVIEW_SEED_USER_IDS = [USER_ID, "00000000-0000-0000-0000-000000000001"];
+
 export async function clearSeedData(sql: Sql): Promise<void> {
-  await sql`DELETE FROM fitness.sleep_stage WHERE session_id IN (
-    SELECT id FROM fitness.sleep_session WHERE user_id = ${USER_ID}
-  )`;
-  await sql`DELETE FROM fitness.activity_interval WHERE activity_id IN (
-    SELECT id FROM fitness.activity WHERE user_id = ${USER_ID}
-  )`;
-  await sql`DELETE FROM fitness.strength_set WHERE activity_id IN (
-    SELECT id FROM fitness.activity WHERE user_id = ${USER_ID}
-  )`;
+  for (const userId of REVIEW_SEED_USER_IDS) {
+    await clearSeedUserData(sql, userId);
+  }
   await sql`DELETE FROM fitness.exercise_alias WHERE provider_id IN ('whoop', 'apple_health', 'strava', 'bodyspec', 'manual_review')`;
-  await sql`DELETE FROM fitness.food_entry_nutrient WHERE food_entry_id IN (
-    SELECT id FROM fitness.food_entry WHERE user_id = ${USER_ID}
-  )`;
-  await sql`DELETE FROM fitness.supplement_nutrient WHERE supplement_id IN (
-    SELECT id FROM fitness.supplement WHERE user_id = ${USER_ID}
-  )`;
-  await sql`DELETE FROM fitness.dexa_scan_region WHERE scan_id IN (
-    SELECT id FROM fitness.dexa_scan WHERE user_id = ${USER_ID}
-  )`;
-  await sql`DELETE FROM fitness.lab_result WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.lab_panel WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.medication_dose_event WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.medication WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.condition WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.allergy_intolerance WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.health_event WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.dexa_scan WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.journal_entry WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.life_events WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.breathwork_session WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.menstrual_period WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.food_entry WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.supplement WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.daily_metric_value WHERE daily_metrics_id IN (
-    SELECT id FROM fitness.daily_metrics WHERE user_id = ${USER_ID}
-  )`;
-  await sql`DELETE FROM fitness.daily_metrics WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.sleep_session WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.activity WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.sport_settings WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.user_settings WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.sync_log WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.oauth_token WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.provider_connection WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.session WHERE user_id = ${USER_ID}`;
   await sql`DELETE FROM fitness.provider_priority WHERE provider_id IN ('whoop', 'apple_health', 'strava', 'bodyspec', 'manual_review')`;
   await sql`DELETE FROM fitness.provider
     WHERE id IN ('whoop', 'apple_health', 'strava', 'bodyspec', 'manual_review')
@@ -60,6 +21,54 @@ export async function clearSeedData(sql: Sql): Promise<void> {
         SELECT 1 FROM fitness.provider_connection
         WHERE provider_connection.provider_id = provider.id
       )`;
+}
+
+async function clearSeedUserData(sql: Sql, userId: string): Promise<void> {
+  await sql`DELETE FROM fitness.sleep_stage WHERE session_id IN (
+    SELECT id FROM fitness.sleep_session WHERE user_id = ${userId}
+  )`;
+  await sql`DELETE FROM fitness.activity_interval WHERE activity_id IN (
+    SELECT id FROM fitness.activity WHERE user_id = ${userId}
+  )`;
+  await sql`DELETE FROM fitness.strength_set WHERE activity_id IN (
+    SELECT id FROM fitness.activity WHERE user_id = ${userId}
+  )`;
+  await sql`DELETE FROM fitness.food_entry_nutrient WHERE food_entry_id IN (
+    SELECT id FROM fitness.food_entry WHERE user_id = ${userId}
+  )`;
+  await sql`DELETE FROM fitness.supplement_nutrient WHERE supplement_id IN (
+    SELECT id FROM fitness.supplement WHERE user_id = ${userId}
+  )`;
+  await sql`DELETE FROM fitness.dexa_scan_region WHERE scan_id IN (
+    SELECT id FROM fitness.dexa_scan WHERE user_id = ${userId}
+  )`;
+  await sql`DELETE FROM fitness.lab_result WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.lab_panel WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.medication_dose_event WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.medication WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.condition WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.allergy_intolerance WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.health_event WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.dexa_scan WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.journal_entry WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.life_events WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.breathwork_session WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.menstrual_period WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.food_entry WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.supplement WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.daily_metric_value WHERE daily_metrics_id IN (
+    SELECT id FROM fitness.daily_metrics WHERE user_id = ${userId}
+  )`;
+  await sql`DELETE FROM fitness.daily_metrics WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.sleep_session WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.activity WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.sport_settings WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.user_settings WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.sync_log WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.oauth_token WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.provider_connection WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.session WHERE user_id = ${userId}`;
+  await sql`DELETE FROM fitness.user_profile WHERE id = ${userId}`;
 }
 
 export async function seedCore(sql: Sql): Promise<void> {
