@@ -24,11 +24,14 @@ describe("heart_rate_day_freshness model", () => {
     expect(modelSql).toContain("'join_use_nulls': 1");
   });
 
-  it("bounds incremental scans to rows newer than the watermark lookback", () => {
+  it("bounds incremental discovery then recomputes full day state", () => {
+    const touchedDaysSql = extractCteSql(modelSql, "touched_heart_rate_days");
     const changedDaysSql = extractCteSql(modelSql, "changed_heart_rate_days");
 
-    expect(changedDaysSql).toContain("ref('deduped_sensor')");
-    expect(changedDaysSql).toContain("channel = 'heart_rate'");
-    expect(changedDaysSql).toContain("{% if is_incremental() %}");
+    expect(touchedDaysSql).toContain("ref('deduped_sensor')");
+    expect(touchedDaysSql).toContain("channel = 'heart_rate'");
+    expect(touchedDaysSql).toContain("{% if is_incremental() %}");
+    expect(changedDaysSql).toContain("INNER JOIN touched_heart_rate_days");
+    expect(changedDaysSql).toContain("countIf(samples.is_deleted = 0) > 0 AS has_live_samples");
   });
 });

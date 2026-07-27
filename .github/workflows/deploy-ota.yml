@@ -128,10 +128,12 @@ jobs:
         env:
           DEBUG: true
           RELEASE_CHANNEL: production
-        run: npx eoas@2.3.17 publish --branch main --platform ios --nonInteractive --packageRunner pnpm
+        run: npx eoas@2.3.22 publish --branch main --platform ios --nonInteractive --packageRunner pnpm
       - name: Upload OTA sourcemaps to Sentry
         working-directory: packages/mobile
         run: pnpm exec sentry-expo-upload-sourcemaps dist
+      - name: Verify published OTA manifest
+        run: pnpm tsx scripts/check-ota-manifest.ts --require-update
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()

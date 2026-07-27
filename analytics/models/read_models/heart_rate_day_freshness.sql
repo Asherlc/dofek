@@ -28,6 +28,17 @@ scan_cutoff AS (
 ),
 {% endif %}
 
+touched_heart_rate_days AS (
+    SELECT DISTINCT
+        samples.user_id AS user_id,
+        samples.recorded_date AS recorded_date
+    FROM {{ ref('deduped_sensor') }} AS samples FINAL
+    WHERE samples.channel = 'heart_rate'
+    {% if is_incremental() %}
+        AND samples.refreshed_at > (SELECT cutoff_at FROM scan_cutoff)
+    {% endif %}
+),
+
 changed_heart_rate_days AS (
     SELECT
         samples.user_id AS user_id,
@@ -35,10 +46,10 @@ changed_heart_rate_days AS (
         max(samples.refreshed_at) AS refreshed_at,
         countIf(samples.is_deleted = 0) > 0 AS has_live_samples
     FROM {{ ref('deduped_sensor') }} AS samples FINAL
+    INNER JOIN touched_heart_rate_days
+        ON touched_heart_rate_days.user_id = samples.user_id
+        AND touched_heart_rate_days.recorded_date = samples.recorded_date
     WHERE samples.channel = 'heart_rate'
-    {% if is_incremental() %}
-        AND samples.refreshed_at > (SELECT cutoff_at FROM scan_cutoff)
-    {% endif %}
     GROUP BY
         samples.user_id,
         samples.recorded_date

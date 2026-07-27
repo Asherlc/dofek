@@ -21,6 +21,10 @@ describe("provider_change_watermark model", () => {
     expect(modelSql).toContain("analytics.body_measurement_sample FINAL");
     expect(normalizedSql).toContain("max(changed_at) AS max_changed_at FROM {{ this }}");
     expect(normalizedSql).toContain("INTERVAL {{ provider_change_watermark_lookback_hours }} HOUR");
+    expect(modelSql).toContain("existing_provider_watermarks AS");
+    expect(modelSql).toContain(
+      "OR recent_provider_changes.source_changed_at > existing_provider_watermarks.changed_at",
+    );
     expect(modelSql).toContain("'max_threads': 1");
     expect(modelSql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).not.toContain("force_optimize_projection_name");

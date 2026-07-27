@@ -18634,4 +18634,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Deploy and confirm production analytics
   cycles complete `provider_change_watermark`, `provider_stats`,
   `heart_rate_day_freshness`, and `sleep_heart_rate_sample` below 240s with
-  bounded row reads.
+  bounded row reads. Incremental watermark rows only advance when the scanned
+  source max exceeds the stored watermark, so lookback-bounded scans cannot
+  regress `changed_at`.
+
+## 2026-07-26 — OTA Cold Manifest Path Still on v2.3.16
+
+- **Status:** Fix pending production validation.
+- **Symptoms:** Production OTA remained pinned to
+  `ghcr.io/axelmarciano/expo-open-ota:v2.3.16`, whose cold latest-update scan
+  enumerated stored updates serially and could exceed client timeouts before
+  the 30-minute cache filled. Deploy publish used `eoas@2.3.17` and only
+  probed the manifest before publish.
+- **User impact:** Cold iOS clients could fail to discover OTA updates; a
+  successful publish could still leave an unverified rollout.
+- **Evidence:** Incident baseline for 2026-07-20 timed out valid production
+  channel requests for 60–65s on cold cache; upstream
+  [v2.3.22](https://github.com/axelmarciano/expo-open-ota/releases/tag/v2.3.22)
+  includes the O(1) cold-miss scan from
+  [PR #73](https://github.com/axelmarciano/expo-open-ota/pull/73). ARM64 and
+  amd64 images are published for that tag.
+- **Root cause:** Server pin lagged the known cold-path fix; post-publish
+  readiness did not re-validate an Expo Updates v1 manifest.
+- **Fix / mitigation:** Pin the OTA service and `eoas` CLI to v2.3.22 (last
+  2.x line with the cold-miss fix; v3 requires a breaking app-id/bucket
+  migration). After publish, run `check-ota-manifest.ts --require-update`.
+- **Validation:** Manifest checker unit tests cover `--require-update`
+  rejecting HTTP 204. Production validation still needs a deploy that rolls
+  the OTA service to v2.3.22 and a successful publish with post-publish
+  manifest verification.
+- **Remaining risk / follow-up:** Confirm cold-cache production manifest
+  latency after the image rolls, then close the 2026-07-20 OTA timeout
+  incident once measured under the client budget.

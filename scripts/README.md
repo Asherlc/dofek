@@ -81,9 +81,10 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   request](https://docs.expo.dev/technical-specs/expo-updates-1/) and prints
   the deployed update metadata, or reports that no update is available.
   URL, channel, runtime version, and platform have explicit command-line
-  overrides for local and preview checks.
+  overrides for local and preview checks. After a publish, pass
+  `--require-update` so a 204/no-update response fails the check.
   - Usage: `pnpm check:mobile-update`
-  - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
+  - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android> --require-update`
 - `e2e-web.ts`: Starts the isolated web E2E stack, runs Cypress, and always
   tears the stack down. Setup or Cypress failures remain the command's exit
   status after cleanup.

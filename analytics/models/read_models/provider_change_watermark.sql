@@ -26,6 +26,17 @@ scan_cutoff AS (
         ) - INTERVAL {{ provider_change_watermark_lookback_hours }} HOUR AS cutoff_at
     FROM watermark
 ),
+
+existing_provider_watermarks AS (
+    SELECT
+        user_id,
+        provider_id,
+        max(changed_at) AS changed_at
+    FROM {{ this }} FINAL
+    GROUP BY
+        user_id,
+        provider_id
+),
 {% endif %}
 
 source_provider_refreshes AS (
@@ -150,13 +161,28 @@ source_provider_refreshes AS (
     GROUP BY user_id, provider_id
 ),
 
-changed_providers AS (
+recent_provider_changes AS (
     SELECT
         user_id,
         provider_id,
-        max(source_refreshed_at) AS changed_at
+        max(source_refreshed_at) AS source_changed_at
     FROM source_provider_refreshes
     GROUP BY user_id, provider_id
+),
+
+changed_providers AS (
+    SELECT
+        recent_provider_changes.user_id AS user_id,
+        recent_provider_changes.provider_id AS provider_id,
+        recent_provider_changes.source_changed_at AS changed_at
+    FROM recent_provider_changes
+    {% if is_incremental() %}
+    LEFT JOIN existing_provider_watermarks
+        ON existing_provider_watermarks.user_id = recent_provider_changes.user_id
+        AND existing_provider_watermarks.provider_id = recent_provider_changes.provider_id
+    WHERE existing_provider_watermarks.provider_id IS NULL
+        OR recent_provider_changes.source_changed_at > existing_provider_watermarks.changed_at
+    {% endif %}
 ),
 
 refresh_clock AS (

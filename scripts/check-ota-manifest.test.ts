@@ -146,6 +146,33 @@ describe("checkOtaManifest", () => {
     }
   });
 
+  it("rejects a 204 response when --require-update is set", async () => {
+    let requestUrl: string | undefined;
+    const server = createServer((request, response) => {
+      requestUrl = request.url;
+      response.statusCode = 204;
+      response.end();
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Test OTA server did not expose a TCP port");
+    }
+    const url = `http://127.0.0.1:${address.port}/manifest`;
+
+    try {
+      const result = await runMobileUpdateCheck(["--url", url, "--require-update"]);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("No update deployed for platform=ios runtimeVersion=1.0");
+      expect(requestUrl).toBe("/manifest");
+    } finally {
+      server.close();
+      await once(server, "close");
+    }
+  });
+
   it("rejects an HTTP 400 response", async () => {
     const fetchImplementation = vi
       .fn<typeof fetch>()

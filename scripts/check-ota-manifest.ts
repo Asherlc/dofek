@@ -3,6 +3,7 @@ import { z } from "zod";
 const defaultCommandOptions = {
   channel: "production",
   platform: "ios",
+  requireUpdate: false,
   runtimeVersion: "1.0",
   url: "https://ota.dofek.asherlc.com/manifest",
 } satisfies OtaManifestRequestOptions;
@@ -26,6 +27,7 @@ const manifestSchema = z.object({
 const commandOptionsSchema = z.object({
   channel: z.string().min(1),
   platform: z.enum(["android", "ios"]),
+  requireUpdate: z.boolean(),
   runtimeVersion: z.string().min(1),
   url: z.url(),
 });
@@ -36,6 +38,7 @@ type OtaPlatform = z.infer<typeof commandOptionsSchema.shape.platform>;
 interface OtaManifestRequestOptions {
   channel: string;
   platform: OtaPlatform;
+  requireUpdate: boolean;
   runtimeVersion: string;
   url: string;
 }
@@ -86,6 +89,7 @@ function parseCommandOptions(arguments_: string[]): OtaManifestRequestOptions {
   const options: {
     channel: string;
     platform: string;
+    requireUpdate: boolean;
     runtimeVersion: string;
     url: string;
   } = { ...defaultCommandOptions };
@@ -103,6 +107,9 @@ function parseCommandOptions(arguments_: string[]): OtaManifestRequestOptions {
       case "--platform":
         options.platform = readOptionValue(arguments_, index, argument);
         index += 1;
+        break;
+      case "--require-update":
+        options.requireUpdate = true;
         break;
       case "--runtime-version":
         options.runtimeVersion = readOptionValue(arguments_, index, argument);
@@ -187,9 +194,11 @@ if (isDirectExecution) {
     timeoutMilliseconds: 5_000,
   });
   if (!manifest) {
-    console.log(
-      `No update deployed for platform=${requestOptions.platform} runtimeVersion=${requestOptions.runtimeVersion}`,
-    );
+    const message = `No update deployed for platform=${requestOptions.platform} runtimeVersion=${requestOptions.runtimeVersion}`;
+    if (requestOptions.requireUpdate) {
+      throw new Error(message);
+    }
+    console.log(message);
   } else {
     console.log(`id:              ${manifest.id}`);
     console.log(`createdAt:       ${manifest.createdAt}`);
