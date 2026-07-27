@@ -1,19 +1,45 @@
 import { Pressable, StyleSheet, Text } from "react-native";
-import { colors } from "../../theme";
+import { colors, fontSize, radius, spacing } from "../../theme";
+
+interface StorybookDateTimePickerEvent {
+  type: "set";
+  nativeEvent: {
+    timestamp: number;
+    utcOffset: number;
+  };
+}
 
 interface StorybookDateTimePickerProps {
   accessibilityLabel?: string;
+  onChange?: (event: StorybookDateTimePickerEvent, date?: Date) => void;
   value: Date;
 }
 
 export default function StorybookDateTimePicker({
   accessibilityLabel,
+  onChange,
   value,
 }: StorybookDateTimePickerProps) {
+  const selectPreviousDay = () => {
+    const selectedDate = new Date(value);
+    selectedDate.setDate(selectedDate.getDate() - 1);
+    onChange?.(
+      {
+        type: "set",
+        nativeEvent: {
+          timestamp: selectedDate.getTime(),
+          utcOffset: selectedDate.getTimezoneOffset(),
+        },
+      },
+      selectedDate,
+    );
+  };
+
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
+      onPress={selectPreviousDay}
       style={styles.picker}
     >
       <Text style={styles.text}>
@@ -31,13 +57,13 @@ const styles = StyleSheet.create({
   picker: {
     backgroundColor: colors.surfaceSecondary,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   text: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: fontSize.base,
   },
 });

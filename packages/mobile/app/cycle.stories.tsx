@@ -46,6 +46,21 @@ function createMockObservable(path: string): OperationResultObservable<AppRouter
         observer.next?.({ result: { data: currentPhase } });
       } else if (path === "menstrualCycle.history") {
         observer.next?.({ result: { data: periodHistory } });
+      } else if (path === "menstrualCycle.logPeriod") {
+        observer.next?.({
+          result: {
+            data: {
+              id: "33333333-3333-4333-8333-333333333333",
+              startDate: "2026-07-27",
+              endDate: null,
+              durationDays: null,
+              durationLabel: null,
+              notes: null,
+            },
+          },
+        });
+      } else {
+        throw new Error(`Unhandled cycle story tRPC operation: ${path}`);
       }
       observer.complete?.();
       return { unsubscribe() {} };
@@ -61,7 +76,11 @@ function CycleStoryFrame() {
   const queryClient = useMemo(
     () =>
       new QueryClient({
-        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+        defaultOptions: {
+          mutations: { retry: false },
+          // Story fixtures are immutable, so background refetches should not replace them.
+          queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+        },
       }),
     [],
   );

@@ -7,7 +7,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
-import { colors } from "../theme";
+import { colors, fontSize, fontWeight, radius, spacing } from "../theme";
 import { rootStackScreenOptions } from "./_layout-options";
 
 function localDateFromYmd(value: string): Date {
@@ -228,20 +228,20 @@ const styles = StyleSheet.create({
   safetyNotice: {
     backgroundColor: colors.surfaceSecondary,
     borderColor: colors.border,
-    borderRadius: 10,
+    borderRadius: radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    gap: 4,
-    marginTop: 12,
-    padding: 12,
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    padding: spacing.md,
   },
   safetyNoticeTitle: {
     color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.semibold,
   },
   safetyNoticeText: {
     color: colors.textSecondary,
-    fontSize: 14,
+    fontSize: fontSize.base,
     lineHeight: 20,
   },
   emptyText: {
