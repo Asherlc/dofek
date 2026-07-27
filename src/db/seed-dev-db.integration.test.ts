@@ -6,7 +6,7 @@ import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
-const userId = "00000000-0000-0000-0000-000000000001";
+const userId = "00000000-0000-4000-8000-000000000001";
 
 interface CountRow {
   count: number;

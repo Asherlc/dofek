@@ -150,6 +150,20 @@ describe("CyclePage", () => {
     expect(screen.getByText("Period history could not be loaded.")).toBeTruthy();
   });
 
+  it("shows the tracking-only safety boundary beside the phase estimate", () => {
+    state.phaseQuery.data = {
+      phase: "menstrual",
+      dayOfCycle: 3,
+      cycleLength: 28,
+    };
+
+    renderCyclePage();
+
+    expect(screen.getByRole("note", { name: "Cycle tracking safety notice" })).toHaveTextContent(
+      "Tracking estimates only. Do not use for birth control or diagnosis.",
+    );
+  });
+
   it("renders the server-provided duration label", () => {
     state.historyQuery.data = [
       {
