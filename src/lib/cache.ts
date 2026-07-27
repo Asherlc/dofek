@@ -169,6 +169,7 @@ const USER_QUERY_PREFIXES = {
   journalEntries: ["journal.entries", "journal.trends", "behaviorImpact."],
   lifeEvents: ["lifeEvents."],
   menstrualCycle: ["menstrualCycle."],
+  personalExperiments: ["personalExperiments."],
   personalization: ["personalization.", "mobileDashboard.", "recovery.", "stress.", "pmc."],
   sportSettings: ["sportSettings."],
 } as const;

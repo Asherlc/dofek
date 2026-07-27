@@ -46,6 +46,10 @@ vi.mock("../lib/trpc", () => ({
   },
 }));
 
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 vi.mock("../lib/useRefresh", () => ({
   useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
 }));

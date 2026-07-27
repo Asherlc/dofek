@@ -1,0 +1,78 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "sentry": {
+      "type": "remote",
+      "url": "https://mcp.sentry.dev/mcp",
+      "oauth": {}
+    },
+    "axiom": {
+      "type": "remote",
+      "url": "https://mcp.axiom.co/mcp"
+    },
+    "context7": {
+      "type": "local",
+      "command": ["npx", "-y", "@upstash/context7-mcp"]
+    },
+    "chrome-devtools": {
+      "type": "local",
+      "command": ["npx", "-y", "chrome-devtools-mcp@latest"]
+    },
+    "openaiDeveloperDocs": {
+      "type": "remote",
+      "url": "https://developers.openai.com/mcp"
+    },
+    "github": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "environment": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "{env:GITHUB_PERSONAL_ACCESS_TOKEN}"
+      }
+    }
+  },
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "ssh *": "allow",
+      "sshpass *": "allow",
+      "ssh-keygen *": "allow",
+      "ssh-add *": "allow",
+      "scp *": "allow",
+      "brew install *": "allow",
+      "ping *": "allow",
+      "curl *": "allow",
+      "python3 *": "allow",
+      "op item list *": "allow",
+      "op item get *": "allow",
+      "dig *": "allow",
+      "nslookup *": "allow",
+      "cat *": "allow",
+      "ls *": "allow",
+      "find *": "allow",
+      "git-crypt status *": "allow",
+      "scutil *": "allow",
+      "dscacheutil *": "allow",
+      "sudo killall *": "allow",
+      "docker compose *": "allow",
+      "docker ps *": "allow",
+      "git add *": "allow",
+      "git commit *": "allow",
+      "git push *": "allow",
+      "git fetch *": "allow",
+      "git merge *": "allow",
+      "git switch *": "allow",
+      "git checkout *": "allow",
+      "git stash *": "allow",
+      "git reset *": "allow",
+      "git ls-remote *": "allow",
+      "git status *": "allow",
+      "git log *": "allow",
+      "git diff *": "allow",
+      "gh *": "allow",
+      "pnpm *": "allow",
+      "npx eas *": "allow",
+      "terraform *": "allow"
+    },
+    "websearch": "allow"
+  }
+}

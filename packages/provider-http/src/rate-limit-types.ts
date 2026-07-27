@@ -21,6 +21,14 @@ export interface ProviderServiceUnavailableErrorOptions {
   retryAfterSeconds?: number | null;
 }
 
+export interface ProviderRequestTimeoutErrorOptions {
+  cause?: unknown;
+  providerId: string;
+  scope?: ProviderHttpErrorScope;
+  timeoutMs: number;
+  userId?: string | null;
+}
+
 export class ProviderRateLimitError extends Error {
   readonly providerId: string;
   readonly statusCode: number;
@@ -58,6 +66,25 @@ export class ProviderServiceUnavailableError extends Error {
     this.scope = options.scope ?? "provider";
     this.userId = options.userId ?? null;
     this.retryAfterSeconds = options.retryAfterSeconds ?? null;
+  }
+}
+
+export class ProviderRequestTimeoutError extends Error {
+  readonly code = "ETIMEDOUT";
+  readonly providerId: string;
+  readonly scope: ProviderHttpErrorScope;
+  readonly timeoutMs: number;
+  readonly userId: string | null;
+
+  constructor(options: ProviderRequestTimeoutErrorOptions) {
+    super(`${options.providerId} provider request timed out after ${options.timeoutMs}ms`, {
+      cause: options.cause,
+    });
+    this.name = "ProviderRequestTimeoutError";
+    this.providerId = options.providerId;
+    this.scope = options.scope ?? "provider";
+    this.timeoutMs = options.timeoutMs;
+    this.userId = options.userId ?? null;
   }
 }
 

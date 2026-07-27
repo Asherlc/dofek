@@ -12,8 +12,9 @@
  * Run:
  *   WHOOP_REFRESH_TOKEN=xxx WHOOP_USER_ID=123 pnpm vitest run src/providers/whoop-api-contract.test.ts
  */
+
+import { WhoopClient } from "@dofek/whoop/client";
 import { describe, expect, it } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
 import { z } from "zod";
 import { inlineSleepSchema, parseInlineSleep } from "./whoop/parsing.ts";
 

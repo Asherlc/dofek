@@ -16,12 +16,13 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Research off-the-shelf solutions before DIY**: Before building a custom tool, library, or infrastructure component, research established alternatives. Prefer an off-the-shelf solution when it fits the current requirement, is widely adopted, actively maintained, and has acceptable security, licensing, and operational trade-offs. Evaluate those qualities with current evidence such as release activity, maintainer responsiveness, adoption, and security posture; [OpenSSF Scorecard](https://scorecard.dev/) is one useful input for open-source security-maintenance signals.
 - **No branch switching without approval**: Never switch branches (`git checkout`, `git switch`, creating a new local branch from another branch, or rebasing onto another branch) unless the user explicitly approves it first.
 - **YAGNI first**: Follow "You Aren't Gonna Need It" — do not add abstractions, options, flags, or future-proofing for hypothetical needs unless there is a current, concrete requirement.
+- **No one-off changes in steady-state code**: Every merged change to production code, configuration, scripts, and workflows must represent the intended durable steady state. Do not leave incident-specific branches, forced optimizer settings, oversized temporary timeouts, diagnostic-only instrumentation, cleanup hooks, feature flags, or manual-removal TODOs that must be remembered and removed later. Perform one-time diagnosis and remediation as explicit operator actions outside steady-state runtime paths, and retain only generally useful observability, regression tests, reproducible schema migrations, and incident documentation.
 - **Ask before deviating from YAGNI**: If a non-YAGNI change appears important, stop and ask the user before implementing it.
 - **Prefer elegant solutions**: Favor clear, maintainable, first-principles fixes over ad-hoc patches or layered self-healing workarounds. If a fix feels hacky, stop and propose a cleaner alternative.
 - **Check with user before choosing approach**: Before committing to a specific implementation approach, strategy, or workaround for a non-trivial task, confirm the direction with the user first. Do not independently choose a strategy and run with it without user alignment.
 - **Persist on chosen strategy; ask before pivoting**: When pursuing a specific user-requested strategy/tactic, continue until you have exhausted reasonable debugging and implementation options for that strategy. Do not switch to a different approach on your own. If the strategy appears blocked after reasonable attempts, stop and check with the user before pivoting.
 - **Strategy pivot hook (mandatory stop gate)**: Before changing strategy, run this gate in your own response: (1) state the current strategy, (2) list attempted steps and evidence, (3) explain exactly why it is blocked, (4) propose one alternative strategy, (5) ask for approval in one sentence. Do not execute the alternative strategy, run additional commands for it, or make code changes for it until the user explicitly approves.
-- **Read README.md first**: Before working on deployment, infrastructure, or operational tasks, always read the README for current architecture, deployment procedures, and operational runbooks. The README is the source of truth for how the production system works.
+- **Read the sibling README.md first**: Before starting any task in this directory, read [README.md](./README.md) for the current architecture and shared project context. For deployment, infrastructure, or operational work, treat its deployment procedures and operational runbooks as the source of truth.
 - **Mirror agent config files with symlinks**: Every directory that contains an `AGENTS.md` file must also contain `CLAUDE.md` and `GEMINI.md` symlinked to `AGENTS.md` (same directory). Keep these in sync whenever adding or moving agent guidance files.
 - **No commented-out dead code/config**: Do not leave commented-out code, workflow jobs, config blocks, or TODO-disabled paths unless the user explicitly asks for that. If something is being removed, delete it fully.
 - **"I can't see a provider" means it's broken**: When the user says they can't see a provider in the UI, it means the provider is failing validation and being hidden. The fix is to debug **why** the provider's `validate()` fails (missing env vars, bad config, etc.) — not to show disabled providers. Disabled providers are intentionally hidden from users. Use the `/fix-provider` skill to diagnose and fix.
@@ -95,7 +96,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Never store the same information in two places**: There must be exactly one canonical storage location for any piece of information. Do not mirror, shadow-write, or keep transitional duplicate tables/columns as a long-term state. When moving data to a new location, do a comprehensive migration: backfill the new canonical location, update every writer and reader, remove the old storage location, and delete obsolete schema/types/docs/tests that imply the old location still exists. Compatibility views are acceptable only when they are read-only projections over the canonical storage and do not store duplicate data.
 - **Do not sync sensor-derived analytics back into Postgres app state**: Raw sensor-derived analytics may live in ClickHouse read models, but never backfill canonical Postgres app tables such as `fitness.user_profile` from `metric_stream`, `analytics.*`, or Postgres read models derived from sensor streams. If a value is user-entered or provider-supplied raw profile state, store it in Postgres; if it is computed from sensor samples, keep it as a query/read-model result.
 - **Deduplicate at query time, not insert time**: Never filter, merge, or discard data during ingestion. Store all raw records from all sources with their source attribution intact (e.g., per-source daily totals, not a naive sum across sources). Deduplication belongs in materialized views or queries — not in insert pipelines. This preserves the ability to re-derive correct values when dedup logic improves and avoids irreversible data loss. For example, when Apple Health reports steps from both iPhone and Apple Watch, store each source's daily total separately and let the view pick the best source — don't sum them at insert time.
-- **Activity sensor analytics must use deduped ClickHouse data**: Do not satisfy activity sensor analytics, tests, or CI fixes by reading directly from raw `fitness.metric_stream`. Activity stream analytics must read deduped data from ClickHouse (`analytics.deduped_sensor` and derived ClickHouse read models such as `analytics.activity_summary`) so provider overlap and source-priority rules are applied.
+- **Activity sensor analytics must use deduped ClickHouse data**: Do not satisfy activity sensor analytics, tests, or CI fixes by reading directly from raw `ingest.metric_stream`. Activity stream analytics must read deduped data from ClickHouse (`analytics.deduped_sensor` and derived ClickHouse read models such as `analytics.activity_summary`) so provider overlap and source-priority rules are applied.
 - **ClickHouse read models are dbt-owned incremental models**: New expensive ClickHouse analytics read models must live as `.sql` dbt models under `analytics/models/` and use incremental target tables. Do not embed analytics transformation SQL in TypeScript, do not add naive ClickHouse materialized views that recompute on read or full-refresh in the serving/deploy path, and do not run historical refreshes from web/worker request paths. `pnpm lint:analytics-policy` enforces that dbt analytics models are explicit incremental models and that raw SQL files do not introduce naive materialized views. Controlled full refreshes/backfills require explicit operator intent, bounded resources, and a runbook.
 - **Name analytics serving tables by domain and grain**: Do not use generic suffixes such as `_read_model`, `_summary`, `_aggregate`, `_table`, or `_model` for new ClickHouse/dbt serving table names. Use names that describe the domain concept and row grain, such as `daily_recovery`, `daily_strain`, `daily_sleep`, or `weekly_healthspan`. Add more words only when they name a domain concept, not an architectural role.
 - **Expensive sensor calculations belong in ClickHouse read models**: If a server route needs an expensive calculation over sensor samples or locations (centroids, distance, elevation, per-activity aggregates, time-series rollups), compute it in a ClickHouse dbt/read model over deduped data rather than recomputing it per request in TypeScript. Keep the raw inputs canonical and provider-agnostic; ClickHouse read models are the place for derived analytics that make UI/API reads fast.
@@ -181,10 +182,10 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 ## Project Structure
 ```
 src/                         — Root package: sync runner, providers, DB schema
-  db/schema.ts               — Drizzle schema (source of truth for DB)
+  db/schema/                 — Drizzle schema modules (source of truth for DB)
   db/index.ts                — DB connection
   providers/types.ts         — Provider plugin interface
-  providers/                 — Provider implementations (30 providers)
+  providers/                 — Provider implementations
   index.ts                   — CLI entry point (enqueues sync via BullMQ)
 packages/
   format/src/                — @dofek/format: date, duration, number, unit formatting
@@ -223,8 +224,10 @@ packages/
     app-side/                — Phone-side companion service (file receive, settings)
     src/                     — Shared logic (IMU collector, binary format, types)
 cypress/                     — E2E tests (Cypress)
+analytics/                   — dbt-owned incremental ClickHouse models
+scripts/                     — TypeScript repository and operational tooling
 drizzle/                     — SQL migrations
-deploy/                      — Terraform (Hetzner + Cloudflare) + Docker Compose deploy
+deploy/                      — OCI/Cloudflare Terraform + Docker Swarm production stack
 Dockerfile                   — Multi-stage: server target (includes built web assets)
 ```
 
@@ -234,7 +237,8 @@ Durable, non-obvious notes for working in the Cursor Cloud VM. The startup updat
 
 ### Toolchain (preinstalled, persisted in snapshot)
 - **Node 26 is required** (`engines.node >=26`, `.nvmrc` = 26). The VM's default `/exec-daemon/node` is Node 22 and sits early in `PATH`. A one-time line appended to `~/.bashrc` prepends nvm's Node 26 bin, so **login shells** (and the update script runner) use Node 26. If a command unexpectedly runs Node 22, run it via `bash -lc '...'` or `nvm use 26`.
-- **pnpm 10.33.0** was installed globally via `npm i -g pnpm@10.33.0` under Node 26 (Node 26 no longer bundles `corepack`). Always use `pnpm` (never npm/yarn).
+- **pnpm 11.17.0** is pinned by the root `packageManager` field. Always use
+  the pinned pnpm release (never npm or yarn for workspace commands).
 - **uv** is preinstalled at `~/.local/bin/uv`; it backs `pnpm analytics:build` (dbt) and `pnpm lint:analytics-sql` (sqlfluff). First dbt/sqlfluff run downloads Python packages.
 
 ### Docker (must be started manually each VM session)

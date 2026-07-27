@@ -1,6 +1,6 @@
+import { WhoopClient } from "@dofek/whoop/client";
+import type { WhoopWeightliftingWorkoutResponse, WhoopWorkoutRecord } from "@dofek/whoop/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
-import type { WhoopWeightliftingWorkoutResponse, WhoopWorkoutRecord } from "whoop-whoop/types";
 import type { SyncDatabase } from "../../db/index.ts";
 import { SyncWindow } from "../sync-window.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";

@@ -252,6 +252,11 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     paddingHorizontal: 4,
   },
+  modalDescription: {
+    fontSize: 13,
+    color: colors.accent,
+    marginBottom: 12,
+  },
   errorBanner: {
     backgroundColor: "rgba(239, 68, 68, 0.1)",
     borderRadius: 8,

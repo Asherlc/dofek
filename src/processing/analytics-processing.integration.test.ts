@@ -59,6 +59,12 @@ describe("analytics processing (integration)", () => {
         runId: "shared-dataset-run",
         modelResults: [
           {
+            name: "provider_change_watermark",
+            status: "succeeded",
+            errorCode: null,
+            message: null,
+          },
+          {
             name: "provider_stats",
             status: "succeeded",
             errorCode: null,

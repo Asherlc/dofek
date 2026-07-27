@@ -1,12 +1,14 @@
 # @dofek/onboarding
 
-Provider guide visibility logic and provider categorization.
+Shared first-run and goal metadata for web and mobile.
 
 ## Features
 
+- **Get Started Flow**: Checklist steps and iOS TestFlight invite copy for onboarding.
+- **Primary Goal**: Roadmap-aligned outcome options (`racePreparation`, `sleepConsistency`, `strengthProgression`, `weightTrend`) and the `primaryGoal` settings key.
 - **Provider Categorization**: Groups supported providers into logical categories like "Activity Tracking", "Sleep & Recovery", "Nutrition", etc.
 - **Provider Guide Visibility**: Logic to determine when the provider guide should be presented to the user.
-- **Settings Integration**: Shared key for persisting provider guide state.
+- **Settings Integration**: Shared keys for persisting provider guide dismissal and primary goal.
 
 ## Implementation Details
 

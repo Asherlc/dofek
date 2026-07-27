@@ -37,6 +37,7 @@ const baseActivity: ActivityDetail = {
   elevationLoss: 340,
   sampleCount: 5400,
   providerAbsentAt: null,
+  sourceDecision: null,
 };
 
 const headerMeta = {

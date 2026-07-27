@@ -481,6 +481,7 @@ jobs:
       - run: pnpm knip
         env:
           CLICKHOUSE_URL: http://default:health@localhost:8123
+          EXPO_PUBLIC_SENTRY_DSN: https://public@example.invalid/1
 
   spellcheck:
     name: Spell Check

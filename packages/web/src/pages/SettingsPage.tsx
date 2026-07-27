@@ -5,10 +5,12 @@ import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel.tsx";
+import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
 import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
+import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector.tsx";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
@@ -183,8 +185,19 @@ export function SettingsPage() {
         <McpTokensPanel />
       </PageSection>
 
+      <PageSection title="Primary goal" subtitle="Choose the outcome Dofek should optimize toward">
+        <PrimaryGoalSelector showHeading={false} />
+      </PageSection>
+
       <PageSection title="Units" subtitle="Choose how measurements are displayed">
         <UnitSystemToggle />
+      </PageSection>
+
+      <PageSection
+        title="Medication Reminders"
+        subtitle="Optional daily reminders with imported logging state"
+      >
+        <MedicationRemindersPanel />
       </PageSection>
 
       <PageSection title="Medication Doses" subtitle="Review imported medication dose events">

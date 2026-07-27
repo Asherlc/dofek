@@ -72,6 +72,7 @@ vi.mock("expo-router", async () => {
 
   return {
     Stack,
+    useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   };
 });
 

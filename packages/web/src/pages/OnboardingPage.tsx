@@ -1,6 +1,7 @@
 import { GET_STARTED_STEPS, IOS_TESTFLIGHT_INVITE } from "@dofek/onboarding/get-started-flow";
 import { Link } from "@tanstack/react-router";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector.tsx";
 
 export function OnboardingPage() {
   return (
@@ -11,9 +12,14 @@ export function OnboardingPage() {
           Set up Dofek with your real data
         </h1>
         <p className="mt-4 max-w-2xl text-sm leading-6 text-muted sm:text-base">
-          Dofek is useful after it has data to work with. Start by connecting the sources you
-          already use, then open the dashboard when sync has something to show.
+          Dofek is useful after it has data to work with. Start by choosing a primary goal,
+          connecting the sources you already use, then open the dashboard when sync has something to
+          show.
         </p>
+      </section>
+
+      <section className="mt-4 rounded-lg border border-border bg-white/80 p-5 shadow-sm sm:p-6">
+        <PrimaryGoalSelector />
       </section>
 
       <section className="mt-4 grid gap-4 lg:grid-cols-3">

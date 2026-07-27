@@ -11,6 +11,7 @@ const navItems = [
   { to: "/nutrition", label: "Nutrition" },
   { to: "/body", label: "Body" },
   { to: "/correlation", label: "Correlation" },
+  { to: "/experiments", label: "Experiments" },
   { to: "/tracking", label: "Tracking" },
   { to: "/health-report", label: "Reports" },
 ] as const;
@@ -80,7 +81,7 @@ export function AppHeader({
               <button
                 type="button"
                 onClick={logout}
-                className="text-xs font-medium text-subtle hover:text-foreground transition-colors cursor-pointer"
+                className="text-xs font-medium text-muted hover:text-foreground transition-colors cursor-pointer"
               >
                 Sign out
               </button>
@@ -163,7 +164,7 @@ export function AppHeader({
               <button
                 type="button"
                 onClick={logout}
-                className="mt-1 text-xs text-subtle hover:text-foreground transition-colors cursor-pointer"
+                className="mt-1 text-xs text-muted hover:text-foreground transition-colors cursor-pointer"
               >
                 Sign out
               </button>
