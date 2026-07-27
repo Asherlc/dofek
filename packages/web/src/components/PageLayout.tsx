@@ -32,22 +32,23 @@ export function PageLayout({
             aria-label="Section navigation"
             className="border-b border-border px-3 sm:px-6 bg-surface/45 backdrop-blur-xl"
           >
-            <div className="mx-auto max-w-6xl flex gap-1 overflow-x-auto scrollbar-hide">
+            <ul aria-label="Section links" className="mx-auto flex max-w-6xl flex-wrap gap-1">
               {tabs.map((tab) => (
-                <Link
-                  key={tab.to}
-                  to={tab.to}
-                  activeOptions={{ exact: tab.exact }}
-                  className="px-3 py-2.5 text-xs font-medium transition-colors text-subtle hover:text-foreground whitespace-nowrap"
-                  activeProps={{
-                    className:
-                      "px-3 py-2.5 text-xs font-semibold transition-colors text-foreground border-b-2 border-accent whitespace-nowrap",
-                  }}
-                >
-                  {tab.label}
-                </Link>
+                <li key={tab.to} className="flex">
+                  <Link
+                    to={tab.to}
+                    activeOptions={{ exact: tab.exact }}
+                    className="px-3 py-2.5 text-xs font-medium transition-colors text-subtle hover:text-foreground whitespace-nowrap"
+                    activeProps={{
+                      className:
+                        "px-3 py-2.5 text-xs font-semibold transition-colors text-foreground border-b-2 border-accent whitespace-nowrap",
+                    }}
+                  >
+                    {tab.label}
+                  </Link>
+                </li>
               ))}
-            </div>
+            </ul>
           </nav>
         )}
         <main className="mx-auto max-w-6xl px-3 py-4 sm:px-6 sm:py-6 lg:py-8 space-y-6 sm:space-y-7">

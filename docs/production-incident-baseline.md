@@ -19352,3 +19352,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   must run in exact-head CI. Future cleanup must resolve exact targets with
   read-only inspection and obtain explicit target-specific approval; never
   infer that Docker's “unused” label authorizes deletion.
+
+## 2026-07-27 — Dotenv Linter Release Download Was Reset
+
+- **Status:** External transport failure confirmed; fresh exact-head CI
+  validation pending.
+- **Symptoms:** PR #2223 CI run
+  [30312025186](https://github.com/Asherlc/dofek/actions/runs/30312025186)
+  failed `Test / Dotenv Lint` in job
+  [90129737415](https://github.com/Asherlc/dofek/actions/runs/30312025186/job/90129737415)
+  before the repository dotenv check executed.
+- **User impact:** No production impact. The pull request's required CI gate was
+  temporarily blocked.
+- **Evidence:** The exact failing command was
+  `sh "$RUNNER_TEMP/dotenv-linter-install.sh" -b "$HOME/.local/bin" v4.0.0`.
+  The first fatal line was
+  `curl: (35) Recv failure: Connection reset by peer`; the installer then
+  reported that the pinned v4.0.0 release tarball download failed. Curl
+  documents exit code 35 as a TLS/SSL connection error:
+  <https://curl.se/libcurl/c/libcurl-errors.html>.
+- **Root cause:** The external release-asset connection reset while the pinned
+  dotenv-linter artifact was downloading. Repository code and the dotenv lint
+  command had not run.
+- **Fix / mitigation:** No code, workflow, retry, or timeout behavior changed.
+  The incident is recorded on a new commit, so that exact head receives a fresh
+  complete CI run under the campaign's one-retry policy.
+- **Validation:** All other completed jobs on the failed head were green,
+  skipped, or neutral when the transport failure was diagnosed. The new
+  documentation head must pass the complete CI and review gates before merge.
+- **Remaining risk / follow-up:** A second external download failure should be
+  treated as an unresolved upstream transport incident rather than papered over
+  with repository retry or timeout changes.
