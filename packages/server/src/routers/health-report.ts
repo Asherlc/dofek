@@ -46,7 +46,7 @@ export const healthReportRouter = router({
     .mutation(async ({ ctx, input }) => {
       const reportData =
         input.reportType === "weekly"
-          ? await new WeeklyReportRepository(ctx.userId, ctx.timezone, ctx.sensorStore).getReport(
+          ? await new WeeklyReportRepository(ctx.userId, ctx.sensorStore).getReport(
               input.weeks,
               input.endDate,
             )

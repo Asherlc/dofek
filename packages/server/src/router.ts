@@ -59,6 +59,7 @@ import { supplementsRouter } from "./routers/supplements.ts";
 import { supportRouter } from "./routers/support.ts";
 import { syncRouter } from "./routers/sync.ts";
 import { todayPlanRouter } from "./routers/today-plan.ts";
+import { tokenAuthRouter } from "./routers/token-auth.ts";
 import { trainingRouter } from "./routers/training.ts";
 import { trendsRouter } from "./routers/trends.ts";
 import { watchAltitudeSyncRouter } from "./routers/watch-altitude-sync.ts";
@@ -103,6 +104,7 @@ const appRouterProcedures = {
   companionToken: companionTokenRouter,
   correlation: correlationRouter,
   credentialAuth: credentialAuthRouter,
+  tokenAuth: tokenAuthRouter,
   pmc: pmcRouter,
   power: powerRouter,
   durationCurves: durationCurvesRouter,

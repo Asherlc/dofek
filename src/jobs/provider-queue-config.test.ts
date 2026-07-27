@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CyclingAnalyticsProvider } from "../providers/cycling-analytics.ts";
 import {
   DEFAULT_QUEUE_CONFIG,
   getConfiguredProviderIds,
@@ -25,12 +26,12 @@ describe("getProviderQueueConfig", () => {
     expect(config.syncTier).toBe("realtime");
   });
 
-  it("returns fitbit-specific config with rate limiter", () => {
-    const config = getProviderQueueConfig("fitbit");
-    expect(config.limiter).toBeDefined();
-    expect(config.limiter?.max).toBe(150);
-    expect(config.limiter?.duration).toBe(3_600_000); // 1 hour
-    expect(config.syncTier).toBe("frequent");
+  it("returns the realtime config for Cycling Analytics' canonical ID", () => {
+    const providerId = new CyclingAnalyticsProvider().id;
+    const config = getProviderQueueConfig(providerId);
+    expect(config.limiter).toBeUndefined();
+    expect(config.concurrency).toBe(3);
+    expect(config.syncTier).toBe("realtime");
   });
 
   it("returns default config for unknown provider", () => {
@@ -103,6 +104,7 @@ describe("getConfiguredProviderIds", () => {
     expect(ids).toContain("whoop");
     expect(ids).toContain("fatsecret");
     expect(ids).toContain("bodyspec");
+    expect(ids).toContain(new CyclingAnalyticsProvider().id);
   });
 
   it("does not contain duplicates", () => {

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, type SQLWrapper, sql } from "drizzle-orm";
 import type { TokenSet } from "../auth/oauth.ts";
 import {
   decryptCredentialValue,
@@ -34,11 +34,21 @@ function oauthTokenContext(
   };
 }
 
+interface ProviderEnsureDatabase {
+  execute(query: SQLWrapper): Promise<unknown>;
+}
+
+type ProviderConnectionTransaction = ProviderEnsureDatabase & Pick<SyncDatabase, "insert">;
+
+interface ProviderConnectionDatabase {
+  transaction<T>(callback: (transaction: ProviderConnectionTransaction) => Promise<T>): Promise<T>;
+}
+
 /**
  * Ensure a provider row exists. Idempotent — does nothing if already present.
  */
 export async function ensureProvider(
-  db: Pick<SyncDatabase, "execute">,
+  db: ProviderEnsureDatabase,
   id: string,
   name: string,
   apiBaseUrl?: string,
@@ -73,7 +83,7 @@ export async function ensureProvider(
  * Save (upsert) OAuth tokens for a provider scoped to a user.
  */
 export async function saveTokens(
-  db: SyncDatabase,
+  db: Pick<SyncDatabase, "insert">,
   providerId: string,
   tokens: TokenSet,
   userId?: string,
@@ -110,6 +120,27 @@ export async function saveTokens(
         updatedAt: new Date(),
       },
     });
+}
+
+/**
+ * Atomically establish a user's provider connection and persist its tokens.
+ * A token write failure rolls back the connection so clients never observe an
+ * authorized provider without usable credentials.
+ */
+export async function connectProviderWithTokens(
+  db: ProviderConnectionDatabase,
+  provider: {
+    id: string;
+    name: string;
+    apiBaseUrl: string;
+  },
+  tokens: TokenSet,
+  userId: string,
+): Promise<void> {
+  await db.transaction(async (transaction) => {
+    await ensureProvider(transaction, provider.id, provider.name, provider.apiBaseUrl, userId);
+    await saveTokens(transaction, provider.id, tokens, userId);
+  });
 }
 
 /**

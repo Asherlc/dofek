@@ -9,7 +9,7 @@ import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
-import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
+import { createCapturingMetricStreamPublisher, fakeJwt } from "./test-helpers.ts";
 import { WgerProvider } from "./wger.ts";
 
 // ============================================================
@@ -54,6 +54,8 @@ function fakeWeightEntry(overrides: Partial<FakeWgerWeightEntry> = {}): FakeWger
   };
 }
 
+const refreshedAccessToken = fakeJwt(1_893_456_000);
+
 function wgerHandlers(
   sessions: FakeWgerWorkoutSession[],
   weightEntries: FakeWgerWeightEntry[],
@@ -61,16 +63,13 @@ function wgerHandlers(
 ) {
   return [
     // Token refresh
-    http.post("https://wger.de/api/v2/token", () => {
+    http.post("https://wger.de/api/v2/token/refresh", () => {
       if (opts?.refreshError) {
         return new HttpResponse("Unauthorized", { status: 401 });
       }
       return HttpResponse.json({
-        access_token: "refreshed-token",
-        refresh_token: "new-refresh",
-        expires_in: 7200,
-        scope: "read",
-        token_type: "Bearer",
+        access: refreshedAccessToken,
+        refresh: "new-refresh",
       });
     }),
 
@@ -258,7 +257,8 @@ describe("WgerProvider.sync() (integration)", () => {
     // Verify token was refreshed in DB
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "wger");
-    expect(tokens?.accessToken).toBe("refreshed-token");
+    expect(tokens?.accessToken).toBe(refreshedAccessToken);
+    expect(tokens?.refreshToken).toBe("new-refresh");
   });
 
   it("handles pagination across multiple pages", async () => {
@@ -514,7 +514,9 @@ describe("WgerProvider.sync() (integration)", () => {
     );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("No OAuth tokens");
+    expect(result.errors[0]?.message).toBe(
+      "No tokens found for Wger. Connect Wger in Data Sources.",
+    );
     expect(result.recordsSynced).toBe(0);
   });
 });

@@ -115,9 +115,20 @@ export function slideAdaptiveWindow(
   state: ProviderAdaptiveRateState,
   nowMs: number,
 ): ProviderAdaptiveRateState {
-  if (nowMs - state.windowStartMs < ADAPTIVE_RATE_WINDOW_MS) return state;
+  const lastRequestMs = state.lastRequestMs === null ? null : Math.min(state.lastRequestMs, nowMs);
+  if (nowMs < state.windowStartMs) {
+    return {
+      ...state,
+      lastRequestMs,
+      windowStartMs: nowMs,
+    };
+  }
+  if (nowMs - state.windowStartMs < ADAPTIVE_RATE_WINDOW_MS) {
+    return lastRequestMs === state.lastRequestMs ? state : { ...state, lastRequestMs };
+  }
   return {
     ...state,
+    lastRequestMs,
     windowStartMs: nowMs,
     requestCount: 0,
   };
@@ -146,7 +157,7 @@ export function learnInferredBudget(
 }
 
 export function admissionDelayMs(state: ProviderAdaptiveRateState, nowMs: number): number {
-  let delayMs = Math.max(throttleDelayMs(state, nowMs), budgetAdmissionDelayMs(state));
+  let delayMs = Math.max(throttleDelayMs(state, nowMs), budgetAdmissionDelayMs(state, nowMs));
 
   if (
     state.providerId === "strava" &&
@@ -154,15 +165,19 @@ export function admissionDelayMs(state: ProviderAdaptiveRateState, nowMs: number
     state.stravaShortUsage != null
   ) {
     const remaining = state.stravaShortLimit - state.stravaShortUsage;
+    let quotaIntervalMs: number;
     if (remaining <= 2) {
-      delayMs = Math.max(delayMs, state.throttleMs * 4);
+      quotaIntervalMs = state.throttleMs * 4;
     } else if (remaining <= 5) {
-      delayMs = Math.max(delayMs, state.throttleMs * 2);
+      quotaIntervalMs = state.throttleMs * 2;
     } else {
       const windowMs = 15 * 60 * 1000;
-      const pacedDelay = Math.ceil(windowMs / remaining);
-      delayMs = Math.max(delayMs, Math.min(pacedDelay, ADAPTIVE_THROTTLE_MAX_MS));
+      quotaIntervalMs = Math.min(Math.ceil(windowMs / remaining), ADAPTIVE_THROTTLE_MAX_MS);
     }
+    delayMs = Math.max(
+      delayMs,
+      remainingIntervalDelayMs(state.lastRequestMs, quotaIntervalMs, nowMs),
+    );
   }
 
   return delayMs;
@@ -171,10 +186,19 @@ export function admissionDelayMs(state: ProviderAdaptiveRateState, nowMs: number
 export function throttleDelayMs(state: ProviderAdaptiveRateState, nowMs: number): number {
   if (state.lastRequestMs == null) return 0;
   const elapsed = nowMs - state.lastRequestMs;
-  return elapsed < state.throttleMs ? state.throttleMs - elapsed : 0;
+  return Math.max(0, state.throttleMs - elapsed);
 }
 
-function budgetAdmissionDelayMs(state: ProviderAdaptiveRateState): number {
+function remainingIntervalDelayMs(
+  lastRequestMs: number | null,
+  intervalMs: number,
+  nowMs: number,
+): number {
+  if (lastRequestMs == null) return 0;
+  return Math.max(0, intervalMs - Math.max(0, nowMs - lastRequestMs));
+}
+
+function budgetAdmissionDelayMs(state: ProviderAdaptiveRateState, nowMs: number): number {
   if (state.inferredBudget == null) return 0;
 
   const softCap = Math.floor(state.inferredBudget * ADAPTIVE_BUDGET_SAFETY_RATIO);
@@ -185,7 +209,8 @@ function budgetAdmissionDelayMs(state: ProviderAdaptiveRateState): number {
     ? Math.max(1, Math.floor(softCap / httpRequestsPerSyncJob(state.providerId)))
     : softCap;
   if (effectiveRequestCount >= effectiveSoftCap) {
-    return state.throttleMs;
+    const elapsedMs = Math.max(0, nowMs - state.windowStartMs);
+    return Math.max(0, ADAPTIVE_RATE_WINDOW_MS - elapsedMs);
   }
 
   return 0;

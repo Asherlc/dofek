@@ -1038,19 +1038,19 @@ describe("createMcpRouter", () => {
     ]);
     toolTestMocks.getAllProviders.mockReturnValue([
       {
-        authSetup: () => ({ oauthConfig: {} }),
+        authSetup: () => ({ oauthConfig: {}, exchangeCode: async () => ({}) }),
         id: "fitbit",
         name: "Fitbit",
         validate: () => null,
       },
       {
-        authSetup: () => ({ oauthConfig: {} }),
+        authSetup: () => ({ oauthConfig: {}, exchangeCode: async () => ({}) }),
         id: "strava",
         name: "Strava",
         validate: () => null,
       },
       {
-        authSetup: () => ({ oauthConfig: {} }),
+        authSetup: () => ({ oauthConfig: {}, exchangeCode: async () => ({}) }),
         id: "wahoo",
         name: "Wahoo",
         validate: () => null,
@@ -1116,7 +1116,7 @@ describe("createMcpRouter", () => {
     ]);
     toolTestMocks.getAllProviders.mockReturnValue([
       {
-        authSetup: () => ({ oauthConfig: {} }),
+        authSetup: () => ({ oauthConfig: {}, exchangeCode: async () => ({}) }),
         id: "wahoo",
         name: "Wahoo",
         validate: () => null,

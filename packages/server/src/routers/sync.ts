@@ -14,7 +14,7 @@ import {
 } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
-import { ProviderModel } from "dofek/providers/provider-model";
+import { ProviderModel, providerTokenAuthSchema } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
 import { operationStatusOutputSchema, readOperationProgress } from "../lib/operation-progress.ts";
@@ -46,6 +46,7 @@ const syncProviderRowOutputSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   authType: z.string(),
+  tokenAuth: providerTokenAuthSchema.nullable(),
   authorized: z.boolean(),
   lastSyncedAt: z.string().nullable(),
   importOnly: z.boolean(),
@@ -224,6 +225,7 @@ const syncRouterProcedures = {
           id: model.id,
           name: model.name,
           authType: model.authType,
+          tokenAuth: model.tokenAuth,
           importOnly: model.importOnly,
         };
       })
@@ -272,6 +274,7 @@ const syncRouterProcedures = {
             name: model.name,
             description: null,
             authType: model.authType,
+            tokenAuth: model.tokenAuth,
             authorized: model.isConnected,
             lastSyncedAt: model.lastSyncedAt,
             importOnly: model.importOnly,
@@ -286,6 +289,7 @@ const syncRouterProcedures = {
           name: provider.name,
           description: provider.description,
           authType: provider.authType,
+          tokenAuth: null,
           authorized: connectionSet.has(provider.id),
           lastSyncedAt: null,
           importOnly: false,
