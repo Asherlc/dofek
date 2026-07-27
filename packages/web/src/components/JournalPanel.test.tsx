@@ -151,8 +151,8 @@ describe("JournalPanel", () => {
 
     const alcoholRow = screen.getByText("Alcohol").parentElement?.parentElement;
     const lateMealRow = screen.getByText("Late meal").parentElement?.parentElement;
-    expect(alcoholRow?.textContent).toBe("AlcoholYeswhoop");
-    expect(lateMealRow?.textContent).toBe("Late mealNowhoop");
+    expect(alcoholRow?.textContent).toMatch(/^Alcohol\s*Yes\s*whoop$/);
+    expect(lateMealRow?.textContent).toMatch(/^Late meal\s*No\s*whoop$/);
     expect(screen.getByText("Yes").className).toContain("bg-surface-hover");
     expect(screen.getByText("Yes").className).toContain("text-muted");
     expect(screen.getByText("No").className).toContain("bg-surface-hover");
