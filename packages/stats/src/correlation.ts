@@ -196,7 +196,7 @@ function formatCalendarDayCount(days: number): string {
 
 export function formatCorrelationLagOption(lag: number): string {
   if (lag === 0) return "Same day";
-  return `${lag > 0 ? "+" : "-"}${formatCalendarDayCount(lag)}`;
+  return `${Math.sign(lag) === 1 ? "+" : "-"}${formatCalendarDayCount(lag)}`;
 }
 
 export function formatCorrelationComparison({
@@ -210,7 +210,7 @@ export function formatCorrelationComparison({
 }): string {
   if (lag === 0) return `${xLabel} vs ${yLabel} on the same calendar day`;
   return `${xLabel} today vs ${yLabel} ${formatCalendarDayCount(lag)} ${
-    lag > 0 ? "later" : "earlier"
+    Math.sign(lag) === 1 ? "later" : "earlier"
   }`;
 }
 
@@ -274,7 +274,9 @@ export class CorrelationResult {
 
     const direction = this.rho > 0 ? "higher" : "lower";
     const lagText =
-      lag === 0 ? "" : ` ${formatCalendarDayCount(lag)} ${lag > 0 ? "later" : "earlier"}`;
+      lag === 0
+        ? ""
+        : ` ${formatCalendarDayCount(lag)} ${Math.sign(lag) === 1 ? "later" : "earlier"}`;
 
     const pText = this.pValue < 0.001 ? "p < 0.001" : `p = ${this.pValue.toFixed(3)}`;
 
