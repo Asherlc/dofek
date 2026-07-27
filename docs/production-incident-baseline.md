@@ -18773,7 +18773,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   shape rather than transient contention.
 - **Root cause:** The join used only `user_id` as its equality key. ClickHouse
   therefore paired each refreshed sample with every activity for that user
-  before applying the exact activity timestamp bounds.
+  before applying the exact activity timestamp bounds. ClickHouse documents
+  that equality conditions in `JOIN ON` determine the matched rows while other
+  conditions apply additional filtering:
+  <https://clickhouse.com/docs/sql-reference/statements/select/join#on-section-conditions>.
 - **Fix / mitigation:** Expand each activity into its inclusive UTC calendar
   dates, join samples on `(user_id, recorded_date)`, and retain the exact
   timestamp bounds. This preserves cross-midnight and overlapping activity

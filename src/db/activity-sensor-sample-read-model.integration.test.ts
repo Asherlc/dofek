@@ -3,17 +3,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
 
-interface ActivitySensorSampleRow {
-  activity_id: string;
-  recorded_at: string;
-}
-
-interface QueryProfileRow {
-  joinResultRows: string;
-}
+const activitySensorSampleRowSchema = z.object({
+  activity_id: z.string(),
+  recorded_at: z.string(),
+});
+const queryProfileRowSchema = z.object({
+  joinResultRows: z.string(),
+});
 
 const testUserId = "00000000-0000-0000-0000-000000000001";
 const overlapUserId = "00000000-0000-0000-0000-000000000002";
@@ -50,7 +50,7 @@ describe("activity_sensor_sample read model", () => {
       query_id: queryId,
       format: "JSONEachRow",
     });
-    const rows = await result.json<ActivitySensorSampleRow>();
+    const rows = z.array(activitySensorSampleRowSchema).parse(await result.json());
 
     expect(rows).toHaveLength(expectedMatchCount);
     expect(new Set(rows.map((row) => row.activity_id)).size).toBe(expectedMatchCount);
@@ -73,9 +73,10 @@ describe("activity_sensor_sample read model", () => {
       query_params: { queryId },
       format: "JSONEachRow",
     });
-    const profileRows = await profileResult.json<QueryProfileRow>();
+    const profileRows = z.tuple([queryProfileRowSchema]).parse(await profileResult.json());
 
-    expect(Number(profileRows[0]?.joinResultRows)).toBe(expectedMatchCount);
+    expect(profileRows).toHaveLength(1);
+    expect(Number(profileRows[0].joinResultRows)).toBe(expectedMatchCount);
   }, 120_000);
 });
 

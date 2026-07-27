@@ -39,6 +39,7 @@ activity_days AS (
         user_id,
         started_at,
         ended_at,
+        effective_ended_at,
         source_synced_at,
         arrayJoin(arrayMap(
             day_offset -> addDays(toDate(started_at), day_offset),
@@ -62,7 +63,7 @@ activity_samples AS (
         ON activity_days.user_id = samples.user_id
         AND activity_days.recorded_date = samples.recorded_date
         AND samples.recorded_at >= activity_days.started_at
-        AND samples.recorded_at <= coalesce(activity_days.ended_at, activity_days.started_at + INTERVAL 12 HOUR)
+        AND samples.recorded_at <= activity_days.effective_ended_at
 )
 
 SELECT
