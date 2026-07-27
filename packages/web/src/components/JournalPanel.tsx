@@ -301,9 +301,7 @@ function AnswerDisplay({ entry }: { entry: JournalEntry }) {
   if (entry.data_type === "boolean") {
     const isYes = entry.answer_numeric !== null && entry.answer_numeric > 0;
     return (
-      <span
-        className={`text-xs px-1.5 py-0.5 rounded font-medium ${isYes ? "bg-accent/15 text-accent" : "bg-surface-hover text-dim"}`}
-      >
+      <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-surface-hover text-muted">
         {isYes ? "Yes" : "No"}
       </span>
     );

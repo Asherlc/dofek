@@ -147,14 +147,16 @@ describe("JournalPanel", () => {
       isLoading: false,
     });
 
-    const { container } = render(<JournalPanel />);
+    render(<JournalPanel />);
 
-    expect(screen.getByText("Alcohol")).toBeDefined();
-    expect(screen.getByText("Late meal")).toBeDefined();
-    expect(screen.getByText("Yes")).toBeDefined();
-    expect(screen.getByText("No")).toBeDefined();
-    expect(screen.queryByText(/\bimpact\b/i)).toBeNull();
-    expect(container.querySelector(".text-green-400, .text-red-400")).toBeNull();
+    const alcoholRow = screen.getByText("Alcohol").parentElement?.parentElement;
+    const lateMealRow = screen.getByText("Late meal").parentElement?.parentElement;
+    expect(alcoholRow?.textContent).toBe("AlcoholYeswhoop");
+    expect(lateMealRow?.textContent).toBe("Late mealNowhoop");
+    expect(screen.getByText("Yes").className).toContain("bg-surface-hover");
+    expect(screen.getByText("Yes").className).toContain("text-muted");
+    expect(screen.getByText("No").className).toContain("bg-surface-hover");
+    expect(screen.getByText("No").className).toContain("text-muted");
   });
 
   it("paginates journal entries", () => {
