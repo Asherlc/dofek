@@ -1,3 +1,5 @@
+import { operationalStatusColors } from "@dofek/scoring/colors";
+
 interface QueryStatePanelProps {
   error?: unknown;
   variant?: "loading" | "error" | "empty";
@@ -42,20 +44,57 @@ export function QueryStatePanel({
 
   const resolvedMessage =
     message ?? (variant === "error" ? getQueryErrorMessage(error) : "No data yet.");
+  const errorTone = operationalStatusColors.danger;
 
   return (
     <div
       className={variant === "error" ? "query-error-panel" : "query-state-panel"}
-      style={{ minHeight: height }}
+      style={{
+        minHeight: height,
+        ...(variant === "error"
+          ? {
+              backgroundColor: errorTone.surface,
+              borderColor: errorTone.border,
+              color: errorTone.foreground,
+            }
+          : {}),
+      }}
       data-testid={`query-state-${variant}`}
+      role={variant === "error" ? "alert" : undefined}
     >
-      <p>{resolvedMessage}</p>
+      {variant === "error" ? (
+        <>
+          <span
+            aria-hidden="true"
+            className="flex h-6 w-6 items-center justify-center rounded-full border text-sm font-bold"
+            data-testid="query-state-error-icon"
+            style={{ borderColor: errorTone.border, color: errorTone.foreground }}
+          >
+            !
+          </span>
+          <h2 className="text-sm font-semibold" style={{ color: errorTone.foreground }}>
+            Could not load this section
+          </h2>
+        </>
+      ) : null}
+      <p style={variant === "error" ? { color: errorTone.foreground } : undefined}>
+        {resolvedMessage}
+      </p>
       {onRetry ? (
         <button
           type="button"
           disabled={retrying}
           onClick={onRetry}
           className="mt-3 text-xs px-3 py-1.5 rounded bg-accent/10 border border-border-strong text-foreground disabled:text-dim disabled:cursor-not-allowed"
+          style={
+            variant === "error"
+              ? {
+                  backgroundColor: errorTone.surface,
+                  borderColor: errorTone.border,
+                  color: errorTone.foreground,
+                }
+              : undefined
+          }
         >
           {retrying ? "Retrying..." : retryLabel}
         </button>

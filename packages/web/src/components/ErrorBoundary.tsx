@@ -1,3 +1,4 @@
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { Component, type ReactNode } from "react";
 import { captureException } from "../lib/telemetry.ts";
 
@@ -35,10 +36,30 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         return this.props.fallback;
       }
 
+      const errorTone = operationalStatusColors.danger;
+
       return (
-        <div className="flex flex-col items-center justify-center min-h-[200px] card p-6">
-          <p className="text-sm text-red-400 mb-2">Something went wrong</p>
-          <p className="text-xs text-subtle mb-4 max-w-md text-center">
+        <div
+          className="flex min-h-[200px] flex-col items-center justify-center rounded-xl border p-6"
+          role="alert"
+          style={{
+            backgroundColor: errorTone.surface,
+            borderColor: errorTone.border,
+            color: errorTone.foreground,
+          }}
+        >
+          <span
+            aria-hidden="true"
+            className="mb-2 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold"
+            data-testid="error-boundary-icon"
+            style={{ borderColor: errorTone.border, color: errorTone.foreground }}
+          >
+            !
+          </span>
+          <h2 className="mb-2 text-sm font-semibold" style={{ color: errorTone.foreground }}>
+            Something went wrong
+          </h2>
+          <p className="mb-4 max-w-md text-center text-xs" style={{ color: errorTone.foreground }}>
             {this.state.error?.message ?? "An unexpected error occurred."}
           </p>
           <button
@@ -48,6 +69,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               this.setState({ hasError: false, error: null });
             }}
             className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
+            style={{
+              backgroundColor: errorTone.surface,
+              borderColor: errorTone.border,
+              color: errorTone.foreground,
+              borderWidth: 1,
+            }}
           >
             Try again
           </button>

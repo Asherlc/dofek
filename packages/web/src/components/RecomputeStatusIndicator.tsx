@@ -1,4 +1,5 @@
 import type { ProcessingDisplayStatus } from "@dofek/providers/processing-status";
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { ClipLoader } from "react-spinners";
 
 interface RecomputeStatusIndicatorProps {
@@ -7,15 +8,15 @@ interface RecomputeStatusIndicatorProps {
   status: ProcessingDisplayStatus;
 }
 
-const ringClassByStatus: Record<ProcessingDisplayStatus, string> = {
-  ready: "text-emerald-500",
-  waiting: "text-blue-500",
-  active: "text-blue-500",
-  partial: "text-blue-500",
-  delayed: "text-amber-500",
-  blocked: "text-red-500",
-  failed: "text-red-500",
-  cancelled: "text-slate-400",
+const ringColorByStatus: Record<ProcessingDisplayStatus, string> = {
+  ready: operationalStatusColors.success.indicator,
+  waiting: operationalStatusColors.info.indicator,
+  active: operationalStatusColors.info.indicator,
+  partial: operationalStatusColors.info.indicator,
+  delayed: operationalStatusColors.warning.indicator,
+  blocked: operationalStatusColors.danger.indicator,
+  failed: operationalStatusColors.danger.indicator,
+  cancelled: operationalStatusColors.neutral.indicator,
 };
 
 export function RecomputeStatusIndicator({
@@ -26,6 +27,7 @@ export function RecomputeStatusIndicator({
   const radius = 12;
   const circumference = 2 * Math.PI * radius;
   const clampedProgress = progress === null ? null : Math.min(100, Math.max(0, progress));
+  const ringColor = ringColorByStatus[status];
 
   return (
     <div className="flex w-full min-w-0 items-center gap-2 text-xs font-medium text-muted">
@@ -34,18 +36,20 @@ export function RecomputeStatusIndicator({
           aria-label={label}
           aria-valuemin={0}
           aria-valuemax={100}
-          className={`shrink-0 ${ringClassByStatus[status]}`}
+          className="shrink-0"
           color="currentColor"
           data-testid="recompute-spinner"
           role="progressbar"
           size={32}
+          style={{ color: ringColor }}
         />
       ) : (
         <svg
           width="32"
           height="32"
           viewBox="0 0 32 32"
-          className={`shrink-0 ${ringClassByStatus[status]}`}
+          className="shrink-0"
+          style={{ color: ringColor }}
           role="progressbar"
           aria-label={label}
           aria-valuemin={0}

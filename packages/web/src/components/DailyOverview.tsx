@@ -506,9 +506,9 @@ function RingSkeleton() {
   );
 }
 
-function RingQueryError({ label, error }: { label: string; error: unknown }) {
+function RingQueryError({ error }: { error: unknown }) {
   return (
-    <div role="alert" aria-label={`${label} error`} className="max-w-[180px] text-center text-xs">
+    <div className="max-w-[180px] text-center text-xs">
       <QueryStatePanel error={error} height={72} />
     </div>
   );
@@ -630,9 +630,7 @@ export function DailyOverview({
               <span className="text-xs text-dim">No data</span>
             </div>
           ) : null}
-          {readinessError != null ? (
-            <RingQueryError label="Recovery" error={readinessError} />
-          ) : null}
+          {readinessError != null ? <RingQueryError error={readinessError} /> : null}
         </div>
 
         <div className="flex flex-col items-center gap-2">
@@ -663,10 +661,8 @@ export function DailyOverview({
               <span className="text-xs text-dim">No data</span>
             </div>
           ) : null}
-          {workloadError != null ? <RingQueryError label="Strain" error={workloadError} /> : null}
-          {strainTargetError != null ? (
-            <RingQueryError label="Strain target" error={strainTargetError} />
-          ) : null}
+          {workloadError != null ? <RingQueryError error={workloadError} /> : null}
+          {strainTargetError != null ? <RingQueryError error={strainTargetError} /> : null}
         </div>
 
         <div className="flex flex-col items-center gap-2">
@@ -696,7 +692,7 @@ export function DailyOverview({
               <span className="text-xs text-dim">No data</span>
             </div>
           ) : null}
-          {sleepError != null ? <RingQueryError label="Sleep" error={sleepError} /> : null}
+          {sleepError != null ? <RingQueryError error={sleepError} /> : null}
         </div>
       </div>
 
