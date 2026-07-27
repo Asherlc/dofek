@@ -103,7 +103,7 @@ describe("MonthlyReportRepository", () => {
       getHeartRateCurveRows: vi.fn(),
       getPaceCurveRows: vi.fn(),
     };
-    const repo = new MonthlyReportRepository("user-1", sensorStore, "America/Los_Angeles");
+    const repo = new MonthlyReportRepository("user-1", sensorStore);
     return { repo, execute: query };
   }
 
@@ -124,6 +124,17 @@ describe("MonthlyReportRepository", () => {
     const { repo } = makeRepository([]);
     const result = await repo.getReport(6);
     expect(result).toEqual({ current: null, history: [] });
+  });
+
+  it("binds the requested user and month window", async () => {
+    const { repo, execute } = makeRepository([]);
+
+    await repo.getReport(12);
+
+    expect(execute).toHaveBeenCalledWith(expect.anything(), expect.any(String), {
+      userId: "user-1",
+      months: 12,
+    });
   });
 
   it("returns single month as current with empty history", async () => {
@@ -167,17 +178,6 @@ describe("MonthlyReportRepository", () => {
     const result = await repo.getReport(6);
     expect(result.current?.avgRestingHr).toBeNull();
     expect(result.current?.avgHrv).toBeNull();
-  });
-
-  it("uses the configured timezone for resting heart rate dates", async () => {
-    const { repo, execute } = makeRepository([]);
-    await repo.getReport(6);
-
-    expect(execute).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.any(String),
-      expect.objectContaining({ timezone: "America/Los_Angeles" }),
-    );
   });
 
   it("returns null trend when previous training hours is zero", async () => {

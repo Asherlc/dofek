@@ -184,6 +184,103 @@ describe("Postgres account-erasure ownership graph (integration)", () => {
   });
 });
 
+describe("personal experiment account erasure (integration)", () => {
+  let context: TestContext;
+  const experimentDeletingUserId = "13000000-0000-4000-8000-000000001994";
+  const experimentOtherUserId = "23000000-0000-4000-8000-000000001994";
+
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES
+            (${experimentDeletingUserId}::uuid, 'Delete Experiment'),
+            (${experimentOtherUserId}::uuid, 'Keep Experiment')`,
+    );
+    await refreshPostgresAccountErasureWriteFences(context.db);
+  }, 120_000);
+
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+
+  it("fences new experiments and deletes only the erasing user's experiments", async () => {
+    await context.db.execute(
+      sql`INSERT INTO fitness.personal_experiment (
+            user_id,
+            hypothesis,
+            intervention,
+            outcome_metric_id,
+            baseline_days,
+            intervention_days,
+            start_date
+          )
+          VALUES
+            (
+              ${experimentDeletingUserId}::uuid,
+              'Deleting hypothesis',
+              'Deleting intervention',
+              'resting_heart_rate',
+              7,
+              7,
+              '2026-07-01'
+            ),
+            (
+              ${experimentOtherUserId}::uuid,
+              'Preserved hypothesis',
+              'Preserved intervention',
+              'resting_heart_rate',
+              7,
+              7,
+              '2026-07-01'
+            )`,
+    );
+
+    const requestId = await beginErasure(context, experimentDeletingUserId);
+
+    await expect(
+      context.db.execute(
+        sql`INSERT INTO fitness.personal_experiment (
+              user_id,
+              hypothesis,
+              intervention,
+              outcome_metric_id,
+              baseline_days,
+              intervention_days,
+              start_date
+            )
+            VALUES (
+              ${experimentDeletingUserId}::uuid,
+              'Blocked hypothesis',
+              'Blocked intervention',
+              'resting_heart_rate',
+              7,
+              7,
+              '2026-07-02'
+            )`,
+      ),
+    ).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        message: expect.stringContaining("Account erasure is active"),
+      }),
+    });
+
+    await erasePostgresAccount(context.db, requestId, experimentDeletingUserId);
+
+    const rows = await context.db.execute(
+      sql`SELECT
+            count(*) FILTER (
+              WHERE user_id = ${experimentDeletingUserId}::uuid
+            )::integer AS deleting_experiments,
+            count(*) FILTER (
+              WHERE user_id = ${experimentOtherUserId}::uuid
+            )::integer AS other_experiments
+          FROM fitness.personal_experiment`,
+    );
+    expect(rows).toEqual([{ deleting_experiments: 0, other_experiments: 1 }]);
+  });
+});
+
 describe("processing history account erasure (integration)", () => {
   let context: TestContext;
   const processingDeletingUserId = "15000000-0000-4000-8000-000000001994";

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { extractCteSql } from "./read-model-sql-test-helpers.ts";
+import { compactWhitespace, extractCteSql } from "./read-model-sql-test-helpers.ts";
+
+describe("compactWhitespace", () => {
+  it("collapses each whitespace run to one space", () => {
+    expect(compactWhitespace("SELECT\n  value\tFROM source")).toBe("SELECT value FROM source");
+  });
+});
 
 describe("extractCteSql", () => {
   it("matches CTE names case-insensitively with flexible whitespace", () => {
@@ -28,6 +34,17 @@ SELECT * FROM block_commented
 
     expect(extractCteSql(sql, "block_commented")).toContain("SELECT 1");
     expect(extractCteSql(sql, "line_commented")).toContain("SELECT 2");
+  });
+
+  it("matches materialized CTE headers", () => {
+    const sql = `
+WITH reusable AS materialized (
+  SELECT 1 AS value
+)
+SELECT * FROM reusable
+`;
+
+    expect(extractCteSql(sql, "reusable")).toContain("SELECT 1");
   });
 
   it("ignores parentheses inside quotes and SQL comments", () => {

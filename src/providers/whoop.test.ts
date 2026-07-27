@@ -1,13 +1,13 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WhoopClient, WhoopRateLimitError } from "whoop-whoop/client";
+import { WhoopClient, WhoopRateLimitError } from "@dofek/whoop/client";
 import type {
   WhoopHrValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
   WhoopWeightliftingWorkoutResponse,
   WhoopWorkoutRecord,
-} from "whoop-whoop/types";
+} from "@dofek/whoop/types";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";

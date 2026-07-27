@@ -209,6 +209,46 @@ describe("eraseClickHouseAccount", () => {
     );
   });
 
+  it("skips the schema-verified non-personal heart-rate cutover TinyLog table", async () => {
+    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const query = queryReturningTables([
+      {
+        age_milliseconds: 1_000_000,
+        columns: [["cutover_at", "DateTime64(9, 'UTC')"]],
+        database: "analytics",
+        engine: "TinyLog",
+        name: "sleep_heart_rate_cutover",
+      },
+      {
+        age_milliseconds: 1_000_000,
+        columns: [["user_id", "UUID"]],
+        database: "analytics",
+        engine: "ReplacingMergeTree",
+        name: "daily_sleep",
+      },
+    ]);
+
+    await expect(
+      eraseClickHouseAccount(
+        { command, insert, query },
+        {
+          activityIds: [],
+          operationIds: [],
+          sleepSessionIds: [],
+          userId,
+        },
+      ),
+    ).resolves.toBeUndefined();
+
+    const mutations = command.mock.calls
+      .map(([options]) => options.query)
+      .filter((queryText) => queryText.includes("ALTER TABLE"))
+      .join("\n");
+    expect(mutations).toContain("`analytics`.`daily_sleep`");
+    expect(mutations).not.toContain("sleep_heart_rate_cutover");
+  });
+
   it("explicitly skips known non-storage engines during physical table discovery", async () => {
     const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
     const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);

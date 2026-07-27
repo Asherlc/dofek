@@ -104,6 +104,203 @@ describe("ClickHouse account erasure (integration)", () => {
     await client.close?.();
   });
 
+  it("erases current provider and heart-rate read models while preserving the cutover marker", async () => {
+    const userId = randomUUID();
+    const otherUserId = randomUUID();
+    const sleepId = randomUUID();
+    const otherSleepId = randomUUID();
+
+    await client.command({
+      query: `CREATE TABLE IF NOT EXISTS analytics.provider_change_state (
+          user_id UUID,
+          provider_id String,
+          changed_at SimpleAggregateFunction(max, DateTime64(9, 'UTC'))
+        )
+        ENGINE = AggregatingMergeTree
+        ORDER BY (user_id, provider_id)`,
+      clickhouse_settings: { log_queries: 0 },
+    });
+    await client.command({
+      query: `CREATE TABLE IF NOT EXISTS analytics.heart_rate_day_change (
+          user_id UUID,
+          recorded_date Date,
+          changed_at SimpleAggregateFunction(max, DateTime64(9, 'UTC'))
+        )
+        ENGINE = AggregatingMergeTree
+        ORDER BY (user_id, recorded_date)`,
+      clickhouse_settings: { log_queries: 0 },
+    });
+    await client.command({
+      query: `CREATE TABLE IF NOT EXISTS analytics.sleep_heart_rate_cutover (
+          cutover_at DateTime64(9, 'UTC')
+        )
+        ENGINE = TinyLog`,
+      clickhouse_settings: { log_queries: 0 },
+    });
+    await client.command({
+      query: `CREATE TABLE IF NOT EXISTS analytics.sleep_heart_rate_window (
+          sleep_id UUID,
+          user_id UUID,
+          started_at DateTime64(6, 'UTC'),
+          ended_at DateTime64(6, 'UTC'),
+          duration_seconds Int64,
+          eligible_sample_count UInt64,
+          source_changed_at DateTime64(9, 'UTC'),
+          refresh_version UInt64,
+          is_deleted UInt8,
+          refreshed_at DateTime64(9, 'UTC')
+        )
+        ENGINE = ReplacingMergeTree(refresh_version)
+        ORDER BY (user_id, sleep_id)`,
+      clickhouse_settings: { log_queries: 0 },
+    });
+
+    try {
+      await client.command({
+        query: `INSERT INTO analytics.provider_change_state
+            (user_id, provider_id, changed_at)
+          VALUES
+            ({user_id:UUID}, 'garmin', now64(9)),
+            ({other_user_id:UUID}, 'garmin', now64(9))`,
+        query_params: { other_user_id: otherUserId, user_id: userId },
+        clickhouse_settings: { log_queries: 0 },
+      });
+      await client.command({
+        query: `INSERT INTO analytics.heart_rate_day_change
+            (user_id, recorded_date, changed_at)
+          VALUES
+            ({user_id:UUID}, today(), now64(9)),
+            ({other_user_id:UUID}, today(), now64(9))`,
+        query_params: { other_user_id: otherUserId, user_id: userId },
+        clickhouse_settings: { log_queries: 0 },
+      });
+      await client.command({
+        query: `INSERT INTO analytics.sleep_heart_rate_cutover (cutover_at)
+          VALUES (now64(9))`,
+        clickhouse_settings: { log_queries: 0 },
+      });
+      await client.command({
+        query: `INSERT INTO analytics.sleep_heart_rate_window (
+            sleep_id,
+            user_id,
+            started_at,
+            ended_at,
+            duration_seconds,
+            eligible_sample_count,
+            source_changed_at,
+            refresh_version,
+            is_deleted,
+            refreshed_at
+          )
+          VALUES
+            (
+              {sleep_id:UUID},
+              {user_id:UUID},
+              now64(6) - INTERVAL 8 HOUR,
+              now64(6),
+              28800,
+              100,
+              now64(9),
+              1,
+              0,
+              now64(9)
+            ),
+            (
+              {other_sleep_id:UUID},
+              {other_user_id:UUID},
+              now64(6) - INTERVAL 8 HOUR,
+              now64(6),
+              28800,
+              100,
+              now64(9),
+              1,
+              0,
+              now64(9)
+            )`,
+        query_params: {
+          other_sleep_id: otherSleepId,
+          other_user_id: otherUserId,
+          sleep_id: sleepId,
+          user_id: userId,
+        },
+        clickhouse_settings: { log_queries: 0 },
+      });
+
+      const cutoverCountBefore = await queryCount(
+        client,
+        "SELECT count() AS count FROM analytics.sleep_heart_rate_cutover",
+      );
+      await eraseClickHouseAccount(
+        client,
+        {
+          activityIds: [],
+          operationIds: [],
+          sleepSessionIds: [sleepId],
+          userId,
+        },
+        {
+          physicalPartPollIntervalMilliseconds: 1_000,
+          physicalPartWaitTimeoutMilliseconds: 45_000,
+        },
+      );
+
+      await expect(
+        queryCount(
+          client,
+          "SELECT count() AS count FROM analytics.provider_change_state WHERE user_id = {user_id:UUID}",
+          { user_id: userId },
+        ),
+      ).resolves.toBe(0);
+      await expect(
+        queryCount(
+          client,
+          "SELECT count() AS count FROM analytics.heart_rate_day_change WHERE user_id = {user_id:UUID}",
+          { user_id: userId },
+        ),
+      ).resolves.toBe(0);
+      await expect(
+        queryCount(
+          client,
+          "SELECT count() AS count FROM analytics.sleep_heart_rate_window WHERE user_id = {user_id:UUID}",
+          { user_id: userId },
+        ),
+      ).resolves.toBe(0);
+      await expect(
+        queryCount(
+          client,
+          "SELECT count() AS count FROM analytics.sleep_heart_rate_window WHERE user_id = {user_id:UUID}",
+          { user_id: otherUserId },
+        ),
+      ).resolves.toBe(1);
+      await expect(
+        queryCount(client, "SELECT count() AS count FROM analytics.sleep_heart_rate_cutover"),
+      ).resolves.toBe(cutoverCountBefore);
+    } finally {
+      await cleanFences(client, userId, []);
+      await client.command({
+        query: `ALTER TABLE analytics.provider_change_state
+          DELETE WHERE user_id IN {user_ids:Array(UUID)}
+          SETTINGS mutations_sync = 2`,
+        query_params: { user_ids: [userId, otherUserId] },
+        clickhouse_settings: { log_queries: 0 },
+      });
+      await client.command({
+        query: `ALTER TABLE analytics.heart_rate_day_change
+          DELETE WHERE user_id IN {user_ids:Array(UUID)}
+          SETTINGS mutations_sync = 2`,
+        query_params: { user_ids: [userId, otherUserId] },
+        clickhouse_settings: { log_queries: 0 },
+      });
+      await client.command({
+        query: `ALTER TABLE analytics.sleep_heart_rate_window
+          DELETE WHERE user_id IN {user_ids:Array(UUID)}
+          SETTINGS mutations_sync = 2`,
+        query_params: { user_ids: [userId, otherUserId] },
+        clickhouse_settings: { log_queries: 0 },
+      });
+    }
+  }, 120_000);
+
   it("erases direct and transitive rows while preserving another user and an unmanaged database", async () => {
     const managedDatabase = databaseName("account_erasure_managed");
     const unrelatedDatabase = databaseName("account_erasure_unmanaged");

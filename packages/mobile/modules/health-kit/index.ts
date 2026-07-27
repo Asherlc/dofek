@@ -187,7 +187,7 @@ export async function setupBackgroundObservers(): Promise<boolean> {
   return HealthKitModule.setupBackgroundObservers();
 }
 
-/** Complete specific HealthKit observer callbacks after their coalesced sync settles. */
+/** Complete specific HealthKit observer callbacks after their serialized sync settles. */
 export function completeObserverUpdates(updateIds: string[], succeeded: boolean): number {
   return HealthKitModule.completeObserverUpdates(updateIds, succeeded);
 }

@@ -34,6 +34,7 @@ import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
 import { AreaChart, CHART_COLORS, chartStyles, LineChart } from "./ActivityDetailCharts";
+import { ActivitySourceDecisionCard } from "./ActivitySourceDecisionCard";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner";
 import { styles } from "./styles";
 import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
@@ -756,6 +757,9 @@ export default function ActivityDetailScreen() {
           </View>
         )}
         {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}
+        {activity.sourceDecision ? (
+          <ActivitySourceDecisionCard decision={activity.sourceDecision} />
+        ) : null}
       </View>
 
       {/* Stats Grid */}

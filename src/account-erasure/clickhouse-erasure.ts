@@ -421,6 +421,17 @@ function assertMatchingStagingSchema(
   }
 }
 
+function isKnownNonPersonalUnsupportedTable(table: PhysicalTable): boolean {
+  return (
+    table.database === "analytics" &&
+    table.name === "sleep_heart_rate_cutover" &&
+    table.engine === "TinyLog" &&
+    table.columns.length === 1 &&
+    table.columns[0]?.[0] === "cutover_at" &&
+    table.columns[0]?.[1] === "DateTime64(9, 'UTC')"
+  );
+}
+
 async function hasActiveTableQuery(
   client: AccountErasureClickHouseClient,
   table: PhysicalTable,
@@ -458,6 +469,9 @@ async function validateAndSelectPersonalTables(
       continue;
     }
     if (engineKind === "unsupported-storage") {
+      if (isKnownNonPersonalUnsupportedTable(table)) {
+        continue;
+      }
       throw new Error(
         `Unsupported ClickHouse physical storage engine for ${tableKey(table)}: ${table.engine}`,
       );

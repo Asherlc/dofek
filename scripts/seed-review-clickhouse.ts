@@ -10,8 +10,6 @@ interface ReviewRawTableCopy {
   sourceTable: string;
   columns: readonly string[];
   selectExpressions: readonly string[];
-  metadataColumns?: readonly string[];
-  metadataExpressions?: readonly string[];
   whereClause?: string;
 }
 
@@ -21,13 +19,6 @@ const peerDbMetadataColumns = [
   "_peerdb_version",
 ] as const;
 const peerDbMetadataExpressions = [
-  "now64(9)",
-  "0",
-  "toInt64(toUnixTimestamp64Micro(now64(6)))",
-] as const;
-
-const ingestMetricStreamMetadataColumns = ["ingested_at", "is_deleted", "version"] as const;
-const ingestMetricStreamMetadataExpressions = [
   "now64(9)",
   "0",
   "toInt64(toUnixTimestamp64Micro(now64(6)))",
@@ -176,63 +167,10 @@ const reviewRawTableCopies: readonly ReviewRawTableCopy[] = [
     ],
     whereClause: `user_id = ${clickHouseStringLiteral(USER_ID)}`,
   },
-  {
-    targetTable: "ingest.metric_stream",
-    sourceTable: "metric_stream",
-    columns: [
-      "recorded_at",
-      "user_id",
-      "provider_id",
-      "external_id",
-      "device_id",
-      "source_type",
-      "channel",
-      "activity_id",
-      "scalar",
-      "point",
-      "id",
-    ],
-    selectExpressions: [
-      "recorded_at",
-      "user_id",
-      "provider_id",
-      "external_id",
-      "device_id",
-      "source_type",
-      "channel",
-      "activity_id",
-      "scalar",
-      buildPointExpression("point"),
-      "id",
-    ],
-    whereClause: `user_id = ${clickHouseStringLiteral(USER_ID)}`,
-    metadataColumns: ingestMetricStreamMetadataColumns,
-    metadataExpressions: ingestMetricStreamMetadataExpressions,
-  },
 ];
 
 function clickHouseStringLiteral(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
-}
-
-function buildPointExpression(columnName: string): string {
-  return `if(
-    isNull(${columnName}),
-    NULL,
-    readWKBPoint(
-      unhex(
-        if(
-          startsWith(lower(assumeNotNull(${columnName})), '0101000020'),
-          concat(
-            substring(assumeNotNull(${columnName}), 1, 2),
-            '01000000',
-            substring(assumeNotNull(${columnName}), 19)
-          ),
-          assumeNotNull(${columnName})
-        )
-      )
-    )
-  )`;
 }
 
 export function buildReviewPostgresTableFunction(
@@ -257,10 +195,8 @@ function buildCopyStatement(
   tableCopy: ReviewRawTableCopy,
 ): string {
   const source = buildReviewPostgresTableFunction(postgresConnectionString, tableCopy.sourceTable);
-  const metadataColumns = tableCopy.metadataColumns ?? peerDbMetadataColumns;
-  const metadataExpressions = tableCopy.metadataExpressions ?? peerDbMetadataExpressions;
-  const allColumns = [...tableCopy.columns, ...metadataColumns];
-  const allExpressions = [...tableCopy.selectExpressions, ...metadataExpressions];
+  const allColumns = [...tableCopy.columns, ...peerDbMetadataColumns];
+  const allExpressions = [...tableCopy.selectExpressions, ...peerDbMetadataExpressions];
   const whereClause = tableCopy.whereClause ? `\nWHERE ${tableCopy.whereClause}` : "";
 
   return `INSERT INTO ${tableCopy.targetTable} (${allColumns.join(", ")})

@@ -67,6 +67,12 @@ export interface ProviderAuthSetup {
   apiBaseUrl?: string;
   /** Automated login that drives the OAuth flow with credentials (no browser needed) */
   automatedLogin?: (email: string, password: string) => Promise<TokenSet>;
+  /** User-supplied API token flow for providers that issue personal tokens. */
+  manualToken?: {
+    label: string;
+    instructionsUrl: `https://${string}`;
+    exchangeToken: (token: string) => Promise<TokenSet>;
+  };
   /** OAuth 1.0 flow for providers that use 3-legged OAuth (e.g. FatSecret) */
   oauth1Flow?: OAuth1Flow;
   /** Extract user identity from this provider (enables using it as a login provider) */
@@ -103,10 +109,44 @@ export interface SyncError {
  * How a provider authenticates users.
  * - 'oauth': Standard OAuth 2.0 redirect flow (Strava, Fitbit, etc.)
  * - 'credential': User provides username/password, server authenticates (Eight Sleep, Zwift, etc.)
+ * - 'token': User supplies a provider-issued personal token
  * - 'file-import': No authentication needed, user uploads files
  * - 'oauth1': OAuth 1.0 3-legged flow (FatSecret)
  */
-export type ProviderAuthType = "oauth" | "credential" | "file-import" | "oauth1";
+export type ProviderAuthType = "oauth" | "credential" | "token" | "file-import" | "oauth1";
+
+export interface ProviderAuthCapabilities {
+  automatedLogin: boolean;
+  manualToken: boolean;
+  oauth1: boolean;
+  oauth: boolean;
+}
+
+/**
+ * Canonical precedence for providers that expose more than one connection flow.
+ * Personal tokens are the public self-service path when OAuth is also available.
+ */
+export function classifyProviderAuth(
+  capabilities: ProviderAuthCapabilities,
+): ProviderAuthType | "none" {
+  if (capabilities.automatedLogin) return "credential";
+  if (capabilities.oauth1) return "oauth1";
+  if (capabilities.manualToken) return "token";
+  if (capabilities.oauth) return "oauth";
+  return "none";
+}
+
+export function getProviderAuthTypeFromSetup(
+  setup: ProviderAuthSetup | undefined,
+): ProviderAuthType | "none" {
+  if (!setup) return "none";
+  return classifyProviderAuth({
+    automatedLogin: Boolean(setup.automatedLogin),
+    oauth1: Boolean(setup.oauth1Flow),
+    manualToken: Boolean(setup.manualToken),
+    oauth: Boolean(setup.oauthConfig && setup.exchangeCode),
+  });
+}
 
 /**
  * Common fields shared by all providers (sync and import).
@@ -319,9 +359,5 @@ export function getProviderAuthType(provider: Provider): ProviderAuthType | "non
   } catch {
     return "none";
   }
-  if (!setup) return "none";
-  if (setup.automatedLogin) return "credential";
-  if (setup.oauth1Flow) return "oauth1";
-  if (setup.oauthConfig) return "oauth";
-  return "none";
+  return getProviderAuthTypeFromSetup(setup);
 }

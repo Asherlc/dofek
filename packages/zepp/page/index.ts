@@ -2,7 +2,7 @@ import { pagePlugin } from "@zeppos/zml/3.0/module/messaging/plugin/page";
 import { BasePage } from "@zeppos/zml/base-page";
 import { queryPermission, requestPermission } from "@zos/app";
 import * as appService from "@zos/app-service";
-import { getDeviceInfo } from "@zos/device";
+import { getDeviceInfo, SCREEN_SHAPE_ROUND } from "@zos/device";
 import { setWakeUpRelaunch } from "@zos/display";
 import { showToast } from "@zos/interaction";
 import {
@@ -40,6 +40,15 @@ import {
 import { collectHealthData } from "../src/health-collector.ts";
 import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
+import { createRoundLoginLayout } from "../src/round-layout.ts";
+import {
+  createSessionCall,
+  drainManualExportQueue,
+  getSessionAction,
+  handleSessionCall,
+  SESSION_STATE,
+  type SessionState,
+} from "../src/session-control.ts";
 import {
   appendSamples,
   finalizeSessionFile,
@@ -80,11 +89,13 @@ function initialActiveFile(): ActiveFileSlot {
 BasePage.use(pagePlugin);
 
 const logger = Logger.getLogger("imu-page");
-const { width: DEVICE_WIDTH } = getDeviceInfo();
+const { width: DEVICE_WIDTH, screenShape } = getDeviceInfo();
 const BG_PERMISSION = "device:os.bg_service";
 const IS_COMPACT_SQUARE_DISPLAY = DEVICE_WIDTH <= 320;
 const CONTENT_INSET = px(IS_COMPACT_SQUARE_DISPLAY ? 20 : 40);
 const CONTENT_WIDTH = DEVICE_WIDTH - CONTENT_INSET * 2;
+const ROUND_LOGIN_LAYOUT =
+  screenShape === SCREEN_SHAPE_ROUND ? createRoundLoginLayout(px, DEVICE_WIDTH) : null;
 const TITLE_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 24 : 36);
 const TITLE_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 44 : 52);
 const TITLE_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 32 : 40);
@@ -97,20 +108,29 @@ const SENSOR_INFO_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 18 : 20);
 const SAMPLE_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 208 : 214);
 const SAMPLE_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 72 : 80);
 const SAMPLE_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 22 : 24);
-const HINT_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 294 : 310);
-const HINT_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 56 : 72);
+const HINT_X = ROUND_LOGIN_LAYOUT?.hint.x ?? CONTENT_INSET;
+const HINT_Y = ROUND_LOGIN_LAYOUT?.hint.y ?? px(IS_COMPACT_SQUARE_DISPLAY ? 294 : 310);
+const HINT_WIDTH = ROUND_LOGIN_LAYOUT?.hint.w ?? CONTENT_WIDTH;
+const HINT_HEIGHT = ROUND_LOGIN_LAYOUT?.hint.h ?? px(IS_COMPACT_SQUARE_DISPLAY ? 56 : 72);
 const HINT_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 18 : 20);
+const LOGIN_BUTTON_LAYOUT = ROUND_LOGIN_LAYOUT?.button ?? {
+  x: px(40),
+  y: DEVICE_WIDTH <= 360 ? px(338) : px(438),
+  w: DEVICE_WIDTH - px(80),
+  h: px(44),
+  radius: px(10),
+};
 
-let statusText: ReturnType<typeof createWidget> | null = null;
+let sessionControlButton: ReturnType<typeof createWidget> | null = null;
 let sensorInfoText: ReturnType<typeof createWidget> | null = null;
 let sampleText: ReturnType<typeof createWidget> | null = null;
 let hintText: ReturnType<typeof createWidget> | null = null;
 let pairingQrContent: string | null = null;
 let pairingQrWidget: ReturnType<typeof createWidget> | null = null;
 
-function renderStatus(text: string) {
-  if (statusText) {
-    statusText.setProperty(prop.TEXT, text);
+function renderSessionControl(state: SessionState) {
+  if (sessionControlButton) {
+    sessionControlButton.setProperty(prop.TEXT, getSessionAction(state).label);
   }
 }
 
@@ -164,6 +184,7 @@ Page(
       hasGyro: false,
       transferTask: nullable<TransferTask>(),
       failedTransfer: nullable<FailedTransfer>(),
+      pendingManualExport: false,
       sampleCount: 0,
       observedHzX100: 0,
       activeFile: initialActiveFile(),
@@ -193,16 +214,28 @@ Page(
         text: "Dofek",
       });
 
-      statusText = createWidget(widget.TEXT, {
+      sessionControlButton = createWidget(widget.BUTTON, {
         x: CONTENT_INSET,
         y: STATUS_Y,
         w: CONTENT_WIDTH,
         h: STATUS_HEIGHT,
-        color: 0x2ecc71,
+        color: 0xffffff,
         text_size: STATUS_TEXT_SIZE,
-        align_h: align.CENTER_H,
-        text_style: IS_COMPACT_SQUARE_DISPLAY ? text_style.WRAP : text_style.NONE,
-        text: "Starting...",
+        normal_color: 0x1976d2,
+        press_color: 0x64a8f0,
+        radius: px(10),
+        text: getSessionAction(SESSION_STATE.IDLE).label,
+        click_func: () => {
+          const action = getSessionAction(
+            this.state.logging ? SESSION_STATE.RECORDING : SESSION_STATE.IDLE,
+          );
+          this.onCall(
+            createSessionCall(action.command, {
+              enableGyro: this.state.enableGyro,
+              freqModeIndex: this.state.freqModeIndex,
+            }),
+          );
+        },
       });
 
       sensorInfoText = createWidget(widget.TEXT, {
@@ -230,9 +263,9 @@ Page(
       });
 
       hintText = createWidget(widget.TEXT, {
-        x: CONTENT_INSET,
+        x: HINT_X,
         y: HINT_Y,
-        w: CONTENT_WIDTH,
+        w: HINT_WIDTH,
         h: HINT_HEIGHT,
         color: 0xe67e22,
         text_size: HINT_TEXT_SIZE,
@@ -242,16 +275,12 @@ Page(
       });
 
       createWidget(widget.BUTTON, {
-        x: px(40),
-        y: DEVICE_WIDTH <= 360 ? px(338) : px(438),
-        w: DEVICE_WIDTH - px(80),
-        h: px(44),
+        ...LOGIN_BUTTON_LAYOUT,
         text: "Login on watch",
         color: 0xffffff,
         text_size: px(22),
         normal_color: 0x1976d2,
         press_color: 0x64a8f0,
-        radius: px(10),
         click_func: () => {
           this.loginFromWatch();
         },
@@ -264,19 +293,23 @@ Page(
         params: {},
       })
         .then((result) => {
-          this.state.enableGyro = result?.enableGyro === true;
-          this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
+          if (!this.state.logging) {
+            this.state.enableGyro = result?.enableGyro === true;
+            this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
+          }
           this.state.hasCredentials = result?.hasCredentials === true;
           const pairing = isRecord(result?.pairing) ? result.pairing : null;
           this.renderPairing(pairing);
           if (!this.state.hasCredentials && !pairing) {
             this.startPairingFromWatch();
           }
-          this.startLogging();
+          this.publishSessionStatus(
+            this.state.logging ? SESSION_STATE.RECORDING : SESSION_STATE.IDLE,
+          );
         })
         .catch((error) => {
           logger.error("preference fetch failed %j", error);
-          this.startLogging();
+          renderHint("Preferences unavailable\nOpen Zepp settings");
         });
     },
 
@@ -339,7 +372,8 @@ Page(
             onSample: (sample) => this.handleSample(sample),
             onStatus: createSessionProgressHandler({
               updateWatch: (stats) => this.handleRate(stats),
-              publishHostStatus: (stats) => this.publishSessionStatus("logging", stats),
+              publishHostStatus: (stats) =>
+                this.publishSessionStatus(SESSION_STATE.RECORDING, stats),
             }),
           },
           { Accelerometer, Gyroscope, checkSensor },
@@ -347,7 +381,7 @@ Page(
 
         if (!collector.available) {
           showToast({ content: collector.reason });
-          renderStatus(collector.reason);
+          renderHint(collector.reason);
           return;
         }
 
@@ -383,9 +417,9 @@ Page(
         } else if (!this.state.pairingShortCode) {
           renderHint("Not connected\nCreating pairing code...");
         }
-        renderStatus("● Recording");
+        renderSessionControl(SESSION_STATE.RECORDING);
 
-        this.publishSessionStatus("logging");
+        this.publishSessionStatus(SESSION_STATE.RECORDING);
       });
     },
 
@@ -531,7 +565,13 @@ Page(
       this.state.collector?.stop();
       this.flushBuffer(true);
       this.writeMetaFile();
-      this.publishSessionStatus("stopped");
+      renderSessionControl(SESSION_STATE.IDLE);
+      renderSensorInfo("Session finalized");
+      renderSamples(
+        `${this.state.sampleCount} samples\n` +
+          `${(this.state.observedHzX100 / 100).toFixed(2)} Hz`,
+      );
+      this.publishSessionStatus(SESSION_STATE.IDLE);
     },
 
     swapAndTransfer() {
@@ -582,7 +622,7 @@ Page(
         );
       }
 
-      this.publishSessionStatus("logging");
+      this.publishSessionStatus(SESSION_STATE.RECORDING);
       this.writeMetaFile();
 
       this.startTransfer({
@@ -616,7 +656,7 @@ Page(
         path: this.activeFilePath(),
         sampleCount: this.state.sampleCount,
         observedHzX100: this.state.observedHzX100,
-        failedSlot: null,
+        failedSlot: this.state.activeFile,
       });
     },
 
@@ -653,6 +693,19 @@ Page(
           if (failedSlot && this.state.failedTransfer?.slot === failedSlot) {
             this.state.failedTransfer = null;
           }
+          drainManualExportQueue(
+            {
+              pendingManualExport: this.state.pendingManualExport,
+              logging: this.state.logging,
+              failedTransferPending: Boolean(this.state.failedTransfer),
+            },
+            {
+              clearManualExportQueue: () => {
+                this.state.pendingManualExport = false;
+              },
+              transferStoppedSession: () => this.transferStoppedSession(),
+            },
+          );
           this.request({
             method: "imu.transferComplete",
             params: { sampleCount },
@@ -684,7 +737,7 @@ Page(
       );
     },
 
-    publishSessionStatus(state: string, progress?: SessionProgress) {
+    publishSessionStatus(state: SessionState, progress?: SessionProgress) {
       this.request({
         method: "imu.publishStatus",
         params: {
@@ -701,16 +754,32 @@ Page(
     },
 
     onCall(payload: { method: string; params?: Record<string, unknown> } | null) {
-      const { method } = payload ?? { method: "" };
-
-      if (method === "transfer.start") {
-        if (this.state.logging) {
-          this.swapAndTransfer();
-        } else {
-          this.transferStoppedSession();
-        }
+      if (
+        handleSessionCall(payload, {
+          logging: this.state.logging,
+          transferInProgress: Boolean(this.state.transferTask),
+          failedTransferPending: Boolean(this.state.failedTransfer),
+          pendingManualExport: this.state.pendingManualExport,
+          applyStartPreferences: (params) => {
+            this.state.enableGyro = params?.enableGyro === true;
+            this.state.freqModeIndex = Number(params?.freqModeIndex ?? this.state.freqModeIndex);
+          },
+          handleBlockedStart: () => {
+            showToast({ content: "Transfer session before starting" });
+            renderHint("Finish session transfer\nbefore starting");
+          },
+          startLogging: () => this.startLogging(),
+          stopLogging: () => this.stopLogging(),
+          queueManualExport: () => {
+            this.state.pendingManualExport = true;
+          },
+          transferStoppedSession: () => this.transferStoppedSession(),
+        })
+      ) {
+        return;
       }
 
+      const method = payload?.method;
       if (method === "health.collect") {
         const watchSummary = collectHealthData({
           HeartRate,

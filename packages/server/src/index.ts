@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { constants as zlibConstants } from "node:zlib";
 import { createBullBoard } from "@bull-board/api";
@@ -339,7 +339,8 @@ function setupRoutes(
           req.path.startsWith("/api/") ||
           req.path.startsWith("/auth/") ||
           req.path.startsWith("/admin/queues") ||
-          req.path.startsWith("/slack/")
+          req.path.startsWith("/slack/") ||
+          extname(req.path) !== ""
         ) {
           next();
           return;

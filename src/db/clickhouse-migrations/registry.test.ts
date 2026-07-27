@@ -107,8 +107,32 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement"),
       ]),
     });
+    expect(
+      migrations.find((migration) => migration.id === "0059_provider_change_state"),
+    ).toMatchObject({
+      id: "0059_provider_change_state",
+      statements: expect.arrayContaining([
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.provider_change_state"),
+        expect.stringContaining(
+          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_change_from_provider_connection",
+        ),
+        expect.stringContaining("FROM ingest.metric_stream"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0060_heart_rate_day_change"),
+    ).toMatchObject({
+      id: "0060_heart_rate_day_change",
+      statements: expect.arrayContaining([
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.heart_rate_day_change"),
+        expect.stringContaining(
+          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.heart_rate_day_change_ingest",
+        ),
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.sleep_heart_rate_window"),
+      ]),
+    });
     expect(migrations.at(-1)).toMatchObject({
-      id: "0059_account_erasure_fence",
+      id: "0061_account_erasure_fence",
       statements: [
         expect.stringContaining("CREATE TABLE IF NOT EXISTS ingest.account_erasure_fence"),
         expect.stringContaining(

@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Modal, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  Linking,
+  Modal,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 import { styles } from "./styles.ts";
+import type { ProviderDetailModals } from "./use-provider-detail-actions.ts";
 
 // ── Generic Credential Auth Modal ──
 
@@ -105,6 +114,162 @@ export function CredentialAuthModal({
         </View>
       </View>
     </Modal>
+  );
+}
+
+// ── Personal Token Auth Modal ──
+
+export function TokenAuthModal({
+  providerId,
+  providerName,
+  tokenLabel,
+  instructionsUrl,
+  onClose,
+  onSuccess,
+}: {
+  providerId: string;
+  providerName: string;
+  tokenLabel: string;
+  instructionsUrl: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [token, setToken] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const tokenRef = useRef<TextInput>(null);
+  const connectMutation = trpc.tokenAuth.connect.useMutation();
+
+  useEffect(() => {
+    tokenRef.current?.focus();
+  }, []);
+
+  const handleClose = useCallback(() => {
+    if (!loading) onClose();
+  }, [loading, onClose]);
+
+  const handleConnect = useCallback(async () => {
+    setError("");
+    setLoading(true);
+    try {
+      await connectMutation.mutateAsync({ providerId, token });
+    } catch (caught: unknown) {
+      captureException(caught, {
+        source: "provider-token-auth-connect",
+        providerId,
+      });
+      setError(caught instanceof Error ? caught.message : "Token connection failed");
+      setLoading(false);
+      return;
+    }
+    setLoading(false);
+    onSuccess();
+  }, [connectMutation, onSuccess, providerId, token]);
+
+  const openInstructions = useCallback(() => {
+    void Linking.openURL(instructionsUrl).catch((caught: unknown) => {
+      captureException(caught, {
+        source: "provider-token-auth-instructions",
+        providerId,
+      });
+      setError(caught instanceof Error ? caught.message : "Could not open token instructions");
+    });
+  }, [instructionsUrl, providerId]);
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={handleClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Connect {providerName}</Text>
+            <TouchableOpacity
+              onPress={handleClose}
+              activeOpacity={0.7}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel={`Close ${providerName} connection`}
+              accessibilityState={{ disabled: loading }}
+            >
+              <Text style={styles.modalClose}>{"\u00D7"}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            onPress={openInstructions}
+            activeOpacity={0.7}
+            accessibilityRole="link"
+            accessibilityLabel={`Create a ${tokenLabel}`}
+          >
+            <Text style={styles.modalDescription}>
+              Create a {tokenLabel} in {providerName}, then paste it below.
+            </Text>
+          </TouchableOpacity>
+
+          {error ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          <TextInput
+            ref={tokenRef}
+            style={styles.input}
+            placeholder={tokenLabel}
+            placeholderTextColor={colors.textTertiary}
+            value={token}
+            onChangeText={setToken}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+          />
+          <TouchableOpacity
+            style={[styles.signInButton, loading && styles.signInButtonDisabled]}
+            onPress={handleConnect}
+            activeOpacity={0.7}
+            disabled={loading || !token}
+            accessibilityRole="button"
+            accessibilityLabel={`Connect ${providerName}`}
+            accessibilityState={{
+              busy: loading,
+              disabled: loading || !token,
+            }}
+          >
+            <Text style={styles.signInButtonText}>{loading ? "Connecting..." : "Connect"}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+export function ProviderDetailAuthModals({ modals }: { modals: ProviderDetailModals }) {
+  return (
+    <>
+      {modals.credentialAuthProvider && (
+        <CredentialAuthModal
+          providerId={modals.credentialAuthProvider.id}
+          providerName={modals.credentialAuthProvider.name}
+          onClose={modals.closeCredentialAuth}
+          onSuccess={modals.handleCredentialSuccess}
+        />
+      )}
+      {modals.tokenAuthProvider && (
+        <TokenAuthModal
+          providerId={modals.tokenAuthProvider.id}
+          providerName={modals.tokenAuthProvider.name}
+          tokenLabel={modals.tokenAuthProvider.label}
+          instructionsUrl={modals.tokenAuthProvider.instructionsUrl}
+          onClose={modals.closeTokenAuth}
+          onSuccess={modals.handleTokenSuccess}
+        />
+      )}
+      {modals.whoopAuthOpen && (
+        <WhoopAuthModal onClose={modals.closeWhoopAuth} onSuccess={modals.handleWhoopSuccess} />
+      )}
+      {modals.garminAuthOpen && (
+        <GarminAuthModal onClose={modals.closeGarminAuth} onSuccess={modals.handleGarminSuccess} />
+      )}
+    </>
   );
 }
 

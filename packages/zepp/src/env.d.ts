@@ -119,7 +119,8 @@ declare module "@zos/utils" {
 }
 
 declare module "@zos/device" {
-  export function getDeviceInfo(): { width: number; height: number };
+  export const SCREEN_SHAPE_ROUND: number;
+  export function getDeviceInfo(): { width: number; height: number; screenShape: number };
 }
 
 declare module "@zos/display" {

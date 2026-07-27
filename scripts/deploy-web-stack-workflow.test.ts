@@ -28,6 +28,17 @@ describe("deploy-web-stack workflow", () => {
     );
   });
 
+  it("uses the scoped R2 environment for the backup freshness check", () => {
+    const freshnessIndex = workflowText.indexOf("      - name: Verify database backup freshness");
+    const releaseIndex = workflowText.indexOf("      - name: Record Sentry production release");
+    const freshnessStep = workflowText.slice(freshnessIndex, releaseIndex);
+
+    expect(freshnessIndex).toBeGreaterThan(-1);
+    expect(releaseIndex).toBeGreaterThan(freshnessIndex);
+    expect(freshnessStep).toContain('--env-file "$R2_OPERATIONS_ENV_FILE"');
+    expect(freshnessStep).not.toContain("INFISICAL_ENV_FILE");
+  });
+
   it("renders scoped service environments before validating the stack", () => {
     const renderIndex = workflowText.indexOf(
       "      - name: Render least-privilege service dotenv files",

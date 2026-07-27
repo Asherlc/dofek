@@ -41,6 +41,7 @@ import { mobileDashboardRouter } from "./routers/mobile-dashboard.ts";
 import { monthlyReportRouter } from "./routers/monthly-report.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
 import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
+import { personalExperimentsRouter } from "./routers/personal-experiments.ts";
 import { personalizationRouter } from "./routers/personalization.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
@@ -59,6 +60,8 @@ import { stressRouter } from "./routers/stress.ts";
 import { supplementsRouter } from "./routers/supplements.ts";
 import { supportRouter } from "./routers/support.ts";
 import { syncRouter } from "./routers/sync.ts";
+import { todayPlanRouter } from "./routers/today-plan.ts";
+import { tokenAuthRouter } from "./routers/token-auth.ts";
 import { trainingRouter } from "./routers/training.ts";
 import { trendsRouter } from "./routers/trends.ts";
 import { watchAltitudeSyncRouter } from "./routers/watch-altitude-sync.ts";
@@ -91,6 +94,7 @@ const appRouterProcedures = {
   insights: insightsRouter,
   journal: journalRouter,
   lifeEvents: lifeEventsRouter,
+  personalExperiments: personalExperimentsRouter,
   mobileDashboard: mobileDashboardRouter,
   supplements: supplementsRouter,
   providerDetail: providerDetailRouter,
@@ -104,6 +108,7 @@ const appRouterProcedures = {
   companionToken: companionTokenRouter,
   correlation: correlationRouter,
   credentialAuth: credentialAuthRouter,
+  tokenAuth: tokenAuthRouter,
   pmc: pmcRouter,
   power: powerRouter,
   durationCurves: durationCurvesRouter,
@@ -125,6 +130,7 @@ const appRouterProcedures = {
   running: runningRouter,
   settings: settingsRouter,
   stress: stressRouter,
+  todayPlan: todayPlanRouter,
   healthReport: healthReportRouter,
   healthspan: healthspanRouter,
   menstrualCycle: menstrualCycleRouter,

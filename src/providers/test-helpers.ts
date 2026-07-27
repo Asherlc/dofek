@@ -21,6 +21,14 @@ import {
 } from "../metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 
+export function fakeJwt(expirationEpochSeconds: number): string {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ exp: expirationEpochSeconds })).toString(
+    "base64url",
+  );
+  return `${header}.${payload}.signature`;
+}
+
 export async function resolveProviderDataGenerationsForTest(
   database: Database,
   scopes: readonly ProviderDataScope[],

@@ -84,7 +84,7 @@ vi.mock("expo-router", async () => {
   return {
     Stack,
     usePathname: () => mockPathname.value,
-    useRouter: () => ({ replace: mockRouterReplace }),
+    useRouter: () => ({ push: vi.fn(), replace: mockRouterReplace, back: vi.fn() }),
   };
 });
 

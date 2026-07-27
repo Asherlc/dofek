@@ -18,10 +18,13 @@ Last updated: 2026-06-23
 
 ### WHOOP
 - **Package:** `packages/whoop-whoop`
+- **Published API client:** `@dofek/whoop`
+- **Published device client:** `@dofek/whoop-ble`
 - **Official API:** WHOOP Developer API (limited, partner access)
 - **Internal API:** Cognito-based auth, REST endpoints for cycles, recovery, sleep, workouts, weightlifting
+- **Bluetooth protocol:** Native Swift client for pairing, authentication, command transport, historical-data transfer, and IMU streaming
 - **Gaps filled:** Weightlifting service (exercise-level sets/reps/weight), cycle data at higher resolution
-- **Verdict:** HIGH VALUE — weightlifting data only available via internal API
+- **Verdict:** HIGH VALUE — weightlifting data only available via internal API, while BLE exposes direct device access
 
 ### Eight Sleep
 - **Package:** `packages/eight-sleep`
@@ -125,6 +128,16 @@ Last updated: 2026-06-23
 - **Community projects:** [Mi-Fit-and-Zepp-workout-exporter](https://github.com/rolandsz/Mi-Fit-and-Zepp-workout-exporter), [huami-token](https://github.com/argrento/huami-token), [amazfit_pyclient](https://github.com/MyrikLD/amazfit_pyclient).
 - **Verdict:** IMPLEMENTED RE PROVIDER — keep monitoring because the auth and data APIs are private and have changed before.
 
+### Peloton
+- **Implemented access:** `packages/peloton-client` automates Peloton's observed Auth0 Universal Login flow, supports authorization-code exchange with PKCE, refreshes tokens, and validates private workout and performance-graph responses. Auth0 describes Universal Login as a browser flow, so HTML automation remains an unstable boundary ([Auth0 Universal Login](https://auth0.com/docs/authenticate/login/auth0-universal-login), [RFC 7636 PKCE](https://www.rfc-editor.org/rfc/rfc7636), [package source](../packages/peloton-client/src/auth.ts)).
+- **Published package:** [`@dofek/peloton`](../packages/peloton-client/README.md) exposes authentication, token refresh, the standalone API client, Zod response schemas, and pure parsers without Dofek persistence code.
+- **Verdict:** IMPLEMENTED RE PROVIDER — high-value reusable access, with explicit private-API and automated-login stability warnings.
+
+### Xert
+- **Implemented access:** Xert documents password and refresh-token grants using its public client credentials; `packages/xert-client` adds a validated client for the observed paginated activity response ([Xert API documentation](https://www.xertonline.com/API.html), [package source](../packages/xert-client/src/client.ts)).
+- **Published package:** [`@dofek/xert`](../packages/xert-client/README.md) exposes sign-in, refresh, activity paging, Zod schemas, typed errors, and pure parsing while leaving environment loading and database sync in Dofek.
+- **Verdict:** IMPLEMENTED PROVIDER CLIENT — the grants are documented, while the activity-list representation remains an observed compatibility boundary.
+
 ---
 
 ## Summary matrix
@@ -138,6 +151,8 @@ Last updated: 2026-06-23
 | TrainerRoad | None | Medium (CSRF cookies) | Essential | Done |
 | VeloHero | None | Easy (SSO) | Essential | Done |
 | TrainingPeaks | Partner-only | Easy (cookie → Bearer) | High | Done |
+| Peloton | Private member API | Medium (Auth0 + PKCE) | High | Done |
+| Xert | Limited | Easy (password grant) | High | Done |
 | Fitbit | Excellent | N/A (no internal API) | None | Skip |
 | Polar | Good | Low (server-rendered) | Low | Skip |
 | Oura | Good | Unknown (undocumented) | Low | Skip |
@@ -145,5 +160,4 @@ Last updated: 2026-06-23
 | Rouvy | Partner-only | Hard (Firebase + GraphQL) | Low | Skip — use Strava/Garmin |
 | Hammerhead | None (on-device SDK only) | Fragile (SRAM migration) | Low | Skip — use Strava/Intervals |
 | Zepp (Amazfit) | Closed registration | Easy (email+password) | Medium | Done |
-| Peloton | Decent | Unknown | Medium | Not investigated |
 | Withings | Decent | Unknown | Medium | Not investigated |

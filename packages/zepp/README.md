@@ -38,7 +38,7 @@ Configured in `app.json` as screen-width target groups.
 │  • uploads health summaries to Dofek          │
 │  • pairs QR/short code or password login      │
 │ Settings App (setting/index.ts)               │
-│  • start/stop, freq mode, gyro flag, export   │
+│  • deliberate start/stop, preferences, export │
 │  • Dofek URL, QR/short code, login, token     │
 └───────────────────────────────────────────────┘
 ```
@@ -109,8 +109,8 @@ pnpm preview
 pnpm build
 ```
 
-4. Open **Dofek Zepp** on the watch, grant accelerometer + background service permissions when prompted.
-5. Open the mini program **Settings** page in the Zepp phone app for remote start/stop/export.
+4. Open **Dofek Zepp** on the watch, then tap **Start session** and grant accelerometer + background service permissions when prompted.
+5. Tap **Stop & transfer** to finalize and send the session. The mini program **Settings** page in the Zepp phone app can also start or stop a session while the Dofek watch app is open.
 
 ## Release (Zepp Store)
 
@@ -186,7 +186,7 @@ zepp/
 
 ## Operational notes
 
-- Start logging from the watch **or** phone Settings (phone sends a Side Service command to the watch page).
-- Stop logging before export so the header sample count is finalized.
+- Recording stays idle until the user starts a session from the watch or phone Settings. Settings sends the command through the Side Service, so the Dofek watch app must be open ([Overall Architecture](https://docs.zepp.com/docs/guides/architecture/arc/)).
+- Stop finalizes and transfers the active session before another session can start. Manual export retries a finalized session when needed.
 - BLE throughput varies with connection quality; large sessions may take minutes to transfer.
 - If gyro is disabled or absent (`checkSensor(Gyroscope) === false`), records omit gyro fields.

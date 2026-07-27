@@ -5,7 +5,13 @@ import {
   isEncryptedCredentialValue,
 } from "../security/credential-encryption.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
-import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
+import {
+  connectProviderWithTokens,
+  deleteTokens,
+  ensureProvider,
+  loadTokens,
+  saveTokens,
+} from "./tokens.ts";
 
 describe("ensureProvider", () => {
   let mock: ReturnType<typeof createMockDatabase>;
@@ -145,6 +151,48 @@ describe("saveTokens", () => {
         userId: TEST_USER_ID,
         refreshToken: null,
         scopes: null,
+      }),
+    );
+  });
+});
+
+describe("connectProviderWithTokens", () => {
+  it("runs connection creation and encrypted token persistence in one transaction", async () => {
+    const mock = createMockDatabase();
+    let transactionCalls = 0;
+    async function transaction<T>(
+      callback: (transactionDatabase: typeof mock.db) => Promise<T>,
+    ): Promise<T> {
+      transactionCalls++;
+      return callback(mock.db);
+    }
+    const tokens = {
+      accessToken: "atomic-access",
+      refreshToken: "atomic-refresh",
+      expiresAt: new Date("2026-09-01T00:00:00Z"),
+      scopes: "read",
+    };
+
+    await connectProviderWithTokens(
+      { transaction },
+      {
+        id: "atomic-provider",
+        name: "Atomic Provider",
+        apiBaseUrl: "https://example.com/api",
+      },
+      tokens,
+      TEST_USER_ID,
+    );
+
+    expect(transactionCalls).toBe(1);
+    expect(mock.spies.execute).toHaveBeenCalledOnce();
+    expect(mock.spies.values).toHaveBeenCalledOnce();
+    expect(mock.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: TEST_USER_ID,
+        providerId: "atomic-provider",
+        expiresAt: tokens.expiresAt,
+        scopes: "read",
       }),
     );
   });

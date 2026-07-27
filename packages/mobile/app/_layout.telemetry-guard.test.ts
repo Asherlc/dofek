@@ -28,6 +28,18 @@ describe("app bootstrap telemetry guard", () => {
       loadMobileAccountErasureStatusCapability: vi.fn(() => Promise.resolve(null)),
     }));
 
+    vi.doMock("expo-notifications", () => ({
+      SchedulableTriggerInputTypes: { DAILY: "daily" },
+      addNotificationResponseReceivedListener: vi.fn(() => ({ remove: vi.fn() })),
+      cancelScheduledNotificationAsync: vi.fn(async () => undefined),
+      getAllScheduledNotificationsAsync: vi.fn(async () => []),
+      getLastNotificationResponse: vi.fn(() => null),
+      getPermissionsAsync: vi.fn(async () => ({ status: "undetermined" })),
+      requestPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
+      scheduleNotificationAsync: vi.fn(async () => "notification-id"),
+      setNotificationHandler: vi.fn(),
+    }));
+
     const captureExceptionMock = vi.fn();
 
     vi.doMock("../lib/telemetry", () => ({

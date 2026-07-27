@@ -3,6 +3,7 @@ import {
   type ProviderHttpErrorScope,
   ProviderRateLimitError,
   type ProviderRateLimitScope,
+  ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
 } from "./rate-limit-types.ts";
 
@@ -11,9 +12,10 @@ export type {
   ProviderHttpErrorScope,
   ProviderRateLimitErrorOptions,
   ProviderRateLimitScope,
+  ProviderRequestTimeoutErrorOptions,
   ProviderServiceUnavailableErrorOptions,
 } from "./rate-limit-types.ts";
-export { ProviderRateLimitError, ProviderServiceUnavailableError };
+export { ProviderRateLimitError, ProviderRequestTimeoutError, ProviderServiceUnavailableError };
 
 export interface FetchRateLimitHandlingOptions {
   createRateLimitError: (response: Response, responseBody: string) => Error;
@@ -30,6 +32,15 @@ export interface RateLimitAwareFetchOptions {
 }
 
 const rateLimitAwareFetches = new WeakSet<typeof globalThis.fetch>();
+export const PROVIDER_HTTP_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
+
+function callerAbortSignal(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+): AbortSignal | undefined {
+  if (init?.signal) return init.signal;
+  return input instanceof Request ? input.signal : undefined;
+}
 
 /**
  * Parses an HTTP `Retry-After` header value, which may be either a number of
@@ -129,23 +140,40 @@ export function createRateLimitAwareFetch(
       await options.adaptiveStore.awaitAdmission(options.providerId, scope, userId);
     }
 
+    const timeoutSignal = AbortSignal.timeout(PROVIDER_HTTP_REQUEST_TIMEOUT_MS);
+    const upstreamSignal = callerAbortSignal(input, init);
+    const signal = upstreamSignal
+      ? AbortSignal.any([upstreamSignal, timeoutSignal])
+      : timeoutSignal;
+
     try {
-      const response = await fetchWithRateLimitHandling(fetchFn, input, init, {
-        createRateLimitError:
-          options.createRateLimitError ??
-          ((response, responseBody) =>
-            createDefaultRateLimitError(options.providerId, scope, userId, response, responseBody)),
-        createServiceUnavailableError:
-          options.createServiceUnavailableError ??
-          ((response, responseBody) =>
-            createDefaultServiceUnavailableError(
-              options.providerId,
-              scope,
-              userId,
-              response,
-              responseBody,
-            )),
-      });
+      const response = await fetchWithRateLimitHandling(
+        fetchFn,
+        input,
+        { ...init, signal },
+        {
+          createRateLimitError:
+            options.createRateLimitError ??
+            ((response, responseBody) =>
+              createDefaultRateLimitError(
+                options.providerId,
+                scope,
+                userId,
+                response,
+                responseBody,
+              )),
+          createServiceUnavailableError:
+            options.createServiceUnavailableError ??
+            ((response, responseBody) =>
+              createDefaultServiceUnavailableError(
+                options.providerId,
+                scope,
+                userId,
+                response,
+                responseBody,
+              )),
+        },
+      );
 
       if (options.adaptiveStore && response.ok) {
         await options.adaptiveStore.recordSuccess(
@@ -158,6 +186,15 @@ export function createRateLimitAwareFetch(
 
       return response;
     } catch (err) {
+      if (timeoutSignal.aborted && signal.reason === timeoutSignal.reason) {
+        throw new ProviderRequestTimeoutError({
+          cause: err,
+          providerId: options.providerId,
+          scope,
+          timeoutMs: PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
+          userId,
+        });
+      }
       if (options.adaptiveStore && err instanceof ProviderRateLimitError) {
         await options.adaptiveStore.recordRateLimit(err);
       }

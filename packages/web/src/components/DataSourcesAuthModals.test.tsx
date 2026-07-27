@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
 
 const mockCredentialSignIn = vi.hoisted(() => vi.fn());
+const mockTokenConnect = vi.hoisted(() => vi.fn());
 const mockGarminSignIn = vi.hoisted(() => vi.fn());
 const mockWhoopSignIn = vi.hoisted(() => vi.fn());
 const mockWhoopVerifyCode = vi.hoisted(() => vi.fn());
 const mockWhoopSaveTokens = vi.hoisted(() => vi.fn());
 const mockCredentialUseMutation = vi.hoisted(() => vi.fn());
+const mockTokenUseMutation = vi.hoisted(() => vi.fn());
 const mockGarminUseMutation = vi.hoisted(() => vi.fn());
 const mockWhoopSignInUseMutation = vi.hoisted(() => vi.fn());
 const mockWhoopVerifyUseMutation = vi.hoisted(() => vi.fn());
@@ -19,6 +21,7 @@ const mockCaptureException = vi.hoisted(() => vi.fn());
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     credentialAuth: { signIn: { useMutation: mockCredentialUseMutation } },
+    tokenAuth: { connect: { useMutation: mockTokenUseMutation } },
     garminAuth: { signIn: { useMutation: mockGarminUseMutation } },
     whoopAuth: {
       signIn: { useMutation: mockWhoopSignInUseMutation },
@@ -37,6 +40,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   mockCredentialUseMutation.mockReturnValue({ mutateAsync: mockCredentialSignIn });
+  mockTokenUseMutation.mockReturnValue({ mutateAsync: mockTokenConnect });
   mockGarminUseMutation.mockReturnValue({ mutateAsync: mockGarminSignIn });
   mockWhoopSignInUseMutation.mockReturnValue({ mutateAsync: mockWhoopSignIn });
   mockWhoopVerifyUseMutation.mockReturnValue({ mutateAsync: mockWhoopVerifyCode });
@@ -82,6 +86,101 @@ describe("data source auth dialogs", () => {
 });
 
 describe("Data source authentication telemetry", () => {
+  it("connects a personal token without exposing it to telemetry", async () => {
+    mockTokenConnect.mockResolvedValue({ success: true });
+    const token = "personal-token-must-not-leak";
+    const onSuccess = vi.fn();
+    const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
+
+    render(
+      <TokenAuthModal
+        providerId="wger"
+        providerName="Wger"
+        tokenLabel="JWT refresh token"
+        instructionsUrl="https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens"
+        onClose={vi.fn()}
+        onSuccess={onSuccess}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("JWT refresh token"), {
+      target: { value: token },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+
+    await waitFor(() => {
+      expect(mockTokenConnect).toHaveBeenCalledWith({ providerId: "wger", token });
+      expect(onSuccess).toHaveBeenCalledOnce();
+    });
+    expect(screen.getByRole("link", { name: "Create a JWT refresh token" })).toHaveAttribute(
+      "href",
+      "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+    );
+    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(token);
+  });
+
+  it("reports personal token failures with provider context only", async () => {
+    const error = new Error("Token rejected");
+    const token = "rejected-token-must-not-leak";
+    mockTokenConnect.mockRejectedValue(error);
+    const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
+
+    render(
+      <TokenAuthModal
+        providerId="ultrahuman"
+        providerName="Ultrahuman"
+        tokenLabel="Personal API token"
+        instructionsUrl="https://vision.ultrahuman.com/developer-docs"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Personal API token"), {
+      target: { value: token },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(error.message));
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      operation: "tokenAuth.connect",
+      providerId: "ultrahuman",
+    });
+    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(token);
+  });
+
+  it("keeps the token modal open while a connection is pending", async () => {
+    let resolveConnection: ((value: { success: true }) => void) | undefined;
+    mockTokenConnect.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConnection = resolve;
+      }),
+    );
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
+
+    render(
+      <TokenAuthModal
+        providerId="wger"
+        providerName="Wger"
+        tokenLabel="JWT refresh token"
+        instructionsUrl="https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens"
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("JWT refresh token"), {
+      target: { value: "pending-refresh-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Close" })).toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => resolveConnection?.({ success: true }));
+    expect(onSuccess).toHaveBeenCalledOnce();
+  });
+
   it("reports credential sign-in failures without credentials", async () => {
     const error = new Error("Provider rejected credentials");
     const password = "provider-password-must-not-leak";

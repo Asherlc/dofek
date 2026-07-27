@@ -43,6 +43,7 @@ import {
   EXPORT_QUEUE,
   enqueueDataExport,
   enqueueProviderDataDeletion,
+  enqueueProviderDataDeletionContinuation,
   getDataExportQueue,
   getProviderDataDeletionQueue,
   PROVIDER_DATA_DELETION_QUEUE,
@@ -815,6 +816,34 @@ describe("queues", () => {
           removeOnFail: { age: 2_592_000, count: 1_000 },
         },
       );
+    });
+
+    it("uses the event and batch as the continuation idempotency key", async () => {
+      const queue = createProviderDataDeletionQueue({ host: "test", port: 9999 });
+      const data = {
+        type: "provider-data-deletion" as const,
+        eventId: "30000000-0000-4000-8000-000000000001",
+        generation: 2,
+        providerId: "strava",
+        userId: "10000000-0000-4000-8000-000000000001",
+        checkpoint: {
+          batches: 3,
+          deletedRows: 2_500,
+          examinedRows: 3_000,
+          lastGeneration: 1,
+          lastId: "20000000-0000-4000-8000-000000000001",
+        },
+      };
+
+      await enqueueProviderDataDeletionContinuation(data, queue);
+
+      expect(mockQueueAdd).toHaveBeenCalledWith("provider-data-deletion", data, {
+        attempts: 20,
+        backoff: { type: "fixed", delay: 30_000 },
+        jobId: "30000000-0000-4000-8000-000000000001-batch-3",
+        removeOnComplete: { age: 604_800, count: 1_000 },
+        removeOnFail: { age: 2_592_000, count: 1_000 },
+      });
     });
 
     it("creates and closes one cached provider deletion queue", async () => {

@@ -673,18 +673,18 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           set +e
-          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
+          timeout 35m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
-            echo "::error::docker stack deploy exceeded 20m"
+            echo "::error::docker stack deploy exceeded 35m"
           fi
           if [ "$status" -ne 0 ]; then
             exit "$status"
           fi
 
-          wait_deadline_seconds=$((SECONDS + 1200))
-          for service in web worker analytics-worker metric-stream-clickhouse-sink clickhouse; do
+          wait_deadline_seconds=$((SECONDS + 2100))
+          for service in web worker analytics-worker metric-stream-clickhouse-sink clickhouse databasus; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(
@@ -710,13 +710,9 @@ jobs:
                   exit 1
                   ;;
                 paused)
-                  running="${replicas%%/*}"
-                  if [ "$running" -eq 0 ]; then
-                    docker service ps "$service_name" --no-trunc
-                    echo "::error::${service_name} update is paused with no running tasks"
-                    exit 1
-                  fi
-                  echo "::warning::${service_name} update is paused but has running tasks; continuing"
+                  docker service ps "$service_name" --no-trunc
+                  echo "::error::${service_name} update is paused"
+                  exit 1
                   ;;
               esac
               if [ "$replicas" = "${desired_replicas}/${desired_replicas}" ] && {
@@ -968,6 +964,19 @@ jobs:
               sleep 10
             done
           done
+
+      - name: Verify database backup freshness
+        if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          docker run --rm \
+            --env-file "$R2_OPERATIONS_ENV_FILE" \
+            --entrypoint node \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            --experimental-strip-types \
+            --enable-source-maps \
+            scripts/check-database-backup-freshness.ts
 
       - name: Record Sentry production release
         if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')

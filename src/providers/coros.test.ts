@@ -747,8 +747,10 @@ describe("CorosClient.downloadFitFile", () => {
 
     expect(result).toBeInstanceOf(Buffer);
     expect(result.length).toBe(4);
-    // FIT file URLs are pre-signed — no auth headers sent
-    expect(mockFetch).toHaveBeenCalledWith("https://cdn.coros.com/fit/123.fit");
+    // FIT file URLs are pre-signed — no auth headers sent.
+    expect(mockFetch).toHaveBeenCalledWith("https://cdn.coros.com/fit/123.fit", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("throws on download failure", async () => {

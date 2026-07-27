@@ -8,10 +8,7 @@ import { reconcileAccountErasureRestoreIntents } from "../account-erasure/restor
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
-import {
-  markProviderDataDeletionCompleted,
-  markProviderDataDeletionFailed,
-} from "../db/provider-data-deletion.ts";
+import { markProviderDataDeletionFailed } from "../db/provider-data-deletion.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
 import { initProductionSentry } from "../lib/sentry.ts";
@@ -41,6 +38,7 @@ import { processProviderDataDeletionJob } from "./process-provider-data-deletion
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
 import { processZipEntryExtractJob } from "./process-zip-entry-extract-job.ts";
+import { createProviderDataDeletionDependencies } from "./provider-data-deletion-dependencies.ts";
 import { startProviderDataDeletionOutboxDispatcher } from "./provider-data-deletion-outbox.ts";
 import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
 import { ensureProvidersRegistered } from "./provider-registration.ts";
@@ -51,7 +49,6 @@ import {
   closeAllQueueResources,
   EXPORT_QUEUE,
   type ExportJobData,
-  enqueueProviderDeleteAnalyticsRefresh,
   FIT_FILE_IMPORT_BATCH_QUEUE,
   FIT_FILE_IMPORT_QUEUE,
   type FitFileImportBatchJobData,
@@ -334,13 +331,12 @@ const providerDataDeletionWorker = new Worker<ProviderDataDeletionJobData>(
         job.data.userId,
         "provider data deletion",
         () =>
-          processProviderDataDeletionJob(job, {
-            accountErasureAllowsWork: (workKind) =>
+          processProviderDataDeletionJob(
+            job,
+            createProviderDataDeletionDependencies(db, getClickHouseClient(), (workKind) =>
               accountErasureAllowsQueuedUserWork(db, job.data.userId, workKind),
-            clickHouseClient: getClickHouseClient(),
-            enqueueAnalyticsRefresh: enqueueProviderDeleteAnalyticsRefresh,
-            markCompleted: (eventId) => markProviderDataDeletionCompleted(db, eventId),
-          }),
+            ),
+          ),
       ),
     );
   },

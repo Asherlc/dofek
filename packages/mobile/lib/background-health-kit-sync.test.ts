@@ -197,7 +197,7 @@ describe("initBackgroundHealthKitSync", () => {
       updateId: "update-1",
     });
 
-    // Advance past debounce timer
+    // Allow the serialized observer sync to settle.
     await vi.advanceTimersByTimeAsync(5000);
     // Let sync promises resolve
     await vi.runAllTimersAsync();
@@ -456,7 +456,7 @@ describe("initBackgroundHealthKitSync", () => {
     const firstClient = createMockClient();
     const firstSync = createDeferred<{ inserted: number }>();
     firstClient.healthKitSync.pushWorkouts.mutate.mockReturnValueOnce(firstSync.promise);
-    vi.mocked(queryWorkouts).mockResolvedValueOnce([
+    vi.mocked(queryWorkouts).mockResolvedValue([
       {
         activityType: 1,
         startDate: "2026-03-22T10:00:00Z",
@@ -471,15 +471,22 @@ describe("initBackgroundHealthKitSync", () => {
     const secondClient = createMockClient();
     const secondOnSyncComplete = vi.fn();
     await initBackgroundHealthKitSync(secondClient, secondOnSyncComplete);
+    const secondListener = mockAddSampleUpdateListener.mock.calls[1][0];
+    secondListener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      updateId: "second-context-update",
+    });
     expect(secondClient.healthKitSync.pushWorkouts.mutate).not.toHaveBeenCalled();
 
     firstSync.resolve({ inserted: 1 });
     await vi.waitFor(() => {
-      expect(secondClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+      expect(secondClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(2);
     });
 
-    expect(firstOnSyncComplete).toHaveBeenCalledTimes(1);
-    expect(secondOnSyncComplete).toHaveBeenCalledTimes(1);
+    expect(firstClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+    expect(firstOnSyncComplete).not.toHaveBeenCalled();
+    expect(secondOnSyncComplete).toHaveBeenCalledTimes(2);
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["second-context-update"], true);
   });
 
   it("tears down and reports an observer registration failure", async () => {
@@ -583,7 +590,35 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
-  it("coalesces debounced observer updates and completes every callback once", async () => {
+  it("starts observer sync without waiting for a background timer (DOFEK-MOBILE-1C)", async () => {
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+    await vi.waitFor(() => {
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "bg-healthkit-sync",
+        "Observer processing complete",
+        expect.any(Object),
+      );
+    });
+    const startingSyncCount = mockLoggerInfo.mock.calls.filter(
+      ([, message]) => message === "Starting sync",
+    ).length;
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener({
+      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+      updateId: "update-1",
+    });
+
+    expect(
+      mockLoggerInfo.mock.calls.filter(([, message]) => message === "Starting sync"),
+    ).toHaveLength(startingSyncCount + 1);
+    await vi.waitFor(() => {
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], true);
+    });
+  });
+
+  it("serializes observer updates and completes every callback once", async () => {
     vi.useFakeTimers();
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);
@@ -603,13 +638,14 @@ describe("initBackgroundHealthKitSync", () => {
     await vi.advanceTimersByTimeAsync(500);
     await vi.runAllTimersAsync();
 
-    expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(1);
-    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1", "update-2"], true);
-    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(2);
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(2);
+    expect(mockCompleteObserverUpdates).toHaveBeenNthCalledWith(1, ["update-1"], true);
+    expect(mockCompleteObserverUpdates).toHaveBeenNthCalledWith(2, ["update-2"], true);
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(3);
     vi.useRealTimers();
   });
 
-  it("debounces an update received while the preceding observer sync is still running", async () => {
+  it("runs a queued update immediately after the preceding observer sync", async () => {
     vi.useFakeTimers();
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);
@@ -643,20 +679,16 @@ describe("initBackgroundHealthKitSync", () => {
       typeIdentifier: "HKQuantityTypeIdentifierStepCount",
       updateId: "update-1",
     });
-    await vi.advanceTimersByTimeAsync(500);
     listener({
       typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
       updateId: "update-2",
     });
 
     firstSync.resolve({ inserted: 1 });
-    await vi.advanceTimersByTimeAsync(499);
-    expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(1);
-    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], true);
-
-    await vi.advanceTimersByTimeAsync(1);
-    await vi.runAllTimersAsync();
-    expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => {
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(2);
+    });
+    expect(mockCompleteObserverUpdates).toHaveBeenNthCalledWith(1, ["update-1"], true);
     expect(mockCompleteObserverUpdates).toHaveBeenLastCalledWith(["update-2"], true);
     vi.useRealTimers();
   });
@@ -734,7 +766,7 @@ describe("teardownBackgroundHealthKitSync", () => {
     teardownBackgroundHealthKitSync();
   });
 
-  it("removes the listener, clears timers, and drains pending native callbacks", async () => {
+  it("removes the listener and drains pending native callbacks", async () => {
     vi.useFakeTimers();
     const mockRemove = vi.fn();
     mockAddSampleUpdateListener.mockReturnValue({ remove: mockRemove });

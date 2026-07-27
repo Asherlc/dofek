@@ -150,12 +150,8 @@ function activity(overrides: Record<string, unknown> = {}) {
     endedAt: "2026-03-18T08:00:00.000Z",
     durationMin: 60,
     location: null,
-    calories: 421.6,
     tss: 100,
-    stats: [
-      { label: "Training Stress Score", value: "100" },
-      { label: "Calories", value: "422 kcal" },
-    ],
+    stats: [{ label: "Training Stress Score", value: "100" }],
     ...overrides,
   };
 }

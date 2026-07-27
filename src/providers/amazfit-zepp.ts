@@ -1,7 +1,7 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
+import { signInToZepp, ZeppInvalidCredentialsError } from "@dofek/zepp-client/client";
 import { captureException } from "@sentry/node";
-import { signInToZepp, ZeppInvalidCredentialsError } from "zepp-client/client";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";

@@ -6,13 +6,13 @@ This directory contains implementations for various data providers (fitness trac
 
 - **Provider Interface**: All providers implement the `Provider` interface (defined in `types.ts`).
 - **Sync vs Import**: Providers are either `SyncProvider` (fetches data via API) or `ImportProvider` (processes uploaded files).
-- **Authentication**: Supports OAuth 2.0 (`oauth`), OAuth 1.0 (`oauth1`), and credential-based (`credential`) authentication. **New sync providers must authenticate per user** — see `docs/adding-a-provider.md` and `provider-auth-policy.ts`.
+- **Authentication**: Supports OAuth 2.0 (`oauth`), OAuth 1.0 (`oauth1`), personal token (`token`), and credential-based (`credential`) authentication. **New sync providers must authenticate per user** — see `docs/adding-a-provider.md` and `provider-auth-policy.ts`.
 - **Webhooks**: Many providers (Strava, Fitbit, Oura) support real-time updates via webhooks (`WebhookProvider`).
 
 ## Implementation Details
 
 - **Registry**: All active providers are registered in `index.ts`.
-- **HTTP Client**: A shared `HttpClient` in `http-client.ts` handles rate limiting, retries, and logging.
+- **HTTP Client**: Provider fetches pass through the shared `@dofek/provider-http` boundary for adaptive rate limiting and a two-minute request deadline. The deadline composes with a caller-provided abort signal; request-start timeouts use `ETIMEDOUT`, and native response-body `TimeoutError` failures are also retryable instead of leaving a BullMQ job active indefinitely. Node.js documents [`AbortSignal.timeout()` and `AbortSignal.any()`](https://nodejs.org/api/globals.html#class-abortsignal).
 - **Validation**: `validate()` may gate app-level OAuth client config, but must not gate on per-user credentials. User auth is checked at sync time via `loadTokens()`.
 - **UI visibility**: Providers that fail `validate()` are hidden until required app config is present. Users connect individually via Connect buttons.
 - **Data Mapping**: Providers transform vendor-specific JSON into Dofek's internal schema modules (see `src/db/schema/`).
@@ -20,10 +20,27 @@ This directory contains implementations for various data providers (fitness trac
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Coros, Cycling Analytics, Decathlon, Eight Sleep, FatSecret, Fitbit, Garmin, Komoot, MapMyFitness, Oura, Peloton, Polar, Ride with GPS, Strava, Suunto, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Zwift.
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Oura, Peloton, Polar, Ride with GPS, Strava, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Zwift.
 - **Config-based sync providers**: Auto-Supplements.
-- **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, and Strong CSV. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
+- **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, Kaya, Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
+
+The Fitbit, Suunto, COROS, Komoot, MapMyFitness, and Decathlon modules remain available for
+historical provider IDs and future vendor onboarding, but are not loaded by the production server or
+worker registries:
+
+- Fitbit must be rebuilt for the Google Health API before the legacy Fitbit Web API is turned down
+  in September 2026 ([Google Health API migration overview](https://developers.google.com/health/about)).
+- Suunto requires organization/partner approval and development and production subscriptions
+  ([Suunto API Zone onboarding](https://apizone.suunto.com/how-to-start)).
+- COROS issues credentials after developer onboarding
+  ([COROS API application](https://support.coros.com/hc/en-us/articles/17085887816340-Submitting-an-API-Application)).
+- Komoot does not offer a public API and selects integration partners
+  ([Komoot API support policy](https://support.komoot.com/hc/en-us/articles/10331570510618-komoot-API)).
+- MapMyFitness limits personal API access to paid MVP accounts and up to ten users
+  ([MapMyFitness developer portal](https://developer.mapmyfitness.com/)).
+- Decathlon requires an approved application registration before issuing client credentials
+  ([Decathlon login authorization guide](https://login-doc.decathlon.com/authorization.html)).
 
 ## Amazfit/Zepp
 

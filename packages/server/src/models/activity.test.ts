@@ -349,7 +349,26 @@ describe("Activity", () => {
         elevationLoss: 340,
         sampleCount: 5400,
         providerAbsentAt: null,
+        sourceDecision: {
+          sourceCount: 2,
+          primarySourceLabel: "Wahoo",
+          explanation:
+            "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+        },
       });
+    });
+
+    it("omits sourceDecision when there is only one source link", () => {
+      const activity = new Activity(
+        {
+          ...fullRow,
+          source_providers: ["wahoo"],
+          source_external_ids: [{ providerId: "wahoo", externalId: "42" }],
+        },
+        mockLookup,
+      );
+
+      expect(activity.toDetail().sourceDecision).toBeNull();
     });
   });
 });

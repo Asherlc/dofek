@@ -99,6 +99,7 @@ describe("createTRPCClient", () => {
     expect(queryCondition({ type: "query", path: "recovery.readinessScore" })).toBe(true);
     expect(queryCondition({ type: "query", path: "recovery.workloadRatio" })).toBe(true);
     expect(queryCondition({ type: "query", path: "recovery.strainTarget" })).toBe(true);
+    expect(queryCondition({ type: "query", path: "todayPlan.get" })).toBe(true);
     expect(queryCondition({ type: "query", path: "sleepNeed.performance" })).toBe(true);
     expect(queryCondition({ type: "query", path: "processing.status" })).toBe(false);
     expect(queryCondition({ type: "query", path: "insights.compute" })).toBe(false);

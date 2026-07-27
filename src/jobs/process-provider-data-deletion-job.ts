@@ -11,9 +11,13 @@ import {
   METRIC_STREAM_TABLE,
   PROVIDER_DATA_GENERATION_TABLE,
 } from "../metric-stream/clickhouse-table.ts";
-import type { ProviderDataDeletionJobData } from "./queues.ts";
+import type {
+  ProviderDataDeletionContinuationJobData,
+  ProviderDataDeletionJobData,
+} from "./queues.ts";
 
 const PROVIDER_DATA_DELETION_BATCH_SIZE = 1_000;
+const providerDataDeletionWorkBlocked = Symbol("provider-data-deletion-work-blocked");
 const metricStreamCursorRowsSchema = z.array(
   z.object({
     generation: z.coerce.number().int().nonnegative(),
@@ -81,6 +85,7 @@ export interface ProviderDataDeletionDependencies {
     providerId: string,
     deletionEventId: string,
   ) => Promise<void>;
+  enqueueContinuation: (data: ProviderDataDeletionContinuationJobData) => Promise<void>;
   markCompleted: (eventId: string) => Promise<void>;
 }
 
@@ -193,7 +198,7 @@ async function tombstoneMetricStreamBatch(
   data: ProviderDataDeletionJobData,
   batchKeys: z.infer<typeof metricStreamCursorRowsSchema>,
   accountErasureAllowsWork: (workKind: string) => Promise<boolean>,
-): Promise<number> {
+): Promise<number | typeof providerDataDeletionWorkBlocked> {
   if (!client.insert) {
     throw new Error("Provider data deletion requires an insert-capable ClickHouse client");
   }
@@ -259,7 +264,7 @@ async function tombstoneMetricStreamBatch(
   const tombstones = metricStreamTombstoneRowsSchema.parse(await result.json());
   if (tombstones.length === 0) return 0;
   if (!(await accountErasureAllowsWork("provider deletion tombstone insert"))) {
-    return 0;
+    return providerDataDeletionWorkBlocked;
   }
   await client.insert({
     table: METRIC_STREAM_TABLE,
@@ -286,25 +291,27 @@ export async function processProviderDataDeletionJob(
   dependencies: ProviderDataDeletionDependencies,
 ): Promise<void> {
   const { clickHouseClient } = dependencies;
-  if (!(await dependencies.accountErasureAllowsWork("provider deletion generation fence"))) {
-    return;
-  }
-  await updateProgress(job, 0, "Advancing provider generation fence...");
-  await advanceClickHouseGenerationFence(clickHouseClient, job.data);
-  if (!(await dependencies.accountErasureAllowsWork("provider deletion projection verification"))) {
-    return;
-  }
-  await updateProgress(job, 5, "Verifying provider deletion projection...");
-  await assertProviderGenerationProjectionReady(clickHouseClient);
-
-  let checkpoint = job.data.checkpoint;
-  while (true) {
-    if (!(await dependencies.accountErasureAllowsWork("provider deletion batch read"))) {
+  const checkpoint = job.data.checkpoint;
+  if (!checkpoint) {
+    if (!(await dependencies.accountErasureAllowsWork("provider deletion generation fence"))) {
       return;
     }
-    const rows = await loadNextMetricStreamBatch(clickHouseClient, job.data, checkpoint);
-    if (rows.length === 0) break;
+    await updateProgress(job, 0, "Advancing provider generation fence...");
+    await advanceClickHouseGenerationFence(clickHouseClient, job.data);
+    if (
+      !(await dependencies.accountErasureAllowsWork("provider deletion projection verification"))
+    ) {
+      return;
+    }
+    await updateProgress(job, 5, "Verifying provider deletion projection...");
+    await assertProviderGenerationProjectionReady(clickHouseClient);
+  }
 
+  if (!(await dependencies.accountErasureAllowsWork("provider deletion batch read"))) {
+    return;
+  }
+  const rows = await loadNextMetricStreamBatch(clickHouseClient, job.data, checkpoint);
+  if (rows.length > 0) {
     if (!(await dependencies.accountErasureAllowsWork("provider deletion tombstone read"))) {
       return;
     }
@@ -314,24 +321,36 @@ export async function processProviderDataDeletionJob(
       rows,
       dependencies.accountErasureAllowsWork,
     );
+    if (deletedRows === providerDataDeletionWorkBlocked) {
+      return;
+    }
+    if (!(await dependencies.accountErasureAllowsWork("provider deletion continuation enqueue"))) {
+      return;
+    }
     const lastRow = rows.at(-1);
     if (!lastRow) {
       throw new Error("Provider data deletion batch did not produce a checkpoint cursor");
     }
-    checkpoint = {
+    const nextCheckpoint = {
       batches: (checkpoint?.batches ?? 0) + 1,
       deletedRows: (checkpoint?.deletedRows ?? 0) + deletedRows,
       examinedRows: (checkpoint?.examinedRows ?? 0) + rows.length,
       lastGeneration: lastRow.generation,
       lastId: lastRow.id,
     };
-    await job.updateData({ ...job.data, checkpoint });
+    const continuationData: ProviderDataDeletionContinuationJobData = {
+      ...job.data,
+      checkpoint: nextCheckpoint,
+    };
+    await job.updateData(continuationData);
     await updateProgress(
       job,
       undefined,
-      `Checked ${checkpoint.examinedRows} metric stream rows; deleted ${checkpoint.deletedRows}...`,
-      checkpoint,
+      `Checked ${nextCheckpoint.examinedRows} metric stream rows; deleted ${nextCheckpoint.deletedRows}...`,
+      nextCheckpoint,
     );
+    await dependencies.enqueueContinuation(continuationData);
+    return;
   }
 
   if (!(await dependencies.accountErasureAllowsWork("provider deletion acknowledgement"))) {

@@ -44,6 +44,13 @@ const {
   mockWithUserWriteFence: vi.fn(),
 }));
 
+function oauthAuthSetup(authUrl: string) {
+  return {
+    oauthConfig: { authUrl },
+    exchangeCode: vi.fn(),
+  };
+}
+
 // Mock trpc
 type MockAdminDb = {
   execute: (query: unknown) => Promise<Array<{ is_admin: boolean }>>;
@@ -135,7 +142,8 @@ vi.mock("dofek/providers/registry", () => ({
   registerProvider: mockRegisterProvider,
 }));
 
-vi.mock("dofek/providers/types", () => ({
+vi.mock("dofek/providers/types", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("dofek/providers/types")>()),
   isSyncProvider: (p: { importOnly?: boolean }) => p.importOnly !== true,
 }));
 
@@ -294,13 +302,13 @@ describe("syncRouter", () => {
           id: "strava",
           name: "Strava",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "broken",
           name: "Broken",
           validate: () => "Missing credentials",
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "no-flow",
@@ -331,13 +339,53 @@ describe("syncRouter", () => {
   });
 
   describe("providers", () => {
+    it("returns manual token connection metadata", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "wger",
+          name: "Wger",
+          validate: () => null,
+          authSetup: () => ({
+            manualToken: {
+              label: "JWT refresh token",
+              instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+              exchangeToken: vi.fn(),
+            },
+          }),
+        },
+      ]);
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+      const wger = result.find((provider: { id: string }) => provider.id === "wger");
+
+      expect(wger).toMatchObject({
+        authType: "token",
+        authorized: false,
+        tokenAuth: {
+          label: "JWT refresh token",
+          instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+        },
+      });
+    });
+
     it("returns provider list with enabled/auth status", async () => {
       mockGetAllProviders.mockReturnValue([
         {
           id: "wahoo",
           name: "Wahoo",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "peloton",
@@ -432,13 +480,13 @@ describe("syncRouter", () => {
           id: "polar",
           name: "Polar",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://flow.polar.com" } }),
+          authSetup: () => oauthAuthSetup("https://flow.polar.com"),
         },
         {
           id: "wahoo",
           name: "Wahoo",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://api.wahoo.com" } }),
+          authSetup: () => oauthAuthSetup("https://api.wahoo.com"),
         },
       ]);
 
@@ -490,7 +538,7 @@ describe("syncRouter", () => {
           id: "withings",
           name: "Withings",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://account.withings.com" } }),
+          authSetup: () => oauthAuthSetup("https://account.withings.com"),
         },
       ]);
 
@@ -752,13 +800,13 @@ describe("syncRouter", () => {
           id: "garmin",
           name: "Garmin",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "wahoo",
           name: "Wahoo",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
       ]);
       const enqueueSpy = vi
@@ -836,7 +884,7 @@ describe("syncRouter", () => {
           id: "whoop",
           name: "WHOOP",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
       ]);
       mockGetJob.mockResolvedValueOnce({
@@ -876,13 +924,13 @@ describe("syncRouter", () => {
           id: "polar",
           name: "Polar",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "wahoo",
           name: "Wahoo",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
       ]);
       const enqueueSpy = vi
@@ -931,13 +979,13 @@ describe("syncRouter", () => {
           id: "strava",
           name: "Strava",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "wahoo",
           name: "Wahoo",
           validate: () => null,
-          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+          authSetup: () => oauthAuthSetup("https://example.com"),
         },
         {
           id: "whoop",

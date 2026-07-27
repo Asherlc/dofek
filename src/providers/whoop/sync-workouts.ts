@@ -1,6 +1,6 @@
+import type { WhoopWorkoutRecord } from "@dofek/whoop/types";
+import { parseDuringRange } from "@dofek/whoop/utils";
 import { eq, sql } from "drizzle-orm";
-import type { WhoopWorkoutRecord } from "whoop-whoop/types";
-import { parseDuringRange } from "whoop-whoop/utils";
 import { resolveUserExerciseWithProvenance } from "../../db/exercise-provenance.ts";
 import {
   finishProviderActivityListSync,

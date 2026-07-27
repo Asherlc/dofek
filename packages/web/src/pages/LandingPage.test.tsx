@@ -182,10 +182,10 @@ describe("LandingPage", () => {
     render(<LandingPage />);
 
     expect(screen.getByText("bpm average")).toBeTruthy();
-    expect(screen.getByText("407 kcal")).toBeTruthy();
+    expect(screen.getByText("Respiratory Rate")).toBeTruthy();
+    expect(screen.getByText("14 breaths/min")).toBeTruthy();
     expect(screen.getByText("36.2°C")).toBeTruthy();
     expect(screen.queryByText("beats/min average")).toBeNull();
-    expect(screen.queryByText("407 calories")).toBeNull();
     expect(screen.queryByText("36.2 Celsius")).toBeNull();
   });
 

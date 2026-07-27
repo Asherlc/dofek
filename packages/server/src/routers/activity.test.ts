@@ -1345,6 +1345,12 @@ describe("Activity model (via router integration)", () => {
     expect(detail.sourceProviders).toEqual(["strava", "wahoo"]);
     expect(detail.sourceLinks).toHaveLength(2);
     expect(detail.sourceLinks[0]?.label).toBe("Strava");
+    expect(detail.sourceDecision).toEqual({
+      sourceCount: 2,
+      primarySourceLabel: "Wahoo",
+      explanation:
+        "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+    });
     expect(detail.avgHr).toBe(145);
     expect(detail.maxHr).toBe(175);
     expect(detail.avgPower).toBe(220);

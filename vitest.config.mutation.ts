@@ -48,6 +48,8 @@ export default defineConfig({
       "packages/whoop-whoop/src/**/*.test.ts",
       "packages/trainingpeaks-connect/src/**/*.test.ts",
       "packages/provider-http/src/**/*.test.ts",
+      "packages/peloton-client/src/**/*.test.ts",
+      "packages/xert-client/src/**/*.test.ts",
       "packages/mobile/**/*.test.{ts,tsx}",
       "packages/zepp/src/**/*.test.ts",
       "packages/zepp/workout-extension/**/*.test.ts",

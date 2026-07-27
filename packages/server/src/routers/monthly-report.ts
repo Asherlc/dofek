@@ -32,7 +32,7 @@ export const monthlyReportRouter = router({
     .input(z.object({ months: z.number().min(1).max(24).default(6) }))
     .query(async ({ ctx, input }): Promise<MonthlyReportResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "monthlyReport.report");
-      const repo = new MonthlyReportRepository(ctx.userId, sensorStore, ctx.timezone);
+      const repo = new MonthlyReportRepository(ctx.userId, sensorStore);
       return repo.getReport(input.months);
     }),
 });

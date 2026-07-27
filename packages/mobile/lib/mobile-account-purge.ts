@@ -18,6 +18,7 @@ import { teardownBackgroundWhoopBleSync } from "./background-whoop-ble-sync";
 import { clearPendingMobileBillingCheckoutOperation } from "./billing-checkout-operation";
 import { advanceDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { purgeDofekFoodWriteBackFromHealthKit } from "./health-kit-food-writeback";
+import { purgeScheduledMedicationReminderNotifications } from "./medication-reminder-notifications";
 import { purgeMobileExportCache } from "./mobile-export-cache";
 import { removeAllMobileQueryCaches } from "./mobile-query-persistence";
 import { captureException } from "./telemetry";
@@ -32,6 +33,7 @@ interface MobileAccountPurgeDependencies {
   purgeFoodWriteBack(): Promise<unknown>;
   purgeHealthKitState(cutoff: string): Promise<unknown>;
   purgeHeartRate(cutoff: string): Promise<unknown>;
+  purgeMedicationReminders(): Promise<unknown>;
   purgeQueryCaches(): Promise<unknown>;
   purgeWatchMotion(cutoff: string): Promise<unknown>;
   purgeWhoopBle(cutoff: string): Promise<unknown>;
@@ -54,6 +56,7 @@ const defaultDependencies: MobileAccountPurgeDependencies = {
     }),
   purgeHealthKitState: purgeHealthKitAccountState,
   purgeHeartRate: purgeHeartRateAccountState,
+  purgeMedicationReminders: purgeScheduledMedicationReminderNotifications,
   purgeQueryCaches: removeAllMobileQueryCaches,
   purgeWatchMotion: purgeWatchMotionAccountState,
   purgeWhoopBle: purgeWhoopBleAccountState,
@@ -138,6 +141,10 @@ export async function purgeMobileAccountState({
   );
   await attempt("account-erasure-heart-rate-purge", () =>
     dependencies.purgeHeartRate(effectiveCutoff),
+  );
+  await attempt(
+    "account-erasure-medication-reminders-purge",
+    dependencies.purgeMedicationReminders,
   );
   await attempt("account-erasure-export-cache-purge", dependencies.purgeExportCache);
   await attempt("account-erasure-query-persistence-purge", dependencies.purgeQueryCaches);

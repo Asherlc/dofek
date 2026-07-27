@@ -11,10 +11,7 @@ const strengthActivity: ActivityCardData = {
   startedAt: "2026-07-14T08:46:00-07:00",
   durationMin: 30,
   location: null,
-  stats: [
-    { label: "Training Stress Score", value: "8.5" },
-    { label: "Calories", value: "109 kcal" },
-  ],
+  stats: [{ label: "Training Stress Score", value: "8.5" }],
 };
 
 const mappedActivity: ActivityCardData = {
@@ -68,10 +65,7 @@ const mappedActivity: ActivityCardData = {
     distanceMeters: 8530,
     elevationGainM: 493,
   },
-  stats: [
-    { label: "Training Stress Score", value: "41" },
-    { label: "Calories", value: "612 kcal" },
-  ],
+  stats: [{ label: "Training Stress Score", value: "41" }],
 };
 
 const meta = {

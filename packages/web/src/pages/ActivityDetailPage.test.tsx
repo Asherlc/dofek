@@ -50,6 +50,7 @@ const mockActivity: ActivityDetail = {
   avgCadence: null,
   sourceProviders: ["whoop", "apple_health"],
   sourceLinks: [],
+  sourceDecision: null,
 };
 
 const mockStreamPoints: Array<{
@@ -799,6 +800,59 @@ describe("ActivityDetailPage", () => {
 
       // Restore
       Object.assign(mockActivity, originalData);
+    });
+
+    it("shows how sources were combined when the server returns a source decision", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, {
+        providerId: "wahoo",
+        subsource: null,
+        sourceProviders: ["wahoo", "strava"],
+        sourceLinks: [
+          {
+            providerId: "strava",
+            externalId: "99999",
+            subsource: null,
+            label: "Strava",
+            url: "https://www.strava.com/activities/99999",
+            providerAbsentAt: null,
+          },
+          {
+            providerId: "wahoo",
+            externalId: "42",
+            subsource: null,
+            label: "Wahoo",
+            url: "https://systm.wahoofitness.com/history/activity-details/42",
+            providerAbsentAt: null,
+          },
+        ],
+        sourceDecision: {
+          sourceCount: 2,
+          primarySourceLabel: "Wahoo",
+          explanation:
+            "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+        },
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByRole("heading", { name: "How sources were combined" })).toBeTruthy();
+      expect(screen.getByText("2")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+        ),
+      ).toBeTruthy();
+
+      Object.assign(mockActivity, originalData);
+    });
+
+    it("hides the source decision card when sourceDecision is null", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.queryByRole("heading", { name: "How sources were combined" })).toBeNull();
     });
   });
 

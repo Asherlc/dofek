@@ -905,6 +905,22 @@ entity "menstrual_period" {
   created_at : timestamp
 }
 
+entity "personal_experiment" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  hypothesis : text
+  intervention : text
+  outcome_metric_id : text
+  lag_days : integer
+  baseline_days : integer
+  intervention_days : integer
+  start_date : date
+  status : text
+  stopped_at : date
+  created_at : timestamp
+}
+
 entity "provider_data_deletion_outbox" {
   * event_id : uuid <<PK>>
   --
@@ -1103,6 +1119,7 @@ user_profile ||--o{ journal_entry
 journal_question ||--o{ journal_entry
 user_profile ||--o{ life_events
 user_profile ||--o{ menstrual_period
+user_profile ||--o{ personal_experiment
 user_profile ||--o{ provider_data_deletion_outbox
 user_profile ||--o{ provider_data_generation
 user_profile ||--o{ shared_report

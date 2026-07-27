@@ -6,7 +6,7 @@ import type { ClickHouseMigration } from "./types.ts";
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0059_account_erasure_fence",
+    id: "0061_account_erasure_fence",
     statements: [buildAccountErasureFenceTableSql(), buildAccountErasureOperationFenceTableSql()],
   };
 }
