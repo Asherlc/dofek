@@ -54,6 +54,12 @@ activity timestamp bounds. This preserves overlapping and cross-midnight
 activity membership without generating cross-day sample/activity candidates;
 ClickHouse recommends reducing the volume entering a join:
 <https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#joins>.
+`activity_sensor_summary_rows` enables ClickHouse materialized CTE execution
+for its reused dirty-key, latest-sample, and cumulative-power stages so each
+stage is evaluated once per build instead of being inlined into every aggregate
+branch. ClickHouse introduced materialized CTEs for exactly this shared-result
+reuse and requires `enable_materialized_cte`:
+<https://clickhouse.com/blog/clickhouse-release-26-03>.
 The serving-facing `analytics.activity_summary` object is a thin ClickHouse view
 over `analytics.activity_summary_rows FINAL`; the expensive activity/sample
 joins belong in incremental dbt models, not in web/API requests. Complex

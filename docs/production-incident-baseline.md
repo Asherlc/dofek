@@ -18100,6 +18100,50 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   remains stable, and verify the accumulated Redpanda events flow into
   ClickHouse.
 
+## 2026-07-26 — Settings Provider Inventory Caused Large Layout Shifts
+
+- **Status:** Direct web fix validated locally; CI and production deployment
+  pending.
+- **Symptoms:** Authenticated direct loads measured CLS `0.2274` on
+  `/settings` and `0.2347` on `/providers` while asynchronous Settings content
+  populated.
+- **User impact:** Sections below Data Sources moved after first paint, so
+  users could lose their reading position or target the wrong control. A good
+  CLS score is `0.1` or less at the 75th percentile, segmented by device type:
+  <https://web.dev/articles/cls#what_is_a_good_cls_score>.
+- **Evidence:** Document TTFB was only 8–21 ms. The loading state reserved one
+  desktop row with three 96 px skeletons, then replaced it with 19 provider
+  cards across seven rows. A deterministic Chrome 150 regression delayed the
+  provider tRPC batch and reproduced a 76 px downstream movement after the
+  provider viewport alone was stabilized: Billing grew 80 px and the Data
+  Sources action header grew 4 px. The Chrome DevTools connector could not
+  record a source trace because its shared browser profile was already locked;
+  the test therefore also compares section geometry independently of Layout
+  Shift API entries.
+- **Root cause:** Loading and resolved states did not share layout
+  reservations. Provider inventory height depended on provider count, the
+  Billing placeholder was shorter than its resolved content, and Data Sources
+  actions increased their header height after the provider response arrived.
+- **Fix / mitigation:** Keep provider cards inside one responsive fixed-height
+  scroll region shared by loading and resolved states, reserve Billing's
+  responsive resolved height, and reserve the Data Sources action-header
+  height. No server query, cache, timeout, or retry behavior changed.
+- **Validation:** The focused component regression failed before the provider
+  region existed and then passed. Before Settings gained tabs, Chrome 150
+  direct loads of `/settings` and redirected `/providers` reported zero
+  Billing height delta, zero Data Sources height delta, zero normalized
+  downstream movement, and CLS `0.0000`; both routes passed without retries.
+  The tab-aware regression now measures Data Sources on
+  `/settings?tab=connections` and redirected `/providers`, and Billing on
+  `/settings?tab=account`. Its post-merge local browser rerun is blocked by the
+  shared Docker disk incident recorded below; exact-head CI validation is
+  pending.
+- **Remaining risk / follow-up:** Confirm production field CLS after rollout
+  because synthetic page-load tests cannot represent every provider inventory,
+  viewport, font, or long-lived session. The provider catalog now scrolls
+  within its reserved region, so usability should also be reviewed on narrow
+  web viewports.
+
 ## 2026-07-26 — Mutation Prep Selected Cypress Test Harness Files
 
 - **Status:** Root cause fixed locally; replacement CI pending.
@@ -18164,6 +18208,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   workspaces' running containers and named volumes while applying Docker's
   [builder-cache pruning guidance](https://docs.docker.com/build/cache/garbage-collection/)
   when disk pressure recurs.
+
 ## 2026-07-26 — WHOOP BLE Initialization Ran While the App Was Backgrounded
 
 - **Status:** Direct fix merged, deployed, and resolved in Sentry.
@@ -18853,6 +18898,102 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   activity-day equality key reduced that to the 100 exact memberships and
   also preserved two memberships for a cross-midnight sample shared by
   overlapping activities.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy, and observe
+  a complete production analytics build plus cache-warming cycle before
+  resolving DOFEK-SERVER-5A.
+
+## 2026-07-27 — Local E2E Docker Storage Exhaustion
+
+- **Status:** Unresolved shared development-environment incident; issue #1999
+  browser validation moved to exact-head CI.
+- **Symptoms:** The isolated web E2E stack could not build, so Cypress did not
+  start. Full lint also stopped when SQLFluff's dbt templater could not connect
+  to the unavailable local ClickHouse service.
+- **User impact:** No production impact. Local browser and database-aware lint
+  validation were unavailable for this worktree.
+- **Evidence:** The first image build failed during `pnpm install` with
+  `Error: database or disk is full`. After removing only this worktree's E2E
+  resources and pruning 327.5 MB of rebuildable builder cache, the retry failed
+  while creating an OverlayFS directory with `no space left on device`.
+  Pruning unused images reclaimed 0 B.
+- **Root cause:** Docker's shared storage was full; the failure occurred before
+  the application image or Cypress spec could run.
+- **Fix / mitigation:** Removed this worktree's failed E2E resources and
+  rebuildable builder cache. No application, timeout, retry, or validation
+  behavior changed, and no broader shared Docker data was deleted.
+- **Validation:** All 14,117 Docker-free unit and mobile tests, root/server/web
+  TypeScript checks, targeted Biome checks, and 27 focused Settings tests pass.
+  Exact-head CI remains responsible for the unavailable browser and
+  database-backed validation.
+- **Remaining risk / follow-up:** Reclaim or expand Docker storage outside this
+  issue worktree, then confirm the isolated E2E stack and full lint run locally.
+
+## 2026-07-26 — Deploy Gate Accepted a Transient Swarm Task
+
+- **Status:** Direct fix validated locally; replacement CI and production
+  deployment pending.
+- **Symptoms:** Deploy Web run `30187561549` completed successfully while
+  `dofek_metric-stream-clickhouse-sink` repeatedly alternated between `0/1` and
+  transient `1/1` states before its task exited with code 1.
+- **User impact:** The release was reported as successful while a required
+  metric-stream consumer was unavailable, so new events could accumulate
+  without reaching ClickHouse.
+- **Evidence:** The exact faulty step was `Deploy ClickHouse consumer services`.
+  Its convergence loop exited on the first `1/1` replica sample. The first
+  service fatal line was `SyntaxError: The requested module 'kafkajs' does not
+  provide an export named 'ConfigResourceTypes'`; Swarm replaced each failed
+  task roughly 20 seconds after its transient running state. Public health
+  endpoints remained HTTP 200 and did not cover the consumer.
+- **Root cause:** The deploy gate checked only an instantaneous replica count
+  and update state, so a crash-looping task could satisfy the gate briefly
+  before Swarm replaced it. Docker documents that a failed task terminates and
+  the orchestrator creates a new task:
+  <https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling>.
+- **Fix / mitigation:** Require the same desired-running task ID to remain at
+  `1/1` with a complete update state continuously for 60 seconds. Reset the
+  window on task replacement or replica loss, preserve immediate
+  rollback/paused failures, and retain the existing global 20-minute deadline.
+- **Validation:** Behavioral workflow tests execute the real deploy shell
+  against a mocked Swarm CLI and cover a stable task, task replacement,
+  transient `0/1`, rollback, pause, and timeout. All eight focused tests pass
+  without an ad-hoc retry or increased deployment deadline.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy, and verify
+  both restored consumers retain one task ID through the stability window and
+  continue processing after the workflow succeeds.
+
+## 2026-07-27 — Activity sensor summary reused CTE timeout (DOFEK-SERVER-5A)
+
+- **Status:** Direct fix reproduced and validated locally; merge, deployment,
+  and production validation pending.
+- **Symptoms:** After the bounded activity membership join deployed, the next
+  serial analytics build completed `activity_sensor_sample` in 18.08 seconds
+  but timed out `activity_sensor_summary_rows` at the unchanged 240-second
+  ClickHouse ceiling.
+- **User impact:** Activity summary, training-load, cycling, hiking, strain,
+  healthspan, and query-cache refreshes remained stale because their upstream
+  summary model failed.
+- **Evidence:** ClickHouse query
+  `dd9f49bb-91f6-408e-8872-2b6a003a4ad1` failed with code `159` after
+  240.004 seconds. It read 474,259,967 rows / 10.31 GiB, built 122,854,645
+  join rows, produced 258,422,173 join-result rows, used 717.91 MiB, and spent
+  146.18 seconds waiting for CPU. Server text logs recorded 29 separate reads
+  of `analytics.activity_sensor_sample` even though the build had only 250
+  dirty activity keys: 147 changed keys plus 103 lifecycle tombstones.
+- **Root cause:** ClickHouse inlined the reused `dirty_keys`,
+  `latest_sensor_samples`, and `power_cumulative` CTEs into each channel,
+  power, and climbing aggregate branch. Every latest-sample branch therefore
+  repeated both full-table dirty-key discovery reads and its own sample read.
+- **Fix / mitigation:** Enable materialized CTE execution only for this
+  offline dbt model and materialize exactly the three reused stages. ClickHouse
+  introduced materialized CTEs to evaluate a shared CTE once and requires the
+  `enable_materialized_cte` setting:
+  <https://clickhouse.com/blog/clickhouse-release-26-03>.
+  No timeout, retry, full refresh, resource limit, or serving query changed.
+- **Validation:** The real ClickHouse regression first reproduced all 29
+  sample-table scans while preserving the historical power summary and
+  lifecycle tombstone fixture. With materialization enabled, the same rendered
+  model emits the same output and opens exactly three sample-table scans. The
+  focused static model suite also verifies that no other CTE is materialized.
 - **Remaining risk / follow-up:** Merge through normal CI, deploy, and observe
   a complete production analytics build plus cache-warming cycle before
   resolving DOFEK-SERVER-5A.

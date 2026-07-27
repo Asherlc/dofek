@@ -15,6 +15,14 @@ type SettingsNavigation = {
 };
 
 const mockNavigate = vi.fn<(options: SettingsNavigation) => void>();
+const mockBillingStatusQuery = vi.fn();
+const mockInvalidate = vi.fn();
+const mockMutation = {
+  error: null,
+  isPending: false,
+  isSuccess: false,
+  mutate: vi.fn(),
+};
 let mockSearch: SettingsSearch = {};
 
 function applySearch(
@@ -42,7 +50,7 @@ vi.mock("../components/PageLayout.tsx", () => ({
 
 vi.mock("../components/PageSection.tsx", () => ({
   PageSection: ({ children, title }: { children: ReactNode; title: string }) => (
-    <section>
+    <section aria-label={title}>
       <h2>{title}</h2>
       {children}
     </section>
@@ -94,34 +102,24 @@ vi.mock("../lib/dashboardLayoutContext.ts", () => ({
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
-    useUtils: () => ({ invalidate: vi.fn() }),
+    useUtils: () => ({ invalidate: mockInvalidate }),
     settings: {
       deleteAllUserData: {
-        useMutation: () => ({
-          mutate: vi.fn(),
-          isPending: false,
-          isSuccess: false,
-          error: null,
-        }),
+        useMutation: () => mockMutation,
       },
     },
     billing: {
-      status: { useQuery: () => ({ data: undefined, isLoading: false, error: null }) },
+      status: { useQuery: mockBillingStatusQuery },
       createCheckoutSession: {
-        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+        useMutation: () => mockMutation,
       },
       createPortalSession: {
-        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+        useMutation: () => mockMutation,
       },
     },
     companionPairing: {
       claim: {
-        useMutation: () => ({
-          mutate: vi.fn(),
-          isPending: false,
-          isSuccess: false,
-          error: null,
-        }),
+        useMutation: () => mockMutation,
       },
     },
   },
@@ -129,6 +127,11 @@ vi.mock("../lib/trpc.ts", () => ({
 
 beforeEach(() => {
   mockSearch = {};
+  mockBillingStatusQuery.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    error: null,
+  });
   vi.clearAllMocks();
 });
 
@@ -198,5 +201,40 @@ describe("SettingsPage tabs", () => {
     for (const tab of screen.getAllByRole("tab")) {
       expect(tab.getAttribute("aria-controls")).toBe(panel.id);
     }
+  });
+
+  it("reserves the resolved billing height across subscription states", async () => {
+    mockSearch = { tab: "account" };
+    mockBillingStatusQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isLoading: true,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    const { rerender } = render(<SettingsPage />);
+    const loadingContainer = screen.getByText("Loading subscription status...");
+
+    expect(loadingContainer.className).toContain("min-h-44");
+    expect(loadingContainer.className).toContain("sm:min-h-32");
+    expect(loadingContainer.className).toContain("lg:min-h-28");
+
+    mockBillingStatusQuery.mockReturnValue({
+      data: {
+        access: { kind: "full", reason: "paid_grant" },
+        canManageBilling: false,
+        hasFullAccess: true,
+      },
+      error: null,
+      isLoading: false,
+    });
+    rerender(<SettingsPage />);
+
+    const resolvedContainer = screen.getByText(
+      "You currently have full access to your data.",
+    ).parentElement;
+    expect(resolvedContainer?.className).toContain("min-h-44");
+    expect(resolvedContainer?.className).toContain("sm:min-h-32");
+    expect(resolvedContainer?.className).toContain("lg:min-h-28");
   });
 });
