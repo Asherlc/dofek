@@ -18815,3 +18815,44 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   path, then confirm the scheduled production sync refreshes before the
   previously observed rejection window and resolves DOFEK-SERVER-47 without a
   401 recurrence.
+
+## 2026-07-27 — Activity sensor membership join timeout (DOFEK-SERVER-5A)
+
+- **Status:** Direct fix reproduced and validated locally; merge, deployment,
+  and production validation pending.
+- **Symptoms:** The first production analytics cycle after the bounded
+  provider and sleep fix completed `provider_stats` in 1.19 seconds and
+  `sleep_heart_rate_sample` in 78.00 seconds, then timed out the
+  `activity_sensor_sample` batch for `2026-07-27` at the unchanged 240-second
+  ClickHouse ceiling.
+- **User impact:** The failed activity intermediary skipped activity summary,
+  training-load, cycling, hiking, strain, and healthspan models and prevented
+  query-cache warming.
+- **Evidence:** ClickHouse query
+  `065a2df2-a867-4a86-a0fe-a14a21342e11` consumed 936,998 sample rows and
+  joined them against 1,476 activity rows. The join generated 1,363,375,296
+  candidate rows, used about 907 MiB, spent 172.7 seconds waiting for CPU, and
+  timed out after 240.003 seconds. The three smaller daily batches in the same
+  run showed the same candidate-row growth, confirming a deterministic query
+  shape rather than transient contention.
+- **Root cause:** The join used only `user_id` as its equality key. ClickHouse
+  therefore paired each refreshed sample with every activity for that user
+  before applying the exact activity timestamp bounds. ClickHouse documents
+  that equality conditions in `JOIN ON` determine the matched rows while other
+  conditions apply additional filtering:
+  <https://clickhouse.com/docs/sql-reference/statements/select/join#on-section-conditions>.
+- **Fix / mitigation:** Expand each activity into its inclusive UTC calendar
+  dates, join samples on `(user_id, recorded_date)`, and retain the exact
+  timestamp bounds. This preserves cross-midnight and overlapping activity
+  membership while preventing cross-day candidate amplification. ClickHouse
+  recommends reducing the data volume entering joins:
+  <https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#joins>.
+  No timeout, retry, full refresh, migration, or serving-path query changed.
+- **Validation:** A real ClickHouse regression reproduced 10,000 candidates
+  from 100 activities and 100 corresponding samples before the fix. The
+  activity-day equality key reduced that to the 100 exact memberships and
+  also preserved two memberships for a cross-midnight sample shared by
+  overlapping activities.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy, and observe
+  a complete production analytics build plus cache-warming cycle before
+  resolving DOFEK-SERVER-5A.
