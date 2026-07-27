@@ -20,6 +20,8 @@ interface LayoutShiftMeasurement {
   supported: boolean;
 }
 
+const TARGET_RESPONSE_DELAY_MS = 6_000;
+
 declare global {
   interface Window {
     __dofekLayoutShiftMeasurement?: LayoutShiftMeasurement;
@@ -147,7 +149,7 @@ function waitForPendingPageResources(win: Window): Promise<void> {
   });
 }
 
-function waitForLayoutShiftQuietWindow(win: Window): Promise<void> {
+function waitForLayoutShiftQuietWindow(win: Window, disconnectObserver: boolean): Promise<void> {
   const measurement = win.__dofekLayoutShiftMeasurement;
   if (!measurement) throw new Error("Layout shift measurement was not installed");
 
@@ -169,7 +171,7 @@ function waitForLayoutShiftQuietWindow(win: Window): Promise<void> {
       }
 
       if (now - quietSince >= 500 || now - startedAt >= 3_000) {
-        observer.disconnect();
+        if (disconnectObserver) observer.disconnect();
         resolve();
         return;
       }
@@ -181,10 +183,10 @@ function waitForLayoutShiftQuietWindow(win: Window): Promise<void> {
   });
 }
 
-async function waitForStableLayout(win: Window): Promise<void> {
+async function waitForStableLayout(win: Window, disconnectObserver: boolean): Promise<void> {
   await waitForPendingPageResources(win);
   await waitForPaint(win);
-  await waitForLayoutShiftQuietWindow(win);
+  await waitForLayoutShiftQuietWindow(win, disconnectObserver);
 }
 
 describe("Settings layout stability", () => {
@@ -200,7 +202,7 @@ describe("Settings layout stability", () => {
     it(`keeps connection settings stable on a direct ${path} load`, () => {
       cy.intercept("POST", /\/api\/trpc\/.*sync\.providers/, (request) => {
         request.on("response", (response) => {
-          response.setDelay(1_500);
+          response.setDelay(TARGET_RESPONSE_DELAY_MS);
         });
       }).as("providerInventory");
 
@@ -214,6 +216,12 @@ describe("Settings layout stability", () => {
       });
       cy.location("pathname").should("eq", "/settings");
       cy.location("search").should("contain", "tab=connections");
+      cy.window().then((win) => waitForStableLayout(win, false));
+      cy.get('section[aria-label="Available data sources"]').should(
+        "have.attr",
+        "aria-busy",
+        "true",
+      );
       cy.contains("main section h3", "Zepp App Pairing").then(($heading) => {
         const heading = $heading.get(0);
         if (!heading) throw new Error("Zepp App Pairing heading was not rendered");
@@ -227,7 +235,7 @@ describe("Settings layout stability", () => {
 
       cy.wait("@providerInventory");
       cy.contains("main", "Apple Health").should("exist");
-      cy.window().then(waitForStableLayout);
+      cy.window().then((win) => waitForStableLayout(win, true));
 
       cy.contains("main section h3", "Zepp App Pairing").then(($heading) => {
         const heading = $heading.get(0);
@@ -266,7 +274,7 @@ describe("Settings layout stability", () => {
   it("keeps account settings stable while Billing resolves", () => {
     cy.intercept("POST", /\/api\/trpc\/.*billing\.status/, (request) => {
       request.on("response", (response) => {
-        response.setDelay(1_500);
+        response.setDelay(TARGET_RESPONSE_DELAY_MS);
       });
     }).as("billingStatus");
 
@@ -278,6 +286,8 @@ describe("Settings layout stability", () => {
     cy.visit("/settings?tab=account", {
       onBeforeLoad: installLayoutShiftObserver,
     });
+    cy.window().then((win) => waitForStableLayout(win, false));
+    cy.contains("main", "Loading subscription status...").should("exist");
     cy.contains("main section h3", "Linked Accounts").then(($heading) => {
       const heading = $heading.get(0);
       if (!heading) throw new Error("Linked Accounts heading was not rendered");
@@ -291,7 +301,7 @@ describe("Settings layout stability", () => {
 
     cy.wait("@billingStatus");
     cy.contains("main", /full access|signup week/i).should("exist");
-    cy.window().then(waitForStableLayout);
+    cy.window().then((win) => waitForStableLayout(win, true));
 
     cy.contains("main section h3", "Linked Accounts").then(($heading) => {
       const heading = $heading.get(0);
