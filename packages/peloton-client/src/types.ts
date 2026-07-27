@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const pelotonInstructorSchema = z.object({
-  id: z.string(),
+  id: z.string().optional(),
   name: z.string(),
   image_url: z.string().optional(),
 });
@@ -21,21 +21,21 @@ export const pelotonWorkoutSchema = z.object({
   status: z.string(),
   fitness_discipline: z.string(),
   name: z.string().optional(),
-  title: z.string().optional(),
+  title: z.string().nullish(),
   created_at: z.number(),
   start_time: z.number(),
-  end_time: z.number(),
+  end_time: z.number().nullable(),
   total_work: z.number(),
   is_total_work_personal_record: z.boolean(),
-  metrics_type: z.string().optional(),
+  metrics_type: z.string().nullish(),
   device_type: z.string().optional(),
   platform: z.string().optional(),
-  peloton_id: z.string().optional(),
+  peloton_id: z.string().nullish(),
   workout_type: z.string().optional(),
   has_pedaling_metrics: z.boolean().optional(),
   has_leaderboard_metrics: z.boolean().optional(),
   timezone: z.string().optional(),
-  strava_id: z.string().optional(),
+  strava_id: z.string().nullish(),
   ride: pelotonRideSchema.optional(),
   total_leaderboard_users: z.number().optional(),
   leaderboard_rank: z.number().optional(),
@@ -64,7 +64,7 @@ export const pelotonMetricSchema = z.object({
 
 const pelotonSummarySchema = z.object({
   display_name: z.string(),
-  value: z.string(),
+  value: z.number(),
   slug: z.string(),
 });
 

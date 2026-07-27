@@ -106,8 +106,8 @@ implementation details.
 ## Protocol and Stability
 
 The protocol notes, known hardware UUIDs, frame layouts, commands, bonding
-requirements, and capture provenance are in
-[Documentation/WHOOP-BLE-Protocol.md](Documentation/WHOOP-BLE-Protocol.md).
+requirements, and capture provenance are in Dofek's
+[WHOOP BLE protocol reference](https://github.com/Asherlc/dofek/blob/main/docs/whoop-ble-protocol.md).
 
 WHOOP firmware or application updates can change this private protocol.
 Applications should surface `WhoopBleError` messages and be prepared for

@@ -1,5 +1,4 @@
 import { formatDateMedium, formatDateTime } from "@dofek/format/format";
-import { formatMeasurementText, UnitConverter } from "@dofek/format/units";
 import { useRouter } from "expo-router";
 import * as Updates from "expo-updates";
 import { useEffect, useRef, useState } from "react";
@@ -19,6 +18,7 @@ import {
 import { DataExportSection } from "../components/DataExportSection";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
+import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
@@ -28,6 +28,7 @@ import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
+import { GoalWeightSettingsSection } from "./settings-goal-weight";
 
 type UnitSystem = "metric" | "imperial";
 
@@ -106,22 +107,6 @@ export default function SettingsScreen() {
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
-
-  // ── Goal Weight ──
-  const goalWeightSetting = trpc.settings.get.useQuery({ key: "goalWeight" });
-  const goalWeightMutation = trpc.bodyAnalytics.setGoalWeight.useMutation({
-    onSuccess: () => {
-      goalWeightSetting.refetch();
-      trpcUtils.bodyAnalytics.weightPrediction.invalidate();
-    },
-  });
-  const currentGoalKg =
-    goalWeightSetting.data?.value != null ? Number(goalWeightSetting.data.value) : null;
-  const [goalInput, setGoalInput] = useState("");
-  const [editingGoal, setEditingGoal] = useState(false);
-  const isImperial = currentUnitSystem === "imperial";
-  const units = new UnitConverter(currentUnitSystem);
-  const kgToLbs = 2.20462;
 
   useEffect(() => {
     if (
@@ -364,6 +349,11 @@ export default function SettingsScreen() {
 
       <ZeppPairingCard />
 
+      {/* ── Primary Goal ── */}
+      <View style={styles.section}>
+        <PrimaryGoalSelector />
+      </View>
+
       {/* ── Units ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Units</Text>
@@ -496,89 +486,7 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* ── Goal Weight ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Goal Weight</Text>
-        <Text style={styles.sectionDescription}>
-          Set a target weight to see projected completion dates
-        </Text>
-        <View style={styles.card}>
-          {editingGoal ? (
-            <View style={styles.goalEditRow}>
-              <TextInput
-                style={styles.goalInput}
-                value={goalInput}
-                onChangeText={setGoalInput}
-                keyboardType="decimal-pad"
-                placeholder={isImperial ? "lbs" : "kg"}
-                placeholderTextColor={colors.textSecondary}
-              />
-              <TouchableOpacity
-                style={styles.goalSaveButton}
-                onPress={() => {
-                  const parsed = Number.parseFloat(goalInput);
-                  if (!Number.isNaN(parsed) && parsed > 0) {
-                    const weightKg = isImperial ? parsed / kgToLbs : parsed;
-                    goalWeightMutation.mutate({ weightKg });
-                  }
-                  setEditingGoal(false);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Save goal weight"
-                accessibilityState={{ busy: goalWeightMutation.isPending }}
-              >
-                <Text style={styles.goalSaveText}>Save</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setEditingGoal(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Cancel goal weight edit"
-              >
-                <Text style={styles.goalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          ) : currentGoalKg != null ? (
-            <View style={styles.goalDisplayRow}>
-              <Text style={styles.goalDisplayText}>
-                {formatMeasurementText(units.formatWeight(currentGoalKg))}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setGoalInput(
-                    String(
-                      Math.round((isImperial ? currentGoalKg * kgToLbs : currentGoalKg) * 10) / 10,
-                    ),
-                  );
-                  setEditingGoal(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Edit goal weight"
-              >
-                <Text style={styles.goalEditText}>Edit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => goalWeightMutation.mutate({ weightKg: null })}
-                accessibilityRole="button"
-                accessibilityLabel="Clear goal weight"
-                accessibilityState={{ busy: goalWeightMutation.isPending }}
-              >
-                <Text style={styles.goalCancelText}>Clear</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity
-              onPress={() => {
-                setGoalInput("");
-                setEditingGoal(true);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Set Goal Weight"
-            >
-              <Text style={styles.goalEditText}>Set Goal Weight</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      <GoalWeightSettingsSection unitSystem={currentUnitSystem} />
 
       {/* ── Algorithm Personalization ── */}
       <View style={styles.section}>
@@ -889,52 +797,6 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 12,
     marginBottom: 8,
-  },
-
-  // ── Goal Weight ──
-  goalEditRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  goalInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    color: colors.text,
-    fontSize: 14,
-  },
-  goalSaveButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  goalSaveText: {
-    color: colors.blue,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  goalCancelText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    paddingHorizontal: 8,
-  },
-  goalDisplayRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  goalDisplayText: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  goalEditText: {
-    color: colors.blue,
-    fontSize: 14,
-    fontWeight: "600",
   },
 
   // ── Developer Tools ──

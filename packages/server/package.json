@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./router": "./src/router.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./health-report-share-expiry": "./src/health-report-share-expiry.ts"
   },
   "scripts": {
     "dev": "tsx ../../scripts/with-env.ts -- tsx src/index.ts",

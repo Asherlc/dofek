@@ -26,14 +26,49 @@ permissions:
   packages: read
   id-token: write
 
-concurrency:
-  group: deploy-web-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'main' }}
-  cancel-in-progress: true
-
 jobs:
+  eligibility:
+    name: Check Production Deploy Eligibility
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - name: Reject stale or unsuccessful automatic deploys
+        id: check
+        env:
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$CI_CONCLUSION" != "success" ]; then
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CURRENT_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq ".sha")
+          if [ "$TRIGGER_SHA" = "$CURRENT_SHA" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+          echo "Skipping stale automatic deploy for ${TRIGGER_SHA}; current main is ${CURRENT_SHA}." >> "$GITHUB_STEP_SUMMARY"
+
   production:
     name: Deploy Web Production
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' && inputs.environment == 'production'
+    needs: eligibility
+    if: needs.eligibility.outputs.should_deploy == 'true'
+    concurrency:
+      group: deploy-web-production
+      cancel-in-progress: false
     permissions:
       contents: read
       actions: read

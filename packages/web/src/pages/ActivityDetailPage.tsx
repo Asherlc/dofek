@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
+import { ActivitySourceDecisionCard } from "../components/ActivitySourceDecisionCard.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
@@ -199,6 +200,9 @@ export function ActivityDetailPage() {
       </div>
 
       {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
+      {activity.sourceDecision ? (
+        <ActivitySourceDecisionCard decision={activity.sourceDecision} />
+      ) : null}
 
       <ActivityHeader activity={activity} units={units} hasGps={hasGps} />
 

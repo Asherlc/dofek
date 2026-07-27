@@ -49,8 +49,8 @@ function fakePerformanceGraph(): PelotonPerformanceGraph {
     segment_list: [],
     average_summaries: [],
     summaries: [
-      { display_name: "Calories", value: "450", slug: "calories" },
-      { display_name: "Distance", value: "9.25", slug: "distance" },
+      { display_name: "Calories", value: 450, slug: "calories" },
+      { display_name: "Distance", value: 9.25, slug: "distance" },
     ],
     metrics: [
       {

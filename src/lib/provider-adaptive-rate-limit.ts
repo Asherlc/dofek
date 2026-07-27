@@ -173,10 +173,16 @@ async function recordSuccessWithStore(
   responseHeaders?: Headers,
 ): Promise<void> {
   const state = await loadOrCreate(providerId, scope, userId);
-  let next = slideAdaptiveWindow(state, Date.now());
+  const nowMs = Date.now();
+  let next = slideAdaptiveWindow(state, nowMs);
   if (providerId === "strava" && responseHeaders) {
     const quota = parseStravaRateLimitHeaders(responseHeaders);
-    if (quota) next = applyStravaQuota(next, quota);
+    if (quota) {
+      next = applyStravaQuota(next, quota);
+      if (next.lastRequestMs == null) {
+        next = { ...next, lastRequestMs: nowMs };
+      }
+    }
   }
   await save(next);
 }
