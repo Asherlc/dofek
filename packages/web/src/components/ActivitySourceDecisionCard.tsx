@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { ActivitySourceDecisionDetail } from "../../../server/src/models/activity-source-decision.ts";
 
 interface ActivitySourceDecisionCardProps {
@@ -6,12 +7,14 @@ interface ActivitySourceDecisionCardProps {
 
 /** Renders the server-authored explanation of how multi-source activity records were combined. */
 export function ActivitySourceDecisionCard({ decision }: ActivitySourceDecisionCardProps) {
+  const headingId = useId();
+
   return (
     <section
       className="mb-4 rounded-lg border border-border bg-surface p-4"
-      aria-labelledby="activity-source-decision-heading"
+      aria-labelledby={headingId}
     >
-      <h2 id="activity-source-decision-heading" className="text-sm font-semibold text-foreground">
+      <h2 id={headingId} className="text-sm font-semibold text-foreground">
         How sources were combined
       </h2>
       <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">

@@ -16,6 +16,7 @@ describe("Zepp storage keys", () => {
     expect(STORAGE_KEYS).toEqual({
       PREF_ENABLE_GYRO: "pref_enable_gyro",
       PREF_FREQ_MODE: "pref_freq_mode",
+      CMD_LOGGING: "cmd_logging",
       CMD_TRANSFER: "cmd_transfer",
       SESSION_STATUS: "session_status",
       LAST_EXPORT_PATH: "last_export_path",

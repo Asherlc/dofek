@@ -60,7 +60,6 @@ jobs:
               (.display_name | type == "string" and length > 0) and
               (.source_path | type == "string" and test("^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$")) and
               (.repository | type == "string" and test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")) and
-              (.token_secret | type == "string" and test("^[A-Z][A-Z0-9_]*$")) and
               (.export_script | type == "string" and test("^scripts/[A-Za-z0-9_.-]+\\.ts$"))
             )
           ' .github/swift-packages.json >/dev/null
@@ -118,6 +117,31 @@ jobs:
         if: steps.current.outputs.should_release == 'true'
         uses: ./.github/actions/setup-node-pnpm
 
+      - name: Resolve SwiftPM distribution repository
+        if: steps.current.outputs.should_release == 'true'
+        id: mirror
+        env:
+          REPOSITORY: ${{ matrix.repository }}
+        run: |
+          OWNER=${REPOSITORY%%/*}
+          NAME=${REPOSITORY#*/}
+          if [ -z "$OWNER" ] || [ -z "$NAME" ] || [ "$OWNER" = "$REPOSITORY" ]; then
+            echo "matrix.repository must be an <owner>/<repo> string, got: $REPOSITORY" >&2
+            exit 1
+          fi
+          echo "owner=$OWNER" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Mint SwiftPM distribution token
+        if: steps.current.outputs.should_release == 'true'
+        id: distribution_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ steps.mirror.outputs.owner }}
+          repositories: ${{ steps.mirror.outputs.name }}
+
       - name: Check out SwiftPM distribution repository
         if: steps.current.outputs.should_release == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -125,7 +149,7 @@ jobs:
           fetch-depth: 0
           path: swiftpm-mirror
           repository: ${{ matrix.repository }}
-          token: ${{ secrets[matrix.token_secret] }}
+          token: ${{ steps.distribution_token.outputs.token }}
 
       - name: Export canonical Swift package
         if: steps.current.outputs.should_release == 'true'
@@ -186,7 +210,7 @@ jobs:
         if: steps.current.outputs.should_release == 'true'
         env:
           DISPLAY_NAME: ${{ matrix.display_name }}
-          GH_TOKEN: ${{ secrets[matrix.token_secret] }}
+          GH_TOKEN: ${{ steps.distribution_token.outputs.token }}
           MIRROR_REPOSITORY: ${{ matrix.repository }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |

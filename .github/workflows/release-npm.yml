@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: release-npm
@@ -33,27 +32,29 @@ jobs:
         working-directory: packages/mobile/modules/whoop-ble
         run: swift test
 
-  release:
-    name: Version and Publish
+  publish:
+    name: Publish
     needs: verify-whoop-ble
     runs-on: ubuntu-24.04
+    permissions:
+      # `contents: write` pushes release tags. Tags are not covered by the branch
+      # rulesets, so this needs no elevated credential.
+      contents: write
+      # OIDC for npm trusted publishing; no npm token is involved.
+      id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
           ref: main
-          token: ${{ secrets.ZEPP_RELEASE_TOKEN }}
 
       - name: Confirm the tested commit is current
         id: current
         env:
+          EVENT_NAME: ${{ github.event_name }}
           TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          RELEASE_TAGS=$(git tag --points-at HEAD --list '@dofek/*@*')
-          PARENT_SHA=$(git rev-parse HEAD^ 2>/dev/null || true)
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] ||
-             [ "$(git rev-parse HEAD)" = "$TESTED_SHA" ] ||
-             { [ -n "$RELEASE_TAGS" ] && [ "$PARENT_SHA" = "$TESTED_SHA" ]; }; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$(git rev-parse HEAD)" = "$TESTED_SHA" ]; then
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_release=false" >> "$GITHUB_OUTPUT"
@@ -64,53 +65,38 @@ jobs:
         if: steps.current.outputs.should_release == 'true'
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Configure release identity
-        if: steps.current.outputs.should_release == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
       - name: Verify public packages
         if: steps.current.outputs.should_release == 'true'
         run: |
           pnpm release:npm:build
           pnpm release:npm:test
 
-      - name: Find changed packages
+      # Version bumps reach main through the reviewed pull request opened by
+      # "Version npm Packages". Publishing is a no-op for any package whose
+      # version is already on the registry.
+      - name: Publish packages
         if: steps.current.outputs.should_release == 'true'
-        id: changed
-        run: |
-          CHANGED_PACKAGES=$(pnpm exec lerna changed --json --loglevel silent)
-          RELEASE_TAGS=$(git tag --points-at HEAD --list '@dofek/*@*')
-          if [ "$(jq 'length' <<< "$CHANGED_PACKAGES")" -eq 0 ]; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-            jq -r '.[].name' <<< "$CHANGED_PACKAGES"
-          fi
-          if [ -z "$RELEASE_TAGS" ]; then
-            echo "has_release_tags=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_release_tags=true" >> "$GITHUB_OUTPUT"
-            echo "$RELEASE_TAGS"
-          fi
-
-      - name: Version changed packages
-        if: >
-          steps.current.outputs.should_release == 'true' &&
-          steps.changed.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ secrets.ZEPP_RELEASE_TOKEN }}
-        run: pnpm release:npm:version
-
-      - name: Publish changed packages
-        if: >
-          steps.current.outputs.should_release == 'true' &&
-          (
-            steps.changed.outputs.has_changes == 'true' ||
-            steps.changed.outputs.has_release_tags == 'true'
-          )
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
         run: pnpm release:npm:publish
+
+      - name: Tag published packages
+        if: steps.current.outputs.should_release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          CREATED_TAGS=()
+          while read -r TAG; do
+            [ -n "$TAG" ] || continue
+            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              continue
+            fi
+            git tag "$TAG"
+            CREATED_TAGS+=("refs/tags/$TAG")
+          done < <(pnpm exec lerna list --json --loglevel silent | jq -r '.[] | "\(.name)@\(.version)"')
+          if [ "${#CREATED_TAGS[@]}" -eq 0 ]; then
+            echo "All package versions are already tagged."
+          else
+            git push origin "${CREATED_TAGS[@]}"
+            echo "Pushed ${#CREATED_TAGS[@]} release tag(s)."
+          fi

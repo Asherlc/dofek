@@ -2,16 +2,20 @@
 
 ## Authentication
 
-Standard OAuth2 with client credentials.
+BodySpec publishes an OAuth 2.0 authorization-code flow using its public
+`bodyspec-api-ext-v1` client and PKCE. Dofek does not require a BodySpec client secret. The
+[current BodySpec OpenAPI document](https://app.bodyspec.com/openapi.json) is the source of truth
+for the client, endpoints, scopes, and API operations.
 
-- **Authorize URL**: `https://app.bodyspec.com/oauth/authorize`
-- **Token URL**: `https://app.bodyspec.com/oauth/token`
-- **Scopes**: `read:results`
+- **Authorize URL**: `https://auth.bodyspec.com/realms/bodyspec/protocol/openid-connect/auth`
+- **Token URL**: `https://auth.bodyspec.com/realms/bodyspec/protocol/openid-connect/token`
+- **Scopes**: `openid profile email`
+- **PKCE**: required
 
 ## Environment Variables
 
-- `BODYSPEC_CLIENT_ID` — From BodySpec developer settings
-- `BODYSPEC_CLIENT_SECRET` — From BodySpec developer settings
+No BodySpec-specific environment variables are required. Dofek uses the shared
+`OAUTH_REDIRECT_URI` for the browser callback.
 
 ## API
 

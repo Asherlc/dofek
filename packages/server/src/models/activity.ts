@@ -188,6 +188,7 @@ export class Activity {
 
   /** Serialize to the ActivityDetail shape consumed by API clients. */
   toDetail(): ActivityDetail {
+    const sourceLinks = this.sourceLinks;
     return {
       id: this.id,
       activityType: this.activityType,
@@ -198,8 +199,13 @@ export class Activity {
       providerId: this.providerId,
       subsource: this.subsource,
       sourceProviders: this.sourceProviders,
-      sourceLinks: this.sourceLinks,
-      sourceDecision: this.sourceDecision,
+      sourceLinks,
+      sourceDecision: buildActivitySourceDecision(
+        this.providerId,
+        this.subsource,
+        sourceLinks,
+        this.#lookupProvider,
+      ),
       avgHr: this.avgHr,
       maxHr: this.maxHr,
       avgPower: this.avgPower,

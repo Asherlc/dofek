@@ -366,7 +366,7 @@
           "sr": "w466"
         }
       ],
-      "designWidth": 466
+      "designWidth": 480
     },
     "round-454": {
       "module": {
@@ -413,7 +413,7 @@
           "sr": "w454"
         }
       ],
-      "designWidth": 454
+      "designWidth": 480
     },
     "round-416": {
       "module": {
@@ -448,7 +448,7 @@
           "sr": "w416"
         }
       ],
-      "designWidth": 416
+      "designWidth": 480
     },
     "round-360": {
       "module": {
@@ -483,7 +483,7 @@
           "sr": "w360"
         }
       ],
-      "designWidth": 360
+      "designWidth": 480
     },
     "square-432x514": {
       "module": {

@@ -71,6 +71,16 @@ export interface ClickHouseMetricStreamSeedRow {
   generation?: number;
 }
 
+export interface ClickHouseActivityPolarizationZoneSeedRow {
+  activityId: string;
+  userId: string;
+  startedAt: string;
+  maxHr: number;
+  z1Seconds: number;
+  z2Seconds: number;
+  z3Seconds: number;
+}
+
 interface ClickHouseTestHandle {
   client: ClickHouseClient;
   setupClient: ClickHouseClient;
@@ -550,6 +560,48 @@ export function getClickHouseTestClient(testContext: ClickHouseSyncTestContext):
   return handle.client;
 }
 
+export async function seedClickHouseActivityPolarizationZone(
+  testContext: ClickHouseSyncTestContext,
+  row: ClickHouseActivityPolarizationZoneSeedRow,
+): Promise<void> {
+  await getClickHouseTestClient(testContext).command({
+    query: `INSERT INTO analytics.activity_polarization_zones (
+        activity_id,
+        user_id,
+        activity_type,
+        started_at,
+        max_hr,
+        z1_seconds,
+        z2_seconds,
+        z3_seconds,
+        is_deleted,
+        refresh_version,
+        refreshed_at
+      )
+      SELECT
+        {activityId:UUID},
+        {userId:UUID},
+        'cycling',
+        parseDateTime64BestEffort({startedAt:String}, 6),
+        toNullable(toInt16({maxHr:Int16})),
+        toInt32({z1Seconds:Int32}),
+        toInt32({z2Seconds:Int32}),
+        toInt32({z3Seconds:Int32}),
+        toUInt8(0),
+        toUInt64(1),
+        now64(9)`,
+    query_params: {
+      activityId: row.activityId,
+      userId: row.userId,
+      startedAt: row.startedAt,
+      maxHr: row.maxHr,
+      z1Seconds: row.z1Seconds,
+      z2Seconds: row.z2Seconds,
+      z3Seconds: row.z3Seconds,
+    },
+  });
+}
+
 async function bootstrapClickHouseTestSchema(
   client: ClickHouseClient,
   connectionString: string,
@@ -656,8 +708,8 @@ ${buildTestHealthspanReadModelSelectSql(defaultTestDatabases)}`,
   await client.command({ query: buildActivityVo2MaxEstimateTableSql() });
 
   // Dbt read model tables — created here as empty ReplacingMergeTree tables so
-  // repositories can query them without errors. The fallback path handles
-  // empty results from these tables.
+  // repositories can query them without errors. Tests that exercise these
+  // serving paths seed the minimal final rows they need.
   await client.command({
     query: buildTestAnalyticsTableStatement("analytics.activity_power_curve"),
   });
