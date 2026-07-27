@@ -439,6 +439,12 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="experiments"
+            options={{
+              title: "Personal Experiments",
+            }}
+          />
+          <Stack.Screen
             name="ble-probe"
             options={{
               title: "BLE Probe",

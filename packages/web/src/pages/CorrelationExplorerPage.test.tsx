@@ -12,6 +12,12 @@ vi.mock("@dofek/format/format", () => ({
   formatNumber: (value: number, precision = 1) => value.toFixed(precision),
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to }: { children: ReactNode; to: string }) => (
+    <a href={typeof to === "string" ? to : "/experiments"}>{children}</a>
+  ),
+}));
+
 vi.mock("../components/ChartDescriptionTooltip.tsx", () => ({
   ChartDescriptionTooltip: () => null,
 }));

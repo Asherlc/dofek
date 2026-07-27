@@ -259,6 +259,48 @@ export const lifeEvents = fitness.table(
 );
 
 // ============================================================
+// Personal experiments (N-of-1 setup & schedule)
+// ============================================================
+
+export const personalExperiment = fitness.table(
+  "personal_experiment",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    hypothesis: text("hypothesis").notNull(),
+    intervention: text("intervention").notNull(),
+    outcomeMetricId: text("outcome_metric_id").notNull(),
+    lagDays: bigint("lag_days", { mode: "number" }).notNull().default(0),
+    baselineDays: bigint("baseline_days", { mode: "number" }).notNull(),
+    interventionDays: bigint("intervention_days", { mode: "number" }).notNull(),
+    startDate: date("start_date").notNull(),
+    status: text("status").notNull().default("active"),
+    stoppedAt: date("stopped_at"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("personal_experiment_user_created_idx").on(table.userId, table.createdAt.desc()),
+    index("personal_experiment_user_status_idx").on(table.userId, table.status),
+    check("personal_experiment_hypothesis_nonempty", sql`btrim(${table.hypothesis}) <> ''`),
+    check("personal_experiment_intervention_nonempty", sql`btrim(${table.intervention}) <> ''`),
+    check(
+      "personal_experiment_outcome_metric_nonempty",
+      sql`btrim(${table.outcomeMetricId}) <> ''`,
+    ),
+    check("personal_experiment_lag_days_range", sql`${table.lagDays} BETWEEN 0 AND 7`),
+    check("personal_experiment_baseline_days_positive", sql`${table.baselineDays} > 0`),
+    check("personal_experiment_intervention_days_positive", sql`${table.interventionDays} > 0`),
+    check("personal_experiment_status_valid", sql`${table.status} IN ('active', 'stopped')`),
+    check(
+      "personal_experiment_stopped_at_consistent",
+      sql`(${table.status} = 'active' AND ${table.stoppedAt} IS NULL) OR (${table.status} = 'stopped' AND ${table.stoppedAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+// ============================================================
 // Breathwork sessions
 // ============================================================
 

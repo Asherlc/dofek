@@ -25,6 +25,7 @@ the exact section.
 - [processing-status-runbook.md](processing-status-runbook.md): durable processing evidence, deployment order, and stage diagnosis.
 - [roadmap.md](roadmap.md): product strategy, release gates, Daily Brief,
   experiments, goals, and trust roadmap.
+- [personal-experiments.md](personal-experiments.md): N-of-1 experiment setup and schedule slice.
 
 ## Architecture And Product Flows
 
