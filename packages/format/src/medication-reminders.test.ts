@@ -90,7 +90,16 @@ describe("medication reminders settings", () => {
   it("finds the latest matching imported dose logging state", () => {
     const loggingState = findLatestDoseLoggingState("Vitamin D3", [
       {
-        id: "event-2",
+        id: "event-older",
+        providerId: "apple_health",
+        medicationName: "vitamin d3",
+        medicationConceptId: null,
+        doseStatus: "skipped",
+        recordedAt: "2026-07-25T16:00:00.000Z",
+        sourceName: "Apple Health",
+      },
+      {
+        id: "event-other",
         providerId: "apple_health",
         medicationName: "Metformin 500 mg",
         medicationConceptId: null,
@@ -99,19 +108,19 @@ describe("medication reminders settings", () => {
         sourceName: "Apple Health",
       },
       {
-        id: "event-1",
+        id: "event-newer",
         providerId: "apple_health",
-        medicationName: "vitamin d3",
+        medicationName: "Vitamin D3",
         medicationConceptId: null,
-        doseStatus: "skipped",
-        recordedAt: "2026-07-25T16:00:00.000Z",
+        doseStatus: "taken",
+        recordedAt: "2026-07-26T12:00:00.000Z",
         sourceName: "Apple Health",
       },
     ]);
 
     expect(loggingState).toEqual({
-      doseStatus: "skipped",
-      recordedAt: "2026-07-25T16:00:00.000Z",
+      doseStatus: "taken",
+      recordedAt: "2026-07-26T12:00:00.000Z",
     });
     expect(findLatestDoseLoggingState("Unknown", [])).toBeNull();
   });

@@ -131,6 +131,21 @@ describe("MedicationRemindersPanel", () => {
     );
   });
 
+  it("rejects invalid local times before writing", () => {
+    render(<MedicationRemindersPanel />);
+
+    fireEvent.change(screen.getByLabelText("Medication name"), {
+      target: { value: "Metformin" },
+    });
+    fireEvent.change(screen.getByLabelText("Daily time"), {
+      target: { value: "8:00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add reminder" }));
+
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(screen.getByText("Time must be in HH:mm 24-hour format (e.g., 08:30).")).toBeTruthy();
+  });
+
   it("disables and deletes reminders", () => {
     mocks.getData.mockReturnValue({ key: "medicationReminders", value: [existingReminder] });
 

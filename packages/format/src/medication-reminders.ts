@@ -44,9 +44,13 @@ export function findLatestDoseLoggingState(
   const normalizedName = medicationName.trim().toLowerCase();
   if (normalizedName.length === 0) return null;
 
-  const match = events.find(
-    (event) => event.medicationName.trim().toLowerCase() === normalizedName,
-  );
+  let match: MedicationDoseEvent | null = null;
+  for (const event of events) {
+    if (event.medicationName.trim().toLowerCase() !== normalizedName) continue;
+    if (!match || new Date(event.recordedAt).getTime() > new Date(match.recordedAt).getTime()) {
+      match = event;
+    }
+  }
   if (!match) return null;
 
   return {

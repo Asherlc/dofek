@@ -19,6 +19,7 @@ describe("app bootstrap telemetry guard", () => {
       SchedulableTriggerInputTypes: { DAILY: "daily" },
       addNotificationResponseReceivedListener: vi.fn(() => ({ remove: vi.fn() })),
       cancelScheduledNotificationAsync: vi.fn(async () => undefined),
+      getAllScheduledNotificationsAsync: vi.fn(async () => []),
       getLastNotificationResponse: vi.fn(() => null),
       getPermissionsAsync: vi.fn(async () => ({ status: "undetermined" })),
       requestPermissionsAsync: vi.fn(async () => ({ status: "granted" })),

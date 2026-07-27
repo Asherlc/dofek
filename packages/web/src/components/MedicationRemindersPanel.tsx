@@ -4,6 +4,7 @@ import {
   findLatestDoseLoggingState,
   MEDICATION_REMINDERS_SETTINGS_KEY,
   type MedicationReminder,
+  medicationReminderSchema,
   parseMedicationReminders,
 } from "@dofek/format/medication-reminders";
 import { useEffect, useRef, useState } from "react";
@@ -68,7 +69,8 @@ export function MedicationRemindersPanel({
     );
   }
 
-  const events = z.array(medicationDoseEventSchema).parse(doseEvents.data?.events ?? []);
+  const eventsParsed = z.array(medicationDoseEventSchema).safeParse(doseEvents.data?.events ?? []);
+  const events = eventsParsed.success ? eventsParsed.data : [];
 
   const persistReminders = (nextReminders: MedicationReminder[]) => {
     const previousSetting = trpcUtils.settings.get.getData({
@@ -104,15 +106,18 @@ export function MedicationRemindersPanel({
       return;
     }
 
-    persistReminders([
-      ...reminders,
-      {
-        id: createReminderId(),
-        medicationName,
-        localTime: draftTime,
-        enabled: true,
-      },
-    ]);
+    const parseResult = medicationReminderSchema.safeParse({
+      id: createReminderId(),
+      medicationName,
+      localTime: draftTime,
+      enabled: true,
+    });
+    if (!parseResult.success) {
+      setWriteError("Time must be in HH:mm 24-hour format (e.g., 08:30).");
+      return;
+    }
+
+    persistReminders([...reminders, parseResult.data]);
     setDraftName("");
     setDraftTime("08:00");
   };

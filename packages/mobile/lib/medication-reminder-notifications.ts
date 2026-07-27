@@ -32,6 +32,15 @@ async function ensureNotificationPermission(): Promise<boolean> {
   return requested.status === "granted";
 }
 
+async function cancelScheduledMedicationReminderNotifications(): Promise<void> {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  for (const notification of scheduled) {
+    const parsed = notificationDataSchema.safeParse(notification.content.data);
+    if (!parsed.success || parsed.data.url !== MEDICATION_REMINDER_NOTIFICATION_URL) continue;
+    await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+  }
+}
+
 export async function syncMedicationReminderNotifications(
   reminders: MedicationReminder[],
 ): Promise<void> {
@@ -41,17 +50,15 @@ export async function syncMedicationReminderNotifications(
   if (enabledReminders.length > 0) {
     const granted = await ensureNotificationPermission();
     if (!granted) {
-      for (const reminder of reminders) {
-        await Notifications.cancelScheduledNotificationAsync(reminder.id);
-      }
+      await cancelScheduledMedicationReminderNotifications();
       return;
     }
   }
 
-  for (const reminder of reminders) {
-    await Notifications.cancelScheduledNotificationAsync(reminder.id);
-    if (!reminder.enabled) continue;
+  // Cancel first so deleted reminder IDs never leave orphaned daily notifications.
+  await cancelScheduledMedicationReminderNotifications();
 
+  for (const reminder of enabledReminders) {
     const { hour, minute } = parseLocalTime(reminder.localTime);
     await Notifications.scheduleNotificationAsync({
       identifier: reminder.id,
