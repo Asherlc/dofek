@@ -88,4 +88,4 @@
 
 - [x] Document default 7-day expiry, selectable durations, and that permanent links require omitting/null `expiresInDays` on the API only (clients always send a duration).
 - [x] Run `rtk pnpm lint`, web/mobile/root typechecks, and the focused share-button tests.
-- [ ] Commit, push, open PR against `main`, monitor CI and review feedback.
+- [x] Commit, push, open PR against `main`, monitor CI and review feedback.
