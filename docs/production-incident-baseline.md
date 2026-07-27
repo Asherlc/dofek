@@ -19058,6 +19058,77 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   UI returns the documented clean-grant retry guidance before resolving
   DOFEK-SERVER-5H.
 
+## 2026-07-27 — Issue 2060 integration validation blocked by Docker disk exhaustion
+
+- **Status:** Local database validation blocked; Docker-free validation passed
+  and exact-head CI follow-up pending.
+- **Symptoms:** The targeted PostgreSQL and ClickHouse integration command
+  failed while starting this worktree's isolated Compose dependencies, before
+  Vitest collected the activity-visibility or review-seed tests.
+- **User impact:** No production user impact. The local agent could not execute
+  the new real-database regression before publication.
+- **Evidence:** The exact failing command was
+  `pnpm test:integration -- packages/server/src/repositories/activity-visibility-consistency.integration.test.ts scripts/seed/core.integration.test.ts`.
+  The first fatal line during the Redpanda image pull was
+  `write /var/lib/docker/image/overlay2/.tmp-repositories.json2323163154: no space left on device`.
+  After scoped cleanup, the single retry failed creating
+  `/var/lib/docker/volumes/issue-2060_db_data` with
+  `mkdir ...: no space left on device`.
+- **Root cause:** The shared Docker VM had no free storage for this worktree's
+  image metadata or isolated database volume; the failure occurred before
+  application code or database assertions ran.
+- **Fix / mitigation:** Removed only the `issue-2060` Compose resources through
+  `pnpm compose -- down --remove-orphans --volumes`, then pruned rebuildable
+  builder cache with `docker builder prune -af`. The cache prune reclaimed
+  zero bytes. After the one permitted retry reproduced the capacity failure,
+  Docker retries stopped and the attempted `issue-2060` network was removed.
+  No other workspace's containers or volumes were deleted.
+- **Validation:** Root, server, and web TypeScript checks pass; all 883
+  Docker-free unit/mobile files pass with 14,132 tests and 21 expected skips.
+  Repository lint passed through Biome, suppression, workflow-download, and
+  exact-version checks. Analytics SQL lint alone could not connect to the same
+  unavailable local ClickHouse instance; the remaining analytics policy,
+  mobile telemetry, and web story checks pass.
+- **Remaining risk / follow-up:** Required CI must execute the new PostgreSQL
+  and ClickHouse integration regression and seed grant assertion on a runner
+  with available Docker storage before merge. Local database validation
+  remains unresolved until Docker storage is restored.
+
+## 2026-07-27 — Issue 2060 CI exposed ambiguous date timezone coercion
+
+- **Status:** Root cause confirmed in exact-head CI; corrected implementation
+  and retry-safe fixture validation pending on the next CI head.
+- **Symptoms:** The real-PostgreSQL timezone-boundary regression selected the
+  activity before the local access start and rejected the activity before the
+  local end. Vitest retries then failed with a duplicate activity primary key.
+- **User impact:** No production change had shipped. If merged, limited users
+  outside the database session timezone could have seen an activity from the
+  previous local day or lost one from the final entitled local day.
+- **Evidence:** The exact failing job was `Test / Integration Tests (2/4)` in
+  workflow run `30303258217`, job `90101781039`. The first fatal assertion was
+  `expected Set{ '44444444-...' } to deeply equal Set{ '55555555-...' }`.
+  The retry then reported PostgreSQL error `23505` for duplicate key
+  `44444444-4444-4444-8444-444444444444`.
+- **Root cause:** Applying `AT TIME ZONE` directly to a `date` left PostgreSQL
+  to choose a timestamp overload through implicit coercion. The observed result
+  retained session-UTC boundary behavior instead of interpreting midnight in
+  `America/Los_Angeles`. PostgreSQL documents distinct `timestamp without time
+  zone` and `timestamp with time zone` operator variants:
+  <https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-ZONECONVERT>.
+  The test also inserted fixed IDs inside the retried test body, so a failed
+  first attempt contaminated its retry.
+- **Fix / mitigation:** Cast each local date explicitly to `timestamp without
+  time zone` before `AT TIME ZONE`, producing an unambiguous `timestamptz`
+  boundary. Seed the boundary activities once in `beforeAll` under a dedicated
+  user so retries are read-only and cannot collide.
+- **Validation:** Updated compiled-SQL tests, root/server TypeScript checks,
+  Biome, and the 51 focused unit tests pass on Node 26.5.0. The preceding exact
+  changed-line mutation run killed 5/5 mutants, and the full Docker-free suite
+  passed 14,133 tests before this final explicit-cast correction.
+- **Remaining risk / follow-up:** The new exact-head CI must pass the real
+  PostgreSQL boundary test, every integration shard, and mutation testing
+  before merge.
+
 ## 2026-07-27 — Issue #2059 local database validation blocked by Docker disk exhaustion
 
 - **Status:** Application fix and executable PostgreSQL regression are ready;

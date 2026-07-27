@@ -89,6 +89,14 @@ export async function seedCore(sql: Sql): Promise<void> {
           updated_at = NOW()
   `;
 
+  await sql`
+    INSERT INTO fitness.user_billing (user_id, paid_grant_reason)
+    VALUES (${USER_ID}, 'review_fixture')
+    ON CONFLICT (user_id) DO UPDATE
+      SET paid_grant_reason = EXCLUDED.paid_grant_reason,
+          updated_at = NOW()
+  `;
+
   for (const providerId of SEED_PROVIDER_IDS) {
     await sql`
       INSERT INTO fitness.provider (id, name, user_id)
