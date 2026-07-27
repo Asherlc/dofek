@@ -371,11 +371,7 @@ export class ActivityRepository extends BaseRepository {
         : sql``;
     const endedAtPredicate = input.requireEndedAt ? sql`AND ended_at IS NOT NULL` : sql``;
     const accessWindow = input.accessWindow ?? this.accessWindow;
-    const accessWindowPredicate =
-      accessWindow.kind === "limited"
-        ? sql`AND started_at >= ${accessWindow.startDate}::timestamptz
-              AND started_at < ${accessWindow.endDateExclusive}::timestamptz`
-        : sql``;
+    const accessWindowPredicate = this.timestampAccessPredicate(sql`started_at`, accessWindow);
     const dateWindowPredicate = postgresCurrentTimestampRangeLowerBound(
       input.days,
       sql`started_at`,

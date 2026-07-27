@@ -136,9 +136,17 @@ describe("ActivityRepository", () => {
       await repo.resolveVisibleActivityIds(["activity-1", "activity-2"]);
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
-      expect(compiledQuery.sql).toContain("started_at >= $4::date");
-      expect(compiledQuery.sql).toContain("started_at < $5::date");
-      expect(compiledQuery.params).toEqual(expect.arrayContaining(["2026-03-10", "2026-03-17"]));
+      expect(compiledQuery.sql).toContain("started_at >= ($4::date AT TIME ZONE $5)");
+      expect(compiledQuery.sql).toContain("started_at < ($6::date AT TIME ZONE $7)");
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "activity-1",
+        "activity-2",
+        "2026-03-10",
+        "UTC",
+        "2026-03-17",
+        "UTC",
+      ]);
     });
 
     it("listVisibleActivityIdsSince applies the local-date and access windows", async () => {
@@ -155,14 +163,16 @@ describe("ActivityRepository", () => {
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql).toContain("started_at >= ($2::date AT TIME ZONE $3)");
-      expect(compiledQuery.sql).toContain("started_at >= $4::date");
-      expect(compiledQuery.sql).toContain("started_at < $5::date");
+      expect(compiledQuery.sql).toContain("started_at >= ($4::date AT TIME ZONE $5)");
+      expect(compiledQuery.sql).toContain("started_at < ($6::date AT TIME ZONE $7)");
       expect(compiledQuery.params).toEqual([
         "user-1",
         "2026-02-01",
         "America/Los_Angeles",
         "2026-03-10",
+        "America/Los_Angeles",
         "2026-03-17",
+        "America/Los_Angeles",
       ]);
     });
 
@@ -209,9 +219,16 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.sql).not.toContain("CURRENT_TIMESTAMP -");
       expect(compiledQuery.sql).toContain("AND ended_at IS NOT NULL");
       expect(compiledQuery.sql).toContain("AND activity_type IN");
-      expect(compiledQuery.sql).toContain("AND started_at >= $3::timestamptz");
-      expect(compiledQuery.sql).toContain("AND started_at < $4::timestamptz");
-      expect(compiledQuery.params).toEqual(["user-1", "cycling", "2024-01-01", "2024-02-01"]);
+      expect(compiledQuery.sql).toContain("AND started_at >= ($3::date AT TIME ZONE $4)");
+      expect(compiledQuery.sql).toContain("AND started_at < ($5::date AT TIME ZONE $6)");
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "cycling",
+        "2024-01-01",
+        "UTC",
+        "2024-02-01",
+        "UTC",
+      ]);
     });
 
     it("resolveVisibleActivityIds skips the query when no ids are provided", async () => {

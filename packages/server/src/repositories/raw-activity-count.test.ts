@@ -33,8 +33,8 @@ describe("countRawActivities", () => {
     expect(renderedQuery?.sql).toContain("FROM fitness.v_activity");
     expect(renderedQuery?.sql).toContain("CURRENT_TIMESTAMP - $2::int * INTERVAL '1 day'");
     expect(renderedQuery?.sql).toContain("activity_type IN ($3)");
-    expect(renderedQuery?.sql).toContain("started_at >= $4::timestamptz");
-    expect(renderedQuery?.sql).toContain("started_at < $5::timestamptz");
+    expect(renderedQuery?.sql).toContain("started_at >= ($4::date AT TIME ZONE $5)");
+    expect(renderedQuery?.sql).toContain("started_at < ($6::date AT TIME ZONE $7)");
     expect(renderedQuery?.sql).not.toContain("= ::uuid");
     expect(renderedQuery?.sql).not.toContain("- ::int");
     expect(renderedQuery?.params).toEqual([
@@ -42,7 +42,9 @@ describe("countRawActivities", () => {
       30,
       "cycling",
       "2026-01-01T00:00:00.000Z",
+      "UTC",
       "2026-02-01T00:00:00.000Z",
+      "UTC",
     ]);
   });
 });
