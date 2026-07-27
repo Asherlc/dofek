@@ -9,6 +9,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
+import { createReminderId } from "../lib/create-reminder-id";
 import { syncMedicationReminderNotifications } from "../lib/medication-reminder-notifications";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
@@ -26,10 +27,6 @@ type MedicationDoseEventsQueryResult = {
   error: { message: string } | null;
   data?: { events?: unknown } | null;
 };
-
-function createReminderId(): string {
-  return crypto.randomUUID();
-}
 
 export function MedicationRemindersPanel({
   focusedReminderId,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { medicationDoseEventSchema } from "./medication-dose-events.ts";
+import type { MedicationDoseEvent } from "./medication-dose-events.ts";
 
 export const MEDICATION_REMINDERS_SETTINGS_KEY = "medicationReminders";
 
@@ -39,7 +39,7 @@ export function parseMedicationReminders(value: unknown): MedicationReminder[] {
 
 export function findLatestDoseLoggingState(
   medicationName: string,
-  events: Array<z.infer<typeof medicationDoseEventSchema>>,
+  events: MedicationDoseEvent[],
 ): MedicationDoseLoggingState | null {
   const normalizedName = medicationName.trim().toLowerCase();
   if (normalizedName.length === 0) return null;
