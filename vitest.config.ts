@@ -69,6 +69,7 @@ export default defineConfig({
           name: "unit",
           setupFiles: ["@testing-library/jest-dom/vitest"],
           include: [
+            ".github/workflows/**/*.test.ts",
             "entrypoint.test.ts",
             "analytics/models/**/*.test.ts",
             "src/**/*.test.ts",
