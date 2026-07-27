@@ -5,8 +5,8 @@
       "args": ["-y", "chrome-devtools-mcp@latest"]
     },
     "codegraph": {
-      "command": "codegraph",
-      "args": ["serve", "--mcp"]
+      "command": "mise",
+      "args": ["exec", "--", "codegraph", "serve", "--mcp"]
     },
     "xcodebuildmcp": {
       "command": "pnpm",
