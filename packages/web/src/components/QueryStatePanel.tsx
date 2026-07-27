@@ -1,6 +1,7 @@
 import { operationalStatusColors } from "@dofek/scoring/colors";
 
 interface QueryStatePanelProps {
+  contextLabel?: string;
   error?: unknown;
   variant?: "loading" | "error" | "empty";
   message?: string;
@@ -21,6 +22,7 @@ export function getQueryErrorMessage(error: unknown, fallback = "Failed to load 
 }
 
 export function QueryStatePanel({
+  contextLabel,
   error,
   variant = error ? "error" : "empty",
   message,
@@ -73,7 +75,9 @@ export function QueryStatePanel({
             !
           </span>
           <h2 className="text-sm font-semibold" style={{ color: errorTone.foreground }}>
-            Could not load this section
+            {contextLabel
+              ? `${contextLabel}: Could not load this section`
+              : "Could not load this section"}
           </h2>
         </>
       ) : null}

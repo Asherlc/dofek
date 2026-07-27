@@ -1,4 +1,5 @@
 import { operationalStatusColors } from "@dofek/scoring/colors";
+import { fontSize, fontWeight } from "@dofek/scoring/tokens";
 import type { StyleProp, ViewStyle } from "react-native";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
@@ -110,19 +111,19 @@ const styles = StyleSheet.create({
   errorPanel: {
     backgroundColor: operationalStatusColors.danger.surface,
     borderColor: operationalStatusColors.danger.border,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   emptyPanel: {
     backgroundColor: colors.surfaceSecondary,
   },
   title: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.bold,
     color: colors.text,
     textAlign: "center",
   },
   message: {
-    fontSize: 13,
+    fontSize: fontSize.sm,
     textAlign: "center",
   },
   errorText: {
@@ -131,14 +132,14 @@ const styles = StyleSheet.create({
   errorIcon: {
     borderColor: operationalStatusColors.danger.border,
     borderRadius: radius.full,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     color: operationalStatusColors.danger.foreground,
-    fontSize: 14,
-    fontWeight: "800",
-    height: 24,
-    lineHeight: 22,
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.extrabold,
+    height: spacing.lg,
+    lineHeight: spacing.lg,
     textAlign: "center",
-    width: 24,
+    width: spacing.lg,
   },
   emptyMessage: {
     color: colors.textSecondary,
@@ -147,14 +148,14 @@ const styles = StyleSheet.create({
     backgroundColor: operationalStatusColors.danger.surface,
     borderColor: operationalStatusColors.danger.border,
     borderRadius: radius.md,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     marginTop: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
   retryText: {
     color: operationalStatusColors.danger.foreground,
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
   },
 });

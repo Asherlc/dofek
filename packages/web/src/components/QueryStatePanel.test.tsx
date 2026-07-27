@@ -56,6 +56,20 @@ describe("QueryStatePanel", () => {
     ).toBeGreaterThanOrEqual(3);
   });
 
+  it("names and visibly identifies a contextual error without nesting alerts", () => {
+    render(
+      <QueryStatePanel contextLabel="Sleep" error={new Error("Sleep performance unavailable")} />,
+    );
+
+    const heading = screen.getByRole("heading", {
+      name: "Sleep: Could not load this section",
+    });
+    const alert = heading.closest('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert).toHaveTextContent("Sleep: Could not load this section");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
   it("falls back when the error has no usable message", () => {
     render(<QueryStatePanel error={new Error("")} />);
     expect(screen.getByText("Failed to load data.")).toBeDefined();

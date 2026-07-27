@@ -68,12 +68,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               this.props.onReset?.();
               this.setState({ hasError: false, error: null });
             }}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
+            className="rounded-md border px-3 py-1.5 text-xs font-medium transition-[filter,outline] hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
             style={{
               backgroundColor: errorTone.surface,
               borderColor: errorTone.border,
               color: errorTone.foreground,
-              borderWidth: 1,
             }}
           >
             Try again

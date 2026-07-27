@@ -1,6 +1,7 @@
 import { operationalStatusColors } from "@dofek/scoring/colors";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { fontSize, fontWeight, spacing } from "../theme";
 import { getQueryErrorMessage, QueryStatePanel } from "./QueryStatePanel";
 
 function relativeLuminance(hexColor: string): number {
@@ -51,6 +52,14 @@ describe("QueryStatePanel", () => {
     expect(panel.style.borderColor).toBe(cssRgb(operationalStatusColors.danger.border));
     expect(title.style.color).toBe(cssRgb(operationalStatusColors.danger.foreground));
     expect(message.style.color).toBe(cssRgb(operationalStatusColors.danger.foreground));
+    expect(title.style.fontSize).toBe(`${fontSize.base}px`);
+    expect(title.style.fontWeight).toBe(fontWeight.bold);
+    const errorIcon = screen.getByTestId("query-state-error-icon");
+    expect(errorIcon.style.fontSize).toBe(`${fontSize.base}px`);
+    expect(errorIcon.style.fontWeight).toBe(fontWeight.extrabold);
+    expect(errorIcon.style.height).toBe(`${spacing.lg}px`);
+    expect(errorIcon.style.lineHeight).toBe(`${spacing.lg}`);
+    expect(errorIcon.style.width).toBe(`${spacing.lg}px`);
     expect(
       contrastRatio(
         operationalStatusColors.danger.foreground,
@@ -76,6 +85,9 @@ describe("QueryStatePanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry providers" }));
 
     expect(onRetry).toHaveBeenCalledOnce();
+    const retryText = screen.getByText("Retry providers");
+    expect(retryText.style.fontSize).toBe(`${fontSize.xs}px`);
+    expect(retryText.style.fontWeight).toBe(fontWeight.bold);
   });
 
   it("disables retry while a refresh is in flight", () => {

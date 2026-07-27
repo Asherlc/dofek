@@ -33,7 +33,16 @@ describe("ErrorBoundary", () => {
       color: operationalStatusColors.danger.foreground,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    const retryButton = screen.getByRole("button", { name: "Try again" });
+    expect(retryButton).toHaveClass(
+      "border",
+      "hover:brightness-95",
+      "focus-visible:outline",
+      "focus-visible:outline-2",
+      "focus-visible:outline-offset-2",
+    );
+
+    fireEvent.click(retryButton);
     expect(onReset).toHaveBeenCalledOnce();
   });
 });
