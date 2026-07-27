@@ -1,6 +1,9 @@
 import { formatNumber, formatSigned } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
-import { formatCorrelationComparison, formatCorrelationLagOption } from "@dofek/stats/correlation";
+import {
+  formatCorrelationComparison,
+  formatCorrelationLagOption,
+} from "@dofek/stats/correlation-lag";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {

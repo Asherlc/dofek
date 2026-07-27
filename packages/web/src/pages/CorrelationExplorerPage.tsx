@@ -1,5 +1,8 @@
 import { formatNumber } from "@dofek/format/format";
-import { formatCorrelationComparison, formatCorrelationLagOption } from "@dofek/stats/correlation";
+import {
+  formatCorrelationComparison,
+  formatCorrelationLagOption,
+} from "@dofek/stats/correlation-lag";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
