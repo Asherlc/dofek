@@ -477,6 +477,13 @@
       "when": 1785000000000,
       "tag": "0057_provider_connection",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1785100000000,
+      "tag": "0058_personal_experiment",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,9 @@ vi.mock("@tanstack/react-router", () => ({
     state.routeComponents[path] = config.component;
     return {};
   },
+  Link: ({ children, to }: { children: ReactNode; to: string }) => (
+    <a href={typeof to === "string" ? to : "/experiments"}>{children}</a>
+  ),
 }));
 
 vi.mock("../hooks/useTodayQueryDate.ts", () => ({

@@ -93,16 +93,12 @@ describe("refitAllParams", () => {
       expect.stringContaining("FROM analytics.activity_summary asum"),
       expect.objectContaining({ userId: "user-1" }),
     );
-    expect(sensorStore.query).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining("analytics.deduped_sensor"),
-      expect.objectContaining({ userId: "user-1" }),
-    );
     const trainingImpulseQuery = sensorStore.query.mock.calls
       .map(([, query]) => query)
-      .find((query) => query.includes("WITH rolling_power AS"));
-    expect(trainingImpulseQuery).toContain("ORDER BY toUnixTimestamp(ds.recorded_at)");
-    expect(trainingImpulseQuery).not.toContain("ORDER BY ds.recorded_at");
+      .find((query) => query.includes("ftp_estimate AS"));
+    expect(trainingImpulseQuery).toContain("asum.normalized_power");
+    expect(trainingImpulseQuery).not.toContain("analytics.deduped_sensor");
+    expect(trainingImpulseQuery).not.toContain("rolling_power");
   });
 
   it("handles individual fitter errors gracefully", async () => {

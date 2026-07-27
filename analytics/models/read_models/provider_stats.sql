@@ -1,116 +1,24 @@
+{% set provider_dirty_key_batch_size = var('provider_dirty_key_batch_size', 1) %}
+
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
+    full_refresh=false,
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, provider_id)',
     query_settings={
         'max_threads': 1,
-        'join_use_nulls': 1
+        'join_use_nulls': 1,
+        'enable_materialized_cte': 1
     }
 ) }}
 
-WITH source_provider_refreshes AS (
-    SELECT
-        user_id,
-        id AS provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'provider') }} FINAL
-    GROUP BY user_id, id
-
-    UNION ALL
+WITH current_provider_state AS materialized (
     SELECT
         user_id,
         provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'daily_metrics') }} FINAL
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'sleep_session') }} FINAL
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(ingested_at) AS source_refreshed_at
-    FROM (
-        SELECT
-            user_id,
-            provider_id,
-            ingested_at
-        FROM {{ source('ingest', 'metric_stream') }}
-        SETTINGS force_optimize_projection_name = 'by_provider_generation'
-    )
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM analytics.body_measurement_sample FINAL
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'food_entry') }} FINAL
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'health_event') }} FINAL
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'lab_panel') }} FINAL
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'lab_result') }} FINAL
-    GROUP BY user_id, provider_id
-
-    UNION ALL
-    SELECT
-        user_id,
-        provider_id,
-        max(_peerdb_synced_at) AS source_refreshed_at
-    FROM {{ source('postgres_fitness', 'journal_entry') }} FINAL
-    GROUP BY user_id, provider_id
-),
-
-current_provider_state AS (
-    SELECT
-        user_id,
-        provider_id,
-        max(source_refreshed_at) AS source_refreshed_at
-    FROM source_provider_refreshes
+        max(changed_at) AS source_changed_at
+    FROM {{ ref('provider_change_watermark') }} FINAL
     GROUP BY user_id, provider_id
 ),
 
@@ -128,42 +36,50 @@ existing_provider_state AS (
 source_dirty_providers AS (
     SELECT
         current_provider_state.user_id AS user_id,
-        current_provider_state.provider_id AS provider_id
+        current_provider_state.provider_id AS provider_id,
+        current_provider_state.source_changed_at AS source_changed_at
     FROM current_provider_state
     {% if is_incremental() %}
     LEFT JOIN existing_provider_state
         ON existing_provider_state.user_id = current_provider_state.user_id
         AND existing_provider_state.provider_id = current_provider_state.provider_id
     WHERE existing_provider_state.provider_id IS NULL
-        OR current_provider_state.source_refreshed_at > existing_provider_state.refreshed_at
+        OR current_provider_state.source_changed_at > existing_provider_state.refreshed_at
     {% endif %}
 ),
 
-{% if is_incremental() %}
-stale_providers AS (
+candidate_dirty_providers AS (
     SELECT
-        existing_provider_state.user_id AS user_id,
-        existing_provider_state.provider_id AS provider_id
-    FROM existing_provider_state
-    LEFT JOIN current_provider_state
-        ON current_provider_state.user_id = existing_provider_state.user_id
-        AND current_provider_state.provider_id = existing_provider_state.provider_id
-    WHERE current_provider_state.provider_id IS NULL
-),
-{% endif %}
-
-providers AS (
-    SELECT
-        user_id,
-        provider_id
+        source_dirty_providers.user_id AS user_id,
+        source_dirty_providers.provider_id AS provider_id,
+        source_dirty_providers.source_changed_at AS source_changed_at
     FROM source_dirty_providers
-    {% if is_incremental() %}
-    UNION DISTINCT
+),
+
+providers AS materialized (
     SELECT
-        user_id,
-        provider_id
-    FROM stale_providers
+        candidate_dirty_providers.user_id AS user_id,
+        candidate_dirty_providers.provider_id AS provider_id
+    FROM candidate_dirty_providers
+    {% if is_incremental() %}
+    LEFT JOIN existing_provider_state
+        ON existing_provider_state.user_id = candidate_dirty_providers.user_id
+        AND existing_provider_state.provider_id = candidate_dirty_providers.provider_id
+    ORDER BY
+        coalesce(
+            existing_provider_state.refreshed_at,
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) ASC,
+        candidate_dirty_providers.source_changed_at ASC,
+        candidate_dirty_providers.user_id,
+        candidate_dirty_providers.provider_id
+    {% else %}
+    ORDER BY
+        candidate_dirty_providers.source_changed_at ASC,
+        candidate_dirty_providers.user_id,
+        candidate_dirty_providers.provider_id
     {% endif %}
+    LIMIT {{ provider_dirty_key_batch_size }}
 ),
 
 metric_stream_current AS (
@@ -172,17 +88,7 @@ metric_stream_current AS (
         provider_id,
         id,
         argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted
-    FROM (
-        SELECT
-            user_id,
-            provider_id,
-            id,
-            is_deleted,
-            version,
-            ingested_at
-        FROM {{ source('ingest', 'metric_stream') }}
-        SETTINGS force_optimize_projection_name = 'by_provider_generation'
-    )
+    FROM {{ source('ingest', 'metric_stream') }}
     WHERE (user_id, provider_id) IN (
         SELECT
             user_id,

@@ -83,11 +83,73 @@ describe("Settings router", () => {
       { key: "unitSystem", value: "kelvin" },
       { key: "dashboardLayout", value: { order: [], hidden: [], collapsed: "invalid" } },
       { key: "whoop.wearLocation", value: "ankle" },
+      { key: "primaryGoal", value: "loseWeight" },
       { key: "unknownSetting", value: true },
+      {
+        key: "medicationReminders",
+        value: [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            medicationName: "",
+            localTime: "08:30",
+            enabled: true,
+          },
+        ],
+      },
+      {
+        key: "medicationReminders",
+        value: [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            medicationName: "Vitamin D3",
+            localTime: "8:30",
+            enabled: true,
+          },
+        ],
+      },
     ])("rejects malformed or unknown setting $key", async (input) => {
       const result = await mutate("settings.set", input);
 
       expect(result.error.data.code).toBe("BAD_REQUEST");
+    });
+
+    it("sets medication reminders and gets them back", async () => {
+      const reminders = [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          medicationName: "Vitamin D3",
+          localTime: "08:30",
+          enabled: true,
+        },
+      ];
+
+      await mutate("settings.set", { key: "medicationReminders", value: reminders });
+
+      const result = await query("settings.get", { key: "medicationReminders" });
+      expect(result.result.data).toEqual({
+        key: "medicationReminders",
+        value: reminders,
+      });
+    });
+
+    it("sets and gets primaryGoal", async () => {
+      await mutate("settings.set", { key: "primaryGoal", value: "sleepConsistency" });
+
+      const result = await query("settings.get", { key: "primaryGoal" });
+      expect(result.result.data).toEqual({
+        key: "primaryGoal",
+        value: "sleepConsistency",
+      });
+    });
+
+    it("returns the updated primaryGoal after set, not a stale cached value", async () => {
+      await mutate("settings.set", { key: "primaryGoal", value: "racePreparation" });
+      const first = await query("settings.get", { key: "primaryGoal" });
+      expect(first.result.data.value).toBe("racePreparation");
+
+      await mutate("settings.set", { key: "primaryGoal", value: "weightTrend" });
+      const second = await query("settings.get", { key: "primaryGoal" });
+      expect(second.result.data.value).toBe("weightTrend");
     });
   });
 

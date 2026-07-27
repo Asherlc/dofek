@@ -1,5 +1,4 @@
-import { describe, expect, it } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
+import { WhoopClient } from "@dofek/whoop/client";
 import type {
   WhoopCycle,
   WhoopMetricValue,
@@ -7,7 +6,8 @@ import type {
   WhoopSleepRecord,
   WhoopWeightliftingWorkoutResponse,
   WhoopWorkoutRecord,
-} from "whoop-whoop/types";
+} from "@dofek/whoop/types";
+import { describe, expect, it } from "vitest";
 import { parseJournalResponse } from "./whoop/journal-parsing.ts";
 import {
   buildV2ActivityTypeLookup,

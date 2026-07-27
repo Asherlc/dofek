@@ -13,7 +13,7 @@ export const Route = createFileRoute("/monthly-report")({
 });
 
 function MonthlyReportPage() {
-  const report = trpc.monthlyReport.report.useQuery({ months: REPORT_MONTHS });
+  const report = trpc.monthlyReport.report.useQuery({ months: REPORT_MONTHS }, { retry: false });
   const { data, isLoading } = report;
 
   return (

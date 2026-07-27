@@ -1,6 +1,5 @@
 import { formatDateMedium, formatDateTime } from "@dofek/format/format";
-import { formatMeasurementText, UnitConverter } from "@dofek/format/units";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Updates from "expo-updates";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -9,7 +8,6 @@ import {
   Linking,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -18,7 +16,9 @@ import {
 } from "react-native";
 import { DataExportSection } from "../components/DataExportSection";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
+import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
+import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
@@ -28,6 +28,8 @@ import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
+import { styles } from "./settings.styles";
+import { GoalWeightSettingsSection } from "./settings-goal-weight";
 
 type UnitSystem = "metric" | "imperial";
 
@@ -41,7 +43,6 @@ function formatLocalizedDateTime(date: Date | null | undefined): string {
   if (!date) return "n/a";
   return formatDateTime(date);
 }
-
 function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: string): string {
   const endInclusive = new Date(`${endDateExclusive}T12:00:00.000Z`);
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
@@ -54,6 +55,9 @@ function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: strin
 export default function SettingsScreen() {
   const auth = useAuth();
   const router = useRouter();
+  const searchParams = useLocalSearchParams<{ focus?: string; reminderId?: string }>();
+  const focusedReminderId =
+    typeof searchParams.reminderId === "string" ? searchParams.reminderId : null;
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
@@ -106,22 +110,6 @@ export default function SettingsScreen() {
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
-
-  // ── Goal Weight ──
-  const goalWeightSetting = trpc.settings.get.useQuery({ key: "goalWeight" });
-  const goalWeightMutation = trpc.bodyAnalytics.setGoalWeight.useMutation({
-    onSuccess: () => {
-      goalWeightSetting.refetch();
-      trpcUtils.bodyAnalytics.weightPrediction.invalidate();
-    },
-  });
-  const currentGoalKg =
-    goalWeightSetting.data?.value != null ? Number(goalWeightSetting.data.value) : null;
-  const [goalInput, setGoalInput] = useState("");
-  const [editingGoal, setEditingGoal] = useState(false);
-  const isImperial = currentUnitSystem === "imperial";
-  const units = new UnitConverter(currentUnitSystem);
-  const kgToLbs = 2.20462;
 
   useEffect(() => {
     if (
@@ -364,6 +352,11 @@ export default function SettingsScreen() {
 
       <ZeppPairingCard />
 
+      {/* ── Primary Goal ── */}
+      <View style={styles.section}>
+        <PrimaryGoalSelector />
+      </View>
+
       {/* ── Units ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Units</Text>
@@ -394,6 +387,16 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             );
           })}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Medication Reminders</Text>
+        <Text style={styles.sectionDescription}>
+          Optional daily reminders with imported logging state
+        </Text>
+        <View style={styles.card}>
+          <MedicationRemindersPanel focusedReminderId={focusedReminderId} />
         </View>
       </View>
 
@@ -496,89 +499,7 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* ── Goal Weight ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Goal Weight</Text>
-        <Text style={styles.sectionDescription}>
-          Set a target weight to see projected completion dates
-        </Text>
-        <View style={styles.card}>
-          {editingGoal ? (
-            <View style={styles.goalEditRow}>
-              <TextInput
-                style={styles.goalInput}
-                value={goalInput}
-                onChangeText={setGoalInput}
-                keyboardType="decimal-pad"
-                placeholder={isImperial ? "lbs" : "kg"}
-                placeholderTextColor={colors.textSecondary}
-              />
-              <TouchableOpacity
-                style={styles.goalSaveButton}
-                onPress={() => {
-                  const parsed = Number.parseFloat(goalInput);
-                  if (!Number.isNaN(parsed) && parsed > 0) {
-                    const weightKg = isImperial ? parsed / kgToLbs : parsed;
-                    goalWeightMutation.mutate({ weightKg });
-                  }
-                  setEditingGoal(false);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Save goal weight"
-                accessibilityState={{ busy: goalWeightMutation.isPending }}
-              >
-                <Text style={styles.goalSaveText}>Save</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setEditingGoal(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Cancel goal weight edit"
-              >
-                <Text style={styles.goalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          ) : currentGoalKg != null ? (
-            <View style={styles.goalDisplayRow}>
-              <Text style={styles.goalDisplayText}>
-                {formatMeasurementText(units.formatWeight(currentGoalKg))}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setGoalInput(
-                    String(
-                      Math.round((isImperial ? currentGoalKg * kgToLbs : currentGoalKg) * 10) / 10,
-                    ),
-                  );
-                  setEditingGoal(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Edit goal weight"
-              >
-                <Text style={styles.goalEditText}>Edit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => goalWeightMutation.mutate({ weightKg: null })}
-                accessibilityRole="button"
-                accessibilityLabel="Clear goal weight"
-                accessibilityState={{ busy: goalWeightMutation.isPending }}
-              >
-                <Text style={styles.goalCancelText}>Clear</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity
-              onPress={() => {
-                setGoalInput("");
-                setEditingGoal(true);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Set Goal Weight"
-            >
-              <Text style={styles.goalEditText}>Set Goal Weight</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      <GoalWeightSettingsSection unitSystem={currentUnitSystem} />
 
       {/* ── Algorithm Personalization ── */}
       <View style={styles.section}>
@@ -725,309 +646,3 @@ export default function SettingsScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 16,
-    paddingTop: 24,
-    paddingBottom: 40,
-  },
-  contentWide: {
-    maxWidth: 600,
-    alignSelf: "center",
-    width: "100%",
-  },
-
-  // ── Sections ──
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  sectionDescription: {
-    fontSize: 13,
-    color: colors.textTertiary,
-    marginBottom: 10,
-  },
-
-  // ── Billing ──
-  billingStatusText: {
-    color: colors.text,
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  billingDetailText: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    marginBottom: 8,
-  },
-  billingErrorText: {
-    color: colors.danger,
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  billingActionRow: {
-    flexDirection: "column",
-    gap: 10,
-  },
-  billingPrimaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  billingSecondaryButton: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  billingButtonText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-
-  // ── Card ──
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: colors.textTertiary,
-  },
-
-  // ── Data Sources ──
-  dataSourcesRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  dataSourcesInfo: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  providerLogos: {
-    flexDirection: "row",
-    gap: 6,
-  },
-  dataSourcesCount: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-
-  // ── Toggle Row ──
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  toggleInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  toggleLabel: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  toggleDescription: {
-    fontSize: 13,
-    color: colors.textTertiary,
-    marginTop: 2,
-  },
-
-  // ── Unit System ──
-  unitRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  unitButton: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.surfaceSecondary,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  unitButtonSelected: {
-    borderColor: colors.accent,
-    backgroundColor: `${colors.accent}15`,
-  },
-  unitLabel: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.textSecondary,
-  },
-  unitLabelSelected: {
-    color: colors.text,
-  },
-  unitDescription: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    marginTop: 2,
-  },
-  unitErrorText: {
-    color: colors.danger,
-    fontSize: 12,
-    marginBottom: 8,
-  },
-
-  // ── Goal Weight ──
-  goalEditRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  goalInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    color: colors.text,
-    fontSize: 14,
-  },
-  goalSaveButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  goalSaveText: {
-    color: colors.blue,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  goalCancelText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    paddingHorizontal: 8,
-  },
-  goalDisplayRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  goalDisplayText: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  goalEditText: {
-    color: colors.blue,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  // ── Developer Tools ──
-  devToolRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-  },
-  devToolRowLast: {
-    borderBottomWidth: 0,
-  },
-  devToolLabel: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: colors.text,
-  },
-  devToolChevron: {
-    fontSize: 18,
-    color: colors.textTertiary,
-  },
-  devToolDetail: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    marginTop: 2,
-    fontVariant: ["tabular-nums"],
-  },
-
-  // ── Danger Zone ──
-  dangerCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.danger,
-  },
-  deleteButton: {
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.danger,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  deleteButtonDisabled: {
-    opacity: 0.6,
-  },
-  deleteButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.danger,
-  },
-
-  // ── Password ──
-  passwordInput: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 12,
-    color: colors.text,
-    fontSize: 15,
-    marginBottom: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  passwordErrorText: {
-    color: colors.danger,
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  passwordButton: {
-    alignItems: "center",
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-    paddingVertical: 12,
-  },
-  passwordButtonText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  // ── Logout ──
-  logoutButton: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.danger,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.danger,
-  },
-});

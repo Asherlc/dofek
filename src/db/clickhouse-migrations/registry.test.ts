@@ -95,7 +95,9 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("ALTER TABLE analytics.daily_recovery"),
       ]),
     });
-    expect(migrations.at(-1)).toMatchObject({
+    expect(
+      migrations.find((migration) => migration.id === "0058_migrate_body_measurement_to_dbt"),
+    ).toMatchObject({
       id: "0058_migrate_body_measurement_to_dbt",
       statements: expect.arrayContaining([
         expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.body_measurement"),
@@ -103,6 +105,28 @@ describe("clickHouseMigrations", () => {
         "DROP VIEW IF EXISTS analytics.v_body_measurement",
         "DROP TABLE IF EXISTS analytics.v_body_measurement",
         expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0059_provider_change_state"),
+    ).toMatchObject({
+      id: "0059_provider_change_state",
+      statements: expect.arrayContaining([
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.provider_change_state"),
+        expect.stringContaining(
+          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_change_from_provider_connection",
+        ),
+        expect.stringContaining("FROM ingest.metric_stream"),
+      ]),
+    });
+    expect(migrations.at(-1)).toMatchObject({
+      id: "0060_heart_rate_day_change",
+      statements: expect.arrayContaining([
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.heart_rate_day_change"),
+        expect.stringContaining(
+          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.heart_rate_day_change_ingest",
+        ),
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.sleep_heart_rate_window"),
       ]),
     });
   });

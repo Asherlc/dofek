@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 const captured = vi.hoisted<{ component: (() => ReactElement) | null }>(() => ({
   component: null,
 }));
+const mockWeeklyReportQuery = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: { component: () => ReactElement }) => {
@@ -52,25 +53,28 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     weeklyReport: {
       report: {
-        useQuery: () => ({
-          data: {
-            current: {
-              weekStart: "2026-07-19",
-              trainingHours: 5,
-              activityCount: 3,
-              strainZone: "optimal",
-              avgDailyLoad: 4,
-              avgSleepMinutes: 450,
-              sleepPerformancePct: 100,
-              avgReadiness: 0,
-              avgRestingHr: 55,
-              avgHrv: 48,
+        useQuery: (...args: unknown[]) => {
+          mockWeeklyReportQuery(...args);
+          return {
+            data: {
+              current: {
+                weekStart: "2026-07-19",
+                trainingHours: 5,
+                activityCount: 3,
+                strainZone: "optimal",
+                avgDailyLoad: 4,
+                avgSleepMinutes: 450,
+                sleepPerformancePct: 100,
+                avgReadiness: 0,
+                avgRestingHr: 55,
+                avgHrv: 48,
+              },
+              history: [],
             },
-            history: [],
-          },
-          isLoading: false,
-          error: null,
-        }),
+            isLoading: false,
+            error: null,
+          };
+        },
       },
     },
   },
@@ -91,5 +95,9 @@ describe("Weekly report route", () => {
         name: "Share weekly report ending 2026-07-24",
       }),
     ).toBeTruthy();
+    expect(mockWeeklyReportQuery).toHaveBeenCalledWith(
+      { weeks: 12, endDate: "2026-07-24" },
+      { retry: false },
+    );
   });
 });

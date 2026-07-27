@@ -6,6 +6,7 @@
  *
  * Run: source /tmp/contract-test-env.sh && pnpm vitest run src/providers/provider-api-contracts.test.ts
  */
+import { pelotonWorkoutSchema } from "@dofek/peloton/types";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -410,18 +411,6 @@ describe.skipIf(!hasPolar)("Polar API contract", () => {
 // ============================================================
 
 const hasPeloton = envOrEmpty("PELOTON_REFRESH_TOKEN").length > 0;
-
-const pelotonWorkoutSchema = z.object({
-  id: z.string(),
-  status: z.string(),
-  fitness_discipline: z.string(),
-  name: z.string(),
-  created_at: z.number(),
-  start_time: z.number(),
-  end_time: z.number(),
-  total_work: z.number().optional(),
-  is_total_work_personal_record: z.boolean().optional(),
-});
 
 const pelotonMeSchema = z.object({
   id: z.string(),

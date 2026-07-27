@@ -7,7 +7,9 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { DashboardLayoutProvider } from "../components/DashboardLayoutProvider.tsx";
 import { QueryErrorBoundary } from "../components/QueryErrorBoundary.tsx";
+import { UnitProvider } from "../components/UnitProvider.tsx";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
 import { ProcessingAlertsProvider } from "../lib/processing-alerts-context.tsx";
 
@@ -106,9 +108,19 @@ function AuthGate() {
     </PageTransition>
   );
 
-  if (!user) return content;
+  const routedContent = user ? (
+    <ProcessingAlertsProvider>{content}</ProcessingAlertsProvider>
+  ) : (
+    content
+  );
 
-  return <ProcessingAlertsProvider>{content}</ProcessingAlertsProvider>;
+  return (
+    <UnitProvider key={user?.id ?? "signed-out"} settingsEnabled={Boolean(user)}>
+      <DashboardLayoutProvider settingsEnabled={Boolean(user)}>
+        {routedContent}
+      </DashboardLayoutProvider>
+    </UnitProvider>
+  );
 }
 
 function parseReturnTo(value: unknown): string | undefined {

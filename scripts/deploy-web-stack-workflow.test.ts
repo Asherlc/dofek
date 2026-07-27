@@ -106,10 +106,7 @@ exit 1
 function deployConsumersRunScript(): string {
   const stepStart = workflowText.indexOf("      - name: Deploy ClickHouse consumer services");
   const runStart = workflowText.indexOf("        run: |\n", stepStart);
-  const stepEnd = workflowText.indexOf(
-    "\n      - name: Record Sentry production release",
-    runStart,
-  );
+  const stepEnd = workflowText.indexOf("\n      - ", runStart);
 
   if (stepStart === -1 || runStart === -1 || stepEnd === -1) {
     throw new Error("Could not find the ClickHouse consumer deploy step");

@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/react-native";
 import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
-import { Stack } from "expo-router";
+import * as Notifications from "expo-notifications";
+import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
@@ -23,6 +24,7 @@ import {
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { invalidateSyncedHealthData } from "../lib/invalidate-synced-health-data";
+import { resolveMedicationReminderNotificationPath } from "../lib/medication-reminder-notifications";
 import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
 import { createAppQueryClient } from "../lib/query-client";
 import { runAfterUiIdle } from "../lib/runAfterUiIdle";
@@ -64,6 +66,41 @@ SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
  * Headless component that manages WHOOP BLE accelerometer sync.
  * Must be rendered inside the tRPC provider tree so it can use tRPC query hooks.
  */
+function MedicationReminderNotificationListener() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const navigateFromNotificationData = (data: unknown) => {
+      const path = resolveMedicationReminderNotificationPath(data);
+      if (!path) return;
+      router.push(path);
+    };
+
+    try {
+      const lastResponse = Notifications.getLastNotificationResponse();
+      if (lastResponse) {
+        navigateFromNotificationData(lastResponse.notification.request.content.data);
+      }
+    } catch (error: unknown) {
+      captureException(error, { context: "medication-reminder-notification-last-response" });
+    }
+
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      try {
+        navigateFromNotificationData(response.notification.request.content.data);
+      } catch (error: unknown) {
+        captureException(error, { context: "medication-reminder-notification-response" });
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [router]);
+
+  return null;
+}
+
 function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trpc.createClient> }) {
   const whoopSyncClient = useMemo(
     () => ({
@@ -350,6 +387,7 @@ function AuthGate() {
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <MobileQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
         {backgroundSyncReady && <WhoopBleSyncManager trpcClient={trpcClient} />}
+        <MedicationReminderNotificationListener />
         <Stack screenOptions={rootStackScreenOptions}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
@@ -436,6 +474,12 @@ function AuthGate() {
             name="correlation"
             options={{
               title: "Correlation Explorer",
+            }}
+          />
+          <Stack.Screen
+            name="experiments"
+            options={{
+              title: "Personal Experiments",
             }}
           />
           <Stack.Screen

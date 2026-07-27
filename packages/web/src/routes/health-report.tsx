@@ -12,8 +12,8 @@ import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export const Route = createFileRoute("/health-report")({
-  validateSearch: (search: Record<string, unknown>): { token: string | null | undefined } => {
-    if (!Object.hasOwn(search, "token")) return { token: undefined };
+  validateSearch: (search: Record<string, unknown>): { token?: string | null } => {
+    if (!Object.hasOwn(search, "token")) return {};
     if (typeof search.token !== "string") return { token: null };
     const token = search.token.trim();
     return { token: token.length > 0 ? token : null };

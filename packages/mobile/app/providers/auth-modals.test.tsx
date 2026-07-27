@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   credentialSignIn,
+  tokenConnect,
   garminSignIn,
   mockCaptureException,
   whoopSaveTokens,
@@ -10,6 +11,7 @@ const {
   whoopVerifyCode,
 } = vi.hoisted(() => ({
   credentialSignIn: vi.fn(),
+  tokenConnect: vi.fn(),
   garminSignIn: vi.fn(),
   mockCaptureException: vi.fn(),
   whoopSaveTokens: vi.fn(),
@@ -26,6 +28,11 @@ vi.mock("../../lib/trpc", () => ({
     credentialAuth: {
       signIn: {
         useMutation: () => ({ mutateAsync: credentialSignIn }),
+      },
+    },
+    tokenAuth: {
+      connect: {
+        useMutation: () => ({ mutateAsync: tokenConnect }),
       },
     },
     garminAuth: {
@@ -47,11 +54,17 @@ vi.mock("../../lib/trpc", () => ({
   },
 }));
 
-import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals";
+import {
+  CredentialAuthModal,
+  GarminAuthModal,
+  TokenAuthModal,
+  WhoopAuthModal,
+} from "./auth-modals";
 
 describe("provider auth modals", () => {
   beforeEach(() => {
     credentialSignIn.mockReset();
+    tokenConnect.mockReset();
     garminSignIn.mockReset();
     mockCaptureException.mockReset();
     whoopSaveTokens.mockReset();
@@ -87,6 +100,99 @@ describe("provider auth modals", () => {
       source: "provider-credential-auth-sign-in",
       providerId: "wahoo",
     });
+  });
+
+  it("connects a personal token and links to the provider instructions", async () => {
+    tokenConnect.mockResolvedValue({ success: true });
+    const onSuccess = vi.fn();
+    render(
+      <TokenAuthModal
+        providerId="wger"
+        providerName="Wger"
+        tokenLabel="JWT refresh token"
+        instructionsUrl="https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens"
+        onClose={vi.fn()}
+        onSuccess={onSuccess}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("JWT refresh token"), {
+      target: { value: "personal-refresh" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Wger" }));
+
+    await waitFor(() => {
+      expect(tokenConnect).toHaveBeenCalledWith({
+        providerId: "wger",
+        token: "personal-refresh",
+      });
+      expect(onSuccess).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("reports personal token failures without including the token", async () => {
+    const error = new Error("Token rejected");
+    const token = "personal-token-must-not-leak";
+    tokenConnect.mockRejectedValue(error);
+    render(
+      <TokenAuthModal
+        providerId="ultrahuman"
+        providerName="Ultrahuman"
+        tokenLabel="Personal API token"
+        instructionsUrl="https://vision.ultrahuman.com/developer-docs"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Personal API token"), {
+      target: { value: token },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ultrahuman" }));
+
+    await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      source: "provider-token-auth-connect",
+      providerId: "ultrahuman",
+    });
+    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(token);
+  });
+
+  it("keeps the token modal open while a connection is pending", async () => {
+    let resolveConnection: ((value: { success: true }) => void) | undefined;
+    tokenConnect.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConnection = resolve;
+      }),
+    );
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    render(
+      <TokenAuthModal
+        providerId="wger"
+        providerName="Wger"
+        tokenLabel="JWT refresh token"
+        instructionsUrl="https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens"
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("JWT refresh token"), {
+      target: { value: "pending-refresh-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Wger" }));
+
+    const closeButton = screen.getByRole("button", { name: "Close Wger connection" });
+    if (!(closeButton instanceof HTMLButtonElement)) {
+      throw new Error("Expected the close action to render as a button");
+    }
+    await waitFor(() => expect(closeButton.disabled).toBe(true));
+    fireEvent.click(closeButton);
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => resolveConnection?.({ success: true }));
+    expect(onSuccess).toHaveBeenCalledOnce();
   });
 
   it("reports a Garmin sign-in error while preserving its message", async () => {

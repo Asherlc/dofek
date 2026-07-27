@@ -32,7 +32,7 @@ or `sensor_fusion`.
 | Suunto FIT files | Same FIT path | Altitude from FIT record | Device-dependent. Suunto documents FIT export as containing measured altitude and says some barometric products combine GPS and barometer through FusedAlti. The exported record does not tell us whether a given sample is GPS-only, barometric, or fused. |
 | Strava streams | `altitude` stream from activity streams endpoint | Stream altitude in meters | Mixed and not explicit in API response. Strava documents that activities from known barometric devices use device-recorded barometric elevation, while non-barometric/GPS-source elevation can be cross-referenced to Strava's elevation basemap. The stream payload does not include a provenance flag, and users can request correction on the web. |
 | Garmin Connect detail API | `directElevation` samples from unofficial activity detail | Direct elevation in meters | Device/account-dependent. Garmin documents that devices with barometric altimeters record elevation from air-pressure changes, while devices without barometric altimeters can use Garmin Connect/professional survey/DEM-style elevation. The unofficial sample field does not expose which source was used. |
-| Ride with GPS trips | `track_points[].e` | Track-point elevation in meters | Unknown. The API documents `e` as elevation and says trip track points come from the recording device and may include many attributes. It does not say whether elevation is device-recorded, corrected, planned-route elevation, or imported from another platform. |
+| Ride with GPS trips | `track_points[].e` | Track-point elevation in meters | Unknown/provider-processed. Dofek stores the API value without per-sample provenance. Ride with GPS says activity elevation may originate from barometric or GPS measurements and can be replaced with its elevation dataset, so `e` does not prove the original sensor or processing path. |
 | Fitbit and Polar TCX | Download TCX, parse `AltitudeMeters` | Trackpoint altitude in meters | Unknown from TCX. The TCX schema carries `AltitudeMeters` but no source. Fitbit/Polar device capabilities vary, so any source classification would need device-specific metadata we do not currently store. |
 | Zwift | Fitness data `altitudeInCm` | Virtual altitude in meters | Virtual/course-derived, not real-world GNSS or barometer. Zwift activities are virtual routes; altitude is part of the simulated route/fitness data. |
 | Komoot, Xert, Cycling Analytics, TrainerRoad summaries | Activity summary raw JSON only | Summary elevation gain/loss in `activity.raw`, not canonical altitude stream | Summary provenance is provider-defined and not used as canonical altitude samples. Do not infer per-sample altitude source from these summary values. |
@@ -76,12 +76,17 @@ or `sensor_fusion`.
 - Strava elevation behavior: Strava documents barometric-device elevation,
   corrected elevation from GPS plus its elevation basemap, and different mobile
   live-elevation behavior by platform:
-  <https://support.strava.com/hc/en-us/articles/115001294564-Elevation-on-Strava-FAQs>
+  <https://support.strava.com/en-us/articles/15401909-elevation>
   and
-  <https://support.strava.com/hc/articles/115000024864-Announcing-Strava-s-Elevation-Basemap>
-- Ride with GPS track points: the API documents `e` as elevation and distinguishes
-  route and trip track points:
-  <https://ridewithgps.com/api/v1/doc/reference/track_points>
+  <https://support.strava.com/en-us/articles/15401823-strava-s-elevation-basemap>
+- Ride with GPS track points and elevation processing: the live OpenAPI
+  specification defines trip track points, while current support docs explain
+  device elevation, provider smoothing, and replacement from the provider's
+  elevation dataset:
+  <https://ridewithgps.com/api/v1/openapi.yaml>,
+  <https://support.ridewithgps.com/hc/en-us/articles/4419010957467-Grade-Elevation-and-GPS-Accuracy-FAQ>,
+  and
+  <https://support.ridewithgps.com/hc/en-us/articles/4444266900763-Replace-Elevation>
 - Fitbit GPS/elevation-related behavior: Fitbit documents GPS capture modes and
   barometric altimeters for floor counting, but TCX altitude source is not
   exposed in our ingest:

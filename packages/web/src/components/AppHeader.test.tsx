@@ -1,8 +1,25 @@
 // @vitest-environment jsdom
+import { surfaceColors, textColors } from "@dofek/scoring/colors";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppHeader } from "./AppHeader.tsx";
+
+function relativeLuminance(hexColor: string): number {
+  const linearChannel = (start: number) => {
+    const channel = Number.parseInt(hexColor.slice(start, start + 2), 16) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * linearChannel(1) + 0.7152 * linearChannel(3) + 0.0722 * linearChannel(5);
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
 
 vi.mock("../lib/auth-context.tsx", () => ({
   useAuth: () => ({
@@ -51,6 +68,19 @@ describe("AppHeader", () => {
     const mobileHeader = screen.getByRole("banner");
     expect(mobileHeader.className).toContain("lg:hidden");
     expect(screen.getByLabelText("Toggle navigation menu")).toBeTruthy();
+  });
+
+  it("uses an AA-contrast navigation token for sign-out actions", () => {
+    render(<AppHeader />);
+
+    const signOutActions = screen.getAllByRole("button", { name: "Sign out" });
+    expect(signOutActions).toHaveLength(2);
+    for (const signOutAction of signOutActions) {
+      expect(signOutAction.classList.contains("text-muted")).toBe(true);
+    }
+    expect(contrastRatio(textColors.secondary, surfaceColors.background)).toBeGreaterThanOrEqual(
+      4.5,
+    );
   });
 
   it("exposes mobile navigation state to assistive technology", () => {

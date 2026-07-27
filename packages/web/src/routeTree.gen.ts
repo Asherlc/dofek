@@ -26,6 +26,7 @@ import { Route as MonthlyReportRouteImport } from './routes/monthly-report'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InsightsRouteImport } from './routes/insights'
 import { Route as HealthReportRouteImport } from './routes/health-report'
+import { Route as ExperimentsRouteImport } from './routes/experiments'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CycleRouteImport } from './routes/cycle'
 import { Route as CorrelationRouteImport } from './routes/correlation'
@@ -138,6 +139,11 @@ const InsightsRoute = InsightsRouteImport.update({
 const HealthReportRoute = HealthReportRouteImport.update({
   id: '/health-report',
   path: '/health-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExperimentsRoute = ExperimentsRouteImport.update({
+  id: '/experiments',
+  path: '/experiments',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -296,6 +302,7 @@ export interface FileRoutesByFullPath {
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
+  '/experiments': typeof ExperimentsRoute
   '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
@@ -341,6 +348,7 @@ export interface FileRoutesByTo {
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
+  '/experiments': typeof ExperimentsRoute
   '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
@@ -386,6 +394,7 @@ export interface FileRoutesById {
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
+  '/experiments': typeof ExperimentsRoute
   '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
@@ -435,6 +444,7 @@ export interface FileRouteTypes {
     | '/correlation'
     | '/cycle'
     | '/dashboard'
+    | '/experiments'
     | '/health-report'
     | '/insights'
     | '/login'
@@ -480,6 +490,7 @@ export interface FileRouteTypes {
     | '/correlation'
     | '/cycle'
     | '/dashboard'
+    | '/experiments'
     | '/health-report'
     | '/insights'
     | '/login'
@@ -524,6 +535,7 @@ export interface FileRouteTypes {
     | '/correlation'
     | '/cycle'
     | '/dashboard'
+    | '/experiments'
     | '/health-report'
     | '/insights'
     | '/login'
@@ -572,6 +584,7 @@ export interface RootRouteChildren {
   CorrelationRoute: typeof CorrelationRoute
   CycleRoute: typeof CycleRoute
   DashboardRoute: typeof DashboardRoute
+  ExperimentsRoute: typeof ExperimentsRoute
   HealthReportRoute: typeof HealthReportRoute
   InsightsRoute: typeof InsightsRoute
   LoginRoute: typeof LoginRoute
@@ -711,6 +724,13 @@ declare module '@tanstack/react-router' {
       path: '/health-report'
       fullPath: '/health-report'
       preLoaderRoute: typeof HealthReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/experiments': {
+      id: '/experiments'
+      path: '/experiments'
+      fullPath: '/experiments'
+      preLoaderRoute: typeof ExperimentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -1003,6 +1023,7 @@ const rootRouteChildren: RootRouteChildren = {
   CorrelationRoute: CorrelationRoute,
   CycleRoute: CycleRoute,
   DashboardRoute: DashboardRoute,
+  ExperimentsRoute: ExperimentsRoute,
   HealthReportRoute: HealthReportRoute,
   InsightsRoute: InsightsRoute,
   LoginRoute: LoginRoute,

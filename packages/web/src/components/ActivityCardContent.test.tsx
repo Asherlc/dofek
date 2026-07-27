@@ -15,10 +15,7 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
     startedAt: "2026-07-14T08:46:00.000Z",
     durationMin: 30,
     location: null,
-    stats: [
-      { label: "Training Stress Score", value: "8.5" },
-      { label: "Calories", value: "109 kcal" },
-    ],
+    stats: [{ label: "Training Stress Score", value: "8.5" }],
     ...overrides,
   };
 }

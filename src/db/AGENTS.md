@@ -13,7 +13,7 @@
 
 ### Testing Strategy
 - **Integration Tests**: `db.integration.test.ts` for verifying schema-level constraints and basic operations.
-- **Dedup Tests**: `dedup.integration.test.ts` to ensure provider priority and deduplication logic are correct.
+- **Dedup Tests**: Add focused integration coverage next to the affected read model or serving path. Current activity coverage lives in `deduped-activities-read-model.integration.test.ts` for the ClickHouse read model and `packages/server/src/routers/activity-dedup.integration.test.ts` for router behavior.
 - **Migration Tests**: `migrate.integration.test.ts` verifies that the full migration sequence runs correctly on a fresh database.
 
 ### Workflow

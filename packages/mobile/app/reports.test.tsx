@@ -6,6 +6,8 @@ const monthlyQueryControl = vi.hoisted(() => ({
   showError: false,
   preserveData: false,
 }));
+const mockWeeklyReportQuery = vi.hoisted(() => vi.fn());
+const mockMonthlyReportQuery = vi.hoisted(() => vi.fn());
 
 vi.mock("../components/HealthReportShareButton", () => ({
   HealthReportShareButton: ({ input }: { input: { reportType: string } }) => (
@@ -17,52 +19,58 @@ vi.mock("../lib/trpc", () => ({
   trpc: {
     weeklyReport: {
       report: {
-        useQuery: () => ({
-          data: {
-            current: {
-              weekStart: "2026-07-19",
-              trainingHours: 5,
-              activityCount: 3,
-              strainZone: "optimal",
-              avgDailyLoad: 4,
-              avgSleepMinutes: 450,
-              sleepPerformancePct: 100,
-              avgReadiness: 0,
-              avgRestingHr: 55,
-              avgHrv: 48,
+        useQuery: (...args: unknown[]) => {
+          mockWeeklyReportQuery(...args);
+          return {
+            data: {
+              current: {
+                weekStart: "2026-07-19",
+                trainingHours: 5,
+                activityCount: 3,
+                strainZone: "optimal",
+                avgDailyLoad: 4,
+                avgSleepMinutes: 450,
+                sleepPerformancePct: 100,
+                avgReadiness: 0,
+                avgRestingHr: 55,
+                avgHrv: 48,
+              },
+              history: [],
             },
-            history: [],
-          },
-          isLoading: false,
-          error: null,
-        }),
+            isLoading: false,
+            error: null,
+          };
+        },
       },
     },
     monthlyReport: {
       report: {
-        useQuery: () => ({
-          data:
-            monthlyQueryControl.showError && !monthlyQueryControl.preserveData
-              ? undefined
-              : {
-                  current: {
-                    monthStart: "2026-07-01",
-                    trainingHours: 20,
-                    activityCount: 10,
-                    avgDailyStrain: 8,
-                    avgSleepMinutes: 450,
-                    avgRestingHr: 55,
-                    avgHrv: 48,
-                    trainingHoursTrend: null,
-                    avgSleepTrend: null,
+        useQuery: (...args: unknown[]) => {
+          mockMonthlyReportQuery(...args);
+          return {
+            data:
+              monthlyQueryControl.showError && !monthlyQueryControl.preserveData
+                ? undefined
+                : {
+                    current: {
+                      monthStart: "2026-07-01",
+                      trainingHours: 20,
+                      activityCount: 10,
+                      avgDailyStrain: 8,
+                      avgSleepMinutes: 450,
+                      avgRestingHr: 55,
+                      avgHrv: 48,
+                      trainingHoursTrend: null,
+                      avgSleepTrend: null,
+                    },
+                    history: [],
                   },
-                  history: [],
-                },
-          isLoading: false,
-          error: monthlyQueryControl.showError
-            ? new Error("Monthly report service unavailable")
-            : null,
-        }),
+            isLoading: false,
+            error: monthlyQueryControl.showError
+              ? new Error("Monthly report service unavailable")
+              : null,
+          };
+        },
       },
     },
   },
@@ -82,6 +90,8 @@ describe("ReportsScreen", () => {
   beforeEach(() => {
     monthlyQueryControl.showError = false;
     monthlyQueryControl.preserveData = false;
+    mockWeeklyReportQuery.mockClear();
+    mockMonthlyReportQuery.mockClear();
   });
 
   it("shows weekly and monthly report surfaces with share actions", async () => {
@@ -94,6 +104,11 @@ describe("ReportsScreen", () => {
     expect(screen.getAllByText("Average Heart Rate Variability (HRV)")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Share weekly report" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Share monthly report" })).toBeTruthy();
+    expect(mockWeeklyReportQuery).toHaveBeenCalledWith(
+      { weeks: 12, endDate: "2026-07-24" },
+      { retry: false },
+    );
+    expect(mockMonthlyReportQuery).toHaveBeenCalledWith({ months: 6 }, { retry: false });
   });
 
   it("shows the monthly server error instead of the empty state", async () => {

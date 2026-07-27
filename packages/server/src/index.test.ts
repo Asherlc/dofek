@@ -1,4 +1,5 @@
 import http from "node:http";
+import { TRPCError } from "@trpc/server";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +20,7 @@ const mockCreateExpressMiddleware = vi.fn(
     createContext: (input: {
       req: { headers: Record<string, string | string[] | undefined> };
     }) => Promise<{ metricStreamPublisher?: unknown }>;
+    onError?: (input: { error: TRPCError; path?: string }) => void;
   }) => express.Router(),
 );
 const mockFitFileImportQueue = { ...mockQueue, name: "fit-file-import" };
@@ -276,6 +278,32 @@ describe("createApp", () => {
     expect(res.body).toContain("<!doctype html>");
   });
 
+  it.each([
+    "/robots.txt",
+    "/llms.txt",
+    "/missing/image.png",
+  ])("returns 404 instead of the SPA shell for missing file-like path %s", async (path) => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    const res = await request(app, "GET", path);
+
+    expect(res.status).toBe(404);
+    expect(res.body).not.toContain("<!doctype html>");
+  });
+
+  it("does not serve the SPA shell for missing Slack routes", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    const res = await request(app, "GET", "/slack/nonexistent");
+
+    expect(res.status).toBe(404);
+    expect(res.body).not.toContain("<!doctype html>");
+  });
+
   it("registers the ingest route using createIngestZosHealthRouter", async () => {
     const { createIngestZosHealthRouter } = await import("./routes/ingest-zos-health.ts");
     const { createDatabaseFromEnv } = await import("dofek/db");
@@ -314,6 +342,24 @@ describe("createApp", () => {
 
     expect(createCompanionPairingRouter).toHaveBeenCalledWith({ db: fakeDb });
     expect(createCompanionTokenHttpRouter).toHaveBeenCalledWith({ db: fakeDb });
+  });
+
+  it("reports the original cause of unexpected tRPC failures", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    createApp(createDatabaseFromEnv(), makeMockSensorStore());
+    const middlewareOptions = mockCreateExpressMiddleware.mock.calls.at(-1)?.[0];
+    const databaseError = new Error(
+      "Failed query: SELECT user_id FROM fitness.session WHERE id = $1",
+    );
+
+    middlewareOptions?.onError?.({
+      error: new TRPCError({ code: "INTERNAL_SERVER_ERROR", cause: databaseError }),
+      path: "weeklyReport.get",
+    });
+
+    expect(mockSentryCaptureException).toHaveBeenCalledWith(databaseError, {
+      tags: { trpcPath: "weeklyReport.get" },
+    });
   });
 
   it("returns ready when Postgres, ClickHouse, and queues are reachable", async () => {

@@ -9,6 +9,7 @@ import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { TodayPlanCard } from "../components/TodayPlanCard.tsx";
 import { useAutoSync } from "../hooks/useAutoSync.ts";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
@@ -126,6 +127,7 @@ export function Dashboard() {
   const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });
   const strainTarget = trpc.recovery.strainTarget.useQuery({ days, endDate });
   const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
+  const todayPlan = trpc.todayPlan.get.useQuery({ days, endDate });
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const coreDashboardReady = isCoreDashboardReady({
@@ -223,6 +225,7 @@ export function Dashboard() {
         error={processingStatus.error}
         loading={processingStatus.isLoading}
       />
+      <TodayPlanCard plan={todayPlan.data} loading={todayPlan.isLoading} error={todayPlan.error} />
       <DailyOverview
         endDate={endDate}
         readiness={readinessData.data}

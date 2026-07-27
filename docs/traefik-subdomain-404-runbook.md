@@ -1,121 +1,118 @@
-# Traefik Subdomain 404 Runbook
+# Traefik Route 404 Runbook
 
-Use this when a domain like `portainer.dofek.asherlc.com` returns:
+Use this when an active production route returns Traefik's:
 
 ```text
 404 page not found
 ```
 
-That response usually means Traefik has no active router for that host.
+The active Oracle production routes are the main application hosts, the OTA
+host, and Databasus, which remains enabled because it owns the PostgreSQL backup
+schedule. Portainer, Netdata, CloudBeaver, pgAdmin, and PeerDB UI are defined in
+the base stack but intentionally scaled to zero by `deploy/stack.oracle.yml`;
+their historical hostnames are not expected to work.
 
-## Scope
+## 1. Confirm the Failure Shape
 
-This runbook is for management subdomains routed by Traefik in `deploy/stack.yml`:
-
-- `portainer.dofek.asherlc.com`
-- `netdata.dofek.asherlc.com`
-- `databasus.dofek.asherlc.com`
-- `pgadmin.dofek.asherlc.com`
-- `ota.dofek.asherlc.com`
-
-## 1. Confirm the failure shape
-
-From your machine:
+Check the affected host and a known application host:
 
 ```bash
-curl -sSI https://portainer.dofek.asherlc.com/ | sed -n '1,8p'
-curl -sS https://portainer.dofek.asherlc.com/ | head -n 1
-```
-
-Expected failure pattern:
-- Status `HTTP/2 404`
-- Body `404 page not found`
-
-Compare with a known good host:
-
-```bash
+curl -sSI https://ota.dofek.asherlc.com/ | sed -n '1,8p'
 curl -sSI https://dofek.asherlc.com/ | sed -n '1,8p'
 ```
 
-If `dofek.asherlc.com` is healthy and only management subdomains fail, continue.
+Traefik's plain `404 page not found` usually means no active router matched the
+request. A response from the application, a TLS failure, or a DNS failure is a
+different failure class.
 
-## 2. Check swarm service state
+## 2. Check Swarm State
 
 ```bash
 docker --context prod service ls --format 'table {{.Name}}\t{{.Replicas}}'
-docker --context prod service ps dofek_traefik
-docker --context prod service ps dofek_portainer
-docker --context prod service ps dofek_netdata
-docker --context prod service ps dofek_databasus
-docker --context prod service ps dofek_pgadmin
-docker --context prod service ps dofek_ota
+docker --context prod service ps dofek_traefik --no-trunc
+docker --context prod service ps dofek_web --no-trunc
+docker --context prod service ps dofek_ota --no-trunc
+docker --context prod service ps dofek_databasus --no-trunc
 ```
 
-If any target service is `0/1` or repeatedly restarting, Traefik may not have an upstream to route to.
+Record the first failed task and its error. Do not redeploy before distinguishing
+a missing router from an unhealthy upstream.
 
-## 3. Check Traefik logs for router/provider errors
+## 3. Check Traefik Evidence
 
 ```bash
 docker --context prod service logs --since 30m dofek_traefik 2>&1 | \
-  rg -i 'error|router|middleware|portainer|netdata|databasus|pgadmin|ota'
+  rg -i 'error|router|provider|middleware|dofek|ota|databasus'
 ```
 
-Common issue patterns:
-- Middleware reference errors
-- Invalid label syntax
-- Provider refresh failures
-
-## 4. Verify route labels in stack config
-
-Check `deploy/stack.yml` labels for the failing service:
+Inspect the deployed service labels rather than assuming the checked-in labels
+reached production:
 
 ```bash
-rg -n 'traefik.http.routers.(portainer|netdata|databasus|pgadmin|ota)|middlewares|loadbalancer.server.port' deploy/stack.yml
+docker --context prod service inspect dofek_web \
+  --format '{{json .Spec.Labels}}'
+docker --context prod service inspect dofek_ota \
+  --format '{{json .Spec.Labels}}'
+docker --context prod service inspect dofek_databasus \
+  --format '{{json .Spec.Labels}}'
 ```
 
-Focus on:
-- `traefik.enable=true`
-- `traefik.http.routers.<name>.rule=Host(...)`
-- `traefik.http.routers.<name>.entrypoints=websecure`
-- `traefik.http.routers.<name>.tls=true`
-- `traefik.http.services.<name>.loadbalancer.server.port=<port>`
-- Middleware names that must exist in the same provider scope
-
-## 5. Redeploy stack after fix
+Then compare them with the canonical base-stack rules:
 
 ```bash
-docker --context prod stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
+rg -n 'traefik.http.routers.(web|ota|databasus)|loadbalancer.server.port' \
+  deploy/stack.yml
 ```
 
-Then verify:
+Verify:
+
+- `traefik.enable=true`;
+- the `Host(...)` rule contains the requested host;
+- the router uses the `websecure` entrypoint with TLS;
+- the service port matches the listening application port;
+- Traefik's swarm provider is healthy and reading the same Docker daemon.
+
+Traefik documents that routers match requests through rules and entrypoints,
+and that Docker/Swarm labels define dynamic routing configuration:
+<https://doc.traefik.io/traefik/routing/routers/> and
+<https://doc.traefik.io/traefik/providers/swarm/>.
+
+## 4. Apply the Canonical Fix
+
+Fix the root cause in the checked-in stack, workflow inputs, DNS configuration,
+or failing service. Production deploys must use the repository workflow because
+it applies the Oracle override, renders Infisical secrets, gates migrations and
+CDC, and verifies rollout health.
+
+After the fix passes CI, let the normal `main` workflow deploy it or dispatch
+the same workflow deliberately:
 
 ```bash
-for host in \
-  portainer.dofek.asherlc.com \
-  netdata.dofek.asherlc.com \
-  databasus.dofek.asherlc.com \
-  pgadmin.dofek.asherlc.com \
-  ota.dofek.asherlc.com
-do
-  echo "== $host =="
-  curl -sSI "https://$host/" | sed -n '1,8p'
-done
+gh workflow run deploy-web.yml \
+  --ref '<branch-or-tag-at-exact-image-commit>' \
+  -f environment=production \
+  -f image_tag='<validated-image-tag>'
 ```
 
-## 6. If still 404
+The source ref must resolve exactly to the commit encoded by the image's
+`SENTRY_RELEASE`, not merely contain that commit; see the
+[`gh workflow run` reference](https://cli.github.com/manual/gh_workflow_run).
 
-Collect these outputs before deeper debugging:
+Do not run a direct `docker stack deploy -c deploy/stack.yml`: that omits
+`deploy/stack.oracle.yml` and the production release gates.
+
+## 5. Verify
 
 ```bash
+curl -fsSI https://dofek.asherlc.com/ | sed -n '1,8p'
+curl -fsSI https://ota.dofek.asherlc.com/ | sed -n '1,8p'
+curl -sSI https://databasus.dofek.asherlc.com/ | sed -n '1,8p'
 docker --context prod service inspect dofek_traefik --pretty
-docker --context prod service inspect dofek_portainer --pretty
-docker --context prod service inspect dofek_netdata --pretty
-docker --context prod service inspect dofek_databasus --pretty
-docker --context prod service inspect dofek_pgadmin --pretty
+docker --context prod service inspect dofek_web --pretty
 docker --context prod service inspect dofek_ota --pretty
+docker --context prod service inspect dofek_databasus --pretty
 ```
 
-At that point, you should have enough evidence to identify whether the issue is:
-- service health/startup failure
-- Traefik label/router config failure
-- middleware lookup/scope mismatch
+If the route still fails, preserve the request output, deployed labels,
+Traefik logs, task errors, workflow run, image tag, and first fatal line before
+continuing the investigation.

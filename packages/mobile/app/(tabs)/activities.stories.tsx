@@ -1,7 +1,9 @@
 import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
+import type { OperationResultObservable, TRPCLink } from "@trpc/client";
+import type { AppRouter } from "dofek-server/router";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import ActivitiesScreen from "./activities";
@@ -123,86 +125,136 @@ const mapPreview = {
   ],
 };
 
-function createSeededProviders() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
-  });
-
+function createStoryData() {
   const today = formatDateYmd();
   const yesterday = formatDateYmd(new Date(Date.now() - 86_400_000));
   const queryInput = { weeks: 4, endDate: today };
 
-  queryClient.setQueryData(
-    [["calendar", "weekList"], { input: queryInput, type: "query" }],
-    [
-      {
-        date: today,
-        activities: [
-          {
-            id: "story-outdoor",
-            name: "Morning Ride",
-            activityType: "road_cycling",
-            startedAt: `${today}T07:30:00Z`,
-            endedAt: `${today}T09:00:00Z`,
-            durationMin: 90,
-            location: {
-              centroidLat: 37.7749,
-              centroidLng: -122.4194,
-              mapPreview,
-              distanceMeters: 32400,
-              elevationGainM: 412,
-            },
-            calories: null,
-            tss: 78.4,
-            stats: [
-              { label: "Training Stress Score", value: "78.4" },
-              { label: "Calories", value: "—" },
-            ],
+  const weekList = [
+    {
+      date: today,
+      activities: [
+        {
+          id: "story-outdoor",
+          name: "Morning Ride",
+          activityType: "road_cycling",
+          startedAt: `${today}T07:30:00Z`,
+          endedAt: `${today}T09:00:00Z`,
+          durationMin: 90,
+          location: {
+            centroidLat: 37.7749,
+            centroidLng: -122.4194,
+            mapPreview,
+            distanceMeters: 32400,
+            elevationGainM: 412,
           },
-        ],
-      },
+          tss: 78.4,
+          stats: [{ label: "Training Stress Score", value: "78.4" }],
+        },
+      ],
+    },
+    {
+      date: yesterday,
+      activities: [
+        {
+          id: "story-indoor",
+          name: "Strength session",
+          activityType: "strength",
+          startedAt: `${yesterday}T17:00:00Z`,
+          endedAt: `${yesterday}T17:45:00Z`,
+          durationMin: 45,
+          location: null,
+          tss: 42.1,
+          stats: [{ label: "Training Stress Score", value: "42.1" }],
+        },
+      ],
+    },
+  ];
+
+  const activityOverview = {
+    activityCount: 2,
+    totalMinutes: 135,
+    totalDistanceMeters: 32400,
+    totalElevationGainM: 412,
+    activityTypes: ["road_cycling", "strength"],
+  };
+
+  const processingStatus = {
+    generatedAt: `${today}T12:00:00.000Z`,
+    scope: { providerId: null, datasets: ["activity"] },
+    overallStatus: "ready" as const,
+    datasets: [
       {
-        date: yesterday,
-        activities: [
-          {
-            id: "story-indoor",
-            name: "Strength session",
-            activityType: "strength",
-            startedAt: `${yesterday}T17:00:00Z`,
-            endedAt: `${yesterday}T17:45:00Z`,
-            durationMin: 45,
-            location: null,
-            calories: 380,
-            tss: 42.1,
-            stats: [
-              { label: "Training Stress Score", value: "42.1" },
-              { label: "Calories", value: "380 kcal" },
-            ],
-          },
-        ],
+        key: "activity",
+        label: "Activities",
+        status: "ready" as const,
+        currentStage: null,
+        progressPercentage: null,
+        lastAdvancedAt: null,
+        lastReadyAt: `${today}T12:00:00.000Z`,
       },
     ],
-  );
+    operations: [],
+  };
 
-  queryClient.setQueryData(
-    [["calendar", "activityOverview"], { input: queryInput, type: "query" }],
-    {
-      activityCount: 2,
-      totalMinutes: 135,
-      totalDistanceMeters: 32400,
-      totalElevationGainM: 412,
-      activityTypes: ["road_cycling", "strength"],
+  return { today, queryInput, weekList, activityOverview, processingStatus };
+}
+
+function createMockLink(storyData: ReturnType<typeof createStoryData>): TRPCLink<AppRouter> {
+  return () =>
+    ({ op }) =>
+      createMockObservable(op.path, storyData);
+}
+
+function createMockObservable(
+  path: string,
+  storyData: ReturnType<typeof createStoryData>,
+): OperationResultObservable<AppRouter, unknown> {
+  const result: OperationResultObservable<AppRouter, unknown> = {
+    subscribe(observer) {
+      if (path === "calendar.weekList") {
+        observer.next?.({ result: { data: storyData.weekList } });
+      } else if (path === "calendar.activityOverview") {
+        observer.next?.({ result: { data: storyData.activityOverview } });
+      } else if (path === "processing.status") {
+        observer.next?.({ result: { data: storyData.processingStatus } });
+      } else {
+        throw new Error(`Unhandled activities story tRPC operation: ${path}`);
+      }
+      observer.complete?.();
+      return { unsubscribe: () => {} };
     },
-  );
-
-  return { queryClient };
+    pipe() {
+      return result;
+    },
+  };
+  return result;
 }
 
 function MockProviders({ children }: { children: React.ReactNode }) {
-  const { queryClient } = createSeededProviders();
-  const trpcClient = trpc.createClient({
-    links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
-  });
+  const storyData = useMemo(() => createStoryData(), []);
+  const queryClient = useMemo(() => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
+    });
+    client.setQueryData(
+      [["calendar", "weekList"], { input: storyData.queryInput, type: "query" }],
+      storyData.weekList,
+    );
+    client.setQueryData(
+      [["calendar", "activityOverview"], { input: storyData.queryInput, type: "query" }],
+      storyData.activityOverview,
+    );
+    client.setQueryData(
+      [["processing", "status"], { input: { datasets: ["activity"] }, type: "query" }],
+      storyData.processingStatus,
+    );
+    return client;
+  }, [storyData]);
+  const trpcClient = useMemo(
+    () => trpc.createClient({ links: [createMockLink(storyData)] }),
+    [storyData],
+  );
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>

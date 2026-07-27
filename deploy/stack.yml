@@ -93,6 +93,7 @@ services:
   worker:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
     command: ["worker"]
+    stop_grace_period: 30m
     env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
       DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}

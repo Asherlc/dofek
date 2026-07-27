@@ -106,6 +106,84 @@ describe("background-whoop-ble-sync", () => {
     expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
   });
 
+  it("waits to connect until the app foregrounds when initialized in the background", async () => {
+    AppState.currentState = "background";
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(whoopDeps.findWhoop).not.toHaveBeenCalled();
+    expect(whoopDeps.connect).not.toHaveBeenCalled();
+    expect(whoopDeps.startImuStreaming).not.toHaveBeenCalled();
+
+    AppState.currentState = "active";
+    appStateCallback?.("active");
+
+    await vi.waitFor(() => {
+      expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
+      expect(whoopDeps.startImuStreaming).toHaveBeenCalled();
+    });
+  });
+
+  it("prevents a foreground transition from overlapping the initial sync", async () => {
+    let resolveInitialDrain: (() => void) | null = null;
+    vi.mocked(whoopDeps.peekBufferedSamples)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveInitialDrain = () => resolve([]);
+          }),
+      )
+      .mockResolvedValue([]);
+
+    const initPromise = initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+    await vi.waitFor(() => {
+      expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1);
+    });
+
+    appStateCallback?.("active");
+
+    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledTimes(1);
+
+    resolveInitialDrain?.();
+    await initPromise;
+  });
+
+  it("does not connect when the app backgrounds while searching for WHOOP", async () => {
+    vi.mocked(whoopDeps.findWhoop).mockImplementation(async () => {
+      AppState.currentState = "background";
+      return { id: "whoop-123", name: "WHOOP 4.0" };
+    });
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(whoopDeps.connect).not.toHaveBeenCalled();
+    expect(whoopDeps.startImuStreaming).not.toHaveBeenCalled();
+  });
+
+  it("disconnects when the app backgrounds while connecting to WHOOP", async () => {
+    vi.mocked(whoopDeps.connect).mockImplementation(async () => {
+      AppState.currentState = "background";
+      return true;
+    });
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(whoopDeps.startImuStreaming).not.toHaveBeenCalled();
+    expect(whoopDeps.disconnect).toHaveBeenCalled();
+  });
+
+  it("disconnects when the app backgrounds while starting WHOOP streaming", async () => {
+    vi.mocked(whoopDeps.startImuStreaming).mockImplementation(async () => {
+      AppState.currentState = "background";
+      return true;
+    });
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(whoopDeps.disconnect).toHaveBeenCalled();
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
+  });
+
   it("uploads buffered samples with gyroscope data immediately on init", async () => {
     const samples = [
       {

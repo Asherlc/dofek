@@ -100,7 +100,7 @@ let currentRealtimeClient: WhoopBleRealtimeUploadClient | null = null;
 /**
  * Initialize always-on WHOOP BLE accelerometer sync.
  *
- * - Connects to the WHOOP strap and starts IMU streaming immediately
+ * - Connects to the WHOOP strap and starts IMU streaming while the app is active
  * - On subsequent foreground events, uploads buffered samples (streaming stays on)
  * - Should be called once after authentication when the setting is enabled
  */
@@ -160,17 +160,29 @@ export async function initBackgroundWhoopBleSync(
       });
   });
 
-  // Do an initial sync immediately — the AppState listener only fires on
-  // state *transitions*, so if the app is already active when init is called
-  // (the common case), nothing would happen until the user backgrounds and
-  // re-opens the app. Best-effort: don't let init failures propagate.
-  logger.info(LOG_CATEGORY, "initializing background sync");
-  try {
-    await syncOnForeground(trpcClient, whoopDeps, realtimeClient, shouldRunForegroundPeriodicDrain);
-    logger.info(LOG_CATEGORY, "initial sync complete");
-  } catch (error: unknown) {
-    logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
-    captureException(error, { source: "whoop-ble-init-sync" });
+  // The AppState listener only fires on state transitions, so sync immediately
+  // when init runs in the foreground. Defer a backgrounded initialization until
+  // the next active transition so this foreground sync does not try to start a
+  // BLE connection while the app is suspended.
+  if (shouldRunForegroundPeriodicDrain()) {
+    logger.info(LOG_CATEGORY, "initializing background sync");
+    syncing = true;
+    try {
+      await syncOnForeground(
+        trpcClient,
+        whoopDeps,
+        realtimeClient,
+        shouldRunForegroundPeriodicDrain,
+      );
+      logger.info(LOG_CATEGORY, "initial sync complete");
+    } catch (error: unknown) {
+      logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
+      captureException(error, { source: "whoop-ble-init-sync" });
+    } finally {
+      syncing = false;
+    }
+  } else {
+    logger.info(LOG_CATEGORY, "initial sync deferred until app foregrounds");
   }
 
   // Periodically drain the buffer while the app is active so samples
@@ -258,6 +270,8 @@ async function syncOnForeground(
   // the sync before findWhoop() can even run. Instead, we let findWhoop()
   // handle unavailable Bluetooth by returning null (it checks state internally
   // after the manager has had time to initialize).
+  if (!shouldContinueUploading()) return;
+
   if (!connected) {
     logger.info(LOG_CATEGORY, "not connected, searching for WHOOP strap");
     const device = await whoopDeps.findWhoop();
@@ -270,6 +284,7 @@ async function syncOnForeground(
       });
       return;
     }
+    if (!shouldContinueUploading()) return;
 
     const deviceLabel = device.name ?? device.id;
     logger.info(LOG_CATEGORY, `connecting to ${deviceLabel}`);
@@ -279,6 +294,11 @@ async function syncOnForeground(
       level: "info",
     });
     await whoopDeps.connect(device.id);
+    if (!shouldContinueUploading()) {
+      whoopDeps.disconnect();
+      connected = false;
+      return;
+    }
     logger.info(LOG_CATEGORY, "connected, sending TOGGLE_IMU_MODE");
     // Send TOGGLE_IMU_MODE to keep IMU data flowing even when the WHOOP
     // app isn't actively syncing. R21 data also flows passively during
@@ -290,6 +310,11 @@ async function syncOnForeground(
       captureException(error, { source: "whoop-ble-start-streaming" });
       // Best-effort — passive data may still flow without the command
       logger.warn(LOG_CATEGORY, `startImuStreaming failed (passive data may still work): ${error}`);
+    }
+    if (!shouldContinueUploading()) {
+      whoopDeps.disconnect();
+      connected = false;
+      return;
     }
     connected = true;
     logger.info(LOG_CATEGORY, "listening for IMU data");

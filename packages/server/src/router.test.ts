@@ -26,6 +26,7 @@ vi.mock("./routers/climbing.ts", () => ({ climbingRouter: mockRouter }));
 vi.mock("./routers/companion-pairing.ts", () => ({ companionPairingRouter: mockRouter }));
 vi.mock("./routers/correlation.ts", () => ({ correlationRouter: mockRouter }));
 vi.mock("./routers/credential-auth.ts", () => ({ credentialAuthRouter: mockRouter }));
+vi.mock("./routers/token-auth.ts", () => ({ tokenAuthRouter: mockRouter }));
 vi.mock("./routers/cycling.ts", () => ({ cyclingRouter: mockRouter }));
 vi.mock("./routers/cycling-advanced.ts", () => ({ cyclingAdvancedRouter: mockRouter }));
 vi.mock("./routers/daily-metrics.ts", () => ({ dailyMetricsRouter: mockRouter }));
@@ -132,6 +133,7 @@ describe("appRouter", () => {
       "breathwork",
       "companionPairing",
       "companionToken",
+      "personalExperiments",
       "sleep",
       "sleepNeed",
       "dailyMetrics",
@@ -153,6 +155,7 @@ describe("appRouter", () => {
       "climbing",
       "correlation",
       "credentialAuth",
+      "tokenAuth",
       "pmc",
       "power",
       "durationCurves",
@@ -174,6 +177,7 @@ describe("appRouter", () => {
       "running",
       "settings",
       "stress",
+      "todayPlan",
       "healthspan",
       "menstrualCycle",
       "medicationDoseEvents",

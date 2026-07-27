@@ -11,7 +11,17 @@ const manifestSchema = z.object({
 });
 const runResultSchema = z.object({
   unique_id: z.string().min(1),
-  status: z.enum(["success", "pass", "warn", "error", "fail", "skipped"]),
+  status: z.enum([
+    "success",
+    "pass",
+    "warn",
+    "error",
+    "fail",
+    "skipped",
+    "partial success",
+    "runtime error",
+    "no-op",
+  ]),
   execution_time: z.number().nonnegative(),
   message: z.string().nullable(),
 });
@@ -107,7 +117,11 @@ export function parseDbtRunArtifacts({
         message: "The selected analytics model was not attempted.",
       };
     }
-    const failed = result.status === "error" || result.status === "fail";
+    const failed =
+      result.status === "error" ||
+      result.status === "fail" ||
+      result.status === "partial success" ||
+      result.status === "runtime error";
     return {
       name,
       uniqueId: result.unique_id,

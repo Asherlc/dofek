@@ -1,5 +1,5 @@
-import { GarminApiError, GarminRateLimitError } from "garmin-connect/client";
-import type { GarminTokens } from "garmin-connect/types";
+import { GarminApiError, GarminRateLimitError } from "@dofek/garmin-connect/client";
+import type { GarminTokens } from "@dofek/garmin-connect/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenSet } from "../auth/oauth.ts";
 import { eachDay, formatDate } from "./garmin/date-utils.ts";
@@ -124,8 +124,8 @@ vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
 
-vi.mock("garmin-connect/client", async (importOriginal) => {
-  const original = await importOriginal<typeof import("garmin-connect/client")>();
+vi.mock("@dofek/garmin-connect/client", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@dofek/garmin-connect/client")>();
   return {
     GarminApiError: original.GarminApiError,
     GarminRateLimitError: original.GarminRateLimitError,
@@ -136,7 +136,7 @@ vi.mock("garmin-connect/client", async (importOriginal) => {
   };
 });
 
-vi.mock("garmin-connect/parsing", () => ({
+vi.mock("@dofek/garmin-connect/parsing", () => ({
   parseConnectActivity: mocks.parseConnectActivity,
   parseConnectSleep: mocks.parseConnectSleep,
   parseConnectSleepStages: mocks.parseConnectSleepStages,
@@ -529,7 +529,9 @@ describe("GarminProvider.authSetup()", () => {
     const forwardedFetch = mocks.signIn.mock.calls[0]?.[3];
     if (typeof forwardedFetch !== "function") throw new Error("expected forwarded fetch function");
     await forwardedFetch("https://example.com");
-    expect(customFetch).toHaveBeenCalledWith("https://example.com");
+    expect(customFetch).toHaveBeenCalledWith("https://example.com", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.accessToken).toBe(JSON.stringify(tokens));
     expect(result.scopes).toBe(INTERNAL_SCOPE_MARKER);
   });
@@ -660,7 +662,10 @@ describe("GarminProvider.authSetup()", () => {
     const nonOauthUrl = "https://connect.garmin.com/api/data";
     const init = { method: "POST" };
     await forwardedFetch(nonOauthUrl, init);
-    expect(customFetch).toHaveBeenCalledWith(nonOauthUrl, init);
+    expect(customFetch).toHaveBeenCalledWith(nonOauthUrl, {
+      ...init,
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("handles invalid URLs passed to the forwarded fetch", async () => {

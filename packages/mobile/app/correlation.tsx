@@ -1,5 +1,6 @@
 import { formatNumber, formatSigned } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
+import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   RefreshControl,
@@ -288,6 +289,7 @@ export default function CorrelationScreen() {
   const metrics = metricsQuery.data ?? [];
   const xMetric = metrics.find((m) => m.id === metricX);
   const yMetric = metrics.find((m) => m.id === metricY);
+  const router = useRouter();
 
   const { refreshing, onRefresh } = useRefresh();
 
@@ -322,6 +324,26 @@ export default function CorrelationScreen() {
         {lag > 0
           ? `How ${xMetric?.label ?? "X"} today relates to ${yMetric?.label ?? "Y"} ${lag === 1 ? "tomorrow" : `${lag} days later`}`
           : "Same-day comparison"}
+      </Text>
+
+      <TouchableOpacity
+        style={styles.experimentButton}
+        onPress={() =>
+          router.push({
+            pathname: "/experiments",
+            params: { outcomeMetricId: metricY, lagDays: String(lag) },
+          })
+        }
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={`Start experiment with ${yMetric?.label ?? "this outcome"}`}
+      >
+        <Text style={styles.experimentButtonText}>
+          Start experiment with {yMetric?.label ?? "this outcome"}
+        </Text>
+      </TouchableOpacity>
+      <Text style={styles.lagHint}>
+        Prefills the outcome and lag. You still choose a controllable intervention.
       </Text>
 
       {/* Same metric warning */}
@@ -546,6 +568,18 @@ const styles = StyleSheet.create({
   lagHint: {
     fontSize: 11,
     color: colors.textTertiary,
+  },
+  experimentButton: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  experimentButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.text,
   },
 
   // Cards
