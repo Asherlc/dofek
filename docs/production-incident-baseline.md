@@ -18707,3 +18707,44 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   changing the four-minute ceiling, observe a complete production analytics
   cycle with bounded row reads and downstream cache warming, then resolve
   DOFEK-SERVER-5A.
+
+## 2026-07-27 — WHOOP Access Token Reused Inside Provider Rejection Window
+
+- **Status:** Direct source fix reproduced and validated locally; merge and
+  production validation pending.
+- **Symptoms:** Scheduled WHOOP syncs intermittently reported
+  [Sentry issue DOFEK-SERVER-47](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-47)
+  with `WHOOP API error (401): Authorization was not valid`, then succeeded on
+  the following scheduled attempt.
+- **User impact:** The affected WHOOP account missed that sync cycle, delaying
+  new cycle, recovery, sleep, and workout data until the next successful run.
+- **Evidence:** Sentry recorded four matching production failures on June 29,
+  July 2, July 3, and July 27. The latest event entered through BullMQ
+  `processSyncJob`, reached `runWhoopOrchestratedSync` and
+  `runBootstrapStep`, then failed the initial `getCycles` call at
+  `2026-07-27T04:30:02.129738Z`. The stored Cognito token still had roughly 30
+  minutes before its recorded expiry, so token resolution reused it; the next
+  30-minute sync crossed the stored expiry, refreshed, and succeeded. The
+  release at the latest failure and the current production release shared the
+  same exact-expiry token-resolution path.
+- **Root cause:** WHOOP rejected access tokens shortly before the expiry
+  recorded from Cognito, while `resolveWhoopTokens` treated every token before
+  that exact instant as reusable. The scheduler therefore made one request
+  with a token inside the observed provider rejection window before the next
+  cycle refreshed it.
+- **Fix / mitigation:** Refresh WHOOP access tokens when one hour or less
+  remains before the stored expiry. The safety window is an internal constant
+  in the shared WHOOP token resolver; no public configuration, retry path, or
+  provider-specific scheduler behavior was added.
+- **Validation:** The exact one-hour boundary regression failed first because
+  the stored token was reused. After the fix, all 124 WHOOP token, provider,
+  and sync-helper tests pass, including refresh at exactly one hour, reuse
+  immediately beyond the boundary, expired-token refresh,
+  revoked-refresh-token cleanup, and malformed response rejection. The root
+  TypeScript typecheck, targeted Biome check, and diff whitespace check also
+  pass. A focused Stryker run killed all 46 non-ignored mutants in the changed
+  token resolver.
+- **Remaining risk / follow-up:** Merge and deploy through the normal release
+  path, then confirm the scheduled production sync refreshes before the
+  previously observed rejection window and resolves DOFEK-SERVER-47 without a
+  401 recurrence.

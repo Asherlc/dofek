@@ -11,6 +11,8 @@ export const WHOOP_PROVIDER_ID = "whoop";
 
 type FetchFn = typeof globalThis.fetch;
 
+const WHOOP_ACCESS_TOKEN_REFRESH_WINDOW_MS = 3_600_000;
+
 const whoopRefreshTokenSchema = z.object({
   accessToken: z.string().min(1),
   refreshToken: z.string().min(1),
@@ -62,13 +64,12 @@ export async function resolveWhoopTokens(options: {
   }
 
   const storedUserId = parseWhoopUserIdFromScopes(stored.scopes);
-  const accessTokenStillValid = stored.expiresAt > new Date();
+  const now = Date.now();
+  const accessTokenOutsideRefreshWindow =
+    stored.expiresAt.getTime() - now > WHOOP_ACCESS_TOKEN_REFRESH_WINDOW_MS;
 
-  if (accessTokenStillValid && storedUserId != null) {
-    const remainingSeconds = Math.max(
-      0,
-      Math.floor((stored.expiresAt.getTime() - Date.now()) / 1000),
-    );
+  if (accessTokenOutsideRefreshWindow && storedUserId != null) {
+    const remainingSeconds = Math.max(0, Math.floor((stored.expiresAt.getTime() - now) / 1000));
     return {
       accessToken: stored.accessToken,
       refreshToken: stored.refreshToken,
