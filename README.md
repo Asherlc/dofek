@@ -20,6 +20,8 @@ training sources to a shared data model served by web and iOS clients.
   authentication, ingestion, and tests.
 - [Testing guide](docs/testing.md): test tiers, Docker dependencies, and local
   recovery.
+- [Development environment](docs/development-environment.md): pinned tools,
+  cloud initialization, Dev Containers, CodeGraph, and RTK.
 - [Deployment guide](deploy/README.md): production topology, release flow,
   secrets, and diagnostics.
 - [Analytics guide](analytics/README.md): dbt-owned ClickHouse models and
@@ -63,9 +65,15 @@ See [the metric-stream architecture](docs/clickhouse-metric-stream.md),
 
 ## Prerequisites
 
-- Node.js 26 or newer, as required by [`package.json`](package.json).
-- The pinned pnpm version declared by the `packageManager` field.
+- [mise](https://mise.jdx.dev/getting-started.html) at the minimum version
+  declared in [`mise.toml`](mise.toml). mise installs Node, pnpm, Python, uv,
+  Infisical, CMake, Ninja, CodeGraph, RTK, and the remaining portable CLI tools
+  from the reviewed checksums in [`mise.lock`](mise.lock).
 - Docker with Compose.
+- Outside the Dev Container: Git, a C/C++ compiler, and a bootstrapped vcpkg
+  checkout exposed through `VCPKG_ROOT`. The container supplies these from its
+  pinned [`Dockerfile`](.devcontainer/Dockerfile); vcpkg documents its
+  [bootstrap process](https://learn.microsoft.com/vcpkg/get_started/get-started).
 - Infisical CLI access to this repository's linked project. Local commands that
   need application secrets fail if `infisical export --env=prod` cannot run;
   see [Infisical CLI documentation](https://infisical.com/docs/cli/overview).
@@ -73,16 +81,19 @@ See [the metric-stream architecture](docs/clickhouse-metric-stream.md),
 ## Quick Start
 
 ```bash
-pnpm install
-infisical login
-pnpm compose:up
-pnpm setup-db
+mise trust mise.toml
+mise install --locked
+mise exec -- infisical login
+mise run cloud:init
 ```
 
-`pnpm compose:up` starts Postgres, ClickHouse, Redis, and Redpanda on
+`mise run cloud:init` installs workspace dependencies, initializes CodeGraph,
+verifies RTK, starts Postgres, ClickHouse, Redis, and Redpanda on
 workspace-specific local ports and writes those ports to `.env.local`.
-`pnpm setup-db` loads the checked-in environment plus Infisical secrets,
+It then loads the checked-in environment plus Infisical secrets,
 applies Postgres migrations, and applies ClickHouse migrations.
+See [the development-environment guide](docs/development-environment.md) for
+cloud prebuilds, non-interactive authentication, and the macOS/iOS profile.
 
 For the complete local CDC topology, start the PeerDB Compose overlay and
 configure its mirrors:
