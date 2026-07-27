@@ -44,11 +44,13 @@ describe("PersonalExperimentsRepository integration", () => {
       lagDays: 1,
       status: "active",
       stoppedAt: null,
+      phase: "upcoming",
       schedule: {
         baselineStartDate: "2099-01-01",
         baselineEndDate: "2099-01-07",
         interventionStartDate: "2099-01-08",
         interventionEndDate: "2099-01-21",
+        scheduleSummary: "Starts on 2099-01-01",
       },
     });
 

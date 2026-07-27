@@ -73,7 +73,7 @@ export default function ExperimentsScreen() {
             </Text>
           ) : null}
 
-          {metricsQuery.isError ? (
+          {metricsQuery.isError && metrics === undefined ? (
             <QueryStatePanel error={metricsQuery.error} height={72} />
           ) : metricsQuery.isLoading || metrics === undefined ? (
             <QueryStatePanel variant="loading" height={72} />
@@ -203,7 +203,11 @@ export default function ExperimentsScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Your experiments</Text>
-          {listQuery.isError ? (
+          {metricsQuery.isError && metrics !== undefined ? (
+            <QueryStatePanel error={metricsQuery.error} height={72} />
+          ) : null}
+
+          {listQuery.isError && experiments === undefined ? (
             <QueryStatePanel error={listQuery.error} height={96} />
           ) : listQuery.isLoading || experiments === undefined ? (
             <QueryStatePanel variant="loading" height={96} />
@@ -214,47 +218,50 @@ export default function ExperimentsScreen() {
               height={96}
             />
           ) : (
-            experiments.map((experiment) => (
-              <View key={experiment.id} style={styles.experimentCard}>
-                <View style={styles.experimentHeader}>
-                  <Text style={styles.experimentTitle}>{experiment.hypothesis}</Text>
-                  <Text style={styles.phaseBadge}>{experiment.phaseLabel}</Text>
+            <>
+              {listQuery.isError ? <QueryStatePanel error={listQuery.error} height={72} /> : null}
+              {experiments.map((experiment) => (
+                <View key={experiment.id} style={styles.experimentCard}>
+                  <View style={styles.experimentHeader}>
+                    <Text style={styles.experimentTitle}>{experiment.hypothesis}</Text>
+                    <Text style={styles.phaseBadge}>{experiment.phaseLabel}</Text>
+                  </View>
+                  <Text style={styles.experimentMeta}>Intervention: {experiment.intervention}</Text>
+                  <Text style={styles.experimentMeta}>
+                    Outcome: {experiment.outcomeMetricLabel}
+                    {experiment.lagDays > 0 ? ` (+${experiment.lagDays} day lag)` : ""}
+                  </Text>
+                  <Text style={styles.experimentMeta}>{experiment.schedule.scheduleSummary}</Text>
+                  <Text style={styles.experimentMeta}>
+                    Baseline {experiment.schedule.baselineStartDate} →{" "}
+                    {experiment.schedule.baselineEndDate}
+                  </Text>
+                  <Text style={styles.experimentMeta}>
+                    Intervention {experiment.schedule.interventionStartDate} →{" "}
+                    {experiment.schedule.interventionEndDate}
+                  </Text>
+                  {experiment.status === "active" ? (
+                    <Pressable
+                      style={styles.secondaryButton}
+                      disabled={
+                        stopMutation.isPending && stopMutation.variables?.id === experiment.id
+                      }
+                      onPress={() => stopMutation.mutate({ id: experiment.id })}
+                      accessibilityRole="button"
+                      accessibilityLabel="Stop experiment"
+                    >
+                      <Text style={styles.secondaryButtonText}>
+                        {stopMutation.isPending && stopMutation.variables?.id === experiment.id
+                          ? "Stopping..."
+                          : "Stop experiment"}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Text style={styles.experimentMeta}>Stopped on {experiment.stoppedAt}</Text>
+                  )}
                 </View>
-                <Text style={styles.experimentMeta}>Intervention: {experiment.intervention}</Text>
-                <Text style={styles.experimentMeta}>
-                  Outcome: {experiment.outcomeMetricLabel}
-                  {experiment.lagDays > 0 ? ` (+${experiment.lagDays} day lag)` : ""}
-                </Text>
-                <Text style={styles.experimentMeta}>{experiment.schedule.scheduleSummary}</Text>
-                <Text style={styles.experimentMeta}>
-                  Baseline {experiment.schedule.baselineStartDate} →{" "}
-                  {experiment.schedule.baselineEndDate}
-                </Text>
-                <Text style={styles.experimentMeta}>
-                  Intervention {experiment.schedule.interventionStartDate} →{" "}
-                  {experiment.schedule.interventionEndDate}
-                </Text>
-                {experiment.status === "active" ? (
-                  <Pressable
-                    style={styles.secondaryButton}
-                    disabled={
-                      stopMutation.isPending && stopMutation.variables?.id === experiment.id
-                    }
-                    onPress={() => stopMutation.mutate({ id: experiment.id })}
-                    accessibilityRole="button"
-                    accessibilityLabel="Stop experiment"
-                  >
-                    <Text style={styles.secondaryButtonText}>
-                      {stopMutation.isPending && stopMutation.variables?.id === experiment.id
-                        ? "Stopping..."
-                        : "Stop experiment"}
-                    </Text>
-                  </Pressable>
-                ) : (
-                  <Text style={styles.experimentMeta}>Stopped on {experiment.stoppedAt}</Text>
-                )}
-              </View>
-            ))
+              ))}
+            </>
           )}
         </View>
       </ScrollView>

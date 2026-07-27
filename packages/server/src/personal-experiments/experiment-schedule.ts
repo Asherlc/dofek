@@ -3,7 +3,12 @@ import { CORRELATION_METRICS } from "@dofek/stats/correlation";
 const METRIC_LABEL_BY_ID = new Map(CORRELATION_METRICS.map((metric) => [metric.id, metric.label]));
 
 export type PersonalExperimentStatus = "active" | "stopped";
-export type PersonalExperimentPhase = "baseline" | "intervention" | "complete" | "stopped";
+export type PersonalExperimentPhase =
+  | "upcoming"
+  | "baseline"
+  | "intervention"
+  | "complete"
+  | "stopped";
 
 export interface ExperimentScheduleInput {
   startDate: string;
@@ -51,6 +56,20 @@ export function resolveExperimentSchedule(input: ExperimentScheduleInput): Exper
       dayInPhase: null,
       daysRemainingInPhase: null,
       scheduleSummary: `Stopped on ${input.stoppedAt ?? input.today}`,
+    };
+  }
+
+  if (input.today < input.startDate) {
+    return {
+      phase: "upcoming",
+      phaseLabel: "Upcoming",
+      baselineStartDate,
+      baselineEndDate,
+      interventionStartDate,
+      interventionEndDate,
+      dayInPhase: null,
+      daysRemainingInPhase: null,
+      scheduleSummary: `Starts on ${input.startDate}`,
     };
   }
 

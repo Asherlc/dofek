@@ -16,23 +16,67 @@ const createInputSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
-export const personalExperimentsRouter = router({
-  metrics: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(() =>
-    CORRELATION_METRICS.map((metric) => ({
-      id: metric.id,
-      label: metric.label,
-      unit: metric.unit,
-      domain: metric.domain,
-    })),
-  ),
+const experimentScheduleSchema = z.object({
+  phase: z.enum(["upcoming", "baseline", "intervention", "complete", "stopped"]),
+  phaseLabel: z.string(),
+  baselineStartDate: z.string(),
+  baselineEndDate: z.string(),
+  interventionStartDate: z.string(),
+  interventionEndDate: z.string(),
+  dayInPhase: z.number().int().nullable(),
+  daysRemainingInPhase: z.number().int().nullable(),
+  scheduleSummary: z.string(),
+});
 
-  list: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
-    const repository = new PersonalExperimentsRepository(ctx.db, ctx.userId, ctx.timezone);
-    return repository.list();
-  }),
+const personalExperimentViewSchema = z.object({
+  id: z.string(),
+  hypothesis: z.string(),
+  intervention: z.string(),
+  outcomeMetricId: z.string(),
+  outcomeMetricLabel: z.string(),
+  lagDays: z.number().int(),
+  baselineDays: z.number().int(),
+  interventionDays: z.number().int(),
+  startDate: z.string(),
+  status: z.enum(["active", "stopped"]),
+  stoppedAt: z.string().nullable(),
+  createdAt: z.string(),
+  phase: z.enum(["upcoming", "baseline", "intervention", "complete", "stopped"]),
+  phaseLabel: z.string(),
+  schedule: experimentScheduleSchema,
+});
+
+const metricOptionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  unit: z.string(),
+  domain: z.string(),
+});
+
+export const personalExperimentsRouter = router({
+  metrics: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+    .input(z.void())
+    .output(z.array(metricOptionSchema))
+    .query(() =>
+      CORRELATION_METRICS.map((metric) => ({
+        id: metric.id,
+        label: metric.label,
+        unit: metric.unit,
+        domain: metric.domain,
+      })),
+    ),
+
+  list: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .input(z.void())
+    .output(z.array(personalExperimentViewSchema))
+    .query(async ({ ctx }) => {
+      const repository = new PersonalExperimentsRepository(ctx.db, ctx.userId, ctx.timezone);
+      return repository.list();
+    }),
 
   get: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ id: z.guid() }))
+    .output(personalExperimentViewSchema)
     .query(async ({ ctx, input }) => {
       const repository = new PersonalExperimentsRepository(ctx.db, ctx.userId, ctx.timezone);
       const experiment = await repository.get(input.id);
@@ -45,32 +89,38 @@ export const personalExperimentsRouter = router({
       return experiment;
     }),
 
-  create: protectedProcedure.input(createInputSchema).mutation(async ({ ctx, input }) => {
-    if (!isKnownOutcomeMetricId(input.outcomeMetricId)) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message:
-          "Choose an outcome metric from the correlation catalog. That metric id is not supported.",
-      });
-    }
+  create: protectedProcedure
+    .input(createInputSchema)
+    .output(personalExperimentViewSchema)
+    .mutation(async ({ ctx, input }) => {
+      if (!isKnownOutcomeMetricId(input.outcomeMetricId)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Choose an outcome metric from the correlation catalog. That metric id is not supported.",
+        });
+      }
 
-    const repository = new PersonalExperimentsRepository(ctx.db, ctx.userId, ctx.timezone);
-    const experiment = await repository.create(input);
-    await invalidateUserQueryDomains(ctx.userId, ["personalExperiments"]);
-    return experiment;
-  }),
+      const repository = new PersonalExperimentsRepository(ctx.db, ctx.userId, ctx.timezone);
+      const experiment = await repository.create(input);
+      await invalidateUserQueryDomains(ctx.userId, ["personalExperiments"]);
+      return experiment;
+    }),
 
-  stop: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
-    const repository = new PersonalExperimentsRepository(ctx.db, ctx.userId, ctx.timezone);
-    const experiment = await repository.stop(input.id);
-    if (!experiment) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message:
-          "That experiment could not be stopped. It may already be stopped or does not exist.",
-      });
-    }
-    await invalidateUserQueryDomains(ctx.userId, ["personalExperiments"]);
-    return experiment;
-  }),
+  stop: protectedProcedure
+    .input(z.object({ id: z.guid() }))
+    .output(personalExperimentViewSchema)
+    .mutation(async ({ ctx, input }) => {
+      const repository = new PersonalExperimentsRepository(ctx.db, ctx.userId, ctx.timezone);
+      const experiment = await repository.stop(input.id);
+      if (!experiment) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "That experiment could not be stopped. It may already be stopped or does not exist.",
+        });
+      }
+      await invalidateUserQueryDomains(ctx.userId, ["personalExperiments"]);
+      return experiment;
+    }),
 });

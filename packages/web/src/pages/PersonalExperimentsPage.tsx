@@ -90,7 +90,7 @@ export function PersonalExperimentsPage({ search = {} }: { search?: PersonalExpe
             </p>
           ) : null}
 
-          {metricsQuery.isError ? (
+          {metricsQuery.isError && metrics === undefined ? (
             <QueryStatePanel error={metricsQuery.error} height={72} />
           ) : metricsQuery.isLoading || metrics === undefined ? (
             <QueryStatePanel variant="loading" height={72} />
@@ -242,7 +242,11 @@ export function PersonalExperimentsPage({ search = {} }: { search?: PersonalExpe
             Your experiments
           </h2>
 
-          {listQuery.isError ? (
+          {metricsQuery.isError && metrics !== undefined ? (
+            <QueryStatePanel error={metricsQuery.error} height={72} />
+          ) : null}
+
+          {listQuery.isError && experiments === undefined ? (
             <QueryStatePanel error={listQuery.error} height={96} />
           ) : listQuery.isLoading || experiments === undefined ? (
             <QueryStatePanel variant="loading" height={96} />
@@ -254,6 +258,7 @@ export function PersonalExperimentsPage({ search = {} }: { search?: PersonalExpe
             />
           ) : (
             <div className="space-y-4">
+              {listQuery.isError ? <QueryStatePanel error={listQuery.error} height={72} /> : null}
               {experiments.map((experiment) => (
                 <ExperimentCard
                   key={experiment.id}
@@ -267,10 +272,6 @@ export function PersonalExperimentsPage({ search = {} }: { search?: PersonalExpe
               ))}
             </div>
           )}
-
-          {listQuery.data !== undefined && listQuery.error ? (
-            <QueryStatePanel error={listQuery.error} height={72} />
-          ) : null}
         </section>
 
         <p className="text-xs text-dim">

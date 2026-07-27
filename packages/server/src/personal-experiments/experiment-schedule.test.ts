@@ -20,6 +20,16 @@ describe("resolveExperimentSchedule", () => {
     stoppedAt: null,
   };
 
+  it("reports upcoming when the start date is still in the future", () => {
+    const schedule = resolveExperimentSchedule({ ...base, today: "2026-06-30" });
+
+    expect(schedule.phase).toBe("upcoming");
+    expect(schedule.phaseLabel).toBe("Upcoming");
+    expect(schedule.dayInPhase).toBeNull();
+    expect(schedule.daysRemainingInPhase).toBeNull();
+    expect(schedule.scheduleSummary).toBe("Starts on 2026-07-01");
+  });
+
   it("reports baseline phase dates and remaining days during baseline", () => {
     const schedule = resolveExperimentSchedule({ ...base, today: "2026-07-03" });
 
