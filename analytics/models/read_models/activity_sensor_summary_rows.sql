@@ -6,7 +6,8 @@
     on_schema_change='fail',
     query_settings={
         'max_threads': 1,
-        'join_use_nulls': 1
+        'join_use_nulls': 1,
+        'enable_materialized_cte': 1
     }
 ) }}
 
@@ -163,7 +164,7 @@ restored_dirty_keys AS (
     {% endif %}
 ),
 
-dirty_keys AS (
+dirty_keys AS materialized (
     SELECT DISTINCT
         assumeNotNull(activity_id) AS activity_id,
         assumeNotNull(user_id) AS user_id
@@ -204,7 +205,7 @@ active_dirty_keys AS (
     FROM dirty_keys
 ),
 
-latest_sensor_samples AS (
+latest_sensor_samples AS materialized (
     SELECT *
     FROM (
         SELECT *
@@ -316,7 +317,7 @@ channel_aggs AS (
     GROUP BY activity_id, user_id
 ),
 
-power_cumulative AS (
+power_cumulative AS materialized (
     SELECT
         activity_id,
         recorded_at,
