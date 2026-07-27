@@ -6,7 +6,6 @@
       "display_name": "WhoopBLE",
       "source_path": "packages/mobile/modules/whoop-ble",
       "repository": "Asherlc/whoop-ble-swift",
-      "token_secret": "ZEPP_RELEASE_TOKEN",
       "export_script": "scripts/export-whoop-ble-swift.ts"
     }
   ]
