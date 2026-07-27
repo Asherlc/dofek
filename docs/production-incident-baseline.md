@@ -19058,6 +19058,86 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   UI returns the documented clean-grant retry guidance before resolving
   DOFEK-SERVER-5H.
 
+## 2026-07-27 — Issue #2059 local database validation blocked by Docker disk exhaustion
+
+- **Status:** Application fix and executable PostgreSQL regression are ready;
+  exact-head integration validation is pending in CI.
+- **Symptoms:** The issue-specific Compose project could not create its Postgres
+  named volume. On PR #2220, integration shard 4 also returned 35 nutrition
+  analytics days where the fixture expected at least 40, and integration
+  shards 1 and 4 failed the micronutrient adequacy query. After those causes
+  were fixed, router integration still returned no micronutrient rows. A
+  pre-merge compatibility audit then found that the PR changed the existing
+  `food.byDate` response in place while upgraded mobile clients could restore
+  the prior response from the persisted query cache for up to 12 hours.
+- **User impact:** No production impact. Local database-backed validation could
+  not start in this worktree.
+- **Evidence:** `pnpm compose -- up -d --wait --wait-timeout 180 db` failed at
+  volume creation. The first fatal line was
+  `mkdir /var/lib/docker/volumes/issue-2059_db_data: no space left on device`.
+  GitHub Actions run 30302715863 showed the 35-row analytics result and the
+  failing micronutrient query. Its Postgres log's first fatal line was
+  `ERROR: missing FROM-clause entry for table "fe" at character 57`.
+  On exact-head run 30304798915, job 90107244740 ran
+  `pnpm exec vitest run --project integration --coverage --shard=1/4`; its
+  first fatal test line was
+  `AssertionError: expected 0 to be greater than 0` in the router's
+  micronutrient adequacy assertion.
+  In the same run, integration shard 3 job 90107244578 first failed
+  `FoodRepository.dailyTotalsRange()` with PostgreSQL error 42702:
+  `column reference "date" is ambiguous`; the query selected bare `date` after
+  joining the canonical daily and display views. The compatibility audit
+  compared the main-branch `food.byDate` response `{ entries, summary }` with
+  the proposed nullable-summary response containing required `resolution`
+  metadata, then confirmed that the mobile persistence buster was only the user
+  ID.
+- **Root cause:** Docker's local storage filesystem had no free capacity for the
+  worktree's new database volume. Separately, the analytics fixture did not
+  declare `nutrition_grain`, so legacy classification treated its multi-nutrient
+  rows as ambiguous and canonical source resolution excluded 15 conflicting
+  days. The micronutrient query selected `fe.date` after its canonical nutrient
+  source had been renamed to alias `fen`. The router fixture independently
+  omitted grain semantics from 30 multi-nutrient daily totals and ten itemized
+  oatmeal rows; the daily totals therefore classified as ambiguous, making
+  their overlapping oatmeal dates unavailable to canonical micronutrient
+  analytics. `dailyTotalsRange()` also left its selected date unqualified after
+  adding a second date-bearing view to the query. The API and persisted-query
+  cache contracts were also not versioned independently, which made the
+  in-place DTO change unsafe for installed and upgraded clients.
+- **Fix / mitigation:** The issue-specific Compose state was removed and the
+  rebuildable builder cache was pruned using Docker's documented cleanup
+  mechanism, but no reclaimable cache remained. Other workspaces' containers
+  and volumes were preserved. No retry, timeout, or test behavior changed.
+  See [Docker's pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/).
+  The analytics fixture now declares daily aggregates and itemized meals
+  explicitly, and the micronutrient query consistently uses the canonical
+  nutrient alias `fen`. The router fixture now likewise declares daily totals
+  as `daily_aggregate` and oatmeal entries as `itemized`. Router-data fixtures
+  now declare the same semantics, and `dailyTotalsRange()` selects
+  `daily.date`. `food.byDate` now preserves the v1 success DTO and returns an
+  actionable precondition error for source conflicts; `food.byDateV2` exposes
+  the nullable summary and resolution metadata used by new web and mobile
+  clients. Mobile persistence now uses a versioned user-scoped buster so the
+  previous DTO cache is discarded according to TanStack Query's documented
+  cache-buster behavior:
+  <https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient>.
+- **Validation:** A single retry reproduced the same volume-creation failure,
+  confirming the infrastructure prerequisite rather than the test body is
+  blocked. The full lint command also reached SQLFluff, then failed because its
+  dbt adapter could not connect to this worktree's unavailable ClickHouse
+  service at `127.0.0.1:57441`; all Docker-free lint stages pass. Unit, type,
+  and static migration validation remain local gates. On Node 26.5.0, the
+  compatibility-focused suite passed all 55 tests, root TypeScript validation
+  passed, and the full Docker-free suite passed 14,154 tests with 21 skipped.
+  The real PostgreSQL test and database-backed SQL lint are required on
+  exact-head CI.
+- **Remaining risk / follow-up:** CI must execute
+  `src/db/nutrition-canonical.integration.test.ts` before merge. Local Docker
+  storage should be expanded or unused resources should be reviewed before the
+  next database-backed worktree run. The compatibility endpoints and cache
+  version must remain covered by exact-shape and restore/discard regression
+  tests before future selected-date DTO changes.
+
 ## 2026-07-27 — Global activity overlap expansion exhausted web DB pools
 
 - **Status:** Root cause confirmed from production query plans and direct

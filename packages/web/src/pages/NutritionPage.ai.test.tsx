@@ -14,6 +14,16 @@ let foodByDateQuery: {
   isFetching?: boolean;
   isLoading: boolean;
 };
+const availableResolution = {
+  status: "available",
+  message: "Totals use the only available nutrition source.",
+  sourceProviders: ["dofek"],
+  contributingProviders: ["dofek"],
+  excludedProviders: [],
+  sourceLabels: ["dofek"],
+  contributingSourceLabels: ["dofek"],
+  excludedSourceLabels: [],
+};
 
 vi.mock("../lib/telemetry.ts", () => ({
   captureException: vi.fn(),
@@ -22,7 +32,7 @@ vi.mock("../lib/telemetry.ts", () => ({
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     food: {
-      byDate: {
+      byDateV2: {
         useQuery: () => ({ ...foodByDateQuery, refetch: foodRefetchMock }),
       },
       create: {
@@ -58,6 +68,7 @@ describe("NutritionPage AI meal confirmation", () => {
     foodByDateQuery = {
       data: {
         entries: [],
+        resolution: availableResolution,
         summary: {
           calories: 0,
           mealCalories: { breakfast: 0, lunch: 0, dinner: 0, snack: 0, other: 0 },
@@ -152,6 +163,7 @@ describe("NutritionPage AI meal confirmation", () => {
             food_description: "Plain yogurt",
           },
         ],
+        resolution: availableResolution,
         summary: {
           calories: 120,
           mealCalories: { breakfast: 120, lunch: 0, dinner: 0, snack: 0, other: 0 },
@@ -190,6 +202,7 @@ describe("NutritionPage AI meal confirmation", () => {
             food_description: null,
           },
         ],
+        resolution: availableResolution,
         summary: {
           calories: 999,
           mealCalories: { breakfast: 777, lunch: 0, dinner: 0, snack: 0, other: 0 },
@@ -215,5 +228,46 @@ describe("NutritionPage AI meal confirmation", () => {
     const proteinProgress =
       screen.getByText("Protein").parentElement?.nextElementSibling?.firstElementChild;
     expect(proteinProgress).toHaveStyle({ width: "35%" });
+  });
+
+  it("renders an accessible source conflict and leaves totals unavailable", async () => {
+    foodByDateQuery = {
+      data: {
+        entries: [
+          {
+            id: "food-1",
+            food_name: "Named itemized meal",
+            meal: "breakfast",
+            calories: 420,
+            protein_g: 20,
+            carbs_g: 50,
+            fat_g: 15,
+            food_description: null,
+          },
+        ],
+        summary: null,
+        resolution: {
+          status: "source_conflict",
+          message:
+            "Totals are unavailable because nutrition sources overlap and no canonical contribution set can be determined.",
+          sourceProviders: ["apple-health", "cronometer"],
+          contributingProviders: [],
+          excludedProviders: ["apple-health", "cronometer"],
+          sourceLabels: ["Apple Health", "Cronometer"],
+          contributingSourceLabels: [],
+          excludedSourceLabels: ["Apple Health", "Cronometer"],
+        },
+      },
+      error: null,
+      isLoading: false,
+    };
+    const { NutritionPage } = await import("./NutritionPage");
+
+    render(<NutritionPage />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Totals are unavailable");
+    expect(screen.getByRole("alert")).toHaveTextContent("Apple Health, Cronometer");
+    expect(screen.queryByText(/kcal remaining/)).toBeNull();
+    expect(screen.getByText("Named itemized meal")).toBeTruthy();
   });
 });

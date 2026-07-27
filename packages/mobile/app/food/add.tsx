@@ -96,7 +96,7 @@ export default function AddFoodScreen() {
     const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
 
     Promise.all([
-      fetch(`${apiUrl}/food.byDate?batch=1`, {
+      fetch(`${apiUrl}/food.byDateV2?batch=1`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -109,7 +109,7 @@ export default function AddFoodScreen() {
           captureException(error, { source: "food-add-recent-today" });
           return null;
         }),
-      fetch(`${apiUrl}/food.byDate?batch=1`, {
+      fetch(`${apiUrl}/food.byDateV2?batch=1`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -160,7 +160,7 @@ export default function AddFoodScreen() {
   const utils = trpc.useUtils();
   const createMutation = trpc.food.create.useMutation({
     onSuccess: () => {
-      utils.food.byDate.invalidate({ date });
+      utils.food.byDateV2.invalidate({ date });
       router.back();
     },
     onError: (error) => {
@@ -177,7 +177,7 @@ export default function AddFoodScreen() {
 
   const quickAddMutation = trpc.food.quickAdd.useMutation({
     onSuccess: () => {
-      utils.food.byDate.invalidate({ date });
+      utils.food.byDateV2.invalidate({ date });
       router.back();
     },
     onError: (error) => {
@@ -428,7 +428,7 @@ export default function AddFoodScreen() {
           ...parsedItem,
         });
       }
-      await utils.food.byDate.invalidate({ date });
+      await utils.food.byDateV2.invalidate({ date });
       setAiMealInput("");
       setPendingAiMealItems([]);
       router.back();

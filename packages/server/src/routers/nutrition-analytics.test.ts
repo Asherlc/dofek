@@ -59,7 +59,7 @@ describe("nutritionAnalyticsRouter selected ranges", () => {
 
     await caller.micronutrientAdequacy({ days: 30 });
 
-    expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("AND fe.date > CURRENT_DATE -");
+    expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("AND fen.date > CURRENT_DATE -");
   });
 
   it("micronutrientAdequacy omits the lower date bound when days is null", async () => {
@@ -68,8 +68,8 @@ describe("nutritionAnalyticsRouter selected ranges", () => {
     await caller.micronutrientAdequacy({ days: null });
 
     const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
-    expect(queryText).toContain("WHERE fe.user_id =");
-    expect(queryText).toContain("AND fe.confirmed = true");
+    expect(queryText).toContain("WHERE fen.user_id =");
+    expect(queryText).toContain("fitness.v_nutrition_canonical_nutrient");
     expect(queryText).not.toContain("CURRENT_DATE -");
   });
 
