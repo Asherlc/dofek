@@ -1,4 +1,5 @@
 import { selectRecentDailyLoad } from "@dofek/training/training";
+import { z } from "zod";
 
 export interface WorkloadRatioRow {
   date: string;
@@ -23,6 +24,27 @@ export interface WorkloadRatioResult {
   displayedDate: string | null;
 }
 
+export const workloadRatioResultSchema = z.object({
+  context: z.object({
+    label: z.string(),
+    description: z.string(),
+    recentDays: z.number().int().positive(),
+    baselineDays: z.number().int().positive(),
+  }),
+  timeSeries: z.array(
+    z.object({
+      date: z.string(),
+      dailyLoad: z.number(),
+      strain: z.number(),
+      acuteLoad: z.number(),
+      chronicLoad: z.number(),
+      workloadRatio: z.number().nullable(),
+    }),
+  ),
+  displayedStrain: z.number(),
+  displayedDate: z.string().nullable(),
+}) satisfies z.ZodType<WorkloadRatioResult>;
+
 const workloadRatioContext = {
   label: "Recent-to-baseline workload ratio",
   description:
@@ -34,7 +56,7 @@ const workloadRatioContext = {
 export function buildWorkloadRatioResult(timeSeries: WorkloadRatioRow[]): WorkloadRatioResult {
   const displayed = selectRecentDailyLoad(timeSeries);
   return {
-    context: workloadRatioContext,
+    context: { ...workloadRatioContext },
     timeSeries,
     displayedStrain: displayed?.strain ?? 0,
     displayedDate: displayed?.date ?? null,

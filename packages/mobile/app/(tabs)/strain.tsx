@@ -222,6 +222,12 @@ export default function StrainScreen() {
 
   const workloadResult = trainingData?.workloadRatio;
   const workloadData = workloadResult?.timeSeries ?? [];
+  const recentLoadLabel =
+    workloadResult == null ? "Recent load" : `Recent ${workloadResult.context.recentDays}-day load`;
+  const baselineLoadLabel =
+    workloadResult == null
+      ? "Baseline load"
+      : `${workloadResult.context.baselineDays}-day baseline load`;
   const todayWorkload = workloadData[workloadData.length - 1];
   const strainTarget = trainingData?.strainTarget;
 
@@ -376,22 +382,24 @@ export default function StrainScreen() {
             <View style={styles.loadGrid}>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>{formatTrainingLoad(acuteLoad)}</Text>
-                <Text style={styles.loadLabel}>Recent 7-day load</Text>
+                <Text style={styles.loadLabel}>{recentLoadLabel}</Text>
               </View>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>{formatTrainingLoad(chronicLoad)}</Text>
-                <Text style={styles.loadLabel}>28-day baseline load</Text>
+                <Text style={styles.loadLabel}>{baselineLoadLabel}</Text>
               </View>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>
                   {workloadRatio != null ? formatNumber(workloadRatio, 2) : "--"}
                 </Text>
-                <Text style={styles.loadLabel}>{workloadResult?.context.label ?? "Ratio"}</Text>
+                <Text style={styles.loadLabel}>
+                  {workloadResult == null ? "Ratio" : workloadResult.context.label}
+                </Text>
               </View>
             </View>
-            {workloadResult?.context.description ? (
+            {workloadResult == null ? null : (
               <Text style={styles.ratioHint}>{workloadResult.context.description}</Text>
-            ) : null}
+            )}
           </View>
 
           {/* Strain trend */}

@@ -27,8 +27,8 @@ describe("StrainCard", () => {
             label: "Recent-to-baseline workload ratio",
             description:
               "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
-            recentDays: 7,
-            baselineDays: 28,
+            recentDays: 5,
+            baselineDays: 20,
           },
           displayedStrain: 13,
           displayedDate: "2026-03-27",
@@ -49,6 +49,14 @@ describe("StrainCard", () => {
     expect(screen.queryByText("13")).toBeNull();
     expect(screen.getByText("0")).toBeTruthy();
     expect(screen.getByText("Last training: Mar 27")).toBeTruthy();
+    expect(screen.getByText("Recent 5-day load")).toBeTruthy();
+    expect(screen.getByText("20-day baseline load")).toBeTruthy();
+    expect(screen.getByText("Recent-to-baseline workload ratio")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+      ),
+    ).toBeTruthy();
   });
 
   it("uses the standard count-up duration for the visible strain value", () => {

@@ -31,6 +31,7 @@ import {
   buildWorkloadRatioResult,
   type WorkloadRatioResult,
   type WorkloadRatioRow,
+  workloadRatioResultSchema,
 } from "../services/workload-ratio.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -309,6 +310,7 @@ export const recoveryRouter = router({
 
       return buildWorkloadRatioResult(timeSeries);
     },
+    { outputSchema: workloadRatioResultSchema },
   ),
 
   /**

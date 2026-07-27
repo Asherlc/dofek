@@ -153,13 +153,15 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
               <p className="text-lg font-bold text-foreground tabular-nums">
                 {formatTrainingLoad(today?.acuteLoad)}
               </p>
-              <p className="text-[10px] text-subtle">Recent 7-day load</p>
+              <p className="text-[10px] text-subtle">Recent {data.context.recentDays}-day load</p>
             </div>
             <div>
               <p className="text-lg font-bold text-foreground tabular-nums">
                 {formatTrainingLoad(today?.chronicLoad)}
               </p>
-              <p className="text-[10px] text-subtle">28-day baseline load</p>
+              <p className="text-[10px] text-subtle">
+                {data.context.baselineDays}-day baseline load
+              </p>
             </div>
             <div>
               <p className="text-lg font-bold text-foreground tabular-nums">

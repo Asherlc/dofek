@@ -459,7 +459,14 @@ describe("DailyOverview", () => {
     render(
       <DailyOverview
         readiness={mockReadiness}
-        workloadRatio={mockWorkloadRatio}
+        workloadRatio={{
+          ...mockWorkloadRatio,
+          context: {
+            ...mockWorkloadRatio.context,
+            recentDays: 5,
+            baselineDays: 20,
+          },
+        }}
         sleepPerformance={mockSleepPerformance}
         strainTarget={mockStrainTarget}
         readinessLoading={false}
@@ -479,8 +486,8 @@ describe("DailyOverview", () => {
     // Breakdown should show target and load stats
     expect(screen.getByText("14")).toBeTruthy(); // target strain value
     expect(screen.getByText("Push")).toBeTruthy();
-    expect(screen.getByText("Recent 7-day load")).toBeTruthy();
-    expect(screen.getByText("28-day baseline load")).toBeTruthy();
+    expect(screen.getByText("Recent 5-day load")).toBeTruthy();
+    expect(screen.getByText("20-day baseline load")).toBeTruthy();
     expect(screen.getByText("Recent-to-baseline workload ratio")).toBeTruthy();
     expect(
       screen.getByText(

@@ -30,6 +30,12 @@ describe("WorkloadRatioChart", () => {
   it("renders the ratio and load windows as neutral descriptive series", () => {
     render(
       <WorkloadRatioChart
+        context={{
+          label: "Recent-to-baseline workload ratio",
+          description: "Descriptive comparison",
+          recentDays: 5,
+          baselineDays: 20,
+        }}
         data={[
           {
             date: "2026-03-28",
@@ -45,8 +51,8 @@ describe("WorkloadRatioChart", () => {
 
     expect(chartOption?.series?.map((series) => series.name)).toEqual([
       "Recent / baseline",
-      "Recent 7-day Load",
-      "28-day Baseline Load",
+      "Recent 5-day Load",
+      "20-day Baseline Load",
     ]);
     expect(chartOption?.yAxis?.[0]?.name).toBe("Recent / baseline");
   });

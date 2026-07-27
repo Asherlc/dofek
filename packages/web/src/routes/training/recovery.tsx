@@ -65,6 +65,7 @@ function RecoveryTab() {
           ) : (
             <WorkloadRatioChart
               data={workloadRatio.data?.timeSeries ?? []}
+              context={workloadRatio.data?.context}
               loading={workloadRatio.isLoading}
             />
           )}

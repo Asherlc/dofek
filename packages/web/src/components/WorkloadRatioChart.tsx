@@ -1,5 +1,5 @@
 import { formatDateShort, formatNumber, formatTrainingLoad } from "@dofek/format/format";
-import type { WorkloadRatioRow } from "dofek-server/types";
+import type { WorkloadRatioResult, WorkloadRatioRow } from "dofek-server/types";
 import {
   chartColors,
   dofekAxis,
@@ -12,10 +12,11 @@ import { DofekChart } from "./DofekChart.tsx";
 
 interface WorkloadRatioChartProps {
   data: WorkloadRatioRow[];
+  context?: WorkloadRatioResult["context"];
   loading?: boolean;
 }
 
-export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
+export function WorkloadRatioChart({ data, context, loading }: WorkloadRatioChartProps) {
   if (loading) {
     return <DofekChart option={{}} loading={true} height={400} />;
   }
@@ -23,6 +24,13 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
   if (data.length === 0) {
     return <DofekChart option={{}} empty={true} height={400} emptyMessage="No workload data" />;
   }
+
+  if (!context) {
+    throw new Error("Workload ratio context is required when chart data is present");
+  }
+
+  const recentLoadLabel = `Recent ${context.recentDays}-day Load`;
+  const baselineLoadLabel = `${context.baselineDays}-day Baseline Load`;
 
   const option = {
     tooltip: dofekTooltip({
@@ -55,7 +63,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
     }),
     axisPointer: { link: [{ xAxisIndex: "all" }] },
     legend: dofekLegend(true, {
-      data: ["Recent / baseline", "Recent 7-day Load", "28-day Baseline Load"],
+      data: ["Recent / baseline", recentLoadLabel, baselineLoadLabel],
     }),
     grid: [
       { top: 40, right: 20, bottom: "55%", left: 50 },
@@ -102,7 +110,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
       // Recent load area (bottom grid)
       {
         ...dofekSeries.line(
-          "Recent 7-day Load",
+          recentLoadLabel,
           data.map((d) => [d.date, d.acuteLoad]),
           {
             color: chartColors.pink,
@@ -116,7 +124,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
       // Baseline load area (bottom grid)
       {
         ...dofekSeries.line(
-          "28-day Baseline Load",
+          baselineLoadLabel,
           data.map((d) => [d.date, d.chronicLoad]),
           {
             color: chartColors.blue,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWorkloadRatioResult } from "./workload-ratio.ts";
+import { buildWorkloadRatioResult, workloadRatioResultSchema } from "./workload-ratio.ts";
 
 describe("buildWorkloadRatioResult", () => {
   it("returns a neutral server-owned definition with the descriptive ratio", () => {
@@ -46,5 +46,25 @@ describe("buildWorkloadRatioResult", () => {
 
     expect(result.displayedStrain).toBe(0);
     expect(result.displayedDate).toBe("2026-03-28");
+  });
+
+  it("does not share mutable context between results", () => {
+    const first = buildWorkloadRatioResult([]);
+    const second = buildWorkloadRatioResult([]);
+
+    first.context.label = "Changed by a caller";
+
+    expect(second.context.label).toBe("Recent-to-baseline workload ratio");
+    expect(first.context).not.toBe(second.context);
+  });
+
+  it("rejects results without the required context", () => {
+    const parsed = workloadRatioResultSchema.safeParse({
+      timeSeries: [],
+      displayedStrain: 0,
+      displayedDate: null,
+    });
+
+    expect(parsed.success).toBe(false);
   });
 });

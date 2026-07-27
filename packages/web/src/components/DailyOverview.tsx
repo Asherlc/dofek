@@ -272,13 +272,17 @@ function StrainBreakdown({
           <p className="text-sm font-bold text-foreground tabular-nums">
             {formatTrainingLoad(acuteLoad)}
           </p>
-          <p className="text-[10px] text-subtle">Recent 7-day load</p>
+          <p className="text-[10px] text-subtle">
+            Recent {workloadRatio.context.recentDays}-day load
+          </p>
         </div>
         <div>
           <p className="text-sm font-bold text-foreground tabular-nums">
             {formatTrainingLoad(chronicLoad)}
           </p>
-          <p className="text-[10px] text-subtle">28-day baseline load</p>
+          <p className="text-[10px] text-subtle">
+            {workloadRatio.context.baselineDays}-day baseline load
+          </p>
         </div>
         <div>
           <p className="text-sm font-bold text-foreground tabular-nums">

@@ -65,7 +65,16 @@ const meta = {
   title: "Recovery/WorkloadRatioChart",
   component: WorkloadRatioChart,
   tags: ["autodocs"],
-  args: { data: workload },
+  args: {
+    data: workload,
+    context: {
+      label: "Recent-to-baseline workload ratio",
+      description:
+        "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
+      recentDays: 7,
+      baselineDays: 28,
+    },
+  },
   decorators: [
     (Story) => (
       <div className="w-[760px] p-4">

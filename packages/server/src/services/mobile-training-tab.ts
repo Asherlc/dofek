@@ -27,7 +27,11 @@ import {
   type StrainTargetResult,
   strainTargetReadinessRowSchema,
 } from "./strain-target-result.ts";
-import { buildWorkloadRatioResult, type WorkloadRatioResult } from "./workload-ratio.ts";
+import {
+  buildWorkloadRatioResult,
+  type WorkloadRatioResult,
+  workloadRatioResultSchema,
+} from "./workload-ratio.ts";
 
 export interface MobileTrainingTabResult {
   workloadRatio: WorkloadRatioResult;
@@ -195,26 +199,7 @@ export async function loadMobileTrainingTab(
 }
 
 export const mobileTrainingTabOutputSchema = z.object({
-  workloadRatio: z.object({
-    context: z.object({
-      label: z.string(),
-      description: z.string(),
-      recentDays: z.number().int().positive(),
-      baselineDays: z.number().int().positive(),
-    }),
-    timeSeries: z.array(
-      z.object({
-        date: z.string(),
-        dailyLoad: z.number(),
-        strain: z.number(),
-        acuteLoad: z.number(),
-        chronicLoad: z.number(),
-        workloadRatio: z.number().nullable(),
-      }),
-    ),
-    displayedStrain: z.number(),
-    displayedDate: z.string().nullable(),
-  }),
+  workloadRatio: workloadRatioResultSchema,
   strainTarget: z
     .object({
       targetStrain: z.number(),

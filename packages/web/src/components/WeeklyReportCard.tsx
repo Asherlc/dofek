@@ -86,16 +86,16 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
         <div>
           <p className="text-subtle text-xs mb-2">Recent weeks</p>
           <div className="flex gap-1">
-            {history.slice(-8).map((w) => {
-              const weekHasTraining = w.activityCount > 0 || w.trainingHours > 0;
+            {history.slice(-8).map((week) => {
+              const weekHasTraining = week.activityCount > 0 || week.trainingHours > 0;
               return (
                 <div
-                  key={w.weekStart}
+                  key={week.weekStart}
                   className={`flex-1 h-2 rounded-full ${
                     weekHasTraining ? "bg-accent/60" : "bg-surface-hover"
                   }`}
-                  title={`${w.weekStart}: ${
-                    weekHasTraining ? formatDurationMinutes(w.trainingHours * 60) : "No training"
+                  title={`${week.weekStart}: ${
+                    weekHasTraining ? formatDurationMinutes(week.trainingHours * 60) : "No training"
                   }`}
                 />
               );
