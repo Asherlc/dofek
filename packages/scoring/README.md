@@ -42,7 +42,7 @@ console.log({
 | `@dofek/scoring/today-plan` | Deterministic ready/insufficient-data Today Plan result with a primary action, supporting facts, confidence, freshness, and shared presentation helpers |
 | `@dofek/scoring/sleep-performance` | Sleep-performance components, tiers, and recommended-bedtime calculation |
 | `@dofek/scoring/healthspan-years` | Score-to-years mapping and formatting |
-| `@dofek/scoring/menstrual-cycle` | Cycle-phase estimation and display metadata |
+| `@dofek/scoring/menstrual-cycle` | Cycle-phase estimation, display metadata, and shared safety copy |
 | `@dofek/scoring/breathwork` | Built-in breathing techniques and session-duration helpers |
 | `@dofek/scoring/loading-policy` | Blocking-loading state policy |
 | `@dofek/scoring/query-cache` | Shared query-cache age constant |
@@ -60,7 +60,9 @@ console.log({
   components equally.
 - Healthspan display deltas map scores from 0–100 onto +3 to -2 years.
 - Cycle phases estimate ovulation as `cycleLength - 14`; this is a display
-  estimate, not a clinical assessment.
+  estimate, not a clinical assessment. The shared safety notice follows
+  [Apple's Cycle Tracking limitation](https://support.apple.com/en-au/120356)
+  that these estimates must not be used for birth control or diagnosis.
 - The design-token modules contain values only; they do not install fonts or
   render UI.
 

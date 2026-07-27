@@ -5,7 +5,7 @@ import {
   encryptCredentialValue,
 } from "../security/credential-encryption.ts";
 import type { SyncDatabase } from "./index.ts";
-import { oauthToken } from "./schema/reference.ts";
+import { oauthToken, providerConnection, webhookSubscription } from "./schema/reference.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 function resolveUserId(userId?: string): string {
@@ -42,6 +42,14 @@ type ProviderConnectionTransaction = ProviderEnsureDatabase & Pick<SyncDatabase,
 
 interface ProviderConnectionDatabase {
   transaction<T>(callback: (transaction: ProviderConnectionTransaction) => Promise<T>): Promise<T>;
+}
+
+type ProviderAuthorizationTransaction = Pick<SyncDatabase, "delete">;
+
+interface ProviderAuthorizationDatabase {
+  transaction<T>(
+    callback: (transaction: ProviderAuthorizationTransaction) => Promise<T>,
+  ): Promise<T>;
 }
 
 /**
@@ -158,6 +166,37 @@ export async function deleteTokens(
   await db
     .delete(oauthToken)
     .where(and(eq(oauthToken.providerId, providerId), eq(oauthToken.userId, scopedUserId)));
+}
+
+/**
+ * Remove a user's provider authorization while preserving previously imported data.
+ * Authorization state is deleted explicitly in one transaction so cleanup also
+ * works before the provider-connection foreign keys have been validated.
+ */
+export async function deleteProviderAuthorization(
+  db: ProviderAuthorizationDatabase,
+  providerId: string,
+  userId?: string,
+): Promise<void> {
+  const scopedUserId = resolveUserId(userId);
+  await db.transaction(async (transaction) => {
+    const authorizationOwner = and(
+      eq(providerConnection.providerId, providerId),
+      eq(providerConnection.userId, scopedUserId),
+    );
+    await transaction
+      .delete(webhookSubscription)
+      .where(
+        and(
+          eq(webhookSubscription.providerId, providerId),
+          eq(webhookSubscription.userId, scopedUserId),
+        ),
+      );
+    await transaction
+      .delete(oauthToken)
+      .where(and(eq(oauthToken.providerId, providerId), eq(oauthToken.userId, scopedUserId)));
+    await transaction.delete(providerConnection).where(authorizationOwner);
+  });
 }
 
 /**

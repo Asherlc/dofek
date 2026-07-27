@@ -1,5 +1,5 @@
 import { formatDateYmd } from "@dofek/format/format";
-import { PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
+import { CYCLE_TRACKING_SAFETY_NOTICE, PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Stack } from "expo-router";
 import { useState } from "react";
@@ -7,7 +7,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
-import { colors } from "../theme";
+import { colors, fontSize, fontWeight, radius, spacing } from "../theme";
 import { rootStackScreenOptions } from "./_layout-options";
 
 function localDateFromYmd(value: string): Date {
@@ -85,6 +85,14 @@ export default function CycleScreen() {
               minHeight={72}
             />
           ) : null}
+          <View
+            accessible
+            accessibilityLabel={`Cycle tracking safety notice. ${CYCLE_TRACKING_SAFETY_NOTICE}`}
+            style={styles.safetyNotice}
+          >
+            <Text style={styles.safetyNoticeTitle}>Tracking limitation</Text>
+            <Text style={styles.safetyNoticeText}>{CYCLE_TRACKING_SAFETY_NOTICE}</Text>
+          </View>
         </View>
 
         <View style={styles.card}>
@@ -216,6 +224,25 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: 12,
     marginTop: 2,
+  },
+  safetyNotice: {
+    backgroundColor: colors.surfaceSecondary,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+  },
+  safetyNoticeTitle: {
+    color: colors.text,
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.semibold,
+  },
+  safetyNoticeText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.base,
+    lineHeight: 20,
   },
   emptyText: {
     color: colors.textTertiary,

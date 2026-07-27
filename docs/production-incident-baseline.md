@@ -18100,6 +18100,70 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   remains stable, and verify the accumulated Redpanda events flow into
   ClickHouse.
 
+## 2026-07-26 — Mutation Prep Selected Cypress Test Harness Files
+
+- **Status:** Root cause fixed locally; replacement CI pending.
+- **Symptoms:** PR `#2033` failed both generated Stryker shards even though the
+  unit, integration, and serialized full test suites passed.
+- **User impact:** The valid review-seed UUID repair was blocked from merging;
+  no production runtime was affected.
+- **Evidence:** The exact failing step was `Run Stryker`. Its two
+  `MUTATE_FILES` values were `cypress/support/commands.ts:1-2` and
+  `cypress/support/test-user.ts:1-1`. The first fatal line in both jobs was
+  `No tests were executed. Stryker will exit prematurely.` The preceding log
+  stated that Vitest found no tests related to either selected file.
+- **Root cause:** Mutation prep excluded Cypress spec files but still treated
+  support modules used only by those specs as application runtime files. The
+  configured mutation Vitest project intentionally does not run Cypress, so
+  Stryker could not establish a dry-run test set for either shard. Stryker
+  documents this exact related-test failure mode:
+  <https://stryker-mutator.io/docs/stryker-js/troubleshooting/#vitest-failed-to-find-test-files-related-to-mutated-files>.
+- **Fix / mitigation:** Exclude the complete `cypress/` test harness from
+  changed-line mutation candidate discovery. Production TypeScript remains
+  subject to the existing strict mutation threshold; no threshold, timeout,
+  retry, or test skip was changed.
+- **Validation:** The exact candidate-discovery pipeline no longer emits either
+  Cypress support file, while the focused review-seed unit and real-Postgres
+  integration tests, full lint, root/server/web typechecks, and all 13,741
+  Docker-free unit/mobile tests remain green. Replacement CI is pending.
+- **Remaining risk / follow-up:** Confirm replacement CI emits no mutation
+  shards for this Cypress-only support change and that all other required gates
+  complete successfully.
+
+## 2026-07-26 — Docker Disk Pressure Stalled Local Integration Validation
+
+- **Status:** Resolved; the unchanged focused integration test passes after
+  scoped cleanup.
+- **Symptoms:** Three local runs of
+  `src/db/seed-dev-db.integration.test.ts` failed before executing either test
+  because Testcontainers reported `Port 5432/tcp not bound after 60000ms`.
+- **User impact:** Local validation of PR `#2033` was blocked. CI and production
+  services were unaffected.
+- **Evidence:** A debug run showed Docker publishing the random host port
+  immediately while PostgreSQL remained inside `initdb` past the 60-second
+  startup window. A Compose status read took roughly 54 seconds,
+  `docker system df` did not complete within 90 seconds, and the macOS data
+  volume had 12 GiB free at 99% utilization. A direct random-port probe proved
+  the image and port publishing path were otherwise sound.
+- **Root cause:** Rebuildable Docker builder cache consumed enough of the
+  nearly-full host data volume to create severe Docker Desktop storage latency;
+  PostgreSQL initialization could not finish inside the existing strict
+  Testcontainers startup window.
+- **Fix / mitigation:** Removed only the `issue-1984` disposable Compose
+  containers, network, and volumes, then ran `docker builder prune -af` as
+  prescribed by the
+  [Docker disk recovery runbook](testing.md#docker-disk-recovery). This
+  reclaimed 5.022 GB, increased free host space to 18 GiB, and reduced
+  `docker ps` latency to roughly 0.13 seconds. No timeout or retry setting was
+  changed.
+- **Validation:** The same focused `pnpm test:integration` invocation for
+  `src/db/seed-dev-db.integration.test.ts` then passed both real-Postgres tests
+  in 93 seconds, and its workspace Compose state was removed afterward.
+- **Remaining risk / follow-up:** The host data volume remains highly utilized,
+  and later Docker builds will recreate cache. Continue preserving other
+  workspaces' running containers and named volumes while applying Docker's
+  [builder-cache pruning guidance](https://docs.docker.com/build/cache/garbage-collection/)
+  when disk pressure recurs.
 ## 2026-07-26 — WHOOP BLE Initialization Ran While the App Was Backgrounded
 
 - **Status:** Direct fix merged, deployed, and resolved in Sentry.
@@ -18829,3 +18893,63 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge through normal CI, deploy, and observe
   a complete production analytics build plus cache-warming cycle before
   resolving DOFEK-SERVER-5A.
+
+## 2026-07-27 — Wahoo reconnect invalidated its replacement grant (DOFEK-SERVER-5H)
+
+- **Status:** Root cause confirmed from production evidence and source fix
+  validated locally; merge,
+  deployment, and production validation pending.
+- **Symptoms:** A Wahoo reconnect failed its authorization-code exchange with
+  `invalid_grant` immediately after the application deauthorized the existing
+  connection.
+- **User impact:** The reconnect displayed an error and removed the previous
+  Wahoo connection. The user had to start authorization a second time.
+- **Evidence:** Sentry recorded one production event at
+  `2026-07-27T15:57:00Z`. Its breadcrumb trail shows
+  `DELETE /v1/permissions` succeeded at `15:56:59.821Z`, followed 653
+  milliseconds later by the token endpoint returning 400. The first fatal
+  line was `Token exchange failed (400)` with `invalid_grant`. Production
+  token metadata shows a new Wahoo token was created at `15:57:14Z`; later
+  scheduled Wahoo syncs succeeded at 16:00, 16:30, 17:00, and 17:30.
+- **Root cause:** The destructive reconnect strategy ran in the OAuth callback
+  after Wahoo had issued the replacement authorization code but before the
+  server exchanged it. Wahoo documents `DELETE /v1/permissions` as deleting
+  all application permissions. In the production trace, that successful
+  deletion was followed immediately by `invalid_grant`; the next authorization
+  succeeded after the stored credential had already been removed. Together,
+  those events isolate callback-time deauthorization as the cause:
+  <https://cloud-api.wahooligan.com/#deauthorize>.
+- **Fix / mitigation:** Wahoo reconnects now exchange and persist the new grant
+  first, without revoking either authorization on success. Generic exchange
+  failures preserve the existing connection. Only Wahoo's explicit
+  `Too many unrevoked access tokens` rejection triggers its documented
+  `DELETE /v1/permissions`
+  ([Wahoo deauthorization API](https://cloud-api.wahooligan.com/#deauthorize));
+  after that succeeds, the server removes the local provider authorization
+  and its dependent token and webhook state, invalidates the provider cache,
+  and links directly to a
+  fresh authorization attempt. Previously imported provider data remains
+  intact. Cleanup failures retain local authorization state and fail loudly.
+  The undocumented `/oauth/revoke` endpoint is no longer exposed in Wahoo's
+  OAuth configuration. Wahoo documents both the ten-token limit and the
+  authorization-code exchange sequence:
+  <https://cloud-api.wahooligan.com/#authentication>.
+- **Validation:** The callback regression tests first failed because successful
+  reconnects still revoked the prior authorization and token-limit failures did
+  not clean up. After the fix, focused tests verify normal single-attempt
+  success without revocation, exact token-limit
+  exchange-deauthorize-delete-invalidate ordering and retry guidance, generic
+  exchange failures preserving the existing connection, deauthorization
+  failures preserving local credentials, and stale-credential reporting when
+  local deletion fails. All 142 focused unit tests and all 3,787 changed
+  unit/mobile tests pass. Executable database integration coverage verifies
+  that removing the authorization clears `sync.providers` connection state and
+  clears the OAuth token while retaining the provider catalog row; its local
+  run was blocked before test collection because Docker had no space to create
+  this worktree's database volume, so CI must run that tier.
+- **Remaining risk / follow-up:** Merge and deploy through the normal release
+  path, perform one production Wahoo reconnect, and confirm the token exchange
+  succeeds without `DELETE /v1/permissions`. Keep the issue open until the
+  deployed release is observed; if the token-limit branch occurs, confirm the
+  UI returns the documented clean-grant retry guidance before resolving
+  DOFEK-SERVER-5H.

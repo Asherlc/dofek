@@ -164,6 +164,23 @@ describe("CycleScreen", () => {
     expect(screen.queryByText(/No active cycle detected/)).toBeNull();
   });
 
+  it("shows the tracking-only safety boundary beside the phase estimate", async () => {
+    state.phaseQuery.data = {
+      phase: "menstrual",
+      dayOfCycle: 3,
+      cycleLength: 28,
+    };
+    const { default: CycleScreen } = await import("./cycle");
+
+    render(<CycleScreen />);
+
+    expect(
+      screen.getByLabelText(
+        "Cycle tracking safety notice. Tracking estimates only. Do not use for birth control or diagnosis.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("renders the server-provided duration label", async () => {
     state.historyQuery.data = [
       {

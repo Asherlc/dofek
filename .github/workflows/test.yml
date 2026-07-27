@@ -1071,6 +1071,7 @@ jobs:
             | { grep -v 'src/db/schema/' || true; } \
             | { grep -v 'packages/server/src/types\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
+            | { grep -v '^cypress/' || true; } \
             | { grep -v 'packages/mobile/' || true; } \
             | { grep -v '\.storybook/' || true; } \
             | { grep -v '\.stories\.ts$' || true; } \

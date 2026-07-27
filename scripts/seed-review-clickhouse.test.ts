@@ -19,7 +19,7 @@ describe("seed-review-clickhouse", () => {
     expect(statements).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.activity");
     expect(statements.join("\n")).toContain("INSERT INTO postgres_fitness.activity");
     expect(statements.join("\n")).toContain(
-      "WHERE user_id = '00000000-0000-0000-0000-000000000001'",
+      "WHERE user_id = '00000000-0000-4000-8000-000000000001'",
     );
   });
 });
