@@ -19,6 +19,10 @@ const config: StorybookConfig = {
         : {};
     viteConfig.resolve.alias = {
       ...existingAliases,
+      "@react-native-community/datetimepicker": resolve(
+        currentDir,
+        "./mocks/react-native-community-datetimepicker.tsx",
+      ),
       "expo-modules-core": resolve(currentDir, "./mocks/expo-modules-core.ts"),
       "expo-router": resolve(currentDir, "./mocks/expo-router.ts"),
       "expo-updates": resolve(currentDir, "./mocks/expo-updates.ts"),
