@@ -123,13 +123,13 @@ const { MockZwiftClient } = vi.hoisted(() => {
   return { MockZwiftClient };
 });
 
-vi.mock("zwift-client/client", async (importOriginal) => {
-  const real = await importOriginal<typeof import("zwift-client/client")>();
+vi.mock("@dofek/zwift/client", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@dofek/zwift/client")>();
   return { ...real, ZwiftClient: MockZwiftClient };
 });
 
 const { mapZwiftSport, parseZwiftActivity, parseZwiftFitnessData } =
-  await vi.importActual<typeof import("zwift-client/parsing")>("zwift-client/parsing");
+  await vi.importActual<typeof import("@dofek/zwift/parsing")>("@dofek/zwift/parsing");
 
 // ============================================================
 // Sample API responses

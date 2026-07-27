@@ -1,7 +1,7 @@
+import { ZWIFT_API_BASE, ZwiftClient } from "@dofek/zwift/client";
+import { parseZwiftActivity, parseZwiftFitnessData } from "@dofek/zwift/parsing";
+import type { ZwiftActivitySummary } from "@dofek/zwift/types";
 import { z } from "zod";
-import { ZWIFT_API_BASE, ZwiftClient } from "zwift-client/client";
-import { parseZwiftActivity, parseZwiftFitnessData } from "zwift-client/parsing";
-import type { ZwiftActivitySummary } from "zwift-client/types";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import {

@@ -1,6 +1,16 @@
-import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import type { EventSubscription } from "expo-modules-core";
 import WhoopBleModule from "./src/WhoopBleModule";
+
+/** A timestamped accelerometer and gyroscope sample from a WHOOP strap. */
+export interface WhoopImuSample {
+  timestamp: string;
+  x: number;
+  y: number;
+  z: number;
+  gyroscopeX: number;
+  gyroscopeY: number;
+  gyroscopeZ: number;
+}
 
 /** A discovered WHOOP strap */
 export interface WhoopDevice {
@@ -33,9 +43,7 @@ interface NativeWhoopSample {
   gyroscopeZ: number;
 }
 
-function mapNativeSample(
-  native: NativeWhoopSample,
-): InertialMeasurementUnitSample & { deviceId: string } {
+function mapNativeSample(native: NativeWhoopSample): WhoopImuSample & { deviceId: string } {
   return {
     deviceId: native.deviceId,
     timestamp: native.timestamp,
@@ -131,7 +139,7 @@ export async function startOpticalMode(): Promise<boolean> {
  */
 export async function peekBufferedSamples(
   maxCount?: number,
-): Promise<Array<InertialMeasurementUnitSample & { deviceId: string }>> {
+): Promise<Array<WhoopImuSample & { deviceId: string }>> {
   const natives: NativeWhoopSample[] = await WhoopBleModule.peekBufferedSamples(maxCount);
   return natives.map(mapNativeSample);
 }
@@ -175,9 +183,7 @@ export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample
  * Retrieve and clear the internal IMU sample buffer.
  * @deprecated Use peekBufferedSamples + confirmSamplesDrain instead.
  */
-export async function getBufferedSamples(): Promise<
-  Array<InertialMeasurementUnitSample & { deviceId: string }>
-> {
+export async function getBufferedSamples(): Promise<Array<WhoopImuSample & { deviceId: string }>> {
   const natives: NativeWhoopSample[] = await WhoopBleModule.getBufferedSamples();
   return natives.map(mapNativeSample);
 }

@@ -149,6 +149,44 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 16,
   },
+  sourceDecisionCard: {
+    marginTop: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: 12,
+    gap: 10,
+  },
+  sourceDecisionTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  sourceDecisionDetails: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  sourceDecisionDetail: {
+    minWidth: 90,
+    gap: 2,
+  },
+  sourceDecisionLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: colors.textTertiary,
+    textTransform: "uppercase",
+  },
+  sourceDecisionValue: {
+    fontSize: 12,
+    color: colors.text,
+  },
+  sourceDecisionExplanation: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    lineHeight: 16,
+  },
   recomputeButton: {
     backgroundColor: colors.surface,
     borderRadius: 12,

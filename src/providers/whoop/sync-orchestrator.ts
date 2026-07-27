@@ -1,5 +1,5 @@
+import { WhoopClient } from "@dofek/whoop/client";
 import { captureException } from "@sentry/node";
-import { WhoopClient } from "whoop-whoop/client";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";

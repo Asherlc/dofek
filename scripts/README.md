@@ -9,6 +9,11 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Populates the main web and mobile review surfaces while keeping generated data deterministic across runs.
   - Automatically applies migrations when needed and verifies representative row counts before reporting success.
   - Usage: `DATABASE_URL=... pnpm seed`
+- `seed-review-clickhouse.ts`: Refreshes review-user relational tables in
+  ClickHouse without replacing canonical `ingest.metric_stream` rows. Postgres
+  is no longer a metric-stream source; see the
+  [metric-stream retirement record](../docs/metric-stream-postgres-retirement.md).
+  - Usage: `pnpm review:seed-clickhouse`
 - `migrate-raw.mjs`: Utility for running raw SQL migrations or manual data fixes.
 
 ## Environment & Secrets
@@ -63,6 +68,13 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   are lost, inactive, or retaining dangerous WAL, and when active ClickHouse
   mirrors have stale `_peerdb_synced_at` values.
   - Usage: `pnpm check:clickhouse-cdc`
+- `check-database-backup-freshness.ts`: Lists every page of the private
+  `dofek-db-backups` R2 bucket and fails when no backup exists, object metadata
+  is incomplete, or the newest recovery point is at least 24 hours old.
+  Cloudflare R2 supports the S3 `ListObjectsV2` operation and its continuation
+  token:
+  https://developers.cloudflare.com/r2/api/s3/api/#implemented-object-level-operations.
+  - Usage: `pnpm tsx scripts/with-env.ts -- pnpm check:database-backup-freshness`
 - `cdc-health-state.ts`: Atomically records CDC monitor outcomes and implements
   the bounded-age/failure probe used by the production `cdc-health` service.
 - `check-ota-manifest.ts`: Sends the production iOS [Expo Updates protocol

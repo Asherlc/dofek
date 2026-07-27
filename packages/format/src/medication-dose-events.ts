@@ -10,6 +10,8 @@ export const medicationDoseEventSchema = z.object({
   sourceName: z.string().nullable(),
 });
 
+export type MedicationDoseEvent = z.infer<typeof medicationDoseEventSchema>;
+
 export function formatDoseStatus(status: string): string {
   const normalized = status.trim();
   if (normalized.length === 0) return "Unknown";

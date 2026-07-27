@@ -30,8 +30,8 @@ const meta = {
           <p className="mt-1 text-xl font-semibold text-foreground">7,640</p>
         </div>
         <div className="rounded-lg border border-border bg-white/70 p-3">
-          <p className="text-xs text-muted">Active Energy</p>
-          <p className="mt-1 text-xl font-semibold text-foreground">407 kcal</p>
+          <p className="text-xs text-muted">Respiratory Rate</p>
+          <p className="mt-1 text-xl font-semibold text-foreground">14 breaths/min</p>
         </div>
       </div>
     ),

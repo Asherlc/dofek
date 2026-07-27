@@ -4,6 +4,7 @@ import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import {
   type ProviderDataDeletionClickHouseClient,
+  type ProviderDataDeletionDependencies,
   processProviderDataDeletionJob,
 } from "../../../../src/jobs/process-provider-data-deletion-job.ts";
 import type { ProviderDataDeletionJobData } from "../../../../src/jobs/queues.ts";
@@ -31,6 +32,33 @@ const acknowledgementAggregateRowsSchema = z.array(
   z.object({ acknowledgement_count: z.coerce.number().int().nonnegative() }),
 );
 const queryLogRowsSchema = z.array(z.object({ read_rows: z.coerce.number().int().nonnegative() }));
+
+async function runProviderDataDeletionToCompletion(
+  initialData: ProviderDataDeletionJobData,
+  dependencies: Omit<ProviderDataDeletionDependencies, "enqueueContinuation">,
+): Promise<void> {
+  let pendingData: ProviderDataDeletionJobData | null = initialData;
+  while (pendingData) {
+    const currentData = pendingData;
+    const continuations: ProviderDataDeletionJobData[] = [];
+    await processProviderDataDeletionJob(
+      {
+        data: currentData,
+        updateData: vi.fn(async (nextData: ProviderDataDeletionJobData) => {
+          Object.assign(currentData, nextData);
+        }),
+        updateProgress: vi.fn(async () => undefined),
+      },
+      {
+        ...dependencies,
+        enqueueContinuation: async (nextData) => {
+          continuations.push(nextData);
+        },
+      },
+    );
+    pendingData = continuations.shift() ?? null;
+  }
+}
 
 describe("processProviderDataDeletionJob ClickHouse integration", () => {
   let testContext: TestContext;
@@ -73,13 +101,6 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
       providerId: "garmin",
       userId,
     };
-    const job = {
-      data,
-      updateData: vi.fn(async (nextData: ProviderDataDeletionJobData) => {
-        Object.assign(data, nextData);
-      }),
-      updateProgress: vi.fn(async () => undefined),
-    };
     const enqueueAnalyticsRefresh = vi.fn(async () => undefined);
     const markCompleted = vi.fn(async () => undefined);
     const clickHouseClient = getClickHouseTestClient(testContext);
@@ -111,7 +132,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
       query_params: { user_id: userId },
     });
 
-    await processProviderDataDeletionJob(job, {
+    await runProviderDataDeletionToCompletion(data, {
       clickHouseClient,
       enqueueAnalyticsRefresh,
       markCompleted,
@@ -300,15 +321,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
       providerId,
       userId,
     };
-    const job = {
-      data,
-      updateData: vi.fn(async (nextData: ProviderDataDeletionJobData) => {
-        Object.assign(data, nextData);
-      }),
-      updateProgress: vi.fn(async () => undefined),
-    };
-
-    await processProviderDataDeletionJob(job, {
+    await runProviderDataDeletionToCompletion(data, {
       clickHouseClient: deletionClient,
       enqueueAnalyticsRefresh: vi.fn(async () => undefined),
       markCompleted: vi.fn(async () => undefined),
@@ -343,20 +356,11 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
       providerId,
       userId,
     };
-    await processProviderDataDeletionJob(
-      {
-        data: firstDeletionData,
-        updateData: vi.fn(async (nextData: ProviderDataDeletionJobData) => {
-          Object.assign(firstDeletionData, nextData);
-        }),
-        updateProgress: vi.fn(async () => undefined),
-      },
-      {
-        clickHouseClient,
-        enqueueAnalyticsRefresh: vi.fn(async () => undefined),
-        markCompleted: vi.fn(async () => undefined),
-      },
-    );
+    await runProviderDataDeletionToCompletion(firstDeletionData, {
+      clickHouseClient,
+      enqueueAnalyticsRefresh: vi.fn(async () => undefined),
+      markCompleted: vi.fn(async () => undefined),
+    });
 
     const secondDeletionData: ProviderDataDeletionJobData = {
       type: "provider-data-deletion",
@@ -390,6 +394,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
           insert: secondDeletionInsert,
         },
         enqueueAnalyticsRefresh: vi.fn(async () => undefined),
+        enqueueContinuation: vi.fn(async () => undefined),
         markCompleted: vi.fn(async () => undefined),
       },
     );
@@ -482,6 +487,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
         {
           clickHouseClient: deletionClient,
           enqueueAnalyticsRefresh: vi.fn(async () => undefined),
+          enqueueContinuation: vi.fn(async () => undefined),
           markCompleted: vi.fn(async () => undefined),
         },
       ),

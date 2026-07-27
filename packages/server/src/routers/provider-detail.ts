@@ -5,7 +5,7 @@ import { getProviderDataDeletionQueue } from "dofek/jobs/queues";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { z } from "zod";
 import { providerDataDeletesTotal } from "../lib/metrics.ts";
-import { operationStatusOutputSchema, readOperationProgress } from "../lib/operation-progress.ts";
+import { operationStatusOutputSchema } from "../lib/operation-progress.ts";
 import { logger } from "../logger.ts";
 import {
   DISCONNECT_CHILD_TABLES,
@@ -18,6 +18,7 @@ import {
   SYNC_LOG_FILTER_OPTION_FIELDS,
   tableInfo,
 } from "../repositories/provider-detail-repository.ts";
+import { readProviderDataDeletionStatus } from "../services/provider-data-deletion-status.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 // Re-export for backward compatibility (used by settings router and tests)
@@ -287,25 +288,10 @@ export const providerDetailRouter = router({
         });
       }
 
-      if (request.status === "pending") {
-        return { status: "queued", message: "Provider data deletion is pending..." };
-      }
-      if (request.status === "completed") {
-        return { status: "completed", percentage: 100, message: "Provider data deleted" };
-      }
-      if (request.status === "failed") {
-        return {
-          status: "failed",
-          message: request.failureReason ?? "Provider data deletion failed",
-        };
-      }
-
       try {
-        const job = await getProviderDataDeletionQueue().getJob(input.operationId);
-        if (!job) {
-          return { status: "queued", message: "Provider data deletion is pending..." };
-        }
-        return readOperationProgress(job);
+        return await readProviderDataDeletionStatus(request, () =>
+          getProviderDataDeletionQueue().getJob(input.operationId),
+        );
       } catch (error: unknown) {
         Sentry.captureException(error, { tags: { operation: "providerDataDeletionStatus" } });
         throw new TRPCError({

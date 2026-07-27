@@ -31,7 +31,7 @@ import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
-import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals";
+import { ProviderDetailAuthModals } from "./auth-modals";
 import { ProviderDataDeleteControl } from "./provider-data-delete-control";
 import { ProviderDetailActionsCard } from "./provider-detail-actions-card";
 import { ProviderDetailExtras } from "./provider-detail-extras";
@@ -1072,20 +1072,7 @@ function ProviderDetailContent({
           <Text style={styles.disconnectButtonText}>Disconnect Provider</Text>
         </TouchableOpacity>
       )}
-      {modals.credentialAuthProvider && (
-        <CredentialAuthModal
-          providerId={modals.credentialAuthProvider.id}
-          providerName={modals.credentialAuthProvider.name}
-          onClose={modals.closeCredentialAuth}
-          onSuccess={modals.handleCredentialSuccess}
-        />
-      )}
-      {modals.whoopAuthOpen && (
-        <WhoopAuthModal onClose={modals.closeWhoopAuth} onSuccess={modals.handleWhoopSuccess} />
-      )}
-      {modals.garminAuthOpen && (
-        <GarminAuthModal onClose={modals.closeGarminAuth} onSuccess={modals.handleGarminSuccess} />
-      )}
+      <ProviderDetailAuthModals modals={modals} />
     </ScrollView>
   );
 }

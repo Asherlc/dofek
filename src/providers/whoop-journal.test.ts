@@ -1,5 +1,5 @@
+import type { WhoopWorkoutRecord } from "@dofek/whoop/types";
 import { describe, expect, it } from "vitest";
-import type { WhoopWorkoutRecord } from "whoop-whoop/types";
 import { parseWorkout } from "./whoop/parsing.ts";
 
 // ============================================================

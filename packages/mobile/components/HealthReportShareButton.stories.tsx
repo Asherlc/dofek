@@ -29,7 +29,7 @@ function createMockLink(): TRPCLink<AppRouter> {
       shareToken: "story-token",
       reportType: "monthly",
       reportData: {},
-      expiresAt: null,
+      expiresAt: "2026-08-02T12:00:00.000Z",
       createdAt: "2026-07-24T12:00:00.000Z",
     });
 }

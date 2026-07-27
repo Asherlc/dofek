@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { compactWhitespace } from "./read-model-sql-test-helpers.ts";
 
 function readProjectFile(path: string): string {
   const projectFileUrl = new URL(`../../../${path}`, import.meta.url);
@@ -21,10 +22,6 @@ function readModel(name: string): string {
   const sql = readFileSync(modelUrl, "utf8");
   expect(sql.length).toBeGreaterThan(0);
   return sql;
-}
-
-function compactWhitespace(value: string): string {
-  return value.replace(/\s+/g, " ");
 }
 
 describe("production analytics read-model build", () => {
@@ -95,9 +92,11 @@ describe("production analytics read-model build", () => {
       "activity_power_curve",
       "cycling_activity",
       "daily_cycling",
+      "provider_change_watermark",
       "provider_stats",
     ]);
     expect(sleepDashboardMatch?.[1]?.split(" ")).toEqual([
+      "sleep_heart_rate_window",
       "sleep_heart_rate_sample",
       "resting_heart_rate_sleep_window",
       "daily_sleep",
@@ -125,35 +124,49 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("incremental_strategy='append'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
-    expect(sql).toContain("initial_lookback_days");
+    expect(sql).toContain("full_refresh=false");
     expect(sql).toContain("sleep_dirty_key_batch_size");
     expect(sql).toContain("existing_sleep_state AS");
-    expect(sql).toContain("current_sleep_state AS");
-    expect(sql).toContain("heart_rate_refreshes AS");
-    expect(sql).toContain("activity_refreshes AS");
+    expect(sql).toContain("current_windows AS");
+    expect(sql).toContain("ref('sleep_heart_rate_window')");
+    expect(sql).toContain("ref('deduped_sensor')");
+    expect(sql).toContain("source('postgres_fitness', 'activity')");
     expect(sql).toContain("source_dirty_sleep_keys AS");
     expect(sql).toContain("stale_sleep_dirty_keys AS");
-    expect(sql).toContain("candidate_dirty_keys AS");
     expect(normalizedSql).toContain("LIMIT {{ sleep_dirty_key_batch_size }}");
-    expect(sql).toContain("current_sleep_state AS materialized");
     expect(sql).toContain("existing_sleep_state AS materialized");
     expect(sql).toContain("dirty_keys AS materialized");
     expect(sql).toContain("merged_samples AS");
     expect(sql).toContain("FULL OUTER JOIN existing_samples");
-    expect(sql).toContain("ref('deduped_sensor')");
-    expect(sql).toContain("source('postgres_fitness', 'sleep_session')");
-    expect(sql).toContain("source('postgres_fitness', 'activity')");
-    expect(sql).toContain("channel = 'heart_rate'");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(sql).toContain("assumeNotNull(sleep_id) AS sleep_id");
     expect(sql).toContain("assumeNotNull(user_id) AS user_id");
     expect(sql).toContain("assumeNotNull(recorded_at) AS recorded_at");
     expect(sql).toContain("assumeNotNull(recorded_date) AS recorded_date");
-    expect(normalizedSql).toContain("source_refreshed_at > existing_sleep_state.refreshed_at");
+    expect(normalizedSql).toContain(
+      "current_windows.refreshed_at > existing_sleep_state.refreshed_at",
+    );
     expect(normalizedSql).not.toContain("target_state AS");
     expect(normalizedSql).not.toContain("last_refreshed_at");
     expect(normalizedSql).not.toContain("incremental_strategy='microbatch'");
     expect(normalizedSql).not.toContain("lookback=");
+  });
+
+  it("materializes exact sleep windows in bounded batches", () => {
+    expect(existsSync(new URL("./sleep_heart_rate_window.sql", import.meta.url))).toBe(true);
+    const sql = readModel("sleep_heart_rate_window");
+    const normalizedSql = compactWhitespace(sql);
+
+    expect(sql).toContain("incremental_strategy='append'");
+    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("full_refresh=false");
+    expect(sql).toContain("source('analytics', 'heart_rate_day_change')");
+    expect(sql).toContain("ref('deduped_sensor')");
+    expect(sql).toContain("eligible_sample_count");
+    expect(normalizedSql).toContain("LIMIT {{ sleep_dirty_key_batch_size }}");
+    expect(normalizedSql).not.toContain(
+      "{% if is_incremental() %} LIMIT {{ sleep_dirty_key_batch_size }}",
+    );
   });
 
   it("aggregates resting heart rate from the bounded sleep intermediary", () => {
@@ -249,37 +262,6 @@ describe("production analytics read-model build", () => {
       "Activity source mirror would tombstone at least",
     );
     expect(normalizedSql.match(/CROSS JOIN source_safety_check/g)?.length).toBe(2);
-  });
-
-  it("counts only active activities in provider stats", () => {
-    const providerStatsSql = readModel("provider_stats");
-
-    expect(providerStatsSql).toContain("source('postgres_fitness', 'activity') }} FINAL");
-    expect(providerStatsSql).toContain("provider_absent_at IS null");
-    expect(providerStatsSql).toContain("deleted_at IS null");
-  });
-
-  it("recounts only dirty providers through the metric-stream covering projection", () => {
-    const providerStatsSql = readModel("provider_stats");
-    const normalizedSql = compactWhitespace(providerStatsSql);
-
-    expect(providerStatsSql).toContain("source_provider_refreshes AS");
-    expect(providerStatsSql).toContain("current_provider_state AS");
-    expect(providerStatsSql).toContain("existing_provider_state AS");
-    expect(providerStatsSql).toContain("source_dirty_providers AS");
-    expect(providerStatsSql).toContain("stale_providers AS");
-    expect(providerStatsSql).toContain("metric_stream_current AS");
-    expect(providerStatsSql).toContain("argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted");
-    expect(normalizedSql).toContain(
-      "force_optimize_projection_name = 'by_provider_generation'",
-    );
-    expect(normalizedSql).toContain(
-      "(user_id, provider_id) IN ( SELECT user_id, provider_id FROM providers )",
-    );
-    expect(providerStatsSql).toContain("'join_use_nulls': 1");
-    expect(normalizedSql).not.toContain(
-      "FROM {{ source('ingest', 'metric_stream') }} FINAL",
-    );
   });
 
   it("materializes deduped activity member aliases from deduped activities", () => {

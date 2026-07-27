@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import WhoopBleLib
+@testable import WhoopBLE
 
 final class WhoopBleNotificationSubscriptionTrackerTests: XCTestCase {
     func testDataSubscriptionAloneCompletesTheHandshake() {

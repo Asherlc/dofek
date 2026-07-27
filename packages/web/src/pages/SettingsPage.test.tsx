@@ -28,6 +28,9 @@ vi.mock("../components/LinkedAccountsPanel.tsx", () => ({
 vi.mock("../components/MedicationDoseEventsPanel.tsx", () => ({
   MedicationDoseEventsPanel: () => <div>Medication doses</div>,
 }));
+vi.mock("../components/MedicationRemindersPanel.tsx", () => ({
+  MedicationRemindersPanel: () => <div>Medication reminders</div>,
+}));
 vi.mock("../components/PageLayout.tsx", () => ({
   PageLayout: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
@@ -41,6 +44,9 @@ vi.mock("../components/PasswordSettingsPanel.tsx", () => ({
 }));
 vi.mock("../components/PersonalizationPanel.tsx", () => ({
   PersonalizationPanel: () => <div>Personalization</div>,
+}));
+vi.mock("../components/PrimaryGoalSelector.tsx", () => ({
+  PrimaryGoalSelector: () => <div>Primary goal</div>,
 }));
 vi.mock("../components/SlackIntegrationPanel.tsx", () => ({
   SlackIntegrationPanel: () => <div>Slack</div>,

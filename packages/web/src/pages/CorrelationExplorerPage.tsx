@@ -1,4 +1,5 @@
 import { formatNumber } from "@dofek/format/format";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationStrengthBar } from "../components/CorrelationStrengthBar.tsx";
@@ -165,6 +166,20 @@ export function CorrelationExplorerPage() {
                 {lag > 0
                   ? `How ${xMetric?.label ?? "X"} today relates to ${yMetric?.label ?? "Y"} ${lag === 1 ? "tomorrow" : `${lag} days later`}`
                   : "Same-day comparison"}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                to="/experiments"
+                search={{ outcomeMetricId: metricY, lagDays: lag }}
+                className="inline-flex px-3 py-1.5 text-xs rounded-md bg-accent/15 text-foreground hover:bg-accent/25 transition-colors"
+              >
+                Start experiment with {yMetric?.label ?? "this outcome"}
+              </Link>
+              <span className="text-[10px] text-dim">
+                Prefills the outcome and lag. You still choose a controllable intervention — the
+                correlated X metric is not assumed to be one.
               </span>
             </div>
           </div>

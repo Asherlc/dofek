@@ -36,7 +36,12 @@ import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { deleteDietarySamples, writeDietarySamples } from "../../modules/health-kit";
 import { colors } from "../../theme";
-import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals.tsx";
+import {
+  CredentialAuthModal,
+  GarminAuthModal,
+  TokenAuthModal,
+  WhoopAuthModal,
+} from "./auth-modals.tsx";
 import { FileImportProviderCard } from "./file-import-provider-card.tsx";
 import { getFileImportProviderConfig } from "./file-import-providers.ts";
 import {
@@ -94,6 +99,12 @@ export default function ProvidersScreen() {
   const [credentialAuthProvider, setCredentialAuthProvider] = useState<{
     id: string;
     name: string;
+  } | null>(null);
+  const [tokenAuthProvider, setTokenAuthProvider] = useState<{
+    id: string;
+    name: string;
+    label: string;
+    instructionsUrl: string;
   } | null>(null);
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
   const [garminAuthOpen, setGarminAuthOpen] = useState(false);
@@ -555,7 +566,12 @@ export default function ProvidersScreen() {
   );
 
   const handleConnect = useCallback(
-    async (provider: { id: string; label: string; authType: string }) => {
+    async (provider: {
+      id: string;
+      label: string;
+      authType: string;
+      tokenAuth?: { label: string; instructionsUrl: string } | null;
+    }) => {
       switch (provider.authType) {
         case "oauth":
         case "oauth1": {
@@ -582,6 +598,25 @@ export default function ProvidersScreen() {
         case "credential":
           setCredentialAuthProvider({ id: provider.id, name: provider.label });
           break;
+        case "token":
+          if (provider.tokenAuth) {
+            setTokenAuthProvider({
+              id: provider.id,
+              name: provider.label,
+              label: provider.tokenAuth.label,
+              instructionsUrl: provider.tokenAuth.instructionsUrl,
+            });
+          } else {
+            const error = new Error(
+              `${provider.label} personal-token authentication is unavailable. Refresh and try again.`,
+            );
+            captureException(error, {
+              context: "connect-provider-list",
+              providerId: provider.id,
+            });
+            Alert.alert("Unable to connect provider", error.message);
+          }
+          break;
         case "custom:whoop":
           setWhoopAuthOpen(true);
           break;
@@ -603,6 +638,7 @@ export default function ProvidersScreen() {
         ? "connected"
         : "not_connected",
     authType: provider.authType,
+    tokenAuth: provider.tokenAuth,
     lastSyncAt: provider.lastSyncedAt,
     importOnly: provider.importOnly,
     pushOnly: provider.pushOnly,
@@ -887,6 +923,19 @@ export default function ProvidersScreen() {
           onClose={() => setCredentialAuthProvider(null)}
           onSuccess={() => {
             setCredentialAuthProvider(null);
+            trpcUtils.sync.providers.invalidate();
+          }}
+        />
+      )}
+      {tokenAuthProvider && (
+        <TokenAuthModal
+          providerId={tokenAuthProvider.id}
+          providerName={tokenAuthProvider.name}
+          tokenLabel={tokenAuthProvider.label}
+          instructionsUrl={tokenAuthProvider.instructionsUrl}
+          onClose={() => setTokenAuthProvider(null)}
+          onSuccess={() => {
+            setTokenAuthProvider(null);
             trpcUtils.sync.providers.invalidate();
           }}
         />

@@ -1,7 +1,7 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { WhoopClient } from "@dofek/whoop/client";
+import type { WhoopCycle, WhoopWorkoutRecord } from "@dofek/whoop/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
-import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { sleepSession } from "../../db/schema/activity.ts";

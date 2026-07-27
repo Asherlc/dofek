@@ -67,6 +67,8 @@ COPY packages/velohero-client/package.json ./packages/velohero-client/
 COPY packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
 COPY packages/provider-http/package.json ./packages/provider-http/
+COPY packages/peloton-client/package.json ./packages/peloton-client/
+COPY packages/xert-client/package.json ./packages/xert-client/
 COPY packages/format/package.json ./packages/format/
 COPY packages/filter-columns/package.json ./packages/filter-columns/
 COPY packages/scoring/package.json ./packages/scoring/
@@ -149,6 +151,10 @@ COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/src ./p
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
 COPY --from=source --chown=node:node /app/packages/provider-http/src ./packages/provider-http/src
 COPY --from=source --chown=node:node /app/packages/provider-http/package.json ./packages/provider-http/
+COPY --from=source --chown=node:node /app/packages/peloton-client/src ./packages/peloton-client/src
+COPY --from=source --chown=node:node /app/packages/peloton-client/package.json ./packages/peloton-client/
+COPY --from=source --chown=node:node /app/packages/xert-client/src ./packages/xert-client/src
+COPY --from=source --chown=node:node /app/packages/xert-client/package.json ./packages/xert-client/
 COPY --from=source --chown=node:node /app/packages/format/src ./packages/format/src
 COPY --from=source --chown=node:node /app/packages/format/package.json ./packages/format/
 COPY --from=source --chown=node:node /app/packages/filter-columns/src ./packages/filter-columns/src
@@ -197,6 +203,8 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/imu node_modules/@dofek/imu && \
     ln -sfn /app/packages/providers-meta node_modules/@dofek/providers && \
     ln -sfn /app/packages/provider-http node_modules/@dofek/provider-http && \
+    ln -sfn /app/packages/peloton-client node_modules/@dofek/peloton && \
+    ln -sfn /app/packages/xert-client node_modules/@dofek/xert && \
     ln -sfn /app/packages/recovery node_modules/@dofek/recovery && \
     ln -sfn /app/packages/zones node_modules/@dofek/zones
 

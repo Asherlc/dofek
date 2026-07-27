@@ -67,6 +67,30 @@ function createSeededProviders() {
     },
   );
 
+  queryClient.setQueryData(
+    [["todayPlan", "get"], { input: { endDate: todayDate }, type: "query" }],
+    {
+      status: "ready",
+      date: todayDate,
+      action: {
+        id: "strain_target",
+        title: "Train hard today — aim for 16.2 strain",
+        summary: "Recovery is strong (82). Push for a high-strain day to build fitness.",
+        zone: "Push",
+      },
+      supportingFacts: [
+        { label: "Recovery", value: "82/100" },
+        { label: "Sleep performance", value: "88 (Good)" },
+      ],
+      confidence: "high",
+      freshness: {
+        recoveryDate: todayDate,
+        sleepDate: localDateString(-1),
+      },
+      missingInputs: [],
+    },
+  );
+
   queryClient.setQueryData([["providerGuide", "status"], { type: "query" }], {
     dismissed: true,
   });

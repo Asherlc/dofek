@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "packages": [
+    {
+      "id": "whoop-ble",
+      "display_name": "WhoopBLE",
+      "source_path": "packages/mobile/modules/whoop-ble",
+      "repository": "Asherlc/whoop-ble-swift",
+      "export_script": "scripts/export-whoop-ble-swift.ts"
+    }
+  ]
+}

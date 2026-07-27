@@ -5,7 +5,12 @@ import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
-import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
+import {
+  CredentialAuthModal,
+  GarminAuthModal,
+  TokenAuthModal,
+  WhoopAuthModal,
+} from "./DataSourcesAuthModals.tsx";
 import type { ProviderState, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
 import { FileImportProviderCard } from "./FileImportProviderCard.tsx";
 import {
@@ -67,6 +72,12 @@ export function DataSourcesPanel() {
   const [credentialAuthProvider, setCredentialAuthProvider] = useState<{
     id: string;
     name: string;
+  } | null>(null);
+  const [tokenAuthProvider, setTokenAuthProvider] = useState<{
+    id: string;
+    name: string;
+    label: string;
+    instructionsUrl: string;
   } | null>(null);
 
   const updateState = useCallback(
@@ -330,6 +341,25 @@ export function DataSourcesPanel() {
         case "credential":
           setCredentialAuthProvider({ id: p.id, name: p.name });
           break;
+        case "token":
+          if (p.tokenAuth) {
+            setTokenAuthProvider({
+              id: p.id,
+              name: p.name,
+              label: p.tokenAuth.label,
+              instructionsUrl: p.tokenAuth.instructionsUrl,
+            });
+          } else {
+            const error = new Error(
+              `${p.name} personal-token authentication is unavailable. Refresh and try again.`,
+            );
+            captureException(error, {
+              operation: "connect-provider",
+              providerId: p.id,
+            });
+            updateState(p.id, { status: "error", message: error.message });
+          }
+          break;
         case "custom:whoop":
           setWhoopAuthOpen(true);
           break;
@@ -340,7 +370,7 @@ export function DataSourcesPanel() {
           handleSync(p.id, fullSync);
       }
     },
-    [handleSync],
+    [handleSync, updateState],
   );
 
   // Build unified list: server providers + Apple Health (file-import-only, not registered on server)
@@ -514,6 +544,20 @@ export function DataSourcesPanel() {
           onClose={() => setCredentialAuthProvider(null)}
           onSuccess={() => {
             setCredentialAuthProvider(null);
+            trpcUtils.sync.providers.invalidate();
+          }}
+        />
+      )}
+
+      {tokenAuthProvider && (
+        <TokenAuthModal
+          providerId={tokenAuthProvider.id}
+          providerName={tokenAuthProvider.name}
+          tokenLabel={tokenAuthProvider.label}
+          instructionsUrl={tokenAuthProvider.instructionsUrl}
+          onClose={() => setTokenAuthProvider(null)}
+          onSuccess={() => {
+            setTokenAuthProvider(null);
             trpcUtils.sync.providers.invalidate();
           }}
         />
