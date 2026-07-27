@@ -103,7 +103,7 @@ function secondSupportingFact(input: BuildTodayPlanInput): {
   if (input.strainTarget?.workloadRatio != null) {
     return {
       fact: {
-        label: "Workload ratio",
+        label: "Recent-to-baseline workload ratio",
         value: String(input.strainTarget.workloadRatio),
       },
       missingSleep: true,

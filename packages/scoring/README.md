@@ -35,7 +35,7 @@ console.log({
 
 | Subpath | Purpose |
 | --- | --- |
-| `@dofek/scoring/scoring` | Strain, recovery, workload-ratio, trend, score-zone, and presentation helpers |
+| `@dofek/scoring/scoring` | Strain, recovery, trend, score-zone, and presentation helpers |
 | `@dofek/scoring/colors` | Semantic, chart, surface, text, sleep-stage, and activity colors |
 | `@dofek/scoring/tokens` | Framework-neutral typography, spacing, radius, animation, and chart tokens |
 | `@dofek/scoring/strain-target` | Daily strain-target calculation and result types |
@@ -53,8 +53,7 @@ console.log({
   to zero, and caps the result at 21.
 - `zScoreToRecoveryScore` uses a Dofek-defined asymmetric sigmoid where a
   z-score of zero maps to 62.
-- Strain targets use Dofek-defined readiness bands and cap the target when the
-  acute-to-chronic workload ratio exceeds 1.3.
+- Strain targets use Dofek-defined readiness bands.
 - Sleep performance defaults to 70% sleep sufficiency and 30% efficiency. When
   consistency or low-stress inputs are supplied, it averages all available
   components equally.

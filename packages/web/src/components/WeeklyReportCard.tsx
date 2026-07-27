@@ -1,5 +1,5 @@
 import { formatDateShort, formatDurationMinutes, formatHRV } from "@dofek/format/format";
-import { StrainZone, sleepPerformanceColor } from "@dofek/scoring/scoring";
+import { sleepPerformanceColor } from "@dofek/scoring/scoring";
 import type { WeeklyReportResult } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
@@ -22,8 +22,6 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
   }
 
   const { current, history } = data;
-  const currentZone = new StrainZone(current.strainZone);
-  const zoneColor = currentZone.color;
   const sleepWasTracked = current.avgSleepMinutes > 0;
   const hasTraining = current.activityCount > 0 || current.trainingHours > 0;
   const prevWeek = history.length > 0 ? history[history.length - 1] : null;
@@ -43,14 +41,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           <div className="px-3 py-1 rounded-full text-xs font-semibold bg-surface-hover text-subtle">
             No training
           </div>
-        ) : (
-          <div
-            className="px-3 py-1 rounded-full text-xs font-semibold"
-            style={{ backgroundColor: `${zoneColor}20`, color: zoneColor }}
-          >
-            {currentZone.label}
-          </div>
-        )}
+        ) : null}
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-5">
@@ -90,35 +81,34 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
         />
       </div>
 
-      {/* Strain zone history mini bar */}
+      {/* Neutral recent-week activity history */}
       {history.length > 0 && (
         <div>
           <p className="text-subtle text-xs mb-2">Recent weeks</p>
           <div className="flex gap-1">
             {history.slice(-8).map((w) => {
-              const zone = new StrainZone(w.strainZone);
-              const weekHasSleepData = w.avgSleepMinutes > 0;
               const weekHasTraining = w.activityCount > 0 || w.trainingHours > 0;
-              const showZone = weekHasSleepData && weekHasTraining;
               return (
                 <div
                   key={w.weekStart}
-                  className={`flex-1 h-2 rounded-full ${showZone ? "" : "bg-surface-hover"}`}
-                  style={showZone ? { backgroundColor: zone.color } : undefined}
-                  title={`${w.weekStart}: ${showZone ? zone.label : weekHasSleepData ? "No training" : "Sleep not tracked"}`}
+                  className={`flex-1 h-2 rounded-full ${
+                    weekHasTraining ? "bg-accent/60" : "bg-surface-hover"
+                  }`}
+                  title={`${w.weekStart}: ${
+                    weekHasTraining ? formatDurationMinutes(w.trainingHours * 60) : "No training"
+                  }`}
                 />
               );
             })}
-            {sleepWasTracked && hasTraining ? (
+            {hasTraining ? (
               <div
-                className="flex-1 h-2 rounded-full ring-2 ring-border-strong"
-                style={{ backgroundColor: zoneColor }}
-                title="This week"
+                className="flex-1 h-2 rounded-full ring-2 ring-border-strong bg-accent"
+                title={`This week: ${formatDurationMinutes(current.trainingHours * 60)}`}
               />
             ) : (
               <div
                 className="flex-1 h-2 rounded-full ring-2 ring-border-strong bg-surface-hover"
-                title={`This week: ${sleepWasTracked ? "No training" : "Sleep not tracked"}`}
+                title="This week: No training"
               />
             )}
           </div>

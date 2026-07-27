@@ -6,7 +6,7 @@ import {
   formatTrainingLoad,
 } from "@dofek/format/format";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
-import { aggregateWeeklyVolume, StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
+import { aggregateWeeklyVolume, StrainScore } from "@dofek/scoring/scoring";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
@@ -267,7 +267,6 @@ export default function StrainScreen() {
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
   const chronicLoad = todayWorkload?.chronicLoad ?? 0;
   const workloadRatio = todayWorkload?.workloadRatio;
-  const workloadRatioScore = new WorkloadRatio(workloadRatio ?? null);
   const displayedDate = workloadResult?.displayedDate;
   const strainDateLabel =
     displayedDate == null
@@ -368,22 +367,6 @@ export default function StrainScreen() {
                 />
               </View>
               <Text style={styles.targetExplanation}>{strainTarget.explanation}</Text>
-              <View style={styles.loadGrid}>
-                <View style={styles.loadItem}>
-                  <Text style={styles.loadValue}>
-                    {formatNumber(strainTarget.currentStrain, 1)}
-                  </Text>
-                  <Text style={styles.loadLabel}>Today</Text>
-                </View>
-                <View style={styles.loadItem}>
-                  <Text style={styles.loadValue}>
-                    {strainTarget.workloadRatio != null
-                      ? formatNumber(strainTarget.workloadRatio, 2)
-                      : "--"}
-                  </Text>
-                  <Text style={styles.loadLabel}>Training Load Ratio</Text>
-                </View>
-              </View>
             </View>
           )}
 
@@ -393,29 +376,22 @@ export default function StrainScreen() {
             <View style={styles.loadGrid}>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>{formatTrainingLoad(acuteLoad)}</Text>
-                <Text style={styles.loadLabel}>Acute (7 day)</Text>
+                <Text style={styles.loadLabel}>Recent 7-day load</Text>
               </View>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>{formatTrainingLoad(chronicLoad)}</Text>
-                <Text style={styles.loadLabel}>Chronic (28 day)</Text>
+                <Text style={styles.loadLabel}>28-day baseline load</Text>
               </View>
               <View style={styles.loadItem}>
-                <Text
-                  style={[
-                    styles.loadValue,
-                    {
-                      color: workloadRatioScore.color,
-                    },
-                  ]}
-                >
+                <Text style={styles.loadValue}>
                   {workloadRatio != null ? formatNumber(workloadRatio, 2) : "--"}
                 </Text>
-                <Text style={styles.loadLabel}>Workload Ratio</Text>
+                <Text style={styles.loadLabel}>{workloadResult?.context.label ?? "Ratio"}</Text>
               </View>
             </View>
-            {workloadRatio != null && (
-              <Text style={styles.ratioHint}>{workloadRatioScore.hint}</Text>
-            )}
+            {workloadResult?.context.description ? (
+              <Text style={styles.ratioHint}>{workloadResult.context.description}</Text>
+            ) : null}
           </View>
 
           {/* Strain trend */}

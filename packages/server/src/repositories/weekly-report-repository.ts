@@ -7,9 +7,6 @@ import type { ActivitySensorStore } from "./activity-repository.ts";
 // Types
 // ---------------------------------------------------------------------------
 
-/** Strain balance category based on ACWR-like load distribution */
-export type StrainZone = "restoring" | "optimal" | "overreaching";
-
 export interface WeekSummary {
   /** Week start date (Sunday) */
   weekStart: string;
@@ -17,8 +14,6 @@ export interface WeekSummary {
   trainingHours: number;
   /** Number of activities */
   activityCount: number;
-  /** Strain balance zone based on the week's average daily load vs chronic baseline */
-  strainZone: StrainZone;
   /** Average daily load for the week */
   avgDailyLoad: number;
   /** Average sleep duration (minutes) */
@@ -41,22 +36,6 @@ export interface WeeklyReportResult {
 }
 
 // ---------------------------------------------------------------------------
-// Domain logic
-// ---------------------------------------------------------------------------
-
-/**
- * Classify a week's average daily load relative to chronic baseline.
- * Whoop uses strain zones: restoring (<80% chronic), optimal (80-130%), overreaching (>130%).
- */
-export function classifyStrainZone(weekAvgLoad: number, chronicAvgLoad: number): StrainZone {
-  if (chronicAvgLoad <= 0) return "optimal";
-  const ratio = weekAvgLoad / chronicAvgLoad;
-  if (ratio < 0.8) return "restoring";
-  if (ratio > 1.3) return "overreaching";
-  return "optimal";
-}
-
-// ---------------------------------------------------------------------------
 // Domain model
 // ---------------------------------------------------------------------------
 
@@ -68,7 +47,6 @@ export interface WeekRowData {
   avgSleepMin: number | null;
   avgRestingHr: number | null;
   avgHrv: number | null;
-  chronicAvgLoad: number;
   prev3wkAvgSleep: number | null;
 }
 
@@ -88,10 +66,6 @@ export class WeekRow {
     return this.#data.avgDailyLoad;
   }
 
-  get chronicAvgLoad(): number {
-    return this.#data.chronicAvgLoad;
-  }
-
   /** Convert raw row data into a WeekSummary with computed fields. */
   toSummary(): WeekSummary {
     const avgSleepMin = this.#data.avgSleepMin ?? 0;
@@ -101,7 +75,6 @@ export class WeekRow {
       weekStart: this.#data.weekStart,
       trainingHours: Math.round(this.#data.totalHours * 10) / 10,
       activityCount: this.#data.activityCount,
-      strainZone: classifyStrainZone(this.#data.avgDailyLoad, this.#data.chronicAvgLoad),
       avgDailyLoad: Math.round(this.#data.avgDailyLoad * 10) / 10,
       avgSleepMinutes: Math.round(avgSleepMin),
       sleepPerformancePct:
@@ -128,7 +101,6 @@ const weeklyReportRowSchema = z.object({
   avg_sleep_min: z.coerce.number().nullable(),
   avg_resting_hr: z.coerce.number().nullable(),
   avg_hrv: z.coerce.number().nullable(),
-  chronic_avg_load: z.coerce.number(),
   prev_3wk_avg_sleep: z.coerce.number().nullable(),
 });
 
@@ -146,9 +118,9 @@ export class WeeklyReportRepository {
     this.#sensorStore = sensorStore;
   }
 
-  /** Fetch weekly performance report with strain zones, sleep performance, and vitals. */
+  /** Fetch weekly performance report with training, sleep performance, and vitals. */
   async getReport(weeks: number, endDate: string): Promise<WeeklyReportResult> {
-    const totalDays = weeks * 7 + 28; // extra for chronic baseline
+    const totalDays = weeks * 7 + 28; // extra weeks for the rolling sleep comparison
     const windowStart = dateWindowStartString(endDate, totalDays);
 
     const rows = await this.#sensorStore.query(
@@ -238,7 +210,6 @@ export class WeeklyReportRepository {
         avg_sleep_min,
         avg_resting_hr,
         avg_hrv,
-        avg(avg_daily_load) OVER (ORDER BY week_start ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS chronic_avg_load,
         avg(avg_sleep_min) OVER (ORDER BY week_start ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING) AS prev_3wk_avg_sleep
       FROM weekly_with_report_presence
       WHERE report_has_data
@@ -261,7 +232,6 @@ export class WeeklyReportRepository {
           avgSleepMin: row.avg_sleep_min,
           avgRestingHr: row.avg_resting_hr,
           avgHrv: row.avg_hrv,
-          chronicAvgLoad: Number(row.chronic_avg_load) || 0,
           prev3wkAvgSleep: row.prev_3wk_avg_sleep,
         }),
     );

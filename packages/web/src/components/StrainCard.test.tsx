@@ -23,6 +23,13 @@ describe("StrainCard", () => {
     render(
       <StrainCard
         data={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 13,
           displayedDate: "2026-03-27",
           timeSeries: [
@@ -48,6 +55,13 @@ describe("StrainCard", () => {
     render(
       <StrainCard
         data={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 13,
           displayedDate: "2026-03-28",
           timeSeries: [

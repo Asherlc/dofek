@@ -27,6 +27,13 @@ const mockReadiness = [
 ];
 
 const mockWorkloadRatio = {
+  context: {
+    label: "Recent-to-baseline workload ratio",
+    description:
+      "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+    recentDays: 7,
+    baselineDays: 28,
+  },
   displayedStrain: 12.5,
   displayedDate: today,
   timeSeries: [
@@ -373,6 +380,13 @@ describe("DailyOverview", () => {
         endDate="2026-03-31"
         readiness={mockReadiness}
         workloadRatio={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 10.2,
           displayedDate: "2026-03-30",
           timeSeries: [
@@ -465,9 +479,14 @@ describe("DailyOverview", () => {
     // Breakdown should show target and load stats
     expect(screen.getByText("14")).toBeTruthy(); // target strain value
     expect(screen.getByText("Push")).toBeTruthy();
-    expect(screen.getByText("Acute (7d)")).toBeTruthy();
-    expect(screen.getByText("Chronic (28d)")).toBeTruthy();
-    expect(screen.getByText("Workload Ratio")).toBeTruthy();
+    expect(screen.getByText("Recent 7-day load")).toBeTruthy();
+    expect(screen.getByText("28-day baseline load")).toBeTruthy();
+    expect(screen.getByText("Recent-to-baseline workload ratio")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+      ),
+    ).toBeTruthy();
   });
 
   it("explains current strain from today's load separately from rolling training load", () => {
@@ -476,8 +495,7 @@ describe("DailyOverview", () => {
       currentStrain: 0,
       progressPercent: 0,
       zone: "Maintain" as const,
-      explanation:
-        "Your recent training load is elevated, so today's target is capped to reduce injury risk.",
+      explanation: "Moderate recovery (50). Aim for a steady training day.",
       dailyLoad: 0,
       acuteLoad: 133,
       chronicLoad: 33,
@@ -489,6 +507,13 @@ describe("DailyOverview", () => {
       <DailyOverview
         readiness={mockReadiness}
         workloadRatio={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 0,
           displayedDate: today,
           timeSeries: [
@@ -512,10 +537,8 @@ describe("DailyOverview", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Strain score breakdown" }));
 
-    expect(screen.getByText("Today")).toBeTruthy();
-    expect(screen.getByText("0")).toBeTruthy();
-    expect(screen.getByText("Training Load Ratio")).toBeTruthy();
-    expect(screen.getAllByText("4.00").length).toBeGreaterThan(0);
+    expect(screen.getByText("Recent-to-baseline workload ratio")).toBeTruthy();
+    expect(screen.getByText("4.00")).toBeTruthy();
   });
 
   it("expands sleep breakdown when sleep ring is clicked", () => {
@@ -606,6 +629,13 @@ describe("DailyOverview", () => {
           },
         ]}
         workloadRatio={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 12.5,
           displayedDate: yesterdayStr,
           timeSeries: [
@@ -662,6 +692,13 @@ describe("DailyOverview", () => {
           },
         ]}
         workloadRatio={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 12.5,
           displayedDate: "2026-03-20",
           timeSeries: [
@@ -707,6 +744,13 @@ describe("DailyOverview", () => {
           },
         ]}
         workloadRatio={{
+          context: {
+            label: "Recent-to-baseline workload ratio",
+            description:
+              "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            recentDays: 7,
+            baselineDays: 28,
+          },
           displayedStrain: 12.5,
           displayedDate: twoDaysAgoStr,
           timeSeries: [

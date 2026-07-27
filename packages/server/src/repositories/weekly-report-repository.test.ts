@@ -1,55 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  classifyStrainZone,
-  WeeklyReportRepository,
-  WeekRow,
-  type WeekRowData,
-} from "./weekly-report-repository.ts";
-
-// ---------------------------------------------------------------------------
-// classifyStrainZone
-// ---------------------------------------------------------------------------
-
-describe("classifyStrainZone", () => {
-  it("returns 'restoring' when ratio is below 0.8", () => {
-    expect(classifyStrainZone(70, 100)).toBe("restoring");
-    expect(classifyStrainZone(79, 100)).toBe("restoring");
-  });
-
-  it("returns 'optimal' when ratio is between 0.8 and 1.3 (inclusive)", () => {
-    expect(classifyStrainZone(80, 100)).toBe("optimal");
-    expect(classifyStrainZone(100, 100)).toBe("optimal");
-    expect(classifyStrainZone(130, 100)).toBe("optimal");
-  });
-
-  it("returns 'overreaching' when ratio is above 1.3", () => {
-    expect(classifyStrainZone(131, 100)).toBe("overreaching");
-    expect(classifyStrainZone(200, 100)).toBe("overreaching");
-  });
-
-  it("returns 'optimal' when chronic average load is zero", () => {
-    expect(classifyStrainZone(50, 0)).toBe("optimal");
-    expect(classifyStrainZone(0, 0)).toBe("optimal");
-  });
-
-  it("returns 'optimal' when chronic average load is negative", () => {
-    expect(classifyStrainZone(50, -10)).toBe("optimal");
-  });
-
-  it("classifies exact boundary 0.8 as optimal (not restoring)", () => {
-    // ratio = 80/100 = 0.8, which should NOT be < 0.8
-    expect(classifyStrainZone(80, 100)).toBe("optimal");
-    // ratio = 79.99/100 = 0.7999, which IS < 0.8
-    expect(classifyStrainZone(79.99, 100)).toBe("restoring");
-  });
-
-  it("classifies exact boundary 1.3 as optimal (not overreaching)", () => {
-    // ratio = 130/100 = 1.3, which should NOT be > 1.3
-    expect(classifyStrainZone(130, 100)).toBe("optimal");
-    // ratio = 130.01/100 = 1.3001, which IS > 1.3
-    expect(classifyStrainZone(130.01, 100)).toBe("overreaching");
-  });
-});
+import { WeeklyReportRepository, WeekRow, type WeekRowData } from "./weekly-report-repository.ts";
 
 // ---------------------------------------------------------------------------
 // WeekRow
@@ -65,7 +15,6 @@ describe("WeekRow", () => {
       avgSleepMin: 420,
       avgRestingHr: 52.34,
       avgHrv: 65.78,
-      chronicAvgLoad: 90,
       prev3wkAvgSleep: 400,
       ...overrides,
     };
@@ -76,10 +25,9 @@ describe("WeekRow", () => {
     expect(row.weekStart).toBe("2026-03-16");
   });
 
-  it("exposes avgDailyLoad and chronicAvgLoad", () => {
-    const row = new WeekRow(makeRowData({ avgDailyLoad: 100, chronicAvgLoad: 80 }));
+  it("exposes avgDailyLoad", () => {
+    const row = new WeekRow(makeRowData({ avgDailyLoad: 100 }));
     expect(row.avgDailyLoad).toBe(100);
-    expect(row.chronicAvgLoad).toBe(80);
   });
 
   describe("toSummary", () => {
@@ -91,23 +39,6 @@ describe("WeekRow", () => {
     it("rounds avgDailyLoad to 1 decimal", () => {
       const summary = new WeekRow(makeRowData({ avgDailyLoad: 85.456 })).toSummary();
       expect(summary.avgDailyLoad).toBe(85.5);
-    });
-
-    it("classifies strain zone", () => {
-      const restoring = new WeekRow(
-        makeRowData({ avgDailyLoad: 50, chronicAvgLoad: 100 }),
-      ).toSummary();
-      expect(restoring.strainZone).toBe("restoring");
-
-      const optimal = new WeekRow(
-        makeRowData({ avgDailyLoad: 100, chronicAvgLoad: 100 }),
-      ).toSummary();
-      expect(optimal.strainZone).toBe("optimal");
-
-      const overreaching = new WeekRow(
-        makeRowData({ avgDailyLoad: 200, chronicAvgLoad: 100 }),
-      ).toSummary();
-      expect(overreaching.strainZone).toBe("overreaching");
     });
 
     it("computes sleep performance as percentage of prev 3-week average", () => {
@@ -200,7 +131,6 @@ describe("WeeklyReportRepository", () => {
       avg_sleep_min: 420,
       avg_resting_hr: 55,
       avg_hrv: 60,
-      chronic_avg_load: 85,
       prev_3wk_avg_sleep: 400,
       ...overrides,
     };

@@ -81,7 +81,7 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const Loading: Story = { args: { data: [], loading: true } };
 export const Empty: Story = { args: { data: [] } };
-export const HighAcuteLoad: Story = {
+export const HigherRecentLoad: Story = {
   args: {
     data: workload.map((row, index) => ({
       ...row,

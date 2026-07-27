@@ -1,5 +1,5 @@
 import { formatDateShort, formatIntensity, formatTrainingLoad } from "@dofek/format/format";
-import { StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
+import { StrainScore } from "@dofek/scoring/scoring";
 import { duration, easing } from "@dofek/scoring/tokens";
 import type { StrainTargetResult, WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
@@ -153,24 +153,22 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
               <p className="text-lg font-bold text-foreground tabular-nums">
                 {formatTrainingLoad(today?.acuteLoad)}
               </p>
-              <p className="text-[10px] text-subtle">Acute (7d)</p>
+              <p className="text-[10px] text-subtle">Recent 7-day load</p>
             </div>
             <div>
               <p className="text-lg font-bold text-foreground tabular-nums">
                 {formatTrainingLoad(today?.chronicLoad)}
               </p>
-              <p className="text-[10px] text-subtle">Chronic (28d)</p>
+              <p className="text-[10px] text-subtle">28-day baseline load</p>
             </div>
             <div>
-              <p
-                className="text-lg font-bold tabular-nums"
-                style={{ color: new WorkloadRatio(workloadRatio ?? null).color }}
-              >
+              <p className="text-lg font-bold text-foreground tabular-nums">
                 {workloadRatio != null ? workloadRatio.toFixed(2) : "--"}
               </p>
-              <p className="text-[10px] text-subtle">Workload Ratio</p>
+              <p className="text-[10px] text-subtle">{data.context.label}</p>
             </div>
           </div>
+          <p className="text-[11px] text-dim">{data.context.description}</p>
 
           {strainTarget && (
             <div className="mt-1 pt-2 border-t border-border">
