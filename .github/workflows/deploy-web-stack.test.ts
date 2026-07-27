@@ -153,8 +153,13 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
       [
         "-c",
         `SECONDS=0
+simulated_seconds=0
+echo() {
+  builtin echo "[\${simulated_seconds}s] $*"
+}
 sleep() {
   SECONDS=$((SECONDS + MOCK_SLEEP_SECONDS))
+  simulated_seconds=$((simulated_seconds + MOCK_SLEEP_SECONDS))
 }
 ${deployConsumersRunScript()}`,
       ],
@@ -185,7 +190,7 @@ const STABLE_OBSERVATION = {
   updateState: "completed",
 } satisfies ServiceObservation;
 
-describe("deploy-web-stack workflow", () => {
+describe("deploy-web-stack workflow contract", () => {
   it("keeps ClickHouse consumers quiesced when CDC configuration fails", () => {
     expect(workflowText).toContain(
       `      - name: Deploy ClickHouse consumer services
@@ -229,10 +234,10 @@ describe("deploy-web-stack workflow", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "dofek_analytics-worker task changed from replaced-task to replacement-task; resetting stability window",
+      "[10s] dofek_analytics-worker task changed from replaced-task to replacement-task; resetting stability window",
     );
     expect(result.stdout).toContain(
-      "dofek_analytics-worker task replacement-task has remained converged for 60s",
+      "[70s] dofek_analytics-worker task replacement-task has remained converged for 60s",
     );
   });
 
@@ -248,10 +253,10 @@ describe("deploy-web-stack workflow", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "dofek_analytics-worker lost convergence; resetting stability window for task stable-task",
+      "[10s] dofek_analytics-worker lost convergence; resetting stability window for task stable-task",
     );
     expect(result.stdout).toContain(
-      "dofek_analytics-worker task stable-task has remained converged for 60s",
+      "[80s] dofek_analytics-worker task stable-task has remained converged for 60s",
     );
   });
 
