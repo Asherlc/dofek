@@ -18916,3 +18916,53 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployed release is observed; if the token-limit branch occurs, confirm the
   UI returns the documented clean-grant retry guidance before resolving
   DOFEK-SERVER-5H.
+
+## 2026-07-27 — Global activity overlap expansion exhausted web DB pools
+
+- **Status:** Root cause confirmed from production query plans and direct
+  source fix prepared; merge, deployment, and production validation pending.
+- **Symptoms:** Dashboard bursts reported
+  [DOFEK-SERVER-5K](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5K),
+  [DOFEK-SERVER-5M](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5M),
+  and
+  [DOFEK-SERVER-5N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5N)
+  as failures of session, insights, and PMC SQL statements.
+- **User impact:** Five session validations plus the insights and PMC SQL
+  calls could not acquire a database connection at 17:46 UTC. At 18:35 UTC,
+  insights and PMC failed while the surrounding dashboard batch took 47.7
+  seconds to finish.
+- **Evidence:** Every Sentry event's causal error was
+  `timeout exceeded when trying to connect` at the web process's unchanged
+  ten-second pool acquisition boundary; the displayed SQL had not started.
+  Web request logs and `pg_stat_statements` show the pool was instead occupied
+  by `fitness.v_activity` queries that took 13.94–16.29 seconds. A read-only
+  `EXPLAIN (ANALYZE, BUFFERS)` of the exact insights query took 5.08 seconds
+  from shared buffers: the recursive view built 2,635 activity rows globally,
+  compared the same-user cross-product, rejected 6,941,004 pairs, and produced
+  2,221 overlapping pairs before applying the request's user and date filters.
+  Current statistics were fresh, there were no lock waits or idle
+  transactions, and the server had 11 of 40 connections in use.
+- **Root cause:** `fitness.v_activity` evaluated the expensive overlap-ratio
+  arithmetic for every same-user activity pair, including millions of
+  time-disjoint pairs. The view's recursive grouping prevents the outer
+  request predicates from bounding that global work. PostgreSQL documents CTE
+  evaluation and recursive query behavior:
+  <https://www.postgresql.org/docs/current/queries-with.html>.
+- **Fix / mitigation:** Require strict positive interval overlap in the pair
+  join alongside the two 80% ratios. Both ratio branches already require
+  positive overlap, so the guards preserve deduplication, contained-activity,
+  cross-provider, and boundary-touching semantics while giving PostgreSQL
+  cheap necessary conditions for disjoint windows. The production read-only
+  benchmark returned the same 210 rows in 1.84 seconds, 64% faster. No pool
+  size, acquisition timeout, retry, cache, or database resource limit changed.
+- **Validation:** A real-PostgreSQL regression fixture covers a contained pair
+  and a boundary-touching non-pair, then inspects the database's executable
+  pairs plan for both positive-overlap guards. Local execution is blocked
+  because Docker Desktop's filesystem is full and PostgreSQL cannot create an
+  isolated test database; GitHub integration CI remains the executable green
+  gate. PostgreSQL documents executable plan inspection with `EXPLAIN`:
+  <https://www.postgresql.org/docs/current/using-explain.html>.
+- **Remaining risk / follow-up:** Merge and deploy through the normal release
+  path, repeat the exact production plan and dashboard request, confirm all
+  three Sentry issues remain quiet, and resolve them only after the deployed
+  query no longer exhausts a web process's five-connection pool.
