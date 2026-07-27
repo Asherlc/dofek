@@ -196,37 +196,28 @@ describe("Settings layout stability", () => {
     cy.cleanTestData();
   });
 
-  for (const path of ["/settings", "/providers"]) {
-    it(`keeps downstream settings content stable on a direct ${path} load`, () => {
+  for (const path of ["/settings?tab=connections", "/providers"]) {
+    it(`keeps connection settings stable on a direct ${path} load`, () => {
       cy.intercept("POST", /\/api\/trpc\/.*sync\.providers/, (request) => {
         request.on("response", (response) => {
           response.setDelay(1_500);
         });
       }).as("providerInventory");
 
-      let initialLinkedAccountsTop = 0;
-      let initialBillingTop = 0;
-      let finalLinkedAccountsTop = 0;
-      let finalBillingTop = 0;
-      let initialBillingHeight = 0;
+      let initialZeppPairingTop = 0;
+      let finalZeppPairingTop = 0;
       let initialDataSourcesHeight = 0;
-      let billingHeightDelta = 0;
       let dataSourcesHeightDelta = 0;
 
       cy.visit(path, {
         onBeforeLoad: installLayoutShiftObserver,
       });
       cy.location("pathname").should("eq", "/settings");
-      cy.contains("main section h3", "Linked Accounts").then(($heading) => {
+      cy.location("search").should("contain", "tab=connections");
+      cy.contains("main section h3", "Zepp App Pairing").then(($heading) => {
         const heading = $heading.get(0);
-        if (!heading) throw new Error("Linked Accounts heading was not rendered");
-        initialLinkedAccountsTop = documentTop(heading);
-      });
-      cy.contains("main section h3", "Billing").then(($heading) => {
-        const heading = $heading.get(0);
-        if (!heading) throw new Error("Billing heading was not rendered");
-        initialBillingTop = documentTop(heading);
-        initialBillingHeight = sectionHeight(heading);
+        if (!heading) throw new Error("Zepp App Pairing heading was not rendered");
+        initialZeppPairingTop = documentTop(heading);
       });
       cy.contains("main section h3", "Data Sources").then(($heading) => {
         const heading = $heading.get(0);
@@ -238,17 +229,10 @@ describe("Settings layout stability", () => {
       cy.contains("main", "Apple Health").should("exist");
       cy.window().then(waitForStableLayout);
 
-      cy.contains("main section h3", "Linked Accounts").then(($heading) => {
+      cy.contains("main section h3", "Zepp App Pairing").then(($heading) => {
         const heading = $heading.get(0);
-        if (!heading) throw new Error("Linked Accounts heading was not rendered");
-
-        finalLinkedAccountsTop = documentTop(heading);
-      });
-      cy.contains("main section h3", "Billing").then(($heading) => {
-        const heading = $heading.get(0);
-        if (!heading) throw new Error("Billing heading was not rendered");
-        finalBillingTop = documentTop(heading);
-        billingHeightDelta = sectionHeight(heading) - initialBillingHeight;
+        if (!heading) throw new Error("Zepp App Pairing heading was not rendered");
+        finalZeppPairingTop = documentTop(heading);
       });
       cy.contains("main section h3", "Data Sources").then(($heading) => {
         const heading = $heading.get(0);
@@ -262,9 +246,7 @@ describe("Settings layout stability", () => {
 
         const cls = maximumLayoutShiftSession(measurement.entries);
         const sources = measurement.entries.flatMap((entry) => entry.sourceLabels);
-        const downstreamDelta = Math.abs(
-          finalLinkedAccountsTop - finalBillingTop - (initialLinkedAccountsTop - initialBillingTop),
-        );
+        const downstreamDelta = Math.abs(finalZeppPairingTop - initialZeppPairingTop);
         cy.log(
           measurement.supported
             ? `CLS ${cls.toFixed(4)}; sources: ${sources.join(", ") || "none"}`
@@ -272,14 +254,71 @@ describe("Settings layout stability", () => {
         );
         const evidence =
           `CLS ${cls.toFixed(4)}; sources: ${sources.join(", ") || "none"}; ` +
-          `Billing height delta ${billingHeightDelta}px; ` +
           `Data Sources height delta ${dataSourcesHeightDelta}px; ` +
-          `normalized downstream delta ${downstreamDelta}px`;
-        expect(Math.abs(billingHeightDelta), evidence).to.be.lessThan(1);
+          `Zepp App Pairing top delta ${downstreamDelta}px`;
         expect(Math.abs(dataSourcesHeightDelta), evidence).to.be.lessThan(1);
         expect(downstreamDelta, evidence).to.be.lessThan(1);
-        expect(cls, evidence).to.be.at.most(0.1);
+        expect(cls, evidence).to.be.at.most(0.001);
       });
     });
   }
+
+  it("keeps account settings stable while Billing resolves", () => {
+    cy.intercept("POST", /\/api\/trpc\/.*billing\.status/, (request) => {
+      request.on("response", (response) => {
+        response.setDelay(1_500);
+      });
+    }).as("billingStatus");
+
+    let initialLinkedAccountsTop = 0;
+    let finalLinkedAccountsTop = 0;
+    let initialBillingHeight = 0;
+    let billingHeightDelta = 0;
+
+    cy.visit("/settings?tab=account", {
+      onBeforeLoad: installLayoutShiftObserver,
+    });
+    cy.contains("main section h3", "Linked Accounts").then(($heading) => {
+      const heading = $heading.get(0);
+      if (!heading) throw new Error("Linked Accounts heading was not rendered");
+      initialLinkedAccountsTop = documentTop(heading);
+    });
+    cy.contains("main section h3", "Billing").then(($heading) => {
+      const heading = $heading.get(0);
+      if (!heading) throw new Error("Billing heading was not rendered");
+      initialBillingHeight = sectionHeight(heading);
+    });
+
+    cy.wait("@billingStatus");
+    cy.contains("main", /full access|signup week/i).should("exist");
+    cy.window().then(waitForStableLayout);
+
+    cy.contains("main section h3", "Linked Accounts").then(($heading) => {
+      const heading = $heading.get(0);
+      if (!heading) throw new Error("Linked Accounts heading was not rendered");
+      finalLinkedAccountsTop = documentTop(heading);
+    });
+    cy.contains("main section h3", "Billing").then(($heading) => {
+      const heading = $heading.get(0);
+      if (!heading) throw new Error("Billing heading was not rendered");
+      billingHeightDelta = sectionHeight(heading) - initialBillingHeight;
+    });
+
+    cy.window().then((win) => {
+      const measurement = win.__dofekLayoutShiftMeasurement;
+      if (!measurement) throw new Error("Layout shift measurement was not installed");
+
+      const cls = maximumLayoutShiftSession(measurement.entries);
+      const sources = measurement.entries.flatMap((entry) => entry.sourceLabels);
+      const downstreamDelta = Math.abs(finalLinkedAccountsTop - initialLinkedAccountsTop);
+      const evidence =
+        `CLS ${cls.toFixed(4)}; sources: ${sources.join(", ") || "none"}; ` +
+        `Billing height delta ${billingHeightDelta}px; ` +
+        `Linked Accounts top delta ${downstreamDelta}px`;
+      cy.log(evidence);
+      expect(Math.abs(billingHeightDelta), evidence).to.be.lessThan(1);
+      expect(downstreamDelta, evidence).to.be.lessThan(1);
+      expect(cls, evidence).to.be.at.most(0.001);
+    });
+  });
 });
