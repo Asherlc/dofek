@@ -107,6 +107,13 @@ function matchCteHeaderEndIndex(sql: string, name: string, startIndex: number): 
   }
 
   cursorIndex = skipSqlTrivia(sql, cursorIndex);
+  const materializedEndIndex = cursorIndex + "materialized".length;
+  if (
+    sql.slice(cursorIndex, materializedEndIndex).toLowerCase() === "materialized" &&
+    !isSqlIdentifierChar(sql[materializedEndIndex])
+  ) {
+    cursorIndex = skipSqlTrivia(sql, materializedEndIndex);
+  }
   return sql[cursorIndex] === "(" ? cursorIndex + 1 : null;
 }
 

@@ -18351,8 +18351,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-26 — Worker Deployments Stalled Active BullMQ Jobs
 
-- **Status:** Direct fixes merged after full CI; production deployment remains
-  pending because the first rollout was superseded during the incident above.
+- **Status:** Resolved. The lifecycle and shared provider-admission fixes are
+  deployed, the exact stalled production job recovered without manual
+  mutation, and both Sentry issues are resolved.
 - **Symptoms:** Sentry issues
   [DOFEK-SERVER-4N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4N)
   and
@@ -18374,7 +18375,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   about 22 minutes, while the old provider-deletion loop could run for more
   than two hours. Axiom could not be queried because its connected user token
   had expired, so Sentry, Docker task state/logs, and Redis metadata supplied
-  the causal evidence.
+  the causal evidence. During the serialized `d627cd8` rollout, the reclaimed
+  one-day Strava job emitted a new
+  [DOFEK-SERVER-4N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4N)
+  event at `17:18:17Z`, remained at zero percent, and continued renewing its
+  lock. PostgreSQL had no active application query. Its persisted adaptive
+  state contained a `200`-request short limit, usage `1`, and one admitted
+  request at `17:30:21Z`. A 20-second Redis command trace then showed the same
+  client repeatedly executing `GET`, `WATCH`, and `GET` for the Strava
+  admission key about every 4.5 seconds without ever reaching `MULTI`/`EXEC`.
+  The 4.5-second interval exactly matched
+  `ceil(15 minutes / (200 - 1))`; Strava documents the default 200-request
+  short limit, its 15-minute window, and the quota headers:
+  <https://developers.strava.com/docs/rate-limits/>.
 - **Root cause:** Docker Swarm's default 10-second stop grace was incompatible
   with BullMQ's graceful close contract, which waits for active jobs, while
   provider HTTP requests had no deadline and provider deletion processed every
@@ -18382,7 +18395,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   default before `SIGKILL`, and BullMQ documents that `Worker.close()` waits for
   active work:
   <https://docs.docker.com/reference/compose-file/services/#stop_grace_period>
-  and <https://docs.bullmq.io/guide/workers/graceful-shutdown>.
+  and <https://docs.bullmq.io/guide/workers/graceful-shutdown>. The follow-up
+  Strava hang was caused by `admissionDelayMs()` returning a full quota pacing
+  interval on every atomic claim recheck instead of the time remaining since
+  the last request. The delay could therefore never reach zero, so the
+  `WATCH` claim loop slept and retried forever. The inferred-budget soft-cap
+  branch had the same fixed-delay defect.
 - **Fix / mitigation:** Give the worker a durable 30-minute stop grace and the
   initial deploy a 35-minute convergence bound; fail rather than continue when
   a Swarm update pauses. Apply a shared two-minute provider HTTP deadline with
@@ -18392,7 +18410,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deletion-request state authoritative so a completed batch job cannot report
   the overall operation complete while its continuation remains active.
   Node.js documents the native timeout and signal-composition primitives:
-  <https://nodejs.org/api/globals.html#class-abortsignal>.
+  <https://nodejs.org/api/globals.html#class-abortsignal>. The follow-up fix
+  makes every admission result a remaining eligibility delay: Strava quota
+  pacing subtracts elapsed time since `lastRequestMs`, and an exhausted
+  adaptive budget waits only for the remainder of its rolling window. This is
+  shared provider admission behavior, with no Strava-job bypass or
+  incident-only flag.
 - **Validation:** The timeout regression failed before implementation. After
   the fix, 205 focused unit tests passed, the root TypeScript typecheck and
   targeted Biome checks passed, and all five real-ClickHouse provider-deletion
@@ -18400,16 +18423,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   bounded projection reads. A focused operation-status regression also verifies
   that a dispatched deletion remains running after its root batch completes.
   No stall-count increase, forced retry, temporary flag, or incident-only
-  shutdown branch was added.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy, confirm the
-  old worker reaches `Shutdown complete` without exit 137, verify the timed-out
-  Strava job retries and completes, observe no fixed-release 4N/2K events
-  across a subsequent rollout, then resolve both Sentry issues.
+  shutdown branch was added. The admission regression failed against the
+  previous implementation; after the fix, 82 focused package/application tests
+  pass, including an atomic Redis-store case that advances through the exact
+  persisted production quota shape. PR #2046 deployed as release `7bc37db`;
+  the exact reclaimed Strava job
+  `sync-req-strava-f923fed7-d934-4cd9-8cb9-8e83020d0e69-11df2d47b5e2f49a237cfc5f`
+  then reached 100%, completed two activities and 6,299 metric rows, and
+  released its Redis lock. Neither issue recurred on the fixed release, and
+  DOFEK-SERVER-4N and DOFEK-SERVER-2K were resolved with this evidence attached.
+- **Remaining risk / follow-up:** None beyond normal Sentry and worker-progress
+  monitoring.
 
 ## 2026-07-26 — Peloton Workout Response Drift Blocked Sync
 
-- **Status:** Direct source fix validated locally; merge and production
-  deployment pending.
+- **Status:** Resolved after the direct source fix deployed in
+  `ef6798d6ca982f5421cdbbc1b52294c1e77b3dc2`.
 - **Symptoms:** Scheduled Peloton syncs failed at the client response boundary
   in
   [Sentry issue DOFEK-SERVER-5E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5E).
@@ -18435,8 +18464,144 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** A production-shaped regression first failed with the exact
   six Zod paths reported by Sentry. After the schema correction, all 17 focused
   client and parsing tests pass, the root TypeScript typecheck passes, targeted
-  Biome checks report no findings, and the changed parser kills all 13
-  generated mutants.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy, observe a
-  successful scheduled Peloton sync on the fixed release, and then resolve
-  DOFEK-SERVER-5E.
+  Biome checks report no findings, and the changed parser kills all 13 generated
+  mutants. PR #2044 passed the full CI suite and deployed as `ef6798d`; the
+  first scheduled production sync on that release parsed two workouts at
+  `2026-07-26T18:30:04Z` with no fixed-release recurrence.
+- **Remaining risk / follow-up:** None for the workout-list contract.
+
+## 2026-07-26 — Peloton Performance Summary Type Drift Blocked Sync
+
+- **Status:** Resolved after the direct source fix merged in PR #2047 and
+  deployed in release `f5b951f09ae35f3947dfd03fa0459b7d7d3a4596`.
+- **Symptoms:** The first post-deploy scheduled Peloton sync reported
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F)
+  while validating performance graphs.
+- **User impact:** The affected connection could load its workout list but
+  could not complete the sync because each workout's performance graph was
+  rejected before metric parsing.
+- **Evidence:** Both production events on release `ef6798d` reported the same
+  Zod failure: `average_summaries[*].value` and `summaries[*].value` were JSON
+  numbers, while the runtime boundary required strings. The exact field paths,
+  release, and stack are preserved in
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F).
+- **Root cause:** The newly extracted reusable Peloton client encoded summary
+  values as strings without a production-shaped non-empty summary fixture. The
+  observed response uses numeric values, as captured in
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F),
+  so the schema rejected a valid graph even though downstream parsing consumes
+  only its numeric metric series.
+- **Fix / mitigation:** Model summary values as numbers at the Zod response
+  boundary and retain the upstream values unchanged. Do not coerce them or
+  accept a string-or-number union: neither would describe the observed numeric
+  contract recorded in
+  [Sentry issue DOFEK-SERVER-5F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5F),
+  and both would preserve an unnecessary compatibility path.
+- **Validation:** The production-shaped performance-graph regression failed
+  first with the exact two Zod paths reported by Sentry. After correcting the
+  canonical schema, 129 focused client/provider unit tests and all 12 Peloton
+  sync integration tests pass; the root TypeScript typecheck and targeted
+  Biome checks also pass. The first scheduled production sync on the fixed
+  release completed at `2026-07-26T20:00:05Z` with two workouts and 1,261
+  metric-stream rows. Sentry recorded no event after the previous release's
+  final failure at `2026-07-26T19:30:04Z`, and DOFEK-SERVER-5F was resolved
+  with that evidence attached.
+- **Remaining risk / follow-up:** None beyond normal scheduled-sync and Sentry
+  monitoring.
+
+## 2026-07-26 — Reused Analytics CTEs Recomputed and Forced Projection Failed
+
+- **Status:** Both remaining aggregate analytics failures have direct fixes
+  reproduced and validated locally; merge and production validation pending.
+- **Symptoms:** The production analytics worker continued reporting
+  [Sentry issue DOFEK-SERVER-5A](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5A)
+  after the power-curve fix deployed. Each serial dbt cycle failed
+  `provider_stats`, timed out `sleep_heart_rate_sample`, and skipped their
+  downstream models.
+- **User impact:** Provider inventory counts and sleep, recovery, training, and
+  healthspan read models could remain stale because a failed cycle never
+  reached cache warming or recorded a successful analytics refresh.
+- **Evidence:** The exact failing command remained the scheduled production
+  `dbt build`. Its first provider fatal line was ClickHouse code `117`:
+  `Projection by_provider_generation is specified in setting
+  force_optimize_projection_name but not used`. The same cycle then failed the
+  sleep model with code `159`: `Timeout exceeded: elapsed 240014.146311 ms,
+  maximum: 240000 ms`. The compiled provider query forced the covering
+  projection in both metric-stream scans, while the sleep model marked three
+  reused CTEs `AS materialized` without enabling materialized CTE execution and
+  rebuilt the heart-rate and activity refresh joins again for its dirty
+  subset. ClickHouse documents that `force_optimize_projection_name` checks
+  that the named projection is actually used at least once:
+  <https://clickhouse.com/docs/whats-new/changelog/2023>.
+- **Root cause:** `provider_stats` made an optional physical optimization a
+  correctness prerequisite, so any valid plan that could not use that
+  projection threw instead of reading the canonical base table. Separately,
+  the sleep model's shared CTE declarations were still inlined, and its
+  `active_dirty_sleep` stage explicitly repeated the already-computed refresh
+  joins. ClickHouse 26.3 introduced materialized CTEs specifically to evaluate
+  a reused CTE once in a temporary table, but requires
+  `enable_materialized_cte=1` for the clause to take effect:
+  <https://clickhouse.com/blog/clickhouse-release-26-03>.
+- **Fix / mitigation:** Keep the covering projection available to the
+  optimizer but remove the forced-projection requirement, so the canonical
+  table remains a correct fallback. Enable materialized CTE execution only for
+  these two offline dbt models; materialize the reused provider state/key set;
+  and carry sleep end, duration, and refresh state through one materialized
+  `current_sleep_state` into the dirty-key stage instead of rebuilding its
+  source joins. This follows ClickHouse's guidance to add and use projections
+  based on measured query need rather than making them speculative
+  prerequisites:
+  <https://clickhouse.com/blog/10-best-practice-tips>. No timeout, retry,
+  resource limit, or worker health budget changed.
+- **Validation:** Both model-structure regressions failed before
+  implementation. A real ClickHouse provider regression then reproduced the
+  exact production code `117` when the named projection existed but was not
+  materialized over the fixture rows, and passed after the model regained its
+  base-table fallback. After the fix, all 45 focused SQL/helper unit tests and
+  all six real-ClickHouse provider/sleep integration cases pass, including
+  bounded incremental sleep, complete full refresh, lifecycle tombstones,
+  current metric-stream versions, and unmaterialized-projection fallback.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy without
+  changing the four-minute query ceiling, observe a complete production dbt
+  cycle in which both models succeed, verify downstream cache warming, then
+  resolve DOFEK-SERVER-5A.
+
+## 2026-07-26 — HealthKit Observer Sync Waited Behind a Background Timer
+
+- **Status:** Direct source fix reproduced and validated locally; merge, OTA
+  deployment, and physical-device production validation pending.
+- **Symptoms:** The iOS native observer coordinator reported
+  [Sentry issue DOFEK-MOBILE-1C](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1C)
+  because HealthKit observer callbacks remained incomplete past their
+  25-second native failure boundary.
+- **User impact:** Background HealthKit deliveries could expire before their
+  JavaScript sync began, delaying the affected samples until a later delivery
+  or foreground catch-up.
+- **Evidence:** The latest production breadcrumb trail recorded a burst of
+  observer updates beginning at `03:17:55.677Z`; every callback logged
+  `Sample update event received, debouncing`, but `Starting sync` did not
+  appear until `03:18:25.763Z`, about 30 seconds later and after the native
+  25-second expiration. The app was backgrounded and the device was locked.
+  The timestamps, device state, and expired update ID are preserved in
+  [Sentry issue DOFEK-MOBILE-1C](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1C).
+- **Root cause:** The observer path deferred its serialized queue behind a
+  500-millisecond JavaScript `setTimeout`. In the recorded background delivery,
+  that timer did not execute for about 30 seconds while the native completion
+  deadline continued advancing.
+- **Fix / mitigation:** Remove the timer and enqueue each native delivery
+  directly into the existing single-flight queue. One sync still runs at a
+  time; update IDs delivered during it remain pending for the next serialized
+  sync and are acknowledged only after that sync settles. The native
+  25-second failure boundary remains unchanged. Apple requires observer
+  completion only after processing the delivered data:
+  <https://developer.apple.com/documentation/healthkit/executing-observer-queries>.
+- **Validation:** The regression first failed because no sync began without
+  advancing fake timers. After the direct queue fix, the regression and all 31
+  background HealthKit orchestration tests pass, including initial catch-up
+  ordering, updates delivered during an active sync, exact native
+  acknowledgements, locked-device behavior, and failure telemetry.
+- **Remaining risk / follow-up:** Merge through normal CI, deploy the
+  JavaScript bundle through the production OTA channel, then confirm on a
+  physical-device observer delivery that `Starting sync` follows the update
+  immediately and no fixed-update expiration is reported before resolving
+  DOFEK-MOBILE-1C.

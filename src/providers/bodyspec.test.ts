@@ -72,9 +72,10 @@ vi.mock("../db/schema/events.ts", () => ({
   },
 }));
 
-import { refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
+import { ProviderAuthenticationFailedError } from "./auth-errors.ts";
 
 // ============================================================
 // Fixtures
@@ -344,23 +345,9 @@ describe("BodySpecProvider", () => {
       process.env = originalEnv;
     });
 
-    it("returns error when BODYSPEC_CLIENT_ID is missing", () => {
+    it("is available without deployment OAuth credentials", () => {
       delete process.env.BODYSPEC_CLIENT_ID;
       delete process.env.BODYSPEC_CLIENT_SECRET;
-      const provider = new BodySpecProvider();
-      expect(provider.validate()).toBe("BODYSPEC_CLIENT_ID is not set");
-    });
-
-    it("returns error when BODYSPEC_CLIENT_SECRET is missing", () => {
-      process.env.BODYSPEC_CLIENT_ID = "test-id";
-      delete process.env.BODYSPEC_CLIENT_SECRET;
-      const provider = new BodySpecProvider();
-      expect(provider.validate()).toBe("BODYSPEC_CLIENT_SECRET is not set");
-    });
-
-    it("returns null when both env vars are set", () => {
-      process.env.BODYSPEC_CLIENT_ID = "test-id";
-      process.env.BODYSPEC_CLIENT_SECRET = "test-secret";
       const provider = new BodySpecProvider();
       expect(provider.validate()).toBeNull();
     });
@@ -411,26 +398,50 @@ describe("BodySpecProvider", () => {
       process.env = originalEnv;
     });
 
-    it("returns undefined when OAuth env vars are missing", () => {
+    it("uses BodySpec's public PKCE client and current Keycloak endpoints", () => {
       delete process.env.BODYSPEC_CLIENT_ID;
       delete process.env.BODYSPEC_CLIENT_SECRET;
       const provider = new BodySpecProvider();
-      expect(provider.authSetup()).toBeUndefined();
+      const setup = provider.authSetup();
+
+      expect(setup).toBeDefined();
+      expect(setup?.oauthConfig).toMatchObject({
+        clientId: "bodyspec-api-ext-v1",
+        authorizeUrl: "https://auth.bodyspec.com/realms/bodyspec/protocol/openid-connect/auth",
+        tokenUrl: "https://auth.bodyspec.com/realms/bodyspec/protocol/openid-connect/token",
+        scopes: ["openid", "profile", "email"],
+        usePkce: true,
+      });
+      expect(setup?.oauthConfig?.clientSecret).toBeUndefined();
     });
 
-    it("returns auth setup with correct OAuth config when env vars are set", () => {
-      process.env.BODYSPEC_CLIENT_ID = "test-id";
-      process.env.BODYSPEC_CLIENT_SECRET = "test-secret";
+    it("exchanges the callback code with the stored PKCE verifier", async () => {
+      vi.mocked(exchangeCodeForTokens).mockResolvedValueOnce({
+        accessToken: "access",
+        refreshToken: "refresh",
+        expiresAt: new Date("2026-08-01T00:00:00Z"),
+        scopes: "openid profile email",
+      });
       const provider = new BodySpecProvider();
       const setup = provider.authSetup();
-      expect(setup).toBeDefined();
-      expect(setup?.oauthConfig?.clientId).toBe("test-id");
-      expect(setup?.oauthConfig?.clientSecret).toBe("test-secret");
-      expect(setup?.oauthConfig?.authorizeUrl).toContain("bodyspec.com/oauth/authorize");
-      expect(setup?.oauthConfig?.tokenUrl).toContain("bodyspec.com/oauth/token");
-      expect(setup?.oauthConfig?.scopes).toEqual(["read:results"]);
+
+      await setup?.exchangeCode?.("authorization-code", "stored-verifier");
+
+      expect(exchangeCodeForTokens).toHaveBeenCalledWith(
+        setup?.oauthConfig,
+        "authorization-code",
+        expect.any(Function),
+        { codeVerifier: "stored-verifier" },
+      );
       expect(setup?.apiBaseUrl).toBe("https://app.bodyspec.com");
-      expect(setup?.exchangeCode).toBeTypeOf("function");
+    });
+
+    it("fails loudly when the callback has no PKCE verifier", async () => {
+      const setup = new BodySpecProvider().authSetup();
+
+      await expect(setup?.exchangeCode?.("authorization-code")).rejects.toThrow(
+        "BodySpec PKCE verifier is missing",
+      );
     });
   });
 
@@ -488,6 +499,8 @@ describe("BodySpecProvider", () => {
     });
 
     it("refreshes expired tokens and saves them", async () => {
+      delete process.env.BODYSPEC_CLIENT_ID;
+      delete process.env.BODYSPEC_CLIENT_SECRET;
       const expiredTokens = {
         accessToken: "expired",
         refreshToken: "refresh-token",
@@ -517,7 +530,14 @@ describe("BodySpecProvider", () => {
         }),
       );
 
-      expect(refreshAccessToken).toHaveBeenCalled();
+      expect(refreshAccessToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientId: "bodyspec-api-ext-v1",
+          tokenUrl: "https://auth.bodyspec.com/realms/bodyspec/protocol/openid-connect/token",
+        }),
+        "refresh-token",
+        expect.any(Function),
+      );
       expect(saveTokens).toHaveBeenCalled();
       expect(result.errors).toHaveLength(0);
     });
@@ -1076,34 +1096,6 @@ describe("BodySpecProvider", () => {
       expect(result.recordsSynced).toBe(0);
     });
 
-    it("handles token refresh failure when no config available", async () => {
-      process.env = { ...originalEnv };
-      delete process.env.BODYSPEC_CLIENT_ID;
-      delete process.env.BODYSPEC_CLIENT_SECRET;
-
-      const expiredTokens = {
-        accessToken: "expired",
-        refreshToken: "refresh-token",
-        expiresAt: new Date("2020-01-01"),
-        scopes: "read:results",
-      };
-      vi.mocked(loadTokens).mockResolvedValue(expiredTokens);
-
-      const provider = new BodySpecProvider();
-      const result = await provider.sync(
-        new SyncRun({
-          db: mockDb(),
-          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
-        }),
-      );
-
-      expect(result.errors).toHaveLength(1);
-      const err = result.errors[0];
-      expect(err).toBeDefined();
-      if (!err) return;
-      expect(err.message).toContain("OAuth config required to refresh BodySpec tokens");
-    });
-
     it("handles token refresh failure when no refresh token", async () => {
       const expiredTokens = {
         accessToken: "expired",
@@ -1170,6 +1162,32 @@ describe("BodySpecProvider", () => {
           headers: { Authorization: "Bearer my-secret-token" },
         }),
       );
+    });
+
+    it.each([
+      401, 403,
+    ])("classifies a %i data response as a redacted authentication failure", async (status) => {
+      vi.mocked(loadTokens).mockResolvedValue({
+        accessToken: "revoked-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      });
+      const response = errorResponse(status, "upstream-secret-response");
+      const provider = new BodySpecProvider(vi.fn().mockResolvedValue(response));
+
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
+
+      expect(result.errors).toHaveLength(1);
+      const error = result.errors[0];
+      expect(error?.cause).toBeInstanceOf(ProviderAuthenticationFailedError);
+      expect(error?.message).not.toContain("upstream-secret-response");
+      expect(response.bodyUsed).toBe(false);
     });
 
     it("truncates long error response bodies", async () => {
