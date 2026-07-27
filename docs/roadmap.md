@@ -111,7 +111,7 @@ Turn the existing source-attribution, processing-status, freshness, and deduplic
 
 - [ ] Explain which sources contributed to a displayed number.
 - [ ] Show last successful sync, expected freshness, and coverage gaps.
-- [ ] Explain source conflicts and the priority or deduplication decision that resolved them.
+- [x] Explain source conflicts and the priority or deduplication decision that resolved them. ([#2058](https://github.com/Asherlc/dofek/issues/2058))
 - [ ] Answer “Why did this number change?” using versioned source and calculation evidence.
 - [ ] Provide direct remediation for stale, disconnected, or incomplete sources.
 - [ ] Let users inspect processing history without exposing infrastructure jargon by default.
