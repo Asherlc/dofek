@@ -5,6 +5,7 @@ import {
   createFileUpload,
   findFileUploadForUser,
   listFileUploadsForReconciliation,
+  listPendingFileUploadOutboxRequests,
   markFileUploadObjectDeleted,
   markFileUploadObjectUploaded,
   markFileUploadUploading,
@@ -143,5 +144,64 @@ describe("file upload state machine (integration)", () => {
     expect(
       (await listFileUploadsForReconciliation(testContext.db)).map((upload) => upload.id),
     ).not.toContain(input.id);
+  });
+
+  it("excludes pending uploads owned by an account being erased", async () => {
+    const fencedUpload = uploadInput();
+    const visibleUpload = {
+      ...uploadInput(),
+      userId: otherUserId,
+    };
+    await createFileUpload(testContext.db, fencedUpload);
+    await markFileUploadUploading(
+      testContext.db,
+      fencedUpload.id,
+      fencedUpload.userId,
+      "fenced-multipart",
+    );
+    await markFileUploadObjectUploaded(testContext.db, fencedUpload.id, fencedUpload.userId);
+    await queueCompletedFileUpload(testContext.db, fencedUpload.id, fencedUpload.userId, {
+      importJobId: `file-import-${fencedUpload.id}`,
+      objectSizeBytes: fencedUpload.expectedSizeBytes,
+    });
+    await createFileUpload(testContext.db, visibleUpload);
+    await markFileUploadUploading(
+      testContext.db,
+      visibleUpload.id,
+      visibleUpload.userId,
+      "visible-multipart",
+    );
+    await markFileUploadObjectUploaded(testContext.db, visibleUpload.id, visibleUpload.userId);
+    await queueCompletedFileUpload(testContext.db, visibleUpload.id, visibleUpload.userId, {
+      importJobId: `file-import-${visibleUpload.id}`,
+      objectSizeBytes: visibleUpload.expectedSizeBytes,
+    });
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.account_erasure_request (
+            id,
+            user_id,
+            user_hash,
+            user_hash_key_id,
+            write_fence_hash,
+            status_token_hash,
+            replay_retained_until,
+            completion_deadline
+          )
+          VALUES (
+            ${randomUUID()}::uuid,
+            ${fencedUpload.userId}::uuid,
+            ${"d".repeat(64)},
+            'test-key',
+            ${"e".repeat(64)},
+            ${"f".repeat(64)},
+            now() + interval '7 days',
+            now() + interval '30 days'
+          )`,
+    );
+
+    const requests = await listPendingFileUploadOutboxRequests(testContext.db, 100);
+
+    expect(requests.map((request) => request.uploadId)).not.toContain(fencedUpload.id);
+    expect(requests.map((request) => request.uploadId)).toContain(visibleUpload.id);
   });
 });

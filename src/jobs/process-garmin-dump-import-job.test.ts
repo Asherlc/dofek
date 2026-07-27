@@ -1,6 +1,6 @@
 import { WaitingChildrenError } from "bullmq";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SyncDatabase } from "../db/index.ts";
+import type { Database, SyncDatabase } from "../db/index.ts";
 import {
   cleanupPreparedGarminDumpImport,
   prepareGarminDumpImport,
@@ -13,8 +13,22 @@ const { mockCaptureException, mockLoggerWarn } = vi.hoisted(() => ({
   mockCaptureException: vi.fn(),
   mockLoggerWarn: vi.fn(),
 }));
+const mockWithUserWriteFence = vi.fn(
+  async (
+    database: unknown,
+    _userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => operation(database),
+);
 
 vi.mock("@sentry/node", () => ({ captureException: mockCaptureException }));
+vi.mock("../db/account-erasure.ts", () => ({
+  withAccountErasureUserWriteFence: (
+    database: unknown,
+    userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => mockWithUserWriteFence(database, userId, operation),
+}));
 
 vi.mock("../logger.ts", () => ({ logger: { warn: mockLoggerWarn } }));
 
@@ -31,11 +45,12 @@ vi.mock("./garmin-dump-flow.ts", () => ({
   FLOW_BATCH_SIZE: 500,
 }));
 
-const mockDb: SyncDatabase = {
+const mockDb: SyncDatabase & Pick<Database, "transaction"> = {
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
   execute: vi.fn(),
+  transaction: vi.fn(),
 };
 
 interface TestImportJob {
@@ -116,6 +131,13 @@ beforeEach(() => {
   vi.mocked(prepareGarminDumpImport).mockResolvedValue(preparedImport);
   vi.mocked(attachGarminFitImportFlow).mockResolvedValue(undefined);
   vi.mocked(cleanupPreparedGarminDumpImport).mockResolvedValue(undefined);
+  mockWithUserWriteFence.mockImplementation(
+    async (
+      database: unknown,
+      _userId: string,
+      operation: (transaction: unknown) => Promise<unknown>,
+    ) => operation(database),
+  );
 });
 
 describe("processGarminDumpImportJob", () => {
@@ -151,6 +173,7 @@ describe("processGarminDumpImportJob", () => {
       id: "import-1",
       queue: "bull:import",
     });
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
     expect(prepareGarminDumpImport).toHaveBeenCalledWith(
       mockDb,
       "/job-files/upload.zip",

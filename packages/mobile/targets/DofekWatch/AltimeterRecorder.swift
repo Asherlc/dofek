@@ -41,6 +41,7 @@ final class AltimeterRecorder: ObservableObject {
             publishError("Barometer not available on this device")
             return
         }
+        guard WatchAccountStateStore().isSyncEnabled else { return }
         guard !isRecording else { return }
 
         altimeter.startRelativeAltitudeUpdates(to: operationQueue) { [weak self] data, error in
@@ -110,6 +111,15 @@ final class AltimeterRecorder: ObservableObject {
         let remaining = buffer.count
         bufferLock.unlock()
         publishBufferedSampleCount(remaining)
+    }
+
+    func purgeAccountState() {
+        stopRecording()
+        bufferLock.lock()
+        buffer.removeAll()
+        baselinePressureKPa = nil
+        bufferLock.unlock()
+        publishBufferedSampleCount(0)
     }
 
     private func publishBufferedSampleCount(_ count: Int) {

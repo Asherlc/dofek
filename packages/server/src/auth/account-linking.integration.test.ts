@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { decryptCredentialValue } from "../../../../src/security/credential-encryption.ts";
 import { resolveOrCreateUser } from "./account-linking.ts";
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
@@ -47,6 +48,25 @@ describe("resolveOrCreateUser (integration)", () => {
     );
     expect(baseline[0]?.email).toBeNull();
     expect(baseline[0]?.name).toBe("Baseline User");
+  });
+
+  it("creates a new user with the caller-selected fenced user ID", async () => {
+    const fencedUserId = "00000000-0000-4000-8000-0000000000f1";
+
+    const result = await resolveOrCreateUser(
+      ctx.db,
+      "google",
+      {
+        providerAccountId: "google-fenced-user",
+        email: "fenced@example.com",
+        emailVerified: true,
+        name: "Fenced User",
+      },
+      undefined,
+      { newUserId: fencedUserId },
+    );
+
+    expect(result).toEqual({ userId: fencedUserId, isNewUser: true });
   });
 
   it("returns existing user when auth_account already exists", async () => {
@@ -190,6 +210,216 @@ describe("resolveOrCreateUser (integration)", () => {
 
     expect(linked.userId).toBe(first.userId);
     expect(linked.isNewUser).toBe(false);
+  });
+
+  it("rejects linking a provider identity owned by another user without mutating either account", async () => {
+    await ctx.db.execute(
+      sql`UPDATE fitness.user_profile
+          SET email = 'link-target@example.test', name = 'Link Target'
+          WHERE id = ${TEST_USER_ID}`,
+    );
+    const owner = await resolveOrCreateUser(ctx.db, "apple", {
+      providerAccountId: "apple-owned-account",
+      email: "owner@example.test",
+      emailVerified: true,
+      name: "Original Owner",
+      revocationCredential: {
+        accessToken: "original-access-token",
+        clientId: "original-client",
+        refreshToken: "original-refresh-token",
+      },
+    });
+    expect(owner.userId).not.toBe(TEST_USER_ID);
+
+    const profilesBefore = await ctx.db.execute<{
+      email: string | null;
+      id: string;
+      name: string;
+    }>(
+      sql`SELECT id, email, name
+          FROM fitness.user_profile
+          WHERE id IN (${TEST_USER_ID}::uuid, ${owner.userId}::uuid)
+          ORDER BY id`,
+    );
+    const accountsBefore = await ctx.db.execute<{
+      auth_provider: string;
+      email: string | null;
+      groups: string[] | null;
+      name: string | null;
+      provider_account_id: string;
+      revocation_access_token: string | null;
+      revocation_client_id: string | null;
+      revocation_refresh_token: string | null;
+      user_id: string;
+    }>(
+      sql`SELECT
+            user_id,
+            auth_provider,
+            provider_account_id,
+            email,
+            name,
+            groups,
+            revocation_access_token,
+            revocation_refresh_token,
+            revocation_client_id
+          FROM fitness.auth_account
+          ORDER BY auth_provider, provider_account_id`,
+    );
+
+    await expect(
+      resolveOrCreateUser(
+        ctx.db,
+        "apple",
+        {
+          providerAccountId: "apple-owned-account",
+          email: "replacement@example.test",
+          emailVerified: true,
+          name: "Replacement Owner",
+          revocationCredential: {
+            accessToken: "replacement-access-token",
+            clientId: "replacement-client",
+            refreshToken: "replacement-refresh-token",
+          },
+        },
+        TEST_USER_ID,
+      ),
+    ).rejects.toThrow("apple account is already linked to another user");
+
+    const profilesAfter = await ctx.db.execute<{
+      email: string | null;
+      id: string;
+      name: string;
+    }>(
+      sql`SELECT id, email, name
+          FROM fitness.user_profile
+          WHERE id IN (${TEST_USER_ID}::uuid, ${owner.userId}::uuid)
+          ORDER BY id`,
+    );
+    const accountsAfter = await ctx.db.execute<{
+      auth_provider: string;
+      email: string | null;
+      groups: string[] | null;
+      name: string | null;
+      provider_account_id: string;
+      revocation_access_token: string | null;
+      revocation_client_id: string | null;
+      revocation_refresh_token: string | null;
+      user_id: string;
+    }>(
+      sql`SELECT
+            user_id,
+            auth_provider,
+            provider_account_id,
+            email,
+            name,
+            groups,
+            revocation_access_token,
+            revocation_refresh_token,
+            revocation_client_id
+          FROM fitness.auth_account
+          ORDER BY auth_provider, provider_account_id`,
+    );
+    expect(profilesAfter).toEqual(profilesBefore);
+    expect(accountsAfter).toEqual(accountsBefore);
+  });
+
+  it("encrypts Apple revocation credentials at the repository boundary", async () => {
+    const result = await resolveOrCreateUser(ctx.db, "apple", {
+      providerAccountId: "apple-revocation-credential",
+      email: "apple-revocation@example.test",
+      emailVerified: true,
+      name: "Apple Revocation",
+      revocationCredential: {
+        accessToken: "apple-access-token",
+        clientId: "com.dofek.app",
+        refreshToken: "apple-refresh-token",
+      },
+    });
+    const rows = await ctx.db.execute(
+      sql`SELECT
+            revocation_access_token,
+            revocation_refresh_token,
+            revocation_client_id
+          FROM fitness.auth_account
+          WHERE user_id = ${result.userId}::uuid
+            AND auth_provider = 'apple'`,
+    );
+    const row = rows[0];
+    expect(row?.revocation_access_token).toMatch(/^enc:v1:/);
+    expect(row?.revocation_refresh_token).toMatch(/^enc:v1:/);
+    expect(row?.revocation_client_id).toBe("com.dofek.app");
+
+    const scopeId = "apple:apple-revocation-credential";
+    await expect(
+      decryptCredentialValue(String(row?.revocation_access_token), {
+        tableName: "fitness.auth_account",
+        columnName: "revocation_access_token",
+        scopeId,
+      }),
+    ).resolves.toBe("apple-access-token");
+    await expect(
+      decryptCredentialValue(String(row?.revocation_refresh_token), {
+        tableName: "fitness.auth_account",
+        columnName: "revocation_refresh_token",
+        scopeId,
+      }),
+    ).resolves.toBe("apple-refresh-token");
+  });
+
+  it("repairs a legacy Apple account's revocation credentials on reauthentication", async () => {
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.auth_account (
+            user_id, auth_provider, provider_account_id, email, name
+          )
+          VALUES (
+            ${TEST_USER_ID}::uuid,
+            'apple',
+            'legacy-apple-account',
+            'legacy-apple@example.test',
+            'Legacy Apple'
+          )`,
+    );
+
+    await expect(
+      resolveOrCreateUser(ctx.db, "apple", {
+        providerAccountId: "legacy-apple-account",
+        email: "legacy-apple@example.test",
+        emailVerified: true,
+        name: "Legacy Apple",
+        revocationCredential: {
+          accessToken: "fresh-apple-access-token",
+          clientId: "com.dofek.app",
+          refreshToken: "fresh-apple-refresh-token",
+        },
+      }),
+    ).resolves.toEqual({ isNewUser: false, userId: TEST_USER_ID });
+
+    const rows = await ctx.db.execute(
+      sql`SELECT
+            revocation_access_token,
+            revocation_refresh_token,
+            revocation_client_id
+          FROM fitness.auth_account
+          WHERE auth_provider = 'apple'
+            AND provider_account_id = 'legacy-apple-account'`,
+    );
+    const row = rows[0];
+    const scopeId = "apple:legacy-apple-account";
+    await expect(
+      decryptCredentialValue(String(row?.revocation_access_token), {
+        tableName: "fitness.auth_account",
+        columnName: "revocation_access_token",
+        scopeId,
+      }),
+    ).resolves.toBe("fresh-apple-access-token");
+    await expect(
+      decryptCredentialValue(String(row?.revocation_refresh_token), {
+        tableName: "fitness.auth_account",
+        columnName: "revocation_refresh_token",
+        scopeId,
+      }),
+    ).resolves.toBe("fresh-apple-refresh-token");
+    expect(row?.revocation_client_id).toBe("com.dofek.app");
   });
 
   it("handles null email gracefully (no email-based linking)", async () => {

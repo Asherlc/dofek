@@ -12,6 +12,23 @@ const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
+const mockWithUserWriteFence = vi.fn(
+  async (
+    database: unknown,
+    _userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => operation(database),
+);
+vi.mock("../db/account-erasure.ts", () => ({
+  withAccountErasureUserWriteFence: (
+    database: unknown,
+    userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => mockWithUserWriteFence(database, userId, operation),
+}));
+vi.mock("../db/account-erasure-processing.ts", () => ({
+  isAccountErasureActive: vi.fn(async () => false),
+}));
 let realUnlink: typeof import("node:fs/promises").unlink;
 const mockUnlink = vi.fn<(path: string) => Promise<void>>();
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -248,6 +265,13 @@ describe("processImportJob", () => {
     mockRecordMetricStreamBatchPublished.mockClear();
     mockRecordRelationalCanonicalCommits.mockClear();
     mockMetricStreamPublishRows.mockClear();
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -961,6 +985,7 @@ describe("processImportJob", () => {
       expect(mockUnlink).toHaveBeenCalledWith(tempFilePath);
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
       expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+      expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
     });
     it("retains the upload and skips terminal side effects while waiting for children", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });

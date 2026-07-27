@@ -1,6 +1,7 @@
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import * as Sentry from "@sentry/react-native";
 import { AppState, type AppStateStatus } from "react-native";
+import { isAfterDeviceErasureCutoff, loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { DeviceSampleGroups, type DeviceScopedSample } from "./device-sample-groups.ts";
 import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 import { captureException, logger } from "./telemetry";
@@ -328,6 +329,8 @@ async function drainBuffer(
   realtimeClient?: WhoopBleRealtimeUploadClient,
   shouldContinueUploading: ShouldContinueUploading = shouldAlwaysContinueUploading,
 ): Promise<void> {
+  const deviceErasureCutoff = await loadDeviceErasureCutoff();
+
   // Log data path stats on every drain for diagnostics
   try {
     const bleModule = require("../modules/whoop-ble");
@@ -350,9 +353,17 @@ async function drainBuffer(
   while (true) {
     const samples = await whoopDeps.peekBufferedSamples(IMU_UPLOAD_BATCH_SIZE);
     if (samples.length === 0) break;
+    const uploadableSamples =
+      deviceErasureCutoff === null
+        ? samples
+        : samples.filter((sample) =>
+            isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff),
+          );
 
     let deviceIds = Array.from(
-      new Set(samples.map((sample) => sample.deviceId?.trim() || DEFAULT_WHOOP_DEVICE_ID)),
+      new Set(
+        uploadableSamples.map((sample) => sample.deviceId?.trim() || DEFAULT_WHOOP_DEVICE_ID),
+      ),
     );
     let firstTimestamp: string | undefined;
     let lastTimestamp: string | undefined;
@@ -362,7 +373,7 @@ async function drainBuffer(
         DEFAULT_WHOOP_DEVICE_ID,
         toInertialMeasurementUnitUploadSample,
       );
-      for (const sample of samples) {
+      for (const sample of uploadableSamples) {
         groups.add(sample);
       }
       deviceIds = [...groups.entries()].map(([deviceId]) => deviceId);
@@ -414,10 +425,16 @@ async function drainBuffer(
       const realtimeSamples = await whoopDeps.peekBufferedRealtimeData(REALTIME_UPLOAD_BATCH_SIZE);
       logger.info(LOG_CATEGORY, `realtime buffer: ${realtimeSamples.length} samples`);
       if (realtimeSamples.length === 0) break;
+      const uploadableRealtimeSamples =
+        deviceErasureCutoff === null
+          ? realtimeSamples
+          : realtimeSamples.filter((sample) =>
+              isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff),
+            );
 
       try {
         const groups = new DeviceSampleGroups(DEFAULT_WHOOP_DEVICE_ID, toRealtimeDataUploadSample);
-        for (const sample of realtimeSamples) {
+        for (const sample of uploadableRealtimeSamples) {
           groups.add(sample);
         }
 

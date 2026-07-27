@@ -18,6 +18,7 @@ final class TransferManager: ObservableObject {
     private let workQueue = DispatchQueue(label: "com.dofek.watch.transfer", qos: .utility)
     private let pendingAltitudeLock = NSLock()
     private var pendingAltitudeSampleCounts: [URL: Int] = [:]
+    private let accountStateStore = WatchAccountStateStore()
 
     /// Maximum time difference (in seconds) for merging an accel sample
     /// with a gyro sample into a single 6-axis IMU sample.
@@ -40,6 +41,12 @@ final class TransferManager: ObservableObject {
         WatchSessionDelegate.shared.onFileTransferFinished = { [weak self] fileTransfer, error in
             self?.handleFileTransferFinished(fileTransfer, error: error)
         }
+        WatchSessionDelegate.shared.onPurgeRequested = { [weak self] cutoff in
+            self?.purgeAccountState(at: cutoff ?? Date())
+        }
+        WatchSessionDelegate.shared.onAccountSyncEnabled = { [weak self] in
+            self?.accountStateStore.enableSync()
+        }
     }
 
     /// Query new samples from both recorders, merge by timestamp, serialize
@@ -57,6 +64,10 @@ final class TransferManager: ObservableObject {
         }
 
         guard !isTransferring else { return }
+        guard accountStateStore.isSyncEnabled else {
+            lastTransferStatus = "Account sync disabled"
+            return
+        }
         guard session.activationState == .activated else {
             lastTransferStatus = "Session not active"
             return
@@ -75,6 +86,7 @@ final class TransferManager: ObservableObject {
     }
 
     private func performTransfer() {
+        guard accountStateStore.isSyncEnabled else { return }
         // Stream samples to a temp JSON file (memory-efficient)
         guard let result = accelerometerRecorder.streamSamplesToFile() else {
             let altitudeSamples = altimeterRecorder.copyBufferedSamples()
@@ -388,6 +400,34 @@ final class TransferManager: ObservableObject {
         #if canImport(Sentry)
         SentrySDK.capture(error: error)
         #endif
+    }
+
+    private func purgeAccountState(at cutoff: Date) {
+        accountStateStore.purge(at: cutoff)
+        gyroscopeRecorder.purgeAccountState()
+        altimeterRecorder.purgeAccountState()
+        accelerometerRecorder.purgeAccountState()
+
+        for transfer in session.outstandingFileTransfers {
+            let fileURL = transfer.file.fileURL
+            transfer.cancel()
+            do {
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    try FileManager.default.removeItem(at: fileURL)
+                }
+            } catch {
+                reportUnexpectedTransferFailure(error)
+            }
+        }
+
+        pendingAltitudeLock.lock()
+        pendingAltitudeSampleCounts.removeAll()
+        pendingAltitudeLock.unlock()
+
+        DispatchQueue.main.async { [weak self] in
+            self?.isTransferring = false
+            self?.lastTransferStatus = "Account data cleared"
+        }
     }
 
     /// Compress a file using zlib via Foundation's NSData.compressed(using:).

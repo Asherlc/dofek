@@ -7,18 +7,9 @@ import { SettingsRepository } from "./settings-repository.ts";
 
 function makeRepository(rows: Record<string, unknown>[] = []) {
   const execute = vi.fn().mockResolvedValue(rows);
-  const transactionCallback = vi.fn();
-  const transaction = vi
-    .fn()
-    .mockImplementation(async (callback: (tx: { execute: typeof execute }) => Promise<void>) => {
-      const transactionExecute = vi.fn().mockResolvedValue([]);
-      transactionCallback.mockImplementation(callback);
-      await callback({ execute: transactionExecute });
-      return transactionExecute;
-    });
-  const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = { execute, transaction };
+  const db: Pick<import("dofek/db").Database, "execute"> = { execute };
   const repo = new SettingsRepository(db, "user-1");
-  return { repo, execute, transaction };
+  return { repo, execute };
 }
 
 // ---------------------------------------------------------------------------
@@ -219,58 +210,6 @@ describe("SettingsRepository", () => {
       } finally {
         Object.assign(process.env, envBackup);
       }
-    });
-  });
-
-  describe("deleteAllUserData", () => {
-    it("calls transaction", async () => {
-      const { repo, transaction } = makeRepository([]);
-      await repo.deleteAllUserData(["fitness.sync_log", "fitness.activity"]);
-      expect(transaction).toHaveBeenCalledTimes(1);
-    });
-
-    it("deletes exactly 4 user-scoped tables (user_settings, life_events, sport_settings, supplement)", async () => {
-      const transactionExecute = vi.fn().mockResolvedValue([]);
-      const transaction = vi
-        .fn()
-        .mockImplementation(
-          async (callback: (tx: { execute: typeof transactionExecute }) => Promise<void>) => {
-            await callback({ execute: transactionExecute });
-          },
-        );
-      const execute = vi.fn().mockResolvedValue([]);
-      const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
-        execute,
-        transaction,
-      };
-      const repo = new SettingsRepository(db, "user-1");
-
-      // Pass 0 child tables to isolate user-scoped count: 4 user-scoped deletes
-      await repo.deleteAllUserData([]);
-      expect(transactionExecute).toHaveBeenCalledTimes(4);
-    });
-
-    it("executes deletes for provider child tables, provider, and user-scoped tables", async () => {
-      const transactionExecute = vi.fn().mockResolvedValue([]);
-      const transaction = vi
-        .fn()
-        .mockImplementation(
-          async (callback: (tx: { execute: typeof transactionExecute }) => Promise<void>) => {
-            await callback({ execute: transactionExecute });
-          },
-        );
-      const execute = vi.fn().mockResolvedValue([]);
-      const db: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
-        execute,
-        transaction,
-      };
-      const repo = new SettingsRepository(db, "user-1");
-
-      const childTables = ["fitness.sync_log", "fitness.activity"];
-      await repo.deleteAllUserData(childTables);
-
-      // 2 child tables + 4 user-scoped tables = 6 execute calls
-      expect(transactionExecute).toHaveBeenCalledTimes(6);
     });
   });
 });

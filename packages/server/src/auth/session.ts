@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 const SESSION_DURATION_DAYS = 30;
 
@@ -18,11 +18,15 @@ export interface SessionInfo {
 }
 
 const sessionRowSchema = z.object({
+  created_at: timestampStringSchema,
   user_id: z.string(),
 });
 
 /** Create a new session for a user. Returns the session token and expiry. */
-export async function createSession(db: Database, userId: string): Promise<SessionInfo> {
+export async function createSession(
+  db: Pick<Database, "execute">,
+  userId: string,
+): Promise<SessionInfo> {
   const sessionId = generateSessionToken();
   const expiresAt = new Date(Date.now() + SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000);
 
@@ -38,18 +42,18 @@ export async function createSession(db: Database, userId: string): Promise<Sessi
 export async function validateSession(
   db: Pick<Database, "execute">,
   sessionId: string,
-): Promise<{ userId: string } | null> {
+): Promise<{ authenticatedAt?: Date; userId: string } | null> {
   const rows = await executeWithSchema(
     db,
     sessionRowSchema,
-    sql`SELECT user_id FROM fitness.session
+    sql`SELECT user_id, created_at FROM fitness.session
         WHERE id = ${sessionId} AND expires_at > NOW()
         LIMIT 1`,
   );
 
   const row = rows[0];
   if (!row) return null;
-  return { userId: row.user_id };
+  return { authenticatedAt: new Date(row.created_at), userId: row.user_id };
 }
 
 /** Delete a session (logout). */

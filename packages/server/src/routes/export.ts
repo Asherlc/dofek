@@ -1,12 +1,10 @@
-import * as Sentry from "@sentry/node";
-import { type DataExportQueue, enqueueDataExport } from "dofek/jobs/queues";
+import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { sql } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import { logger } from "../logger.ts";
 
 const EXPORT_FILENAME = "dofek-export.zip";
 const EXPORT_TTL_DAYS = 7;
@@ -56,14 +54,14 @@ function toExportResponse(row: z.infer<typeof exportListRowSchema>) {
 
 interface ExportRouterDeps {
   db: import("dofek/db").Database;
-  exportQueue: DataExportQueue;
   createSignedDownloadUrl?: SignedDownloadUrlFactory;
 }
+
+type ExportCreationResult = { status: "created"; exportId: string } | { status: "insert-failed" };
 
 export function createExportRouter({
   createSignedDownloadUrl = defaultCreateSignedDownloadUrl,
   db,
-  exportQueue,
 }: ExportRouterDeps): Router {
   const router = Router();
 
@@ -107,38 +105,33 @@ export function createExportRouter({
       return;
     }
 
-    const expiresAt = new Date(Date.now() + EXPORT_TTL_DAYS * 24 * 60 * 60 * 1000);
-    const rows = await executeWithSchema(
+    const result = await withAccountErasureUserWriteFence(
       db,
-      insertExportRowSchema,
-      sql`INSERT INTO fitness.data_export (user_id, status, filename, expires_at)
-          VALUES (${session.userId}, 'queued', ${EXPORT_FILENAME}, ${expiresAt.toISOString()})
-          RETURNING id`,
+      session.userId,
+      async (transaction): Promise<ExportCreationResult> => {
+        const expiresAt = new Date(Date.now() + EXPORT_TTL_DAYS * 24 * 60 * 60 * 1000);
+        const rows = await executeWithSchema(
+          transaction,
+          insertExportRowSchema,
+          sql`INSERT INTO fitness.data_export (user_id, status, filename, expires_at)
+              VALUES (${session.userId}, 'queued', ${EXPORT_FILENAME}, ${expiresAt.toISOString()})
+              RETURNING id`,
+        );
+        const exportId = rows[0]?.id;
+        if (!exportId) {
+          return { status: "insert-failed" };
+        }
+
+        return { status: "created", exportId };
+      },
     );
-    const exportId = rows[0]?.id;
-    if (!exportId) {
+
+    if (result.status === "insert-failed") {
       res.status(500).json({ error: "Failed to create export" });
       return;
     }
 
-    try {
-      await enqueueDataExport({ exportId, userId: session.userId }, exportQueue);
-    } catch (error: unknown) {
-      Sentry.captureException(error, {
-        tags: { source: "data-export-enqueue" },
-        extra: { exportId, userId: session.userId },
-      });
-      logger.error(`[export] Failed to enqueue durable export ${exportId}: ${String(error)}`);
-      res.status(503).json({
-        error:
-          "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
-        exportId,
-        retryable: true,
-      });
-      return;
-    }
-
-    res.json({ status: "queued", exportId });
+    res.json({ status: "queued", exportId: result.exportId });
   });
 
   router.get("/status/:jobId", async (req, res) => {

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   date,
   foreignKey,
   index,
@@ -170,10 +171,81 @@ export const exerciseAlias = fitness.table(
     providerExerciseName: text("provider_exercise_name").notNull(),
   },
   (table) => [
+    uniqueIndex("exercise_alias_id_exercise_idx").on(table.id, table.exerciseId),
     uniqueIndex("exercise_alias_provider_name_idx").on(
       table.providerId,
       table.providerExerciseName,
     ),
+  ],
+);
+
+/**
+ * Canonical ownership/provenance for shared exercise catalog rows.
+ *
+ * System rows keep seeded/shared exercises alive. User rows identify the
+ * provider import that caused a user to contribute or reuse an exercise.
+ */
+export const exerciseSource = fitness.table(
+  "exercise_source",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    exerciseId: uuid("exercise_id")
+      .notNull()
+      .references(() => exercise.id, { onDelete: "cascade" }),
+    sourceKind: text("source_kind").notNull(),
+    userId: uuid("user_id").references(() => userProfile.id, {
+      onDelete: "cascade",
+    }),
+    providerId: text("provider_id").references(() => provider.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "exercise_source_shape_valid",
+      sql`(
+        ${table.sourceKind} = 'system'
+        AND ${table.userId} IS NULL
+        AND ${table.providerId} IS NULL
+      ) OR (
+        ${table.sourceKind} = 'user'
+        AND ${table.userId} IS NOT NULL
+        AND ${table.providerId} IS NOT NULL
+      )`,
+    ),
+    uniqueIndex("exercise_source_id_exercise_idx").on(table.id, table.exerciseId),
+    uniqueIndex("exercise_source_system_idx")
+      .on(table.exerciseId)
+      .where(sql`${table.sourceKind} = 'system'`),
+    uniqueIndex("exercise_source_user_provider_idx")
+      .on(table.exerciseId, table.userId, table.providerId)
+      .where(sql`${table.sourceKind} = 'user'`),
+    index("exercise_source_user_idx").on(table.userId),
+  ],
+);
+
+/** Attributes a provider alias to the same source as its exercise. */
+export const exerciseAliasSource = fitness.table(
+  "exercise_alias_source",
+  {
+    aliasId: uuid("alias_id").notNull(),
+    sourceId: uuid("source_id").notNull(),
+    exerciseId: uuid("exercise_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.aliasId, table.sourceId] }),
+    foreignKey({
+      columns: [table.aliasId, table.exerciseId],
+      foreignColumns: [exerciseAlias.id, exerciseAlias.exerciseId],
+      name: "exercise_alias_source_alias_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.sourceId, table.exerciseId],
+      foreignColumns: [exerciseSource.id, exerciseSource.exerciseId],
+      name: "exercise_alias_source_source_fkey",
+    }).onDelete("cascade"),
+    index("exercise_alias_source_exercise_idx").on(table.exerciseId),
+    index("exercise_alias_source_source_idx").on(table.sourceId),
   ],
 );
 
@@ -193,12 +265,17 @@ export const oauthToken = fitness.table(
       .references(() => provider.id),
     accessToken: text("access_token").notNull(),
     refreshToken: text("refresh_token"),
+    providerAccountId: text("provider_account_id"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     scopes: text("scopes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    check(
+      "oauth_token_provider_account_id_nonempty",
+      sql`${table.providerAccountId} IS NULL OR length(${table.providerAccountId}) > 0`,
+    ),
     primaryKey({ columns: [table.userId, table.providerId] }),
     foreignKey({
       columns: [table.userId, table.providerId],

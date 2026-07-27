@@ -19,6 +19,7 @@ export interface ClickHouseCommandClient {
     format: "JSONEachRow";
     query_params?: Record<string, unknown>;
     abort_signal?: AbortSignal;
+    clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<{ json(): Promise<TRow[]> }>;
   close?(): Promise<void>;
 }
@@ -29,6 +30,7 @@ export interface ClickHouseClient extends ClickHouseCommandClient {
     format: "JSONEachRow";
     query_params?: Record<string, unknown>;
     abort_signal?: AbortSignal;
+    clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<{ json(): Promise<TRow[]> }>;
 }
 

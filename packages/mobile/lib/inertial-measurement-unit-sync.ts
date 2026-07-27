@@ -1,4 +1,5 @@
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
+import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
 
 const UPLOAD_BATCH_SIZE = 5000;
 const TWELVE_HOURS_SECONDS = 12 * 3600;
@@ -33,6 +34,7 @@ export interface InertialMeasurementUnitSyncOptions {
   coreMotion: InertialMeasurementUnitAdapter;
   deviceId: string;
   deviceType: string;
+  minimumSampleDate?: string | null;
   onProgress?: (message: string) => void;
 }
 
@@ -53,7 +55,14 @@ export interface InertialMeasurementUnitSyncResult {
 export async function syncInertialMeasurementUnitToServer(
   options: InertialMeasurementUnitSyncOptions,
 ): Promise<InertialMeasurementUnitSyncResult> {
-  const { trpcClient, coreMotion, deviceId, deviceType, onProgress } = options;
+  const {
+    trpcClient,
+    coreMotion,
+    deviceId,
+    deviceType,
+    minimumSampleDate = null,
+    onProgress,
+  } = options;
 
   if (!coreMotion.isAccelerometerRecordingAvailable()) {
     onProgress?.("Accelerometer recording not available on this device");
@@ -65,8 +74,16 @@ export async function syncInertialMeasurementUnitToServer(
   const lastSync = coreMotion.getLastSyncTimestamp();
   const oldestQueryableDate = new Date(now.getTime() - SENSOR_HISTORY_LOOKBACK_MS);
   const requestedFromDate = lastSync ? new Date(lastSync) : oldestQueryableDate;
-  const fromDate =
-    requestedFromDate < oldestQueryableDate ? oldestQueryableDate : requestedFromDate;
+  let fromDate = requestedFromDate < oldestQueryableDate ? oldestQueryableDate : requestedFromDate;
+  if (minimumSampleDate !== null) {
+    const cutoffDate = new Date(minimumSampleDate);
+    if (!Number.isFinite(cutoffDate.getTime())) {
+      throw new Error("Device erasure cutoff is invalid.");
+    }
+    if (cutoffDate > fromDate) {
+      fromDate = cutoffDate;
+    }
+  }
   const queryWindowEndDate = new Date(
     Math.min(fromDate.getTime() + SENSOR_QUERY_WINDOW_MS, now.getTime()),
   );
@@ -79,9 +96,11 @@ export async function syncInertialMeasurementUnitToServer(
   }
 
   onProgress?.(`Querying IMU data from ${fromDate.toISOString()}...`);
-  const samples = await coreMotion.queryRecordedData(
-    fromDate.toISOString(),
-    queryWindowEndDate.toISOString(),
+  const samples = (
+    await coreMotion.queryRecordedData(fromDate.toISOString(), queryWindowEndDate.toISOString())
+  ).filter(
+    (sample) =>
+      minimumSampleDate === null || isAfterDeviceErasureCutoff(sample.timestamp, minimumSampleDate),
   );
 
   if (samples.length === 0) {

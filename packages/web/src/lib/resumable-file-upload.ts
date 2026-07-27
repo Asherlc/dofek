@@ -303,6 +303,18 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
+export function deleteIndexedDbUploadDatabase(): Promise<void> {
+  if (typeof indexedDB === "undefined") return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DATABASE_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error ?? new Error("Failed to delete upload storage"));
+    request.onblocked = () =>
+      reject(new Error("Upload storage deletion is blocked by another open Dofek tab"));
+  });
+}
+
 export const indexedDbUploadSessionStore: UploadSessionStore = {
   async get(providerId) {
     const database = await openUploadDatabase();

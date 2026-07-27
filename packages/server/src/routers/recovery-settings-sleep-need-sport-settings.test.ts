@@ -41,8 +41,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-import { invalidateAllUserQueries, invalidateUserQueryDomains, queryCache } from "dofek/lib/cache";
-import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
+import { invalidateUserQueryDomains, queryCache } from "dofek/lib/cache";
 import { recoveryRouter } from "./recovery.ts";
 import { settingsRouter } from "./settings.ts";
 import { sleepNeedRouter } from "./sleep-need.ts";
@@ -623,30 +622,6 @@ describe("settingsRouter", () => {
       await expect(caller.set({ key: "unitSystem", value: "metric" })).rejects.toThrow(
         "Failed to upsert setting",
       );
-    });
-  });
-
-  describe("deleteAllUserData", () => {
-    it("deletes provider and user-scoped data in one transaction", async () => {
-      const txExecute = vi.fn().mockResolvedValue([]);
-      const mockTransaction = vi
-        .fn()
-        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
-          await fn({ execute: txExecute });
-        });
-
-      const caller = createCaller({
-        db: { execute: vi.fn(), transaction: mockTransaction },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-
-      const result = await caller.deleteAllUserData();
-      expect(result).toEqual({ success: true });
-      expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 4);
-      expectCallsUseNonEmptySql(txExecute);
-      expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
     });
   });
 

@@ -154,7 +154,7 @@ export function completeSignupHtml(
 }
 
 export async function persistProviderConnection(params: {
-  db: import("dofek/db").Database;
+  db: import("dofek/db").SyncDatabase;
   provider: import("dofek/providers/types").Provider;
   providerName: string;
   apiBaseUrl?: string;
@@ -176,15 +176,11 @@ export async function persistProviderConnection(params: {
     `[auth] ${params.provider.id} tokens saved for user ${params.userId}. Expires: ${params.tokens.expiresAt.toISOString()}`,
   );
 
-  try {
-    const { isWebhookProvider } = await import("dofek/providers/types");
-    if (isWebhookProvider(params.provider)) {
-      const { registerWebhookForProvider } = await import("../webhooks.ts");
-      await registerWebhookForProvider(params.db, params.provider, params.userId);
-      logger.info(`[auth] Webhook registered for ${params.provider.id}`);
-    }
-  } catch (webhookErr: unknown) {
-    logger.warn(`[auth] Failed to register webhook for ${params.provider.id}: ${webhookErr}`);
+  const { isWebhookProvider } = await import("dofek/providers/types");
+  if (isWebhookProvider(params.provider)) {
+    const { registerWebhookForProvider } = await import("../webhooks.ts");
+    await registerWebhookForProvider(params.db, params.provider, params.userId);
+    logger.info(`[auth] Webhook registered for ${params.provider.id}`);
   }
 }
 

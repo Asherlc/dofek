@@ -54,6 +54,11 @@ export interface ProviderAuthSetup {
   /** Provider-specific cleanup for an existing authorization. */
   revokeExistingTokens?: (tokens: TokenSet) => Promise<void>;
   /**
+   * Provider-specific revocation semantics for durable account-erasure replay.
+   * This must accept only provider-documented terminal outcomes.
+   */
+  revokeTokensForAccountErasure?: (tokens: TokenSet) => Promise<void>;
+  /**
    * Revoke the current authorization before exchanging a replacement code.
    * Use only when the provider will reject the exchange while its old grant exists.
    * The default exchanges and persists the replacement before revoking old tokens.

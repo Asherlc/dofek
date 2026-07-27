@@ -21,10 +21,16 @@ export async function listQueuedDataExportRequests(
     database,
     dataExportRequestRowSchema,
     sql`
-      SELECT id, user_id
-      FROM fitness.data_export
-      WHERE status = 'queued'
-      ORDER BY created_at, id
+      SELECT export.id, export.user_id
+      FROM fitness.data_export AS export
+      WHERE export.status = 'queued'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM fitness.account_erasure_request AS erasure
+          WHERE erasure.user_id = export.user_id
+            AND erasure.status <> 'completed'
+        )
+      ORDER BY export.created_at, export.id
       LIMIT ${parsedLimit}
     `,
   );

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
+import { makeTransactionalTestDatabase } from "../routers/test-helpers.ts";
 import {
   aggregateDailyMetricSamples,
   categorize,
@@ -1015,7 +1016,7 @@ describe("INTEGER_DAILY_COLUMNS", () => {
 describe("HealthKitSyncRepository", () => {
   function makeRepository() {
     const execute = vi.fn().mockResolvedValue([]);
-    const db = { execute };
+    const db = makeTransactionalTestDatabase({ execute });
     const publisher = makeMetricStreamPublisher();
     const repository = new HealthKitSyncRepository(db, "user-1", publisher);
     return { repository, execute, publisher };
@@ -1061,7 +1062,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledOnce();
+      expect(execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({
           providerId: "apple_health",
@@ -1096,7 +1097,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledOnce();
+      expect(execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({ channel: "body_fat_percentage", scalar: 18.5 }),
       ]);
@@ -1113,7 +1114,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledOnce();
+      expect(execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({ channel: "body_mass_index", scalar: 23.4 }),
       ]);
@@ -1130,7 +1131,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledOnce();
+      expect(execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({ channel: "height", scalar: 175.5 }),
       ]);
@@ -1152,7 +1153,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(2);
-      expect(execute).toHaveBeenCalledOnce();
+      expect(execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(publisher)).toHaveLength(2);
     });
   });
@@ -1206,7 +1207,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledOnce();
+      expect(execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({ channel: "heart_rate", scalar: 72 }),
       ]);
@@ -1285,7 +1286,7 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledOnce();
+      expect(execute).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(publisher)).toEqual([
         expect.objectContaining({ channel: "respiratory_rate", scalar: 14.5 }),
       ]);
@@ -1907,7 +1908,11 @@ describe("HealthKitSyncRepository.processBodyMeasurements (mutation: body fat tr
   it("body fat percentage transform multiplies by 100 (not 10, 1000, or divides)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const publisher = makeMetricStreamPublisher();
-    const repo = new HealthKitSyncRepository({ execute }, "user-1", publisher);
+    const repo = new HealthKitSyncRepository(
+      makeTransactionalTestDatabase({ execute }),
+      "user-1",
+      publisher,
+    );
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierBodyFatPercentage",
@@ -1993,7 +1998,11 @@ describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)
   it("only counts samples with valid metric stream mapping", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const publisher = makeMetricStreamPublisher();
-    const repo = new HealthKitSyncRepository({ execute }, "user-1", publisher);
+    const repo = new HealthKitSyncRepository(
+      makeTransactionalTestDatabase({ execute }),
+      "user-1",
+      publisher,
+    );
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierHeartRate",
@@ -2028,7 +2037,7 @@ describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)
     ];
     const result = await repo.processMetricStream(samples);
     expect(result).toBe(2);
-    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(getPublishedRows(publisher)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ channel: "heart_rate", scalar: 72 }),
@@ -2437,7 +2446,11 @@ describe("HealthKitSyncRepository.processBodyMeasurements (mutation: batching)",
   it("processes more than BATCH_SIZE samples correctly", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const publisher = makeMetricStreamPublisher();
-    const repo = new HealthKitSyncRepository({ execute }, "user-1", publisher);
+    const repo = new HealthKitSyncRepository(
+      makeTransactionalTestDatabase({ execute }),
+      "user-1",
+      publisher,
+    );
     // BATCH_SIZE is 500, create 501 samples
     const samples: HealthKitSample[] = Array.from({ length: 501 }, (_, index) => ({
       type: "HKQuantityTypeIdentifierBodyMass",
@@ -2451,7 +2464,7 @@ describe("HealthKitSyncRepository.processBodyMeasurements (mutation: batching)",
     }));
     const result = await repo.processBodyMeasurements(samples);
     expect(result).toBe(501);
-    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute).toHaveBeenCalledTimes(4);
     expect(publisher.publishRows).toHaveBeenCalledTimes(2);
     expect(publisher.publishRows.mock.calls[0]?.[0]).toHaveLength(500);
     expect(publisher.publishRows.mock.calls[1]?.[0]).toHaveLength(1);

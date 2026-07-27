@@ -1,7 +1,8 @@
+import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { z } from "zod";
 import {
   createOrGetCompanionToken,
-  regenerateCompanionToken,
+  regenerateCompanionTokenInTransaction,
 } from "../companion/token-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -18,6 +19,8 @@ export const companionTokenRouter = router({
   }),
 
   regenerate: protectedProcedure.output(companionTokenOutputSchema).mutation(async ({ ctx }) => {
-    return regenerateCompanionToken(ctx.db, ctx.userId);
+    return withAccountErasureUserWriteFence(ctx.db, ctx.userId, (transaction) =>
+      regenerateCompanionTokenInTransaction(transaction, ctx.userId),
+    );
   }),
 });

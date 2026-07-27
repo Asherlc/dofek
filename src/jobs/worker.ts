@@ -1,5 +1,10 @@
+import { randomUUID } from "node:crypto";
 import * as Sentry from "@sentry/node";
 import { Job, UnrecoverableError, Worker } from "bullmq";
+import { validateAccountErasureLedgerKeyring } from "../account-erasure/identity.ts";
+import { createEncryptedAccountErasureSnapshot } from "../account-erasure/remote-snapshot.ts";
+import { createAccountErasureRestoreLedgerFromEnv } from "../account-erasure/restore-ledger.ts";
+import { reconcileAccountErasureRestoreIntents } from "../account-erasure/restore-reconciliation.ts";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
@@ -11,6 +16,17 @@ import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
 import { initProductionSentry } from "../lib/sentry.ts";
 import { jobContext, logger } from "../logger.ts";
+import { getAllProviders } from "../providers/index.ts";
+import { startAccountErasureOutboxDispatcher } from "./account-erasure-outbox.ts";
+import { createAccountErasureRuntime } from "./account-erasure-runtime.ts";
+import { runAccountErasureRestoreStartupGate } from "./account-erasure-startup.ts";
+import {
+  accountErasureAllowsQueuedUserWork,
+  createAccountErasureWorkLockPoolFromEnv,
+  runQueuedUserWorkUnlessAccountErasing,
+} from "./account-erasure-work-guard.ts";
+import { createAccountErasureWorkPurgerFromEnv } from "./account-erasure-work-purger.ts";
+import { createAccountErasureWorker } from "./account-erasure-worker.ts";
 import { startDataExportOutboxDispatcher } from "./data-export-outbox.ts";
 import { startFileUploadOutboxDispatcher } from "./file-upload-outbox.ts";
 import { startFileUploadReconciler } from "./file-upload-reconciliation.ts";
@@ -27,7 +43,9 @@ import { processSyncJob } from "./process-sync-job.ts";
 import { processZipEntryExtractJob } from "./process-zip-entry-extract-job.ts";
 import { startProviderDataDeletionOutboxDispatcher } from "./provider-data-deletion-outbox.ts";
 import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
+import { ensureProvidersRegistered } from "./provider-registration.ts";
 import {
+  ACCOUNT_ERASURE_QUEUE,
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
   type ActivityAnalyticsJobData,
   closeAllQueueResources,
@@ -38,6 +56,7 @@ import {
   FIT_FILE_IMPORT_QUEUE,
   type FitFileImportBatchJobData,
   type FitFileImportJobData,
+  getAccountErasureQueue,
   getDataExportQueue,
   getImportQueue,
   getProviderDataDeletionQueue,
@@ -68,6 +87,18 @@ const WORKER_READINESS_HOST = "127.0.0.1";
 const WORKER_READINESS_PORT = 3001;
 
 const db = createDatabaseFromEnv();
+const accountErasureWorkLockPool = createAccountErasureWorkLockPoolFromEnv();
+validateAccountErasureLedgerKeyring();
+const accountErasureRestoreLedger = createAccountErasureRestoreLedgerFromEnv();
+await ensureProvidersRegistered();
+await runAccountErasureRestoreStartupGate(() =>
+  reconcileAccountErasureRestoreIntents({
+    createEncryptedRemoteSnapshot: (transaction, userId) =>
+      createEncryptedAccountErasureSnapshot(transaction, userId, getAllProviders()),
+    database: db,
+    ledger: accountErasureRestoreLedger,
+  }),
+);
 const connection = getRedisConnection();
 let importUploadStorage: ReturnType<typeof createImportUploadStorageFromEnv> | null = null;
 
@@ -117,6 +148,13 @@ async function refreshPostSyncBodyMeasurements() {
   await refreshBodyMeasurementReadModel(getClickHouseClient());
 }
 
+const accountErasureRuntime = await createAccountErasureRuntime(
+  db,
+  getClickHouseClient(),
+  createAccountErasureWorkPurgerFromEnv(),
+);
+const accountErasureLeaseOwner = `account-erasure-worker:${randomUUID()}`;
+
 // ── Per-provider sync workers ──
 
 const providerWorkers = new Map<string, Worker<SyncJobData>>();
@@ -125,7 +163,16 @@ for (const providerId of getConfiguredProviderIds()) {
   const config = getProviderQueueConfig(providerId);
   const worker = new Worker<SyncJobData>(
     providerSyncQueueName(providerId),
-    (job) => jobContext.run(job, () => processSyncJob(job, db)),
+    (job) =>
+      jobContext.run(job, () =>
+        runQueuedUserWorkUnlessAccountErasing(
+          accountErasureWorkLockPool,
+          db,
+          job.data.userId,
+          "provider sync",
+          () => processSyncJob(job, db),
+        ),
+      ),
     {
       autorun: false,
       connection,
@@ -147,7 +194,15 @@ const legacySyncWorker = new Worker<SyncJobData>(
       `[worker] Processing job from legacy "sync" queue (provider=${job.data.providerId}). ` +
         "New jobs should use per-provider queues.",
     );
-    return jobContext.run(job, () => processSyncJob(job, db));
+    return jobContext.run(job, () =>
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
+        db,
+        job.data.userId,
+        "legacy provider sync",
+        () => processSyncJob(job, db),
+      ),
+    );
   },
   { autorun: false, connection },
 );
@@ -158,32 +213,75 @@ const importWorker: Worker<ImportJobData> = new Worker<ImportJobData>(
   IMPORT_QUEUE,
   (job, token) =>
     jobContext.run(job, () =>
-      processFileUploadImportJob(
-        importJobWithLockExtender(job, token, importWorker),
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
         db,
-        getImportUploadStorage(),
+        job.data.userId,
+        "file import",
+        () =>
+          processFileUploadImportJob(
+            importJobWithLockExtender(job, token, importWorker),
+            db,
+            getImportUploadStorage(),
+          ),
       ),
     ),
   { autorun: false, connection },
 );
 const exportWorker = new Worker<ExportJobData>(
   EXPORT_QUEUE,
-  (job) => jobContext.run(job, () => processExportJob(job, db)),
+  (job) =>
+    jobContext.run(job, () =>
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
+        db,
+        job.data.userId,
+        "data export",
+        () => processExportJob(job, db),
+      ),
+    ),
   { autorun: false, connection },
 );
 const fitFileImportWorker = new Worker<FitFileImportJobData>(
   FIT_FILE_IMPORT_QUEUE,
-  (job) => jobContext.run(job, () => processFitFileImportJob(job, db)),
+  (job) =>
+    jobContext.run(job, () =>
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
+        db,
+        job.data.userId,
+        "FIT file import",
+        () => processFitFileImportJob(job, db),
+      ),
+    ),
   { autorun: false, connection, concurrency: 2 },
 );
 const fitFileImportBatchWorker = new Worker<FitFileImportBatchJobData>(
   FIT_FILE_IMPORT_BATCH_QUEUE,
-  (job) => jobContext.run(job, () => processFitFileImportBatchJob(job)),
+  (job) =>
+    jobContext.run(job, () =>
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
+        db,
+        job.data.userId,
+        "FIT file import batch",
+        () => processFitFileImportBatchJob(job),
+      ),
+    ),
   { autorun: false, connection, concurrency: 1 },
 );
 const zipEntryExtractWorker = new Worker<ZipEntryExtractJobData>(
   ZIP_ENTRY_EXTRACT_QUEUE,
-  (job) => jobContext.run(job, () => processZipEntryExtractJob(job)),
+  (job) =>
+    jobContext.run(job, () =>
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
+        db,
+        job.data.userId,
+        "ZIP entry extraction",
+        () => processZipEntryExtractJob(job),
+      ),
+    ),
   { autorun: false, connection, concurrency: 2 },
 );
 const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
@@ -195,13 +293,30 @@ const postSyncWorker = new Worker<PostSyncJobData>(
   POST_SYNC_QUEUE,
   (job) =>
     jobContext.run(job, () =>
-      processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements),
+      job.data.type === "global-maintenance"
+        ? processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements)
+        : runQueuedUserWorkUnlessAccountErasing(
+            accountErasureWorkLockPool,
+            db,
+            job.data.userId,
+            "post-sync refit",
+            () => processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements),
+          ),
     ),
   { autorun: false, connection, concurrency: 1 },
 );
 const activityDeleteAnalyticsWorker = new Worker<ActivityAnalyticsJobData>(
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
-  (job) => jobContext.run(job, () => processActivityDeleteAnalyticsJob(job)),
+  (job) =>
+    jobContext.run(job, () =>
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
+        db,
+        job.data.userId,
+        "activity analytics refresh",
+        () => processActivityDeleteAnalyticsJob(job, db),
+      ),
+    ),
   { autorun: false, connection, concurrency: 1 },
 );
 const providerDataDeletionWorker = new Worker<ProviderDataDeletionJobData>(
@@ -213,14 +328,29 @@ const providerDataDeletionWorker = new Worker<ProviderDataDeletionJobData>(
       throw new UnrecoverableError(error instanceof Error ? error.message : String(error));
     }
     return jobContext.run(job, () =>
-      processProviderDataDeletionJob(job, {
-        clickHouseClient: getClickHouseClient(),
-        enqueueAnalyticsRefresh: enqueueProviderDeleteAnalyticsRefresh,
-        markCompleted: (eventId) => markProviderDataDeletionCompleted(db, eventId),
-      }),
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
+        db,
+        job.data.userId,
+        "provider data deletion",
+        () =>
+          processProviderDataDeletionJob(job, {
+            accountErasureAllowsWork: (workKind) =>
+              accountErasureAllowsQueuedUserWork(db, job.data.userId, workKind),
+            clickHouseClient: getClickHouseClient(),
+            enqueueAnalyticsRefresh: enqueueProviderDeleteAnalyticsRefresh,
+            markCompleted: (eventId) => markProviderDataDeletionCompleted(db, eventId),
+          }),
+      ),
     );
   },
   { autorun: false, connection, concurrency: 1 },
+);
+const accountErasureWorker = createAccountErasureWorker(
+  db,
+  accountErasureLeaseOwner,
+  accountErasureRuntime.phaseRunner,
+  { connection },
 );
 
 async function persistProviderDataDeletionFailure(
@@ -331,8 +461,13 @@ const allWorkers: Worker[] = [
   postSyncWorker,
   activityDeleteAnalyticsWorker,
   providerDataDeletionWorker,
+  accountErasureWorker,
 ];
 const garminImportProgressCoordinator = createGarminImportProgressCoordinator(connection);
+const accountErasureOutboxDispatcher = startAccountErasureOutboxDispatcher(
+  db,
+  getAccountErasureQueue(),
+);
 const providerDataDeletionOutboxDispatcher = startProviderDataDeletionOutboxDispatcher(
   db,
   getProviderDataDeletionQueue(),
@@ -379,6 +514,19 @@ function importJobWithLockExtender(
   };
 }
 
+function reportAccountErasureWorkerEvent(
+  event: "error" | "failed" | "lockRenewalFailed" | "stalled",
+  message: string,
+): void {
+  Sentry.captureException(new Error(message), {
+    tags: {
+      bullmqEvent: event,
+      queue: ACCOUNT_ERASURE_QUEUE,
+    },
+  });
+  logger.error(`[worker] ${message}`);
+}
+
 for (const worker of allWorkers) {
   worker.on("active", (job) => {
     trackActiveJob(worker, job);
@@ -392,6 +540,11 @@ for (const worker of allWorkers) {
 
   worker.on("failed", (job, err) => {
     finishActiveJob(worker, job);
+    if (worker.name === ACCOUNT_ERASURE_QUEUE) {
+      reportAccountErasureWorkerEvent("failed", "Account erasure job failed");
+      if (activeJobCount() === 0) startIdleTimer();
+      return;
+    }
     // FIT file import batch children fail as UnrecoverableError — that's expected
     // for invalid files. Suppress per-file capture to avoid flooding Sentry and
     // rely on the batch/parent job to report grouped error causes once.
@@ -417,6 +570,10 @@ for (const worker of allWorkers) {
   });
 
   worker.on("stalled", (jobId, previousState) => {
+    if (worker.name === ACCOUNT_ERASURE_QUEUE) {
+      reportAccountErasureWorkerEvent("stalled", "Account erasure BullMQ job stalled");
+      return;
+    }
     const message = `BullMQ job stalled: queue=${worker.name} jobId=${jobId} previousState=${previousState}`;
     const error = new Error(message);
     Sentry.captureException(error, {
@@ -430,6 +587,13 @@ for (const worker of allWorkers) {
   });
 
   worker.on("lockRenewalFailed", (jobIds) => {
+    if (worker.name === ACCOUNT_ERASURE_QUEUE) {
+      reportAccountErasureWorkerEvent(
+        "lockRenewalFailed",
+        "Account erasure BullMQ lock renewal failed",
+      );
+      return;
+    }
     const message = `BullMQ lock renewal failed: queue=${worker.name} jobIds=${jobIds.join(",")}`;
     const error = new Error(message);
     Sentry.captureException(error, {
@@ -451,6 +615,10 @@ for (const worker of allWorkers) {
   });
 
   worker.on("error", (err) => {
+    if (worker.name === ACCOUNT_ERASURE_QUEUE) {
+      reportAccountErasureWorkerEvent("error", "Account erasure worker error");
+      return;
+    }
     Sentry.captureException(err);
     logger.error(`[worker] Worker error: ${err.message}`);
   });
@@ -494,13 +662,18 @@ async function shutdown() {
     new Promise<void>((resolve, reject) => {
       readinessServer.close((error) => (error ? reject(error) : resolve()));
     }),
+    accountErasureOutboxDispatcher.close(),
     providerDataDeletionOutboxDispatcher.close(),
     dataExportOutboxDispatcher.close(),
     fileUploadOutboxDispatcher.close(),
     fileUploadReconciler.close(),
     ...allWorkers.map((worker) => worker.close()),
   ]);
-  await garminImportProgressCoordinator.close();
+  await Promise.all([
+    garminImportProgressCoordinator.close(),
+    accountErasureRuntime.close(),
+    accountErasureWorkLockPool.close(),
+  ]);
   await closeAllQueueResources();
   await db.$client.end();
   logger.info("[worker] Shutdown complete.");

@@ -24,18 +24,6 @@ export interface SlackStatus {
   connected: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Tables deleted during full user data wipe
-// ---------------------------------------------------------------------------
-
-const USER_SCOPED_DELETE_TABLES = [
-  "fitness.user_settings",
-  "fitness.life_events",
-  "fitness.sport_settings",
-  "fitness.supplement",
-];
-
-const GLOBAL_PROVIDER_TABLES = new Set(["fitness.exercise_alias"]);
 export const DEFAULT_CALORIE_GOAL = 2000;
 
 function parseCalorieGoal(value: unknown): number {
@@ -46,31 +34,16 @@ function parseCalorieGoal(value: unknown): number {
     : DEFAULT_CALORIE_GOAL;
 }
 
-function isUndefinedTableError(error: unknown): boolean {
-  if (error instanceof Error) {
-    return error.message.includes("does not exist");
-  }
-  if (typeof error === "object" && error !== null) {
-    if ("code" in error && error.code === "42P01") {
-      return true;
-    }
-    if ("message" in error && typeof error.message === "string") {
-      return error.message.includes("does not exist");
-    }
-  }
-  return false;
-}
-
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
 
 /** Data access for user settings and account management. */
 export class SettingsRepository {
-  readonly #db: Pick<Database, "execute" | "transaction">;
+  readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
 
-  constructor(db: Pick<Database, "execute" | "transaction">, userId: string) {
+  constructor(db: Pick<Database, "execute">, userId: string) {
     this.#db = db;
     this.#userId = userId;
   }
@@ -134,34 +107,5 @@ export class SettingsRepository {
       configured,
       connected: rows.length > 0,
     };
-  }
-
-  /**
-   * Delete all user data across provider-scoped and user-scoped tables.
-   * Runs inside a transaction.
-   */
-  async deleteAllUserData(providerChildTables: string[]): Promise<void> {
-    await this.#db.transaction(async (transaction) => {
-      for (const table of providerChildTables) {
-        if (GLOBAL_PROVIDER_TABLES.has(table)) {
-          continue;
-        }
-        try {
-          await transaction.execute(
-            sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`,
-          );
-        } catch (error: unknown) {
-          if (!isUndefinedTableError(error)) {
-            throw error;
-          }
-        }
-      }
-
-      for (const table of USER_SCOPED_DELETE_TABLES) {
-        await transaction.execute(
-          sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${this.#userId}`,
-        );
-      }
-    });
   }
 }

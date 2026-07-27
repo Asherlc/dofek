@@ -1,14 +1,18 @@
 import kafkaJs, { type ConfigResourceTypes } from "kafkajs";
 
-const QUARANTINE_RETENTION_MS = "604800000";
-const QUARANTINE_RETENTION_BYTES = "1073741824";
-const QUARANTINE_TOPIC_SUFFIX = ".quarantine.v1";
+export const METRIC_STREAM_QUARANTINE_RETENTION_MS = "604800000";
+export const METRIC_STREAM_QUARANTINE_RETENTION_BYTES = "1073741824";
+export const METRIC_STREAM_QUARANTINE_TOPIC_SUFFIX = ".quarantine.v1";
 
-const quarantineTopicConfig = [
+export const METRIC_STREAM_QUARANTINE_TOPIC_CONFIG = [
   { name: "cleanup.policy", value: "delete" },
-  { name: "retention.ms", value: QUARANTINE_RETENTION_MS },
-  { name: "retention.bytes", value: QUARANTINE_RETENTION_BYTES },
+  { name: "retention.ms", value: METRIC_STREAM_QUARANTINE_RETENTION_MS },
+  { name: "retention.bytes", value: METRIC_STREAM_QUARANTINE_RETENTION_BYTES },
 ];
+
+export function metricStreamQuarantineTopic(sourceTopic: string): string {
+  return `${sourceTopic}${METRIC_STREAM_QUARANTINE_TOPIC_SUFFIX}`;
+}
 
 interface KafkaQuarantineAdmin {
   alterConfigs(options: {
@@ -82,7 +86,7 @@ export class KafkaMetricStreamQuarantineWriter implements MetricStreamQuarantine
   constructor(options: KafkaMetricStreamQuarantineWriterOptions) {
     this.#admin = options.admin;
     this.#producer = options.producer;
-    this.#topic = `${options.sourceTopic}${QUARANTINE_TOPIC_SUFFIX}`;
+    this.#topic = metricStreamQuarantineTopic(options.sourceTopic);
   }
 
   async connect(): Promise<void> {
@@ -90,7 +94,7 @@ export class KafkaMetricStreamQuarantineWriter implements MetricStreamQuarantine
     await this.#admin.createTopics({
       topics: [
         {
-          configEntries: quarantineTopicConfig,
+          configEntries: METRIC_STREAM_QUARANTINE_TOPIC_CONFIG,
           topic: this.#topic,
         },
       ],
@@ -99,7 +103,7 @@ export class KafkaMetricStreamQuarantineWriter implements MetricStreamQuarantine
     await this.#admin.alterConfigs({
       resources: [
         {
-          configEntries: quarantineTopicConfig,
+          configEntries: METRIC_STREAM_QUARANTINE_TOPIC_CONFIG,
           name: this.#topic,
           type: kafkaJs.ConfigResourceTypes.TOPIC,
         },

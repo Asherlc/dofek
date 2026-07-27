@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { formatLocalDate } from "./test-helpers";
 
-const TEST_USER_ID = "e2e00000-0000-0000-0000-000000000001";
+const TEST_USER_ID = "e2e00000-0000-4000-8000-000000000001";
 const E2E_PROVIDER_ID = "e2e-test-provider";
 const dailyMetricsRowSchema = z.object({ steps: z.number().nullable() });
 

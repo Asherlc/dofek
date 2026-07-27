@@ -62,6 +62,18 @@ final class WatchFileInbox {
         .map(\.lastPathComponent)
         .sorted()
     }
+
+    func purgePendingFiles() throws {
+        guard fileManager.fileExists(atPath: pendingDirectory.path) else {
+            return
+        }
+        for fileURL in try fileManager.contentsOfDirectory(
+            at: pendingDirectory,
+            includingPropertiesForKeys: nil
+        ) {
+            try fileManager.removeItem(at: fileURL)
+        }
+    }
 }
 
 final class WatchFileReceiver {
@@ -79,17 +91,27 @@ final class WatchFileReceiver {
     }
 
     private let inbox: WatchFileInbox
+    private let shouldAcceptFile: () -> Bool
     private let reportError: (Error) -> Void
     private let observerLock = NSLock()
     private weak var storedObserver: WatchFileReceiverObserver?
 
-    init(inbox: WatchFileInbox, reportError: @escaping (Error) -> Void) {
+    init(
+        inbox: WatchFileInbox,
+        shouldAcceptFile: @escaping () -> Bool = { true },
+        reportError: @escaping (Error) -> Void
+    ) {
         self.inbox = inbox
+        self.shouldAcceptFile = shouldAcceptFile
         self.reportError = reportError
     }
 
     func receive(fileURL: URL, metadata: [String: Any]?) {
         do {
+            guard shouldAcceptFile() else {
+                try FileManager.default.removeItem(at: fileURL)
+                return
+            }
             let fileName = try inbox.persistReceivedFile(at: fileURL, metadata: metadata)
             let observer = observer
             observer?.watchFileReceiver(didPersist: fileName, metadata: metadata)

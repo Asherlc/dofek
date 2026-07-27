@@ -101,10 +101,10 @@ export const metricStreamDeleteScopeSchema = z
   })
   .strict()
   .superRefine((scope, context) => {
-    if (!scope.activityId && !scope.providerId) {
+    if (!scope.userId && !scope.activityId && !scope.providerId) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Metric stream delete scope must include activityId or providerId",
+        message: "Metric stream delete scope must include userId, activityId, or providerId",
       });
     }
   });
@@ -254,6 +254,9 @@ export function createMetricStreamDeletePartitionKey(
   const scope = metricStreamDeleteScopeSchema.parse(scopeInput);
   if (scope.activityId) {
     return `activity:${scope.activityId}`;
+  }
+  if (scope.userId && !scope.providerId) {
+    return `account:${scope.userId}`;
   }
   return [
     "provider",

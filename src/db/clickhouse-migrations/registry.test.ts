@@ -95,7 +95,9 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("ALTER TABLE analytics.daily_recovery"),
       ]),
     });
-    expect(migrations.at(-1)).toMatchObject({
+    expect(
+      migrations.find((migration) => migration.id === "0058_migrate_body_measurement_to_dbt"),
+    ).toMatchObject({
       id: "0058_migrate_body_measurement_to_dbt",
       statements: expect.arrayContaining([
         expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.body_measurement"),
@@ -104,6 +106,15 @@ describe("clickHouseMigrations", () => {
         "DROP TABLE IF EXISTS analytics.v_body_measurement",
         expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement"),
       ]),
+    });
+    expect(migrations.at(-1)).toMatchObject({
+      id: "0059_account_erasure_fence",
+      statements: [
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS ingest.account_erasure_fence"),
+        expect.stringContaining(
+          "CREATE TABLE IF NOT EXISTS ingest.account_erasure_operation_fence",
+        ),
+      ],
     });
   });
 

@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import {
+  ACCOUNT_ERASURE_FENCE_TABLE,
+  ACCOUNT_ERASURE_OPERATION_FENCE_TABLE,
   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_TABLE,
@@ -21,11 +24,16 @@ import {
 } from "./redpanda-consumer.ts";
 
 export interface ClickHouseMetricStreamInsertClient {
-  command?(options: { query: string; query_params?: Record<string, unknown> }): Promise<unknown>;
+  command?(options: {
+    query: string;
+    query_params?: Record<string, unknown>;
+    clickhouse_settings?: Record<string, string | number | boolean>;
+  }): Promise<unknown>;
   query?(options: {
     query: string;
     query_params?: Record<string, unknown>;
     format: "JSONEachRow";
+    clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<{ json(): Promise<unknown> }>;
   insert(options: {
     table: typeof METRIC_STREAM_TABLE;
@@ -103,6 +111,10 @@ const providerDataGenerationRowsSchema = z.array(
 const deletionAcknowledgementRowsSchema = z.array(
   z.object({ acknowledgement_count: z.coerce.number().int().nonnegative() }),
 );
+const accountErasureFenceRowsSchema = z.array(z.object({ user_hash: z.string().length(64) }));
+const accountErasureOperationFenceRowsSchema = z.array(
+  z.object({ operation_hash: z.string().length(64) }),
+);
 
 function providerGenerationKey(userId: string, providerId: string): string {
   return `${userId}\0${providerId}`;
@@ -167,6 +179,55 @@ async function filterEventsByProviderGeneration(
       event.generation >=
       (activeGenerations.get(providerGenerationKey(event.userId, event.providerId)) ?? 0),
   );
+}
+
+async function filterEventsByAccountErasureFence(
+  client: ClickHouseMetricStreamInsertClient,
+  events: readonly MetricStreamRowEvent[],
+): Promise<MetricStreamRowEvent[]> {
+  if (events.length === 0) return [];
+  if (!client.query) {
+    throw new Error("ClickHouse metric-stream ingestion requires a query-capable client");
+  }
+  const userHashes = new Map<string, string>();
+  for (const event of events) {
+    userHashes.set(event.userId, createHash("sha256").update(event.userId).digest("hex"));
+  }
+  const result = await client.query({
+    query: `SELECT user_hash
+      FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL
+      WHERE user_hash IN {user_hashes:Array(String)}`,
+    query_params: {
+      user_hashes: [...userHashes.values()],
+    },
+    format: "JSONEachRow",
+  });
+  const erasedUserHashes = new Set(
+    accountErasureFenceRowsSchema.parse(await result.json()).map((row) => row.user_hash),
+  );
+  return events.filter((event) => !erasedUserHashes.has(userHashes.get(event.userId) ?? ""));
+}
+
+async function isOperationAccountErasureFenced(
+  client: ClickHouseMetricStreamInsertClient,
+  operationId: string,
+): Promise<boolean> {
+  if (!client.query) {
+    throw new Error(
+      "ClickHouse metric-stream processing acknowledgement requires a query-capable client",
+    );
+  }
+  const operationHash = createHash("sha256").update(operationId).digest("hex");
+  const result = await client.query({
+    query: `SELECT operation_hash
+      FROM ${ACCOUNT_ERASURE_OPERATION_FENCE_TABLE} FINAL
+      WHERE operation_hash = {operation_hash:FixedString(64)}
+      LIMIT 1`,
+    query_params: { operation_hash: operationHash },
+    format: "JSONEachRow",
+    clickhouse_settings: { log_queries: 0 },
+  });
+  return accountErasureOperationFenceRowsSchema.parse(await result.json()).length > 0;
 }
 
 async function tombstoneMetricStreamIds(
@@ -413,6 +474,10 @@ export async function markMetricStreamScopeDeletedInClickHouse(
         GROUP BY metric_stream_row.id
       )
       WHERE latest_row.14 = 0
+        AND lower(hex(SHA256(toString(latest_row.2)))) NOT IN (
+          SELECT user_hash
+          FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL
+        )
         AND ${latestConditions.join(" AND ")}`,
     query_params: queryParams,
   });
@@ -435,15 +500,18 @@ export async function applyMetricStreamEventsToClickHouse(
   const flushRows = async () => {
     if (rowBuffer.length === 0) return;
     const replicatedEvents = rowBuffer.filter(isClickHouseReplicatedEvent);
-    await insertMetricStreamEventsIntoClickHouse(client, replicatedEvents);
+    const accountActiveEvents = await filterEventsByAccountErasureFence(client, replicatedEvents);
+    await insertMetricStreamEventsIntoClickHouse(client, accountActiveEvents);
     const currentGenerationEvents = await filterEventsByProviderGeneration(
       client,
-      replicatedEvents,
+      accountActiveEvents,
     );
     const currentEventIds = new Set(currentGenerationEvents.map((event) => event.id));
     const staleEventIds = [
       ...new Set(
-        replicatedEvents.filter((event) => !currentEventIds.has(event.id)).map((event) => event.id),
+        accountActiveEvents
+          .filter((event) => !currentEventIds.has(event.id))
+          .map((event) => event.id),
       ),
     ];
     await tombstoneMetricStreamIds(client, staleEventIds);
@@ -466,6 +534,9 @@ export async function applyMetricStreamEventsToClickHouse(
       throw new Error(
         "ClickHouse metric-stream processing acknowledgement requires a command-capable client",
       );
+    }
+    if (await isOperationAccountErasureFenced(client, event.operationId)) {
+      return;
     }
     await client.command({
       query: `INSERT INTO ${METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE} (

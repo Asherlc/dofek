@@ -413,6 +413,34 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.realtimeSampleCount, 0)
     }
 
+    func testErasureCutoffDropsExistingAndFutureSamplesAtOrBeforeBoundary() {
+        let cutoff = Date(timeIntervalSince1970: 1_711_000_001)
+        buffer.appendImuSamples([
+            makeImuSample(timestampSeconds: 1_711_000_000),
+            makeImuSample(timestampSeconds: 1_711_000_001),
+        ])
+        buffer.appendRealtimeData([
+            makeRealtimeSample(timestampSeconds: 1_711_000_001),
+        ])
+
+        buffer.advanceErasureCutoff(to: cutoff)
+        buffer.appendImuSamples([
+            makeImuSample(timestampSeconds: 1_711_000_001),
+            makeImuSample(timestampSeconds: 1_711_000_002),
+        ])
+        buffer.appendRealtimeData([
+            makeRealtimeSample(timestampSeconds: 1_711_000_000),
+            makeRealtimeSample(timestampSeconds: 1_711_000_002),
+        ])
+
+        XCTAssertEqual(buffer.imuSampleCount, 1)
+        XCTAssertEqual(buffer.realtimeSampleCount, 1)
+        XCTAssertTrue(
+            (buffer.peekImuSamples()[0]["timestamp"] as? String)?
+                .contains("2024-03-21T05:46:42") == true
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeImuSamples(count: Int) -> [WhoopImuSample] {
@@ -430,6 +458,35 @@ final class WhoopBleSampleBufferTests: XCTestCase {
                 gyroscopeZ: 0
             )
         }
+    }
+
+    private func makeImuSample(timestampSeconds: UInt32) -> WhoopImuSample {
+        WhoopImuSample(
+            timestampSeconds: timestampSeconds,
+            subSeconds: 0,
+            sampleIndex: 0,
+            samplesInFrame: 1,
+            accelerometerX: 0,
+            accelerometerY: 0,
+            accelerometerZ: 1,
+            gyroscopeX: 0,
+            gyroscopeY: 0,
+            gyroscopeZ: 0
+        )
+    }
+
+    private func makeRealtimeSample(timestampSeconds: UInt32) -> WhoopRealtimeDataSample {
+        WhoopRealtimeDataSample(
+            timestampSeconds: timestampSeconds,
+            subSeconds: 0,
+            heartRate: 60,
+            rrIntervalMs: 1_000,
+            quaternionW: 1,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0,
+            opticalBytes: Data(count: 18)
+        )
     }
 
     private func makeRealtimeSamples(count: Int) -> [WhoopRealtimeDataSample] {

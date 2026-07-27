@@ -9,6 +9,7 @@ import {
 } from "../../db/schema/activity.ts";
 import { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import type { WebhookEvent } from "../types.ts";
 import type {
   FitbitActivity,
@@ -130,7 +131,7 @@ function createMockDb() {
     execute: vi.fn().mockResolvedValue([]),
   };
 
-  return Object.assign(db, chain);
+  return makeTransactionalTestDatabase(Object.assign(db, chain));
 }
 
 function expectConflictTarget(
@@ -395,6 +396,8 @@ describe("fitbitOAuthConfig", () => {
     expect(config?.scopes).toContain("heartrate");
     expect(config?.authorizeUrl).toContain("fitbit.com");
     expect(config?.tokenUrl).toContain("fitbit.com");
+    expect(config?.revokeUrl).toBe("https://api.fitbit.com/oauth2/revoke");
+    expect(config?.tokenAuthMethod).toBe("basic");
   });
 });
 
@@ -789,8 +792,13 @@ describe("FitbitProvider", () => {
       );
       expect(replacementScopes).toContainEqual({
         activityId: "10000000-0000-4000-8000-000000000001",
+        userId: "00000000-0000-0000-0000-000000000001",
       });
-      expect(replacementScopes).toContainEqual({ providerId: "fitbit", externalId: "55555" });
+      expect(replacementScopes).toContainEqual({
+        providerId: "fitbit",
+        externalId: "55555",
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
     });
 
     it("captures per-record insert errors without aborting the whole sync", async () => {
@@ -1670,7 +1678,11 @@ describe("FitbitProvider", () => {
           value.channel === "body_fat_percentage",
       );
       expect(bodyFatValues).toMatchObject({ scalar: 18.5 });
-      expect(replacementScopes).toContainEqual({ providerId: "fitbit", externalId: "55555" });
+      expect(replacementScopes).toContainEqual({
+        providerId: "fitbit",
+        externalId: "55555",
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
     });
 
     it("returns empty result for unknown objectType", async () => {

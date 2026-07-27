@@ -1,13 +1,27 @@
+import { randomUUID } from "node:crypto";
 import * as Sentry from "@sentry/node";
-import { type OAuthConfig, revokeToken, type TokenSet } from "dofek/auth/oauth";
+import type { OAuthConfig, TokenSet } from "dofek/auth/oauth";
+import type { SyncDatabase, TransactionDatabase } from "dofek/db";
+import {
+  AccountErasureIdentityFencedError,
+  AccountErasureUserFencedError,
+  lockAndAssertAccountErasureIdentityWriteFence,
+  withAccountErasureUserAndIdentityWriteFence,
+  withAccountErasureUserWriteFence,
+} from "dofek/db/account-erasure";
 import { queryCache } from "dofek/lib/cache";
 import type { Request, Response } from "express";
-import { MissingEmailForSignupError, resolveOrCreateUser } from "../../auth/account-linking.ts";
+import {
+  findExistingUserId,
+  MissingEmailForSignupError,
+  resolveOrCreateUser,
+} from "../../auth/account-linking.ts";
 import {
   getSessionIdFromRequest,
   isValidMobileScheme,
   setSessionCookie,
 } from "../../auth/cookies.ts";
+import { revokeProviderCredentials } from "../../auth/provider-credential-revocation.ts";
 import { createSession, validateSession } from "../../auth/session.ts";
 import { logger } from "../../logger.ts";
 import {
@@ -28,33 +42,8 @@ interface ReconnectFailure {
   providerName: string;
 }
 
-async function revokeStandardTokens(
-  oauthConfig: OAuthConfig,
-  tokens: TokenSet,
-  providerId: string,
-): Promise<void> {
-  const errors: string[] = [];
-  for (const [tokenType, token] of [
-    ["access", tokens.accessToken],
-    ["refresh", tokens.refreshToken],
-  ] as const) {
-    if (!token) continue;
-    try {
-      logger.info(`[auth] Revoking superseded ${providerId} ${tokenType} token...`);
-      await revokeToken(oauthConfig, token);
-      logger.info(`[auth] ${providerId} ${tokenType} token revocation succeeded`);
-    } catch (error: unknown) {
-      const message = `${tokenType} token revocation failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`;
-      errors.push(message);
-      logger.error(`[auth] ${providerId} ${message}`);
-      Sentry.captureException(error);
-    }
-  }
-  if (errors.length > 0) {
-    throw new Error(`Failed to revoke superseded ${providerId} tokens: ${errors.join("; ")}`);
-  }
+interface DeferredReconnectFailure {
+  error: unknown;
 }
 
 async function revokeSupersededAuthorization(params: {
@@ -63,25 +52,7 @@ async function revokeSupersededAuthorization(params: {
   providerId: string;
   revokeExistingTokens?: (tokens: TokenSet) => Promise<void>;
 }): Promise<void> {
-  if (params.revokeExistingTokens) {
-    try {
-      await params.revokeExistingTokens(params.tokens);
-      return;
-    } catch (error: unknown) {
-      logger.warn(
-        `[auth] Custom revocation failed for superseded ${params.providerId} authorization: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      Sentry.captureException(error);
-      if (!params.oauthConfig.revokeUrl) {
-        throw error;
-      }
-    }
-  }
-  if (params.oauthConfig.revokeUrl) {
-    await revokeStandardTokens(params.oauthConfig, params.tokens, params.providerId);
-  }
+  await revokeProviderCredentials(params);
 }
 
 export async function handleOAuth2Callback(req: Request, res: Response): Promise<void> {
@@ -135,30 +106,33 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
         res.status(400).send("Provider does not support OAuth 1.0");
         return;
       }
+      const oauth1Flow = setup.oauth1Flow;
 
-      logger.info(`[auth] Exchanging OAuth 1.0 tokens for ${stored.providerId}...`);
-      const { token, tokenSecret } = await setup.oauth1Flow.exchangeForAccessToken(
-        oauthToken,
-        stored.tokenSecret,
-        oauthVerifier,
-      );
+      await withAccountErasureUserWriteFence(db, stored.userId, async (transaction) => {
+        logger.info(`[auth] Exchanging OAuth 1.0 tokens for ${stored.providerId}...`);
+        const { token, tokenSecret } = await oauth1Flow.exchangeForAccessToken(
+          oauthToken,
+          stored.tokenSecret,
+          oauthVerifier,
+        );
 
-      const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
-      await ensureProvider(db, provider.id, provider.name, undefined, stored.userId);
-      // Store OAuth 1.0 tokens — token as accessToken, tokenSecret as refreshToken
-      // OAuth 1.0 tokens don't expire
-      await saveTokens(
-        db,
-        provider.id,
-        {
-          accessToken: token,
-          refreshToken: tokenSecret,
-          expiresAt: new Date("2099-12-31"),
-          scopes: "",
-        },
-        stored.userId,
-      );
-      await queryCache.invalidateByPrefix(`${stored.userId}:sync.providers`);
+        const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+        await ensureProvider(transaction, provider.id, provider.name, undefined, stored.userId);
+        // Store OAuth 1.0 tokens — token as accessToken, tokenSecret as refreshToken.
+        // OAuth 1.0 tokens don't expire.
+        await saveTokens(
+          transaction,
+          provider.id,
+          {
+            accessToken: token,
+            refreshToken: tokenSecret,
+            expiresAt: new Date("2099-12-31"),
+            scopes: "",
+          },
+          stored.userId,
+        );
+        await queryCache.invalidateByPrefix(`${stored.userId}:sync.providers`);
+      });
 
       logger.info(`[auth] ${stored.providerId} OAuth 1.0 tokens saved.`);
       res.send(oauthSuccessHtml(provider.name, undefined, provider.id));
@@ -216,6 +190,8 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       res.status(400).send("Provider does not support OAuth code exchange");
       return;
     }
+    const oauthConfig = setup.oauthConfig;
+    const exchangeCode = setup.exchangeCode;
 
     if (setup.getUserIdentity && intent === "data") {
       const sessionId = getSessionIdFromRequest(req);
@@ -225,188 +201,297 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       }
     }
 
-    let existingTokens: TokenSet | null = null;
-    const isDataReconnect = intent === "data";
-    if (isDataReconnect && (setup.revokeExistingTokens || setup.oauthConfig.revokeUrl)) {
-      const { loadTokens } = await import("dofek/db/tokens");
-      existingTokens = await loadTokens(db, providerId, stateUserId);
-    }
-
-    if (existingTokens && setup.reconnectStrategy === "revoke-then-replace") {
-      if (!setup.revokeExistingTokens) {
-        throw new Error(
-          `${provider.name} requires pre-exchange revocation but has no revocation handler`,
-        );
+    let issuedTokens: TokenSet | null = null;
+    const completeOAuthConnection = async (
+      operationDb: SyncDatabase,
+      identityLockTransaction?: TransactionDatabase,
+    ): Promise<DeferredReconnectFailure | undefined> => {
+      let existingTokens: TokenSet | null = null;
+      const isDataReconnect = intent === "data";
+      if (isDataReconnect && (setup.revokeExistingTokens || oauthConfig.revokeUrl)) {
+        const { loadTokens } = await import("dofek/db/tokens");
+        existingTokens = await loadTokens(operationDb, providerId, stateUserId);
       }
-      reconnectFailure = { kind: "preserved", providerName: provider.name };
-      logger.info(`[auth] Revoking existing ${providerId} authorization before exchange...`);
-      await setup.revokeExistingTokens(existingTokens);
-      logger.info(`[auth] Existing ${providerId} authorization revoked`);
 
-      reconnectFailure = { kind: "removed", providerName: provider.name };
-      const { deleteTokens } = await import("dofek/db/tokens");
-      try {
-        await deleteTokens(db, providerId, stateUserId);
-      } catch (deleteError: unknown) {
-        const detail = deleteError instanceof Error ? deleteError.message : String(deleteError);
-        const cleanupError = new Error(
-          `${providerId} authorization was revoked but its stored credential could not be deleted; a stale revoked credential remains stored: ${detail}`,
-          { cause: deleteError },
-        );
-        logger.error(`[auth] ${cleanupError.message}`, {
-          err: deleteError,
-          providerId,
-          userId: stateUserId,
-        });
-        throw cleanupError;
-      }
-      await queryCache.invalidateByPrefix(`${stateUserId}:sync.providers`);
-    }
-
-    logger.info(`[auth] Exchanging code for ${providerId} tokens...`);
-    let tokens: TokenSet;
-    try {
-      tokens = await setup.exchangeCode(code, storedCodeVerifier);
-    } catch (exchangeError: unknown) {
-      if (existingTokens) {
-        reconnectFailure = {
-          kind: setup.reconnectStrategy === "revoke-then-replace" ? "removed" : "preserved",
-          providerName: provider.name,
-        };
-      }
-      throw exchangeError;
-    }
-
-    // Auto-link identity when connecting data providers (if getUserIdentity is available)
-    if (setup.getUserIdentity && intent !== "data") {
-      const identity = await setup.getUserIdentity(tokens.accessToken);
-
-      if (intent === "login") {
-        try {
-          const { userId, isNewUser } = await resolveOrCreateUser(
-            db,
-            providerId,
-            identity,
-            undefined,
-            {
-              requireEmailForNewUser: setup.identityCapabilities?.providesEmail === false,
-            },
+      if (existingTokens && setup.reconnectStrategy === "revoke-then-replace") {
+        if (!setup.revokeExistingTokens) {
+          throw new Error(
+            `${provider.name} requires pre-exchange revocation but has no revocation handler`,
           );
+        }
+        reconnectFailure = { kind: "preserved", providerName: provider.name };
+        logger.info(`[auth] Revoking existing ${providerId} authorization before exchange...`);
+        await setup.revokeExistingTokens(existingTokens);
+        logger.info(`[auth] Existing ${providerId} authorization revoked`);
+
+        reconnectFailure = { kind: "removed", providerName: provider.name };
+        const { deleteTokens } = await import("dofek/db/tokens");
+        try {
+          await deleteTokens(operationDb, providerId, stateUserId);
+        } catch (deleteError: unknown) {
+          const detail = deleteError instanceof Error ? deleteError.message : String(deleteError);
+          const cleanupError = new Error(
+            `${providerId} authorization was revoked but its stored credential could not be deleted; a stale revoked credential remains stored: ${detail}`,
+            { cause: deleteError },
+          );
+          logger.error(`[auth] ${cleanupError.message}`, {
+            err: deleteError,
+            providerId,
+            userId: stateUserId,
+          });
+          throw cleanupError;
+        }
+        await queryCache.invalidateByPrefix(`${stateUserId}:sync.providers`);
+      }
+
+      logger.info(`[auth] Exchanging code for ${providerId} tokens...`);
+      let tokens: TokenSet;
+      try {
+        tokens = await exchangeCode(code, storedCodeVerifier);
+        issuedTokens = tokens;
+      } catch (exchangeError: unknown) {
+        if (existingTokens) {
+          reconnectFailure = {
+            kind: setup.reconnectStrategy === "revoke-then-replace" ? "removed" : "preserved",
+            providerName: provider.name,
+          };
+        }
+        if (existingTokens && setup.reconnectStrategy === "revoke-then-replace") {
+          return { error: exchangeError };
+        }
+        throw exchangeError;
+      }
+
+      // Auto-link identity when connecting data providers (if getUserIdentity is available)
+      if (setup.getUserIdentity && intent !== "data") {
+        const identity = await setup.getUserIdentity(tokens.accessToken);
+        const externalIdentities: Parameters<
+          typeof withAccountErasureUserAndIdentityWriteFence
+        >[2][number][] = [
+          {
+            authProvider: providerId,
+            kind: "provider_account",
+            providerAccountId: identity.providerAccountId,
+          },
+        ];
+        if (identity.emailVerified && identity.email) {
+          externalIdentities.push({ email: identity.email, kind: "email" });
+        }
+
+        if (intent === "login") {
+          try {
+            const targetUserId =
+              (await findExistingUserId(db, providerId, identity)) ?? randomUUID();
+            const loginResult = await withAccountErasureUserAndIdentityWriteFence(
+              db,
+              targetUserId,
+              externalIdentities,
+              async (transaction) => {
+                const resolution = await resolveOrCreateUser(
+                  transaction,
+                  providerId,
+                  identity,
+                  undefined,
+                  {
+                    newUserId: targetUserId,
+                    requireEmailForNewUser: setup.identityCapabilities?.providesEmail === false,
+                  },
+                );
+                if (resolution.userId !== targetUserId) {
+                  throw new Error(
+                    `Data-provider identity resolution changed from ${targetUserId} to ${resolution.userId}`,
+                  );
+                }
+                await persistProviderConnection({
+                  db: transaction,
+                  provider,
+                  providerName: provider.name,
+                  apiBaseUrl: setup.apiBaseUrl,
+                  tokens,
+                  userId: resolution.userId,
+                });
+                return {
+                  ...resolution,
+                  sessionInfo: await createSession(transaction, resolution.userId),
+                };
+              },
+            );
+            const { userId, isNewUser, sessionInfo } = loginResult;
+
+            // Mobile: redirect to app via deep link with session token
+            if (stateEntry.mobileScheme && isValidMobileScheme(stateEntry.mobileScheme)) {
+              logger.info(
+                `[auth] User ${userId} logged in via data provider ${providerId} (mobile)`,
+              );
+              const exchangeCode = await getMobileAuthExchangeStoreRef().issue({
+                kind: "session",
+                sessionId: sessionInfo.sessionId,
+                isNewUser,
+              });
+              res.redirect(`${stateEntry.mobileScheme}://auth/callback?code=${exchangeCode}`);
+              return;
+            }
+
+            setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
+            logger.info(`[auth] User ${userId} logged in via data provider ${providerId}`);
+            res.redirect(getPostLoginRedirect(returnTo, isNewUser));
+            return;
+          } catch (loginErr: unknown) {
+            if (loginErr instanceof MissingEmailForSignupError) {
+              const token = await getPendingEmailSignupStoreRef().issue({
+                providerId,
+                providerName: provider.name,
+                apiBaseUrl: setup.apiBaseUrl,
+                identity: {
+                  providerAccountId: identity.providerAccountId,
+                  email: null,
+                  name: identity.name,
+                },
+                tokens,
+                mobileScheme: stateEntry.mobileScheme,
+                returnTo,
+              });
+              res.status(200).send(completeSignupHtml(provider.name, token));
+              return;
+            }
+            throw loginErr;
+          }
+        }
+
+        if (linkUserId) {
+          if (!identityLockTransaction) {
+            throw new Error("Identity lock transaction is required for account linking");
+          }
+          await lockAndAssertAccountErasureIdentityWriteFence(
+            identityLockTransaction,
+            externalIdentities,
+          );
+          await resolveOrCreateUser(operationDb, providerId, identity, linkUserId);
           await persistProviderConnection({
-            db,
+            db: operationDb,
             provider,
             providerName: provider.name,
             apiBaseUrl: setup.apiBaseUrl,
             tokens,
-            userId,
+            userId: linkUserId,
           });
-          const sessionInfo = await createSession(db, userId);
-
-          // Mobile: redirect to app via deep link with session token
-          if (stateEntry.mobileScheme && isValidMobileScheme(stateEntry.mobileScheme)) {
-            logger.info(`[auth] User ${userId} logged in via data provider ${providerId} (mobile)`);
-            const exchangeCode = await getMobileAuthExchangeStoreRef().issue({
-              kind: "session",
-              sessionId: sessionInfo.sessionId,
-              isNewUser,
-            });
-            res.redirect(`${stateEntry.mobileScheme}://auth/callback?code=${exchangeCode}`);
-            return;
-          }
-
-          setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
-          logger.info(`[auth] User ${userId} logged in via data provider ${providerId}`);
-          res.redirect(getPostLoginRedirect(returnTo, isNewUser));
+          logger.info(`[auth] Linked ${providerId} to user ${linkUserId}`);
+          res.redirect("/settings");
           return;
-        } catch (loginErr: unknown) {
-          if (loginErr instanceof MissingEmailForSignupError) {
-            const token = await getPendingEmailSignupStoreRef().issue({
-              providerId,
-              providerName: provider.name,
-              apiBaseUrl: setup.apiBaseUrl,
-              identity: {
-                providerAccountId: identity.providerAccountId,
-                email: null,
-                name: identity.name,
-              },
-              tokens,
-              mobileScheme: stateEntry.mobileScheme,
-              returnTo,
-            });
-            res.status(200).send(completeSignupHtml(provider.name, token));
-            return;
-          }
-          throw loginErr;
         }
-      }
-
-      if (linkUserId) {
-        await resolveOrCreateUser(db, providerId, identity, linkUserId);
+      } else if (setup.getUserIdentity) {
         await persistProviderConnection({
-          db,
+          db: operationDb,
           provider,
           providerName: provider.name,
           apiBaseUrl: setup.apiBaseUrl,
           tokens,
-          userId: linkUserId,
+          userId: stateUserId,
         });
-        logger.info(`[auth] Linked ${providerId} to user ${linkUserId}`);
-        res.redirect("/settings");
-        return;
-      }
-    } else if (setup.getUserIdentity) {
-      await persistProviderConnection({
-        db,
-        provider,
-        providerName: provider.name,
-        apiBaseUrl: setup.apiBaseUrl,
-        tokens,
-        userId: stateUserId,
-      });
-      try {
-        const identity = await setup.getUserIdentity(tokens.accessToken);
-        await resolveOrCreateUser(db, providerId, identity, stateUserId);
-        logger.info(`[auth] Auto-linked ${providerId} identity to user ${stateUserId}`);
-      } catch (identityErr: unknown) {
-        logger.warn(`[auth] Failed to extract identity from ${providerId}: ${identityErr}`);
-      }
-    } else {
-      await persistProviderConnection({
-        db,
-        provider,
-        providerName: provider.name,
-        apiBaseUrl: setup.apiBaseUrl,
-        tokens,
-        userId: stateUserId,
-      });
-    }
-
-    if (existingTokens && setup.reconnectStrategy !== "revoke-then-replace") {
-      try {
-        await revokeSupersededAuthorization({
-          oauthConfig: setup.oauthConfig,
-          tokens: existingTokens,
-          providerId,
-          revokeExistingTokens: setup.revokeExistingTokens,
+        try {
+          const identity = await setup.getUserIdentity(tokens.accessToken);
+          if (!identityLockTransaction) {
+            throw new Error("Identity lock transaction is required for data-provider linking");
+          }
+          const identities: Parameters<
+            typeof lockAndAssertAccountErasureIdentityWriteFence
+          >[1][number][] = [
+            {
+              authProvider: providerId,
+              kind: "provider_account",
+              providerAccountId: identity.providerAccountId,
+            },
+          ];
+          if (identity.emailVerified && identity.email) {
+            identities.push({ email: identity.email, kind: "email" });
+          }
+          await lockAndAssertAccountErasureIdentityWriteFence(identityLockTransaction, identities);
+          await resolveOrCreateUser(operationDb, providerId, identity, stateUserId);
+          logger.info(`[auth] Auto-linked ${providerId} identity to user ${stateUserId}`);
+        } catch (identityErr: unknown) {
+          if (identityErr instanceof AccountErasureIdentityFencedError) {
+            throw identityErr;
+          }
+          Sentry.captureException(identityErr);
+          logger.warn(`[auth] Failed to extract identity from ${providerId}: ${identityErr}`);
+        }
+      } else {
+        await persistProviderConnection({
+          db: operationDb,
+          provider,
+          providerName: provider.name,
+          apiBaseUrl: setup.apiBaseUrl,
+          tokens,
+          userId: stateUserId,
         });
-      } catch (revokeError: unknown) {
-        logger.error(
-          `[auth] Replacement ${providerId} connection succeeded, but superseded authorization cleanup failed: ${
-            revokeError instanceof Error ? revokeError.message : String(revokeError)
-          }`,
-        );
-        Sentry.captureException(revokeError);
       }
-    }
 
-    res.send(
-      oauthSuccessHtml(
-        provider.name,
-        `Token expires: ${tokens.expiresAt.toISOString()}`,
-        provider.id,
-      ),
-    );
+      if (existingTokens && setup.reconnectStrategy !== "revoke-then-replace") {
+        try {
+          await revokeSupersededAuthorization({
+            oauthConfig,
+            tokens: existingTokens,
+            providerId,
+            revokeExistingTokens: setup.revokeExistingTokens,
+          });
+        } catch (revokeError: unknown) {
+          logger.error(
+            `[auth] Replacement ${providerId} connection succeeded, but superseded authorization cleanup failed: ${
+              revokeError instanceof Error ? revokeError.message : String(revokeError)
+            }`,
+          );
+          Sentry.captureException(revokeError);
+        }
+      }
+
+      res.send(
+        oauthSuccessHtml(
+          provider.name,
+          `Token expires: ${tokens.expiresAt.toISOString()}`,
+          provider.id,
+        ),
+      );
+    };
+
+    const knownUserId = intent === "data" ? stateUserId : linkUserId;
+    try {
+      const deferredFailure = knownUserId
+        ? await withAccountErasureUserWriteFence(db, knownUserId, (transaction) =>
+            completeOAuthConnection(transaction, transaction),
+          )
+        : await completeOAuthConnection(db);
+      if (deferredFailure) {
+        throw deferredFailure.error;
+      }
+    } catch (callbackError: unknown) {
+      if (issuedTokens) {
+        try {
+          await revokeSupersededAuthorization({
+            oauthConfig,
+            tokens: issuedTokens,
+            providerId,
+            revokeExistingTokens: setup.revokeExistingTokens,
+          });
+        } catch (cleanupError: unknown) {
+          Sentry.captureException(cleanupError, {
+            tags: {
+              source: "data-provider-oauth",
+              operation: "revoke-orphan-authorization",
+            },
+            extra: { providerId, knownUserId },
+          });
+        }
+      }
+      throw callbackError;
+    }
   } catch (err: unknown) {
+    if (
+      err instanceof AccountErasureIdentityFencedError ||
+      err instanceof AccountErasureUserFencedError
+    ) {
+      res.status(409).type("text/plain").send(err.message);
+      return;
+    }
     Sentry.captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     logger.error(

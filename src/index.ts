@@ -8,6 +8,10 @@ import { parseSinceDays } from "./cli.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { runWithTokenUser } from "./db/token-user-context.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
+import {
+  createAccountErasureWorkLockPoolFromEnv,
+  runQueuedUserWorkUnlessAccountErasing,
+} from "./jobs/account-erasure-work-guard.ts";
 import { processFitFileImportJob } from "./jobs/process-fit-file-import-job.ts";
 import { processSyncJob } from "./jobs/process-sync-job.ts";
 import { ensureProvidersRegistered } from "./jobs/provider-registration.ts";
@@ -50,6 +54,7 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
   }
 
   const db = createDatabaseFromEnv();
+  const accountErasureWorkLockPool = createAccountErasureWorkLockPoolFromEnv();
   const connection = getRedisConnection();
   const queue = createSyncQueue(connection);
   const userId = await resolveCliUserId(db);
@@ -67,12 +72,30 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
   logger.info(`[sync] Enqueued ${jobs.length} sync job(s), one per provider — ${label}`);
 
   // Process the job inline with a temporary worker
-  const worker = new Worker<SyncJobData>(SYNC_QUEUE, (j) => processSyncJob(j, db), {
-    connection,
-  });
+  const worker = new Worker<SyncJobData>(
+    SYNC_QUEUE,
+    (job) =>
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
+        db,
+        job.data.userId,
+        "CLI provider sync",
+        () => processSyncJob(job, db),
+      ),
+    {
+      connection,
+    },
+  );
   const fitFileImportWorker = new Worker<FitFileImportJobData>(
     FIT_FILE_IMPORT_QUEUE,
-    (job) => processFitFileImportJob(job, db),
+    (job) =>
+      runQueuedUserWorkUnlessAccountErasing(
+        accountErasureWorkLockPool,
+        db,
+        job.data.userId,
+        "CLI FIT file import",
+        () => processFitFileImportJob(job, db),
+      ),
     { connection },
   );
   const queueEvents = new QueueEvents(SYNC_QUEUE, { connection });
@@ -93,6 +116,7 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
     await fitFileImportWorker.close();
     await queueEvents.close();
     await queue.close();
+    await accountErasureWorkLockPool.close();
   }
 }
 

@@ -153,6 +153,8 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
 
+      - uses: ./.github/actions/setup-node-pnpm
+
       - name: Resolve image tag
         id: resolve
         env:
@@ -184,31 +186,26 @@ jobs:
       - name: Validate required deploy secrets in rendered dotenv
         env:
           INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
+        run: pnpm tsx scripts/validate-deploy-env.ts "$INFISICAL_ENV_FILE_PATH"
+
+      - name: Render least-privilege service dotenv files
+        env:
+          INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
+          SERVICE_ENV_DIRECTORY: ${{ runner.temp }}/dofek-service-env
         run: |
-          set -euo pipefail
-          required_keys=(
-            STRIPE_SECRET_KEY
-            STRIPE_WEBHOOK_SECRET
-            STRIPE_PRICE_ID
-            R2_ENDPOINT
-            R2_ACCESS_KEY_ID
-            R2_SECRET_ACCESS_KEY
-          )
-          missing=()
-          for key in "${required_keys[@]}"; do
-            if ! grep -q "^${key}=" "$INFISICAL_ENV_FILE_PATH"; then
-              missing+=("$key")
-              continue
-            fi
-            value="$(grep "^${key}=" "$INFISICAL_ENV_FILE_PATH" | head -n 1 | cut -d= -f2-)"
-            if [ -z "$value" ]; then
-              missing+=("$key (empty)")
-            fi
-          done
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Rendered Infisical dotenv is missing required keys: ${missing[*]}. Ensure they exist as shared secrets at path / in Infisical ${DEPLOY_ENVIRONMENT}, not personal overrides invisible to the deploy machine identity."
-            exit 1
-          fi
+          pnpm tsx scripts/render-deploy-service-env.ts \
+            "$INFISICAL_ENV_FILE_PATH" \
+            "$SERVICE_ENV_DIRECTORY"
+          {
+            echo "ANALYTICS_WORKER_ENV_FILE=$SERVICE_ENV_DIRECTORY/analytics-worker.env"
+            echo "CDC_HEALTH_ENV_FILE=$SERVICE_ENV_DIRECTORY/cdc-health.env"
+            echo "CDC_OPERATIONS_ENV_FILE=$SERVICE_ENV_DIRECTORY/cdc-operations.env"
+            echo "COLLECTOR_ENV_FILE=$SERVICE_ENV_DIRECTORY/collector.env"
+            echo "DATABASE_OPERATIONS_ENV_FILE=$SERVICE_ENV_DIRECTORY/database-operations.env"
+            echo "R2_OPERATIONS_ENV_FILE=$SERVICE_ENV_DIRECTORY/r2-operations.env"
+            echo "WEB_ENV_FILE=$SERVICE_ENV_DIRECTORY/web.env"
+            echo "WORKER_ENV_FILE=$SERVICE_ENV_DIRECTORY/worker.env"
+          } >> "$GITHUB_ENV"
 
       - name: Export deploy env for stack interpolation
         env:
@@ -431,7 +428,7 @@ jobs:
 
           env_value() {
             local key="$1"
-            grep "^${key}=" "$INFISICAL_ENV_FILE" | head -n 1 | cut -d= -f2-
+            grep "^${key}=" "$R2_OPERATIONS_ENV_FILE" | head -n 1 | cut -d= -f2-
           }
 
           R2_ENDPOINT="$(env_value R2_ENDPOINT)"
@@ -478,6 +475,16 @@ jobs:
             --endpoint-url "$R2_ENDPOINT" \
             --exclude "index.html" \
             --cache-control "public, max-age=31536000, immutable"
+
+      - name: Sweep and verify expired database backups
+        if: (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production') && env.STACK_NAME == 'dofek'
+        env:
+          DB_BACKUPS_R2_BUCKET: dofek-db-backups
+        run: >-
+          pnpm tsx scripts/sweep-expired-r2-backups.ts
+          --env-file "$R2_OPERATIONS_ENV_FILE"
+          --bucket "$DB_BACKUPS_R2_BUCKET"
+          --retention-days 21
 
       - name: Validate host bind mount paths
         run: |
@@ -530,7 +537,7 @@ jobs:
         run: |
           for attempt in $(seq 1 36); do
             recovery_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
-              --env-file "$INFISICAL_ENV_FILE" \
+              --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
               postgres:18-alpine sh -euc \
               "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
               psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
@@ -584,7 +591,7 @@ jobs:
           migration_timeout_seconds=14400
           migration_started_at="$(date +%s)"
           docker run -d --name "$migration_container" --network "${STACK_NAME}_default" \
-            --env-file "$INFISICAL_ENV_FILE" \
+            --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
@@ -639,6 +646,26 @@ jobs:
           fi
           cleanup_migration_container
           echo "Migration succeeded."
+
+      - name: Backfill verified Slack team memberships
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          docker run --rm --network "${STACK_NAME}_default" \
+            --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
+            --entrypoint sh \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts scripts/backfill-slack-team-memberships.ts --execute'
+
+      - name: Backfill historical exercise provenance
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          docker run --rm --network "${STACK_NAME}_default" \
+            --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
+            --entrypoint sh \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts scripts/backfill-exercise-provenance.ts'
 
       - name: Deploy stack without ClickHouse consumers
         id: deploy_stack_quiesced
@@ -714,7 +741,7 @@ jobs:
           readiness_timeout_seconds=$((readiness_attempts * command_timeout_seconds + (readiness_attempts - 1) * retry_sleep_seconds))
           for attempt in $(seq 1 "$readiness_attempts"); do
             recovery_output=$(timeout "${command_timeout_seconds}s" docker run --rm --network "${STACK_NAME}_default" \
-              --env-file "$INFISICAL_ENV_FILE" \
+              --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
               postgres:18-alpine sh -euc \
               "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
               psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
@@ -737,7 +764,7 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           docker run --rm --network "${STACK_NAME}_default" \
-            --env-file "$INFISICAL_ENV_FILE" \
+            --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec ./entrypoint.sh provider-connection-cutover'
@@ -768,7 +795,7 @@ jobs:
         run: |
           for attempt in $(seq 1 36); do
             peerdb_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
-              --env-file "$INFISICAL_ENV_FILE" \
+              --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
               postgres:18-alpine sh -euc \
               "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
               psql --host=peerdb --port=9900 --username=peerdb --dbname=peerdb --no-align --tuples-only --quiet \
@@ -868,7 +895,7 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           docker run --rm --network "${STACK_NAME}_default" \
-            --env-file "$INFISICAL_ENV_FILE" \
+            --env-file "$CDC_OPERATIONS_ENV_FILE" \
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \

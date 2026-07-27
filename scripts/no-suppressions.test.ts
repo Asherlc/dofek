@@ -108,4 +108,17 @@ describe("repository suppression policy", () => {
 
     expect(result.status).toBe(0);
   });
+
+  it("ignores tracked files deleted in the working tree", () => {
+    const repositoryPath = createRepository({
+      "src/deleted.ts": "export const removed = true;\n",
+      "src/remaining.ts": "export const value = true;\n",
+    });
+    rmSync(path.join(repositoryPath, "src/deleted.ts"));
+
+    const result = runPolicy(repositoryPath);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("No suppression comments found.");
+  });
 });

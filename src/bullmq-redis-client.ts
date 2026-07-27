@@ -30,6 +30,21 @@ declare module "bullmq" {
       countKeyword: "COUNT",
       count: string,
     ): Promise<[string, string[]]>;
+    type(key: string): Promise<string>;
+    del(...keys: string[]): Promise<number>;
+    get(key: string): Promise<string | null>;
+    smembers(key: string): Promise<string[]>;
+    info(section: "persistence"): Promise<string>;
+    bgsave(schedule: "SCHEDULE"): Promise<string>;
+    bgrewriteaof(): Promise<string>;
+    xrange(
+      key: string,
+      start: string,
+      end: string,
+      countKeyword: "COUNT",
+      count: number,
+    ): Promise<Array<[string, string[]]>>;
+    xdel(key: string, ...ids: string[]): Promise<number>;
   }
 
   interface IRedisTransaction {

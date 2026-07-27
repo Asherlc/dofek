@@ -31,6 +31,12 @@ final class GyroscopeSampleBuffer {
         lock.unlock()
     }
 
+    func clearAll() {
+        lock.lock()
+        samples.removeAll()
+        lock.unlock()
+    }
+
     var count: Int {
         lock.lock()
         let count = samples.count

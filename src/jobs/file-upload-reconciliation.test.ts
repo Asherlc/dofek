@@ -129,6 +129,31 @@ describe("reconcileFileUploads", () => {
     expect(objectStorage.deleteObject).not.toHaveBeenCalledWith(stale.objectKey);
   });
 
+  it("deletes a completed object when an expired multipart upload can no longer be aborted", async () => {
+    const stale = upload({
+      state: "uploading",
+      r2MultipartUploadId: "completed-multipart-id",
+      expiresAt: new Date(0),
+    });
+    repository.list.mockResolvedValue([stale]);
+    const objectStorage = storage();
+    const abortError = new Error("NoSuchUpload");
+    vi.mocked(objectStorage.abortMultipartUpload).mockRejectedValueOnce(abortError);
+
+    await reconcileFileUploads(database, objectStorage);
+
+    expect(objectStorage.headObject).toHaveBeenCalledWith(stale.objectKey);
+    expect(objectStorage.deleteObject).toHaveBeenCalledWith(stale.objectKey);
+    expect(repository.expire).toHaveBeenCalledWith(database, stale.id);
+    expect(repository.captureException).toHaveBeenCalledWith(abortError, {
+      tags: {
+        source: "file-upload-reconciliation",
+        repairKind: "completed_multipart",
+      },
+      extra: { uploadId: stale.id },
+    });
+  });
+
   it("queues uploaded objects and requeues stuck processing", async () => {
     const uploaded = upload({});
     const stuck = upload({ id: "00000000-0000-4000-8000-0000000000f3", state: "processing" });

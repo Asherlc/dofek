@@ -1,17 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Database } from "../db/typed-sql.ts";
+import type { Database } from "../db/index.ts";
 
 const mocks = vi.hoisted(() => ({
+  AccountErasureUserFencedError: class AccountErasureUserFencedError extends Error {},
   captureException: vi.fn(),
   listQueued: vi.fn(),
   logError: vi.fn(),
   logInfo: vi.fn(),
+  withUserWriteFence: vi.fn(),
 }));
 
 vi.mock("../db/data-export.ts", () => ({
   listQueuedDataExportRequests: mocks.listQueued,
 }));
 vi.mock("@sentry/node", () => ({ captureException: mocks.captureException }));
+vi.mock("../db/account-erasure.ts", () => ({
+  AccountErasureUserFencedError: mocks.AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence: (...args: unknown[]) => mocks.withUserWriteFence(...args),
+}));
 vi.mock("../logger.ts", () => ({
   logger: { error: mocks.logError, info: mocks.logInfo },
 }));
@@ -21,6 +27,13 @@ import { dispatchDataExportOutbox, startDataExportOutboxDispatcher } from "./dat
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.listQueued.mockResolvedValue([]);
+  mocks.withUserWriteFence.mockImplementation(
+    async (
+      database: unknown,
+      _userId: string,
+      operation: (transaction: unknown) => Promise<unknown>,
+    ) => operation(database),
+  );
 });
 
 afterEach(() => {
@@ -28,13 +41,20 @@ afterEach(() => {
 });
 
 describe("dispatchDataExportOutbox", () => {
+  function mockDatabase() {
+    return {
+      execute: vi.fn(async () => []),
+      transaction: vi.fn(),
+    } satisfies Pick<Database, "execute" | "transaction">;
+  }
+
   it("retries a committed export with one deterministic BullMQ job", async () => {
     const request = {
       exportId: "10000000-0000-4000-8000-000000000025",
       userId: "20000000-0000-4000-8000-000000000025",
     };
     mocks.listQueued.mockResolvedValue([request]);
-    const database = { execute: vi.fn(async () => []) } satisfies Pick<Database, "execute">;
+    const database = mockDatabase();
     const queue = {
       add: vi
         .fn()
@@ -59,6 +79,11 @@ describe("dispatchDataExportOutbox", () => {
         removeOnFail: true,
       },
     );
+    expect(mocks.withUserWriteFence).toHaveBeenCalledWith(
+      database,
+      request.userId,
+      expect.any(Function),
+    );
   });
 
   it("passes the requested batch size and dispatches every queued export in order", async () => {
@@ -73,7 +98,7 @@ describe("dispatchDataExportOutbox", () => {
       },
     ];
     mocks.listQueued.mockResolvedValue(requests);
-    const database = { execute: vi.fn() } satisfies Pick<Database, "execute">;
+    const database = mockDatabase();
     const queue = { add: vi.fn().mockResolvedValue({}) };
 
     await expect(dispatchDataExportOutbox(database, queue, 2)).resolves.toBe(2);
@@ -81,9 +106,50 @@ describe("dispatchDataExportOutbox", () => {
     expect(mocks.listQueued).toHaveBeenCalledWith(database, 2);
     expect(queue.add).toHaveBeenCalledTimes(2);
   });
+
+  it("skips a fenced account without starving later users", async () => {
+    const requests = [
+      {
+        exportId: "10000000-0000-4000-8000-000000000025",
+        userId: "20000000-0000-4000-8000-000000000025",
+      },
+      {
+        exportId: "30000000-0000-4000-8000-000000000025",
+        userId: "40000000-0000-4000-8000-000000000025",
+      },
+    ];
+    mocks.listQueued.mockResolvedValue(requests);
+    mocks.withUserWriteFence
+      .mockRejectedValueOnce(new mocks.AccountErasureUserFencedError())
+      .mockImplementationOnce(
+        async (
+          database: unknown,
+          _userId: string,
+          operation: (transaction: unknown) => Promise<unknown>,
+        ) => operation(database),
+      );
+    const database = mockDatabase();
+    const queue = { add: vi.fn().mockResolvedValue({}) };
+
+    await expect(dispatchDataExportOutbox(database, queue, 2)).resolves.toBe(1);
+
+    expect(queue.add).toHaveBeenCalledOnce();
+    expect(queue.add).toHaveBeenCalledWith(
+      "export",
+      expect.objectContaining({ exportId: requests[1]?.exportId }),
+      expect.any(Object),
+    );
+  });
 });
 
 describe("startDataExportOutboxDispatcher", () => {
+  function mockDatabase() {
+    return {
+      execute: vi.fn(async () => []),
+      transaction: vi.fn(),
+    } satisfies Pick<Database, "execute" | "transaction">;
+  }
+
   it("polls immediately, reports dispatched work, and stops when closed", async () => {
     vi.useFakeTimers();
     const request = {
@@ -91,7 +157,7 @@ describe("startDataExportOutboxDispatcher", () => {
       userId: "20000000-0000-4000-8000-000000000025",
     };
     mocks.listQueued.mockResolvedValue([request]);
-    const database = { execute: vi.fn() } satisfies Pick<Database, "execute">;
+    const database = mockDatabase();
     const queue = { add: vi.fn().mockResolvedValue({}) };
 
     const dispatcher = startDataExportOutboxDispatcher(database, queue, 100);
@@ -115,7 +181,7 @@ describe("startDataExportOutboxDispatcher", () => {
           resolveList = resolve;
         }),
     );
-    const database = { execute: vi.fn() } satisfies Pick<Database, "execute">;
+    const database = mockDatabase();
     const queue = { add: vi.fn() };
     const dispatcher = startDataExportOutboxDispatcher(database, queue, 100);
 
@@ -130,7 +196,7 @@ describe("startDataExportOutboxDispatcher", () => {
 
   it("does not log when there are no queued exports", async () => {
     vi.useFakeTimers();
-    const database = { execute: vi.fn() } satisfies Pick<Database, "execute">;
+    const database = mockDatabase();
     const queue = { add: vi.fn() };
 
     const dispatcher = startDataExportOutboxDispatcher(database, queue, 100);
@@ -144,7 +210,7 @@ describe("startDataExportOutboxDispatcher", () => {
   it("reports polling failures and continues polling", async () => {
     vi.useFakeTimers();
     mocks.listQueued.mockRejectedValueOnce(new Error("database unavailable")).mockResolvedValue([]);
-    const database = { execute: vi.fn() } satisfies Pick<Database, "execute">;
+    const database = mockDatabase();
     const queue = { add: vi.fn() };
 
     const dispatcher = startDataExportOutboxDispatcher(database, queue, 100);

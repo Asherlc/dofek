@@ -145,6 +145,106 @@ describe("syncHealthKitToServer", () => {
     expect(startDate.getFullYear()).toBeLessThanOrEqual(1970);
   });
 
+  it("never uploads HealthKit history from before a deleted account cutoff", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const cutoff = "2026-03-21T12:00:00.000Z";
+    const sample = (uuid: string, startDate: string) => ({
+      type: "HKQuantityTypeIdentifierHeartRate",
+      value: 72,
+      unit: "count/min",
+      startDate,
+      endDate: startDate,
+      sourceName: "Apple Watch",
+      sourceBundle: "com.apple.health",
+      uuid,
+    });
+    healthKit.queryDailyStatistics.mockResolvedValue([
+      { date: "2026-03-21", value: 100 },
+      { date: "2026-03-22", value: 200 },
+    ]);
+    healthKit.queryQuantitySamples.mockResolvedValue([
+      sample("old", "2026-03-21T11:59:59.000Z"),
+      sample("equal", cutoff),
+      sample("new", "2026-03-21T12:00:00.001Z"),
+    ]);
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "old-workout",
+        workoutType: "running",
+        startDate: cutoff,
+        endDate: "2026-03-21T13:00:00.000Z",
+        duration: 3600,
+        totalDistance: 1000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+      {
+        uuid: "new-workout",
+        workoutType: "running",
+        startDate: "2026-03-21T12:00:00.001Z",
+        endDate: "2026-03-21T13:00:00.000Z",
+        duration: 3600,
+        totalDistance: 1000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+    ]);
+    healthKit.querySleepSamples.mockResolvedValue([
+      {
+        uuid: "old-sleep",
+        startDate: cutoff,
+        endDate: "2026-03-21T13:00:00.000Z",
+        value: "asleepCore",
+        sourceName: "Apple Watch",
+      },
+      {
+        uuid: "new-sleep",
+        startDate: "2026-03-21T12:00:00.001Z",
+        endDate: "2026-03-21T13:00:00.000Z",
+        value: "asleepCore",
+        sourceName: "Apple Watch",
+      },
+    ]);
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: cutoff, lat: 1, lng: 1 },
+      { date: "2026-03-21T12:00:00.001Z", lat: 2, lng: 2 },
+    ]);
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      minimumSampleDate: cutoff,
+      syncRangeDays: null,
+    });
+
+    const quantitySamples = client.healthKitSync.pushQuantitySamples.mutate.mock.calls.flatMap(
+      ([input]) => input.samples,
+    );
+    expect(quantitySamples.every((value) => value.startDate > cutoff)).toBe(true);
+    expect(quantitySamples.some((value) => value.uuid === "new")).toBe(true);
+    expect(quantitySamples.some((value) => value.startDate.startsWith("2026-03-21"))).toBe(true);
+    expect(quantitySamples.some((value) => value.startDate.startsWith("2026-03-22"))).toBe(true);
+
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledWith({
+      workouts: [expect.objectContaining({ uuid: "new-workout" })],
+      windowStart: cutoff,
+      windowEnd: expect.any(String),
+    });
+    expect(client.healthKitSync.pushSleepSamples.mutate).toHaveBeenCalledWith({
+      samples: [expect.objectContaining({ uuid: "new-sleep" })],
+    });
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).toHaveBeenCalledWith({
+      routes: [
+        {
+          workoutUuid: "new-workout",
+          sourceName: "Apple Watch",
+          locations: [{ date: "2026-03-21T12:00:00.001Z", lat: 2, lng: 2 }],
+        },
+      ],
+    });
+  });
+
   it("starts incremental daily statistics at the local day boundary", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-26T15:30:00-07:00"));

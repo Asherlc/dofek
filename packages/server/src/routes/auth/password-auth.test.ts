@@ -11,6 +11,9 @@ const {
   mockLogger,
   mockCreatePasswordResetToken,
   mockResetPasswordWithToken,
+  mockUserAndIdentityFence,
+  mockUserWriteFence,
+  MockAccountErasureUserFencedError,
 } = vi.hoisted(() => ({
   mockRegisterPasswordUser: vi.fn(),
   mockAuthenticatePasswordUser: vi.fn(),
@@ -24,6 +27,22 @@ const {
   mockLogger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
   mockCreatePasswordResetToken: vi.fn(),
   mockResetPasswordWithToken: vi.fn(),
+  mockUserAndIdentityFence: vi.fn(),
+  mockUserWriteFence: vi.fn(),
+  MockAccountErasureUserFencedError: class MockAccountErasureUserFencedError extends Error {
+    constructor(cause?: unknown) {
+      super("Account deletion is active for this user.", { cause });
+      this.name = "AccountErasureUserFencedError";
+    }
+  },
+}));
+
+vi.mock("dofek/db/account-erasure", () => ({
+  AccountErasureIdentityFencedError: class AccountErasureIdentityFencedError extends Error {},
+  AccountErasureUserFencedError: MockAccountErasureUserFencedError,
+  withAccountErasureUserAndIdentityWriteFence: (...args: unknown[]) =>
+    mockUserAndIdentityFence(...args),
+  withAccountErasureUserWriteFence: (...args: unknown[]) => mockUserWriteFence(...args),
 }));
 
 vi.mock("../../auth/password-credential.ts", () => ({
@@ -126,6 +145,21 @@ describe("handlePasswordRegister", () => {
       expiresAt: new Date("2027-01-01"),
     });
     mockRegisterPasswordUser.mockResolvedValue({ userId: "user-1", isNewUser: true });
+    mockUserAndIdentityFence.mockImplementation(
+      async (
+        database: unknown,
+        _userId: string,
+        _identities: unknown,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => operation(database),
+    );
+    mockUserWriteFence.mockImplementation(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
 
   afterEach(() => {
@@ -323,6 +357,13 @@ describe("handlePasswordLogin", () => {
       expiresAt: new Date("2027-01-01"),
     });
     mockAuthenticatePasswordUser.mockResolvedValue({ userId: "user-1" });
+    mockUserWriteFence.mockImplementation(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
 
   it("returns 400 for invalid login body", async () => {
@@ -351,6 +392,30 @@ describe("handlePasswordLogin", () => {
       redirect: "/",
       isNewUser: false,
     });
+  });
+
+  it("returns a conflict without reporting an account-erasure write fence", async () => {
+    const userId = "10000000-0000-4000-8000-000000001994";
+    mockUserWriteFence.mockRejectedValueOnce(
+      new MockAccountErasureUserFencedError(
+        Object.assign(new Error(`Account erasure is active for user ${userId}`), {
+          code: "55000",
+        }),
+      ),
+    );
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordLogin(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "Account deletion is active for this user.",
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain(userId);
   });
 
   it("redirects to home after login when json is not requested", async () => {

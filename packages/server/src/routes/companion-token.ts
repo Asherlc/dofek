@@ -1,9 +1,13 @@
 import { PasswordLoginRequestSchema } from "@dofek/auth/auth";
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "dofek/db/account-erasure";
 import express, { Router } from "express";
 import { authenticatePasswordUser, InvalidCredentialsError } from "../auth/password-credential.ts";
-import { regenerateCompanionToken } from "../companion/token-repository.ts";
+import { regenerateCompanionTokenInTransaction } from "../companion/token-repository.ts";
 import { logger } from "../logger.ts";
 
 function sendJson(res: import("express").Response, status: number, body: unknown): void {
@@ -26,7 +30,11 @@ export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
         parsed.data.email,
         parsed.data.password,
       );
-      const companionToken = await regenerateCompanionToken(deps.db, userId);
+      const companionToken = await withAccountErasureUserWriteFence(
+        deps.db,
+        userId,
+        (transaction) => regenerateCompanionTokenInTransaction(transaction, userId),
+      );
       if (!companionToken.token) {
         throw new Error("Companion token was regenerated without returning a token");
       }
@@ -34,6 +42,10 @@ export function createCompanionTokenHttpRouter(deps: { db: Database }): Router {
     } catch (error: unknown) {
       if (error instanceof InvalidCredentialsError) {
         sendJson(res, 401, { error: error.message });
+        return;
+      }
+      if (error instanceof AccountErasureUserFencedError) {
+        sendJson(res, 409, { error: error.message });
         return;
       }
       Sentry.captureException(error);

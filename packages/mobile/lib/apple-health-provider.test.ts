@@ -155,6 +155,7 @@ describe("AppleHealthSyncService", () => {
     const syncResult: SyncResult = { inserted: 2, errors: [] };
     const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => syncResult);
     const service = new AppleHealthSyncService({
+      loadDeviceErasureCutoff: vi.fn(async () => "2026-07-26T12:00:00.000Z"),
       trpcClient,
       healthKit: {
         queryDailyStatistics: vi.fn(async () => []),
@@ -173,6 +174,7 @@ describe("AppleHealthSyncService", () => {
     expect(syncFunction).toHaveBeenCalledWith(
       expect.objectContaining({
         syncRangeDays: 1,
+        minimumSampleDate: "2026-07-26T12:00:00.000Z",
         onProgress,
         trpcClient: expect.objectContaining({
           healthKitSync: expect.objectContaining({
@@ -181,6 +183,18 @@ describe("AppleHealthSyncService", () => {
         }),
       }),
     );
+  });
+
+  it("fails closed without querying HealthKit when the cutoff cannot be loaded", async () => {
+    const syncFunction = vi.fn<AppleHealthSyncFunction>();
+    const service = new AppleHealthSyncService({
+      loadDeviceErasureCutoff: vi.fn().mockRejectedValue(new Error("SecureStore unavailable")),
+      syncFunction,
+      trpcClient: createTrpcClient(),
+    });
+
+    await expect(service.sync({ syncRangeDays: 1 })).rejects.toThrow("SecureStore unavailable");
+    expect(syncFunction).not.toHaveBeenCalled();
   });
 });
 

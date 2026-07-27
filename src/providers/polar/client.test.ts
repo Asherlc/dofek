@@ -232,3 +232,82 @@ describe("PolarClient — rate-limit aware fetch wiring", () => {
     await expect(client.getExercises()).rejects.toBeInstanceOf(ProviderRateLimitError);
   });
 });
+
+describe("PolarClient — durable account-erasure deregistration", () => {
+  it("accepts Polar's documented absent response without issuing DELETE", async () => {
+    const requests: string[] = [];
+    const fetchFn: typeof globalThis.fetch = async (url, init) => {
+      requests.push(`${init?.method ?? "GET"} ${String(url)}`);
+      return new Response(null, { status: 204 });
+    };
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.deregisterUserForAccountErasure("12345")).resolves.toBeUndefined();
+    expect(requests).toEqual(["GET https://www.polaraccesslink.com/v3/users/12345"]);
+  });
+
+  it("deletes a registered user and accepts only the documented 204 success", async () => {
+    const requests: string[] = [];
+    const fetchFn: typeof globalThis.fetch = async (url, init) => {
+      const method = init?.method ?? "GET";
+      requests.push(`${method} ${String(url)}`);
+      return new Response(null, { status: method === "GET" ? 200 : 204 });
+    };
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.deregisterUserForAccountErasure("12345")).resolves.toBeUndefined();
+    expect(requests).toEqual([
+      "GET https://www.polaraccesslink.com/v3/users/12345",
+      "DELETE https://www.polaraccesslink.com/v3/users/12345",
+    ]);
+  });
+
+  it("accepts the exact OAuth invalid_token challenge on replay", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(null, {
+        status: 401,
+        headers: {
+          "WWW-Authenticate": 'Bearer realm="polar", error="invalid_token"',
+        },
+      });
+    const client = new PolarClient("revoked-access-token", fetchFn);
+
+    await expect(client.deregisterUserForAccountErasure("12345")).resolves.toBeUndefined();
+  });
+
+  it("accepts an invalid_token race after registration was confirmed", async () => {
+    const fetchFn: typeof globalThis.fetch = async (_url, init) =>
+      init?.method === "DELETE"
+        ? new Response(null, {
+            status: 401,
+            headers: {
+              "WWW-Authenticate": 'Bearer realm="polar", error="invalid_token"',
+            },
+          })
+        : new Response(null, { status: 200 });
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.deregisterUserForAccountErasure("12345")).resolves.toBeUndefined();
+  });
+
+  it("rejects a bare 401 because it does not prove token revocation", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("Unauthorized", { status: 401 });
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.deregisterUserForAccountErasure("12345")).rejects.toThrow(
+      "registration check failed (401)",
+    );
+  });
+
+  it("rejects undocumented not-found responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async (_url, init) =>
+      new Response("Not found", { status: init?.method === "DELETE" ? 404 : 200 });
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.deregisterUserForAccountErasure("12345")).rejects.toThrow(
+      "deregistration failed (404)",
+    );
+    await expect(client.deregisterUser("12345")).rejects.toThrow("deregistration failed (404)");
+  });
+});

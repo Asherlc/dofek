@@ -9,6 +9,7 @@ import yauzl from "yauzl";
 import { processZipEntryExtractJob } from "./process-zip-entry-extract-job.ts";
 
 const createdDirectories: string[] = [];
+const TEST_USER_ID = "00000000-0000-4000-8000-000000000001";
 type YauzlOpenCallback = (error: Error | null, zipFile: ZipFile) => void;
 
 async function createTempDirectory(): Promise<string> {
@@ -59,6 +60,7 @@ describe("processZipEntryExtractJob", () => {
 
     const result = await processZipEntryExtractJob({
       data: {
+        userId: TEST_USER_ID,
         archivePath,
         entryPath: ["DI_CONNECT/activity.fit"],
         outputExtension: "fit",
@@ -81,6 +83,7 @@ describe("processZipEntryExtractJob", () => {
 
     const result = await processZipEntryExtractJob({
       data: {
+        userId: TEST_USER_ID,
         archivePath,
         entryPath: ["DI_CONNECT/activity.fit"],
         outputDirectory,
@@ -108,6 +111,7 @@ describe("processZipEntryExtractJob", () => {
 
     const firstResult = await processZipEntryExtractJob({
       data: {
+        userId: TEST_USER_ID,
         archivePath,
         entryPath: ["DI_CONNECT/activity.fit"],
         outputExtension: "fit",
@@ -122,6 +126,7 @@ describe("processZipEntryExtractJob", () => {
 
     const replayResult = await processZipEntryExtractJob({
       data: {
+        userId: TEST_USER_ID,
         archivePath,
         entryPath: ["DI_CONNECT/activity.fit"],
         outputExtension: "fit",
@@ -144,6 +149,7 @@ describe("processZipEntryExtractJob", () => {
 
     const firstResult = await processZipEntryExtractJob({
       data: {
+        userId: TEST_USER_ID,
         archivePath,
         entryPath: ["DI_CONNECT/activity.fit"],
         outputExtension: "fit",
@@ -159,6 +165,7 @@ describe("processZipEntryExtractJob", () => {
     await expect(
       processZipEntryExtractJob({
         data: {
+          userId: TEST_USER_ID,
           archivePath,
           entryPath: ["DI_CONNECT/activity.fit"],
           outputExtension: "fit",
@@ -189,6 +196,7 @@ describe("processZipEntryExtractJob", () => {
 
     const result = await processZipEntryExtractJob({
       data: {
+        userId: TEST_USER_ID,
         archivePath,
         entryPath: [
           "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip",
@@ -217,6 +225,7 @@ describe("processZipEntryExtractJob", () => {
 
     const result = await processZipEntryExtractJob({
       data: {
+        userId: TEST_USER_ID,
         archivePath,
         entryPath: [
           "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip",
@@ -244,6 +253,7 @@ describe("processZipEntryExtractJob", () => {
     await expect(
       processZipEntryExtractJob({
         data: {
+          userId: TEST_USER_ID,
           archivePath,
           entryPath: ["DI_CONNECT/activity.fit"],
           outputExtension: "fit",
@@ -275,6 +285,7 @@ describe("processZipEntryExtractJob", () => {
     await expect(
       processZipEntryExtractJob({
         data: {
+          userId: TEST_USER_ID,
           archivePath,
           entryPath: [
             "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip",
@@ -304,6 +315,7 @@ describe("processZipEntryExtractJob", () => {
     await expect(
       processZipEntryExtractJob({
         data: {
+          userId: TEST_USER_ID,
           archivePath,
           entryPath: ["DI_CONNECT/activity.fit"],
           outputExtension: "fit",
@@ -343,6 +355,7 @@ describe("processZipEntryExtractJob", () => {
     await expect(
       processZipEntryExtractJob({
         data: {
+          userId: TEST_USER_ID,
           archivePath,
           entryPath: ["DI_CONNECT/activity.fit"],
           outputExtension: "fit",
@@ -364,6 +377,7 @@ describe("processZipEntryExtractJob", () => {
     await expect(
       processZipEntryExtractJob({
         data: {
+          userId: TEST_USER_ID,
           archivePath,
           entryPath: ["missing.fit"],
           outputExtension: "fit",
@@ -385,6 +399,7 @@ describe("processZipEntryExtractJob", () => {
     await expect(
       processZipEntryExtractJob({
         data: {
+          userId: TEST_USER_ID,
           archivePath,
           entryPath: [""],
           outputExtension: "fit",

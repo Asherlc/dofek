@@ -88,7 +88,10 @@ services:
       # MinIO requires a root password of at least 8 characters; do not reuse
       # POSTGRES_PASSWORD here since the local default ("health") is too short.
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-peerdblocaldev}
+      MINIO_API_STALE_UPLOADS_EXPIRY: 24h
+      MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL: 15m
       PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
+      PEERDB_STAGE_LIFECYCLE_CONFIG: '{"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled"}]}'
     volumes:
       - peerdb_minio_data:/data
     restart: unless-stopped
@@ -105,6 +108,8 @@ services:
         sleep 1;
       done;
       mc mb --ignore-existing peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
+      printf '%s\n' "$$PEERDB_STAGE_LIFECYCLE_CONFIG" |
+        mc ilm rule import peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
       wait
       "
 

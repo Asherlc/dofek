@@ -12,6 +12,7 @@ const mockCaptureException = vi.fn();
 const mockLoggerInfo = vi.fn();
 const mockLoggerWarn = vi.fn();
 const mockLoggerError = vi.fn();
+const mockLoadDeviceErasureCutoff = vi.fn().mockResolvedValue(null);
 
 vi.mock("../modules/health-kit", () => ({
   isAvailable: (...args: unknown[]) => mockIsAvailable(...args),
@@ -37,6 +38,14 @@ vi.mock("./telemetry", () => ({
     error: (...args: unknown[]) => mockLoggerError(...args),
   },
 }));
+
+vi.mock("./device-erasure-cutoff", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./device-erasure-cutoff")>();
+  return {
+    ...original,
+    loadDeviceErasureCutoff: (...args: unknown[]) => mockLoadDeviceErasureCutoff(...args),
+  };
+});
 
 import { queryDailyStatistics, queryWorkoutRoutes, queryWorkouts } from "../modules/health-kit";
 import {

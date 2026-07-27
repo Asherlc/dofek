@@ -79,6 +79,11 @@ export function disconnect(): void {
   BleHeartRateModule.disconnect();
 }
 
+/** Disconnect and clear buffered heart-rate samples for the deleted account. */
+export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
+  return BleHeartRateModule.purgeAccountState(deviceErasureCutoff);
+}
+
 /** Connection state change event from the native BLE module. */
 export interface ConnectionStateEvent {
   state: string;

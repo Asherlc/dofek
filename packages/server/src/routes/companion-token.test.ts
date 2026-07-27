@@ -6,11 +6,25 @@ const {
   mockCaptureException,
   mockLogger,
   mockRegenerateCompanionToken,
+  mockWithUserWriteFence,
+  MockAccountErasureUserFencedError,
 } = vi.hoisted(() => ({
   mockAuthenticatePasswordUser: vi.fn(),
   mockCaptureException: vi.fn(),
   mockLogger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
   mockRegenerateCompanionToken: vi.fn(),
+  mockWithUserWriteFence: vi.fn(),
+  MockAccountErasureUserFencedError: class MockAccountErasureUserFencedError extends Error {
+    constructor(cause?: unknown) {
+      super("Account deletion is active for this user.", { cause });
+      this.name = "AccountErasureUserFencedError";
+    }
+  },
+}));
+
+vi.mock("dofek/db/account-erasure", () => ({
+  AccountErasureUserFencedError: MockAccountErasureUserFencedError,
+  withAccountErasureUserWriteFence: (...args: unknown[]) => mockWithUserWriteFence(...args),
 }));
 
 vi.mock("../auth/password-credential.ts", () => ({
@@ -24,7 +38,8 @@ vi.mock("../auth/password-credential.ts", () => ({
 }));
 
 vi.mock("../companion/token-repository.ts", () => ({
-  regenerateCompanionToken: (...args: unknown[]) => mockRegenerateCompanionToken(...args),
+  regenerateCompanionTokenInTransaction: (...args: unknown[]) =>
+    mockRegenerateCompanionToken(...args),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -37,6 +52,8 @@ vi.mock("../logger.ts", () => ({
 
 import { InvalidCredentialsError } from "../auth/password-credential.ts";
 import { createCompanionTokenHttpRouter } from "./companion-token.ts";
+
+const transaction = { execute: vi.fn() };
 
 function createTestApp() {
   const app = express();
@@ -85,6 +102,13 @@ describe("createCompanionTokenHttpRouter", () => {
       createdAt: "2026-07-12T00:00:00.000Z",
       revokedAt: null,
     });
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        _database: unknown,
+        _userId: string,
+        operation: (database: typeof transaction) => Promise<unknown>,
+      ) => operation(transaction),
+    );
   });
 
   it("returns 400 for invalid login details", async () => {
@@ -130,7 +154,8 @@ describe("createCompanionTokenHttpRouter", () => {
       "user@example.com",
       "password123",
     );
-    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith(db, "user-1");
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(db, "user-1", expect.any(Function));
+    expect(mockRegenerateCompanionToken).toHaveBeenCalledWith(transaction, "user-1");
     expect(response).toEqual({
       status: 200,
       body: {
@@ -140,6 +165,30 @@ describe("createCompanionTokenHttpRouter", () => {
         revokedAt: null,
       },
     });
+  });
+
+  it("returns a conflict without reporting an account-erasure write fence", async () => {
+    const userId = "10000000-0000-4000-8000-000000001994";
+    mockWithUserWriteFence.mockRejectedValueOnce(
+      new MockAccountErasureUserFencedError(
+        Object.assign(new Error(`Account erasure is active for user ${userId}`), {
+          code: "55000",
+        }),
+      ),
+    );
+    const { app } = createTestApp();
+
+    const response = await postJson(app, "/api/companion-token/password-login", {
+      email: "user@example.com",
+      password: "password123",
+    });
+
+    expect(response).toEqual({
+      status: 409,
+      body: { error: "Account deletion is active for this user." },
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain(userId);
   });
 
   it("reports unexpected token creation failures", async () => {

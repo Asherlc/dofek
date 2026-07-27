@@ -27,6 +27,20 @@ vi.mock("../lib/typed-sql.ts", () => ({
   ),
 }));
 
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: async (
+    db: {
+      transaction: <T>(
+        operation: (transaction: { execute: (query: unknown) => Promise<unknown[]> }) => Promise<T>,
+      ) => Promise<T>;
+    },
+    _userId: string,
+    operation: (transaction: {
+      execute: (query: unknown) => Promise<unknown[]>;
+    }) => Promise<unknown>,
+  ) => db.transaction(operation),
+}));
+
 const { companionTokenRouter } = await import("./companion-token.ts");
 
 const createCaller = createTestCallerFactory(companionTokenRouter);

@@ -1,11 +1,13 @@
 import * as Sentry from "@sentry/node";
 import { UnrecoverableError } from "bullmq";
+import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import type { Database, SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
+import { currentMetricStreamWriteDatabase } from "../metric-stream/write-fence-context.ts";
 import {
   processingDatasetKeysForImport,
   processingDatasetKeysForOutputPath,
@@ -18,9 +20,11 @@ import {
   appendProcessingStageEvent,
   createProcessingOperation,
   recordMetricStreamBatchPublished,
+  recordMetricStreamBatchPublishedInTransaction,
   recordRelationalCanonicalCommits,
 } from "../processing/processing-event-store.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
+import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import type { LocalImportJobData } from "./local-import-job-data.ts";
 import type { GarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
 
@@ -142,8 +146,12 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       ? new MetricStreamProcessingPublisher(createLazyDefaultMetricStreamEventPublisher(), {
           operationId: processingOperation.id,
           datasetKeys: metricDatasetKeys,
-          recordPublishedBatch: (batch) =>
-            recordMetricStreamBatchPublished(requireTransactionalDatabase(db), batch),
+          recordPublishedBatch: (batch) => {
+            const transaction = currentMetricStreamWriteDatabase();
+            return transaction
+              ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
+              : recordMetricStreamBatchPublished(requireTransactionalDatabase(db), batch);
+          },
         })
       : undefined;
   const sinceDate = new Date(since);
@@ -155,6 +163,9 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   let importFailed = false;
   let importError: unknown;
   try {
+    if (!(await accountErasureAllowsQueuedUserWork(db, userId, `${importType} import`))) {
+      return;
+    }
     await runWithTokenUser(userId, async () => {
       if (importType === "apple-health") {
         await reportImportProgress(job, 0, "Starting Apple Health import...");
@@ -423,6 +434,9 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       : undefined,
     idempotencyKey: terminalImportError ? "worker-failed" : "worker-succeeded",
   });
+  if (!(await accountErasureAllowsQueuedUserWork(db, userId, "post-import cache invalidation"))) {
+    return;
+  }
   await invalidateAllUserQueries(userId);
 
   try {
@@ -440,7 +454,9 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
 
   try {
     const { enqueueDebouncedUserRefit } = await import("./queues.ts");
-    await enqueueDebouncedUserRefit(userId);
+    await withAccountErasureUserWriteFence(requireTransactionalDatabase(db), userId, async () => {
+      await enqueueDebouncedUserRefit(userId);
+    });
   } catch (err) {
     logger.error(`[worker] Failed to enqueue post-import user refit: ${err}`);
     Sentry.captureException(err, { tags: { phase: "post-import-user-refit-enqueue" } });

@@ -33,6 +33,11 @@ vi.mock("../auth/providers.ts", () => ({
     createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
     validateCallback: vi.fn(),
   })),
+  appleRevocationCredentialFromTokens: vi.fn(() => ({
+    accessToken: "apple-access",
+    clientId: "com.dofek.web",
+    refreshToken: "apple-refresh",
+  })),
   validateNativeAppleCallback: vi.fn(),
   generateState: vi.fn(() => "mock-state"),
   generateCodeVerifier: vi.fn(() => "mock-verifier"),
@@ -71,6 +76,34 @@ vi.mock("../auth/account-linking.ts", () => ({
     }
   },
   resolveOrCreateUser: vi.fn(() => Promise.resolve({ userId: "user-1", isNewUser: false })),
+  findExistingUserId: vi.fn(() => Promise.resolve("user-1")),
+}));
+
+vi.mock("../auth/identity-credential-revocation.ts", () => ({
+  revokeIdentityCredentials: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("dofek/auth/apple-credential-revocation", () => ({
+  revokeAppleCredential: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("dofek/db/account-erasure", () => ({
+  AccountErasureIdentityFencedError: class AccountErasureIdentityFencedError extends Error {},
+  AccountErasureUserFencedError: class AccountErasureUserFencedError extends Error {},
+  lockAndAssertAccountErasureIdentityWriteFence: vi.fn(() => Promise.resolve()),
+  withAccountErasureUserAndIdentityWriteFence: vi.fn(
+    async (
+      database: unknown,
+      _userId: string,
+      _identities: unknown,
+      operation: (transaction: unknown) => Promise<unknown>,
+    ) => operation(database),
+  ),
+  withAccountErasureUserWriteFence: async (
+    database: unknown,
+    _userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => operation(database),
 }));
 
 vi.mock("dofek/lib/cache", () => ({
@@ -133,12 +166,21 @@ import * as Sentry from "@sentry/node";
 import cookieParser from "cookie-parser";
 import { revokeToken } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
+import {
+  AccountErasureIdentityFencedError,
+  AccountErasureUserFencedError,
+  withAccountErasureUserAndIdentityWriteFence,
+} from "dofek/db/account-erasure";
 import { loadTokens } from "dofek/db/tokens";
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { getAllProviders } from "dofek/providers/registry";
 import { isWebhookProvider, type SyncProvider } from "dofek/providers/types";
 import express from "express";
-import { MissingEmailForSignupError, resolveOrCreateUser } from "../auth/account-linking.ts";
+import {
+  findExistingUserId,
+  MissingEmailForSignupError,
+  resolveOrCreateUser,
+} from "../auth/account-linking.ts";
 import {
   clearSessionCookie,
   getLinkUserCookie,
@@ -248,6 +290,21 @@ async function request(
 describe("createAuthRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.APPLE_CLIENT_ID = "com.dofek.web";
+    vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
+    vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
+    vi.mocked(getLinkUserCookie).mockReturnValue(null);
+    vi.mocked(getMobileSchemeCookie).mockReturnValue(undefined);
+    vi.mocked(getPostLoginRedirectCookie).mockReturnValue(undefined);
+    vi.mocked(resolveOrCreateUser).mockReset().mockResolvedValue({
+      userId: "user-1",
+      isNewUser: false,
+    });
+    vi.mocked(findExistingUserId).mockReset().mockResolvedValue("user-1");
+    vi.mocked(getAllProviders).mockReset().mockReturnValue([]);
+    vi.mocked(isWebhookProvider).mockReset().mockReturnValue(false);
+    vi.mocked(registerWebhookForProvider).mockReset().mockResolvedValue(undefined);
+    vi.mocked(loadTokens).mockReset().mockResolvedValue(null);
     vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-default");
     vi.mocked(validateSession).mockResolvedValue({
       userId: "user-1",
@@ -838,6 +895,7 @@ describe("createAuthRouter", () => {
         userId: "new-user-1",
         isNewUser: true,
       });
+      vi.mocked(findExistingUserId).mockResolvedValueOnce("new-user-1");
 
       const { app } = createTestApp();
       const res = await request(
@@ -998,6 +1056,7 @@ describe("createAuthRouter", () => {
         "apple",
         expect.objectContaining({ name: "Jane Doe" }),
         null,
+        { newUserId: "user-1" },
       );
       vi.mocked(isProviderConfigured).mockImplementation((name: string) => name === "google");
     });
@@ -1611,6 +1670,53 @@ describe("createAuthRouter", () => {
   });
 
   describe("identity callback error handling", () => {
+    it("does not emit a fenced identity when orphan credential cleanup fails", async () => {
+      const cleanupError = new Error("credential cleanup unavailable");
+      const { revokeIdentityCredentials } = await import(
+        "../auth/identity-credential-revocation.ts"
+      );
+      vi.mocked(revokeIdentityCredentials).mockRejectedValueOnce(cleanupError);
+      vi.mocked(withAccountErasureUserAndIdentityWriteFence).mockRejectedValueOnce(
+        new AccountErasureIdentityFencedError(),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: vi.fn().mockResolvedValue({
+          tokens: { accessToken: "new-provider-credential" },
+          user: {
+            sub: "stable-provider-account-id",
+            email: "erasing-user@example.test",
+            name: "Erasing User",
+          },
+        }),
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:fenced-state",
+        codeVerifier: "verifier",
+      });
+
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:fenced-state",
+      );
+
+      expect(res.status).toBe(409);
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        cleanupError,
+        expect.objectContaining({
+          tags: {
+            operation: "revoke-orphan-credentials",
+            source: "identity-callback",
+          },
+        }),
+      );
+      const telemetry = JSON.stringify(vi.mocked(Sentry.captureException).mock.calls);
+      expect(telemetry).not.toContain("stable-provider-account-id");
+      expect(telemetry).not.toContain("erasing-user@example.test");
+    });
+
     it("returns 500 and logs error when validateCallback throws", async () => {
       vi.mocked(getIdentityProvider).mockReturnValue({
         createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
@@ -1970,6 +2076,10 @@ describe("createAuthRouter", () => {
         codeVerifier: "link-verifier",
       });
       vi.mocked(getLinkUserCookie).mockReturnValue("existing-user-id");
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({
+        userId: "existing-user-id",
+        isNewUser: false,
+      });
       const { app } = createTestApp();
       const res = await request(
         app,
@@ -1987,6 +2097,7 @@ describe("createAuthRouter", () => {
         "google",
         expect.objectContaining({ providerAccountId: "goog-link" }),
         "existing-user-id",
+        { newUserId: "existing-user-id" },
       );
       vi.mocked(getLinkUserCookie).mockReturnValue(null);
     });
@@ -2217,7 +2328,7 @@ describe("createAuthRouter", () => {
           email: "runner@test.com",
         }),
         undefined,
-        { requireEmailForNewUser: false },
+        { newUserId: "user-1", requireEmailForNewUser: false },
       );
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),
@@ -2261,6 +2372,7 @@ describe("createAuthRouter", () => {
         userId: "new-runner-user-1",
         isNewUser: true,
       });
+      vi.mocked(findExistingUserId).mockResolvedValueOnce("new-runner-user-1");
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "strava",
@@ -2303,7 +2415,10 @@ describe("createAuthRouter", () => {
           email: "new-runner@test.com",
         }),
         undefined,
-        { requireEmailForNewUser: false },
+        {
+          newUserId: "new-runner-user-1",
+          requireEmailForNewUser: false,
+        },
       );
     });
 
@@ -2378,7 +2493,7 @@ describe("createAuthRouter", () => {
           email: "mobile@test.com",
         }),
         undefined,
-        { requireEmailForNewUser: false },
+        { newUserId: "user-1", requireEmailForNewUser: false },
       );
     });
 
@@ -2450,7 +2565,7 @@ describe("createAuthRouter", () => {
           email: null,
         }),
         undefined,
-        { requireEmailForNewUser: true },
+        { newUserId: "user-1", requireEmailForNewUser: true },
       );
       expect(ensureProvider).not.toHaveBeenCalled();
       expect(createSession).not.toHaveBeenCalled();
@@ -2476,6 +2591,9 @@ describe("createAuthRouter", () => {
       vi.mocked(resolveOrCreateUser)
         .mockRejectedValueOnce(new MissingEmailForSignupError("Strava"))
         .mockResolvedValueOnce({ userId: "manual-email-user", isNewUser: true });
+      vi.mocked(findExistingUserId)
+        .mockResolvedValueOnce("user-1")
+        .mockResolvedValueOnce("manual-email-user");
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "strava",
@@ -2530,6 +2648,8 @@ describe("createAuthRouter", () => {
           email: "runner@example.com",
           emailVerified: false,
         }),
+        undefined,
+        { newUserId: "manual-email-user" },
       );
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),
@@ -2585,6 +2705,9 @@ describe("createAuthRouter", () => {
           firstCompletionStarted.resolve();
           return deferredUser.promise;
         });
+      vi.mocked(findExistingUserId)
+        .mockResolvedValueOnce("user-1")
+        .mockResolvedValueOnce("concurrent-user");
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "strava",
@@ -2676,6 +2799,9 @@ describe("createAuthRouter", () => {
           completionStarted.resolve();
           return deferredUser.promise;
         });
+      vi.mocked(findExistingUserId)
+        .mockResolvedValueOnce("user-1")
+        .mockResolvedValueOnce("renewal-failure-user");
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "strava",
@@ -2845,6 +2971,9 @@ describe("createAuthRouter", () => {
       vi.mocked(resolveOrCreateUser)
         .mockRejectedValueOnce(new MissingEmailForSignupError("Strava"))
         .mockResolvedValueOnce({ userId: "mobile-email-user", isNewUser: true });
+      vi.mocked(findExistingUserId)
+        .mockResolvedValueOnce("user-1")
+        .mockResolvedValueOnce("mobile-email-user");
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "strava",
@@ -2933,6 +3062,7 @@ describe("createAuthRouter", () => {
         .mockRejectedValueOnce(new MissingEmailForSignupError("Strava"))
         .mockRejectedValueOnce(new Error("temporary database failure"))
         .mockResolvedValueOnce({ userId: "retry-user", isNewUser: true });
+      vi.mocked(findExistingUserId).mockResolvedValueOnce("user-1").mockResolvedValue("retry-user");
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "strava",
@@ -2985,6 +3115,118 @@ describe("createAuthRouter", () => {
         undefined,
         "retry-user",
       );
+    });
+
+    it.each([
+      {
+        error: new AccountErasureIdentityFencedError(
+          "This identity belongs to an account that is currently being deleted.",
+        ),
+        fence: "identity",
+      },
+      {
+        error: new AccountErasureUserFencedError(),
+        fence: "user",
+      },
+    ])("revokes and consumes a pending authorization rejected by the $fence erasure fence", async ({
+      error,
+    }) => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              revokeUrl: "https://www.strava.com/oauth/deauthorize",
+              scopes: ["read"],
+            },
+            exchangeCode: vi.fn(),
+          }),
+        },
+      ]);
+      vi.mocked(withAccountErasureUserAndIdentityWriteFence).mockRejectedValueOnce(error);
+      const { app } = createTestApp();
+      const pendingStore = getPendingEmailSignupStoreRef();
+      const token = await pendingStore.issue(makePendingEmailSignupEntry());
+      const releaseSpy = vi.spyOn(pendingStore, "release");
+      const completeSpy = vi.spyOn(pendingStore, "complete");
+
+      const firstResponse = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "runner@example.com" },
+      });
+      const responseAfterLoss = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "runner@example.com" },
+      });
+
+      expect(firstResponse.status).toBe(409);
+      expect(responseAfterLoss.status).toBe(400);
+      expect(revokeToken).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          revokeUrl: "https://www.strava.com/oauth/deauthorize",
+        }),
+        "pending-access-token",
+      );
+      expect(revokeToken).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          revokeUrl: "https://www.strava.com/oauth/deauthorize",
+        }),
+        "pending-refresh-token",
+      );
+      expect(completeSpy).toHaveBeenCalledOnce();
+      expect(releaseSpy).not.toHaveBeenCalled();
+      await expect(pendingStore.get(token)).resolves.toBeNull();
+    });
+
+    it("retains the claimed pending authorization when fenced cleanup cannot be completed", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              revokeUrl: "https://www.strava.com/oauth/deauthorize",
+              scopes: ["read"],
+            },
+            exchangeCode: vi.fn(),
+          }),
+        },
+      ]);
+      vi.mocked(withAccountErasureUserAndIdentityWriteFence).mockRejectedValueOnce(
+        new AccountErasureIdentityFencedError(
+          "This identity belongs to an account that is currently being deleted.",
+        ),
+      );
+      const cleanupError = new Error("pending store delete unavailable");
+      const { app } = createTestApp();
+      const pendingStore = getPendingEmailSignupStoreRef();
+      const token = await pendingStore.issue(makePendingEmailSignupEntry());
+      const releaseSpy = vi.spyOn(pendingStore, "release");
+      const completeSpy = vi.spyOn(pendingStore, "complete").mockRejectedValueOnce(cleanupError);
+
+      const response = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "runner@example.com" },
+      });
+
+      expect(response.status).toBe(500);
+      expect(response.body).toContain("credential cleanup failed");
+      expect(revokeToken).toHaveBeenCalledTimes(2);
+      expect(completeSpy).toHaveBeenCalledOnce();
+      expect(releaseSpy).not.toHaveBeenCalled();
+      await expect(pendingStore.get(token)).resolves.not.toBeNull();
+      expect(Sentry.captureException).toHaveBeenCalledWith(cleanupError, {
+        tags: {
+          context: "pending-email-signup-fenced-cleanup",
+          providerId: "strava",
+        },
+      });
     });
 
     it("rejects complete-signup requests without a token", async () => {
@@ -3046,6 +3288,7 @@ describe("createAuthRouter", () => {
         userId: "matched-provider-user",
         isNewUser: false,
       });
+      vi.mocked(findExistingUserId).mockResolvedValueOnce("matched-provider-user");
       const { app } = createTestApp();
       const pendingStore = getPendingEmailSignupStoreRef();
       const token = await pendingStore.issue(
@@ -3110,6 +3353,13 @@ describe("createAuthRouter", () => {
       const completionError = new Error("database unavailable");
       const releaseError = new Error("claim release unavailable");
       vi.mocked(resolveOrCreateUser).mockRejectedValueOnce(completionError);
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => null,
+        },
+      ]);
       const { app } = createTestApp();
       const pendingStore = getPendingEmailSignupStoreRef();
       const token = await pendingStore.issue(makePendingEmailSignupEntry());
@@ -3296,6 +3546,10 @@ describe("createAuthRouter", () => {
       vi.mocked(validateSession).mockResolvedValue({
         userId: "link-user-123",
         expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({
+        userId: "link-user-123",
+        isNewUser: false,
       });
 
       const { app } = createTestApp();
@@ -3620,6 +3874,47 @@ describe("createAuthRouter", () => {
   });
 
   describe("POST /auth/apple/native", () => {
+    it("does not emit a fenced Apple identity when credential cleanup fails", async () => {
+      const cleanupError = new Error("Apple cleanup unavailable");
+      const { revokeAppleCredential } = await import("dofek/auth/apple-credential-revocation");
+      vi.mocked(revokeAppleCredential).mockRejectedValueOnce(cleanupError);
+      vi.mocked(withAccountErasureUserAndIdentityWriteFence).mockRejectedValueOnce(
+        new AccountErasureIdentityFencedError(),
+      );
+      vi.mocked(isNativeAppleConfigured).mockReturnValue(true);
+      vi.mocked(validateNativeAppleCallback).mockResolvedValue({
+        revocationCredential: {
+          clientId: "com.dofek.app",
+          refreshToken: "new-apple-refresh-token",
+        },
+        user: {
+          sub: "stable-apple-account-id",
+          email: "erasing-apple-user@example.test",
+          name: null,
+          groups: null,
+        },
+      });
+
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/apple/native", {
+        formBody: { authorizationCode: "native-code" },
+      });
+
+      expect(res.status).toBe(409);
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        cleanupError,
+        expect.objectContaining({
+          tags: {
+            operation: "revoke-orphan-credentials",
+            source: "apple-native-callback",
+          },
+        }),
+      );
+      const telemetry = JSON.stringify(vi.mocked(Sentry.captureException).mock.calls);
+      expect(telemetry).not.toContain("stable-apple-account-id");
+      expect(telemetry).not.toContain("erasing-apple-user@example.test");
+    });
+
     it("returns 400 when native Apple is not configured", async () => {
       vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
       const { app } = createTestApp();
@@ -3683,6 +3978,8 @@ describe("createAuthRouter", () => {
           providerAccountId: "apple-native-2",
           email: "bob@icloud.com",
         }),
+        undefined,
+        { newUserId: "user-1" },
       );
       vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
@@ -3713,6 +4010,8 @@ describe("createAuthRouter", () => {
         expect.anything(),
         "apple",
         expect.objectContaining({ name: "Carol Token" }),
+        undefined,
+        { newUserId: "user-1" },
       );
       vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
@@ -3732,6 +4031,8 @@ describe("createAuthRouter", () => {
         expect.anything(),
         "apple",
         expect.objectContaining({ name: "Dave", email: null }),
+        undefined,
+        { newUserId: "user-1" },
       );
       vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
@@ -3751,6 +4052,8 @@ describe("createAuthRouter", () => {
         expect.anything(),
         "apple",
         expect.objectContaining({ name: null }),
+        undefined,
+        { newUserId: "user-1" },
       );
       vi.mocked(isNativeAppleConfigured).mockReturnValue(false);
     });
@@ -4353,7 +4656,7 @@ describe("createAuthRouter", () => {
       expect(registerWebhookForProvider).not.toHaveBeenCalled();
     });
 
-    it("continues successfully even when webhook registration fails", async () => {
+    it("fails and revokes issued credentials when webhook registration fails", async () => {
       vi.mocked(isWebhookProvider).mockReturnValue(true);
       vi.mocked(registerWebhookForProvider).mockRejectedValueOnce(
         new Error("Webhook registration failed"),
@@ -4375,6 +4678,7 @@ describe("createAuthRouter", () => {
               authorizationEndpoint: "https://api.wahoo.com/oauth/authorize",
               clientId: "test",
               redirectUri: "https://dofek.asherlc.com/callback",
+              revokeUrl: "https://api.wahoo.com/oauth/revoke",
               scopes: ["user_read"],
             },
             exchangeCode: mockExchangeCode,
@@ -4388,12 +4692,19 @@ describe("createAuthRouter", () => {
       if (typeof location !== "string") throw new Error("Expected location header");
       const state = new URL(location).searchParams.get("state");
 
-      // Should still succeed even though webhook registration failed
       const callbackRes = await request(app, "get", `/callback?code=code&state=${state}`);
-      expect(callbackRes.status).toBe(200);
-      expect(callbackRes.body).toContain("Authorized!");
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("Failed to register webhook"),
+      expect(callbackRes.status).toBe(500);
+      expect(callbackRes.body).toContain("Token exchange failed");
+      expect(revokeToken).toHaveBeenCalledTimes(2);
+      expect(revokeToken).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ revokeUrl: "https://api.wahoo.com/oauth/revoke" }),
+        "webhook-fail-access",
+      );
+      expect(revokeToken).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ revokeUrl: "https://api.wahoo.com/oauth/revoke" }),
+        "webhook-fail-refresh",
       );
 
       vi.mocked(isWebhookProvider).mockReturnValue(false);

@@ -125,6 +125,22 @@ final class BleHeartRateSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.sampleCount, 0)
     }
 
+    func testErasureCutoffDropsExistingAndFutureSamplesAtOrBeforeBoundary() {
+        let buffer = BleHeartRateSampleBuffer()
+        buffer.append(sample(at: 1_000, bpm: 60))
+        buffer.append(sample(at: 2_000, bpm: 61))
+
+        buffer.advanceErasureCutoff(to: Date(timeIntervalSince1970: 2_000))
+        buffer.append(sample(at: 1_999, bpm: 62))
+        buffer.append(sample(at: 2_000, bpm: 63))
+        buffer.append(sample(at: 2_001, bpm: 64))
+
+        XCTAssertEqual(
+            buffer.peekSamples().compactMap { $0["heartRateBpm"] as? Int },
+            [64]
+        )
+    }
+
     func testNegativePeekCountReturnsEmptyWithoutCrashing() {
         let buffer = BleHeartRateSampleBuffer()
         buffer.append(sample(bpm: 60))
@@ -136,5 +152,14 @@ final class BleHeartRateSampleBufferTests: XCTestCase {
         buffer.append(sample(bpm: 60))
         buffer.confirmDrain(count: -5)
         XCTAssertEqual(buffer.sampleCount, 1)
+    }
+
+    private func sample(at timestamp: TimeInterval, bpm: Int) -> BleHeartRateSample {
+        BleHeartRateSample(
+            deviceId: "strap-a",
+            timestamp: Date(timeIntervalSince1970: timestamp),
+            heartRateBpm: bpm,
+            rrIntervalsMs: []
+        )
     }
 }

@@ -25,6 +25,9 @@ const mockIsRecordingActive = vi.fn(() => true);
 const mockQueryRecordedData = vi.fn(() => Promise.resolve([]));
 const mockGetLastSyncTimestamp = vi.fn((): string | null => null);
 const mockSetLastSyncTimestamp = vi.fn();
+const mockLoadDeviceErasureCutoff = vi.fn(() =>
+  Promise.resolve<string | null>("2026-07-26T12:00:00.000Z"),
+);
 
 vi.mock("../modules/core-motion", () => ({
   isAccelerometerRecordingAvailable: (...args: unknown[]) =>
@@ -36,6 +39,10 @@ vi.mock("../modules/core-motion", () => ({
   queryRecordedData: (...args: unknown[]) => mockQueryRecordedData(...args),
   getLastSyncTimestamp: (...args: unknown[]) => mockGetLastSyncTimestamp(...args),
   setLastSyncTimestamp: (...args: unknown[]) => mockSetLastSyncTimestamp(...args),
+}));
+
+vi.mock("./device-erasure-cutoff", () => ({
+  loadDeviceErasureCutoff: (...args: unknown[]) => mockLoadDeviceErasureCutoff(...args),
 }));
 
 const mockSyncInertialMeasurementUnitToServer = vi.fn(() =>
@@ -79,6 +86,8 @@ describe("background-accelerometer-sync", () => {
     mockSyncInertialMeasurementUnitToServer.mockResolvedValue({ inserted: 0, recording: true });
     mockIsAccelerometerRecordingAvailable.mockReturnValue(true);
     mockGetMotionAuthorizationStatus.mockReturnValue("authorized");
+    mockLoadDeviceErasureCutoff.mockResolvedValue("2026-07-26T12:00:00.000Z");
+    mockStartRecording.mockClear();
     vi.mocked(AppState.addEventListener).mockClear();
     teardownBackgroundAccelerometerSync();
   });
@@ -122,6 +131,30 @@ describe("background-accelerometer-sync", () => {
         source: "bg-accel-sync",
       });
     });
+  });
+
+  it("passes the retained device cutoff to every foreground sync", async () => {
+    await initBackgroundAccelerometerSync(trpcClient);
+
+    appStateCallback?.("active");
+
+    await vi.waitFor(() => {
+      expect(mockSyncInertialMeasurementUnitToServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          minimumSampleDate: "2026-07-26T12:00:00.000Z",
+        }),
+      );
+    });
+  });
+
+  it("fails closed before recording when the retained cutoff cannot be read", async () => {
+    mockLoadDeviceErasureCutoff.mockRejectedValue(new Error("SecureStore unavailable"));
+
+    await expect(initBackgroundAccelerometerSync(trpcClient)).rejects.toThrow(
+      "SecureStore unavailable",
+    );
+    expect(mockStartRecording).not.toHaveBeenCalled();
+    expect(AppState.addEventListener).not.toHaveBeenCalled();
   });
 
   it("resets syncing flag after error so next foreground event can sync", async () => {

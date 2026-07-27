@@ -23,6 +23,19 @@ export async function resolveProviderDataGenerationsForTest(
   };
 }
 
+export function makeTransactionalTestDatabase<TDatabase extends Database>(
+  database: TDatabase,
+): TDatabase & {
+  transaction<TResult>(work: (transaction: TDatabase) => Promise<TResult>): Promise<TResult>;
+} {
+  async function transaction<TResult>(
+    work: (transaction: TDatabase) => Promise<TResult>,
+  ): Promise<TResult> {
+    return work(database);
+  }
+  return Object.assign(database, { transaction });
+}
+
 export function createTestCallerFactory(router: AnyRouter) {
   return trpc.createCallerFactory(router);
 }

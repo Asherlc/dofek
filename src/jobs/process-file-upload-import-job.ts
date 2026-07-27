@@ -19,6 +19,7 @@ import {
   fileUploadLifecycleTotal,
 } from "../file-upload-metrics.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
+import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import type { LocalImportJobData } from "./local-import-job-data.ts";
 import { processImportJob } from "./process-import-job.ts";
 import type { ImportJobData } from "./queues.ts";
@@ -132,6 +133,15 @@ export async function processFileUploadImportJob(
 ): Promise<void> {
   const upload = await claimFileUploadForProcessing(database, job.data.uploadId, job.id);
   if (upload.state === "completed") return;
+  if (
+    !(await accountErasureAllowsQueuedUserWork(
+      database,
+      upload.userId,
+      "file upload object download",
+    ))
+  ) {
+    return;
+  }
 
   const baseDirectory = process.env.JOB_FILES_DIR ?? tmpdir();
   await mkdir(baseDirectory, { recursive: true });
@@ -152,9 +162,28 @@ export async function processFileUploadImportJob(
     if (upload.originalFilename.toLowerCase().endsWith(".zip")) {
       await validateImportArchive(filePath);
     }
+    if (
+      !(await accountErasureAllowsQueuedUserWork(database, upload.userId, "file upload import"))
+    ) {
+      return;
+    }
     await processImportJob(localJob(job, upload, filePath, database), database);
+    if (
+      !(await accountErasureAllowsQueuedUserWork(database, upload.userId, "file upload completion"))
+    ) {
+      return;
+    }
     await completeFileUploadProcessing(database, upload.id, verifiedSha256);
     fileUploadLifecycleTotal.add(1, { state: "completed", import_type: upload.importType });
+    if (
+      !(await accountErasureAllowsQueuedUserWork(
+        database,
+        upload.userId,
+        "file upload object deletion",
+      ))
+    ) {
+      return;
+    }
     await storage.deleteObject(upload.objectKey);
   } catch (error) {
     if (error instanceof WaitingChildrenError) {

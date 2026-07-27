@@ -77,6 +77,7 @@ describe("validateNativeAppleCallback (integration)", () => {
 
         return HttpResponse.json({
           access_token: "mock-access-token",
+          refresh_token: "mock-refresh-token",
           token_type: "Bearer",
           expires_in: 3600,
           id_token: fakeIdToken,
@@ -91,6 +92,11 @@ describe("validateNativeAppleCallback (integration)", () => {
     expect(result.user.emailVerified).toBe(true);
     expect(result.user.name).toBeNull();
     expect(result.user.groups).toBeNull();
+    expect(result.revocationCredential).toEqual({
+      accessToken: "mock-access-token",
+      clientId: "com.dofek.app",
+      refreshToken: "mock-refresh-token",
+    });
   });
 
   it("sends a valid ES256 JWT as client_secret", async () => {

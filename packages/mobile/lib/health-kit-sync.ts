@@ -5,6 +5,7 @@ import type {
   SleepSample,
   WorkoutSample,
 } from "../modules/health-kit";
+import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { isHealthKitDatabaseInaccessible } from "./health-kit-errors";
 import { captureException } from "./telemetry";
 
@@ -41,15 +42,35 @@ const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY
 
 const BATCH_SIZE = 500;
 
-function syncWindowStart(syncRangeDays: number | null): string {
+function syncWindowStart(syncRangeDays: number | null, minimumSampleDate: string | null): string {
+  let rangeStart: string;
   if (syncRangeDays === null) {
-    return new Date(0).toISOString();
+    rangeStart = new Date(0).toISOString();
+  } else {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - syncRangeDays);
+    startDate.setHours(0, 0, 0, 0);
+    rangeStart = startDate.toISOString();
   }
 
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - syncRangeDays);
-  startDate.setHours(0, 0, 0, 0);
-  return startDate.toISOString();
+  if (minimumSampleDate === null) return rangeStart;
+  const cutoffTime = Date.parse(minimumSampleDate);
+  if (!Number.isFinite(cutoffTime)) {
+    throw new Error("Device erasure cutoff is invalid.");
+  }
+  return cutoffTime > Date.parse(rangeStart) ? minimumSampleDate : rangeStart;
+}
+
+function localCalendarDate(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error("Device erasure cutoff is invalid.");
+  }
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function normalizeWorkout(workout: WorkoutSample): WorkoutSample {
@@ -117,6 +138,8 @@ export interface SyncTrpcClient {
 export interface SyncOptions {
   trpcClient: SyncTrpcClient;
   healthKit: HealthKitAdapter;
+  /** Device-wide lower bound retained across deleted accounts. */
+  minimumSampleDate?: string | null;
   /** Number of days to sync, or null for all-time */
   syncRangeDays: number | null;
   onProgress?: (message: string) => void;
@@ -150,10 +173,19 @@ export interface HealthKitSyncStage {
  * Queries all HealthKit types and pushes them to the server via tRPC.
  */
 export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncResult> {
-  const { trpcClient, healthKit, syncRangeDays, onProgress, onStage } = options;
+  const {
+    trpcClient,
+    healthKit,
+    minimumSampleDate = null,
+    syncRangeDays,
+    onProgress,
+    onStage,
+  } = options;
 
-  const startDate = syncWindowStart(syncRangeDays);
+  const startDate = syncWindowStart(syncRangeDays, minimumSampleDate);
   const endDate = new Date().toISOString();
+  const cutoffCalendarDate =
+    minimumSampleDate === null ? null : localCalendarDate(minimumSampleDate);
 
   const allSamples: HealthKitSample[] = [];
   const totalTypes = ALL_QUANTITY_TYPES.length;
@@ -178,6 +210,9 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
       dailyStats = [];
     }
     for (const stat of dailyStats) {
+      if (cutoffCalendarDate !== null && stat.date <= cutoffCalendarDate) {
+        continue;
+      }
       allSamples.push({
         type: typeId,
         value: stat.value,
@@ -202,7 +237,13 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     });
 
     const samples = await healthKit.queryQuantitySamples(typeId, startDate, endDate);
-    allSamples.push(...samples);
+    allSamples.push(
+      ...samples.filter(
+        (sample) =>
+          minimumSampleDate === null ||
+          isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
+      ),
+    );
     typeIndex++;
   }
 
@@ -230,7 +271,13 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   // Sync workouts
   onProgress?.("Querying workouts...");
   onStage?.({ operation: "queryWorkouts" });
-  const workouts = (await healthKit.queryWorkouts(startDate, endDate)).map(normalizeWorkout);
+  const workouts = (await healthKit.queryWorkouts(startDate, endDate))
+    .filter(
+      (workout) =>
+        minimumSampleDate === null ||
+        isAfterDeviceErasureCutoff(workout.startDate, minimumSampleDate),
+    )
+    .map(normalizeWorkout);
   {
     onStage?.({
       operation: "pushWorkouts",
@@ -263,7 +310,11 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
             continue;
           }
           try {
-            const locations = await healthKit.queryWorkoutRoutes(workout.uuid);
+            const locations = (await healthKit.queryWorkoutRoutes(workout.uuid)).filter(
+              (location) =>
+                minimumSampleDate === null ||
+                isAfterDeviceErasureCutoff(location.date, minimumSampleDate),
+            );
             if (locations.length > 0) {
               workerRoutes.push({
                 workoutUuid: workout.uuid,
@@ -311,7 +362,10 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   // Sync sleep
   onProgress?.("Querying sleep...");
   onStage?.({ operation: "querySleepSamples" });
-  const sleepSamples = await healthKit.querySleepSamples(startDate, endDate);
+  const sleepSamples = (await healthKit.querySleepSamples(startDate, endDate)).filter(
+    (sample) =>
+      minimumSampleDate === null || isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
+  );
   if (sleepSamples.length > 0) {
     onStage?.({
       operation: "pushSleepSamples",

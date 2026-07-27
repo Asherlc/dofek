@@ -8,6 +8,7 @@ import { executeWithSchema, timestampStringSchema } from "../db/typed-sql.ts";
 import { sendExportReadyEmail } from "../export-email.ts";
 import { createSignedExportDownloadUrl, uploadExportFileToR2 } from "../export-storage.ts";
 import { logger } from "../logger.ts";
+import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import type { ExportJobData } from "./queues.ts";
 
 /** Minimal Job interface: only the subset processExportJob actually uses. */
@@ -34,9 +35,12 @@ export async function processExportJob(job: ExportJob, db: SyncDatabase): Promis
   const { exportId, userId } = job.data;
   const outputPath = join(JOB_FILES_DIR, `dofek-export-${exportId}.zip`);
 
-  logger.info(`[worker] Starting data export for user ${userId}...`);
+  logger.info("[worker] Starting data export...");
 
   try {
+    if (!(await accountErasureAllowsQueuedUserWork(db, userId, "data export generation"))) {
+      return;
+    }
     await mkdir(JOB_FILES_DIR, { recursive: true });
     await db.execute(sql`
       UPDATE fitness.data_export
@@ -61,6 +65,9 @@ export async function processExportJob(job: ExportJob, db: SyncDatabase): Promis
       throw new Error("User email is required to deliver data export");
     }
 
+    if (!(await accountErasureAllowsQueuedUserWork(db, userId, "data export file generation"))) {
+      return;
+    }
     const { generateExport } = await import("../export.ts");
     const result = await generateExport(
       db,
@@ -75,14 +82,26 @@ export async function processExportJob(job: ExportJob, db: SyncDatabase): Promis
       },
     );
 
+    if (!(await accountErasureAllowsQueuedUserWork(db, userId, "data export object upload"))) {
+      return;
+    }
     const uploadedExport = await uploadExportFileToR2(outputPath, { exportId, userId });
+    if (!(await accountErasureAllowsQueuedUserWork(db, userId, "data export delivery"))) {
+      return;
+    }
     const downloadUrl = await createSignedExportDownloadUrl(uploadedExport.objectKey);
+    if (!(await accountErasureAllowsQueuedUserWork(db, userId, "data export notification"))) {
+      return;
+    }
     await sendExportReadyEmail({
       downloadUrl,
       expiresAt: new Date(exportUser.expires_at),
       toEmail: exportUser.email,
     });
 
+    if (!(await accountErasureAllowsQueuedUserWork(db, userId, "data export completion"))) {
+      return;
+    }
     await db.execute(sql`
       UPDATE fitness.data_export
       SET status = 'completed',

@@ -82,6 +82,15 @@ final class AccelerometerTransferCursorTests: XCTestCase {
         XCTAssertEqual(boundary, transferredBoundary)
         XCTAssertEqual(cursor.confirmedBoundary, transferredBoundary)
     }
+
+    func testAccountPurgeClearsConfirmedBoundary() {
+        let cursor = AccelerometerTransferCursor(defaults: defaults)
+        cursor.confirm(through: Date(timeIntervalSince1970: 200))
+
+        cursor.purge()
+
+        XCTAssertNil(cursor.confirmedBoundary)
+    }
 }
 
 private enum TestTransferError: Error {

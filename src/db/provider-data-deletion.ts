@@ -152,10 +152,16 @@ export async function listPendingProviderDataDeletionRequests(
   const rows = await executeWithSchema(
     database,
     providerDataDeletionRequestRowSchema,
-    sql`SELECT event_id, user_id, provider_id, generation
-        FROM fitness.provider_data_deletion_outbox
-        WHERE status = 'pending'
-        ORDER BY created_at, event_id
+    sql`SELECT outbox.event_id, outbox.user_id, outbox.provider_id, outbox.generation
+        FROM fitness.provider_data_deletion_outbox AS outbox
+        WHERE outbox.status = 'pending'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM fitness.account_erasure_request AS erasure
+            WHERE erasure.user_id = outbox.user_id
+              AND erasure.status <> 'completed'
+          )
+        ORDER BY outbox.created_at, outbox.event_id
         LIMIT ${parsedLimit}`,
   );
   return rows.map(mapProviderDataDeletionRequest);

@@ -1,6 +1,7 @@
 import { formatDateMedium, parseValidDate } from "@dofek/format/format";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { AccountErasurePanel } from "../components/AccountErasurePanel.tsx";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
@@ -11,7 +12,12 @@ import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
 import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
+import {
+  clearWebBillingCheckoutOperation,
+  getOrCreateWebBillingCheckoutOperationId,
+} from "../lib/billing-checkout-operation.ts";
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 import { McpTokensPanel } from "./McpTokensPanel.tsx";
 
@@ -25,18 +31,16 @@ function getSignupWeekLabel(startDate: string, endDateExclusive: string): string
 
 export function SettingsPage() {
   const { layout, toggleHidden, resetLayout } = useDashboardLayout();
-  const trpcUtils = trpc.useUtils();
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [zeppPairingCode, setZeppPairingCode] = useState("");
-  const deleteAllDataMutation = trpc.settings.deleteAllUserData.useMutation({
-    onSuccess: async () => {
-      setShowDeleteConfirm(false);
-      await trpcUtils.invalidate();
-    },
-  });
   const billingStatus = trpc.billing.status.useQuery();
+  const [checkoutClientError, setCheckoutClientError] = useState<string | null>(null);
   const checkoutSessionMutation = trpc.billing.createCheckoutSession.useMutation({
-    onSuccess: ({ url }) => {
+    onSuccess: ({ url }, { operationId }) => {
+      try {
+        clearWebBillingCheckoutOperation(operationId);
+      } catch (error: unknown) {
+        captureException(error, { source: "billing-checkout-operation-clear" });
+      }
       window.location.assign(url);
     },
   });
@@ -67,6 +71,19 @@ export function SettingsPage() {
 
   function handleClaimZeppPairing() {
     zeppPairingMutation.mutate({ code: zeppPairingCode });
+  }
+
+  function handleCheckout(): void {
+    setCheckoutClientError(null);
+    try {
+      const operationId = getOrCreateWebBillingCheckoutOperationId();
+      checkoutSessionMutation.mutate({ operationId });
+    } catch (error: unknown) {
+      captureException(error, { source: "billing-checkout-operation-create" });
+      setCheckoutClientError(
+        error instanceof Error ? error.message : "Checkout could not be started in this browser.",
+      );
+    }
   }
 
   const hiddenSections = layout.hidden;
@@ -107,7 +124,7 @@ export function SettingsPage() {
               {!billingStatus.data.hasFullAccess && (
                 <button
                   type="button"
-                  onClick={() => checkoutSessionMutation.mutate()}
+                  onClick={handleCheckout}
                   disabled={checkoutSessionMutation.isPending}
                   className="px-3 py-2 rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 transition-colors cursor-pointer"
                 >
@@ -129,6 +146,9 @@ export function SettingsPage() {
             </div>
             {checkoutSessionMutation.error ? (
               <p className="text-sm text-red-400">{checkoutSessionMutation.error.message}</p>
+            ) : null}
+            {checkoutClientError ? (
+              <p className="text-sm text-red-400">{checkoutClientError}</p>
             ) : null}
             {portalSessionMutation.error ? (
               <p className="text-sm text-red-400">{portalSessionMutation.error.message}</p>
@@ -257,47 +277,11 @@ export function SettingsPage() {
 
       <PageSection
         title="Danger Zone"
-        subtitle="Permanently delete all synced and manually-entered data for your account"
+        subtitle="Permanently close your account and start durable deletion"
         card={false}
       >
         <div className="rounded-lg border border-red-900/60 bg-surface-solid p-4 space-y-3">
-          {showDeleteConfirm ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted">
-                Delete all your data? This action cannot be undone.
-              </span>
-              <button
-                type="button"
-                onClick={() => deleteAllDataMutation.mutate()}
-                disabled={deleteAllDataMutation.isPending}
-                className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors cursor-pointer"
-              >
-                {deleteAllDataMutation.isPending ? "Deleting..." : "Confirm Delete"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(false)}
-                disabled={deleteAllDataMutation.isPending}
-                className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowDeleteConfirm(true)}
-              className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors cursor-pointer"
-            >
-              Delete All User Data
-            </button>
-          )}
-          {deleteAllDataMutation.error && (
-            <p className="text-xs text-red-400">{deleteAllDataMutation.error.message}</p>
-          )}
-          {deleteAllDataMutation.isSuccess && !showDeleteConfirm && (
-            <p className="text-xs text-accent">All user data has been deleted.</p>
-          )}
+          <AccountErasurePanel />
         </div>
       </PageSection>
     </PageLayout>

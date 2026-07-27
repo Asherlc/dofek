@@ -1,3 +1,4 @@
+import { accountErasureRouter } from "./routers/account-erasure.ts";
 import { activityRouter } from "./routers/activity.ts";
 import { activityRecordingRouter } from "./routers/activity-recording.ts";
 import { adminRouter } from "./routers/admin.ts";
@@ -67,6 +68,7 @@ import { whoopBleSyncRouter } from "./routers/whoop-ble-sync.ts";
 import { router } from "./trpc.ts";
 
 const appRouterProcedures = {
+  accountErasure: accountErasureRouter,
   admin: adminRouter,
   inertialMeasurementUnitSync: inertialMeasurementUnitSyncRouter,
   watchAltitudeSync: watchAltitudeSyncRouter,

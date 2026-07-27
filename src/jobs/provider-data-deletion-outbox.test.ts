@@ -5,9 +5,11 @@ import {
 } from "./provider-data-deletion-outbox.ts";
 
 const mocks = vi.hoisted(() => ({
+  AccountErasureUserFencedError: class AccountErasureUserFencedError extends Error {},
   captureException: vi.fn(),
   loggerError: vi.fn(),
   loggerInfo: vi.fn(),
+  withUserWriteFence: vi.fn(),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -20,10 +22,25 @@ vi.mock("../logger.ts", () => ({
     info: mocks.loggerInfo,
   },
 }));
+vi.mock("../db/account-erasure.ts", () => ({
+  AccountErasureUserFencedError: mocks.AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence: (
+    database: unknown,
+    userId: string,
+    operation: (transaction: unknown) => Promise<unknown>,
+  ) => mocks.withUserWriteFence(database, userId, operation),
+}));
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  mocks.withUserWriteFence.mockImplementation(
+    async (
+      database: unknown,
+      _userId: string,
+      operation: (transaction: unknown) => Promise<unknown>,
+    ) => operation(database),
+  );
 });
 
 afterEach(() => {
@@ -47,7 +64,9 @@ describe("dispatchProviderDataDeletionOutbox", () => {
       .mockResolvedValueOnce([]);
     const add = vi.fn(async () => undefined);
 
-    await expect(dispatchProviderDataDeletionOutbox({ execute }, { add }, 100)).resolves.toBe(1);
+    await expect(
+      dispatchProviderDataDeletionOutbox({ execute, transaction: vi.fn() }, { add }, 100),
+    ).resolves.toBe(1);
 
     expect(add).toHaveBeenCalledWith(
       "provider-data-deletion",
@@ -55,6 +74,54 @@ describe("dispatchProviderDataDeletionOutbox", () => {
       expect.objectContaining({ jobId: eventId }),
     );
     expect(add.mock.invocationCallOrder[0]).toBeLessThan(execute.mock.invocationCallOrder[1] ?? 0);
+    expect(mocks.withUserWriteFence).toHaveBeenCalledWith(
+      expect.anything(),
+      "00000000-0000-4000-8000-000000000004",
+      expect.any(Function),
+    );
+  });
+
+  it("skips a fenced account without starving later users", async () => {
+    const firstEventId = "30000000-0000-4000-8000-000000000003";
+    const secondEventId = "40000000-0000-4000-8000-000000000003";
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          event_id: firstEventId,
+          generation: "2",
+          provider_id: "garmin",
+          user_id: "00000000-0000-4000-8000-000000000004",
+        },
+        {
+          event_id: secondEventId,
+          generation: "3",
+          provider_id: "wahoo",
+          user_id: "00000000-0000-4000-8000-000000000005",
+        },
+      ])
+      .mockResolvedValue([]);
+    mocks.withUserWriteFence
+      .mockRejectedValueOnce(new mocks.AccountErasureUserFencedError())
+      .mockImplementationOnce(
+        async (
+          database: unknown,
+          _userId: string,
+          operation: (transaction: unknown) => Promise<unknown>,
+        ) => operation(database),
+      );
+    const add = vi.fn(async () => undefined);
+
+    await expect(
+      dispatchProviderDataDeletionOutbox({ execute, transaction: vi.fn() }, { add }, 100),
+    ).resolves.toBe(1);
+
+    expect(add).toHaveBeenCalledOnce();
+    expect(add).toHaveBeenCalledWith(
+      "provider-data-deletion",
+      expect.objectContaining({ eventId: secondEventId }),
+      expect.any(Object),
+    );
   });
 });
 
@@ -73,7 +140,11 @@ describe("startProviderDataDeletionOutboxDispatcher", () => {
       .mockResolvedValueOnce([]);
     const add = vi.fn(async () => undefined);
 
-    const dispatcher = startProviderDataDeletionOutboxDispatcher({ execute }, { add }, 1_000);
+    const dispatcher = startProviderDataDeletionOutboxDispatcher(
+      { execute, transaction: vi.fn() },
+      { add },
+      1_000,
+    );
     await vi.advanceTimersByTimeAsync(0);
 
     expect(add).toHaveBeenCalledOnce();
@@ -91,7 +162,11 @@ describe("startProviderDataDeletionOutboxDispatcher", () => {
     const execute = vi.fn().mockReturnValueOnce(firstQuery).mockResolvedValue([]);
     const add = vi.fn(async () => undefined);
 
-    const dispatcher = startProviderDataDeletionOutboxDispatcher({ execute }, { add }, 1_000);
+    const dispatcher = startProviderDataDeletionOutboxDispatcher(
+      { execute, transaction: vi.fn() },
+      { add },
+      1_000,
+    );
     expect(execute).toHaveBeenCalledOnce();
 
     await vi.advanceTimersByTimeAsync(3_000);
@@ -112,7 +187,11 @@ describe("startProviderDataDeletionOutboxDispatcher", () => {
     const execute = vi.fn().mockRejectedValueOnce(dispatchError).mockResolvedValue([]);
     const add = vi.fn(async () => undefined);
 
-    const dispatcher = startProviderDataDeletionOutboxDispatcher({ execute }, { add }, 1_000);
+    const dispatcher = startProviderDataDeletionOutboxDispatcher(
+      { execute, transaction: vi.fn() },
+      { add },
+      1_000,
+    );
     await vi.advanceTimersByTimeAsync(0);
 
     expect(mocks.captureException).toHaveBeenCalledWith(dispatchError, {
@@ -146,7 +225,11 @@ describe("startProviderDataDeletionOutboxDispatcher", () => {
     const add = vi.fn(async () => undefined);
 
     try {
-      const dispatcher = startProviderDataDeletionOutboxDispatcher({ execute }, { add }, 1_000);
+      const dispatcher = startProviderDataDeletionOutboxDispatcher(
+        { execute, transaction: vi.fn() },
+        { add },
+        1_000,
+      );
       await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
       await dispatcher.close();
 

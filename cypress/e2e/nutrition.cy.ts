@@ -1,6 +1,6 @@
 import { formatLocalDate } from "./test-helpers";
 
-const TEST_USER_ID = "e2e00000-0000-0000-0000-000000000001";
+const TEST_USER_ID = "e2e00000-0000-4000-8000-000000000001";
 
 describe("Nutrition page", () => {
   beforeEach(() => {

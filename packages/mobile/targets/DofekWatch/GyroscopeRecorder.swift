@@ -35,6 +35,7 @@ final class GyroscopeRecorder: ObservableObject {
     /// Buffers samples in memory until a successful file transfer confirms them.
     func startRecording() {
         guard Self.isAvailable else { return }
+        guard WatchAccountStateStore().isSyncEnabled else { return }
         guard !motionManager.isDeviceMotionActive else { return }
 
         motionManager.deviceMotionUpdateInterval = Self.samplingIntervalSeconds
@@ -78,5 +79,10 @@ final class GyroscopeRecorder: ObservableObject {
     /// Number of samples currently buffered.
     var bufferedSampleCount: Int {
         sampleBuffer.count
+    }
+
+    func purgeAccountState() {
+        stopRecording()
+        sampleBuffer.clearAll()
     }
 }

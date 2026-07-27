@@ -22,7 +22,7 @@ describe("listQueuedDataExportRequests", () => {
     }
     const compiled = new PgDialect().sqlToQuery(query);
     expect(compiled.sql.replaceAll(/\s+/g, " ").trim()).toBe(
-      "SELECT id, user_id FROM fitness.data_export WHERE status = 'queued' ORDER BY created_at, id LIMIT $1",
+      "SELECT export.id, export.user_id FROM fitness.data_export AS export WHERE export.status = 'queued' AND NOT EXISTS ( SELECT 1 FROM fitness.account_erasure_request AS erasure WHERE erasure.user_id = export.user_id AND erasure.status <> 'completed' ) ORDER BY export.created_at, export.id LIMIT $1",
     );
     expect(compiled.params).toEqual([2]);
   });

@@ -35,12 +35,24 @@ const sharedTestConfig = {
   teardownTimeout: 60_000,
   fileParallelism: true,
   pool: "forks" as const,
+  poolOptions: {
+    forks: {
+      execArgv: ["--no-experimental-webstorage"],
+    },
+  },
   retry: 2,
 };
 
 const testCredentialEncryptionKey = Buffer.from("a".repeat(32), "utf8").toString("base64");
 
 const sharedTestEnv = {
+  ACCOUNT_ERASURE_LEDGER_KEYRING_JSON: JSON.stringify({
+    activeKeyId: "test-v1",
+    keys: {
+      "test-v0": Buffer.from("b".repeat(32), "utf8").toString("base64"),
+      "test-v1": testCredentialEncryptionKey,
+    },
+  }),
   CREDENTIAL_ENCRYPTION_KEY_BASE64: testCredentialEncryptionKey,
   CREDENTIAL_ENCRYPTION_KEY_NAMESPACE: "dofek-test",
   CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
@@ -67,7 +79,7 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "unit",
-          setupFiles: ["@testing-library/jest-dom/vitest"],
+          setupFiles: ["packages/web/test-setup.ts"],
           include: [
             "entrypoint.test.ts",
             "analytics/models/**/*.test.ts",
@@ -89,6 +101,7 @@ export default defineConfig({
           fileParallelism: false,
           poolOptions: {
             forks: {
+              ...sharedTestConfig.poolOptions.forks,
               singleFork: true,
             },
           },

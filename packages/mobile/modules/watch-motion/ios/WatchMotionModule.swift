@@ -5,6 +5,7 @@ import WatchConnectivity
 public class WatchMotionModule: Module, WatchFileReceiverObserver {
     private var session: WCSession?
     private let pendingDirectory = WatchFileInbox.shared.pendingDirectory
+    private let accountStateStore = WatchMotionAccountStateStore(userDefaults: .standard)
 
     // swiftlint:disable:next function_body_length
     public func definition() -> ModuleDefinition {
@@ -56,6 +57,10 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
         }
 
         AsyncFunction("requestWatchSync") { (promise: Promise) in
+            guard self.accountStateStore.isSyncEnabled else {
+                promise.resolve(false)
+                return
+            }
             guard let session = self.session, session.isReachable else {
                 promise.resolve(false)
                 return
@@ -71,6 +76,10 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
         /// This ensures continuous coverage even if the user never opens
         /// the Watch app — the iPhone can keep the 12-hour sessions rolling.
         AsyncFunction("requestWatchRecording") { (promise: Promise) in
+            guard self.accountStateStore.isSyncEnabled else {
+                promise.resolve(false)
+                return
+            }
             guard let session = self.session, session.isReachable else {
                 promise.resolve(false)
                 return
@@ -101,7 +110,9 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
                 do {
                     let fileData = try Data(contentsOf: fileURL)
                     NSLog("[WatchMotion] readWatchFile %@: %d bytes", fileName, fileData.count)
-                    let samples = try SampleFileParser.parse(fileData)
+                    let samples = self.filterAfterDeviceErasureCutoff(
+                        try SampleFileParser.parse(fileData)
+                    )
                     NSLog("[WatchMotion] readWatchFile %@: parsed %d samples", fileName, samples.count)
                     promise.resolve(samples)
                 } catch {
@@ -121,7 +132,9 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
                 do {
                     let fileData = try Data(contentsOf: fileURL)
                     NSLog("[WatchMotion] readWatchAltitudeFile %@: %d bytes", fileName, fileData.count)
-                    let samples = try SampleFileParser.parse(fileData)
+                    let samples = self.filterAfterDeviceErasureCutoff(
+                        try SampleFileParser.parse(fileData)
+                    )
                     NSLog("[WatchMotion] readWatchAltitudeFile %@: parsed %d samples", fileName, samples.count)
                     promise.resolve(samples)
                 } catch {
@@ -138,6 +151,58 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
             }
             NSLog("[WatchMotion] deleteWatchFile: %@", fileName)
             try? FileManager.default.removeItem(at: fileURL)
+        }
+
+        AsyncFunction("enableAccountSync") { (promise: Promise) in
+            self.accountStateStore.enableSync()
+            guard let session = self.session else {
+                promise.resolve(true)
+                return
+            }
+            let payload = ["action": "enable_account_sync"]
+            session.transferUserInfo(payload)
+            if session.isReachable {
+                session.sendMessage(payload, replyHandler: nil) { error in
+                    SentrySDK.capture(error: error)
+                }
+            }
+            promise.resolve(true)
+        }
+
+        AsyncFunction("purgeAccountState") {
+            (cutoffString: String, promise: Promise) in
+            guard let cutoff = self.parseIsoDate(cutoffString) else {
+                promise.reject(
+                    "WATCH_INVALID_ERASURE_CUTOFF",
+                    "Invalid device erasure cutoff"
+                )
+                return
+            }
+            self.accountStateStore.purge(at: cutoff)
+            do {
+                try WatchFileInbox.shared.purgePendingFiles()
+            } catch {
+                SentrySDK.capture(error: error)
+                promise.reject(
+                    "WATCH_PENDING_FILE_PURGE_ERROR",
+                    "Failed to clear pending Watch files: \(error.localizedDescription)"
+                )
+                return
+            }
+
+            if let session = self.session {
+                let payload = [
+                    "action": "purge_account_state",
+                    "deviceErasureCutoff": cutoffString,
+                ]
+                session.transferUserInfo(payload)
+                if session.isReachable {
+                    session.sendMessage(payload, replyHandler: nil) { error in
+                        SentrySDK.capture(error: error)
+                    }
+                }
+            }
+            promise.resolve(true)
         }
     }
 
@@ -191,6 +256,31 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
         )
         return contents?.count ?? 0
     }
+
+    private func filterAfterDeviceErasureCutoff(
+        _ samples: [[String: Any]]
+    ) -> [[String: Any]] {
+        guard accountStateStore.deviceErasureCutoff != nil else {
+            return samples
+        }
+        return samples.filter { sample in
+            guard let timestamp = sample["timestamp"] as? String,
+                  let date = parseIsoDate(timestamp) else {
+                return false
+            }
+            return accountStateStore.shouldInclude(timestamp: date)
+        }
+    }
+
+    private func parseIsoDate(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let parsed = formatter.date(from: value) {
+            return parsed
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
+    }
 }
 
 // MARK: - WCSession Delegate (singleton holder to avoid retain cycles)
@@ -199,6 +289,9 @@ private class WatchSessionDelegateHolder: NSObject, WCSessionDelegate {
     static let shared = WatchSessionDelegateHolder()
     private let receiver = WatchFileReceiver(
         inbox: .shared,
+        shouldAcceptFile: {
+            WatchMotionAccountStateStore(userDefaults: .standard).isSyncEnabled
+        },
         reportError: { error in
             NSLog("[WatchMotion] Failed to persist received Watch file: %@", error.localizedDescription)
             SentrySDK.capture(error: error)

@@ -1,8 +1,7 @@
-import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
+import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
-import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
 
 const dashboardLayoutSchema = z.strictObject({
   order: z.array(z.string()),
@@ -52,12 +51,5 @@ export const settingsRouter = router({
   slackStatus: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM }).query(async ({ ctx }) => {
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     return repo.slackStatus();
-  }),
-
-  deleteAllUserData: protectedProcedure.mutation(async ({ ctx }) => {
-    const repo = new SettingsRepository(ctx.db, ctx.userId);
-    await repo.deleteAllUserData(DISCONNECT_CHILD_TABLES);
-    await invalidateAllUserQueries(ctx.userId);
-    return { success: true };
   }),
 });

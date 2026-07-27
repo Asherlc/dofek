@@ -34,8 +34,15 @@ interface PeerDbMirrorStateChangeRequest {
   };
 }
 
+export interface PeerDbMirrorListItem {
+  destinationType: number | string;
+  isCdc: boolean;
+  name: string;
+}
+
 export interface PeerDbMirrorApiClient {
   getMirrorStatus(mirrorName: string): Promise<PeerDbMirrorStatus>;
+  listMirrors(): Promise<PeerDbMirrorListItem[]>;
   changeMirrorState(request: PeerDbMirrorStateChangeRequest): Promise<void>;
 }
 
@@ -135,6 +142,15 @@ const peerDbMirrorStatusResponseSchema = z
     ok: z.boolean().optional(),
   })
   .passthrough();
+const peerDbMirrorListResponseSchema = z.object({
+  mirrors: z.array(
+    z.object({
+      destinationType: z.union([z.number().int(), z.string().min(1)]),
+      isCdc: z.boolean(),
+      name: z.string().min(1),
+    }),
+  ),
+});
 const rawAnalyticsMirrorTableMappings: Record<
   (typeof rawAnalyticsMirrorNames)[number],
   readonly string[]
@@ -288,11 +304,20 @@ async function parsePeerDbApiResponse(response: Response): Promise<unknown> {
   return JSON.parse(responseText);
 }
 
-function createPeerDbMirrorApiClient(
+export function createPeerDbMirrorApiClient(
   baseUrl: string,
   authorization: string | undefined,
 ): PeerDbMirrorApiClient {
   const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
+
+  async function get(path: string): Promise<unknown> {
+    const headers: Record<string, string> = {};
+    if (authorization) {
+      headers.authorization = authorization;
+    }
+    const response = await fetch(`${normalizedBaseUrl}/${path}`, { headers });
+    return parsePeerDbApiResponse(response);
+  }
 
   async function post(path: string, body: unknown): Promise<unknown> {
     const headers: Record<string, string> = { "content-type": "application/json" };
@@ -336,7 +361,23 @@ function createPeerDbMirrorApiClient(
         );
       }
     },
+    async listMirrors() {
+      return peerDbMirrorListResponseSchema.parse(await get("mirrors/list")).mirrors;
+    },
   };
+}
+
+export function createPeerDbMirrorApiClientFromEnv(): PeerDbMirrorApiClient {
+  const databaseUrl = new URL(requireEnv("DATABASE_URL"));
+  if (!isLocalhost(databaseUrl.hostname)) {
+    return createPeerDbMirrorApiClient("http://peerdb-flow-api:8113/v1", undefined);
+  }
+  const config = buildPeerDbFlowApiConfig(
+    databaseUrl.hostname,
+    requireEnv("POSTGRES_PASSWORD"),
+    resolveTemplatePort("PEERDB_UI_PORT", 3001),
+  );
+  return createPeerDbMirrorApiClient(config.url, config.authorization);
 }
 
 function parseClickHouseUrl(urlString: string): URL {

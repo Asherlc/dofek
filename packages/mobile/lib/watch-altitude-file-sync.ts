@@ -7,6 +7,7 @@ import {
   type WatchAltitudeSample,
   WatchAltitudeSampleSchema,
 } from "../modules/watch-motion/schemas";
+import { isAfterDeviceErasureCutoff, loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "watch-altitude-file-sync";
@@ -46,6 +47,7 @@ function parseAltitudeSample(raw: unknown): WatchAltitudeSample | null {
 export async function syncWatchAltitudeFiles(
   trpcClient: WatchAltitudeSyncTrpcClient,
 ): Promise<WatchAltitudeFileSyncResult> {
+  const deviceErasureCutoff = await loadDeviceErasureCutoff();
   const fileNames = getPendingWatchAltitudeFileNames();
 
   logger.info(TAG, `Found ${fileNames.length} pending altitude files`);
@@ -64,7 +66,12 @@ export async function syncWatchAltitudeFiles(
       const rawSamples = await readWatchAltitudeFile(fileName);
       const samples = rawSamples
         .map((sample) => parseAltitudeSample(sample))
-        .filter((sample): sample is WatchAltitudeSample => sample != null);
+        .filter((sample): sample is WatchAltitudeSample => sample != null)
+        .filter(
+          (sample) =>
+            deviceErasureCutoff === null ||
+            isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff),
+        );
 
       logger.info(TAG, `${fileName}: ${samples.length} samples`);
 

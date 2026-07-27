@@ -49,6 +49,16 @@ final class GyroscopeSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.count, 0)
     }
 
+    func testAccountPurgeClearsEveryBufferedSample() {
+        let buffer = GyroscopeSampleBuffer()
+        buffer.append(sample(id: 1))
+        buffer.append(sample(id: 2))
+
+        buffer.clearAll()
+
+        XCTAssertEqual(buffer.count, 0)
+    }
+
     private func sample(id: Int) -> [String: Any] {
         ["id": id]
     }

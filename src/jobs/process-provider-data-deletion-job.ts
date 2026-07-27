@@ -74,6 +74,7 @@ export interface ProviderDataDeletionJob {
 }
 
 export interface ProviderDataDeletionDependencies {
+  accountErasureAllowsWork(workKind: string): Promise<boolean>;
   clickHouseClient: ProviderDataDeletionClickHouseClient;
   enqueueAnalyticsRefresh: (
     userId: string,
@@ -191,6 +192,7 @@ async function tombstoneMetricStreamBatch(
   client: ProviderDataDeletionClickHouseClient,
   data: ProviderDataDeletionJobData,
   batchKeys: z.infer<typeof metricStreamCursorRowsSchema>,
+  accountErasureAllowsWork: (workKind: string) => Promise<boolean>,
 ): Promise<number> {
   if (!client.insert) {
     throw new Error("Provider data deletion requires an insert-capable ClickHouse client");
@@ -256,6 +258,9 @@ async function tombstoneMetricStreamBatch(
   });
   const tombstones = metricStreamTombstoneRowsSchema.parse(await result.json());
   if (tombstones.length === 0) return 0;
+  if (!(await accountErasureAllowsWork("provider deletion tombstone insert"))) {
+    return 0;
+  }
   await client.insert({
     table: METRIC_STREAM_TABLE,
     values: tombstones,
@@ -281,17 +286,34 @@ export async function processProviderDataDeletionJob(
   dependencies: ProviderDataDeletionDependencies,
 ): Promise<void> {
   const { clickHouseClient } = dependencies;
+  if (!(await dependencies.accountErasureAllowsWork("provider deletion generation fence"))) {
+    return;
+  }
   await updateProgress(job, 0, "Advancing provider generation fence...");
   await advanceClickHouseGenerationFence(clickHouseClient, job.data);
+  if (!(await dependencies.accountErasureAllowsWork("provider deletion projection verification"))) {
+    return;
+  }
   await updateProgress(job, 5, "Verifying provider deletion projection...");
   await assertProviderGenerationProjectionReady(clickHouseClient);
 
   let checkpoint = job.data.checkpoint;
   while (true) {
+    if (!(await dependencies.accountErasureAllowsWork("provider deletion batch read"))) {
+      return;
+    }
     const rows = await loadNextMetricStreamBatch(clickHouseClient, job.data, checkpoint);
     if (rows.length === 0) break;
 
-    const deletedRows = await tombstoneMetricStreamBatch(clickHouseClient, job.data, rows);
+    if (!(await dependencies.accountErasureAllowsWork("provider deletion tombstone read"))) {
+      return;
+    }
+    const deletedRows = await tombstoneMetricStreamBatch(
+      clickHouseClient,
+      job.data,
+      rows,
+      dependencies.accountErasureAllowsWork,
+    );
     const lastRow = rows.at(-1);
     if (!lastRow) {
       throw new Error("Provider data deletion batch did not produce a checkpoint cursor");
@@ -312,14 +334,26 @@ export async function processProviderDataDeletionJob(
     );
   }
 
+  if (!(await dependencies.accountErasureAllowsWork("provider deletion acknowledgement"))) {
+    return;
+  }
   await updateProgress(job, 90, "Acknowledging provider data deletion...", checkpoint);
   await acknowledgeProviderDataDeletion(clickHouseClient, job.data.eventId);
+  if (!(await dependencies.accountErasureAllowsWork("provider deletion analytics enqueue"))) {
+    return;
+  }
   await dependencies.enqueueAnalyticsRefresh(
     job.data.userId,
     job.data.providerId,
     job.data.eventId,
   );
+  if (!(await dependencies.accountErasureAllowsWork("provider deletion cache invalidation"))) {
+    return;
+  }
   await invalidateAllUserQueries(job.data.userId);
+  if (!(await dependencies.accountErasureAllowsWork("provider deletion completion"))) {
+    return;
+  }
   await dependencies.markCompleted(job.data.eventId);
   await updateProgress(job, 100, "Provider data deletion complete.", checkpoint);
 }

@@ -106,13 +106,17 @@ describe("data provider OAuth reconnect", () => {
 
   it("clears locally stored Wahoo tokens after confirmed revocation if exchange fails", async () => {
     await seedConnection("wahoo", "Wahoo");
+    let revocationRequests = 0;
+    let tokenRequests = 0;
     mswServer.use(
       http.delete("https://api.wahooligan.com/v1/permissions", () => {
+        revocationRequests++;
         return new HttpResponse(null, { status: 204 });
       }),
-      http.post("https://api.wahooligan.com/oauth/token", () =>
-        HttpResponse.text("temporary outage", { status: 503 }),
-      ),
+      http.post("https://api.wahooligan.com/oauth/token", () => {
+        tokenRequests++;
+        return HttpResponse.text("temporary outage", { status: 503 });
+      }),
     );
 
     const response = await callback("wahoo");
@@ -122,6 +126,8 @@ describe("data provider OAuth reconnect", () => {
     expect(body).toContain("previous Wahoo authorization was removed");
     expect(body).toContain("connect Wahoo again");
     await expect(loadTokens(testCtx.db, "wahoo", TEST_USER_ID)).resolves.toBeNull();
+    expect(revocationRequests).toBe(1);
+    expect(tokenRequests).toBe(1);
   });
 
   it("preserves stored Wahoo tokens when provider revocation fails", async () => {

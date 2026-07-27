@@ -102,6 +102,8 @@ export interface TokenSet {
   accessToken: string;
   refreshToken: string | null;
   expiresAt: Date;
+  /** Stable provider-side account identifier tied to this authorization. */
+  providerAccountId?: string;
   scopes: string | null;
 }
 

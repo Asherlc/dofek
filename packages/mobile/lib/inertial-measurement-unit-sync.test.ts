@@ -110,6 +110,37 @@ describe("syncInertialMeasurementUnitToServer", () => {
     expect(fromDate).toBe("2026-05-17T21:24:00.000Z");
   });
 
+  it("never uploads Core Motion history from before a deleted account cutoff", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-20T13:00:00.000Z"));
+    const cutoff = "2026-05-20T12:00:00.000Z";
+    const queryRecordedData = vi.fn().mockResolvedValue([
+      { timestamp: "2026-05-20T11:59:59.999Z", x: 1, y: 1, z: 1 },
+      { timestamp: cutoff, x: 2, y: 2, z: 2 },
+      { timestamp: "2026-05-20T12:00:00.001Z", x: 3, y: 3, z: 3 },
+    ]);
+    const coreMotion = makeAdapter({
+      getLastSyncTimestamp: () => "2026-05-20T11:00:00.000Z",
+      queryRecordedData,
+    });
+    const trpcClient = makeTrpcClient({ pushResult: { inserted: 1 } });
+
+    await syncInertialMeasurementUnitToServer({
+      trpcClient,
+      coreMotion,
+      deviceId: "iPhone 15 Pro",
+      deviceType: "iphone",
+      minimumSampleDate: cutoff,
+    });
+
+    expect(queryRecordedData).toHaveBeenCalledWith(cutoff, "2026-05-20T12:10:00.000Z");
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      deviceId: "iPhone 15 Pro",
+      deviceType: "iphone",
+      samples: [{ timestamp: "2026-05-20T12:00:00.001Z", x: 3, y: 3, z: 3 }],
+    });
+  });
+
   it("limits each CoreMotion query to ten minutes while catching up", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-20T19:00:00.000Z"));

@@ -140,10 +140,18 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
 ### Production Secrets
 
 Production secrets are stored in Infisical and rendered by CI into a temporary
-`.env.<env>` file for `docker stack deploy`; the file is not stored on the
-server. Required app, database, ClickHouse, PeerDB, export, and
-mobile pipeline keys are listed in the deploy steps and mobile CI sections
-below. Missing required keys must fail the workflow before rollout.
+`.env.<env>` control-plane file on the runner; the file is not stored on the
+server. CI validates that complete export, then renders mode-`0600` allowlisted
+files for `web`, `worker`, `analytics-worker`, `cdc-health`, `collector`, and
+one-shot database, CDC, and R2 operations. Each service or operation receives only its own file;
+the metric-stream sink and OTA service receive only their explicit stack
+environment. Docker documents that `env_file` is set per Compose service, and
+Infisical documents templated CLI exports:
+[Docker service environment files](https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/),
+[Infisical CLI export](https://infisical.com/docs/cli/commands/export).
+Required app, database, ClickHouse, PeerDB, export, and mobile pipeline keys are
+listed in the deploy steps and mobile CI sections below. Missing required keys
+must fail the workflow before rollout.
 
 The web image build and post-rollout Sentry release step also require the
 GitHub Actions `SENTRY_AUTH_TOKEN` secret already used for browser source-map
@@ -160,9 +168,11 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
          -> deploy-terraform (shared prerequisite)
          -> deploy-web-stack
               -> fetch env via Infisical Secrets Action
+              -> validate full env and render service-scoped env files
               -> pre-migration stack apply without pruning
               -> wait for postgres writable
               -> migrate (one-shot container on <stack>_default)
+              -> backfill and verify historical exercise provenance
               -> prune deploy <stack> with requested app image tag
               -> backfill and validate provider connections
               -> configure CDC and restore consumers
@@ -185,6 +195,11 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
 3. **Deploy Web Stack** (`deploy-web-stack.yml`):
    1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.
       The template escapes embedded newlines only when `secret.IsMultilineEncodingEnabled` is true.
+      After validating the complete export, CI uses
+      `scripts/render-deploy-service-env.ts` to create service-scoped files in
+      the runner's temporary directory. The complete file remains available
+      only to runner-side stack interpolation and control-plane derivation; never
+      use it as a service `env_file`.
       - Must include `CREDENTIAL_ENCRYPTION_KEY_BASE64` (base64-encoded 32-byte key).
       - Must include `CLICKHOUSE_PASSWORD` for the ClickHouse service. The deploy workflow URL-encodes it into `CLICKHOUSE_PASSWORD_ENCODED` for app `CLICKHOUSE_URL` interpolation.
       - Must include `POSTGRES_PASSWORD`; PeerDB's catalog database and internal MinIO stage use this existing secret.
@@ -192,6 +207,41 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       - Must include `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` for Stripe billing checkout, portal, and webhook verification. Public return URLs use the deploy workflow's `PUBLIC_URL`.
       - Must include `REDPANDA_BROKERS` and `METRIC_STREAM_TOPIC` for metric-stream producer and sink services.
       - Must include `METRIC_STREAM_R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` for the Redpanda Connect R2 archive.
+      - Must include `ACCOUNT_ERASURE_LEDGER_KEYRING_JSON` as
+        `{"activeKeyId":"<id>","keys":{"<id>":"<base64-32-byte-key>"}}`.
+        Keep every retained key while restore-ledger objects still reference
+        it; rotate by adding the new key, changing `activeKeyId`, deploying,
+        and retaining the retired key for the life of the ledger. Web and worker
+        startup validate every retained key and reconcile
+        the immutable R2 intent ledger before accepting traffic or jobs.
+        Terraform locks the `account-erasure/v1/` prefix indefinitely and does
+        not apply a lifecycle deletion rule. This narrow deletion ledger keeps
+        only a random deletion-request identifier and timestamp, a keyed
+        pseudonymous account digest, a key identifier, and the authenticated
+        ciphertext needed to recover the status capability. It contains no raw
+        account or provider identifiers, email address, health data, or provider
+        credentials. Cloudflare documents that R2 bucket locks can prevent
+        deletion and overwriting indefinitely, apply to existing and new
+        objects, and take precedence over lifecycle deletion:
+        [R2 bucket locks](https://developers.cloudflare.com/r2/buckets/bucket-locks/).
+      - Must include `BREVO_API_KEY`, `POSTHOG_PERSONAL_API_KEY`, and
+        `POSTHOG_PROJECT_ID` so account erasure can delete Brevo transactional
+        logs and PostHog persons, events, and recordings. The credentials must
+        authorize the documented [Brevo transactional-log deletion API](https://developers.brevo.com/reference/delete-an-smtp-transactional-log)
+        and [PostHog Persons API](https://posthog.com/docs/api/persons).
+      - Must include `AXIOM_API_TOKEN`, `SENTRY_AUTH_TOKEN`, and `SENTRY_ORG`
+        so the final account-erasure phase can verify that processor log
+        retention remains within the published 30-day boundary. The Axiom token
+        must read dataset configuration, including `retentionDays` and
+        `useRetentionPeriod`, and the Sentry token must have `org:read` access:
+        [Axiom dataset API](https://axiom.co/docs/restapi/endpoints/updateDataset)
+        and [Sentry Retrieve an Organization](https://docs.sentry.io/api/organizations/retrieve-an-organization/).
+      - The S3-compatible `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` must have
+        Object Read & Write access scoped to all application buckets they use,
+        including `dofek-account-erasure-ledger` and `dofek-db-backups`;
+        Cloudflare documents that this permission can be scoped to selected
+        buckets and permits object reads, writes, and listings:
+        <https://developers.cloudflare.com/r2/api/tokens/#permissions>.
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://ubuntu@<host>`.
    3. Login to GHCR on the CI runner.
@@ -244,13 +294,34 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       wait open while the single-node host restarts services.
    7. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
    8. Run **schema migrations** as a one-shot container attached to the swarm overlay network:
-      `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.
+      `docker run --rm --network <stack>_default --env-file database-operations.env ghcr.io/…:<tag> migrate`.
       When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
       analytics migrations before the stack update.
-   9. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
-   10. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
+   9. Run the Slack team-membership backfill as a fail-closed one-shot
+      container before any account-erasure-capable web or worker task rolls
+      out. The command verifies each bot token's recorded workspace with
+      Slack `auth.test`, accepts a non-installer membership only when
+      `users.info` returns the exact user and an authoritative matching
+      workspace field, and writes all verified assignments atomically. Missing
+      `users:read`, an unusable token, a changed database snapshot, or an
+      unqualified identity matching multiple installed workspaces stops the
+      deploy without partial writes. Slack documents that `auth.test` reports
+      the token's workspace without an additional scope, that `users.info`
+      requires `users:read`, and that user IDs are workspace-qualified by
+      `team_id`:
+      [auth.test](https://docs.slack.dev/reference/methods/auth.test/),
+      [users.info](https://docs.slack.dev/reference/methods/users.info/),
+      [user object](https://docs.slack.dev/reference/objects/user-object/).
+   10. Run the idempotent historical exercise-provenance backfill as a one-shot
+      container immediately after migrations. It inserts provenance in bounded
+      batches, validates that no attributable exercise or alias rows remain,
+      and fails the deploy before new web or worker tasks roll out if
+      validation fails. Ordinary integration setup creates the current schema
+      directly and does not replay this historical scan.
+   11. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
+   12. `docker stack deploy -c deploy/stack.yml -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true <stack>` — swarm rolls out the requested app image while keeping the ClickHouse consumers at zero replicas, and CI polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
-   11. Run the resumable `provider-connection-cutover` one-shot command after
+   13. Run the resumable `provider-connection-cutover` one-shot command after
        every requested app service has converged. It backfills
        `fitness.provider_connection` from legacy provider owners, OAuth tokens,
        and child-table ownership, then validates the OAuth/webhook composite
@@ -260,8 +331,8 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
        rows. PostgreSQL documents the staged `NOT VALID` and `VALIDATE
        CONSTRAINT` operations used by this cutover:
        <https://www.postgresql.org/docs/current/sql-altertable.html>.
-   12. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
-   13. Run the final `docker stack deploy -c deploy/stack.yml ...` to restore
+   14. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
+   15. Run the final `docker stack deploy -c deploy/stack.yml ...` to restore
        `analytics-worker` and `metric-stream-clickhouse-sink` only when every
        post-quiesce readiness step and ClickHouse CDC setup succeeds. If a
        prerequisite fails, the workflow leaves both consumers at zero replicas
@@ -269,7 +340,7 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
        deployment. GitHub applies `success()` to successful prior steps, while
        `always()` runs even after failures, so critical deploy steps must not use
        `always()` as their status gate ([GitHub Actions status check functions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)).
-   14. After the final production stack converges, record the image's full
+   16. After the final production stack converges, record the image's full
        `SENTRY_RELEASE` commit SHA as deployed to `production` for
        `dofek-web` and `dofek-server`. Failed, rolled-back, or quiesced
        rollouts never reach this step. The official action requires its
@@ -351,6 +422,22 @@ Databasus backup state:
 - Terraform creates that directory and performs a one-time copy from the legacy `databasus_data` Docker volume when the bind-mount path is still empty.
 - If that path is empty or replaced, Databasus comes up as a fresh install and scheduled DB backups stop even if the `dofek-db-backups` bucket still exists.
 - After any Databasus storage or deploy change, verify the latest object in `dofek-db-backups` is less than 24 hours old.
+- PeerDB uses its private MinIO bucket only as transient staging while loading
+  ClickHouse. The bucket is unversioned and its deterministic lifecycle expires
+  objects after one day; MinIO applies that expiration to incomplete multipart
+  uploads on unversioned buckets as well. Account-erasure completion also lists
+  both objects and multipart uploads and fails closed if scanner lag leaves
+  anything past the boundary:
+  [PeerDB ClickHouse staging](https://docs.peerdb.io/connect/clickhouse/clickhouse),
+  [MinIO lifecycle rule patterns](https://docs.min.io/aistor/administration/object-lifecycle-management/lifecycle-rule-patterns/).
+- Database-backup objects expire at 21 days. Account-erasure active-store
+  verification scrubs the raw user ID, encrypted remote snapshot, checkpoint
+  details, and phase progress by day 7; the 21-day backup window plus
+  Cloudflare's documented lifecycle delay keeps the 30-day completion boundary
+  measurable. Every web-stack deploy also lists and directly deletes objects
+  older than 21 days in bounded batches, then performs a full absence
+  verification:
+  <https://developers.cloudflare.com/r2/buckets/object-lifecycles/#behavior>.
 
 Required Infisical keys for mobile pipelines:
 

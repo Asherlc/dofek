@@ -20,4 +20,38 @@ describe("deploy-web-stack workflow", () => {
     expect(workflowText).toContain("ClickHouse consumers remain quiesced");
     expect(workflowText).toContain("rerun the deployment");
   });
+
+  it("runs the destructive database-backup sweep only for the production stack", () => {
+    expect(workflowText).toContain(
+      `      - name: Sweep and verify expired database backups
+        if: (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production') && env.STACK_NAME == 'dofek'`,
+    );
+  });
+
+  it("renders scoped service environments before validating the stack", () => {
+    const renderIndex = workflowText.indexOf(
+      "      - name: Render least-privilege service dotenv files",
+    );
+    const validationIndex = workflowText.indexOf("      - name: Validate rendered stack files");
+    expect(renderIndex).toBeGreaterThan(-1);
+    expect(validationIndex).toBeGreaterThan(renderIndex);
+  });
+
+  it("backfills historical exercise provenance after migrations and before rollout", () => {
+    const migrationIndex = workflowText.indexOf("      - name: Run migrations");
+    const backfillIndex = workflowText.indexOf(
+      "      - name: Backfill historical exercise provenance",
+    );
+    const rolloutIndex = workflowText.indexOf(
+      "      - name: Deploy stack without ClickHouse consumers",
+    );
+    expect(backfillIndex).toBeGreaterThan(migrationIndex);
+    expect(rolloutIndex).toBeGreaterThan(backfillIndex);
+    expect(workflowText.slice(backfillIndex, rolloutIndex)).toContain(
+      '--env-file "$DATABASE_OPERATIONS_ENV_FILE"',
+    );
+    expect(workflowText.slice(backfillIndex, rolloutIndex)).toContain(
+      "scripts/backfill-exercise-provenance.ts",
+    );
+  });
 });

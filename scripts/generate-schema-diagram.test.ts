@@ -2,12 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   buildPlantUml,
   extractTables,
+  normalizeGeneratedDbml,
   parseColumnLine,
   parseColumns,
   parseRefs,
   parseTables,
   type Table,
 } from "./generate-schema-diagram.ts";
+
+describe("normalizeGeneratedDbml", () => {
+  it("removes generator whitespace while preserving one final newline", () => {
+    expect(normalizeGeneratedDbml("table x {  \n    \n}\n\n")).toBe("table x {\n\n}\n");
+  });
+});
 
 const SINGLE_TABLE_DBML = `table fitness.activity {
   id uuid [pk, not null, default: \`gen_random_uuid()\`]

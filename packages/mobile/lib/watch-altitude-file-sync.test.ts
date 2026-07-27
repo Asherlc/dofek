@@ -1,6 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WatchAltitudeSyncTrpcClient } from "./watch-altitude-file-sync.ts";
 
+const { mockLoadDeviceErasureCutoff } = vi.hoisted(() => ({
+  mockLoadDeviceErasureCutoff: vi.fn<() => Promise<string | null>>(),
+}));
+
+vi.mock("./device-erasure-cutoff", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./device-erasure-cutoff")>();
+  return {
+    ...actual,
+    loadDeviceErasureCutoff: mockLoadDeviceErasureCutoff,
+  };
+});
+
 const mockGetPendingWatchAltitudeFileNames = vi.fn((): string[] => []);
 const mockReadWatchAltitudeFile = vi.fn(
   (_fileName: string): Promise<Record<string, unknown>[]> => Promise.resolve([]),
@@ -37,6 +49,7 @@ describe("syncWatchAltitudeFiles", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockLoadDeviceErasureCutoff.mockResolvedValue(null);
     trpcClient = makeTrpcClient();
   });
 
@@ -84,6 +97,24 @@ describe("syncWatchAltitudeFiles", () => {
     expect(result).toEqual({ totalInserted: 0, filesProcessed: 1, filesFailed: 0 });
     expect(trpcClient.watchAltitudeSync.pushSamples.mutate).not.toHaveBeenCalled();
     expect(mockDeleteWatchFile).toHaveBeenCalledWith("watch-altitude-empty.json.gz");
+  });
+
+  it("uploads only altitude samples strictly after the durable cutoff", async () => {
+    const cutoff = "2026-03-30T12:00:00.000Z";
+    mockLoadDeviceErasureCutoff.mockResolvedValue(cutoff);
+    mockGetPendingWatchAltitudeFileNames.mockReturnValue(["watch-altitude-old-account.json.gz"]);
+    mockReadWatchAltitudeFile.mockResolvedValue([
+      { timestamp: cutoff, altitudeM: 10 },
+      { timestamp: "2026-03-30T12:00:01.000Z", altitudeM: 11 },
+    ]);
+
+    await syncWatchAltitudeFiles(trpcClient);
+
+    expect(trpcClient.watchAltitudeSync.pushSamples.mutate).toHaveBeenCalledWith({
+      deviceId: "Apple Watch",
+      samples: [{ timestamp: "2026-03-30T12:00:01.000Z", altitudeM: 11 }],
+    });
+    expect(mockDeleteWatchFile).toHaveBeenCalledWith("watch-altitude-old-account.json.gz");
   });
 
   it("does not delete a file when upload fails", async () => {

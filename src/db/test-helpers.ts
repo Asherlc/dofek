@@ -236,6 +236,11 @@ async function migrateTestDatabase(connectionString: string): Promise<void> {
     }
   }
 
+  // Legacy compatibility migrations above can recreate managed base tables
+  // after the account-erasure migration has installed its catalog-derived
+  // fences. Keep the final template schema fenced exactly like production.
+  await migrationClient.query("SELECT fitness.refresh_account_erasure_write_fences()");
+
   // Seed the canonical integration-test user.
   // Many integration tests use TEST_USER_ID fixtures and expect this row to exist.
   await migrationClient.query(

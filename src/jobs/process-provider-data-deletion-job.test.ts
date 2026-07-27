@@ -90,6 +90,7 @@ describe("processProviderDataDeletionJob", () => {
     const job = makeJob();
 
     await processProviderDataDeletionJob(job, {
+      accountErasureAllowsWork: vi.fn(async () => true),
       clickHouseClient: { command, insert, query },
       enqueueAnalyticsRefresh,
       markCompleted,
@@ -215,6 +216,7 @@ describe("processProviderDataDeletionJob", () => {
 
     await expect(
       processProviderDataDeletionJob(makeJob(), {
+        accountErasureAllowsWork: vi.fn(async () => true),
         clickHouseClient: { command, insert, query },
         enqueueAnalyticsRefresh,
         markCompleted,
@@ -238,6 +240,7 @@ describe("processProviderDataDeletionJob", () => {
 
     await expect(
       processProviderDataDeletionJob(makeJob(), {
+        accountErasureAllowsWork: vi.fn(async () => true),
         clickHouseClient: { command, query },
         enqueueAnalyticsRefresh: vi.fn(async () => undefined),
         markCompleted: vi.fn(async () => undefined),
@@ -264,6 +267,7 @@ describe("processProviderDataDeletionJob", () => {
     };
 
     await processProviderDataDeletionJob(makeJob({ checkpoint }), {
+      accountErasureAllowsWork: vi.fn(async () => true),
       clickHouseClient: { command, insert, query },
       enqueueAnalyticsRefresh: vi.fn(async () => undefined),
       markCompleted: vi.fn(async () => undefined),
@@ -292,6 +296,7 @@ describe("processProviderDataDeletionJob", () => {
 
     await expect(
       processProviderDataDeletionJob(makeJob(), {
+        accountErasureAllowsWork: vi.fn(async () => true),
         clickHouseClient: { command, insert, query },
         enqueueAnalyticsRefresh,
         markCompleted,
@@ -321,6 +326,7 @@ describe("processProviderDataDeletionJob", () => {
     job.updateProgress.mockRejectedValue(progressError);
 
     await processProviderDataDeletionJob(job, {
+      accountErasureAllowsWork: vi.fn(async () => true),
       clickHouseClient: { command, query },
       enqueueAnalyticsRefresh,
       markCompleted,

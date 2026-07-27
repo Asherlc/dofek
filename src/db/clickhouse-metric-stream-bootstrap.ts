@@ -1,4 +1,6 @@
 import {
+  buildAccountErasureFenceTableSql,
+  buildAccountErasureOperationFenceTableSql,
   buildIngestMetricStreamCreateTableSql,
   buildMetricStreamDeleteAcknowledgementTableSql,
   buildMetricStreamProcessingAcknowledgementTableSql,
@@ -27,6 +29,8 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
     buildMetricStreamDeleteAcknowledgementTableSql(),
     buildMetricStreamProcessingAcknowledgementTableSql(),
     buildProviderDataGenerationTableSql(),
+    buildAccountErasureFenceTableSql(),
+    buildAccountErasureOperationFenceTableSql(),
     "CREATE DATABASE IF NOT EXISTS postgres_fitness",
     ...buildPostgresFitnessRawTableStatements(),
     ...buildBodyMeasurementSampleProjectionStatements(),

@@ -1,7 +1,8 @@
 import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
+import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { z } from "zod";
-import { regenerateCompanionToken } from "../companion/token-repository.ts";
+import { regenerateCompanionTokenInTransaction } from "../companion/token-repository.ts";
 import { getCompanionPairingStore, parsePairingCodeInput } from "../lib/companion-pairing-store.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -43,72 +44,93 @@ export const companionPairingRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const store = getCompanionPairingStore();
-      await assertClaimAttemptAllowed(store, ctx.userId);
-      const challenge = await store.getByShortCode(input.code);
-      if (!challenge) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Pairing code was not found or has expired.",
-        });
-      }
-      if (challenge.claimedAt && challenge.userId !== ctx.userId) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "Pairing code has already been used.",
-        });
-      }
-
-      if (challenge.claimedAt && challenge.companionToken) {
-        return {
-          state: "claimed",
-          expiresAt: challenge.expiresAt,
-        };
-      }
-
-      const claimedChallenge = await store.claimChallenge({
-        shortCode: challenge.shortCode,
-        userId: ctx.userId,
-      });
-      if (!claimedChallenge) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "Pairing code has already been used.",
-        });
-      }
-
+      let claimedByRequest = false;
+      let pairedToken: string | null = null;
       try {
-        const companionToken = await regenerateCompanionToken(ctx.db, ctx.userId);
-        if (!companionToken.token) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to create Dofek connection.",
-          });
-        }
+        return await withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
+          await assertClaimAttemptAllowed(store, ctx.userId);
+          const challenge = await store.getByShortCode(input.code);
+          if (!challenge) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Pairing code was not found or has expired.",
+            });
+          }
+          if (challenge.claimedAt && challenge.userId !== ctx.userId) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Pairing code has already been used.",
+            });
+          }
 
-        const pairedChallenge = await store.setClaimedChallengeToken({
-          shortCode: challenge.shortCode,
-          userId: ctx.userId,
-          companionToken: companionToken.token,
-        });
-        if (!pairedChallenge) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "Pairing code has already been used.",
-          });
-        }
+          if (challenge.claimedAt && challenge.companionToken) {
+            return {
+              state: "claimed" as const,
+              expiresAt: challenge.expiresAt,
+            };
+          }
 
-        return {
-          state: "claimed",
-          expiresAt: pairedChallenge.expiresAt,
-        };
-      } catch (error) {
-        try {
-          await store.releaseClaimedChallengeTokenIssuance({
+          const claimedChallenge = await store.claimChallenge({
             shortCode: challenge.shortCode,
             userId: ctx.userId,
           });
-        } catch (releaseError) {
-          captureException(releaseError);
+          if (!claimedChallenge) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Pairing code has already been used.",
+            });
+          }
+          claimedByRequest = true;
+
+          const companionToken = await regenerateCompanionTokenInTransaction(
+            transaction,
+            ctx.userId,
+          );
+          if (!companionToken.token) {
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Failed to create Dofek connection.",
+            });
+          }
+
+          const pairedChallenge = await store.setClaimedChallengeToken({
+            shortCode: challenge.shortCode,
+            userId: ctx.userId,
+            companionToken: companionToken.token,
+          });
+          if (!pairedChallenge) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Pairing code has already been used.",
+            });
+          }
+          pairedToken = companionToken.token;
+
+          return {
+            state: "claimed" as const,
+            expiresAt: pairedChallenge.expiresAt,
+          };
+        });
+      } catch (error: unknown) {
+        if (pairedToken) {
+          try {
+            await store.deleteClaimedChallenge({
+              shortCode: input.code,
+              userId: ctx.userId,
+              companionToken: pairedToken,
+            });
+          } catch (deleteError: unknown) {
+            captureException(deleteError);
+          }
+        } else if (claimedByRequest) {
+          try {
+            await store.releaseClaimedChallengeTokenIssuance({
+              shortCode: input.code,
+              userId: ctx.userId,
+            });
+          } catch (releaseError: unknown) {
+            captureException(releaseError);
+          }
         }
         throw error;
       }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyMetricStreamEventsToClickHouse,
@@ -6,6 +7,7 @@ import {
   markMetricStreamScopeDeletedInClickHouse,
 } from "./clickhouse-sink.ts";
 import {
+  ACCOUNT_ERASURE_FENCE_TABLE,
   METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_TABLE,
 } from "./clickhouse-table.ts";
@@ -268,14 +270,17 @@ describe("applyMetricStreamEventsToClickHouse", () => {
   it("tombstones an event when the provider generation fence advances during insertion", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
-    const query = vi.fn(async () => ({
-      json: async () => [
-        {
-          generation: "1",
-          provider_id: heartRateEvent.providerId,
-          user_id: heartRateEvent.userId,
-        },
-      ],
+    const query = vi.fn(async (options: { query: string }) => ({
+      json: async () =>
+        options.query.includes(ACCOUNT_ERASURE_FENCE_TABLE)
+          ? []
+          : [
+              {
+                generation: "1",
+                provider_id: heartRateEvent.providerId,
+                user_id: heartRateEvent.userId,
+              },
+            ],
     }));
 
     const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
@@ -287,7 +292,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         values: [expect.objectContaining({ id: heartRateEvent.id, generation: 0 })],
       }),
     );
-    expect(insert.mock.invocationCallOrder[0]).toBeLessThan(query.mock.invocationCallOrder[0] ?? 0);
+    expect(insert.mock.invocationCallOrder[0]).toBeLessThan(query.mock.invocationCallOrder[1] ?? 0);
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
@@ -297,17 +302,40 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(applied).toBe(0);
   });
 
-  it("tombstones events older than the active provider generation fence", async () => {
+  it("never writes events for an account with an active erasure fence", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
     const query = vi.fn(async () => ({
       json: async () => [
         {
-          generation: "2",
-          provider_id: heartRateEvent.providerId,
-          user_id: heartRateEvent.userId,
+          user_hash: createHash("sha256").update(heartRateEvent.userId).digest("hex"),
         },
       ],
+    }));
+
+    const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
+      heartRateEvent,
+    ]);
+
+    expect(insert).not.toHaveBeenCalled();
+    expect(command).not.toHaveBeenCalled();
+    expect(applied).toBe(0);
+  });
+
+  it("tombstones events older than the active provider generation fence", async () => {
+    const command = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => undefined);
+    const query = vi.fn(async (options: { query: string }) => ({
+      json: async () =>
+        options.query.includes(ACCOUNT_ERASURE_FENCE_TABLE)
+          ? []
+          : [
+              {
+                generation: "2",
+                provider_id: heartRateEvent.providerId,
+                user_id: heartRateEvent.userId,
+              },
+            ],
     }));
 
     const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
@@ -354,6 +382,10 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(applied).toBe(0);
     expect(command).toHaveBeenCalledTimes(1);
     expect(firstCommandQuery(command)).toContain(`INSERT INTO ${METRIC_STREAM_TABLE}`);
+    expect(firstCommandQuery(command)).toContain(
+      `lower(hex(SHA256(toString(latest_row.2)))) NOT IN`,
+    );
+    expect(firstCommandQuery(command)).toContain(`FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL`);
     expect(insert).not.toHaveBeenCalled();
   });
 
@@ -547,6 +579,23 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       },
     });
     expect(firstCommandQuery(command)).toContain("latest_row.6 = {external_id:String}");
+  });
+
+  it("applies an account-wide replacement delete using only the user predicate", async () => {
+    const command = vi.fn(async () => undefined);
+
+    await applyMetricStreamEventsToClickHouse(
+      { command, insert: vi.fn(async () => undefined), query: makeEmptyGenerationQuery() },
+      [
+        createCurrentMetricStreamDeletedEvent({
+          userId: "10000000-0000-4000-8000-000000000001",
+        }),
+      ],
+    );
+
+    expect(firstCommandQuery(command)).toContain("candidate_row.user_id = {user_id:UUID}");
+    expect(firstCommandQuery(command)).toContain("latest_row.2 = {user_id:UUID}");
+    expect(firstCommandQuery(command)).toContain(`FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL`);
   });
 
   it("rejects replacement delete scopes that produce no ClickHouse conditions", async () => {

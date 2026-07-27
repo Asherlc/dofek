@@ -11,5 +11,20 @@ export function initPostHog() {
 }
 
 export function capturePageView() {
+  if (posthog.has_opted_out_capturing()) return;
   posthog.capture("$pageview");
+}
+
+export function identifyPostHogUser(userId: string): void {
+  posthog.opt_in_capturing();
+  posthog.identify(userId);
+}
+
+export function resetPostHogUser(): void {
+  posthog.reset();
+}
+
+export function disablePostHogForAccountErasure(): void {
+  posthog.reset();
+  posthog.opt_out_capturing();
 }

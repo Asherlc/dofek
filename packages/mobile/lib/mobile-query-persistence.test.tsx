@@ -1,8 +1,18 @@
 import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { dehydrate, QueryClient } from "@tanstack/react-query";
 import { persistQueryClientRestore } from "@tanstack/react-query-persist-client";
-import { beforeEach, describe, expect, it } from "vitest";
-import { createMobileQueryPersister, removeMobileQueryCache } from "./mobile-query-persistence";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createMobileQueryPersister,
+  removeAllMobileQueryCaches,
+  removeMobileQueryCache,
+} from "./mobile-query-persistence";
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("./telemetry", () => ({
+  captureException: mockCaptureException,
+}));
 
 function createQueryClient() {
   return new QueryClient({
@@ -14,6 +24,7 @@ function createQueryClient() {
 
 describe("mobile query persistence", () => {
   beforeEach(async () => {
+    vi.clearAllMocks();
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     await AsyncStorage.clear();
   });
@@ -109,5 +120,37 @@ describe("mobile query persistence", () => {
 
     await expect(AsyncStorage.getItem("dofek-query-cache:user-1")).resolves.toBeNull();
     await expect(AsyncStorage.getItem("dofek-query-cache:user-2")).resolves.toBe("cache");
+  });
+
+  it("clears every account cache during account erasure without touching unrelated storage", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    await AsyncStorage.setItem("dofek-query-cache:user-1", "cache");
+    await AsyncStorage.setItem("dofek-query-cache:user-2", "cache");
+    await AsyncStorage.setItem("unrelated-setting", "keep");
+
+    await removeAllMobileQueryCaches();
+
+    await expect(AsyncStorage.getItem("dofek-query-cache:user-1")).resolves.toBeNull();
+    await expect(AsyncStorage.getItem("dofek-query-cache:user-2")).resolves.toBeNull();
+    await expect(AsyncStorage.getItem("unrelated-setting")).resolves.toBe("keep");
+  });
+
+  it("never includes a raw user id in persistence error telemetry", async () => {
+    const userId = "private-user-id";
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    vi.mocked(AsyncStorage.removeItem).mockRejectedValueOnce(new Error("AsyncStorage unavailable"));
+
+    await removeMobileQueryCache(userId);
+
+    const telemetry = mockCaptureException.mock.calls
+      .map(
+        ([error, context]) =>
+          `${error instanceof Error ? error.message : String(error)} ${JSON.stringify(context)}`,
+      )
+      .join(" ");
+    expect(telemetry).not.toContain(userId);
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      source: "mobile-query-cache-clear",
+    });
   });
 });

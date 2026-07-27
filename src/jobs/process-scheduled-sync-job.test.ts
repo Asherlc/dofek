@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SyncDatabase } from "../db/index.ts";
+import type { Database, SyncDatabase } from "../db/index.ts";
 
 /** Per-provider mock queues keyed by provider ID */
 const providerQueues = new Map<
@@ -17,9 +17,16 @@ const mockLoggerInfo = vi.fn();
 const mockLoggerWarn = vi.fn();
 const mockGetActiveCooldown = vi.fn();
 const mockCaptureException = vi.fn();
+const mockWithUserWriteFence = vi.fn();
+class MockAccountErasureUserFencedError extends Error {}
 
 vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
+vi.mock("../db/account-erasure.ts", () => ({
+  AccountErasureUserFencedError: MockAccountErasureUserFencedError,
+  withAccountErasureUserWriteFence: mockWithUserWriteFence,
 }));
 
 function getMockQueue(providerId: string) {
@@ -84,12 +91,15 @@ interface ScheduledSyncRow {
   provider_id: string;
 }
 
-function createScheduledSyncDatabase(rows: ScheduledSyncRow[]): SyncDatabase {
+type ScheduledSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
+
+function createScheduledSyncDatabase(rows: ScheduledSyncRow[]): ScheduledSyncDatabase {
   return {
     select: vi.fn(),
     insert: vi.fn(),
     delete: vi.fn(),
     execute: vi.fn().mockResolvedValue(rows),
+    transaction: vi.fn(),
   };
 }
 
@@ -107,6 +117,14 @@ describe("processScheduledSyncJob", () => {
     mockGetActiveCooldown.mockReset();
     mockGetActiveCooldown.mockResolvedValue(null);
     mockCaptureException.mockClear();
+    mockWithUserWriteFence.mockReset();
+    mockWithUserWriteFence.mockImplementation(
+      async (
+        database: ScheduledSyncDatabase,
+        _userId: string,
+        operation: (database: ScheduledSyncDatabase) => Promise<unknown>,
+      ) => operation(database),
+    );
   });
 
   it("enqueues sync jobs into per-provider queues for non-CSV providers only", async () => {
@@ -186,6 +204,43 @@ describe("processScheduledSyncJob", () => {
     expect(stravaQueue.add).toHaveBeenCalledTimes(2);
     // Only one queue instance created for strava
     expect(providerQueues.size).toBe(1);
+  });
+
+  it("holds each user's account-erasure fence while enqueueing scheduled syncs", async () => {
+    const db = createScheduledSyncDatabase([
+      { user_id: "user-1", provider_id: "strava" },
+      { user_id: "user-2", provider_id: "wahoo" },
+    ]);
+
+    await processScheduledSyncJob(createScheduledSyncJob(), db);
+
+    expect(mockWithUserWriteFence).toHaveBeenCalledTimes(2);
+    expect(mockWithUserWriteFence).toHaveBeenNthCalledWith(1, db, "user-1", expect.any(Function));
+    expect(mockWithUserWriteFence).toHaveBeenNthCalledWith(2, db, "user-2", expect.any(Function));
+  });
+
+  it("skips a fenced account without starving later users", async () => {
+    const db = createScheduledSyncDatabase([
+      { user_id: "user-1", provider_id: "strava" },
+      { user_id: "user-2", provider_id: "wahoo" },
+    ]);
+    mockWithUserWriteFence
+      .mockRejectedValueOnce(new MockAccountErasureUserFencedError())
+      .mockImplementationOnce(
+        async (
+          database: ScheduledSyncDatabase,
+          _userId: string,
+          operation: (database: ScheduledSyncDatabase) => Promise<unknown>,
+        ) => operation(database),
+      );
+
+    await expect(processScheduledSyncJob(createScheduledSyncJob(), db)).resolves.toBeUndefined();
+
+    expect(getMockQueue("strava").add).not.toHaveBeenCalled();
+    expect(getMockQueue("wahoo").add).toHaveBeenCalledOnce();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[scheduled-sync] Skipping one account with active erasure",
+    );
   });
 
   it("skips connections whose provider plugin is missing", async () => {

@@ -620,7 +620,7 @@ export class RideWithGpsProvider implements SyncProvider {
         // metricRows still use the legacy shape; convert and publish to metric stream.
         await replaceMetricStreamBatch(
           db,
-          { activityId },
+          { activityId, userId: scopedUserId },
           metricRows,
           SOURCE_TYPE_API,
           options.metricStreamPublisher,

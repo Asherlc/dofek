@@ -25,6 +25,10 @@ enum CoreMotionIsoDateParser {
 
         return internetDateTime.date(from: value)
     }
+
+    static func format(_ value: Date) -> String {
+        return fractionalSeconds.string(from: value)
+    }
 }
 
 #if os(iOS) && canImport(ExpoModulesCore)
@@ -36,12 +40,10 @@ extension CMSensorDataList: @retroactive Sequence {
     }
 }
 
-private let lastSyncKey = "com.dofek.coreMotion.lastSyncTimestamp"
-private let recordingActiveKey = "com.dofek.coreMotion.recordingActive"
-
 public class CoreMotionModule: Module {
     private let sensorRecorder = CMSensorRecorder()
     private let activityManager = CMMotionActivityManager()
+    private let accountStateStore = CoreMotionAccountStateStore(userDefaults: .standard)
 
     // swiftlint:disable:next function_body_length
     public func definition() -> ModuleDefinition {
@@ -97,12 +99,17 @@ public class CoreMotionModule: Module {
             let clampedDuration = min(durationSeconds, 12 * 3600)
             self.sensorRecorder.recordAccelerometer(forDuration: clampedDuration)
 
-            UserDefaults.standard.set(true, forKey: recordingActiveKey)
+            UserDefaults.standard.set(
+                true,
+                forKey: CoreMotionAccountStateStore.recordingActiveKey
+            )
             promise.resolve(true)
         }
 
         Function("isRecordingActive") {
-            return UserDefaults.standard.bool(forKey: recordingActiveKey)
+            return UserDefaults.standard.bool(
+                forKey: CoreMotionAccountStateStore.recordingActiveKey
+            )
         }
 
         // MARK: - Querying recorded data
@@ -116,9 +123,16 @@ public class CoreMotionModule: Module {
                 return
             }
 
-            guard let fromDate = CoreMotionIsoDateParser.parse(fromDateString),
+            guard let requestedFromDate = CoreMotionIsoDateParser.parse(fromDateString),
                   let toDate = CoreMotionIsoDateParser.parse(toDateString) else {
                 promise.reject("COREMOTION_INVALID_DATE", "Invalid ISO 8601 date string")
+                return
+            }
+            let fromDate =
+                self.accountStateStore.effectiveSyncStart(requestedFromDate)
+                ?? requestedFromDate
+            guard fromDate < toDate else {
+                promise.resolve([])
                 return
             }
 
@@ -142,6 +156,11 @@ public class CoreMotionModule: Module {
                     guard let accelerometerData = dataPoint as? CMRecordedAccelerometerData else {
                         continue
                     }
+                    guard self.accountStateStore.shouldInclude(
+                        sampleDate: accelerometerData.startDate
+                    ) else {
+                        continue
+                    }
 
                     samples.append([
                         "timestamp": formatter.string(from: accelerometerData.startDate),
@@ -160,11 +179,35 @@ public class CoreMotionModule: Module {
         // MARK: - Sync cursor persistence
 
         Function("getLastSyncTimestamp") { () -> String? in
-            return UserDefaults.standard.string(forKey: lastSyncKey)
+            let stored = UserDefaults.standard
+                .string(forKey: CoreMotionAccountStateStore.lastSyncKey)
+                .flatMap(CoreMotionIsoDateParser.parse)
+            return self.accountStateStore.effectiveSyncStart(stored)
+                .map(CoreMotionIsoDateParser.format)
         }
 
         Function("setLastSyncTimestamp") { (timestamp: String) in
-            UserDefaults.standard.set(timestamp, forKey: lastSyncKey)
+            guard let candidate = CoreMotionIsoDateParser.parse(timestamp),
+                  let effective = self.accountStateStore.effectiveSyncStart(candidate) else {
+                return
+            }
+            UserDefaults.standard.set(
+                CoreMotionIsoDateParser.format(effective),
+                forKey: CoreMotionAccountStateStore.lastSyncKey
+            )
+        }
+
+        AsyncFunction("purgeAccountState") {
+            (cutoffString: String, promise: Promise) in
+            guard let cutoff = CoreMotionIsoDateParser.parse(cutoffString) else {
+                promise.reject(
+                    "COREMOTION_INVALID_ERASURE_CUTOFF",
+                    "Invalid device erasure cutoff"
+                )
+                return
+            }
+            self.accountStateStore.purge(at: cutoff)
+            promise.resolve(true)
         }
     }
 }

@@ -15,6 +15,19 @@ describe("app bootstrap telemetry guard", () => {
       hideAsync: vi.fn(() => Promise.resolve()),
     }));
 
+    vi.doMock("expo-crypto", () => ({
+      randomUUID: vi.fn(() => "11111111-1111-4111-8111-111111111111"),
+    }));
+
+    vi.doMock("../components/AccountDeletionStatusScreen", () => ({
+      AccountDeletionStatusScreen: () => null,
+    }));
+
+    vi.doMock("../lib/account-erasure-storage", () => ({
+      loadAnyMobileAccountErasurePreparation: vi.fn(() => Promise.resolve(null)),
+      loadMobileAccountErasureStatusCapability: vi.fn(() => Promise.resolve(null)),
+    }));
+
     const captureExceptionMock = vi.fn();
 
     vi.doMock("../lib/telemetry", () => ({

@@ -1,8 +1,13 @@
+import { randomUUID } from "node:crypto";
 import * as Sentry from "@sentry/node";
+import {
+  AccountErasureIdentityFencedError,
+  withAccountErasureUserAndIdentityWriteFence,
+} from "dofek/db/account-erasure";
 import { queryCache } from "dofek/lib/cache";
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { resolveOrCreateUser } from "../../auth/account-linking.ts";
+import { findExistingUserId, resolveOrCreateUser } from "../../auth/account-linking.ts";
 import {
   clearOAuthFlowCookies,
   getLinkUserCookie,
@@ -12,7 +17,8 @@ import {
   isValidMobileScheme,
   setSessionCookie,
 } from "../../auth/cookies.ts";
-import { getIdentityProvider } from "../../auth/providers.ts";
+import { revokeIdentityCredentials } from "../../auth/identity-credential-revocation.ts";
+import { appleRevocationCredentialFromTokens, getIdentityProvider } from "../../auth/providers.ts";
 import { createSession } from "../../auth/session.ts";
 import { logger } from "../../logger.ts";
 import {
@@ -122,7 +128,7 @@ export async function handleIdentityCallback(
 
     // Validate the authorization code
     const provider = getIdentityProvider(providerName);
-    const { user: identityUser } = await provider.validateCallback(code, codeVerifier);
+    const { tokens, user: identityUser } = await provider.validateCallback(code, codeVerifier);
 
     // Apple only sends the user's name in the form_post body on first authorization —
     // it's never included in the ID token. Parse it here as a fallback.
@@ -131,22 +137,79 @@ export async function handleIdentityCallback(
         ? parseAppleFormPostName(rawParams.user)
         : null;
     const userName = identityUser.name ?? appleFormPostName;
+    const appleClientId = process.env.APPLE_CLIENT_ID;
+    if (providerName === "apple" && !appleClientId) {
+      throw new Error("APPLE_CLIENT_ID is required for Apple credential revocation");
+    }
 
-    const db = getDb();
-
-    // Resolve or create user (with email-based auto-linking and optional logged-in linking)
-    const { userId, isNewUser } = await resolveOrCreateUser(
-      db,
-      providerName,
+    const identity = {
+      providerAccountId: identityUser.sub,
+      email: identityUser.email,
+      emailVerified: identityUser.emailVerified,
+      name: userName,
+      groups: identityUser.groups,
+      revocationCredential:
+        providerName === "apple" && appleClientId
+          ? appleRevocationCredentialFromTokens(tokens, appleClientId)
+          : undefined,
+    };
+    const externalIdentities: Parameters<
+      typeof withAccountErasureUserAndIdentityWriteFence
+    >[2][number][] = [
       {
-        providerAccountId: identityUser.sub,
-        email: identityUser.email,
-        emailVerified: identityUser.emailVerified,
-        name: userName,
-        groups: identityUser.groups,
+        authProvider: providerName,
+        kind: "provider_account",
+        providerAccountId: identity.providerAccountId,
       },
-      linkUserId,
-    );
+    ];
+    if (identity.emailVerified && identity.email) {
+      externalIdentities.push({ email: identity.email, kind: "email" });
+    }
+    const db = getDb();
+    const targetUserId =
+      linkUserId ?? (await findExistingUserId(db, providerName, identity)) ?? randomUUID();
+    let result: {
+      isNewUser: boolean;
+      sessionInfo: Awaited<ReturnType<typeof createSession>> | null;
+      userId: string;
+    };
+    try {
+      result = await withAccountErasureUserAndIdentityWriteFence(
+        db,
+        targetUserId,
+        externalIdentities,
+        async (transaction) => {
+          const { userId, isNewUser } = await resolveOrCreateUser(
+            transaction,
+            providerName,
+            identity,
+            linkUserId,
+            { newUserId: targetUserId },
+          );
+          if (userId !== targetUserId) {
+            throw new Error(`Identity resolution changed from ${targetUserId} to ${userId}`);
+          }
+          return {
+            userId,
+            isNewUser,
+            sessionInfo: linkUserId ? null : await createSession(transaction, userId),
+          };
+        },
+      );
+    } catch (persistenceError: unknown) {
+      try {
+        await revokeIdentityCredentials(providerName, tokens, appleClientId);
+      } catch (cleanupError: unknown) {
+        Sentry.captureException(cleanupError, {
+          tags: {
+            source: "identity-callback",
+            operation: "revoke-orphan-credentials",
+          },
+        });
+      }
+      throw persistenceError;
+    }
+    const { userId, isNewUser, sessionInfo } = result;
 
     if (linkUserId) {
       try {
@@ -159,10 +222,7 @@ export async function handleIdentityCallback(
       }
     }
 
-    // Create session (or keep existing if linking)
-    if (!linkUserId) {
-      const sessionInfo = await createSession(db, userId);
-
+    if (sessionInfo) {
       // Mobile: redirect to app via deep link with session token
       if (mobileScheme && isValidMobileScheme(mobileScheme)) {
         logger.info(`[auth] User ${userId} logged in via ${providerName} (mobile)`);
@@ -181,6 +241,10 @@ export async function handleIdentityCallback(
     logger.info(`[auth] User ${userId} ${linkUserId ? "linked" : "logged in via"} ${providerName}`);
     res.redirect(linkUserId ? "/settings" : getPostLoginRedirect(returnTo, isNewUser));
   } catch (err: unknown) {
+    if (err instanceof AccountErasureIdentityFencedError) {
+      res.status(409).type("text/plain").send(err.message);
+      return;
+    }
     Sentry.captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     const oauthCode =

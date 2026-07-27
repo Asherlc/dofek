@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { resolveUserExerciseWithProvenance } from "../db/exercise-provenance.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { strengthSet } from "../db/schema/activity.ts";
-import { exercise, exerciseAlias } from "../db/schema/reference.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { lookupExerciseMuscleGroups } from "../exercise-metadata.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
@@ -178,13 +178,6 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
   }
 
   return Array.from(groupMap.values());
-}
-
-function textArrayExpression(values: readonly string[]) {
-  return sql`ARRAY[${sql.join(
-    values.map((value) => sql`${value}`),
-    sql`, `,
-  )}]::text[]`;
 }
 
 // ============================================================
@@ -416,58 +409,20 @@ export async function importStrongCsv(
         const { exerciseName, equipment } = parseStrongExerciseName(csvRow.exerciseName);
         const cacheKey = `${exerciseName}|${equipment ?? ""}`;
         const inferredMuscleGroups = lookupExerciseMuscleGroups(exerciseName);
-        const exerciseValues: typeof exercise.$inferInsert = {
-          name: exerciseName,
-          equipment,
-          ...(inferredMuscleGroups
-            ? { muscleGroups: inferredMuscleGroups, exerciseType: "STRENGTH" }
-            : {}),
-        };
 
         let exerciseId = exerciseCache.get(cacheKey);
         if (!exerciseId) {
-          // Upsert exercise
-          await db.insert(exercise).values(exerciseValues).onConflictDoNothing();
-
-          const whereClause = equipment
-            ? and(eq(exercise.name, exerciseName), eq(exercise.equipment, equipment))
-            : and(eq(exercise.name, exerciseName));
-
-          const exerciseRows = await db
-            .select({ id: exercise.id })
-            .from(exercise)
-            .where(whereClause)
-            .limit(1);
-
-          exerciseId = exerciseRows[0]?.id;
-          if (exerciseId) {
-            if (inferredMuscleGroups) {
-              const inferredMuscleGroupsExpression = textArrayExpression(inferredMuscleGroups);
-              await db.execute(
-                sql`UPDATE fitness.exercise
-                    SET muscle_groups = COALESCE(muscle_groups, ${inferredMuscleGroupsExpression}),
-                        exercise_type = COALESCE(exercise_type, 'STRENGTH')
-                    WHERE id = ${exerciseId}`,
-              );
-            }
-
-            exerciseCache.set(cacheKey, exerciseId);
-
-            // Upsert alias
-            await db
-              .insert(exerciseAlias)
-              .values({
-                exerciseId,
-                providerId: STRONG_PROVIDER_ID,
-                providerExerciseName: csvRow.exerciseName,
-              })
-              .onConflictDoNothing();
-          }
-        }
-
-        if (!exerciseId) {
-          errors.push({ message: `Could not resolve exercise: ${csvRow.exerciseName}` });
-          continue;
+          exerciseId = await resolveUserExerciseWithProvenance(db, {
+            equipment,
+            exerciseType: inferredMuscleGroups ? "STRENGTH" : null,
+            muscleGroups: inferredMuscleGroups,
+            name: exerciseName,
+            providerExerciseId: null,
+            providerExerciseName: csvRow.exerciseName,
+            providerId: STRONG_PROVIDER_ID,
+            userId,
+          });
+          exerciseCache.set(cacheKey, exerciseId);
         }
 
         // Compute exercise index (order of first appearance within workout)

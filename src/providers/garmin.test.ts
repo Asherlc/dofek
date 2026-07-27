@@ -14,6 +14,7 @@ import { createGarminSyncCheckpoint } from "./garmin/sync-checkpoint.ts";
 import { planGarminSyncSteps } from "./garmin/sync-step-plan.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 import type { SyncOptions } from "./types.ts";
 
 vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
@@ -269,7 +270,7 @@ function createMockDb(): MockDb {
   db.values.mockReturnValue(db);
   db.onConflictDoUpdate.mockReturnValue(db);
   db.delete.mockReturnValue(db);
-  return db;
+  return makeTransactionalTestDatabase(db);
 }
 
 async function planAllGarminSteps(

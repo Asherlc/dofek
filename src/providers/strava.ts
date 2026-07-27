@@ -547,6 +547,23 @@ export class StravaProvider implements WebhookProvider {
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      revokeExistingTokens: async (tokens) => {
+        const token = tokens.refreshToken ?? tokens.accessToken;
+        const response = await fetchFn(`${STRAVA_AUTH_BASE}/revoke`, {
+          body: new URLSearchParams({
+            token,
+            token_type_hint: tokens.refreshToken ? "refresh_token" : "access_token",
+          }),
+          headers: {
+            Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64")}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          method: "POST",
+        });
+        if (!response.ok) {
+          throw new Error(`Strava token revocation failed (${response.status})`);
+        }
+      },
       apiBaseUrl: STRAVA_API_BASE,
       identityCapabilities: { providesEmail: false },
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {

@@ -69,6 +69,7 @@ afterEach(() => {
 
 import type { SyncDatabase } from "../../db/index.ts";
 import { logger } from "../../logger.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import {
   buildSourceNameMap,
   defaultConsoleProgress,
@@ -234,12 +235,12 @@ function createImportMockDb(panelRows: { id: string; externalId: string | null }
 
   const execute = vi.fn().mockResolvedValue([]);
 
-  const db: SyncDatabase = {
+  const db = makeTransactionalTestDatabase<SyncDatabase>({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,
     execute,
-  };
+  });
 
   return {
     db,
@@ -918,12 +919,12 @@ function createRunImportMockDb() {
 
   const execute = vi.fn().mockResolvedValue([]);
 
-  const db: SyncDatabase = {
+  const db = makeTransactionalTestDatabase<SyncDatabase>({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,
     execute,
-  };
+  });
 
   return {
     db,
@@ -1086,12 +1087,12 @@ describe("runImport (control-flow mutation killers)", () => {
     const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
     const values = vi.fn().mockReturnValue({ onConflictDoNothing });
     const insertFn = vi.fn().mockReturnValue({ values });
-    return {
+    return makeTransactionalTestDatabase<SyncDatabase>({
       delete: deleteFn,
       insert: insertFn,
       select: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
   }
 
   it("routes each record bucket and accumulates exact synced counts", async () => {

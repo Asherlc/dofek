@@ -381,6 +381,12 @@ export async function listPendingFileUploadOutboxRequests(
         FROM fitness.file_upload_outbox AS outbox
         JOIN fitness.file_upload AS upload ON upload.id = outbox.upload_id
         WHERE outbox.status = 'pending'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM fitness.account_erasure_request AS erasure
+            WHERE erasure.user_id = upload.user_id
+              AND erasure.status <> 'completed'
+          )
         ORDER BY outbox.created_at, outbox.event_id
         LIMIT ${parsedLimit}`,
   );

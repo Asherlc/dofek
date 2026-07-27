@@ -5,6 +5,7 @@ import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity } from "../db/schema/activity.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
 import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -200,7 +201,10 @@ describe("SuuntoProvider.sync() (integration)", () => {
     const activityId = rows[0]?.id;
     if (!activityId) throw new Error("expected activity id");
     expect(metricStreamCapture.publishedMetricStreamRows.length).toBeGreaterThan(0);
-    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({ activityId });
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({
+      activityId,
+      userId: TEST_USER_ID,
+    });
   });
 
   it("upserts on re-sync (no duplicates)", async () => {

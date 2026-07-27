@@ -230,6 +230,57 @@ describe("KomootProvider.authSetup()", () => {
     await expectKomootRateLimitError(() => exchangeCode("code"));
   });
 
+  it("replays the documented refresh-token disconnect request", async () => {
+    process.env.KOMOOT_CLIENT_ID = "komoot-client";
+    process.env.KOMOOT_CLIENT_SECRET = "komoot-secret";
+    const fetchFn = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const revoke = new KomootProvider(fetchFn).authSetup().revokeTokensForAccountErasure;
+    if (!revoke) throw new Error("revokeTokensForAccountErasure not defined");
+    const tokens = {
+      accessToken: "komoot-access",
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      refreshToken: "komoot-refresh",
+      scopes: "profile",
+    };
+
+    await revoke(tokens);
+    await revoke(tokens);
+
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    for (const [input, init] of fetchFn.mock.calls) {
+      const url = new URL(String(input));
+      expect(url.origin + url.pathname).toBe(
+        "https://auth-api.main.komoot.net/v1/clients/komoot-client/refresh_tokens/",
+      );
+      expect(url.searchParams.get("refresh_token")).toBe("komoot-refresh");
+      expect(init?.method).toBe("DELETE");
+      expect(init?.headers).toEqual({
+        Accept: "application/json",
+        Authorization: `Basic ${btoa("komoot-client:komoot-secret")}`,
+      });
+    }
+  });
+
+  it("requires a refresh token and the documented 200 response", async () => {
+    process.env.KOMOOT_CLIENT_ID = "komoot-client";
+    process.env.KOMOOT_CLIENT_SECRET = "komoot-secret";
+    const fetchFn = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const revoke = new KomootProvider(fetchFn).authSetup().revokeTokensForAccountErasure;
+    if (!revoke) throw new Error("revokeTokensForAccountErasure not defined");
+    const tokens = {
+      accessToken: "komoot-access",
+      expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      refreshToken: null,
+      scopes: "profile",
+    };
+
+    await expect(revoke(tokens)).rejects.toThrow("Reconnect Komoot before deleting your account");
+    expect(fetchFn).not.toHaveBeenCalled();
+    await expect(revoke({ ...tokens, refreshToken: "komoot-refresh" })).rejects.toThrow(
+      "Komoot authorization revocation failed (204)",
+    );
+  });
+
   it("throws when env vars are missing", () => {
     delete process.env.KOMOOT_CLIENT_ID;
     delete process.env.KOMOOT_CLIENT_SECRET;

@@ -10,7 +10,7 @@ long-lived refresh token.
 ```
 SupportPanel (web + mobile)
   -> trpc support.createTicket            packages/server/src/routers/support.ts
-    -> ZohoDeskClient.createTicket()      packages/server/src/lib/zoho-desk.ts
+    -> ZohoDeskClient.createTicket()      src/zoho-desk.ts
       -> POST https://desk.zoho.com/api/v1/tickets
 ```
 
@@ -24,6 +24,22 @@ SupportPanel (web + mobile)
 The router pulls the contact email/name from the user's profile, allows an
 optional reply-to override from the form, reports failures to Sentry, and returns
 the created ticket number.
+
+Account erasure uses the stored Zoho ticket ID, first calls Zoho's
+[`tickets/moveToTrash`](https://desk.zoho.com/DeskAPIDocument#Tickets_DeleteTickets)
+operation, and then calls
+[`recycleBin/delete`](https://desk.zoho.com/DeskAPIDocument#RecycleBin_DeleteresourcesfromRecycleBin)
+to permanently delete that exact ticket. Retries check both active tickets and
+the [Recycle Bin](https://desk.zoho.com/DeskAPIDocument#RecycleBin_Listdeletedresources)
+before treating the ticket as absent.
+
+Tickets created before exact ticket-ID provenance was deployed still contain
+the server-generated `User ID: <UUID>` footer. Account erasure uses Zoho's
+[ticket search API](https://desk.zoho.com/DeskAPIDocument#Search_SearchTickets)
+to find candidates by that UUID, accepts a candidate only when its final
+server-generated footer contains the exact erasing user ID, and checkpoints the
+exact returned ticket IDs before deleting them. Contact email alone is never
+used as deletion provenance.
 
 ## Environment variables (all in Infisical, `prod`)
 
@@ -45,8 +61,8 @@ manual revoke or when the per-client refresh-token limit is exceeded).
 1. In the [Zoho API Console](https://api-console.zoho.com/), create a **Self
    Client**. Copy the Client ID and Client Secret.
 2. On the **Generate Code** tab, request scope
-   `Desk.tickets.CREATE,Desk.contacts.CREATE` with a short duration. This
-   produces a grant code (single-use, ~10 min).
+   `Desk.tickets.CREATE,Desk.contacts.CREATE,Desk.search.READ,Desk.tickets.READ,Desk.tickets.DELETE,Desk.recyclebin.READ,Desk.recyclebin.UPDATE`
+   with a short duration. This produces a grant code (single-use, ~10 min).
 3. Exchange the grant code for a refresh token:
 
    ```bash
@@ -58,6 +74,11 @@ manual revoke or when the per-client refresh-token limit is exceeded).
    ```
 
    Store the returned `refresh_token` as `ZOHO_DESK_REFRESH_TOKEN`.
+
+Refreshing an access token preserves the refresh token's
+[same set of scopes](https://www.zoho.com/accounts/protocol/oauth/devices/refresh-access-token.html).
+Before deploying account erasure, generate a replacement token with the full
+scope set above and update `ZOHO_DESK_REFRESH_TOKEN` in Infisical.
 
 > The Self Client is bound to the Zoho user who created it. For an account-agnostic
 > production setup, use a **Server-based Application** client with a dedicated

@@ -57,3 +57,9 @@ export function getLastSyncTimestamp(): string | null {
 export function setLastSyncTimestamp(timestamp: string): void {
   CoreMotionModule.setLastSyncTimestamp(timestamp);
 }
+
+/** Clear Dofek's Core Motion cursor and recording flags.
+ * CMSensorRecorder source history remains managed by iOS. */
+export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
+  return CoreMotionModule.purgeAccountState(deviceErasureCutoff);
+}

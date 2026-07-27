@@ -92,31 +92,38 @@ export async function regenerateCompanionToken(
   db: TransactionalDatabase,
   userId: string,
 ): Promise<CompanionTokenMetadata> {
-  return db.transaction(async (transaction) => {
-    const lockRows = await executeWithSchema(
-      transaction,
-      advisoryLockRowSchema,
-      sql`SELECT pg_try_advisory_xact_lock(hashtext(${userId})) AS acquired`,
-    );
-    if (!lockRows[0]?.acquired) {
-      const activeToken = await findActiveCompanionToken(transaction, userId);
-      if (!activeToken) {
-        throw new Error("Companion token regeneration is already in progress");
-      }
-      return {
-        id: activeToken.id,
-        token: null,
-        createdAt: activeToken.created_at,
-        revokedAt: activeToken.revoked_at,
-      };
+  return db.transaction((transaction) =>
+    regenerateCompanionTokenInTransaction(transaction, userId),
+  );
+}
+
+export async function regenerateCompanionTokenInTransaction(
+  transaction: ExecutableDatabase,
+  userId: string,
+): Promise<CompanionTokenMetadata> {
+  const lockRows = await executeWithSchema(
+    transaction,
+    advisoryLockRowSchema,
+    sql`SELECT pg_try_advisory_xact_lock(hashtext(${userId})) AS acquired`,
+  );
+  if (!lockRows[0]?.acquired) {
+    const activeToken = await findActiveCompanionToken(transaction, userId);
+    if (!activeToken) {
+      throw new Error("Companion token regeneration is already in progress");
     }
-    await transaction.execute(
-      sql`UPDATE fitness.companion_token
-          SET revoked_at = COALESCE(revoked_at, NOW())
-          WHERE user_id = ${userId} AND revoked_at IS NULL`,
-    );
-    return createOrGetCompanionToken(transaction, userId);
-  });
+    return {
+      id: activeToken.id,
+      token: null,
+      createdAt: activeToken.created_at,
+      revokedAt: activeToken.revoked_at,
+    };
+  }
+  await transaction.execute(
+    sql`UPDATE fitness.companion_token
+        SET revoked_at = COALESCE(revoked_at, NOW())
+        WHERE user_id = ${userId} AND revoked_at IS NULL`,
+  );
+  return createOrGetCompanionToken(transaction, userId);
 }
 
 export async function validateCompanionToken(
