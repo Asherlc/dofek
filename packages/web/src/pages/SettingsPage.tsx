@@ -38,6 +38,8 @@ function getSignupWeekLabel(startDate: string, endDateExclusive: string): string
   return `${formatDateMedium(startDate)} to ${formatDateMedium(endInclusive)}`;
 }
 
+const billingRegionClassName = "min-h-44 sm:min-h-32 lg:min-h-28";
+
 export function SettingsPage() {
   const search = useSearch({ from: "/settings" });
   const navigate = useNavigate({ from: "/settings" });
@@ -133,11 +135,15 @@ export function SettingsPage() {
         {activeTab === "account" ? (
           <PageSection title="Billing" subtitle="Manage subscription and access window">
             {billingStatus.isLoading ? (
-              <p className="text-sm text-subtle">Loading subscription status...</p>
+              <p className={`${billingRegionClassName} text-sm text-subtle`}>
+                Loading subscription status...
+              </p>
             ) : billingStatus.error ? (
-              <p className="text-sm text-red-400">{billingStatus.error.message}</p>
+              <p className={`${billingRegionClassName} text-sm text-red-400`}>
+                {billingStatus.error.message}
+              </p>
             ) : billingStatus.data ? (
-              <div className="space-y-3">
+              <div className={`${billingRegionClassName} space-y-3`}>
                 <p className="text-sm text-subtle">
                   {billingStatus.data.access.kind === "limited"
                     ? `Your access is limited to your signup week (${getSignupWeekLabel(
@@ -197,7 +203,9 @@ export function SettingsPage() {
                   <p className="text-sm text-red-400">{portalSessionMutation.error.message}</p>
                 ) : null}
               </div>
-            ) : null}
+            ) : (
+              <div className={billingRegionClassName} />
+            )}
           </PageSection>
         ) : null}
 

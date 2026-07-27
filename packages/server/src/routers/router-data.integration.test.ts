@@ -375,12 +375,13 @@ describe("Router data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, food_description, confirmed
+                user_id, provider_id, date, meal, food_name, food_description, confirmed,
+                nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${dateOffset}::int,
                 'breakfast', ${`Oatmeal ${i}`}, 'Steel-cut oats with berries',
-                true
+                true, 'itemized'
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -403,11 +404,11 @@ describe("Router data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, confirmed
+                user_id, provider_id, date, meal, food_name, confirmed, nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${dateOffset}::int,
-                'lunch', ${`Chicken Salad ${i}`}, true
+                'lunch', ${`Chicken Salad ${i}`}, true, 'itemized'
               ) RETURNING id
             ),
             new_nutrition AS (
@@ -430,11 +431,12 @@ describe("Router data coverage", () => {
       await testCtx.db.execute(
         sql`WITH new_entry AS (
               INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, external_id, food_name, source_name, confirmed
+                user_id, provider_id, date, external_id, food_name, source_name, confirmed,
+                nutrition_grain
               ) VALUES (
                 ${TEST_USER_ID}, 'dofek',
                 CURRENT_DATE - ${i}::int,
-                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true
+                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true, 'daily_aggregate'
               ) RETURNING id
             )
             INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
@@ -1488,7 +1490,7 @@ describe("Router data coverage", () => {
       expect(result.length).toBeGreaterThan(0);
     });
 
-    it("workloadRatio returns acute/chronic ratio with displayed strain", async () => {
+    it("workloadRatio returns the recent-to-baseline ratio with displayed strain", async () => {
       const result = await query<{
         timeSeries: {
           date: string;
@@ -1498,6 +1500,12 @@ describe("Router data coverage", () => {
           chronicLoad: number;
           workloadRatio: number | null;
         }[];
+        context: {
+          label: "Recent-to-baseline workload ratio";
+          description: "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.";
+          recentDays: 7;
+          baselineDays: 28;
+        };
         displayedStrain: number;
         displayedDate: string | null;
       }>("recovery.workloadRatio", { days: 90 });

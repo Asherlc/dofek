@@ -806,6 +806,10 @@ describe("createMcpRouter", () => {
         mealCount: 4,
         proteinGrams: 165,
         sourceProviders: ["fatsecret"],
+        resolutionStatus: "available",
+        resolutionMessage: "Totals use the only available nutrition source.",
+        contributingProviders: ["fatsecret"],
+        excludedProviders: [],
       },
     ]);
 
@@ -825,25 +829,33 @@ describe("createMcpRouter", () => {
         fiber_g: 32,
         meal_count: 4,
         protein_g: 165,
+        resolution_message: "Totals use the only available nutrition source.",
+        resolution_status: "available",
         source_provider: "fatsecret",
         source_providers: ["fatsecret"],
+        contributing_providers: ["fatsecret"],
+        excluded_providers: [],
         total_calories: 2_450,
       },
     ]);
   });
 
-  it("reports no single nutrition provider when a day combines sources", async () => {
+  it("reports an explicit conflict instead of totals when a day combines sources", async () => {
     authorizeMcpToken(["nutrition:read"]);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([
       {
-        calories: 2_450,
-        carbsGrams: 280,
+        calories: null,
+        carbsGrams: null,
         date: "2026-05-18",
-        fatGrams: 85,
-        fiberGrams: 32,
+        fatGrams: null,
+        fiberGrams: null,
         mealCount: 4,
-        proteinGrams: 165,
+        proteinGrams: null,
         sourceProviders: ["cronometer", "fatsecret"],
+        resolutionStatus: "source_conflict",
+        resolutionMessage: "Totals are unavailable because nutrition sources overlap.",
+        contributingProviders: [],
+        excludedProviders: ["cronometer", "fatsecret"],
       },
     ]);
 
@@ -858,8 +870,12 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toEqual([
       expect.objectContaining({
+        resolution_status: "source_conflict",
+        total_calories: null,
         source_provider: null,
         source_providers: ["cronometer", "fatsecret"],
+        contributing_providers: [],
+        excluded_providers: ["cronometer", "fatsecret"],
       }),
     ]);
   });

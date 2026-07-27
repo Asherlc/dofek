@@ -12,7 +12,6 @@ describe("WeeklyReportCard", () => {
             weekStart: "2026-03-17",
             trainingHours: 8,
             activityCount: 5,
-            strainZone: "overreaching",
             avgDailyLoad: 8,
             avgSleepMinutes: 0,
             sleepPerformancePct: 100,
@@ -26,7 +25,6 @@ describe("WeeklyReportCard", () => {
     );
 
     expect(screen.getByText("Sleep not tracked")).toBeTruthy();
-    expect(screen.queryByText("Overreaching")).toBeNull();
     expect(screen.getByText("Not tracked")).toBeTruthy();
   });
 
@@ -38,7 +36,6 @@ describe("WeeklyReportCard", () => {
             weekStart: "2026-05-24",
             trainingHours: 0,
             activityCount: 0,
-            strainZone: "optimal",
             avgDailyLoad: 0,
             avgSleepMinutes: 475,
             sleepPerformancePct: 112,
@@ -52,7 +49,6 @@ describe("WeeklyReportCard", () => {
     );
 
     expect(screen.getByText("No training")).toBeTruthy();
-    expect(screen.queryByText("Optimal")).toBeNull();
   });
 
   it("labels weekly sleep as an average nightly value", () => {
@@ -63,7 +59,6 @@ describe("WeeklyReportCard", () => {
             weekStart: "2026-05-24",
             trainingHours: 4,
             activityCount: 2,
-            strainZone: "optimal",
             avgDailyLoad: 3,
             avgSleepMinutes: 459,
             sleepPerformancePct: 105,
@@ -77,5 +72,41 @@ describe("WeeklyReportCard", () => {
     );
 
     expect(screen.getByText("Avg nightly sleep")).toBeTruthy();
+  });
+
+  it("shows recent training history even when sleep was not tracked", () => {
+    render(
+      <WeeklyReportCard
+        data={{
+          current: {
+            weekStart: "2026-03-17",
+            trainingHours: 3,
+            activityCount: 2,
+            avgDailyLoad: 4,
+            avgSleepMinutes: 0,
+            sleepPerformancePct: 0,
+            avgReadiness: 0,
+            avgRestingHr: null,
+            avgHrv: null,
+          },
+          history: [
+            {
+              weekStart: "2026-03-10",
+              trainingHours: 2,
+              activityCount: 1,
+              avgDailyLoad: 3,
+              avgSleepMinutes: 0,
+              sleepPerformancePct: 0,
+              avgReadiness: 0,
+              avgRestingHr: null,
+              avgHrv: null,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTitle("2026-03-10: 2h 0m")).toBeTruthy();
+    expect(screen.getByTitle("This week: 3h 0m")).toBeTruthy();
   });
 });

@@ -103,6 +103,7 @@ export class InsightsRepository {
           sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
             FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.#userId}
+              AND resolution_status = 'available'
               ${dateWindowStartPredicate(sql`date`, endDate, days)}
             ORDER BY date ASC`,
         ),

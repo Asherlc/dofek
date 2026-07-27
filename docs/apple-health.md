@@ -110,7 +110,18 @@ The iOS app writes direct Dofek food entries back to Apple Health as dietary ene
 
 Mobile stores a local fingerprint ledger for each written food entry. If a direct Dofek entry changes, the app deletes prior Dofek-written HealthKit samples by their HealthKit sync identifiers before writing the replacement samples.
 
-Apple Health nutrition imports store each dietary sample as an unnamed `fitness.food_entry` with source/timestamp metadata plus one `fitness.food_entry_nutrient` row. Daily nutrition totals are read from `fitness.v_nutrition_daily`, which derives totals from those nutrient rows.
+Apple Health nutrition imports store each dietary quantity sample as an unnamed
+`daily_aggregate` `fitness.food_entry` with source/timestamp metadata plus one
+`fitness.food_entry_nutrient` row. Apple documents quantity samples as numeric
+values with units and sample timestamps/source metadata:
+[`HKQuantitySample`](https://developer.apple.com/documentation/healthkit/hkquantitysample),
+[`HKSample`](https://developer.apple.com/documentation/healthkit/hksample), and
+[`HKSourceRevision`](https://developer.apple.com/documentation/healthkit/hksourcerevision).
+Raw per-provider totals remain available through
+`fitness.v_nutrition_provider_daily`; application totals use
+`fitness.v_nutrition_daily`, which excludes an overlapping aggregate when one
+clear itemized source exists and reports other ambiguous overlaps instead of
+summing them.
 
 ## Workout Source Attribution
 

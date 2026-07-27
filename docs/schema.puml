@@ -304,6 +304,7 @@ entity "food_entry" {
   user_id : uuid <<FK>>
   external_id : text
   date : date
+  nutrition_grain : nutrition_entry_grain
   meal : meal
   food_name : text
   food_description : text

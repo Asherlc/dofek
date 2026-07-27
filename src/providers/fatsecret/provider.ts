@@ -185,6 +185,7 @@ export class FatSecretProvider implements SyncProvider {
                 providerId: this.id,
                 externalId: e.externalId,
                 date: e.date,
+                nutritionGrain: "itemized",
                 meal: e.meal,
                 foodName: e.foodName,
                 foodDescription: e.foodDescription,

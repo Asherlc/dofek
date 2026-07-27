@@ -72,6 +72,16 @@ function createSeededProviders() {
         fat_g: 28,
       },
     ],
+    resolution: {
+      status: "available",
+      message: "Totals use the only available nutrition source.",
+      sourceProviders: ["dofek"],
+      contributingProviders: ["dofek"],
+      excludedProviders: [],
+      sourceLabels: ["dofek"],
+      contributingSourceLabels: ["dofek"],
+      excludedSourceLabels: [],
+    },
     summary: {
       calories: 2220,
       mealCalories: {

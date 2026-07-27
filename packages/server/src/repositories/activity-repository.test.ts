@@ -123,6 +123,67 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.params).toContain("user-1");
     });
 
+    it("resolveVisibleActivityIds applies the repository access window", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-1" }]);
+      const repo = new ActivityRepository({ execute }, "user-1", "UTC", {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-03-10",
+        endDateExclusive: "2026-03-17",
+      });
+
+      await repo.resolveVisibleActivityIds(["activity-1", "activity-2"]);
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain(
+        "started_at >= (CAST($4::date AS timestamp without time zone) AT TIME ZONE $5)",
+      );
+      expect(compiledQuery.sql).toContain(
+        "started_at < (CAST($6::date AS timestamp without time zone) AT TIME ZONE $7)",
+      );
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "activity-1",
+        "activity-2",
+        "2026-03-10",
+        "UTC",
+        "2026-03-17",
+        "UTC",
+      ]);
+    });
+
+    it("listVisibleActivityIdsSince applies the local-date and access windows", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-1" }]);
+      const repo = new ActivityRepository({ execute }, "user-1", "America/Los_Angeles", {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-03-10",
+        endDateExclusive: "2026-03-17",
+      });
+
+      await expect(repo.listVisibleActivityIdsSince("2026-02-01")).resolves.toEqual(["activity-1"]);
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("started_at >= ($2::date AT TIME ZONE $3)");
+      expect(compiledQuery.sql).toContain(
+        "started_at >= (CAST($4::date AS timestamp without time zone) AT TIME ZONE $5)",
+      );
+      expect(compiledQuery.sql).toContain(
+        "started_at < (CAST($6::date AS timestamp without time zone) AT TIME ZONE $7)",
+      );
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "2026-02-01",
+        "America/Los_Angeles",
+        "2026-03-10",
+        "America/Los_Angeles",
+        "2026-03-17",
+        "America/Los_Angeles",
+      ]);
+    });
+
     it("countVisibleInWindow counts rows in v_activity", async () => {
       const { repo, execute } = makeRepository([{ activity_count: 4 }]);
 
@@ -166,9 +227,20 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.sql).not.toContain("CURRENT_TIMESTAMP -");
       expect(compiledQuery.sql).toContain("AND ended_at IS NOT NULL");
       expect(compiledQuery.sql).toContain("AND activity_type IN");
-      expect(compiledQuery.sql).toContain("AND started_at >= $3::timestamptz");
-      expect(compiledQuery.sql).toContain("AND started_at < $4::timestamptz");
-      expect(compiledQuery.params).toEqual(["user-1", "cycling", "2024-01-01", "2024-02-01"]);
+      expect(compiledQuery.sql).toContain(
+        "AND started_at >= (CAST($3::date AS timestamp without time zone) AT TIME ZONE $4)",
+      );
+      expect(compiledQuery.sql).toContain(
+        "AND started_at < (CAST($5::date AS timestamp without time zone) AT TIME ZONE $6)",
+      );
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "cycling",
+        "2024-01-01",
+        "UTC",
+        "2024-02-01",
+        "UTC",
+      ]);
     });
 
     it("resolveVisibleActivityIds skips the query when no ids are provided", async () => {

@@ -1,4 +1,7 @@
-import { selectedDateNutritionSummarySchema } from "@dofek/nutrition/selected-date-summary";
+import {
+  nutritionSourceResolutionSchema,
+  selectedDateNutritionSummarySchema,
+} from "@dofek/nutrition/selected-date-summary";
 import { z } from "zod";
 
 // ── Re-export server types used by iOS screens ──
@@ -58,4 +61,10 @@ export type FoodEntryRow = z.infer<typeof FoodEntrySchema>;
 export const FoodByDateSchema = z.object({
   entries: z.array(FoodEntrySchema),
   summary: selectedDateNutritionSummarySchema,
+});
+
+export const FoodByDateV2Schema = z.object({
+  entries: z.array(FoodEntrySchema),
+  summary: selectedDateNutritionSummarySchema.nullable(),
+  resolution: nutritionSourceResolutionSchema,
 });

@@ -182,7 +182,7 @@ export function buildStrainTargetResult(
   const acuteLoad = acuteLoadTotal / acuteWindow;
   chronicLoad /= chronicWindow;
 
-  const target = computeStrainTarget(readinessScore, chronicLoad, acuteLoad);
+  const target = computeStrainTarget(readinessScore);
   const todayLoadRow = input.loads.find((row) => row.date === input.endDate);
   const todayLoad = todayLoadRow?.daily_load ?? 0;
   const currentStrain = computeCurrentStrain({ fallbackActivityLoad: todayLoad });

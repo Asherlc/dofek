@@ -18100,6 +18100,50 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   remains stable, and verify the accumulated Redpanda events flow into
   ClickHouse.
 
+## 2026-07-26 — Settings Provider Inventory Caused Large Layout Shifts
+
+- **Status:** Direct web fix validated locally; CI and production deployment
+  pending.
+- **Symptoms:** Authenticated direct loads measured CLS `0.2274` on
+  `/settings` and `0.2347` on `/providers` while asynchronous Settings content
+  populated.
+- **User impact:** Sections below Data Sources moved after first paint, so
+  users could lose their reading position or target the wrong control. A good
+  CLS score is `0.1` or less at the 75th percentile, segmented by device type:
+  <https://web.dev/articles/cls#what_is_a_good_cls_score>.
+- **Evidence:** Document TTFB was only 8–21 ms. The loading state reserved one
+  desktop row with three 96 px skeletons, then replaced it with 19 provider
+  cards across seven rows. A deterministic Chrome 150 regression delayed the
+  provider tRPC batch and reproduced a 76 px downstream movement after the
+  provider viewport alone was stabilized: Billing grew 80 px and the Data
+  Sources action header grew 4 px. The Chrome DevTools connector could not
+  record a source trace because its shared browser profile was already locked;
+  the test therefore also compares section geometry independently of Layout
+  Shift API entries.
+- **Root cause:** Loading and resolved states did not share layout
+  reservations. Provider inventory height depended on provider count, the
+  Billing placeholder was shorter than its resolved content, and Data Sources
+  actions increased their header height after the provider response arrived.
+- **Fix / mitigation:** Keep provider cards inside one responsive fixed-height
+  scroll region shared by loading and resolved states, reserve Billing's
+  responsive resolved height, and reserve the Data Sources action-header
+  height. No server query, cache, timeout, or retry behavior changed.
+- **Validation:** The focused component regression failed before the provider
+  region existed and then passed. Before Settings gained tabs, Chrome 150
+  direct loads of `/settings` and redirected `/providers` reported zero
+  Billing height delta, zero Data Sources height delta, zero normalized
+  downstream movement, and CLS `0.0000`; both routes passed without retries.
+  The tab-aware regression now measures Data Sources on
+  `/settings?tab=connections` and redirected `/providers`, and Billing on
+  `/settings?tab=account`. Its post-merge local browser rerun is blocked by the
+  shared Docker disk incident recorded below; exact-head CI validation is
+  pending.
+- **Remaining risk / follow-up:** Confirm production field CLS after rollout
+  because synthetic page-load tests cannot represent every provider inventory,
+  viewport, font, or long-lived session. The provider catalog now scrolls
+  within its reserved region, so usability should also be reviewed on narrow
+  web viewports.
+
 ## 2026-07-26 — Mutation Prep Selected Cypress Test Harness Files
 
 - **Status:** Root cause fixed locally; replacement CI pending.
@@ -18164,6 +18208,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   workspaces' running containers and named volumes while applying Docker's
   [builder-cache pruning guidance](https://docs.docker.com/build/cache/garbage-collection/)
   when disk pressure recurs.
+
 ## 2026-07-26 — WHOOP BLE Initialization Ran While the App Was Backgrounded
 
 - **Status:** Direct fix merged, deployed, and resolved in Sentry.
@@ -18857,6 +18902,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   a complete production analytics build plus cache-warming cycle before
   resolving DOFEK-SERVER-5A.
 
+## 2026-07-27 — Local E2E Docker Storage Exhaustion
+
+- **Status:** Unresolved shared development-environment incident; issue #1999
+  browser validation moved to exact-head CI.
+- **Symptoms:** The isolated web E2E stack could not build, so Cypress did not
+  start. Full lint also stopped when SQLFluff's dbt templater could not connect
+  to the unavailable local ClickHouse service.
+- **User impact:** No production impact. Local browser and database-aware lint
+  validation were unavailable for this worktree.
+- **Evidence:** The first image build failed during `pnpm install` with
+  `Error: database or disk is full`. After removing only this worktree's E2E
+  resources and pruning 327.5 MB of rebuildable builder cache, the retry failed
+  while creating an OverlayFS directory with `no space left on device`.
+  Pruning unused images reclaimed 0 B.
+- **Root cause:** Docker's shared storage was full; the failure occurred before
+  the application image or Cypress spec could run.
+- **Fix / mitigation:** Removed this worktree's failed E2E resources and
+  rebuildable builder cache. No application, timeout, retry, or validation
+  behavior changed, and no broader shared Docker data was deleted.
+- **Validation:** All 14,117 Docker-free unit and mobile tests, root/server/web
+  TypeScript checks, targeted Biome checks, and 27 focused Settings tests pass.
+  Exact-head CI remains responsible for the unavailable browser and
+  database-backed validation.
+- **Remaining risk / follow-up:** Reclaim or expand Docker storage outside this
+  issue worktree, then confirm the isolated E2E stack and full lint run locally.
+
 ## 2026-07-26 — Deploy Gate Accepted a Transient Swarm Task
 
 - **Status:** Direct fix validated locally; replacement CI and production
@@ -18986,3 +19057,248 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployed release is observed; if the token-limit branch occurs, confirm the
   UI returns the documented clean-grant retry guidance before resolving
   DOFEK-SERVER-5H.
+
+## 2026-07-27 — Issue 2060 integration validation blocked by Docker disk exhaustion
+
+- **Status:** Local database validation blocked; Docker-free validation passed
+  and exact-head CI follow-up pending.
+- **Symptoms:** The targeted PostgreSQL and ClickHouse integration command
+  failed while starting this worktree's isolated Compose dependencies, before
+  Vitest collected the activity-visibility or review-seed tests.
+- **User impact:** No production user impact. The local agent could not execute
+  the new real-database regression before publication.
+- **Evidence:** The exact failing command was
+  `pnpm test:integration -- packages/server/src/repositories/activity-visibility-consistency.integration.test.ts scripts/seed/core.integration.test.ts`.
+  The first fatal line during the Redpanda image pull was
+  `write /var/lib/docker/image/overlay2/.tmp-repositories.json2323163154: no space left on device`.
+  After scoped cleanup, the single retry failed creating
+  `/var/lib/docker/volumes/issue-2060_db_data` with
+  `mkdir ...: no space left on device`.
+- **Root cause:** The shared Docker VM had no free storage for this worktree's
+  image metadata or isolated database volume; the failure occurred before
+  application code or database assertions ran.
+- **Fix / mitigation:** Removed only the `issue-2060` Compose resources through
+  `pnpm compose -- down --remove-orphans --volumes`, then pruned rebuildable
+  builder cache with `docker builder prune -af`. The cache prune reclaimed
+  zero bytes. After the one permitted retry reproduced the capacity failure,
+  Docker retries stopped and the attempted `issue-2060` network was removed.
+  No other workspace's containers or volumes were deleted.
+- **Validation:** Root, server, and web TypeScript checks pass; all 883
+  Docker-free unit/mobile files pass with 14,132 tests and 21 expected skips.
+  Repository lint passed through Biome, suppression, workflow-download, and
+  exact-version checks. Analytics SQL lint alone could not connect to the same
+  unavailable local ClickHouse instance; the remaining analytics policy,
+  mobile telemetry, and web story checks pass.
+- **Remaining risk / follow-up:** Required CI must execute the new PostgreSQL
+  and ClickHouse integration regression and seed grant assertion on a runner
+  with available Docker storage before merge. Local database validation
+  remains unresolved until Docker storage is restored.
+
+## 2026-07-27 — Issue 2060 CI exposed ambiguous date timezone coercion
+
+- **Status:** Root cause confirmed in exact-head CI; corrected implementation
+  and retry-safe fixture validation pending on the next CI head.
+- **Symptoms:** The real-PostgreSQL timezone-boundary regression selected the
+  activity before the local access start and rejected the activity before the
+  local end. Vitest retries then failed with a duplicate activity primary key.
+- **User impact:** No production change had shipped. If merged, limited users
+  outside the database session timezone could have seen an activity from the
+  previous local day or lost one from the final entitled local day.
+- **Evidence:** The exact failing job was `Test / Integration Tests (2/4)` in
+  workflow run `30303258217`, job `90101781039`. The first fatal assertion was
+  `expected Set{ '44444444-...' } to deeply equal Set{ '55555555-...' }`.
+  The retry then reported PostgreSQL error `23505` for duplicate key
+  `44444444-4444-4444-8444-444444444444`.
+- **Root cause:** Applying `AT TIME ZONE` directly to a `date` left PostgreSQL
+  to choose a timestamp overload through implicit coercion. The observed result
+  retained session-UTC boundary behavior instead of interpreting midnight in
+  `America/Los_Angeles`. PostgreSQL documents distinct `timestamp without time
+  zone` and `timestamp with time zone` operator variants:
+  <https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-ZONECONVERT>.
+  The test also inserted fixed IDs inside the retried test body, so a failed
+  first attempt contaminated its retry.
+- **Fix / mitigation:** Cast each local date explicitly to `timestamp without
+  time zone` before `AT TIME ZONE`, producing an unambiguous `timestamptz`
+  boundary. Seed the boundary activities once in `beforeAll` under a dedicated
+  user so retries are read-only and cannot collide.
+- **Validation:** Updated compiled-SQL tests, root/server TypeScript checks,
+  Biome, and the 51 focused unit tests pass on Node 26.5.0. The preceding exact
+  changed-line mutation run killed 5/5 mutants, and the full Docker-free suite
+  passed 14,133 tests before this final explicit-cast correction.
+- **Remaining risk / follow-up:** The new exact-head CI must pass the real
+  PostgreSQL boundary test, every integration shard, and mutation testing
+  before merge.
+
+## 2026-07-27 — Issue #2059 local database validation blocked by Docker disk exhaustion
+
+- **Status:** Application fix and executable PostgreSQL regression are ready;
+  exact-head integration validation is pending in CI.
+- **Symptoms:** The issue-specific Compose project could not create its Postgres
+  named volume. On PR #2220, integration shard 4 also returned 35 nutrition
+  analytics days where the fixture expected at least 40, and integration
+  shards 1 and 4 failed the micronutrient adequacy query. After those causes
+  were fixed, router integration still returned no micronutrient rows. A
+  pre-merge compatibility audit then found that the PR changed the existing
+  `food.byDate` response in place while upgraded mobile clients could restore
+  the prior response from the persisted query cache for up to 12 hours.
+- **User impact:** No production impact. Local database-backed validation could
+  not start in this worktree.
+- **Evidence:** `pnpm compose -- up -d --wait --wait-timeout 180 db` failed at
+  volume creation. The first fatal line was
+  `mkdir /var/lib/docker/volumes/issue-2059_db_data: no space left on device`.
+  GitHub Actions run 30302715863 showed the 35-row analytics result and the
+  failing micronutrient query. Its Postgres log's first fatal line was
+  `ERROR: missing FROM-clause entry for table "fe" at character 57`.
+  On exact-head run 30304798915, job 90107244740 ran
+  `pnpm exec vitest run --project integration --coverage --shard=1/4`; its
+  first fatal test line was
+  `AssertionError: expected 0 to be greater than 0` in the router's
+  micronutrient adequacy assertion.
+  In the same run, integration shard 3 job 90107244578 first failed
+  `FoodRepository.dailyTotalsRange()` with PostgreSQL error 42702:
+  `column reference "date" is ambiguous`; the query selected bare `date` after
+  joining the canonical daily and display views. The compatibility audit
+  compared the main-branch `food.byDate` response `{ entries, summary }` with
+  the proposed nullable-summary response containing required `resolution`
+  metadata, then confirmed that the mobile persistence buster was only the user
+  ID.
+- **Root cause:** Docker's local storage filesystem had no free capacity for the
+  worktree's new database volume. Separately, the analytics fixture did not
+  declare `nutrition_grain`, so legacy classification treated its multi-nutrient
+  rows as ambiguous and canonical source resolution excluded 15 conflicting
+  days. The micronutrient query selected `fe.date` after its canonical nutrient
+  source had been renamed to alias `fen`. The router fixture independently
+  omitted grain semantics from 30 multi-nutrient daily totals and ten itemized
+  oatmeal rows; the daily totals therefore classified as ambiguous, making
+  their overlapping oatmeal dates unavailable to canonical micronutrient
+  analytics. `dailyTotalsRange()` also left its selected date unqualified after
+  adding a second date-bearing view to the query. The API and persisted-query
+  cache contracts were also not versioned independently, which made the
+  in-place DTO change unsafe for installed and upgraded clients.
+- **Fix / mitigation:** The issue-specific Compose state was removed and the
+  rebuildable builder cache was pruned using Docker's documented cleanup
+  mechanism, but no reclaimable cache remained. Other workspaces' containers
+  and volumes were preserved. No retry, timeout, or test behavior changed.
+  See [Docker's pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/).
+  The analytics fixture now declares daily aggregates and itemized meals
+  explicitly, and the micronutrient query consistently uses the canonical
+  nutrient alias `fen`. The router fixture now likewise declares daily totals
+  as `daily_aggregate` and oatmeal entries as `itemized`. Router-data fixtures
+  now declare the same semantics, and `dailyTotalsRange()` selects
+  `daily.date`. `food.byDate` now preserves the v1 success DTO and returns an
+  actionable precondition error for source conflicts; `food.byDateV2` exposes
+  the nullable summary and resolution metadata used by new web and mobile
+  clients. Mobile persistence now uses a versioned user-scoped buster so the
+  previous DTO cache is discarded according to TanStack Query's documented
+  cache-buster behavior:
+  <https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient>.
+- **Validation:** A single retry reproduced the same volume-creation failure,
+  confirming the infrastructure prerequisite rather than the test body is
+  blocked. The full lint command also reached SQLFluff, then failed because its
+  dbt adapter could not connect to this worktree's unavailable ClickHouse
+  service at `127.0.0.1:57441`; all Docker-free lint stages pass. Unit, type,
+  and static migration validation remain local gates. On Node 26.5.0, the
+  compatibility-focused suite passed all 55 tests, root TypeScript validation
+  passed, and the full Docker-free suite passed 14,154 tests with 21 skipped.
+  The real PostgreSQL test and database-backed SQL lint are required on
+  exact-head CI.
+- **Remaining risk / follow-up:** CI must execute
+  `src/db/nutrition-canonical.integration.test.ts` before merge. Local Docker
+  storage should be expanded or unused resources should be reviewed before the
+  next database-backed worktree run. The compatibility endpoints and cache
+  version must remain covered by exact-shape and restore/discard regression
+  tests before future selected-date DTO changes.
+
+## 2026-07-27 — Global activity overlap expansion exhausted web DB pools
+
+- **Status:** Root cause confirmed from production query plans and direct
+  source fix prepared; merge, deployment, and production validation pending.
+- **Symptoms:** Dashboard bursts reported
+  [DOFEK-SERVER-5K](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5K),
+  [DOFEK-SERVER-5M](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5M),
+  and
+  [DOFEK-SERVER-5N](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5N)
+  as failures of session, insights, and PMC SQL statements.
+- **User impact:** Five session validations plus the insights and PMC SQL
+  calls could not acquire a database connection at 17:46 UTC. At 18:35 UTC,
+  insights and PMC failed while the surrounding dashboard batch took 47.7
+  seconds to finish.
+- **Runbook classification:** Following the
+  [loading-performance evidence gate](./performance/loading-performance-runbook.md#evidence-gate),
+  this was a request-time query-shape slowdown in PostgreSQL. The first fatal
+  line was `timeout exceeded when trying to connect`; the named slow family was
+  `fitness.v_activity`, and the evidence below excludes client blanking,
+  ClickHouse queueing, stale statistics, disk I/O, and lock contention.
+- **Evidence:** Every Sentry event's causal error was
+  `timeout exceeded when trying to connect` at the web process's unchanged
+  ten-second pool acquisition boundary; the displayed SQL had not started.
+  Web request logs and `pg_stat_statements` show the pool was instead occupied
+  by `fitness.v_activity` queries that took 13.94–16.29 seconds. A read-only
+  `EXPLAIN (ANALYZE, BUFFERS)` of the exact insights query took 5.08 seconds
+  from shared buffers: the recursive view built 2,635 activity rows globally,
+  compared the same-user cross-product, rejected 6,941,004 pairs, and produced
+  2,221 overlapping pairs before applying the request's user and date filters.
+  Current statistics were fresh, there were no lock waits or idle
+  transactions, and the server had 11 of 40 connections in use.
+- **Root cause:** `fitness.v_activity` evaluated the expensive overlap-ratio
+  arithmetic for every same-user activity pair, including millions of
+  time-disjoint pairs. The view's recursive grouping prevents the outer
+  request predicates from bounding that global work. PostgreSQL documents CTE
+  evaluation and recursive query behavior:
+  <https://www.postgresql.org/docs/current/queries-with.html>.
+- **Fix / mitigation:** Require strict positive interval overlap in the pair
+  join alongside the two 80% ratios. Both ratio branches already require
+  positive overlap, so the guards preserve deduplication, contained-activity,
+  cross-provider, and boundary-touching semantics while giving PostgreSQL
+  cheap necessary conditions for disjoint windows. The production read-only
+  benchmark returned the same 210 rows in 1.84 seconds, 64% faster. No pool
+  size, acquisition timeout, retry, cache, or database resource limit changed.
+- **Validation:** A real-PostgreSQL regression fixture covers a contained pair
+  and a boundary-touching non-pair, then inspects the database's executable
+  pairs plan for both positive-overlap guards. Local execution is blocked
+  because Docker Desktop's filesystem is full and PostgreSQL cannot create an
+  isolated test database; GitHub integration CI remains the executable green
+  gate. PostgreSQL documents executable plan inspection with `EXPLAIN`:
+  <https://www.postgresql.org/docs/current/using-explain.html>.
+- **Remaining risk / follow-up:** Merge and deploy through the normal release
+  path, repeat the exact production plan and dashboard request, confirm all
+  three Sentry issues remain quiet, and resolve them only after the deployed
+  query no longer exhausts a web process's five-connection pool.
+
+## 2026-07-27 — Weekly report query-window mutants survived CI
+
+- **Status:** Root cause confirmed; focused regression and exact mutation
+  validation prepared on PR #2222.
+- **Symptoms:** CI run
+  [30306020715](https://github.com/Asherlc/dofek/actions/runs/30306020715)
+  failed `Test / Stryker (5)` in job
+  [90110762516](https://github.com/Asherlc/dofek/actions/runs/30306020715/job/90110762516).
+- **User impact:** No production impact. PR #2222 could not merge because the
+  strict mutation gate detected missing behavioral coverage.
+- **Evidence:** The exact failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  The first fatal line was
+  `Final mutation score 0.00 under breaking threshold 75`. The report identified
+  two surviving arithmetic mutants at
+  `weekly-report-repository.ts:123`: `weeks * 7 + 28` changed to
+  `weeks / 7 + 28` and `weeks * 7 - 28`.
+- **Root cause:** Existing repository and router tests asserted report parsing
+  but not the ClickHouse query parameters. They therefore could not distinguish
+  the intended requested-week window plus 28 days of rolling sleep history from
+  either mutated window.
+- **Fix / mitigation:** Add a public `WeeklyReportRepository.getReport`
+  regression that requests two weeks ending 2026-03-28 and verifies the exact
+  query parameters: 42 total days and a 2026-02-14 window start. No mutation
+  threshold, query formula, timeout, retry, or CI configuration changed.
+  Stryker documents surviving mutants as changes not detected by the test suite:
+  <https://stryker-mutator.io/docs/mutation-testing-elements/survived/>.
+- **Validation:** All 25 focused repository tests pass. The exact changed-line
+  Stryker run killed both arithmetic mutants for a 100% mutation score without
+  changing the 75% breaking threshold. Server TypeScript and repository-wide
+  Biome checks pass. Full local lint reached SQLFluff, then stopped before
+  analysis because no ClickHouse service was listening on
+  `127.0.0.1:8123`; the prior exact PR head's CI lint passed, and the
+  corrective exact head remains the database-aware lint gate.
+- **Remaining risk / follow-up:** After PR #2220 merges, merge the exact current
+  `origin/main` into #2222, rerun exact-head CI, and merge only with every
+  required check green and zero unresolved review threads.

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { selectedDateNutritionSummarySchema } from "./selected-date-summary.ts";
+import {
+  nutritionSourceResolutionSchema,
+  selectedDateNutritionSummarySchema,
+} from "./selected-date-summary.ts";
 
 const summary = {
   calories: 1000,
@@ -35,5 +38,23 @@ describe("selectedDateNutritionSummarySchema", () => {
         calorieGoal: { ...summary.calorieGoal, progressPercentage: 101 },
       }),
     ).toThrow();
+  });
+});
+
+describe("nutritionSourceResolutionSchema", () => {
+  it("parses an explicit source conflict with server-owned provenance", () => {
+    const resolution = {
+      status: "source_conflict",
+      message:
+        "Totals are unavailable because nutrition sources overlap and no canonical contribution set can be determined.",
+      sourceProviders: ["apple-health", "cronometer"],
+      contributingProviders: [],
+      excludedProviders: ["apple-health", "cronometer"],
+      sourceLabels: ["Apple Health", "Cronometer"],
+      contributingSourceLabels: [],
+      excludedSourceLabels: ["Apple Health", "Cronometer"],
+    };
+
+    expect(nutritionSourceResolutionSchema.parse(resolution)).toEqual(resolution);
   });
 });

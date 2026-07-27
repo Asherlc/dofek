@@ -7,7 +7,7 @@ const SYNCED_HEALTH_DATA_QUERY_PATHS = new Set([
   "calendar.weekList",
   "calendar.activityOverview",
   "activity.list",
-  "food.byDate",
+  "food.byDateV2",
   "processing.status",
   "nutritionAnalytics.adaptiveTdee",
   "nutritionAnalytics.macroRatios",

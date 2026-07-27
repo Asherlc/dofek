@@ -799,7 +799,6 @@ describe("Router transformation logic", () => {
         expect(data.current.weekStart).toBeTruthy();
         expect(typeof data.current.trainingHours).toBe("number");
         expect(typeof data.current.activityCount).toBe("number");
-        expect(["restoring", "optimal", "overreaching"]).toContain(data.current.strainZone);
         expect(typeof data.current.avgDailyLoad).toBe("number");
         expect(typeof data.current.sleepPerformancePct).toBe("number");
       }
@@ -808,7 +807,6 @@ describe("Router transformation logic", () => {
       if (data.history.length > 0) {
         for (const week of data.history) {
           expect(week.weekStart).toBeTruthy();
-          expect(["restoring", "optimal", "overreaching"]).toContain(week.strainZone);
         }
       }
     });

@@ -86,6 +86,40 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
   });
 }
 
+function makeConflictCaller() {
+  const execute = vi
+    .fn()
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([{ id: "f1", food_name: "Lunch" }])
+    .mockResolvedValueOnce([
+      {
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        breakfast_calories: 0,
+        lunch_calories: 0,
+        dinner_calories: 0,
+        snack_calories: 0,
+        other_calories: 0,
+        resolution_status: "source_conflict",
+        resolution_message:
+          "Totals are unavailable because nutrition sources overlap and no canonical contribution set can be determined.",
+        source_providers: ["cronometer", "fatsecret"],
+        contributing_providers: [],
+        excluded_providers: ["cronometer", "fatsecret"],
+        source_labels: ["cronometer", "fatsecret"],
+        contributing_source_labels: [],
+        excluded_source_labels: ["cronometer", "fatsecret"],
+      },
+    ]);
+  return createCaller({
+    db: { execute },
+    userId: "user-1",
+    timezone: "UTC",
+  });
+}
+
 describe("foodRouter", () => {
   beforeEach(() => {
     cacheMocks.invalidateByPrefix.mockReset();
@@ -117,7 +151,7 @@ describe("foodRouter", () => {
   });
 
   describe("byDate", () => {
-    it("returns entries with the canonical selected-date summary", async () => {
+    it("preserves the v1 available response contract", async () => {
       const execute = vi
         .fn()
         .mockResolvedValueOnce([{ key: "calorieGoal", value: 1600 }])
@@ -133,6 +167,15 @@ describe("foodRouter", () => {
             dinner_calories: 0,
             snack_calories: 0,
             other_calories: 100,
+            resolution_status: "available",
+            resolution_message:
+              "Totals use the itemized source; overlapping daily aggregate sources are preserved but excluded.",
+            source_providers: ["apple-health", "cronometer"],
+            contributing_providers: ["cronometer"],
+            excluded_providers: ["apple-health"],
+            source_labels: ["apple-health", "cronometer"],
+            contributing_source_labels: ["cronometer"],
+            excluded_source_labels: ["apple-health"],
           },
         ]);
       const caller = createCaller({
@@ -169,6 +212,30 @@ describe("foodRouter", () => {
       });
     });
 
+    it("fails v1 conflicts with an actionable precondition error", async () => {
+      const caller = makeConflictCaller();
+
+      await expect(caller.byDate({ date: "2024-01-15" })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("keep one contribution set"),
+      });
+    });
+
+    it("returns entries and explicit conflict metadata from v2", async () => {
+      const caller = makeConflictCaller();
+
+      const result = await caller.byDateV2({ date: "2024-01-15" });
+
+      expect(result.summary).toBeNull();
+      expect(result.resolution).toEqual(
+        expect.objectContaining({
+          status: "source_conflict",
+          sourceProviders: ["cronometer", "fatsecret"],
+          contributingProviders: [],
+        }),
+      );
+    });
+
     it("logs when no rows are returned", async () => {
       const infoSpy = vi.spyOn(logger, "info").mockImplementation(() => undefined);
       const execute = vi
@@ -186,6 +253,14 @@ describe("foodRouter", () => {
             dinner_calories: 0,
             snack_calories: 0,
             other_calories: 0,
+            resolution_status: "available",
+            resolution_message: "Totals use the only available nutrition source.",
+            source_providers: [],
+            contributing_providers: [],
+            excluded_providers: [],
+            source_labels: [],
+            contributing_source_labels: [],
+            excluded_source_labels: [],
           },
         ]);
       const caller = createCaller({
@@ -194,11 +269,55 @@ describe("foodRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.byDate({ date: "2024-01-15" });
+      const result = await caller.byDateV2({ date: "2024-01-15" });
 
       expect(infoSpy).toHaveBeenCalledWith(
         "[food] byDate returned 0 rows for userId=user-1 date=2024-01-15",
       );
+      expect(result).toEqual(
+        expect.objectContaining({
+          summary: expect.objectContaining({ calories: 0 }),
+          resolution: expect.objectContaining({ status: "available" }),
+        }),
+      );
+    });
+
+    it("does not log an aggregate-only day as an empty-data anomaly", async () => {
+      const infoSpy = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            calories: 1800,
+            protein_g: 90,
+            carbs_g: 220,
+            fat_g: 60,
+            breakfast_calories: 0,
+            lunch_calories: 0,
+            dinner_calories: 0,
+            snack_calories: 0,
+            other_calories: 1800,
+            resolution_status: "available",
+            resolution_message: "Totals use the only available nutrition source.",
+            source_providers: ["apple-health"],
+            contributing_providers: ["apple-health"],
+            excluded_providers: [],
+            source_labels: ["Apple Health"],
+            contributing_source_labels: ["Apple Health"],
+            excluded_source_labels: [],
+          },
+        ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.byDateV2({ date: "2024-01-15" });
+
+      expect(infoSpy).not.toHaveBeenCalled();
     });
   });
 

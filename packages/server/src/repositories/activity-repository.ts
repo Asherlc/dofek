@@ -326,9 +326,24 @@ export class ActivityRepository extends BaseRepository {
       sql`SELECT id::text AS id
           FROM fitness.v_activity
           WHERE user_id = ${this.userId}::uuid
-            AND id IN (${activityIdFilter})`,
+            AND id IN (${activityIdFilter})
+            ${this.timestampAccessPredicate(sql`started_at`)}`,
     );
     return new Set(rows.map((row) => row.id));
+  }
+
+  /** Returns visible canonical activity IDs since an inclusive local calendar date. */
+  async listVisibleActivityIdsSince(localDate: string): Promise<string[]> {
+    const rows = await this.query(
+      z.object({ id: z.string() }),
+      sql`SELECT id::text AS id
+          FROM fitness.v_activity
+          WHERE user_id = ${this.userId}::uuid
+            AND started_at >= (${localDate}::date AT TIME ZONE ${this.timezone})
+            ${this.timestampAccessPredicate(sql`started_at`)}
+          ORDER BY started_at DESC`,
+    );
+    return rows.map((row) => row.id);
   }
 
   /** Drops rows whose ids are not currently visible in fitness.v_activity. */
@@ -356,11 +371,7 @@ export class ActivityRepository extends BaseRepository {
         : sql``;
     const endedAtPredicate = input.requireEndedAt ? sql`AND ended_at IS NOT NULL` : sql``;
     const accessWindow = input.accessWindow ?? this.accessWindow;
-    const accessWindowPredicate =
-      accessWindow.kind === "limited"
-        ? sql`AND started_at >= ${accessWindow.startDate}::timestamptz
-              AND started_at < ${accessWindow.endDateExclusive}::timestamptz`
-        : sql``;
+    const accessWindowPredicate = this.timestampAccessPredicate(sql`started_at`, accessWindow);
     const dateWindowPredicate = postgresCurrentTimestampRangeLowerBound(
       input.days,
       sql`started_at`,
