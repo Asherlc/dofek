@@ -113,4 +113,28 @@ describe("HealthReportShareButton", () => {
       expect(invalidate).toHaveBeenCalled();
     });
   });
+
+  it("keeps expiry selection independent across share button instances", () => {
+    render(
+      <>
+        <HealthReportShareButton
+          input={{ reportType: "weekly", weeks: 12, endDate: "2026-07-24" }}
+        />
+        <HealthReportShareButton input={{ reportType: "monthly", months: 6 }} />
+      </>,
+    );
+
+    const thirtyDayOptions = screen.getAllByRole("radio", { name: "30 days" });
+    expect(thirtyDayOptions).toHaveLength(2);
+    const [firstThirtyDayOption, secondThirtyDayOption] = thirtyDayOptions;
+    if (!firstThirtyDayOption || !secondThirtyDayOption) {
+      throw new Error("Expected two thirty-day expiry radios");
+    }
+
+    fireEvent.click(firstThirtyDayOption);
+
+    expect(firstThirtyDayOption).toBeChecked();
+    expect(secondThirtyDayOption).not.toBeChecked();
+    expect(screen.getAllByRole("radio", { name: "7 days" })[1]).toBeChecked();
+  });
 });

@@ -5,7 +5,8 @@ Shareable weekly and monthly health reports are created through `healthReport.ge
 ## Link expiry
 
 - The server accepts `expiresInDays` as an integer from 1 to 90, or `null` for a non-expiring link. See [`packages/server/src/routers/health-report.ts`](../packages/server/src/routers/health-report.ts).
-- Web and mobile share buttons always send a duration. The default is **7 days**. Users can choose **7**, **30**, or **90** days before creating the link.
+- Shared client durations live in `HEALTH_REPORT_SHARE_EXPIRY_OPTIONS` / `DEFAULT_HEALTH_REPORT_SHARE_EXPIRY_DAYS` from `dofek-server/health-report-share-expiry` (currently **7**, **30**, and **90** days; default **7**).
+- Web and mobile share buttons always send one of those durations.
 - Successful share copy (web) and the native share sheet message (mobile) include the server-returned `expiresAt`, formatted with `formatDateMedium` from `@dofek/format`.
 - Shared Reports on web lists existing links and shows their expiry when present.
 

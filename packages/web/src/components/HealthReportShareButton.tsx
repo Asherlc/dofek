@@ -1,12 +1,13 @@
 import { formatDateMedium } from "@dofek/format/format";
+import {
+  DEFAULT_HEALTH_REPORT_SHARE_EXPIRY_DAYS,
+  HEALTH_REPORT_SHARE_EXPIRY_OPTIONS,
+  type HealthReportShareExpiryDays,
+} from "dofek-server/health-report-share-expiry";
 import type { HealthReportGenerateInput } from "dofek-server/types";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
-
-const SHARE_EXPIRY_OPTIONS = [7, 30, 90] as const;
-type ShareExpiryDays = (typeof SHARE_EXPIRY_OPTIONS)[number];
-const DEFAULT_SHARE_EXPIRY_DAYS: ShareExpiryDays = 7;
 
 export function HealthReportShareButton({
   disabled = false,
@@ -16,7 +17,10 @@ export function HealthReportShareButton({
   input: HealthReportGenerateInput;
 }) {
   const trpcUtils = trpc.useUtils();
-  const [expiresInDays, setExpiresInDays] = useState<ShareExpiryDays>(DEFAULT_SHARE_EXPIRY_DAYS);
+  const expiryFieldId = useId();
+  const [expiresInDays, setExpiresInDays] = useState<HealthReportShareExpiryDays>(
+    DEFAULT_HEALTH_REPORT_SHARE_EXPIRY_DAYS,
+  );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
   const generateReport = trpc.healthReport.generate.useMutation({
@@ -44,6 +48,7 @@ export function HealthReportShareButton({
 
   const reportLabel = `${input.reportType} report`;
   const errorMessage = clientError ?? generateReport.error?.message ?? null;
+  const expiryGroupName = `share-link-expiry-${expiryFieldId}`;
 
   return (
     <div className="flex flex-col items-start gap-2">
@@ -55,9 +60,9 @@ export function HealthReportShareButton({
         <span className="text-xs text-muted" aria-hidden="true">
           Expires in
         </span>
-        {SHARE_EXPIRY_OPTIONS.map((days) => {
+        {HEALTH_REPORT_SHARE_EXPIRY_OPTIONS.map((days) => {
           const selected = expiresInDays === days;
-          const optionId = `share-expiry-${days}`;
+          const optionId = `${expiryFieldId}-share-expiry-${days}`;
           return (
             <label
               key={days}
@@ -71,7 +76,7 @@ export function HealthReportShareButton({
               <input
                 id={optionId}
                 type="radio"
-                name="share-link-expiry"
+                name={expiryGroupName}
                 value={days}
                 checked={selected}
                 disabled={disabled || generateReport.isPending}

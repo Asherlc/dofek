@@ -1,4 +1,9 @@
 import { formatDateMedium } from "@dofek/format/format";
+import {
+  DEFAULT_HEALTH_REPORT_SHARE_EXPIRY_DAYS,
+  HEALTH_REPORT_SHARE_EXPIRY_OPTIONS,
+  type HealthReportShareExpiryDays,
+} from "dofek-server/health-report-share-expiry";
 import type { HealthReportGenerateInput } from "dofek-server/types";
 import { useState } from "react";
 import { Share, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -6,10 +11,6 @@ import { useAuth } from "../lib/auth-context";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
-
-const SHARE_EXPIRY_OPTIONS = [7, 30, 90] as const;
-type ShareExpiryDays = (typeof SHARE_EXPIRY_OPTIONS)[number];
-const DEFAULT_SHARE_EXPIRY_DAYS: ShareExpiryDays = 7;
 
 export function HealthReportShareButton({
   disabled = false,
@@ -20,7 +21,9 @@ export function HealthReportShareButton({
 }) {
   const { serverUrl } = useAuth();
   const trpcUtils = trpc.useUtils();
-  const [expiresInDays, setExpiresInDays] = useState<ShareExpiryDays>(DEFAULT_SHARE_EXPIRY_DAYS);
+  const [expiresInDays, setExpiresInDays] = useState<HealthReportShareExpiryDays>(
+    DEFAULT_HEALTH_REPORT_SHARE_EXPIRY_DAYS,
+  );
   const [clientError, setClientError] = useState<string | null>(null);
   const generateReport = trpc.healthReport.generate.useMutation({
     onSuccess: async (report) => {
@@ -55,7 +58,7 @@ export function HealthReportShareButton({
         style={styles.expiryRow}
       >
         <Text style={styles.expiryLabel}>Expires in</Text>
-        {SHARE_EXPIRY_OPTIONS.map((days) => {
+        {HEALTH_REPORT_SHARE_EXPIRY_OPTIONS.map((days) => {
           const selected = expiresInDays === days;
           return (
             <TouchableOpacity
