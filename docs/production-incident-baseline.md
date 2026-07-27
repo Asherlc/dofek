@@ -18735,7 +18735,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Refresh WHOOP access tokens when one hour or less
   remains before the stored expiry. The safety window is an internal constant
   in the shared WHOOP token resolver; no public configuration, retry path, or
-  provider-specific scheduler behavior was added.
+  provider-specific scheduler behavior was added. WHOOP documents proactive
+  refresh before expiry and recommends refreshing tokens every hour:
+  <https://developer.whoop.com/docs/developing/oauth#refreshing-an-access-token>,
+  <https://developer.whoop.com/docs/developing/support#how-often-should-we-refresh-tokens-in-the-oauth-flow>.
 - **Validation:** The exact one-hour boundary regression failed first because
   the stored token was reused. After the fix, all 124 WHOOP token, provider,
   and sync-helper tests pass, including refresh at exactly one hour, reuse
