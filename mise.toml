@@ -28,7 +28,7 @@ run = "pnpm tsx scripts/dev-environment.ts prebuild"
 
 [tasks."cloud:start"]
 description = "Start local services and initialize databases"
-depends = ["dependencies"]
+depends = ["cloud:prebuild"]
 run = "pnpm tsx scripts/dev-environment.ts start"
 
 [tasks."cloud:init"]

@@ -14,7 +14,11 @@ function writeExecutable(path: string, contents: string): void {
 }
 
 function createFixture(
-  options: { codegraphInitialized?: boolean; dockerInfoFails?: boolean } = {},
+  options: {
+    codegraphInitialized?: boolean;
+    dockerInfoFails?: boolean;
+    nodeRequirement?: string;
+  } = {},
 ) {
   const fixtureDirectory = mkdtempSync(join(tmpdir(), "dev-environment-test-"));
   const binaryDirectory = join(fixtureDirectory, "bin");
@@ -33,7 +37,7 @@ function createFixture(
   writeFileSync(
     join(fixtureDirectory, "package.json"),
     JSON.stringify({
-      engines: { node: ">=26" },
+      engines: { node: options.nodeRequirement ?? ">=26" },
       packageManager: "pnpm@11.17.0+sha512.fixture",
     }),
   );
@@ -113,7 +117,11 @@ FAKE_COMMAND_NAME=vcpkg exec "${process.execPath}" "${join(binaryDirectory, "com
 
 function runDevEnvironment(
   mode: string,
-  options: { codegraphInitialized?: boolean; dockerInfoFails?: boolean } = {},
+  options: {
+    codegraphInitialized?: boolean;
+    dockerInfoFails?: boolean;
+    nodeRequirement?: string;
+  } = {},
 ) {
   const fixture = createFixture(options);
   const result = spawnSync(
@@ -172,6 +180,17 @@ describe("dev-environment", () => {
     expect(result.status).toBe(23);
     expect(result.stderr).toContain("Docker daemon unavailable");
     expect(commands).toEqual([["docker", "info"]]);
+  });
+
+  it("enforces the Node.js requirement declared by package.json", () => {
+    const { commands, result } = runDevEnvironment("doctor", {
+      codegraphInitialized: true,
+      nodeRequirement: ">=27",
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Node.js >=27 is required; found v26.5.0.");
+    expect(commands).toEqual([["node", "--version"]]);
   });
 
   it("starts services, initializes databases, and verifies the complete environment", () => {

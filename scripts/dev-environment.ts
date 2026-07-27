@@ -71,6 +71,16 @@ function readPackageManifest(): z.infer<typeof packageManifestSchema> {
   return packageManifestSchema.parse(JSON.parse(readFileSync(manifestPath, "utf8")));
 }
 
+function parseMinimumNodeMajor(requirement: string): number {
+  const majorText = /^>=(\d+)$/.exec(requirement)?.[1];
+  if (!majorText) {
+    fail(
+      `package.json engines.node must use the supported >=<major> format; found ${requirement}.`,
+    );
+  }
+  return Number.parseInt(majorText, 10);
+}
+
 function prebuild(): void {
   const codegraphDatabase = join(process.cwd(), ".codegraph", "codegraph.db");
   if (!existsSync(codegraphDatabase)) {
@@ -83,6 +93,7 @@ function prebuild(): void {
 function doctor(): void {
   const manifest = readPackageManifest();
   const nodeRequirement = manifest.engines.node;
+  const minimumNodeMajor = parseMinimumNodeMajor(nodeRequirement);
 
   const packageManager = manifest.packageManager.split("+")[0];
   const expectedPnpmVersion = packageManager?.match(/^pnpm@(.+)$/)?.[1];
@@ -96,7 +107,7 @@ function doctor(): void {
     label: "Node.js",
   });
   const nodeMajor = Number.parseInt(nodeVersion.replace(/^v/, "").split(".")[0] ?? "", 10);
-  if (!Number.isInteger(nodeMajor) || nodeMajor < 26) {
+  if (!Number.isInteger(nodeMajor) || nodeMajor < minimumNodeMajor) {
     fail(`Node.js ${nodeRequirement} is required; found ${nodeVersion}.`);
   }
 
