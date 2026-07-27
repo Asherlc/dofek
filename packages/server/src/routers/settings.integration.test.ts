@@ -84,10 +84,51 @@ describe("Settings router", () => {
       { key: "dashboardLayout", value: { order: [], hidden: [], collapsed: "invalid" } },
       { key: "whoop.wearLocation", value: "ankle" },
       { key: "unknownSetting", value: true },
+      {
+        key: "medicationReminders",
+        value: [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            medicationName: "",
+            localTime: "08:30",
+            enabled: true,
+          },
+        ],
+      },
+      {
+        key: "medicationReminders",
+        value: [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            medicationName: "Vitamin D3",
+            localTime: "8:30",
+            enabled: true,
+          },
+        ],
+      },
     ])("rejects malformed or unknown setting $key", async (input) => {
       const result = await mutate("settings.set", input);
 
       expect(result.error.data.code).toBe("BAD_REQUEST");
+    });
+
+    it("sets medication reminders and gets them back", async () => {
+      const reminders = [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          medicationName: "Vitamin D3",
+          localTime: "08:30",
+          enabled: true,
+        },
+      ];
+
+      await mutate("settings.set", { key: "medicationReminders", value: reminders });
+
+      const result = await query("settings.get", { key: "medicationReminders" });
+      expect(result.result.data).toEqual({
+        key: "medicationReminders",
+        value: reminders,
+      });
     });
   });
 

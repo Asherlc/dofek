@@ -1,6 +1,6 @@
 import { formatDateMedium, formatDateTime } from "@dofek/format/format";
 import { formatMeasurementText, UnitConverter } from "@dofek/format/units";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Updates from "expo-updates";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { DataExportSection } from "../components/DataExportSection";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
+import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
@@ -54,6 +55,9 @@ function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: strin
 export default function SettingsScreen() {
   const auth = useAuth();
   const router = useRouter();
+  const searchParams = useLocalSearchParams<{ focus?: string; reminderId?: string }>();
+  const focusedReminderId =
+    typeof searchParams.reminderId === "string" ? searchParams.reminderId : null;
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
@@ -394,6 +398,16 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             );
           })}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Medication Reminders</Text>
+        <Text style={styles.sectionDescription}>
+          Optional daily reminders with imported logging state
+        </Text>
+        <View style={styles.card}>
+          <MedicationRemindersPanel focusedReminderId={focusedReminderId} />
         </View>
       </View>
 

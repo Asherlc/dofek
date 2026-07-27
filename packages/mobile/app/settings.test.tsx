@@ -32,6 +32,10 @@ vi.mock("expo-updates", () => ({
   isEmbeddedLaunch: true,
 }));
 
+vi.mock("../lib/medication-reminder-notifications", () => ({
+  syncMedicationReminderNotifications: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../components/PersonalizationPanel", () => ({
   PersonalizationPanel: () => React.createElement("div", null, "PersonalizationPanel"),
 }));
@@ -69,6 +73,7 @@ let mockBillingStatus = {
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
+  useLocalSearchParams: () => ({}),
 }));
 
 vi.mock("../lib/auth-context", () => ({
@@ -224,7 +229,9 @@ vi.mock("../lib/trpc", () => ({
         useQuery: (input: { key: string }) =>
           input.key === "unitSystem"
             ? mockUnitSettingQuery
-            : { data: { value: "metric" }, error: null, refetch: vi.fn() },
+            : input.key === "medicationReminders"
+              ? { data: { key: "medicationReminders", value: [] }, error: null, refetch: vi.fn() }
+              : { data: { value: "metric" }, error: null, refetch: vi.fn() },
       },
       set: {
         useMutation: () => ({ mutate: mockSettingsSetMutate, isPending: false }),
@@ -503,6 +510,9 @@ describe("SettingsScreen medication doses", () => {
 
     render(<SettingsScreen />);
 
+    expect(screen.getByText("Medication Reminders")).toBeTruthy();
+    expect(screen.getByText("Optional daily reminders with imported logging state")).toBeTruthy();
+    expect(screen.getByText("No medication reminders yet.")).toBeTruthy();
     expect(screen.getByText("Medication Doses")).toBeTruthy();
     expect(screen.getByText("Review imported medication dose events")).toBeTruthy();
     expect(screen.getByText("No medication dose events yet.")).toBeTruthy();

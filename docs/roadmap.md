@@ -87,7 +87,7 @@ Distribute the Daily Brief after the core recommendation loop proves useful.
 - [ ] Add iOS home-screen and lock-screen widgets for the day's action, its status, and critical data freshness.
 - [ ] Add a Watch glance for the accepted action and relevant target.
 - [ ] Notify users when a required source becomes stale or disconnected and provide direct remediation.
-- [ ] Support optional medication reminders with clear logging state.
+- [x] Support optional medication reminders with clear logging state.
 - [ ] If a streak is tested, tie it to a low-pressure action such as reviewing the Brief or recording a check-in. Never reward exercise volume, weight change, calorie restriction, or a “perfect” recovery score.
 
 Duolingo's product research found that reducing the minimum daily commitment improved retention in its [streak experiments](https://blog.duolingo.com/improving-the-streak/). Its [widget design](https://blog.duolingo.com/widget-feature/) focuses on reminding the user of one meaningful action. Dofek should apply the habit principle without importing unsafe health gamification.
