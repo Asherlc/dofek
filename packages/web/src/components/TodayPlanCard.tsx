@@ -1,27 +1,14 @@
-import type { TodayPlanResult } from "@dofek/scoring/today-plan";
+import {
+  formatTodayPlanConfidence,
+  formatTodayPlanFreshness,
+  type TodayPlanResult,
+} from "@dofek/scoring/today-plan";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
-
-const confidenceLabel: Record<TodayPlanResult["confidence"], string> = {
-  high: "High confidence",
-  moderate: "Moderate confidence",
-  low: "Low confidence",
-};
 
 export interface TodayPlanCardProps {
   plan?: TodayPlanResult | null;
   loading?: boolean;
   error?: unknown;
-}
-
-function freshnessSummary(plan: TodayPlanResult): string | null {
-  const parts: string[] = [];
-  if (plan.freshness.recoveryDate != null) {
-    parts.push(`Recovery data from ${plan.freshness.recoveryDate}`);
-  }
-  if (plan.freshness.sleepDate != null) {
-    parts.push(`Sleep data from ${plan.freshness.sleepDate}`);
-  }
-  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardProps) {
@@ -55,12 +42,12 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Today Plan</h2>
         {refreshWarning}
         <p className="text-sm text-foreground leading-snug">{plan.message}</p>
-        <p className="text-[11px] text-dim">{confidenceLabel[plan.confidence]}</p>
+        <p className="text-[11px] text-dim">{formatTodayPlanConfidence(plan.confidence)}</p>
       </section>
     );
   }
 
-  const freshness = freshnessSummary(plan);
+  const freshness = formatTodayPlanFreshness(plan.freshness);
 
   return (
     <section className="card p-4 space-y-3" aria-label="Today Plan">
@@ -84,7 +71,7 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         ))}
       </dl>
       <div className="space-y-1">
-        <p className="text-[11px] text-dim">{confidenceLabel[plan.confidence]}</p>
+        <p className="text-[11px] text-dim">{formatTodayPlanConfidence(plan.confidence)}</p>
         {freshness != null ? <p className="text-[11px] text-dim">{freshness}</p> : null}
       </div>
     </section>

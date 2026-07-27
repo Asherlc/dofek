@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { buildTodayPlan } from "./today-plan.ts";
+import {
+  buildTodayPlan,
+  formatTodayPlanConfidence,
+  formatTodayPlanFreshness,
+} from "./today-plan.ts";
 
 describe("buildTodayPlan", () => {
   it("returns insufficient_data when readiness/strain target is missing", () => {
@@ -147,5 +150,36 @@ describe("buildTodayPlan", () => {
     ]);
     expect(plan.missingInputs).toEqual(["sleep"]);
     expect(plan.confidence).toBe("moderate");
+  });
+});
+
+describe("Today Plan presentation helpers", () => {
+  it("formats confidence labels for clients", () => {
+    expect(formatTodayPlanConfidence("high")).toBe("High confidence");
+    expect(formatTodayPlanConfidence("moderate")).toBe("Moderate confidence");
+    expect(formatTodayPlanConfidence("low")).toBe("Low confidence");
+  });
+
+  it("formats freshness summaries from recovery and sleep dates", () => {
+    expect(
+      formatTodayPlanFreshness({
+        recoveryDate: "2026-07-26",
+        sleepDate: "2026-07-26",
+      }),
+    ).toBe("Recovery data from 2026-07-26 · Sleep data from 2026-07-26");
+
+    expect(
+      formatTodayPlanFreshness({
+        recoveryDate: "2026-07-26",
+        sleepDate: null,
+      }),
+    ).toBe("Recovery data from 2026-07-26");
+
+    expect(
+      formatTodayPlanFreshness({
+        recoveryDate: null,
+        sleepDate: null,
+      }),
+    ).toBeNull();
   });
 });

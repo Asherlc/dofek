@@ -167,3 +167,30 @@ export function buildTodayPlan(input: BuildTodayPlanInput): TodayPlanResult {
     missingInputs,
   };
 }
+
+const confidenceLabels: Record<TodayPlanConfidence, string> = {
+  high: "High confidence",
+  moderate: "Moderate confidence",
+  low: "Low confidence",
+};
+
+/**
+ * Shared confidence wording for web and mobile Today Plan cards.
+ */
+export function formatTodayPlanConfidence(confidence: TodayPlanConfidence): string {
+  return confidenceLabels[confidence];
+}
+
+/**
+ * Shared freshness wording for web and mobile Today Plan cards.
+ */
+export function formatTodayPlanFreshness(freshness: TodayPlanFreshness): string | null {
+  const parts: string[] = [];
+  if (freshness.recoveryDate != null) {
+    parts.push(`Recovery data from ${freshness.recoveryDate}`);
+  }
+  if (freshness.sleepDate != null) {
+    parts.push(`Sleep data from ${freshness.sleepDate}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}

@@ -1,29 +1,16 @@
-import type { TodayPlanResult } from "@dofek/scoring/today-plan";
+import {
+  formatTodayPlanConfidence,
+  formatTodayPlanFreshness,
+  type TodayPlanResult,
+} from "@dofek/scoring/today-plan";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 import { getQueryErrorMessage, QueryStatePanel } from "./QueryStatePanel";
-
-const confidenceLabel: Record<TodayPlanResult["confidence"], string> = {
-  high: "High confidence",
-  moderate: "Moderate confidence",
-  low: "Low confidence",
-};
 
 export interface TodayPlanCardProps {
   plan?: TodayPlanResult | null;
   loading?: boolean;
   error?: unknown;
-}
-
-function freshnessSummary(plan: TodayPlanResult): string | null {
-  const parts: string[] = [];
-  if (plan.freshness.recoveryDate != null) {
-    parts.push(`Recovery data from ${plan.freshness.recoveryDate}`);
-  }
-  if (plan.freshness.sleepDate != null) {
-    parts.push(`Sleep data from ${plan.freshness.sleepDate}`);
-  }
-  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardProps) {
@@ -68,12 +55,12 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         <Text style={styles.sectionTitle}>TODAY PLAN</Text>
         {refreshWarning}
         <Text style={styles.message}>{plan.message}</Text>
-        <Text style={styles.meta}>{confidenceLabel[plan.confidence]}</Text>
+        <Text style={styles.meta}>{formatTodayPlanConfidence(plan.confidence)}</Text>
       </View>
     );
   }
 
-  const freshness = freshnessSummary(plan);
+  const freshness = formatTodayPlanFreshness(plan.freshness);
 
   return (
     <View style={styles.card} accessibilityLabel="Today Plan">
@@ -92,7 +79,7 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
           </View>
         ))}
       </View>
-      <Text style={styles.meta}>{confidenceLabel[plan.confidence]}</Text>
+      <Text style={styles.meta}>{formatTodayPlanConfidence(plan.confidence)}</Text>
       {freshness != null ? <Text style={styles.meta}>{freshness}</Text> : null}
     </View>
   );
