@@ -18825,7 +18825,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `DELETE /v1/permissions`
   ([Wahoo deauthorization API](https://cloud-api.wahooligan.com/#deauthorize));
   after that succeeds, the server removes the local provider authorization
-  (cascading its token), invalidates the provider cache, and links directly to a
+  and its dependent token and webhook state, invalidates the provider cache,
+  and links directly to a
   fresh authorization attempt. Previously imported provider data remains
   intact. Cleanup failures retain local authorization state and fail loudly.
   The undocumented `/oauth/revoke` endpoint is no longer exposed in Wahoo's
@@ -18842,7 +18843,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   local deletion fails. All 142 focused unit tests and all 3,787 changed
   unit/mobile tests pass. Executable database integration coverage verifies
   that removing the authorization clears `sync.providers` connection state and
-  cascades the OAuth token while retaining the provider catalog row; its local
+  clears the OAuth token while retaining the provider catalog row; its local
   run was blocked before test collection because Docker had no space to create
   this worktree's database volume, so CI must run that tier.
 - **Remaining risk / follow-up:** Merge and deploy through the normal release

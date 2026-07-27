@@ -5,7 +5,7 @@ import {
   isEncryptedCredentialValue,
 } from "../security/credential-encryption.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
-import { providerConnection } from "./schema/reference.ts";
+import { oauthToken, providerConnection, webhookSubscription } from "./schema/reference.ts";
 import {
   connectProviderWithTokens,
   deleteProviderAuthorization,
@@ -219,12 +219,24 @@ describe("deleteProviderAuthorization", () => {
     mock = createMockDatabase();
   });
 
-  it("deletes the provider connection so credentials cascade and reconnect is available", async () => {
-    await deleteProviderAuthorization(mock.db, "wahoo", TEST_USER_ID);
+  it("atomically deletes dependent authorization state before the provider connection", async () => {
+    let transactionCalls = 0;
+    async function transaction<T>(
+      callback: (transactionDatabase: typeof mock.db) => Promise<T>,
+    ): Promise<T> {
+      transactionCalls++;
+      return callback(mock.db);
+    }
 
-    expect(mock.spies.deleteFn).toHaveBeenCalledOnce();
-    expect(mock.spies.deleteFn).toHaveBeenCalledWith(providerConnection);
-    expect(mock.spies.deleteWhere).toHaveBeenCalledOnce();
+    await deleteProviderAuthorization({ transaction }, "wahoo", TEST_USER_ID);
+
+    expect(transactionCalls).toBe(1);
+    expect(mock.spies.deleteFn.mock.calls).toEqual([
+      [webhookSubscription],
+      [oauthToken],
+      [providerConnection],
+    ]);
+    expect(mock.spies.deleteWhere).toHaveBeenCalledTimes(3);
   });
 });
 
