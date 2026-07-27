@@ -174,6 +174,7 @@ describe("appRouter", () => {
       "running",
       "settings",
       "stress",
+      "todayPlan",
       "healthspan",
       "menstrualCycle",
       "medicationDoseEvents",
