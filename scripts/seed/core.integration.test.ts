@@ -34,6 +34,18 @@ describe("review seed core", () => {
     ).resolves.toEqual([]);
   });
 
+  it("grants the review fixture full paid access", async () => {
+    await seedCore(sql);
+
+    const billingRows = await sql`
+      SELECT paid_grant_reason
+      FROM fitness.user_billing
+      WHERE user_id = ${USER_ID}
+    `;
+
+    expect(billingRows).toEqual([{ paid_grant_reason: "review_fixture" }]);
+  });
+
   it("clears fixtures created with the previous review user ID", async () => {
     await clearSeedData(sql);
     await sql`DELETE FROM fitness.user_profile WHERE id = ${USER_ID}`;
