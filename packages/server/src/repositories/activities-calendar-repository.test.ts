@@ -464,6 +464,56 @@ describe("ActivitiesCalendarRepository", () => {
     expect(database.execute).not.toHaveBeenCalled();
   });
 
+  it("excludes unauthorized activities from overview totals, types, and type-filter paths", async () => {
+    const database = makeDatabase([[{ id: "authorized-run" }], [{ id: "authorized-run" }]]);
+    const activityRows = [
+      {
+        id: "authorized-run",
+        activity_type: "running",
+        duration_min: 45,
+        total_distance_meters: 5000,
+        total_elevation_gain_m: 100,
+      },
+      {
+        id: "unauthorized-ride",
+        activity_type: "cycling",
+        duration_min: 90,
+        total_distance_meters: 30000,
+        total_elevation_gain_m: 500,
+      },
+    ];
+    const sensorStore = makeSensorStore([activityRows, activityRows]);
+    const repository = new ActivitiesCalendarRepository(
+      database,
+      "00000000-0000-0000-0000-000000000001",
+      "UTC",
+      sensorStore,
+    );
+
+    await expect(
+      repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
+    ).resolves.toEqual({
+      activityCount: 1,
+      totalMinutes: 45,
+      totalDistanceMeters: 5000,
+      totalElevationGainM: 100,
+      activityTypes: ["running"],
+    });
+    await expect(
+      repository.getActivityOverview({
+        weeks: 4,
+        endDate: "2026-03-20",
+        activityType: "cycling",
+      }),
+    ).resolves.toEqual({
+      activityCount: 0,
+      totalMinutes: 0,
+      totalDistanceMeters: 0,
+      totalElevationGainM: 0,
+      activityTypes: ["running"],
+    });
+  });
+
   it("computes overview totals and type filters from canonical deduped activity summaries", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
