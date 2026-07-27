@@ -16,6 +16,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 - [testing.md](testing.md): testing patterns that come up repeatedly in this codebase.
 - [processing-status-runbook.md](processing-status-runbook.md): durable processing evidence, deployment order, and stage diagnosis.
 - [roadmap.md](roadmap.md): product-level roadmap notes and planned user-facing improvements.
+- [personal-experiments.md](personal-experiments.md): N-of-1 experiment setup and schedule slice.
 
 ## Architecture And Product Flows
 

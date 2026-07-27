@@ -614,6 +614,16 @@ export default function RecoveryScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.navLink}
+            onPress={() => router.push("/experiments")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Personal Experiments"
+          >
+            <Text style={styles.navLinkText}>Personal Experiments</Text>
+            <Text style={styles.navChevron}>{"\u203A"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.navLink}
             onPress={() => router.push("/daily-heart-rate")}
             activeOpacity={0.7}
             accessibilityRole="button"

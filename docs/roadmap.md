@@ -56,11 +56,11 @@ This outcome is successful when a newly activated user can receive a credible ac
 
 Turn correlations, journal entries, life events, medication-dose events, and behavior impact into guided N-of-1 experiments.
 
-- [ ] Let a user choose a question or hypothesis, outcome, intervention, and practical experiment duration.
+- [x] Let a user choose a question or hypothesis, outcome, intervention, and practical experiment duration. *(setup & schedule slice; see [`personal-experiments.md`](./personal-experiments.md))*
 - [ ] Record a baseline, adherence, outcome check-ins, and obvious confounders.
-- [ ] Support relevant time lags instead of assuming only same-day effects.
+- [x] Support relevant time lags instead of assuming only same-day effects. *(setup stores lag; analysis deferred)*
 - [ ] Report effect direction, magnitude, sample size, uncertainty, missing data, and limitations without claiming causality.
-- [ ] Recommend extending or stopping an experiment when evidence is insufficient rather than manufacturing a conclusion.
+- [ ] Recommend extending or stopping an experiment when evidence is insufficient rather than manufacturing a conclusion. *(manual stop shipped; evidence-based recommend deferred)*
 - [ ] Make journal and life-event capture available on mobile so context can be recorded when it happens.
 - [ ] Feed completed experiments into future Daily Brief recommendations only when the evidence contract permits it.
 
