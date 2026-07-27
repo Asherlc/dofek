@@ -212,6 +212,18 @@ describe("WeeklyReportRepository", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it("queries the requested weeks plus the rolling sleep comparison window", async () => {
+    const { repo, execute } = makeRepository([]);
+    await repo.getReport(2, "2026-03-28");
+
+    expect(execute.mock.calls[0]?.[2]).toEqual({
+      userId: "user-1",
+      windowStart: "2026-02-14",
+      endDate: "2026-03-28",
+      totalDays: 42,
+    });
+  });
+
   it("ignores ClickHouse join-default zeros when averaging weekly sleep", async () => {
     const { repo, execute } = makeRepository([]);
     await repo.getReport(4, "2026-03-28");
