@@ -18822,13 +18822,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   first, without revoking either authorization on success. Generic exchange
   failures preserve the existing connection. Only Wahoo's explicit
   `Too many unrevoked access tokens` rejection triggers its documented
-  `DELETE /v1/permissions`; after that succeeds, the server removes the local
-  provider authorization (cascading its token), invalidates the provider cache,
-  and links directly to a fresh authorization attempt. Previously imported
-  provider data remains intact. Cleanup failures retain local authorization
-  state and fail loudly. The undocumented `/oauth/revoke` endpoint is no longer
-  exposed in Wahoo's OAuth configuration. Wahoo documents both the ten-token
-  limit and the authorization-code exchange sequence:
+  `DELETE /v1/permissions`
+  ([Wahoo deauthorization API](https://cloud-api.wahooligan.com/#deauthorize));
+  after that succeeds, the server removes the local provider authorization
+  (cascading its token), invalidates the provider cache, and links directly to a
+  fresh authorization attempt. Previously imported provider data remains
+  intact. Cleanup failures retain local authorization state and fail loudly.
+  The undocumented `/oauth/revoke` endpoint is no longer exposed in Wahoo's
+  OAuth configuration. Wahoo documents both the ten-token limit and the
+  authorization-code exchange sequence:
   <https://cloud-api.wahooligan.com/#authentication>.
 - **Validation:** The callback regression tests first failed because successful
   reconnects still revoked the prior authorization and token-limit failures did

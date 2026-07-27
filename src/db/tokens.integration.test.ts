@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
-import { oauthToken, providerConnection } from "./schema/reference.ts";
+import { oauthToken, provider, providerConnection } from "./schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import {
   connectProviderWithTokens,
@@ -255,9 +255,10 @@ describe("Token storage (integration)", () => {
       .select()
       .from(oauthToken)
       .where(and(eq(oauthToken.userId, TEST_USER_ID), eq(oauthToken.providerId, providerId)));
-    const providerRows = await ctx.db.execute<{ id: string }>(
-      sql`SELECT id FROM fitness.provider WHERE id = ${providerId}`,
-    );
+    const providerRows = await ctx.db
+      .select({ id: provider.id })
+      .from(provider)
+      .where(eq(provider.id, providerId));
 
     expect(connectionRows).toEqual([]);
     expect(tokenRows).toEqual([]);

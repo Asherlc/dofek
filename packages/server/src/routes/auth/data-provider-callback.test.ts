@@ -8,6 +8,7 @@ const {
   mockLogger,
   mockLoadTokens,
   mockDeleteTokens,
+  mockDeleteProviderAuthorization,
   mockInvalidateByPrefix,
   mockGetAllProviders,
   mockResolveOrCreateUser,
@@ -20,6 +21,7 @@ const {
   mockLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   mockLoadTokens: vi.fn(),
   mockDeleteTokens: vi.fn(),
+  mockDeleteProviderAuthorization: vi.fn(),
   mockInvalidateByPrefix: vi.fn(),
   mockGetAllProviders: vi.fn(),
   mockResolveOrCreateUser: vi.fn(),
@@ -66,7 +68,7 @@ vi.mock("./slack-oauth.ts", () => ({
 vi.mock("dofek/db/tokens", () => ({
   loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
   deleteTokens: (...args: unknown[]) => mockDeleteTokens(...args),
-  deleteProviderAuthorization: (...args: unknown[]) => mockDeleteTokens(...args),
+  deleteProviderAuthorization: (...args: unknown[]) => mockDeleteProviderAuthorization(...args),
   ensureProvider: vi.fn(),
   saveTokens: vi.fn(),
 }));
@@ -229,8 +231,8 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     mockRevokeExistingTokens.mockImplementation(async () => {
       events.push("deauthorize-all-permissions");
     });
-    mockDeleteTokens.mockImplementation(async () => {
-      events.push("delete-stored-tokens");
+    mockDeleteProviderAuthorization.mockImplementation(async () => {
+      events.push("delete-provider-authorization");
     });
     mockInvalidateByPrefix.mockImplementation(async () => {
       events.push("invalidate-cache");
@@ -242,14 +244,15 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(events).toEqual([
       "exchange-new-grant",
       "deauthorize-all-permissions",
-      "delete-stored-tokens",
+      "delete-provider-authorization",
       "invalidate-cache",
     ]);
     expect(mockRevokeExistingTokens).toHaveBeenCalledWith({
       accessToken: "expired-access",
       refreshToken: "expired-refresh",
     });
-    expect(mockDeleteTokens).toHaveBeenCalledWith(mockDb, "wahoo", "user-1");
+    expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(mockDb, "wahoo", "user-1");
+    expect(mockDeleteTokens).not.toHaveBeenCalled();
     expect(mockPersistProviderConnection).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("authorization reset"));
@@ -272,6 +275,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     await handleOAuth2Callback(req, res);
 
     expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+    expect(mockDeleteProviderAuthorization).not.toHaveBeenCalled();
     expect(mockDeleteTokens).not.toHaveBeenCalled();
     expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
     expect(mockPersistProviderConnection).not.toHaveBeenCalled();
@@ -293,6 +297,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     await handleOAuth2Callback(req, res);
 
     expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
+    expect(mockDeleteProviderAuthorization).not.toHaveBeenCalled();
     expect(mockDeleteTokens).not.toHaveBeenCalled();
     expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
     expect(mockPersistProviderConnection).not.toHaveBeenCalled();
@@ -659,7 +664,8 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     await handleOAuth2Callback(req, res);
 
     expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
-    expect(mockDeleteTokens).toHaveBeenCalledWith(mockDb, "wahoo", "user-1");
+    expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(mockDb, "wahoo", "user-1");
+    expect(mockDeleteTokens).not.toHaveBeenCalled();
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.send).toHaveBeenCalledWith(
@@ -675,7 +681,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     });
     mockExchangeCode.mockRejectedValue(new Error("Too many unrevoked access tokens"));
     mockRevokeExistingTokens.mockResolvedValue(undefined);
-    mockDeleteTokens.mockRejectedValue(new Error("database unavailable"));
+    mockDeleteProviderAuthorization.mockRejectedValue(new Error("database unavailable"));
 
     const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
     await handleOAuth2Callback(req, res);
