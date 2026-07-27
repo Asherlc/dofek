@@ -21,7 +21,7 @@ import { captureException, logger } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
-import { FoodByDateSchema, type FoodEntryRow } from "../../types/api";
+import { FoodByDateV2Schema, type FoodEntryRow } from "../../types/api";
 import { type LoggerTab, TABS } from "../food/add-types";
 
 const MEALS = [
@@ -63,7 +63,7 @@ export default function FoodScreen() {
   }, []);
 
   const trpcUtils = trpc.useUtils();
-  const foodQuery = trpc.food.byDate.useQuery(
+  const foodQuery = trpc.food.byDateV2.useQuery(
     { date: dateString },
     { placeholderData: (previousData) => previousData },
   );
@@ -82,7 +82,7 @@ export default function FoodScreen() {
   const selectedDateFood =
     foodResponse === undefined
       ? { data: undefined, error: null }
-      : safeParseData(FoodByDateSchema, foodResponse, "food:byDate");
+      : safeParseData(FoodByDateV2Schema, foodResponse, "food:byDateV2");
   const entries = selectedDateFood.data?.entries ?? [];
   const summary = selectedDateFood.data?.summary;
   const resolution = selectedDateFood.data?.resolution;
@@ -185,7 +185,7 @@ export default function FoodScreen() {
   }
 
   const { refreshing, onRefresh } = useRefresh({
-    invalidate: () => trpcUtils.food.byDate.invalidate({ date: dateString }),
+    invalidate: () => trpcUtils.food.byDateV2.invalidate({ date: dateString }),
   });
   const aiLoggingInProgress = analyzeItemsMutation.isPending || createAiEntryMutation.isPending;
 

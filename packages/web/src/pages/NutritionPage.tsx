@@ -51,6 +51,11 @@ export type FoodEntry = z.infer<typeof foodEntrySchema>;
 
 export const selectedDateFoodSchema = z.object({
   entries: z.array(foodEntrySchema),
+  summary: selectedDateNutritionSummarySchema,
+});
+
+export const selectedDateFoodV2Schema = z.object({
+  entries: z.array(foodEntrySchema),
   summary: selectedDateNutritionSummarySchema.nullable(),
   resolution: nutritionSourceResolutionSchema,
 });
@@ -69,7 +74,7 @@ export function NutritionPage() {
 
   const dateString = formatDateForQuery(selectedDate);
 
-  const foodQuery = trpc.food.byDate.useQuery(
+  const foodQuery = trpc.food.byDateV2.useQuery(
     { date: dateString },
     { placeholderData: (previousData) => previousData },
   );
@@ -94,7 +99,7 @@ export function NutritionPage() {
   const [pendingAiMealItems, setPendingAiMealItems] = useState<AiMealItems>([]);
 
   const selectedDateFood =
-    foodQuery.data === undefined ? undefined : selectedDateFoodSchema.parse(foodQuery.data);
+    foodQuery.data === undefined ? undefined : selectedDateFoodV2Schema.parse(foodQuery.data);
   const entries = selectedDateFood?.entries ?? [];
   const isFoodBlockingLoading = shouldShowBlockingLoading({
     data: entries,

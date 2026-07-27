@@ -60,6 +60,11 @@ export type FoodEntryRow = z.infer<typeof FoodEntrySchema>;
 
 export const FoodByDateSchema = z.object({
   entries: z.array(FoodEntrySchema),
+  summary: selectedDateNutritionSummarySchema,
+});
+
+export const FoodByDateV2Schema = z.object({
+  entries: z.array(FoodEntrySchema),
   summary: selectedDateNutritionSummarySchema.nullable(),
   resolution: nutritionSourceResolutionSchema,
 });

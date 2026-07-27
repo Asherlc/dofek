@@ -19066,7 +19066,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   named volume. On PR #2220, integration shard 4 also returned 35 nutrition
   analytics days where the fixture expected at least 40, and integration
   shards 1 and 4 failed the micronutrient adequacy query. After those causes
-  were fixed, router integration still returned no micronutrient rows.
+  were fixed, router integration still returned no micronutrient rows. A
+  pre-merge compatibility audit then found that the PR changed the existing
+  `food.byDate` response in place while upgraded mobile clients could restore
+  the prior response from the persisted query cache for up to 12 hours.
 - **User impact:** No production impact. Local database-backed validation could
   not start in this worktree.
 - **Evidence:** `pnpm compose -- up -d --wait --wait-timeout 180 db` failed at
@@ -19083,7 +19086,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   In the same run, integration shard 3 job 90107244578 first failed
   `FoodRepository.dailyTotalsRange()` with PostgreSQL error 42702:
   `column reference "date" is ambiguous`; the query selected bare `date` after
-  joining the canonical daily and display views.
+  joining the canonical daily and display views. The compatibility audit
+  compared the main-branch `food.byDate` response `{ entries, summary }` with
+  the proposed nullable-summary response containing required `resolution`
+  metadata, then confirmed that the mobile persistence buster was only the user
+  ID.
 - **Root cause:** Docker's local storage filesystem had no free capacity for the
   worktree's new database volume. Separately, the analytics fixture did not
   declare `nutrition_grain`, so legacy classification treated its multi-nutrient
@@ -19094,7 +19101,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   oatmeal rows; the daily totals therefore classified as ambiguous, making
   their overlapping oatmeal dates unavailable to canonical micronutrient
   analytics. `dailyTotalsRange()` also left its selected date unqualified after
-  adding a second date-bearing view to the query.
+  adding a second date-bearing view to the query. The API and persisted-query
+  cache contracts were also not versioned independently, which made the
+  in-place DTO change unsafe for installed and upgraded clients.
 - **Fix / mitigation:** The issue-specific Compose state was removed and the
   rebuildable builder cache was pruned using Docker's documented cleanup
   mechanism, but no reclaimable cache remained. Other workspaces' containers
@@ -19105,18 +19114,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   nutrient alias `fen`. The router fixture now likewise declares daily totals
   as `daily_aggregate` and oatmeal entries as `itemized`. Router-data fixtures
   now declare the same semantics, and `dailyTotalsRange()` selects
-  `daily.date`.
+  `daily.date`. `food.byDate` now preserves the v1 success DTO and returns an
+  actionable precondition error for source conflicts; `food.byDateV2` exposes
+  the nullable summary and resolution metadata used by new web and mobile
+  clients. Mobile persistence now uses a versioned user-scoped buster so the
+  previous DTO cache is discarded according to TanStack Query's documented
+  cache-buster behavior:
+  <https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient>.
 - **Validation:** A single retry reproduced the same volume-creation failure,
   confirming the infrastructure prerequisite rather than the test body is
   blocked. The full lint command also reached SQLFluff, then failed because its
   dbt adapter could not connect to this worktree's unavailable ClickHouse
   service at `127.0.0.1:57441`; all Docker-free lint stages pass. Unit, type,
-  and static migration validation remain local gates; the real PostgreSQL test
-  and database-backed SQL lint are required on exact-head CI.
+  and static migration validation remain local gates. On Node 26.5.0, the
+  compatibility-focused suite passed all 55 tests, root TypeScript validation
+  passed, and the full Docker-free suite passed 14,154 tests with 21 skipped.
+  The real PostgreSQL test and database-backed SQL lint are required on
+  exact-head CI.
 - **Remaining risk / follow-up:** CI must execute
   `src/db/nutrition-canonical.integration.test.ts` before merge. Local Docker
   storage should be expanded or unused resources should be reviewed before the
-  next database-backed worktree run.
+  next database-backed worktree run. The compatibility endpoints and cache
+  version must remain covered by exact-shape and restore/discard regression
+  tests before future selected-date DTO changes.
 
 ## 2026-07-27 — Global activity overlap expansion exhausted web DB pools
 

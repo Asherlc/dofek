@@ -10,6 +10,12 @@ calories, macros, goal progress, or source selection. An available day includes
 the contributing and excluded providers/sources; an overlapping-source conflict
 has a null summary plus an actionable message and provenance.
 
+The `food.byDate` v1 procedure retains its installed-client contract of
+`{ entries, summary }` with a non-null summary and fails with an actionable
+precondition error when sources conflict. New web and mobile clients use
+`food.byDateV2`, whose separate response contract includes nullable `summary`
+and required `resolution` metadata.
+
 The database creates these values as query-time projections over raw entries,
 consistent with PostgreSQL views being virtual tables defined by a query:
 [PostgreSQL `CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html).

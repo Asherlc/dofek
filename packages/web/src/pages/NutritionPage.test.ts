@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { type FoodEntry, foodEntrySchema, selectedDateFoodSchema } from "./NutritionPage";
+import {
+  type FoodEntry,
+  foodEntrySchema,
+  selectedDateFoodSchema,
+  selectedDateFoodV2Schema,
+} from "./NutritionPage";
 
 const entrySchema = z.array(foodEntrySchema);
 
@@ -49,19 +54,9 @@ describe("foodEntrySchema", () => {
 });
 
 describe("selectedDateFoodSchema", () => {
-  it("parses entries with the server-owned display summary", () => {
+  it("parses the v1 response with a non-null server-owned display summary", () => {
     const result = selectedDateFoodSchema.parse({
       entries: [makeEntry()],
-      resolution: {
-        status: "available",
-        message: "Totals use the only available nutrition source.",
-        sourceProviders: ["dofek"],
-        contributingProviders: ["dofek"],
-        excludedProviders: [],
-        sourceLabels: ["dofek"],
-        contributingSourceLabels: ["dofek"],
-        excludedSourceLabels: [],
-      },
       summary: {
         calories: 999,
         mealCalories: { breakfast: 777, lunch: 0, dinner: 0, snack: 0, other: 0 },
@@ -74,10 +69,29 @@ describe("selectedDateFoodSchema", () => {
       },
     });
 
-    if (result.summary === null) {
-      throw new Error("Expected an available nutrition summary");
-    }
     expect(result.summary.calories).toBe(999);
     expect(result.summary.mealCalories.breakfast).toBe(777);
+  });
+});
+
+describe("selectedDateFoodV2Schema", () => {
+  it("parses conflict metadata with no mixed-source summary", () => {
+    const result = selectedDateFoodV2Schema.parse({
+      entries: [makeEntry()],
+      summary: null,
+      resolution: {
+        status: "source_conflict",
+        message: "Totals are unavailable because nutrition sources overlap.",
+        sourceProviders: ["cronometer", "fatsecret"],
+        contributingProviders: [],
+        excludedProviders: ["cronometer", "fatsecret"],
+        sourceLabels: ["Cronometer", "FatSecret"],
+        contributingSourceLabels: [],
+        excludedSourceLabels: ["Cronometer", "FatSecret"],
+      },
+    });
+
+    expect(result.summary).toBeNull();
+    expect(result.resolution.status).toBe("source_conflict");
   });
 });

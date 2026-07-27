@@ -86,6 +86,40 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
   });
 }
 
+function makeConflictCaller() {
+  const execute = vi
+    .fn()
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([{ id: "f1", food_name: "Lunch" }])
+    .mockResolvedValueOnce([
+      {
+        calories: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        breakfast_calories: 0,
+        lunch_calories: 0,
+        dinner_calories: 0,
+        snack_calories: 0,
+        other_calories: 0,
+        resolution_status: "source_conflict",
+        resolution_message:
+          "Totals are unavailable because nutrition sources overlap and no canonical contribution set can be determined.",
+        source_providers: ["cronometer", "fatsecret"],
+        contributing_providers: [],
+        excluded_providers: ["cronometer", "fatsecret"],
+        source_labels: ["cronometer", "fatsecret"],
+        contributing_source_labels: [],
+        excluded_source_labels: ["cronometer", "fatsecret"],
+      },
+    ]);
+  return createCaller({
+    db: { execute },
+    userId: "user-1",
+    timezone: "UTC",
+  });
+}
+
 describe("foodRouter", () => {
   beforeEach(() => {
     cacheMocks.invalidateByPrefix.mockReset();
@@ -117,7 +151,7 @@ describe("foodRouter", () => {
   });
 
   describe("byDate", () => {
-    it("returns entries with the canonical selected-date summary", async () => {
+    it("preserves the v1 available response contract", async () => {
       const execute = vi
         .fn()
         .mockResolvedValueOnce([{ key: "calorieGoal", value: 1600 }])
@@ -154,17 +188,6 @@ describe("foodRouter", () => {
 
       expect(result).toEqual({
         entries: [{ id: "f1", food_name: "Lunch" }],
-        resolution: {
-          status: "available",
-          message:
-            "Totals use the itemized source; overlapping daily aggregate sources are preserved but excluded.",
-          sourceProviders: ["apple-health", "cronometer"],
-          contributingProviders: ["cronometer"],
-          excludedProviders: ["apple-health"],
-          sourceLabels: ["apple-health", "cronometer"],
-          contributingSourceLabels: ["cronometer"],
-          excludedSourceLabels: ["apple-health"],
-        },
         summary: {
           calories: 1000,
           mealCalories: {
@@ -189,40 +212,19 @@ describe("foodRouter", () => {
       });
     });
 
-    it("returns an explicit conflict instead of overlapping source totals", async () => {
-      const execute = vi
-        .fn()
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ id: "f1", food_name: "Lunch" }])
-        .mockResolvedValueOnce([
-          {
-            calories: null,
-            protein_g: null,
-            carbs_g: null,
-            fat_g: null,
-            breakfast_calories: 0,
-            lunch_calories: 0,
-            dinner_calories: 0,
-            snack_calories: 0,
-            other_calories: 0,
-            resolution_status: "source_conflict",
-            resolution_message:
-              "Totals are unavailable because nutrition sources overlap and no canonical contribution set can be determined.",
-            source_providers: ["cronometer", "fatsecret"],
-            contributing_providers: [],
-            excluded_providers: ["cronometer", "fatsecret"],
-            source_labels: ["cronometer", "fatsecret"],
-            contributing_source_labels: [],
-            excluded_source_labels: ["cronometer", "fatsecret"],
-          },
-        ]);
-      const caller = createCaller({
-        db: { execute },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+    it("fails v1 conflicts with an actionable precondition error", async () => {
+      const caller = makeConflictCaller();
 
-      const result = await caller.byDate({ date: "2024-01-15" });
+      await expect(caller.byDate({ date: "2024-01-15" })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("keep one contribution set"),
+      });
+    });
+
+    it("returns entries and explicit conflict metadata from v2", async () => {
+      const caller = makeConflictCaller();
+
+      const result = await caller.byDateV2({ date: "2024-01-15" });
 
       expect(result.summary).toBeNull();
       expect(result.resolution).toEqual(
@@ -267,10 +269,16 @@ describe("foodRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.byDate({ date: "2024-01-15" });
+      const result = await caller.byDateV2({ date: "2024-01-15" });
 
       expect(infoSpy).toHaveBeenCalledWith(
         "[food] byDate returned 0 rows for userId=user-1 date=2024-01-15",
+      );
+      expect(result).toEqual(
+        expect.objectContaining({
+          summary: expect.objectContaining({ calories: 0 }),
+          resolution: expect.objectContaining({ status: "available" }),
+        }),
       );
     });
 
@@ -307,7 +315,7 @@ describe("foodRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.byDate({ date: "2024-01-15" });
+      await caller.byDateV2({ date: "2024-01-15" });
 
       expect(infoSpy).not.toHaveBeenCalled();
     });

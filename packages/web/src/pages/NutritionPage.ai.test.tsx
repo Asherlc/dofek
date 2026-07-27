@@ -32,7 +32,7 @@ vi.mock("../lib/telemetry.ts", () => ({
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     food: {
-      byDate: {
+      byDateV2: {
         useQuery: () => ({ ...foodByDateQuery, refetch: foodRefetchMock }),
       },
       create: {

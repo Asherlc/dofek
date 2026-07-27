@@ -45,7 +45,7 @@ vi.mock("expo-router", () => ({
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     food: {
-      byDate: {
+      byDateV2: {
         useQuery: () => ({ ...foodByDateQuery, refetch: foodRefetchMock }),
       },
       analyzeItemsWithAi: {
@@ -60,7 +60,7 @@ vi.mock("../../lib/trpc", () => ({
     },
     useUtils: () => ({
       food: {
-        byDate: { invalidate: invalidateFoodByDateMock },
+        byDateV2: { invalidate: invalidateFoodByDateMock },
       },
     }),
   },
