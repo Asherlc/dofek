@@ -90,7 +90,7 @@ ${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
           AND startsWith(logger_name, {tableName:String})`,
       query_params: {
         queryId,
-        tableName: `${targetSchema}.activity_sensor_sample `,
+        tableName: `${targetSchema}.activity_sensor_sample`,
       },
       format: "JSONEachRow",
     });
