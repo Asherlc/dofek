@@ -2,8 +2,6 @@ import { CORRELATION_METRICS } from "@dofek/stats/correlation";
 
 const METRIC_LABEL_BY_ID = new Map(CORRELATION_METRICS.map((metric) => [metric.id, metric.label]));
 
-export const PERSONAL_EXPERIMENT_METRIC_IDS = CORRELATION_METRICS.map((metric) => metric.id);
-
 export type PersonalExperimentStatus = "active" | "stopped";
 export type PersonalExperimentPhase = "baseline" | "intervention" | "complete" | "stopped";
 
