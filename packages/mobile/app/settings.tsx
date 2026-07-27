@@ -19,6 +19,7 @@ import {
 import { DataExportSection } from "../components/DataExportSection";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
+import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
@@ -363,6 +364,15 @@ export default function SettingsScreen() {
       </View>
 
       <ZeppPairingCard />
+
+      {/* ── Primary Goal ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Primary Goal</Text>
+        <Text style={styles.sectionDescription}>
+          Choose the outcome Dofek should optimize toward
+        </Text>
+        <PrimaryGoalSelector showHeading={false} />
+      </View>
 
       {/* ── Units ── */}
       <View style={styles.section}>
