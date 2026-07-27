@@ -214,6 +214,60 @@ describe("canonical nutrition contribution set", () => {
     expect(rows).toEqual([{ calories: 1900, protein_g: 95, resolution_status: "available" }]);
   });
 
+  it("rejects aggregate-only totals from multiple sources", async () => {
+    const date = "2026-01-06";
+    await addEntry({
+      providerId: "nutrition-aggregate",
+      date,
+      grain: "daily_aggregate",
+      nutrients: { calories: 1900 },
+    });
+    await addEntry({
+      providerId: "nutrition-other",
+      date,
+      grain: "daily_aggregate",
+      nutrients: { calories: 1850 },
+    });
+
+    const rows = await executeWithSchema(
+      context.db,
+      conflictRowSchema,
+      sql`
+      SELECT calories, resolution_status, contributing_providers
+      FROM fitness.v_nutrition_daily
+      WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
+    `,
+    );
+    expect(rows).toEqual([
+      {
+        calories: null,
+        resolution_status: "source_conflict",
+        contributing_providers: [],
+      },
+    ]);
+  });
+
+  it("keeps one legacy ambiguous entry available exactly once", async () => {
+    const date = "2026-01-07";
+    await addEntry({
+      providerId: "nutrition-aggregate",
+      date,
+      grain: null,
+      nutrients: { calories: 1800, protein: 90 },
+    });
+
+    const rows = await executeWithSchema(
+      context.db,
+      aggregateOnlyRowSchema,
+      sql`
+      SELECT calories, protein_g, resolution_status
+      FROM fitness.v_nutrition_daily
+      WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
+    `,
+    );
+    expect(rows).toEqual([{ calories: 1800, protein_g: 90, resolution_status: "available" }]);
+  });
+
   it("marks genuinely ambiguous multi-source days unavailable", async () => {
     const date = "2026-01-03";
     await addEntry({
