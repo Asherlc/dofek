@@ -456,6 +456,24 @@ describe("ActivitiesCalendarRepository", () => {
     expect(database.execute).toHaveBeenCalledTimes(1);
   });
 
+  it("returns an empty overview without querying ClickHouse when no activities are visible", async () => {
+    const database = makeDatabase([[]]);
+    const sensorStore = makeSensorStore([]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await expect(
+      repository.getActivityOverview({ weeks: 4, endDate: "2026-03-20" }),
+    ).resolves.toEqual({
+      activityCount: 0,
+      totalMinutes: 0,
+      totalDistanceMeters: 0,
+      totalElevationGainM: 0,
+      activityTypes: [],
+    });
+    expect(sensorStore.query).not.toHaveBeenCalled();
+    expect(database.execute).toHaveBeenCalledTimes(1);
+  });
+
   it("excludes unauthorized activities from overview totals, types, and type-filter paths", async () => {
     const database = makeDatabase([[{ id: "authorized-run" }], [{ id: "authorized-run" }]]);
     const sensorStore = makeSensorStore([
