@@ -153,10 +153,12 @@ describe("JournalPanel", () => {
     const lateMealRow = screen.getByText("Late meal").parentElement?.parentElement;
     expect(alcoholRow?.textContent).toMatch(/^Alcohol\s*Yes\s*whoop$/);
     expect(lateMealRow?.textContent).toMatch(/^Late meal\s*No\s*whoop$/);
-    expect(screen.getByText("Yes").className).toContain("bg-surface-hover");
-    expect(screen.getByText("Yes").className).toContain("text-muted");
-    expect(screen.getByText("No").className).toContain("bg-surface-hover");
-    expect(screen.getByText("No").className).toContain("text-muted");
+    const yesAnswer = screen.getByText("Yes");
+    const noAnswer = screen.getByText("No");
+    expect(yesAnswer.classList.contains("bg-surface-hover")).toBe(true);
+    expect(yesAnswer.classList.contains("text-muted")).toBe(true);
+    expect(noAnswer.classList.contains("bg-surface-hover")).toBe(true);
+    expect(noAnswer.classList.contains("text-muted")).toBe(true);
   });
 
   it("paginates journal entries", () => {
