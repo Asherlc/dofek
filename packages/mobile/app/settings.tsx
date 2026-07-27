@@ -28,8 +28,8 @@ import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
-import { GoalWeightSettingsSection } from "./settings-goal-weight";
 import { styles } from "./settings.styles";
+import { GoalWeightSettingsSection } from "./settings-goal-weight";
 
 type UnitSystem = "metric" | "imperial";
 
@@ -43,7 +43,6 @@ function formatLocalizedDateTime(date: Date | null | undefined): string {
   if (!date) return "n/a";
   return formatDateTime(date);
 }
-
 function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: string): string {
   const endInclusive = new Date(`${endDateExclusive}T12:00:00.000Z`);
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
@@ -647,4 +646,3 @@ export default function SettingsScreen() {
     </ScrollView>
   );
 }
-
