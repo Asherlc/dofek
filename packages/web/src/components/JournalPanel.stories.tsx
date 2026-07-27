@@ -13,17 +13,17 @@ interface JournalScenario {
 
 const entries = [
   {
-    id: "journal-energy",
+    id: "journal-alcohol",
     date: "2026-07-24",
-    provider_id: "dofek",
-    question_slug: "energy",
-    display_name: "Energy",
-    category: "wellness",
-    data_type: "numeric",
-    unit: "/10",
+    provider_id: "whoop",
+    question_slug: "alcohol",
+    display_name: "Alcohol",
+    category: "substance",
+    data_type: "boolean",
+    unit: null,
     answer_text: null,
-    answer_numeric: 8,
-    impact_score: 1.4,
+    answer_numeric: 1,
+    impact_score: 0.4,
   },
   {
     id: "journal-training",

@@ -117,6 +117,46 @@ describe("JournalPanel", () => {
     expect(screen.getByText("Journal refresh failed")).toBeDefined();
   });
 
+  it("shows journal answers without presenting provider impact scores as per-entry effects", () => {
+    mocks.entriesQuery.mockReturnValue({
+      data: [
+        {
+          ...entry,
+          id: "alcohol",
+          provider_id: "whoop",
+          question_slug: "alcohol",
+          display_name: "Alcohol",
+          data_type: "boolean",
+          answer_numeric: 1,
+          answer_text: null,
+          impact_score: 0.4,
+        },
+        {
+          ...entry,
+          id: "late-meal",
+          provider_id: "whoop",
+          question_slug: "late_meal",
+          display_name: "Late meal",
+          data_type: "boolean",
+          answer_numeric: 0,
+          answer_text: null,
+          impact_score: -0.3,
+        },
+      ],
+      error: null,
+      isLoading: false,
+    });
+
+    const { container } = render(<JournalPanel />);
+
+    expect(screen.getByText("Alcohol")).toBeDefined();
+    expect(screen.getByText("Late meal")).toBeDefined();
+    expect(screen.getByText("Yes")).toBeDefined();
+    expect(screen.getByText("No")).toBeDefined();
+    expect(screen.queryByText(/\bimpact\b/i)).toBeNull();
+    expect(container.querySelector(".text-green-400, .text-red-400")).toBeNull();
+  });
+
   it("paginates journal entries", () => {
     mocks.entriesQuery.mockReturnValue({
       data: Array.from({ length: 21 }, (_, index) => ({

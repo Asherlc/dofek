@@ -99,7 +99,6 @@ const entrySchema = z.object({
   unit: z.string().nullable(),
   answer_text: z.string().nullable(),
   answer_numeric: z.coerce.number().nullable(),
-  impact_score: z.coerce.number().nullable(),
 });
 
 type JournalEntry = z.infer<typeof entrySchema>;
@@ -281,14 +280,6 @@ function JournalEntryRow({
       <div className="flex items-center gap-2">
         <span className="text-sm text-foreground">{entry.display_name}</span>
         <AnswerDisplay entry={entry} />
-        {entry.impact_score !== null && (
-          <span
-            className={`text-xs px-1.5 py-0.5 rounded ${entry.impact_score >= 0 ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}
-          >
-            {entry.impact_score > 0 ? "+" : ""}
-            {entry.impact_score.toFixed(1)} impact
-          </span>
-        )}
       </div>
       <div className="flex items-center gap-2">
         {!isManual && <span className="text-xs text-dim">{entry.provider_id}</span>}
