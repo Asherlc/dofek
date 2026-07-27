@@ -40,19 +40,19 @@ vi.mock("expo-router", () => ({
 }));
 
 vi.mock("../components/QueryStatePanel", () => ({
+  getQueryErrorMessage: (error: unknown) =>
+    error instanceof Error ? error.message : "Could not load this section.",
   QueryStatePanel: ({
     variant,
     message,
-    error,
   }: {
     variant?: string;
     message?: string;
-    error?: { message: string } | null;
   }) => (
     <div>
       {variant === "loading" ? "Loading" : null}
       {variant === "empty" ? (message ?? "Empty") : null}
-      {error ? error.message : null}
+      {variant === "error" ? (message ?? "Error") : null}
     </div>
   ),
 }));

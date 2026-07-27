@@ -2,7 +2,7 @@ import { formatDateYmd } from "@dofek/format/format";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { QueryStatePanel } from "../components/QueryStatePanel";
+import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
@@ -74,9 +74,13 @@ export default function ExperimentsScreen() {
           ) : null}
 
           {metricsQuery.isError && metrics === undefined ? (
-            <QueryStatePanel error={metricsQuery.error} height={72} />
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(metricsQuery.error)}
+              minHeight={72}
+            />
           ) : metricsQuery.isLoading || metrics === undefined ? (
-            <QueryStatePanel variant="loading" height={72} />
+            <QueryStatePanel variant="loading" minHeight={72} />
           ) : (
             <View style={styles.form}>
               <Text style={styles.label}>Hypothesis</Text>
@@ -195,7 +199,11 @@ export default function ExperimentsScreen() {
               </Pressable>
 
               {createMutation.error ? (
-                <QueryStatePanel error={createMutation.error} height={72} />
+                <QueryStatePanel
+                  variant="error"
+                  message={getQueryErrorMessage(createMutation.error)}
+                  minHeight={72}
+                />
               ) : null}
             </View>
           )}
@@ -204,22 +212,36 @@ export default function ExperimentsScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Your experiments</Text>
           {metricsQuery.isError && metrics !== undefined ? (
-            <QueryStatePanel error={metricsQuery.error} height={72} />
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(metricsQuery.error)}
+              minHeight={72}
+            />
           ) : null}
 
           {listQuery.isError && experiments === undefined ? (
-            <QueryStatePanel error={listQuery.error} height={96} />
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(listQuery.error)}
+              minHeight={96}
+            />
           ) : listQuery.isLoading || experiments === undefined ? (
-            <QueryStatePanel variant="loading" height={96} />
+            <QueryStatePanel variant="loading" minHeight={96} />
           ) : experiments.length === 0 ? (
             <QueryStatePanel
               variant="empty"
               message="No experiments yet. Start one above, or open Correlation Explorer and choose Start experiment."
-              height={96}
+              minHeight={96}
             />
           ) : (
             <>
-              {listQuery.isError ? <QueryStatePanel error={listQuery.error} height={72} /> : null}
+              {listQuery.isError ? (
+                <QueryStatePanel
+                  variant="error"
+                  message={getQueryErrorMessage(listQuery.error)}
+                  minHeight={72}
+                />
+              ) : null}
               {experiments.map((experiment) => (
                 <View key={experiment.id} style={styles.experimentCard}>
                   <View style={styles.experimentHeader}>
