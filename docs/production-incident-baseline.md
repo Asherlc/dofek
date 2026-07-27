@@ -18986,3 +18986,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployed release is observed; if the token-limit branch occurs, confirm the
   UI returns the documented clean-grant retry guidance before resolving
   DOFEK-SERVER-5H.
+
+## 2026-07-27 — Issue 2060 integration validation blocked by Docker disk exhaustion
+
+- **Status:** Local database validation blocked; Docker-free validation passed
+  and exact-head CI follow-up pending.
+- **Symptoms:** The targeted PostgreSQL and ClickHouse integration command
+  failed while starting this worktree's isolated Compose dependencies, before
+  Vitest collected the activity-visibility or review-seed tests.
+- **User impact:** No production user impact. The local agent could not execute
+  the new real-database regression before publication.
+- **Evidence:** The exact failing command was
+  `pnpm test:integration -- packages/server/src/repositories/activity-visibility-consistency.integration.test.ts scripts/seed/core.integration.test.ts`.
+  The first fatal line during the Redpanda image pull was
+  `write /var/lib/docker/image/overlay2/.tmp-repositories.json2323163154: no space left on device`.
+  After scoped cleanup, the single retry failed creating
+  `/var/lib/docker/volumes/issue-2060_db_data` with
+  `mkdir ...: no space left on device`.
+- **Root cause:** The shared Docker VM had no free storage for this worktree's
+  image metadata or isolated database volume; the failure occurred before
+  application code or database assertions ran.
+- **Fix / mitigation:** Removed only the `issue-2060` Compose resources through
+  `pnpm compose -- down --remove-orphans --volumes`, then pruned rebuildable
+  builder cache with `docker builder prune -af`. The cache prune reclaimed
+  zero bytes. After the one permitted retry reproduced the capacity failure,
+  Docker retries stopped and the attempted `issue-2060` network was removed.
+  No other workspace's containers or volumes were deleted.
+- **Validation:** Root, server, and web TypeScript checks pass; all 883
+  Docker-free unit/mobile files pass with 14,132 tests and 21 expected skips.
+  Repository lint passed through Biome, suppression, workflow-download, and
+  exact-version checks. Analytics SQL lint alone could not connect to the same
+  unavailable local ClickHouse instance; the remaining analytics policy,
+  mobile telemetry, and web story checks pass.
+- **Remaining risk / follow-up:** Required CI must execute the new PostgreSQL
+  and ClickHouse integration regression and seed grant assertion on a runner
+  with available Docker storage before merge. Local database validation
+  remains unresolved until Docker storage is restored.

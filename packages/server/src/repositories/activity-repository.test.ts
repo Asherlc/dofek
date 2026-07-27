@@ -125,27 +125,45 @@ describe("ActivityRepository", () => {
 
     it("resolveVisibleActivityIds applies the repository access window", async () => {
       const execute = vi.fn().mockResolvedValue([{ id: "activity-1" }]);
-      const repo = new ActivityRepository(
-        { execute },
-        "user-1",
-        "UTC",
-        {
-          kind: "limited",
-          paid: false,
-          reason: "free_signup_week",
-          startDate: "2026-03-10",
-          endDateExclusive: "2026-03-17",
-        },
-      );
+      const repo = new ActivityRepository({ execute }, "user-1", "UTC", {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-03-10",
+        endDateExclusive: "2026-03-17",
+      });
 
       await repo.resolveVisibleActivityIds(["activity-1", "activity-2"]);
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql).toContain("started_at >= $4::date");
       expect(compiledQuery.sql).toContain("started_at < $5::date");
-      expect(compiledQuery.params).toEqual(
-        expect.arrayContaining(["2026-03-10", "2026-03-17"]),
-      );
+      expect(compiledQuery.params).toEqual(expect.arrayContaining(["2026-03-10", "2026-03-17"]));
+    });
+
+    it("listVisibleActivityIdsSince applies the local-date and access windows", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "activity-1" }]);
+      const repo = new ActivityRepository({ execute }, "user-1", "America/Los_Angeles", {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-03-10",
+        endDateExclusive: "2026-03-17",
+      });
+
+      await expect(repo.listVisibleActivityIdsSince("2026-02-01")).resolves.toEqual(["activity-1"]);
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("started_at >= ($2::date AT TIME ZONE $3)");
+      expect(compiledQuery.sql).toContain("started_at >= $4::date");
+      expect(compiledQuery.sql).toContain("started_at < $5::date");
+      expect(compiledQuery.params).toEqual([
+        "user-1",
+        "2026-02-01",
+        "America/Los_Angeles",
+        "2026-03-10",
+        "2026-03-17",
+      ]);
     });
 
     it("countVisibleInWindow counts rows in v_activity", async () => {

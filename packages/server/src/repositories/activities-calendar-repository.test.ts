@@ -97,12 +97,6 @@ function expectDedupedActivitiesWithSummaryMetrics(queryText: string | undefined
   expect(normalizedQueryText).toContain("LEFT JOIN analytics.activity_summary asum");
 }
 
-function expectVisibleDedupedActivitiesOnly(queryText: string | undefined): void {
-  const normalizedQueryText = normalizeSql(queryText);
-  expect(normalizedQueryText).toContain("FROM analytics.deduped_activities AS activity FINAL");
-  expect(normalizedQueryText).not.toContain("analytics.v_activity");
-}
-
 function expectDedupedActivitiesDriveActivityListIdentity(queryText: string | undefined): void {
   const normalizedQueryText = normalizeSql(queryText);
   expect(normalizedQueryText).toContain("FROM analytics.deduped_activities AS activity FINAL");
@@ -421,15 +415,15 @@ describe("ActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
-  it("returns activity overview totals directly from ClickHouse", async () => {
-    const database = makeDatabase([]);
+  it("returns activity overview totals from authorized ClickHouse activity rows", async () => {
+    const database = makeDatabase([[{ id: "running-activity" }, { id: "cycling-activity" }]]);
     const sensorStore = makeSensorStore([
       [
         {
-          activity_count: "2",
-          total_minutes: "150.45",
-          total_distance_meters: "30000.25",
-          total_elevation_gain_m: "420.25",
+          activity_count: "1",
+          total_minutes: "60.2",
+          total_distance_meters: "10000.1",
+          total_elevation_gain_m: "120.1",
         },
       ],
       [{ activity_type: "cycling" }, { activity_type: "running" }],
@@ -443,46 +437,47 @@ describe("ActivitiesCalendarRepository", () => {
     });
 
     expect(result).toEqual({
-      activityCount: 2,
-      totalMinutes: 150.5,
-      totalDistanceMeters: 30000.3,
-      totalElevationGainM: 420.3,
+      activityCount: 1,
+      totalMinutes: 60.2,
+      totalDistanceMeters: 10000.1,
+      totalElevationGainM: 120.1,
       activityTypes: ["cycling", "running"],
     });
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
       expect.stringContaining("activity.activity_type = {activityType:String}"),
-      expect.objectContaining({ activityType: "running" }),
+      expect.objectContaining({
+        activityIds: ["running-activity", "cycling-activity"],
+        activityType: "running",
+      }),
     );
-    expect(sensorStore.query).toHaveBeenNthCalledWith(
-      2,
-      expect.anything(),
-      expect.not.stringContaining("activity.activity_type = {activityType:String}"),
-      expect.not.objectContaining({ activityType: "running" }),
-    );
-    expect(database.execute).not.toHaveBeenCalled();
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(database.execute).toHaveBeenCalledTimes(1);
   });
 
   it("excludes unauthorized activities from overview totals, types, and type-filter paths", async () => {
     const database = makeDatabase([[{ id: "authorized-run" }], [{ id: "authorized-run" }]]);
-    const activityRows = [
-      {
-        id: "authorized-run",
-        activity_type: "running",
-        duration_min: 45,
-        total_distance_meters: 5000,
-        total_elevation_gain_m: 100,
-      },
-      {
-        id: "unauthorized-ride",
-        activity_type: "cycling",
-        duration_min: 90,
-        total_distance_meters: 30000,
-        total_elevation_gain_m: 500,
-      },
-    ];
-    const sensorStore = makeSensorStore([activityRows, activityRows]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          activity_count: 1,
+          total_minutes: 45,
+          total_distance_meters: 5000,
+          total_elevation_gain_m: 100,
+        },
+      ],
+      [{ activity_type: "running" }],
+      [
+        {
+          activity_count: 0,
+          total_minutes: 0,
+          total_distance_meters: 0,
+          total_elevation_gain_m: 0,
+        },
+      ],
+      [{ activity_type: "running" }],
+    ]);
     const repository = new ActivitiesCalendarRepository(
       database,
       "00000000-0000-0000-0000-000000000001",
@@ -512,6 +507,12 @@ describe("ActivitiesCalendarRepository", () => {
       totalElevationGainM: 0,
       activityTypes: ["running"],
     });
+    for (const queryCall of vi.mocked(sensorStore.query).mock.calls) {
+      expect(queryCall[2]).toMatchObject({ activityIds: ["authorized-run"] });
+      expect(queryCall[2]).not.toEqual(
+        expect.objectContaining({ activityIds: expect.arrayContaining(["unauthorized-ride"]) }),
+      );
+    }
   });
 
   it("computes overview totals and type filters from canonical deduped activity summaries", async () => {
@@ -532,13 +533,14 @@ describe("ActivitiesCalendarRepository", () => {
     await repository.getActivityOverview({ weeks: 1, endDate: "2026-03-20" });
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
     expectDedupedActivitiesWithSummaryMetrics(overviewQueryText);
     expect(normalizeSql(overviewQueryText)).not.toContain("analytics.v_activity");
     expect(normalizeSql(overviewQueryText)).toContain(
       "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
     );
-    expectVisibleDedupedActivitiesOnly(typeQueryText);
+    expect(normalizeSql(overviewQueryText)).toContain(
+      "activity.activity_id IN {activityIds:Array(UUID)}",
+    );
   });
 
   it("uses deduped activities as the activity overview identity source", async () => {
@@ -559,14 +561,10 @@ describe("ActivitiesCalendarRepository", () => {
     await repository.getActivityOverview({ weeks: 1, endDate: "2026-03-20" });
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
     expectDedupedActivitiesWithSummaryMetrics(overviewQueryText);
     expect(normalizeSql(overviewQueryText)).not.toContain("analytics.v_activity");
     expect(normalizeSql(overviewQueryText)).toContain(
-      "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
-    );
-    expect(normalizeSql(typeQueryText)).toContain(
-      "FROM analytics.deduped_activities AS activity FINAL",
+      "activity.activity_id IN {activityIds:Array(UUID)}",
     );
   });
 
