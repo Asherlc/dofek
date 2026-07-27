@@ -1,64 +1,78 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
-import { TEST_USER_ID } from "../db/schema/core.ts";
-import { foodEntry, supplement, supplementNutrient } from "../db/schema/nutrition.ts";
+import {
+  foodEntry,
+  foodEntryNutrient,
+  supplement,
+  supplementDoseEvent,
+  supplementNutrient,
+} from "../db/schema/nutrition.ts";
 import { userProfile } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
+import { ensureProvider } from "../db/tokens.ts";
 import { AutoSupplementsProvider } from "./auto-supplements.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
-// ============================================================
-// Helpers
-// ============================================================
+const PRIMARY_USER_ID = "11111111-1111-4111-8111-111111111111";
+const SECOND_USER_ID = "22222222-2222-4222-8222-222222222222";
 
-/** Insert a supplement with its nutrition data in a single transaction. */
 async function insertSupplementWithNutrition(
   db: TestContext["db"],
-  suppValues: {
+  values: {
     userId: string;
     name: string;
-    sortOrder: number;
+    effectiveFrom: string;
+    effectiveTo?: string;
     meal?: "breakfast" | "lunch" | "dinner" | "snack" | "other";
   },
   nutrients: Record<string, number | null>,
 ) {
-  const [supplementRow] = await db
+  const [definition] = await db
     .insert(supplement)
     .values({
-      ...suppValues,
+      ...values,
+      sortOrder: 0,
     })
-    .onConflictDoNothing()
-    .returning({ id: supplement.id });
+    .returning({
+      id: supplement.id,
+      scheduleId: supplement.scheduleId,
+    });
+  if (!definition) throw new Error(`Failed to insert supplement definition: ${values.name}`);
 
-  if (supplementRow?.id) {
-    const nutrientEntries = nutrientAmountEntriesFromLegacyFields(nutrients);
-    if (nutrientEntries.length > 0) {
-      await db.insert(supplementNutrient).values(
-        nutrientEntries.map((nutrientEntry) => ({
-          supplementId: supplementRow.id,
-          nutrientId: nutrientEntry.nutrientId,
-          amount: nutrientEntry.amount,
-        })),
-      );
-    }
+  const nutrientEntries = nutrientAmountEntriesFromLegacyFields(nutrients);
+  if (nutrientEntries.length > 0) {
+    await db.insert(supplementNutrient).values(
+      nutrientEntries.map((nutrient) => ({
+        supplementId: definition.id,
+        nutrientId: nutrient.nutrientId,
+        amount: nutrient.amount,
+      })),
+    );
   }
+  return definition;
 }
 
-// ============================================================
-// Integration tests for sync() with real DB
-// ============================================================
+function syncRun(ctx: TestContext, userId: string, sinceDate: string, untilDate: string): SyncRun {
+  return new SyncRun({
+    db: ctx.db,
+    userId,
+    window: SyncWindow.fromDateRange({ sinceDate, untilDate }),
+  });
+}
 
-describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
+describe("AutoSupplementsProvider — dose events with Postgres", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    // Ensure the baseline fixture user exists
     await ctx.db
       .insert(userProfile)
-      .values({ id: TEST_USER_ID, name: "Test User" })
+      .values([
+        { id: PRIMARY_USER_ID, name: "Primary Supplement User" },
+        { id: SECOND_USER_ID, name: "Second Supplement User" },
+      ])
       .onConflictDoNothing();
   }, 60_000);
 
@@ -66,208 +80,258 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("inserts supplement entries into the database", async () => {
-    await insertSupplementWithNutrition(
+  it("materializes only the requested user's effective definitions inside the exact window", async () => {
+    const primary = await insertSupplementWithNutrition(
       ctx.db,
-      { userId: TEST_USER_ID, name: "Vitamin D3", sortOrder: 0 },
+      {
+        userId: PRIMARY_USER_ID,
+        name: "Scoped Vitamin D",
+        effectiveFrom: "2099-01-02",
+        effectiveTo: "2099-01-04",
+      },
       { vitaminDMcg: 50 },
     );
     await insertSupplementWithNutrition(
       ctx.db,
-      { userId: TEST_USER_ID, name: "Fish Oil", sortOrder: 1, meal: "breakfast" },
-      { calories: 10, omega3Mg: 1000 },
-    );
-
-    const provider = new AutoSupplementsProvider();
-
-    // Use a since date that is today so we get exactly 1 day
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const result = await provider.sync(
-      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
-    );
-
-    expect(result.provider).toBe("auto-supplements");
-    expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBe(2);
-
-    // Verify entries in DB
-    const rows = await ctx.db
-      .select()
-      .from(foodEntry)
-      .where(eq(foodEntry.providerId, "auto-supplements"));
-    expect(rows.length).toBeGreaterThanOrEqual(2);
-
-    const vitD = rows.find((r) => r.foodName === "Vitamin D3");
-    expect(vitD).toBeDefined();
-    expect(vitD?.category).toBe("supplement");
-    expect(vitD?.userId).toBe(TEST_USER_ID);
-
-    const fishOil = rows.find((r) => r.foodName === "Fish Oil");
-    expect(fishOil).toBeDefined();
-    expect(fishOil?.meal).toBe("breakfast");
-  });
-
-  it("upserts on re-sync (updates existing entries)", async () => {
-    await insertSupplementWithNutrition(
-      ctx.db,
-      { userId: TEST_USER_ID, name: "Magnesium", sortOrder: 0 },
-      { magnesiumMg: 400 },
-    );
-
-    const provider = new AutoSupplementsProvider();
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-
-    // Sync twice
-    await provider.sync(
-      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
-    );
-    const result = await provider.sync(
-      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
-    );
-
-    expect(result.errors).toHaveLength(0);
-
-    // Verify no duplicates for Magnesium on today's date
-    const rows = await ctx.db
-      .select()
-      .from(foodEntry)
-      .where(eq(foodEntry.providerId, "auto-supplements"));
-    const todayStr = today.toISOString().slice(0, 10);
-    const magCount = rows.filter((r) => r.foodName === "Magnesium" && r.date === todayStr).length;
-    expect(magCount).toBe(1);
-  });
-
-  it("syncs an exact-day window when since and until are equal", async () => {
-    await insertSupplementWithNutrition(
-      ctx.db,
-      { userId: TEST_USER_ID, name: "ExactDaySupplement", sortOrder: 0 },
-      { calories: 5 },
-    );
-
-    const provider = new AutoSupplementsProvider();
-    const result = await provider.sync(
-      new SyncRun({
-        db: ctx.db,
-        window: new SyncWindow({
-          since: new Date("2099-01-01T00:00:00Z"),
-          until: new Date("2099-01-01T00:00:00Z"),
-        }),
-      }),
-    );
-
-    expect(result.recordsSynced).toBeGreaterThan(0);
-    expect(result.errors).toHaveLength(0);
-
-    const rows = await ctx.db
-      .select()
-      .from(foodEntry)
-      .where(eq(foodEntry.providerId, "auto-supplements"));
-    const exactDayRows = rows.filter((row) => row.foodName === "ExactDaySupplement");
-    expect(exactDayRows.map((row) => row.date)).toEqual(["2099-01-01"]);
-  });
-
-  it("handles multiple days in range", async () => {
-    await insertSupplementWithNutrition(
-      ctx.db,
-      { userId: TEST_USER_ID, name: "TestMultiDay", sortOrder: 0 },
-      { calories: 5 },
-    );
-
-    const provider = new AutoSupplementsProvider();
-
-    // 3 days ago to today = 4 days
-    const threeDaysAgo = new Date();
-    threeDaysAgo.setUTCDate(threeDaysAgo.getUTCDate() - 3);
-    threeDaysAgo.setUTCHours(0, 0, 0, 0);
-
-    const result = await provider.sync(
-      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: threeDaysAgo }) }),
-    );
-
-    expect(result.errors).toHaveLength(0);
-    // Should have entries for multiple supplements across multiple days
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(4);
-  });
-
-  it("does not sync supplement entries after the window end", async () => {
-    await insertSupplementWithNutrition(
-      ctx.db,
-      { userId: TEST_USER_ID, name: "WindowBounded", sortOrder: 0 },
-      { calories: 5 },
-    );
-
-    const provider = new AutoSupplementsProvider();
-    const result = await provider.sync(
-      new SyncRun({
-        db: ctx.db,
-        window: SyncWindow.fromDateRange({ sinceDate: "2026-04-01", untilDate: "2026-04-01" }),
-      }),
-    );
-
-    expect(result.errors).toHaveLength(0);
-
-    const rows = await ctx.db
-      .select()
-      .from(foodEntry)
-      .where(eq(foodEntry.providerId, "auto-supplements"));
-    const windowBoundedRows = rows.filter((row) => row.foodName === "WindowBounded");
-    expect(windowBoundedRows.map((row) => row.date)).toEqual(["2026-04-01"]);
-  });
-
-  it("syncs supplements for multiple users independently", async () => {
-    const secondUserId = "22222222-2222-2222-2222-222222222222";
-
-    // Create second user
-    await ctx.db
-      .insert(userProfile)
-      .values({ id: secondUserId, name: "Second User" })
-      .onConflictDoNothing();
-
-    await insertSupplementWithNutrition(
-      ctx.db,
-      { userId: secondUserId, name: "User2 Zinc", sortOrder: 0 },
+      {
+        userId: SECOND_USER_ID,
+        name: "Other User Zinc",
+        effectiveFrom: "2099-01-01",
+      },
       { zincMg: 15 },
     );
 
     const provider = new AutoSupplementsProvider();
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const result = await provider.sync(
-      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
-    );
+    const result = await provider.sync(syncRun(ctx, PRIMARY_USER_ID, "2099-01-01", "2099-01-05"));
 
-    expect(result.errors).toHaveLength(0);
-
-    // Verify user2's supplement entry exists with correct userId
+    expect(result).toMatchObject({
+      provider: "auto-supplements",
+      errors: [],
+      recordsSynced: 2,
+    });
     const rows = await ctx.db
       .select()
-      .from(foodEntry)
-      .where(eq(foodEntry.providerId, "auto-supplements"));
-    const user2Entry = rows.find((r) => r.foodName === "User2 Zinc" && r.userId === secondUserId);
-    expect(user2Entry).toBeDefined();
-
-    // Verify nutrition data was synced by checking via the view
-    const viewRows = await ctx.db.execute<{ zinc_mg: number | null }>(
-      sql`SELECT zinc_mg FROM fitness.v_food_entry_with_nutrition
-          WHERE food_name = 'User2 Zinc' AND user_id = ${secondUserId} LIMIT 1`,
-    );
-    expect(viewRows[0]?.zinc_mg).toBe(15);
+      .from(supplementDoseEvent)
+      .where(eq(supplementDoseEvent.userId, PRIMARY_USER_ID));
+    expect(rows.map((row) => [row.supplementId, row.scheduledDate, row.status])).toEqual([
+      [primary.id, "2099-01-02", "planned"],
+      [primary.id, "2099-01-03", "planned"],
+    ]);
+    expect(
+      await ctx.db
+        .select()
+        .from(supplementDoseEvent)
+        .where(eq(supplementDoseEvent.userId, SECOND_USER_ID)),
+    ).toEqual([]);
+    expect(
+      await ctx.db.select().from(foodEntry).where(eq(foodEntry.providerId, "auto-supplements")),
+    ).toEqual([]);
   });
 
-  it("returns empty result when no supplements exist in DB", async () => {
-    // Clean up all supplements
-    await ctx.db.delete(supplement);
-
+  it("is idempotent and never infers a past occurrence was taken", async () => {
+    const definition = await insertSupplementWithNutrition(
+      ctx.db,
+      {
+        userId: PRIMARY_USER_ID,
+        name: "Historical Magnesium",
+        effectiveFrom: "2020-01-01",
+        effectiveTo: "2020-01-02",
+      },
+      { magnesiumMg: 400 },
+    );
     const provider = new AutoSupplementsProvider();
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const result = await provider.sync(
-      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+
+    const first = await provider.sync(syncRun(ctx, PRIMARY_USER_ID, "2020-01-01", "2020-01-01"));
+    const second = await provider.sync(syncRun(ctx, PRIMARY_USER_ID, "2020-01-01", "2020-01-01"));
+
+    expect(first.recordsSynced).toBe(1);
+    expect(second.recordsSynced).toBe(0);
+    const rows = await ctx.db
+      .select()
+      .from(supplementDoseEvent)
+      .where(eq(supplementDoseEvent.supplementId, definition.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("unknown");
+  });
+
+  it("advances a stale planned leaf to unknown without rewriting its history", async () => {
+    const definition = await insertSupplementWithNutrition(
+      ctx.db,
+      {
+        userId: PRIMARY_USER_ID,
+        name: "Stale Plan",
+        effectiveFrom: "2021-01-01",
+        effectiveTo: "2021-01-02",
+      },
+      { magnesiumMg: 200 },
+    );
+    await ensureProvider(
+      ctx.db,
+      "auto-supplements",
+      "Auto-Supplements",
+      undefined,
+      PRIMARY_USER_ID,
+    );
+    const [planned] = await ctx.db
+      .insert(supplementDoseEvent)
+      .values({
+        userId: PRIMARY_USER_ID,
+        scheduleId: definition.scheduleId,
+        supplementId: definition.id,
+        providerId: "auto-supplements",
+        externalId: "stale-planned",
+        scheduledDate: "2021-01-01",
+        status: "planned",
+        recordedAt: new Date("2021-01-01T12:00:00Z"),
+      })
+      .returning({ id: supplementDoseEvent.id });
+    if (!planned) throw new Error("Failed to seed planned supplement dose");
+
+    const result = await new AutoSupplementsProvider().sync(
+      syncRun(ctx, PRIMARY_USER_ID, "2021-01-01", "2021-01-01"),
     );
 
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+    const history = await ctx.db
+      .select()
+      .from(supplementDoseEvent)
+      .where(eq(supplementDoseEvent.supplementId, definition.id));
+    expect(history).toHaveLength(2);
+    expect(history.find((event) => event.id === planned.id)?.status).toBe("planned");
+    expect(history.find((event) => event.supersedesEventId === planned.id)?.status).toBe("unknown");
+  });
+
+  it("adds nutrients only while a taken event is the current leaf", async () => {
+    const definition = await insertSupplementWithNutrition(
+      ctx.db,
+      {
+        userId: PRIMARY_USER_ID,
+        name: "Taken Vitamin D",
+        effectiveFrom: "2098-01-01",
+        effectiveTo: "2098-01-02",
+        meal: "breakfast",
+      },
+      { vitaminDMcg: 25 },
+    );
+    await new AutoSupplementsProvider().sync(
+      syncRun(ctx, PRIMARY_USER_ID, "2098-01-01", "2098-01-01"),
+    );
+    const [planned] = await ctx.db
+      .select()
+      .from(supplementDoseEvent)
+      .where(eq(supplementDoseEvent.supplementId, definition.id));
+    if (!planned) throw new Error("Failed to materialize planned supplement dose");
+
+    const [taken] = await ctx.db
+      .insert(supplementDoseEvent)
+      .values({
+        userId: PRIMARY_USER_ID,
+        scheduleId: definition.scheduleId,
+        supplementId: definition.id,
+        providerId: "auto-supplements",
+        externalId: "taken-overlay",
+        scheduledDate: planned.scheduledDate,
+        status: "taken",
+        supersedesEventId: planned.id,
+        recordedAt: new Date("2098-01-01T12:00:00Z"),
+      })
+      .returning({ id: supplementDoseEvent.id });
+    if (!taken) throw new Error("Failed to record taken supplement dose");
+
+    const takenRows = await ctx.db.execute<{
+      amount: number;
+      food_entry_id: string | null;
+      supplement_dose_event_id: string | null;
+    }>(sql`SELECT amount, food_entry_id, supplement_dose_event_id
+           FROM fitness.v_nutrition_canonical_nutrient
+           WHERE user_id = ${PRIMARY_USER_ID}
+             AND date = '2098-01-01'
+             AND nutrient_id = 'vitamin_d'`);
+    expect(takenRows).toEqual([
+      {
+        amount: 25,
+        food_entry_id: null,
+        supplement_dose_event_id: taken.id,
+      },
+    ]);
+
+    await ctx.db.insert(supplementDoseEvent).values({
+      userId: PRIMARY_USER_ID,
+      scheduleId: definition.scheduleId,
+      supplementId: definition.id,
+      providerId: "auto-supplements",
+      externalId: "skipped-overlay",
+      scheduledDate: planned.scheduledDate,
+      status: "skipped",
+      supersedesEventId: taken.id,
+      recordedAt: new Date("2098-01-01T13:00:00Z"),
+    });
+
+    const skippedRows = await ctx.db.execute(
+      sql`SELECT amount
+          FROM fitness.v_nutrition_canonical_nutrient
+          WHERE user_id = ${PRIMARY_USER_ID}
+            AND date = '2098-01-01'
+            AND nutrient_id = 'vitamin_d'`,
+    );
+    expect(skippedRows).toEqual([]);
+  });
+
+  it("migration cleanup removes only fictional auto-supplement foods and cascades nutrients", async () => {
+    await ensureProvider(
+      ctx.db,
+      "fixture-food-source",
+      "Fixture Food Source",
+      undefined,
+      PRIMARY_USER_ID,
+    );
+    const [fictional, real] = await ctx.db
+      .insert(foodEntry)
+      .values([
+        {
+          userId: PRIMARY_USER_ID,
+          providerId: "auto-supplements",
+          externalId: "fictional-food",
+          date: "2022-01-01",
+          foodName: "Fictional supplement food",
+        },
+        {
+          userId: PRIMARY_USER_ID,
+          providerId: "fixture-food-source",
+          externalId: "real-food",
+          date: "2022-01-01",
+          foodName: "Real food",
+        },
+      ])
+      .returning({ id: foodEntry.id, providerId: foodEntry.providerId });
+    if (!fictional || !real) throw new Error("Failed to seed cleanup fixtures");
+    await ctx.db.insert(foodEntryNutrient).values([
+      { foodEntryId: fictional.id, nutrientId: "vitamin_d_mcg", amount: 10 },
+      { foodEntryId: real.id, nutrientId: "vitamin_d_mcg", amount: 5 },
+    ]);
+
+    await ctx.db.execute(
+      sql`DELETE FROM fitness.food_entry WHERE provider_id = 'auto-supplements'`,
+    );
+
+    expect(await ctx.db.select().from(foodEntry).where(eq(foodEntry.id, fictional.id))).toEqual([]);
+    expect(
+      await ctx.db
+        .select()
+        .from(foodEntryNutrient)
+        .where(eq(foodEntryNutrient.foodEntryId, fictional.id)),
+    ).toEqual([]);
+    expect(
+      await ctx.db
+        .select()
+        .from(foodEntry)
+        .where(and(eq(foodEntry.id, real.id), eq(foodEntry.providerId, "fixture-food-source"))),
+    ).toHaveLength(1);
+    expect(
+      await ctx.db
+        .select()
+        .from(foodEntryNutrient)
+        .where(eq(foodEntryNutrient.foodEntryId, real.id)),
+    ).toHaveLength(1);
   });
 });

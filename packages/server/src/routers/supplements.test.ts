@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const invalidateNutritionCaches = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
+vi.mock("../lib/nutrition-cache.ts", () => ({ invalidateNutritionCaches }));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -68,11 +72,51 @@ describe("supplementsRouter", () => {
     it("returns result from repository", async () => {
       const { caller } = await makeCaller([]);
       const result = await caller.list();
-      expect(result).toBeDefined();
+      expect(result).toEqual([]);
+    });
+
+    it("preserves the exact installed-client V1 definition shape", async () => {
+      const { caller } = await makeCaller([
+        {
+          id: "supplement-version-1",
+          user_id: "user-1",
+          schedule_id: "schedule-1",
+          supersedes_supplement_id: null,
+          name: "Vitamin D",
+          amount: 50,
+          unit: "mcg",
+          form: null,
+          description: null,
+          meal: "breakfast",
+          sort_order: 0,
+          effective_from: "2026-01-01",
+          effective_to: null,
+          nutrition_data_id: null,
+          created_at: "2026-01-01T00:00:00.000Z",
+          updated_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]);
+
+      expect(await caller.list()).toEqual([
+        {
+          name: "Vitamin D",
+          amount: 50,
+          unit: "mcg",
+          meal: "breakfast",
+        },
+      ]);
     });
   });
 
   describe("save", () => {
+    it("preserves the exact installed-client V1 success shape", async () => {
+      const { caller } = await makeCaller([]);
+      expect(await caller.save({ supplements: [] })).toEqual({
+        success: true,
+        count: 0,
+      });
+    });
+
     it("rejects empty supplement name", async () => {
       const { caller } = await makeCaller([]);
       await expect(caller.save({ supplements: [{ name: "" }] })).rejects.toThrow();
@@ -111,13 +155,109 @@ describe("supplementsRouter", () => {
       ).rejects.toThrow();
     });
   });
+
+  describe("occurrences", () => {
+    it("returns server-computed statuses and counts", async () => {
+      const { caller } = await makeCaller([
+        {
+          id: "event-1",
+          schedule_id: "schedule-1",
+          supplement_id: "supplement-1",
+          supplement_name: "Vitamin D",
+          scheduled_date: "2026-07-27",
+          status: "planned",
+          supersedes_event_id: null,
+          provider_id: "auto-supplements",
+          source_name: "Auto-Supplements",
+          recorded_at: "2026-07-27T08:00:00.000Z",
+          created_at: "2026-07-27T08:00:00.000Z",
+          is_current: true,
+        },
+      ]);
+
+      expect(await caller.occurrences({ days: 7 })).toEqual({
+        counts: { planned: 1, taken: 0, skipped: 0, unknown: 0 },
+        occurrences: [
+          {
+            currentEventId: "event-1",
+            scheduleId: "schedule-1",
+            supplementId: "supplement-1",
+            supplementName: "Vitamin D",
+            scheduledDate: "2026-07-27",
+            status: "planned",
+            history: [
+              {
+                id: "event-1",
+                providerId: "auto-supplements",
+                recordedAt: "2026-07-27T08:00:00.000Z",
+                sourceName: "Auto-Supplements",
+                status: "planned",
+              },
+            ],
+          },
+        ],
+      });
+    });
+
+    it("rejects unbounded history windows", async () => {
+      const { caller } = await makeCaller([]);
+      await expect(caller.occurrences({ days: 31 })).rejects.toThrow();
+    });
+  });
+
+  describe("recordDose", () => {
+    it("records a correction and invalidates nutrition caches", async () => {
+      const recordDose = vi.spyOn(SupplementsRepository.prototype, "recordDose").mockResolvedValue({
+        id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
+        scheduledDate: "2026-07-27",
+        status: "taken",
+      });
+      const { caller } = await makeCaller([]);
+
+      await expect(
+        caller.recordDose({
+          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
+          status: "taken",
+        }),
+      ).resolves.toEqual({
+        id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
+        scheduledDate: "2026-07-27",
+        status: "taken",
+      });
+      expect(recordDose).toHaveBeenCalledWith("b0ec9f35-fb09-40bb-b536-fd7970ec7c62", "taken");
+      expect(invalidateNutritionCaches).toHaveBeenCalledWith("user-1");
+      recordDose.mockRestore();
+    });
+
+    it("maps stale-leaf conflicts to an actionable conflict error", async () => {
+      const recordDose = vi
+        .spyOn(SupplementsRepository.prototype, "recordDose")
+        .mockRejectedValue(new SupplementDoseConflictError());
+      const { caller } = await makeCaller([]);
+
+      await expect(
+        caller.recordDose({
+          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
+          status: "skipped",
+        }),
+      ).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: "Supplement status changed. Reload and try again.",
+      });
+      recordDose.mockRestore();
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
 // toApiSupplement utility tests
 // ---------------------------------------------------------------------------
 
-import { toApiSupplement } from "../repositories/supplements-repository.ts";
+import {
+  SupplementDoseConflictError,
+  SupplementsRepository,
+  toApiSupplement,
+} from "../repositories/supplements-repository.ts";
 
 describe("toApiSupplement()", () => {
   it("maps name from row", () => {

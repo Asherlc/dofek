@@ -15,6 +15,8 @@ const supplementInsertValuesSchema = z.object({
   description: z.string().nullable(),
   meal: z.string().nullable(),
   sortOrder: z.number(),
+  scheduleId: z.string().optional(),
+  supersedesSupplementId: z.string().optional(),
 });
 
 /** All nutrient columns set to null, matching the DB view's snake_case shape. */
@@ -162,7 +164,7 @@ describe("SupplementsRepository", () => {
             }),
           })),
           delete: vi.fn().mockReturnValue(deleteReturn),
-          execute: vi.fn().mockResolvedValue([]),
+          execute: vi.fn().mockResolvedValue(rows),
         };
         return callback(transactionContext);
       });
@@ -185,6 +187,8 @@ describe("SupplementsRepository", () => {
       {
         id: "sup-1",
         user_id: "user-1",
+        schedule_id: "schedule-1",
+        supersedes_supplement_id: null,
         name: "Vitamin D",
         amount: 5000,
         unit: "IU",
@@ -192,6 +196,8 @@ describe("SupplementsRepository", () => {
         description: null,
         meal: "breakfast",
         sort_order: 0,
+        effective_from: "2024-01-01",
+        effective_to: null,
         nutrition_data_id: "nd-1",
         created_at: "2024-01-01T00:00:00Z",
         updated_at: "2024-01-01T00:00:00Z",
@@ -205,6 +211,13 @@ describe("SupplementsRepository", () => {
     expect(result[0]?.amount).toBe(5000);
     expect(result[0]?.unit).toBe("IU");
     expect(result[0]?.meal).toBe("breakfast");
+    expect(result[0]).toEqual({
+      name: "Vitamin D",
+      amount: 5000,
+      unit: "IU",
+      form: "softgel",
+      meal: "breakfast",
+    });
   });
 
   it("save with empty array returns zero count", async () => {
@@ -264,4 +277,87 @@ describe("SupplementsRepository", () => {
     await repo.save([{ name: "Vitamin D", amount: 5000, unit: "IU" }]);
     expect(insertCalls).toHaveLength(1);
   });
+
+  it("treats a new leading V1 definition as new after matching existing names globally", async () => {
+    const currentRows = [
+      makeSupplementViewRow("supplement-a", "schedule-a", "Vitamin A", 0),
+      makeSupplementViewRow("supplement-b", "schedule-b", "Vitamin B", 1),
+    ];
+    const { repo, insertCalls } = makeRepository(currentRows);
+
+    await repo.save([{ name: "Vitamin C" }, { name: "Vitamin A" }, { name: "Vitamin B" }]);
+
+    const parsed = insertCalls
+      .map((call) => supplementInsertValuesSchema.safeParse(call.values))
+      .filter((result) => result.success)
+      .map((result) => result.data);
+    expect(parsed).toEqual([
+      {
+        userId: "user-1",
+        name: "Vitamin C",
+        amount: null,
+        unit: null,
+        form: null,
+        description: null,
+        meal: null,
+        sortOrder: 0,
+      },
+    ]);
+  });
+
+  it("creates an immutable successor with the same schedule for a V1 rename", async () => {
+    const currentRows = [
+      makeSupplementViewRow("supplement-a", "schedule-a", "Vitamin A", 0),
+      makeSupplementViewRow("supplement-b", "schedule-b", "Vitamin B", 1),
+    ];
+    const { repo, insertCalls } = makeRepository(currentRows);
+
+    await repo.save([{ name: "Vitamin C" }, { name: "Vitamin B" }]);
+
+    const parsed = insertCalls
+      .map((call) => supplementInsertValuesSchema.safeParse(call.values))
+      .filter((result) => result.success)
+      .map((result) => result.data);
+    expect(parsed).toEqual([
+      {
+        userId: "user-1",
+        scheduleId: "schedule-a",
+        supersedesSupplementId: "supplement-a",
+        name: "Vitamin C",
+        amount: null,
+        unit: null,
+        form: null,
+        description: null,
+        meal: null,
+        sortOrder: 0,
+      },
+    ]);
+  });
 });
+
+function makeSupplementViewRow(
+  id: string,
+  scheduleId: string,
+  name: string,
+  sortOrder: number,
+): Record<string, unknown> {
+  return {
+    id,
+    user_id: "user-1",
+    schedule_id: scheduleId,
+    supersedes_supplement_id: null,
+    name,
+    amount: null,
+    unit: null,
+    form: null,
+    description: null,
+    meal: null,
+    sort_order: sortOrder,
+    effective_from: "2026-01-01",
+    effective_to: null,
+    nutrition_data_id: null,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    ...NULL_NUTRIENTS,
+  };
+}

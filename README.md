@@ -179,6 +179,15 @@ clients render server-computed metric values rather than recomputing them.
   retains raw per-provider totals; serving totals derive from
   `fitness.v_nutrition_daily`, which resolves one contribution set at query
   time and reports ambiguous overlaps explicitly.
+- Supplement definitions are immutable versions under a stable schedule
+  identity. Daily occurrences use an append-only `planned` / `taken` /
+  `skipped` / `unknown` event chain, and only an explicitly `taken` current
+  leaf contributes supplement nutrients to canonical nutrition. PostgreSQL
+  partial unique indexes and foreign keys enforce one active definition and a
+  linear same-occurrence history; see
+  [partial indexes](https://www.postgresql.org/docs/current/indexes-partial.html)
+  and
+  [foreign-key constraints](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK).
 
 ## Authentication and Secrets
 

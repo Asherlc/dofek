@@ -498,6 +498,13 @@
       "when": 1785181000000,
       "tag": "0060_canonical_nutrition_contribution_set",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1785182000000,
+      "tag": "0061_supplement_dose_events",
+      "breakpoints": true
     }
   ]
 }

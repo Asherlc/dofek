@@ -153,7 +153,10 @@ tables through ClickHouse replication.
 | `fitness.sleep_session` | Sleep sessions with stage breakdown |
 | `fitness.food_entry` | Raw food items and nutrition samples, including their ingestion grain |
 | `fitness.food_entry_nutrient` | Row-based food-entry nutrient amounts |
+| `fitness.supplement` | Immutable per-user supplement definition versions under stable schedule identities |
 | `fitness.supplement_nutrient` | Row-based supplement nutrient amounts |
+| `fitness.supplement_dose_event` | Append-only planned/taken/skipped/unknown occurrence history with provider provenance |
+| `fitness.v_supplement_dose_current` | Current leaf for each supplement occurrence event chain |
 | `fitness.v_nutrition_provider_daily` | Raw per-provider daily nutrient totals for provenance and provider inspection |
 | `fitness.v_nutrition_daily_resolution` | Per-user/date canonical contribution decision and selected/excluded source provenance |
 | `fitness.v_nutrition_canonical_nutrient` | Nutrient rows from the resolved contribution set |
@@ -187,8 +190,14 @@ documentation.
 `food_entry_nutrient`. Daily totals are derived from those rows instead of
 inserted separately.
 
-**FatSecret**, manual food logging, Slack meal logging, and auto-supplements
-write `itemized` entries through the same normalized path.
+**FatSecret**, manual food logging, and Slack meal logging write `itemized`
+entries through the normalized food path. Supplement schedules do not create
+food entries. Their nutrients enter
+`fitness.v_nutrition_canonical_nutrient` only while the current dose-event
+leaf is explicitly `taken`; planned, skipped, and unknown leaves contribute
+nothing. The append-only chain uses unique and foreign-key constraints rather
+than rewriting history, following PostgreSQL's documented
+[constraint semantics](https://www.postgresql.org/docs/current/ddl-constraints.html).
 
 Serving code reads `fitness.v_nutrition_daily` and
 `fitness.v_nutrition_canonical_nutrient`. A single itemized source is selected
@@ -203,6 +212,13 @@ these query-time projections without duplicating raw storage; see
 Provider details, provider statistics, and exports continue to use raw
 `food_entry` / `food_entry_nutrient` data. Aggregate-only rows are excluded from
 editable unnamed food cards, but are not deleted.
+
+The installed-client `supplements.list` and `supplements.save` procedures keep
+their original V1 definition-only success and error shapes. Definition-version
+identity remains internal to that permanent projection. The additive
+`supplements.occurrences` and `supplements.recordDose` procedures expose
+current event IDs and history for newer clients; no mobile persisted-cache
+contract bump is required because the persisted V1 payload did not change.
 
 ## Deduplication
 

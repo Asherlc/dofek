@@ -106,6 +106,8 @@ function fullViewRow(overrides: Record<string, unknown> = {}): Record<string, un
   return {
     id: "uuid-1",
     user_id: "user-1",
+    schedule_id: "schedule-uuid-1",
+    supersedes_supplement_id: null,
     name: "Multivitamin",
     sort_order: 0,
     amount: 5000,
@@ -114,6 +116,8 @@ function fullViewRow(overrides: Record<string, unknown> = {}): Record<string, un
     description: "Daily vitamin",
     meal: "breakfast",
     nutrition_data_id: "nd-uuid-1",
+    effective_from: "2026-01-01",
+    effective_to: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...NUTRIENT_SNAKE_VALUES,
@@ -295,13 +299,18 @@ describe("supplementsRouter", () => {
       expect(mocks.mockTransaction).toHaveBeenCalledOnce();
     });
 
-    it("deletes existing supplements in the transaction", async () => {
-      const { db, mocks } = createMockDb();
+    it("archives and succeeds an edited V1 definition without changing its schedule identity", async () => {
+      const { db, mocks } = createMockDb({ viewRows: [fullViewRow()] });
       const caller = createCaller({ db, userId: "user-1" });
 
       await caller.save({ supplements: [{ name: "New Supp" }] });
 
-      expect(mocks.mockDelete).toHaveBeenCalledTimes(1);
+      expect(mocks.mockExecute).toHaveBeenCalledTimes(2);
+      expect(mocks.mockInsertValues.mock.calls[0]?.[0]).toMatchObject({
+        scheduleId: "schedule-uuid-1",
+        supersedesSupplementId: "uuid-1",
+        name: "New Supp",
+      });
     });
 
     it("inserts supplement then supplement nutrition for each supplement", async () => {
@@ -316,7 +325,7 @@ describe("supplementsRouter", () => {
       });
 
       expect(mocks.mockInsert).toHaveBeenCalledTimes(4);
-      expect(mocks.mockExecute).toHaveBeenCalledTimes(0);
+      expect(mocks.mockExecute).toHaveBeenCalledTimes(1);
     });
 
     it("handles empty supplements array (delete all, no insert)", async () => {

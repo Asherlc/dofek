@@ -346,6 +346,8 @@ entity "supplement" {
   * id : uuid <<PK>>
   --
   user_id : uuid <<FK>>
+  schedule_id : uuid
+  supersedes_supplement_id : uuid
   name : text
   amount : real
   unit : text
@@ -353,8 +355,27 @@ entity "supplement" {
   description : text
   meal : meal
   sort_order : integer
+  effective_from : date
+  effective_to : date
   created_at : timestamp
   updated_at : timestamp
+}
+
+entity "supplement_dose_event" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  schedule_id : uuid
+  supplement_id : uuid
+  provider_id : text <<FK>>
+  external_id : text
+  scheduled_date : date
+  status : supplement_dose_status
+  supersedes_event_id : uuid
+  recorded_at : timestamp
+  source_name : text
+  raw : jsonb
+  created_at : timestamp
 }
 
 entity "supplement_nutrient" {
@@ -961,6 +982,8 @@ user_profile ||--o{ food_entry
 food_entry ||--o{ food_entry_nutrient
 nutrient ||--o{ food_entry_nutrient
 user_profile ||--o{ supplement
+user_profile ||--o{ supplement_dose_event
+provider ||--o{ supplement_dose_event
 supplement ||--o{ supplement_nutrient
 nutrient ||--o{ supplement_nutrient
 provider ||--o{ allergy_intolerance

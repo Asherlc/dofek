@@ -43,10 +43,29 @@ vi.mock("../lib/useRefresh", () => ({
 vi.mock("../lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
+      invalidate: mocks.invalidate,
       supplements: { list: { invalidate: mocks.invalidate } },
     }),
     supplements: {
       list: { useQuery: () => mocks.query },
+      occurrences: {
+        useQuery: () => ({
+          data: {
+            occurrences: [],
+            counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+          },
+          error: null,
+          isLoading: false,
+        }),
+      },
+      recordDose: {
+        useMutation: () => ({
+          error: null,
+          isError: false,
+          isPending: false,
+          mutate: vi.fn(),
+        }),
+      },
       save: {
         useMutation: (options: typeof mocks.saveOptions) => {
           mocks.saveOptions = options;
