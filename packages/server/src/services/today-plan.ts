@@ -150,14 +150,17 @@ export async function loadTodayPlan(
   });
 
   const sleepRow = sleepRows[0];
-  const sleepPerformance =
-    sleepRow?.duration_minutes != null && sleepRow.efficiency_pct != null
-      ? computeSleepPerformance(
-          sleepRow.duration_minutes,
-          DEFAULT_SLEEP_NEED_MINUTES,
-          sleepRow.efficiency_pct,
-        )
-      : null;
+  let sleepPerformance: ReturnType<typeof computeSleepPerformance> | null = null;
+  let sleepDate: string | null = null;
+
+  if (sleepRow?.duration_minutes != null && sleepRow.efficiency_pct != null) {
+    sleepPerformance = computeSleepPerformance(
+      sleepRow.duration_minutes,
+      DEFAULT_SLEEP_NEED_MINUTES,
+      sleepRow.efficiency_pct,
+    );
+    sleepDate = sleepRow.date;
+  }
 
   return buildTodayPlan({
     endDate,
@@ -174,6 +177,6 @@ export async function loadTodayPlan(
     sleepPerformanceScore: sleepPerformance?.score ?? null,
     sleepPerformanceTier: sleepPerformance?.tier ?? null,
     recoveryDate: readinessMetrics?.date ?? null,
-    sleepDate: sleepPerformance != null ? (sleepRow?.date ?? null) : null,
+    sleepDate,
   });
 }
