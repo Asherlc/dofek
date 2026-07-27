@@ -95,9 +95,11 @@ describe("production analytics read-model build", () => {
       "activity_power_curve",
       "cycling_activity",
       "daily_cycling",
+      "provider_change_watermark",
       "provider_stats",
     ]);
     expect(sleepDashboardMatch?.[1]?.split(" ")).toEqual([
+      "heart_rate_day_freshness",
       "sleep_heart_rate_sample",
       "resting_heart_rate_sleep_window",
       "daily_sleep",
@@ -130,6 +132,10 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("existing_sleep_state AS");
     expect(sql).toContain("current_sleep_state AS");
     expect(sql).toContain("heart_rate_refreshes AS");
+    expect(sql).toContain("ref('heart_rate_day_freshness')");
+    expect(compactWhitespace(sql)).not.toContain(
+      "ref('deduped_sensor') }} AS samples FINAL INNER JOIN active_sleep",
+    );
     expect(sql).toContain("activity_refreshes AS");
     expect(sql).toContain("source_dirty_sleep_keys AS");
     expect(sql).toContain("stale_sleep_dirty_keys AS");

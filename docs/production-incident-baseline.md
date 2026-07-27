@@ -18605,3 +18605,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   physical-device observer delivery that `Starting sync` follows the update
   immediately and no fixed-update expiration is reported before resolving
   DOFEK-MOBILE-1C.
+
+## 2026-07-26 — Analytics provider_stats and sleep_heart_rate_sample timeout (DOFEK-SERVER-5A)
+
+- **Status:** Fix pending production validation.
+- **Symptoms:** Production analytics cycles timed out at 240s on
+  `analytics.provider_stats` (~130M rows / ~5 GiB per cycle) and
+  `analytics.sleep_heart_rate_sample` (discovery joined all sleeps to HR
+  samples before LIMIT 32).
+- **User impact:** Provider inventory and sleep heart-rate read models fell
+  behind; downstream resting HR and recovery inputs could stale.
+- **Evidence:** Deployed materialized-CTE fix still failed every cycle at the
+  240s ClickHouse query budget; `provider_stats` full-scanned
+  `source_provider_refreshes` including all of `metric_stream`, and
+  `sleep_heart_rate_sample` joined `deduped_sensor` at sample granularity for
+  dirty discovery.
+- **Root cause:** Unbounded dirty discovery — provider stats recounted every
+  dirty provider in one query, and sleep HR discovery scanned all heart-rate
+  samples across all sleeps before batching.
+- **Fix / mitigation:** Added `provider_change_watermark` (incremental,
+  lookback-bounded source scans) and fair one-provider-at-a-time
+  `provider_stats` incremental batches; added `heart_rate_day_freshness` day
+  keys and switched sleep HR discovery to join day freshness instead of
+  sample-level `deduped_sensor` (sample join retained only in
+  `current_samples`).
+- **Validation:** Focused unit/SQL tests pass locally (54 tests). ClickHouse
+  integration tests updated but not executed locally (auth unavailable).
+- **Remaining risk / follow-up:** Deploy and confirm production analytics
+  cycles complete `provider_change_watermark`, `provider_stats`,
+  `heart_rate_day_freshness`, and `sleep_heart_rate_sample` below 240s with
+  bounded row reads.

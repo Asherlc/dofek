@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { readModelSql } from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
+import { extractCteSql, readModelSql } from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
 import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
@@ -84,6 +84,16 @@ describe("sleep heart-rate sample read model", () => {
       ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (user_id, recorded_date, channel, recorded_at)`,
     });
+    await client.command({
+      query: `CREATE TABLE ${analyticsDatabase}.heart_rate_day_freshness (
+        user_id UUID,
+        recorded_date Date,
+        refreshed_at DateTime64(9, 'UTC'),
+        has_live_samples UInt8,
+        refresh_version UInt64
+      ) ENGINE = ReplacingMergeTree(refresh_version)
+      ORDER BY (user_id, recorded_date)`,
+    });
   });
 
   afterAll(async () => {
@@ -137,6 +147,14 @@ describe("sleep heart-rate sample read model", () => {
           },
         });
         await client.command({
+          query: `INSERT INTO ${analyticsDatabase}.heart_rate_day_freshness (
+            user_id, recorded_date, refreshed_at, has_live_samples, refresh_version
+          ) VALUES (
+            {userId:UUID}, toDate({recordedAt:String}), now64(9), 1, 1
+          )`,
+          query_params: { recordedAt, userId },
+        });
+        await client.command({
           query: `INSERT INTO ${analyticsDatabase}.deduped_sensor (
             user_id, recorded_at, recorded_date, channel, scalar,
             is_deleted, refresh_version, refreshed_at
@@ -160,6 +178,7 @@ describe("sleep heart-rate sample read model", () => {
       await client.command({ query: `DROP TABLE IF EXISTS ${targetTable}` });
       await client.command({ query: `TRUNCATE TABLE ${postgresDatabase}.sleep_session` });
       await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.deduped_sensor` });
+      await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.heart_rate_day_freshness` });
     }
   });
 
@@ -192,6 +211,14 @@ describe("sleep heart-rate sample read model", () => {
           },
         });
         await client.command({
+          query: `INSERT INTO ${analyticsDatabase}.heart_rate_day_freshness (
+            user_id, recorded_date, refreshed_at, has_live_samples, refresh_version
+          ) VALUES (
+            {userId:UUID}, toDate({recordedAt:String}), now64(9), 1, 1
+          )`,
+          query_params: { recordedAt, userId },
+        });
+        await client.command({
           query: `INSERT INTO ${analyticsDatabase}.deduped_sensor (
             user_id, recorded_at, recorded_date, channel, scalar,
             is_deleted, refresh_version, refreshed_at
@@ -214,6 +241,7 @@ describe("sleep heart-rate sample read model", () => {
     } finally {
       await client.command({ query: `TRUNCATE TABLE ${postgresDatabase}.sleep_session` });
       await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.deduped_sensor` });
+      await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.heart_rate_day_freshness` });
     }
   });
 
@@ -263,5 +291,49 @@ describe("sleep heart-rate sample read model", () => {
     } finally {
       await client.command({ query: `DROP TABLE IF EXISTS ${targetTable}` });
     }
+  });
+
+  it("discovers eligible sleeps from day freshness keys without scanning deduped_sensor", async () => {
+    const userId = randomUUID();
+    const sleepId = randomUUID();
+    const startedAt = "2026-07-20 00:00:00";
+    const endedAt = "2026-07-20 08:00:00";
+
+    await client.command({
+      query: `INSERT INTO ${postgresDatabase}.sleep_session (
+        id, user_id, started_at, ended_at, duration_minutes, sleep_type,
+        _peerdb_synced_at, _peerdb_is_deleted
+      ) VALUES (
+        {sleepId:UUID}, {userId:UUID},
+        {startedAt:DateTime64(6, 'UTC')}, {endedAt:DateTime64(6, 'UTC')},
+        480, 'sleep', now64(9), 0
+      )`,
+      query_params: { endedAt, sleepId, startedAt, userId },
+    });
+    await client.command({
+      query: `INSERT INTO ${analyticsDatabase}.heart_rate_day_freshness (
+        user_id, recorded_date, refreshed_at, has_live_samples, refresh_version
+      ) VALUES (
+        {userId:UUID}, toDate({startedAt:String}), now64(9), 1, 1
+      )`,
+      query_params: { startedAt, userId },
+    });
+
+    const modelSql = readModelSql("sleep_heart_rate_sample.sql")
+      .replace(/\{\{\s*source\('postgres_fitness',\s*'([^']+)'\)\s*\}\}/g, `${postgresDatabase}.$1`)
+      .replace(/\{\{\s*ref\('([^']+)'\)\s*\}\}/g, `${analyticsDatabase}.$1`);
+
+    const result = await client.query({
+      query: `WITH
+        sleep_source AS (${extractCteSql(modelSql, "sleep_source")}),
+        active_sleep AS (${extractCteSql(modelSql, "active_sleep")}),
+        heart_rate_refreshes AS (${extractCteSql(modelSql, "heart_rate_refreshes")})
+        SELECT uniqExact(sleep_id) AS count
+        FROM heart_rate_refreshes
+        SETTINGS join_use_nulls = 1`,
+      format: "JSONEachRow",
+    });
+
+    expect(countSchema.parse(await result.json())).toEqual([{ count: 1 }]);
   });
 });

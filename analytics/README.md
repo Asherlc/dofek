@@ -28,10 +28,13 @@ activity/member aliases for downstream models. `activity_sensor_sample` and
 `activity_location_sample` are bounded microbatch intermediates over sample
 time. `body_measurement` incrementally rebuilds only users whose body samples
 or priority inputs changed, and `analytics.v_body_measurement` is a thin
-active-row view over that dbt-owned canonical table. `sleep_heart_rate_sample`
-instead advances through at most 32 dirty sleep
-keys per incremental build, including lifecycle tombstones, so one accumulated
-sleep backlog cannot monopolize a build. dbt documents incremental models as
+active-row view over that dbt-owned canonical table. `provider_change_watermark` maintains bounded provider source-change
+watermarks, and `provider_stats` recounts at most one dirty provider per
+incremental build so provider inventory work cannot monopolize a cycle.
+`heart_rate_day_freshness` materializes daily heart-rate freshness keys from
+`deduped_sensor`, and `sleep_heart_rate_sample` joins those day keys for dirty
+sleep discovery instead of scanning all heart-rate samples before its bounded
+dirty-key batch. dbt documents incremental models as
 transforming only the rows selected by the model's incremental filter:
 <https://docs.getdbt.com/docs/build/incremental-models>.
 `resting_heart_rate_sleep_window` aggregates the
@@ -78,6 +81,7 @@ recovery, stress, sleep-need, and healthspan routes.
 Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `deduped_sensor`, `activity_source_records`, `activity_duplicate_matches`,
 `activity_duplicate_groups`, `deduped_activities`, `deduped_activity_members`,
+`provider_change_watermark`, `heart_rate_day_freshness`,
 `sleep_heart_rate_sample`, `resting_heart_rate_sleep_window`,
 `daily_sleep`, `daily_recovery_inputs`, `daily_recovery`, `activity_sensor_sample`, `activity_location_sample`,
 `activity_sensor_summary_rows`, `activity_location_summary_rows`,
