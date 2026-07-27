@@ -21,6 +21,15 @@ const stravaLink: SourceLink = {
   providerAbsentAt: null,
 };
 
+const garminLink: SourceLink = {
+  providerId: "garmin",
+  externalId: "7",
+  subsource: null,
+  label: "Garmin Connect",
+  url: null,
+  providerAbsentAt: null,
+};
+
 describe("buildActivitySourceDecision", () => {
   it("returns null when there are fewer than two source links", () => {
     expect(buildActivitySourceDecision("wahoo", null, [])).toBeNull();
@@ -36,12 +45,22 @@ describe("buildActivitySourceDecision", () => {
     });
   });
 
-  it("uses the matching source link label for the primary when available", () => {
-    const strongLink: SourceLink = {
+  it("reports the actual source count for more than two sources", () => {
+    const decision = buildActivitySourceDecision("wahoo", null, [
+      wahooLink,
+      stravaLink,
+      garminLink,
+    ]);
+    expect(decision?.sourceCount).toBe(3);
+    expect(decision?.primarySourceLabel).toBe("Wahoo");
+  });
+
+  it("prefers the matching source link label over the default provider label", () => {
+    const customPrimary: SourceLink = {
       providerId: "apple_health",
       externalId: "hk:workout:strong",
       subsource: "Strong",
-      label: "Strong (via Apple Health)",
+      label: "Strong App (custom)",
       url: null,
       providerAbsentAt: null,
       memberActivityId: "strong-member",
@@ -57,25 +76,84 @@ describe("buildActivitySourceDecision", () => {
     };
 
     expect(
-      buildActivitySourceDecision("apple_health", "Strong", [strongLink, whoopCloudLink]),
+      buildActivitySourceDecision("apple_health", "Strong", [customPrimary, whoopCloudLink]),
     ).toEqual({
       sourceCount: 2,
-      primarySourceLabel: "Strong (via Apple Health)",
+      primarySourceLabel: "Strong App (custom)",
       explanation:
-        "Strong (via Apple Health) was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+        "Strong App (custom) was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+    });
+  });
+
+  it("does not treat a same-provider link with a different subsource as the primary", () => {
+    const whoopViaApple: SourceLink = {
+      providerId: "apple_health",
+      externalId: "hk:workout:whoop",
+      subsource: "WHOOP",
+      label: "WHOOP App (custom)",
+      url: null,
+      providerAbsentAt: null,
+    };
+    const strongViaApple: SourceLink = {
+      providerId: "apple_health",
+      externalId: "hk:workout:strong",
+      subsource: "Strong",
+      label: "Strong App (custom)",
+      url: null,
+      providerAbsentAt: null,
+    };
+
+    expect(
+      buildActivitySourceDecision("apple_health", "Strong", [whoopViaApple, strongViaApple]),
+    ).toEqual({
+      sourceCount: 2,
+      primarySourceLabel: "Strong App (custom)",
+      explanation:
+        "Strong App (custom) was selected as the primary record by source priority. Missing details may come from the other matched sources.",
     });
   });
 
   it("falls back to a provider label when no source link matches the primary", () => {
     expect(
       buildActivitySourceDecision("garmin", null, [wahooLink, stravaLink], (id) =>
-        id === "garmin" ? { name: "Garmin" } : undefined,
+        id === "garmin" ? { name: "Garmin Connect Custom" } : undefined,
       ),
     ).toEqual({
       sourceCount: 2,
-      primarySourceLabel: "Garmin",
+      primarySourceLabel: "Garmin Connect Custom",
       explanation:
-        "Garmin was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+        "Garmin Connect Custom was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+    });
+  });
+
+  it("falls back to the provider source label when lookup is omitted", () => {
+    expect(buildActivitySourceDecision("unknown_provider", null, [wahooLink, stravaLink])).toEqual({
+      sourceCount: 2,
+      primarySourceLabel: "unknown_provider",
+      explanation:
+        "unknown_provider was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+    });
+  });
+
+  it("falls back to the provider source label when lookup has no name for the primary", () => {
+    expect(
+      buildActivitySourceDecision("unknown_provider", null, [wahooLink, stravaLink], () => undefined),
+    ).toEqual({
+      sourceCount: 2,
+      primarySourceLabel: "unknown_provider",
+      explanation:
+        "unknown_provider was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+    });
+  });
+
+  it("uses the subsource-aware provider label when the primary has a subsource but no matching link", () => {
+    expect(
+      buildActivitySourceDecision("apple_health", "Strong", [wahooLink, stravaLink]),
+    ).toEqual({
+      sourceCount: 2,
+      primarySourceLabel: "Strong (via Apple Health)",
+      explanation:
+        "Strong (via Apple Health) was selected as the primary record by source priority. Missing details may come from the other matched sources.",
     });
   });
 });

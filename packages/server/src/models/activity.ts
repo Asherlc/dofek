@@ -177,15 +177,6 @@ export class Activity {
     return this.#row.provider_absent_at ? String(this.#row.provider_absent_at) : null;
   }
 
-  get sourceDecision(): ActivitySourceDecisionDetail | null {
-    return buildActivitySourceDecision(
-      this.providerId,
-      this.subsource,
-      this.sourceLinks,
-      this.#lookupProvider,
-    );
-  }
-
   /** Serialize to the ActivityDetail shape consumed by API clients. */
   toDetail(): ActivityDetail {
     const sourceLinks = this.sourceLinks;
