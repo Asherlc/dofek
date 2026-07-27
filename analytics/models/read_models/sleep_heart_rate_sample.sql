@@ -80,22 +80,17 @@ heart_rate_refreshes AS (
     SELECT
         active_sleep.user_id AS user_id,
         active_sleep.sleep_id AS sleep_id,
-        max(samples.refreshed_at) AS heart_rate_refreshed_at
-    FROM {{ ref('deduped_sensor') }} AS samples FINAL
-    INNER JOIN active_sleep
-        ON active_sleep.user_id = samples.user_id
-        AND samples.recorded_at >= active_sleep.started_at
-        AND samples.recorded_at <= active_sleep.ended_at
-    LEFT JOIN active_activity
-        ON active_activity.user_id = active_sleep.user_id
-        AND samples.recorded_at >= active_activity.started_at
-        AND samples.recorded_at <= active_activity.ended_at
+        max(day_freshness.refreshed_at) AS heart_rate_refreshed_at
+    FROM active_sleep
+    INNER JOIN {{ ref('heart_rate_day_freshness') }} AS day_freshness FINAL
+        ON day_freshness.user_id = active_sleep.user_id
+        AND day_freshness.recorded_date >= toDate(active_sleep.started_at)
+        AND day_freshness.recorded_date <= toDate(active_sleep.ended_at)
     WHERE active_sleep.is_nap = FALSE
-        AND samples.channel = 'heart_rate'
+        AND day_freshness.has_live_samples = 1
     GROUP BY
         active_sleep.user_id,
         active_sleep.sleep_id
-    HAVING countIf(samples.is_deleted = 0 AND active_activity.id IS NULL) > 0
 ),
 
 activity_refreshes AS (

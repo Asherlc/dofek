@@ -17,7 +17,8 @@ describe("provider_stats model", () => {
   it("recounts only dirty providers through reusable provider sets", () => {
     const normalizedSql = compactWhitespace(modelSql);
 
-    expect(modelSql).toContain("source_provider_refreshes AS");
+    expect(modelSql).toContain("ref('provider_change_watermark')");
+    expect(modelSql).not.toContain("source_provider_refreshes AS");
     expect(modelSql).toContain("current_provider_state AS");
     expect(modelSql).toContain("existing_provider_state AS");
     expect(modelSql).toContain("source_dirty_providers AS");
@@ -27,6 +28,10 @@ describe("provider_stats model", () => {
     expect(modelSql).toContain("'enable_materialized_cte': 1");
     expect(modelSql).toContain("current_provider_state AS materialized");
     expect(modelSql).toContain("providers AS materialized");
+    expect(modelSql).toContain("provider_dirty_key_batch_size");
+    expect(normalizedSql).toContain("LIMIT {{ provider_dirty_key_batch_size }}");
+    expect(normalizedSql).toContain("existing_provider_state.refreshed_at");
+    expect(normalizedSql).toContain("candidate_dirty_providers.source_changed_at ASC");
     expect(normalizedSql).toContain(
       "(user_id, provider_id) IN ( SELECT user_id, provider_id FROM providers )",
     );
@@ -34,5 +39,6 @@ describe("provider_stats model", () => {
     expect(normalizedSql).not.toContain(
       "FROM {{ source('ingest', 'metric_stream') }} FINAL",
     );
+    expect(normalizedSql).not.toContain("force_optimize_projection_name");
   });
 });
