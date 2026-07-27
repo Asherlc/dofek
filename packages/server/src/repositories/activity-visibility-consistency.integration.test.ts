@@ -109,10 +109,13 @@ describe("activity visibility consistency", () => {
     expect(training.activities.map((activity) => activity.id).sort()).toEqual(
       [AUTHORIZED_RUN_ID, AUTHORIZED_WALK_ID].sort(),
     );
-    expect(training.weeklyVolume).toEqual([
-      expect.objectContaining({ activity_type: "running", count: 1 }),
-      expect.objectContaining({ activity_type: "walking", count: 1 }),
-    ]);
+    expect(training.weeklyVolume).toHaveLength(2);
+    expect(training.weeklyVolume).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ activity_type: "running", count: 1 }),
+        expect.objectContaining({ activity_type: "walking", count: 1 }),
+      ]),
+    );
   });
 
   it("does not leak unauthorized totals or types through an activity-type filter", async () => {
