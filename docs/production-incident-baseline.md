@@ -18792,3 +18792,60 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Merge through normal CI, deploy, and observe
   a complete production analytics build plus cache-warming cycle before
   resolving DOFEK-SERVER-5A.
+
+## 2026-07-27 — Wahoo reconnect invalidated its replacement grant (DOFEK-SERVER-5H)
+
+- **Status:** Root cause confirmed from production evidence and source fix
+  validated locally; merge,
+  deployment, and production validation pending.
+- **Symptoms:** A Wahoo reconnect failed its authorization-code exchange with
+  `invalid_grant` immediately after the application deauthorized the existing
+  connection.
+- **User impact:** The reconnect displayed an error and removed the previous
+  Wahoo connection. The user had to start authorization a second time.
+- **Evidence:** Sentry recorded one production event at
+  `2026-07-27T15:57:00Z`. Its breadcrumb trail shows
+  `DELETE /v1/permissions` succeeded at `15:56:59.821Z`, followed 653
+  milliseconds later by the token endpoint returning 400. The first fatal
+  line was `Token exchange failed (400)` with `invalid_grant`. Production
+  token metadata shows a new Wahoo token was created at `15:57:14Z`; later
+  scheduled Wahoo syncs succeeded at 16:00, 16:30, 17:00, and 17:30.
+- **Root cause:** The destructive reconnect strategy ran in the OAuth callback
+  after Wahoo had issued the replacement authorization code but before the
+  server exchanged it. Wahoo documents `DELETE /v1/permissions` as deleting
+  all application permissions. In the production trace, that successful
+  deletion was followed immediately by `invalid_grant`; the next authorization
+  succeeded after the stored credential had already been removed. Together,
+  those events isolate callback-time deauthorization as the cause:
+  <https://cloud-api.wahooligan.com/#deauthorize>.
+- **Fix / mitigation:** Wahoo reconnects now exchange and persist the new grant
+  first, without revoking either authorization on success. Generic exchange
+  failures preserve the existing connection. Only Wahoo's explicit
+  `Too many unrevoked access tokens` rejection triggers its documented
+  `DELETE /v1/permissions`; after that succeeds, the server removes the local
+  provider authorization (cascading its token), invalidates the provider cache,
+  and links directly to a fresh authorization attempt. Previously imported
+  provider data remains intact. Cleanup failures retain local authorization
+  state and fail loudly. The undocumented `/oauth/revoke` endpoint is no longer
+  exposed in Wahoo's OAuth configuration. Wahoo documents both the ten-token
+  limit and the authorization-code exchange sequence:
+  <https://cloud-api.wahooligan.com/#authentication>.
+- **Validation:** The callback regression tests first failed because successful
+  reconnects still revoked the prior authorization and token-limit failures did
+  not clean up. After the fix, focused tests verify normal single-attempt
+  success without revocation, exact token-limit
+  exchange-deauthorize-delete-invalidate ordering and retry guidance, generic
+  exchange failures preserving the existing connection, deauthorization
+  failures preserving local credentials, and stale-credential reporting when
+  local deletion fails. All 142 focused unit tests and all 3,787 changed
+  unit/mobile tests pass. Executable database integration coverage verifies
+  that removing the authorization clears `sync.providers` connection state and
+  cascades the OAuth token while retaining the provider catalog row; its local
+  run was blocked before test collection because Docker had no space to create
+  this worktree's database volume, so CI must run that tier.
+- **Remaining risk / follow-up:** Merge and deploy through the normal release
+  path, perform one production Wahoo reconnect, and confirm the token exchange
+  succeeds without `DELETE /v1/permissions`. Keep the issue open until the
+  deployed release is observed; if the token-limit branch occurs, confirm the
+  UI returns the documented clean-grant retry guidance before resolving
+  DOFEK-SERVER-5H.

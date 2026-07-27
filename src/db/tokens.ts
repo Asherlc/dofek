@@ -5,7 +5,7 @@ import {
   encryptCredentialValue,
 } from "../security/credential-encryption.ts";
 import type { SyncDatabase } from "./index.ts";
-import { oauthToken } from "./schema/reference.ts";
+import { oauthToken, providerConnection } from "./schema/reference.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 function resolveUserId(userId?: string): string {
@@ -158,6 +158,27 @@ export async function deleteTokens(
   await db
     .delete(oauthToken)
     .where(and(eq(oauthToken.providerId, providerId), eq(oauthToken.userId, scopedUserId)));
+}
+
+/**
+ * Remove a user's provider authorization while preserving previously imported data.
+ * Deleting the connection cascades to its OAuth token and webhook subscription,
+ * allowing clients to offer authorization again.
+ */
+export async function deleteProviderAuthorization(
+  db: SyncDatabase,
+  providerId: string,
+  userId?: string,
+): Promise<void> {
+  const scopedUserId = resolveUserId(userId);
+  await db
+    .delete(providerConnection)
+    .where(
+      and(
+        eq(providerConnection.providerId, providerId),
+        eq(providerConnection.userId, scopedUserId),
+      ),
+    );
 }
 
 /**

@@ -5,8 +5,10 @@ import {
   isEncryptedCredentialValue,
 } from "../security/credential-encryption.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
+import { providerConnection } from "./schema/reference.ts";
 import {
   connectProviderWithTokens,
+  deleteProviderAuthorization,
   deleteTokens,
   ensureProvider,
   loadTokens,
@@ -207,6 +209,22 @@ describe("deleteTokens", () => {
 
     expect(mock.spies.deleteFn).toHaveBeenCalled();
     expect(mock.spies.deleteWhere).toHaveBeenCalled();
+  });
+});
+
+describe("deleteProviderAuthorization", () => {
+  let mock: ReturnType<typeof createMockDatabase>;
+
+  beforeEach(() => {
+    mock = createMockDatabase();
+  });
+
+  it("deletes the provider connection so credentials cascade and reconnect is available", async () => {
+    await deleteProviderAuthorization(mock.db, "wahoo", TEST_USER_ID);
+
+    expect(mock.spies.deleteFn).toHaveBeenCalledOnce();
+    expect(mock.spies.deleteFn).toHaveBeenCalledWith(providerConnection);
+    expect(mock.spies.deleteWhere).toHaveBeenCalledOnce();
   });
 });
 
