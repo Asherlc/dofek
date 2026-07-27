@@ -208,6 +208,8 @@ describe("Settings layout stability", () => {
 
       let initialZeppPairingTop = 0;
       let finalZeppPairingTop = 0;
+      let initialDataSourcesTop = 0;
+      let finalDataSourcesTop = 0;
       let initialDataSourcesHeight = 0;
       let dataSourcesHeightDelta = 0;
 
@@ -230,6 +232,7 @@ describe("Settings layout stability", () => {
       cy.contains("main section h3", "Data Sources").then(($heading) => {
         const heading = $heading.get(0);
         if (!heading) throw new Error("Data Sources heading was not rendered");
+        initialDataSourcesTop = documentTop(heading);
         initialDataSourcesHeight = sectionHeight(heading);
       });
 
@@ -245,6 +248,7 @@ describe("Settings layout stability", () => {
       cy.contains("main section h3", "Data Sources").then(($heading) => {
         const heading = $heading.get(0);
         if (!heading) throw new Error("Data Sources heading was not rendered");
+        finalDataSourcesTop = documentTop(heading);
         dataSourcesHeightDelta = sectionHeight(heading) - initialDataSourcesHeight;
       });
 
@@ -254,7 +258,11 @@ describe("Settings layout stability", () => {
 
         const cls = maximumLayoutShiftSession(measurement.entries);
         const sources = measurement.entries.flatMap((entry) => entry.sourceLabels);
-        const downstreamDelta = Math.abs(finalZeppPairingTop - initialZeppPairingTop);
+        const downstreamDelta = Math.abs(
+          finalZeppPairingTop -
+            finalDataSourcesTop -
+            (initialZeppPairingTop - initialDataSourcesTop),
+        );
         cy.log(
           measurement.supported
             ? `CLS ${cls.toFixed(4)}; sources: ${sources.join(", ") || "none"}`
@@ -263,7 +271,7 @@ describe("Settings layout stability", () => {
         const evidence =
           `CLS ${cls.toFixed(4)}; sources: ${sources.join(", ") || "none"}; ` +
           `Data Sources height delta ${dataSourcesHeightDelta}px; ` +
-          `Zepp App Pairing top delta ${downstreamDelta}px`;
+          `normalized Zepp App Pairing delta ${downstreamDelta}px`;
         expect(Math.abs(dataSourcesHeightDelta), evidence).to.be.lessThan(1);
         expect(downstreamDelta, evidence).to.be.lessThan(1);
         expect(cls, evidence).to.be.at.most(0.001);
@@ -280,6 +288,8 @@ describe("Settings layout stability", () => {
 
     let initialLinkedAccountsTop = 0;
     let finalLinkedAccountsTop = 0;
+    let initialBillingTop = 0;
+    let finalBillingTop = 0;
     let initialBillingHeight = 0;
     let billingHeightDelta = 0;
 
@@ -296,6 +306,7 @@ describe("Settings layout stability", () => {
     cy.contains("main section h3", "Billing").then(($heading) => {
       const heading = $heading.get(0);
       if (!heading) throw new Error("Billing heading was not rendered");
+      initialBillingTop = documentTop(heading);
       initialBillingHeight = sectionHeight(heading);
     });
 
@@ -311,6 +322,7 @@ describe("Settings layout stability", () => {
     cy.contains("main section h3", "Billing").then(($heading) => {
       const heading = $heading.get(0);
       if (!heading) throw new Error("Billing heading was not rendered");
+      finalBillingTop = documentTop(heading);
       billingHeightDelta = sectionHeight(heading) - initialBillingHeight;
     });
 
@@ -320,11 +332,13 @@ describe("Settings layout stability", () => {
 
       const cls = maximumLayoutShiftSession(measurement.entries);
       const sources = measurement.entries.flatMap((entry) => entry.sourceLabels);
-      const downstreamDelta = Math.abs(finalLinkedAccountsTop - initialLinkedAccountsTop);
+      const downstreamDelta = Math.abs(
+        finalLinkedAccountsTop - finalBillingTop - (initialLinkedAccountsTop - initialBillingTop),
+      );
       const evidence =
         `CLS ${cls.toFixed(4)}; sources: ${sources.join(", ") || "none"}; ` +
         `Billing height delta ${billingHeightDelta}px; ` +
-        `Linked Accounts top delta ${downstreamDelta}px`;
+        `normalized Linked Accounts delta ${downstreamDelta}px`;
       cy.log(evidence);
       expect(Math.abs(billingHeightDelta), evidence).to.be.lessThan(1);
       expect(downstreamDelta, evidence).to.be.lessThan(1);

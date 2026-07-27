@@ -255,6 +255,11 @@ describe("DataSourcesPanel", () => {
       isLoading: true,
       error: null,
     });
+    mockDataHealthQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    });
 
     const { rerender } = render(<DataSourcesPanel />);
     const loadingRegion = screen.getByRole("region", { name: "Available data sources" });
@@ -264,6 +269,7 @@ describe("DataSourcesPanel", () => {
     expect(loadingRegion.className).toContain("sm:h-96");
     expect(loadingRegion.className).toContain("lg:h-[28rem]");
     expect(loadingRegion.className).toContain("overflow-y-auto");
+    expect(within(loadingRegion).getByText("Loading processing status…")).toBeTruthy();
 
     mockProvidersQuery.mockReturnValue({
       data: [
@@ -277,6 +283,19 @@ describe("DataSourcesPanel", () => {
           needsReauth: false,
         },
       ],
+      isLoading: false,
+      error: null,
+    });
+    rerender(<DataSourcesPanel />);
+
+    const processingRegion = screen.getByRole("region", { name: "Available data sources" });
+    expect(processingRegion).toBe(loadingRegion);
+    expect(processingRegion.getAttribute("aria-busy")).toBe("true");
+    expect(within(processingRegion).getByText("Loading processing status…")).toBeTruthy();
+    expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
+
+    mockDataHealthQuery.mockReturnValue({
+      data: undefined,
       isLoading: false,
       error: null,
     });
