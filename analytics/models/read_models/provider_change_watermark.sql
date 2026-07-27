@@ -192,10 +192,12 @@ refresh_clock AS (
 )
 
 SELECT
-    changed_providers.user_id AS user_id,
-    changed_providers.provider_id AS provider_id,
+    assumeNotNull(changed_providers.user_id) AS user_id,
+    assumeNotNull(changed_providers.provider_id) AS provider_id,
     changed_providers.changed_at AS changed_at,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
 FROM changed_providers
 CROSS JOIN refresh_clock
+WHERE changed_providers.user_id IS NOT NULL
+    AND changed_providers.provider_id IS NOT NULL

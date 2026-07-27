@@ -25,6 +25,8 @@ describe("provider_change_watermark model", () => {
     expect(modelSql).toContain(
       "OR recent_provider_changes.source_changed_at > existing_provider_watermarks.changed_at",
     );
+    expect(modelSql).toContain("assumeNotNull(changed_providers.user_id) AS user_id");
+    expect(modelSql).toContain("assumeNotNull(changed_providers.provider_id) AS provider_id");
     expect(modelSql).toContain("'max_threads': 1");
     expect(modelSql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).not.toContain("force_optimize_projection_name");
