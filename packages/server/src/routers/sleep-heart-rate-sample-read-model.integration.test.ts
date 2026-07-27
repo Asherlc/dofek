@@ -22,8 +22,8 @@ function renderSleepHeartRateSql(
   isIncremental: boolean,
 ): string {
   return readModelSql("sleep_heart_rate_sample.sql")
-    .replace(/^\{\{ config\([\s\S]*?\n\) \}\}\s*/, "")
-    .replace(/^\{%\s*set [^\n]+\n/gm, "")
+    .replace(/\{%\s*set[\s\S]*?%\}\s*/g, "")
+    .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/g, "")
     .replaceAll("{{ initial_lookback_days }}", "120")
     .replaceAll("{{ sleep_dirty_key_batch_size }}", "2")
     .replace(/\{\{\s*source\('postgres_fitness',\s*'([^']+)'\)\s*\}\}/g, `${postgresDatabase}.$1`)
@@ -33,7 +33,8 @@ function renderSleepHeartRateSql(
       (_, incrementalSql: string, nonIncrementalSql: string | undefined) =>
         isIncremental ? incrementalSql : (nonIncrementalSql ?? ""),
     )
-    .replace(/\{\{\s*this\s*\}\}/g, targetTable);
+    .replace(/\{\{\s*this\s*\}\}/g, targetTable)
+    .trimStart();
 }
 
 describe("sleep heart-rate sample read model", () => {

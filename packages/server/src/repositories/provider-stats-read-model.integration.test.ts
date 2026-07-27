@@ -60,6 +60,13 @@ function renderMetricStreamRefreshSql(metricStreamTable: string): {
   };
 }
 
+function stripDbtModelWrapper(modelSql: string): string {
+  return modelSql
+    .replace(/\{%\s*set[\s\S]*?%\}\s*/g, "")
+    .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/g, "")
+    .trimStart();
+}
+
 function renderProviderStatsSql(
   targetTable: string,
   watermarkTable: string,
@@ -67,9 +74,7 @@ function renderProviderStatsSql(
   isIncremental: boolean,
   batchSize = 1,
 ): string {
-  return readModelSql("provider_stats.sql")
-    .replace(/^\{\{ config\([\s\S]*?\n\) \}\}\s*/, "")
-    .replace(/^\{%\s*set [^\n]+\n/gm, "")
+  return stripDbtModelWrapper(readModelSql("provider_stats.sql"))
     .replaceAll("{{ provider_dirty_key_batch_size }}", String(batchSize))
     .replace(/\{\{\s*ref\('provider_change_watermark'\)\s*\}\}/g, watermarkTable)
     .replace(/\{\{\s*source\('ingest',\s*'metric_stream'\)\s*\}\}/g, `${ingestDatabase}.metric_stream`)
@@ -83,6 +88,51 @@ function renderProviderStatsSql(
         isIncremental ? incrementalSql : (nonIncrementalSql ?? ""),
     )
     .replace(/\{\{\s*this\s*\}\}/g, targetTable);
+}
+
+function renderDirtyProviderSelectionSql(
+  targetTable: string,
+  watermarkTable: string,
+  isIncremental: boolean,
+  batchSize = 1,
+): string {
+  const modelSql = renderProviderStatsSql(
+    targetTable,
+    watermarkTable,
+    "unused",
+    isIncremental,
+    batchSize,
+  );
+  const currentProviderStateSql = extractCteSql(modelSql, "current_provider_state");
+  const sourceDirtyProvidersSql = extractCteSql(modelSql, "source_dirty_providers");
+  const candidateDirtyProvidersSql = extractCteSql(modelSql, "candidate_dirty_providers");
+  const providersSql = extractCteSql(modelSql, "providers");
+  const existingProviderStateSql = isIncremental
+    ? `existing_provider_state AS (
+      ${extractCteSql(modelSql, "existing_provider_state")}
+    ),
+    stale_providers AS (
+      ${extractCteSql(modelSql, "stale_providers")}
+    ),`
+    : "";
+
+  return `WITH current_provider_state AS materialized (
+    ${currentProviderStateSql}
+  ),
+  ${existingProviderStateSql}
+  source_dirty_providers AS (
+    ${sourceDirtyProvidersSql}
+  ),
+  candidate_dirty_providers AS (
+    ${candidateDirtyProvidersSql}
+  ),
+  providers AS materialized (
+    ${providersSql}
+  )
+  SELECT
+    providers.user_id AS user_id,
+    providers.provider_id AS provider_id
+  FROM providers`;
 }
 
 function renderMetricStreamCountSql(ingestDatabase: string): string {
@@ -324,7 +374,7 @@ describe("provider stats read model", () => {
 
       const result = await client.query({
         query: `SELECT uniqExact(provider_id) AS count
-          FROM (${renderProviderStatsSql(targetTable, watermarkTable, ingestDatabase, true, 1)})
+          FROM (${renderDirtyProviderSelectionSql(targetTable, watermarkTable, true, 1)})
           SETTINGS join_use_nulls = 1, enable_materialized_cte = 1`,
         format: "JSONEachRow",
       });
@@ -389,7 +439,7 @@ describe("provider stats read model", () => {
 
       const result = await client.query({
         query: `SELECT provider_id
-          FROM (${renderProviderStatsSql(targetTable, watermarkTable, ingestDatabase, true, 1)})
+          FROM (${renderDirtyProviderSelectionSql(targetTable, watermarkTable, true, 1)})
           SETTINGS join_use_nulls = 1, enable_materialized_cte = 1`,
         format: "JSONEachRow",
       });
