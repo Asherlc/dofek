@@ -28,6 +28,36 @@ interface ReconnectFailure {
   providerName: string;
 }
 
+const WAHOO_TOKEN_LIMIT_ERROR = "Too many unrevoked access tokens";
+
+function isWahooTokenLimitError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(WAHOO_TOKEN_LIMIT_ERROR);
+}
+
+async function removeRevokedAuthorization(
+  db: ReturnType<typeof getDb>,
+  providerId: string,
+  userId: string,
+): Promise<void> {
+  const { deleteProviderAuthorization } = await import("dofek/db/tokens");
+  try {
+    await deleteProviderAuthorization(db, providerId, userId);
+  } catch (deleteError: unknown) {
+    const detail = deleteError instanceof Error ? deleteError.message : String(deleteError);
+    const cleanupError = new Error(
+      `${providerId} authorization was revoked but its stored credential could not be deleted; a stale revoked credential remains stored: ${detail}`,
+      { cause: deleteError },
+    );
+    logger.error(`[auth] ${cleanupError.message}`, {
+      err: deleteError,
+      providerId,
+      userId,
+    });
+    throw cleanupError;
+  }
+  await queryCache.invalidateByPrefix(`${userId}:sync.providers`);
+}
+
 async function revokeStandardTokens(
   oauthConfig: OAuthConfig,
   tokens: TokenSet,
@@ -244,23 +274,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       logger.info(`[auth] Existing ${providerId} authorization revoked`);
 
       reconnectFailure = { kind: "removed", providerName: provider.name };
-      const { deleteTokens } = await import("dofek/db/tokens");
-      try {
-        await deleteTokens(db, providerId, stateUserId);
-      } catch (deleteError: unknown) {
-        const detail = deleteError instanceof Error ? deleteError.message : String(deleteError);
-        const cleanupError = new Error(
-          `${providerId} authorization was revoked but its stored credential could not be deleted; a stale revoked credential remains stored: ${detail}`,
-          { cause: deleteError },
-        );
-        logger.error(`[auth] ${cleanupError.message}`, {
-          err: deleteError,
-          providerId,
-          userId: stateUserId,
-        });
-        throw cleanupError;
-      }
-      await queryCache.invalidateByPrefix(`${stateUserId}:sync.providers`);
+      await removeRevokedAuthorization(db, providerId, stateUserId);
     }
 
     logger.info(`[auth] Exchanging code for ${providerId} tokens...`);
@@ -269,10 +283,31 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       tokens = await setup.exchangeCode(code, storedCodeVerifier);
     } catch (exchangeError: unknown) {
       if (existingTokens) {
-        reconnectFailure = {
-          kind: setup.reconnectStrategy === "revoke-then-replace" ? "removed" : "preserved",
-          providerName: provider.name,
-        };
+        if (
+          setup.reconnectStrategy === "deauthorize-on-token-limit" &&
+          isWahooTokenLimitError(exchangeError)
+        ) {
+          if (!setup.revokeExistingTokens) {
+            throw new Error(
+              `${provider.name} requires token-limit deauthorization but has no revocation handler`,
+            );
+          }
+          reconnectFailure = { kind: "preserved", providerName: provider.name };
+          logger.info(
+            `[auth] ${providerId} rejected replacement for too many active tokens; deauthorizing before retry...`,
+          );
+          await setup.revokeExistingTokens(existingTokens);
+          logger.info(
+            `[auth] Existing ${providerId} authorization revoked after token-limit error`,
+          );
+          reconnectFailure = { kind: "removed", providerName: provider.name };
+          await removeRevokedAuthorization(db, providerId, stateUserId);
+        } else {
+          reconnectFailure = {
+            kind: setup.reconnectStrategy === "revoke-then-replace" ? "removed" : "preserved",
+            providerName: provider.name,
+          };
+        }
       }
       throw exchangeError;
     }
@@ -381,7 +416,11 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       });
     }
 
-    if (existingTokens && setup.reconnectStrategy !== "revoke-then-replace") {
+    if (
+      existingTokens &&
+      setup.reconnectStrategy !== "revoke-then-replace" &&
+      setup.reconnectStrategy !== "deauthorize-on-token-limit"
+    ) {
       try {
         await revokeSupersededAuthorization({
           oauthConfig: setup.oauthConfig,
@@ -417,16 +456,24 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     // Wahoo-specific: when orphaned tokens on Wahoo's side block new token creation,
     // the user needs to deauthorize the app from the Wahoo mobile app.
     if (message.includes("Too many unrevoked access tokens")) {
-      const priorAuthorizationMessage =
-        reconnectFailure?.kind === "removed"
-          ? "<p>Your previous Wahoo authorization was removed before the replacement could be completed.</p>"
-          : "";
+      if (reconnectFailure?.kind === "removed") {
+        res
+          .status(400)
+          .send(
+            [
+              "<h2>Wahoo authorization reset</h2>",
+              "<p>Your previous Wahoo authorization was removed after Wahoo rejected the replacement for too many active tokens.</p>",
+              "<p>The old connection is now clean. Start authorization again to receive a fresh grant.</p>",
+              '<p><a href="/auth/provider/wahoo">Authorize Wahoo again</a></p>',
+            ].join("\n"),
+          );
+        return;
+      }
       res
         .status(400)
         .send(
           [
             "<h2>Wahoo connection blocked by orphaned tokens</h2>",
-            priorAuthorizationMessage,
             "<p>Wahoo limits the number of active tokens per app. Old tokens from a previous session are blocking the new connection.</p>",
             "<p><strong>To fix this:</strong></p>",
             "<ol>",

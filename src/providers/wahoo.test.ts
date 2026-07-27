@@ -354,7 +354,7 @@ describe("WahooProvider.authSetup()", () => {
     const setup = provider.authSetup();
     expect(setup.oauthConfig?.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
-    expect(setup.reconnectStrategy).toBe("revoke-then-replace");
+    expect(setup.reconnectStrategy).toBe("deauthorize-on-token-limit");
     expect(setup.revokeExistingTokens).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toBe("https://api.wahooligan.com");
     expect(setup.identityCapabilities?.providesEmail).toBe(false);
