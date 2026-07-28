@@ -64,6 +64,13 @@ console.log({
   that these estimates must not be used for birth control or diagnosis.
 - The design-token modules contain values only; they do not install fonts or
   render UI.
+- `operationalStatusColors` is the light-theme presentation palette for generic
+  application states. Its foregrounds meet the
+  [WCAG 2.2 normal-text contrast requirement](https://www.w3.org/TR/WCAG22/#contrast-minimum)
+  on paired surfaces, and its borders/indicators meet
+  [WCAG 2.2 non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast).
+  It does not classify health, nutrition, training, clinical, or scoring values;
+  those domain meanings remain with their owning models.
 
 The package performs no network requests and needs no authentication or runtime
 configuration. Validate untrusted input before calling the calculation
