@@ -98,6 +98,7 @@ vi.mock("react-native", () => {
       accessibilityLabel,
       accessibilityRole,
       accessible: _accessible,
+      automaticallyAdjustKeyboardInsets,
       children,
       style,
       testID,
@@ -109,6 +110,7 @@ vi.mock("react-native", () => {
           ...props,
           "aria-description": accessibilityHint,
           "aria-label": accessibilityLabel,
+          "data-automatically-adjust-keyboard-insets": automaticallyAdjustKeyboardInsets,
           "data-testid": testID,
           role: accessibilityRole,
           style: flattenStyle(style),
@@ -320,7 +322,12 @@ vi.mock("react-native", () => {
     AppState,
     LayoutAnimation,
     UIManager,
-    useWindowDimensions: () => ({ width: 390, height: 844 }),
+    useWindowDimensions: vi.fn(() => ({
+      width: 390,
+      height: 844,
+      scale: 3,
+      fontScale: 1,
+    })),
   };
 });
 
