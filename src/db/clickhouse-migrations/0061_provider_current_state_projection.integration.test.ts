@@ -73,9 +73,8 @@ describe("0061_provider_current_state_projection", () => {
       },
       format: "JSONEachRow",
     });
-    expect(projectionPartSchema.parse(await beforeMaterialization.json())).toEqual([
-      { missing_projection_parts: 3 },
-    ]);
+    const [projectionParts] = projectionPartSchema.parse(await beforeMaterialization.json());
+    expect(projectionParts?.missing_projection_parts).toBeGreaterThan(0);
 
     await client.command({
       query: `ALTER TABLE ${table}

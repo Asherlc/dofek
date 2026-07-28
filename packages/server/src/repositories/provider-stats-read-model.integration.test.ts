@@ -9,7 +9,10 @@ import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
 } from "../../../../src/db/clickhouse.ts";
-import { buildIngestMetricStreamCreateTableSql } from "../../../../src/metric-stream/clickhouse-table.ts";
+import {
+  buildIngestMetricStreamCreateTableSql,
+  METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION,
+} from "../../../../src/metric-stream/clickhouse-table.ts";
 
 const providerCountSchema = z.array(
   z.object({
@@ -110,8 +113,8 @@ function renderMetricStreamCountSql(
   const projectionSettings =
     projectionMode === "force"
       ? `force_optimize_projection = 1,
-    force_optimize_projection_name = 'by_provider_current_state'`
-      : "preferred_optimize_projection_name = 'by_provider_current_state'";
+    force_optimize_projection_name = '${METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION}'`
+      : `preferred_optimize_projection_name = '${METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION}'`;
 
   return `WITH providers AS (
     SELECT {userId:UUID} AS user_id, 'test_provider' AS provider_id
@@ -251,7 +254,9 @@ describe("provider stats read model", () => {
       .parse(await result.json())
       .map((row) => row.explain)
       .join("\n");
-    expect(explain).toContain("ReadFromMergeTree (by_provider_current_state)");
+    expect(explain).toContain(
+      `ReadFromMergeTree (${METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION})`,
+    );
   });
 
   it("keeps a high-cardinality exact recount within a bounded memory budget", async () => {
