@@ -17199,8 +17199,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-25 — Analytics Builds Exceeded the ClickHouse Query Ceiling
 
-- **Status:** Root cause fixed in code; production deployment and full-cycle
-  validation pending.
+- **Status:** Historical intermediate update; superseded by the final resolved
+  `Provider Inventory Current-State Aggregation Timed Out` entry below.
 - **Symptoms:** Sentry issue
   [`DOFEK-SERVER-5A`](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5A)
   recorded a failed production analytics-worker cycle at
@@ -17255,11 +17255,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Production validation still must show a complete 36-model cycle below the
   existing query ceiling, followed by cache warming and a stable healthy
   analytics-worker task.
-- **Remaining risk / follow-up:** Production continues running the prior model
-  definitions until this change is deployed. After deployment, verify the body
-  model migration completes, observe at least one full analytics cycle, compare
-  model read rows/bytes and duration in `system.query_log`, and confirm the
-  analytics-worker remains healthy without changing the four-minute ceiling.
+- **Remaining risk / follow-up:** Historical at the time of this entry. Its
+  rollout completed, subsequent bottlenecks are recorded in later
+  DOFEK-SERVER-5A entries, and the final resolved entry below records the
+  production outcome.
 
 ## 2026-07-25 — Failed Deploy Left ClickHouse Consumers Quiesced
 
@@ -18620,8 +18619,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-26 — Reused Analytics CTEs Recomputed and Forced Projection Failed
 
-- **Status:** Both remaining aggregate analytics failures have direct fixes
-  reproduced and validated locally; merge and production validation pending.
+- **Status:** Historical intermediate update; superseded by the final resolved
+  `Provider Inventory Current-State Aggregation Timed Out` entry below.
 - **Symptoms:** The production analytics worker continued reporting
   [Sentry issue DOFEK-SERVER-5A](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5A)
   after the power-curve fix deployed. Each serial dbt cycle failed
@@ -18670,10 +18669,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   all six real-ClickHouse provider/sleep integration cases pass, including
   bounded incremental sleep, complete full refresh, lifecycle tombstones,
   current metric-stream versions, and unmaterialized-projection fallback.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy without
-  changing the four-minute query ceiling, observe a complete production dbt
-  cycle in which both models succeed, verify downstream cache warming, then
-  resolve DOFEK-SERVER-5A.
+- **Remaining risk / follow-up:** Historical at the time of this entry. Its
+  rollout completed, subsequent bottlenecks are recorded in later
+  DOFEK-SERVER-5A entries, and the final resolved entry below records the
+  production outcome.
 
 ## 2026-07-26 — HealthKit Observer Sync Waited Behind a Background Timer
 
@@ -18776,8 +18775,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   or the next sync will prune it the same way.
 ## 2026-07-27 — Analytics provider_stats and sleep_heart_rate_sample timeout (DOFEK-SERVER-5A)
 
-- **Status:** Direct fix validated locally; PR, deployment, and production
-  validation pending.
+- **Status:** Historical intermediate update; superseded by the final resolved
+  `Provider Inventory Current-State Aggregation Timed Out` entry below.
 - **Symptoms:** The current production release repeatedly timed out its serial
   analytics build at the 240-second ClickHouse query ceiling in
   `provider_stats` and `sleep_heart_rate_sample`.
@@ -18812,10 +18811,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   tombstones, exact current-row counts, bounded convergence, processed-empty
   sleeps, actual source tombstones, and old post-cutover deletion. Analytics
   SQL lint/policy checks and `git diff --check` also pass.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy without
-  changing the four-minute ceiling, observe a complete production analytics
-  cycle with bounded row reads and downstream cache warming, then resolve
-  DOFEK-SERVER-5A.
+- **Remaining risk / follow-up:** Historical at the time of this entry. Its
+  rollout completed, subsequent bottlenecks are recorded in later
+  DOFEK-SERVER-5A entries, and the final resolved entry below records the
+  production outcome.
 
 ## 2026-07-27 — WHOOP Access Token Reused Inside Provider Rejection Window
 
@@ -18863,8 +18862,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-27 — Activity sensor membership join timeout (DOFEK-SERVER-5A)
 
-- **Status:** Direct fix reproduced and validated locally; merge, deployment,
-  and production validation pending.
+- **Status:** Historical intermediate update; superseded by the final resolved
+  `Provider Inventory Current-State Aggregation Timed Out` entry below.
 - **Symptoms:** The first production analytics cycle after the bounded
   provider and sleep fix completed `provider_stats` in 1.19 seconds and
   `sleep_heart_rate_sample` in 78.00 seconds, then timed out the
@@ -18898,9 +18897,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   activity-day equality key reduced that to the 100 exact memberships and
   also preserved two memberships for a cross-midnight sample shared by
   overlapping activities.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy, and observe
-  a complete production analytics build plus cache-warming cycle before
-  resolving DOFEK-SERVER-5A.
+- **Remaining risk / follow-up:** Historical at the time of this entry. Its
+  rollout completed, the next bottleneck is recorded in the later reused-CTE
+  entry, and the final resolved entry below records the production outcome.
 
 ## 2026-07-27 — Local E2E Docker Storage Exhaustion
 
@@ -18963,8 +18962,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-27 — Activity sensor summary reused CTE timeout (DOFEK-SERVER-5A)
 
-- **Status:** Direct fix reproduced and validated locally; merge, deployment,
-  and production validation pending.
+- **Status:** Historical intermediate update; superseded by the final resolved
+  `Provider Inventory Current-State Aggregation Timed Out` entry below.
 - **Symptoms:** After the bounded activity membership join deployed, the next
   serial analytics build completed `activity_sensor_sample` in 18.08 seconds
   but timed out `activity_sensor_summary_rows` at the unchanged 240-second
@@ -18994,9 +18993,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   lifecycle tombstone fixture. With materialization enabled, the same rendered
   model emits the same output and opens exactly three sample-table scans. The
   focused static model suite also verifies that no other CTE is materialized.
-- **Remaining risk / follow-up:** Merge through normal CI, deploy, and observe
-  a complete production analytics build plus cache-warming cycle before
-  resolving DOFEK-SERVER-5A.
+- **Remaining risk / follow-up:** Historical at the time of this entry. Its
+  rollout completed, the next bottleneck is recorded in the final provider
+  inventory entry below, and that entry records the production outcome.
 
 ## 2026-07-27 — Wahoo reconnect invalidated its replacement grant (DOFEK-SERVER-5H)
 
@@ -19395,9 +19394,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `lastSuccessAt = 2026-07-28T02:03:28.467Z`.
 - **Remaining risk / follow-up:** The one-time historical materialization
   briefly reached ClickHouse's 11.70 GiB global memory ceiling while many
-  projection parts ran concurrently. ClickHouse retried the affected parts,
-  continued reducing `parts_to_do`, cleared the failure reason, and completed
-  without a limit, timeout, retry, or service-topology change. Future
-  large-table projection materializations should retain the same explicit
-  `system.mutations`, `system.merges`, disk, and service-health monitoring; no
-  runtime resilience knob remains.
+  projection parts ran concurrently. Repeated `system.mutations` samples then
+  showed the affected parts retry, `parts_to_do` continue falling, the failure
+  reason clear, and the mutation complete without a limit, timeout, retry, or
+  service-topology change. ClickHouse documents that classic mutations rewrite
+  parts through the merge thread pool, can be resource intensive, and should be
+  monitored through `system.mutations`:
+  <https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#classic-mutations>.
+  Future large-table projection materializations should retain the same
+  explicit `system.mutations`, `system.merges`, disk, and service-health
+  monitoring; no runtime resilience knob remains.
