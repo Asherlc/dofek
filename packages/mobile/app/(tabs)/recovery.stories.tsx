@@ -1,4 +1,3 @@
-import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
@@ -6,24 +5,16 @@ import { mobileRecoveryFixtureSchema } from "dofek-server/mobile-dashboard-contr
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
+import { createFixtureDates } from "./fixture-dates";
 import RecoveryScreen from "./recovery";
-
-function localDateString(dayOffset = 0): string {
-  const date = new Date();
-  date.setDate(date.getDate() + dayOffset);
-  return formatDateYmd(date);
-}
-
-function buildTrendDates(count: number): string[] {
-  return Array.from({ length: count }, (_, index) => localDateString(index - (count - 1)));
-}
 
 function createSeededProviders() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
-  const endDate = localDateString();
-  const trendDates = buildTrendDates(14);
+  const dates = createFixtureDates(new Date());
+  const endDate = dates.date();
+  const trendDates = Array.from({ length: 14 }, (_, index) => dates.date(index - 13));
   const readinessComponents = {
     hrvScore: 84,
     restingHrScore: 78,
@@ -102,7 +93,7 @@ function createSeededProviders() {
         goal: {
           goalWeightKg: 72.5,
           remainingKg: 1.1,
-          estimatedDate: localDateString(60),
+          estimatedDate: dates.date(60),
           daysRemaining: 60,
         },
         projectionLine: [],

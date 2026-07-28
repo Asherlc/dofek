@@ -1,31 +1,17 @@
-import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { mobileTrainingFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
+import { createFixtureDates, type FixtureDates } from "./fixture-dates";
 import StrainScreen from "./strain";
 
-function localDateString(dayOffset = 0): string {
-  const date = new Date();
-  date.setDate(date.getDate() + dayOffset);
-  return formatDateYmd(date);
-}
-
-function localWeekStartString(dayOffset = 0): string {
-  const date = new Date();
-  date.setDate(date.getDate() + dayOffset);
-  const daysSinceMonday = (date.getDay() + 6) % 7;
-  date.setDate(date.getDate() - daysSinceMonday);
-  return formatDateYmd(date);
-}
-
-function createMockWorkloadData() {
+function createMockWorkloadData(dates: FixtureDates) {
   const timeSeries = Array.from({ length: 7 }, (_, index) => {
     const isLatest = index === 6;
     return {
-      date: localDateString(index - 6),
+      date: dates.date(index - 6),
       dailyLoad: isLatest ? 450 : 330 + index * 18,
       strain: isLatest ? 12.5 : 10.2 + index * 0.3,
       acuteLoad: isLatest ? 380 : 350 + index * 5,
@@ -43,54 +29,58 @@ function createMockWorkloadData() {
       baselineDays: 28,
     },
     displayedStrain: 12.5,
-    displayedDate: localDateString(),
+    displayedDate: dates.date(),
     timeSeries,
   };
 }
 
-const mockActivities = [
-  {
-    id: "a1",
-    name: "Morning Ride",
-    activity_type: "cycling",
-    started_at: `${localDateString()}T07:00:00.000Z`,
-    ended_at: `${localDateString()}T08:30:00.000Z`,
-    avg_hr: 148,
-    max_hr: 176,
-    avg_power: 235,
-    max_power: 580,
-    avg_cadence: 88,
-    hr_samples: 5400,
-    power_samples: 5400,
-    distance_meters: 42000,
-  },
-  {
-    id: "a2",
-    name: "Evening Run",
-    activity_type: "running",
-    started_at: `${localDateString(-1)}T18:00:00.000Z`,
-    ended_at: `${localDateString(-1)}T18:45:00.000Z`,
-    avg_hr: 155,
-    max_hr: 172,
-    avg_power: null,
-    max_power: null,
-    avg_cadence: null,
-    hr_samples: 2700,
-    power_samples: null,
-    distance_meters: 7500,
-  },
-];
+function createMockActivities(dates: FixtureDates) {
+  return [
+    {
+      id: "a1",
+      name: "Morning Ride",
+      activity_type: "cycling",
+      started_at: `${dates.date()}T07:00:00.000Z`,
+      ended_at: `${dates.date()}T08:30:00.000Z`,
+      avg_hr: 148,
+      max_hr: 176,
+      avg_power: 235,
+      max_power: 580,
+      avg_cadence: 88,
+      hr_samples: 5400,
+      power_samples: 5400,
+      distance_meters: 42000,
+    },
+    {
+      id: "a2",
+      name: "Evening Run",
+      activity_type: "running",
+      started_at: `${dates.date(-1)}T18:00:00.000Z`,
+      ended_at: `${dates.date(-1)}T18:45:00.000Z`,
+      avg_hr: 155,
+      max_hr: 172,
+      avg_power: null,
+      max_power: null,
+      avg_cadence: null,
+      hr_samples: 2700,
+      power_samples: null,
+      distance_meters: 7500,
+    },
+  ];
+}
 
-function createSeededProviders(activities: unknown[] = []) {
+function createSeededProviders(hasActivities: boolean) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
-  const endDate = localDateString();
-  const hasActivities = activities.length > 0;
+  const dates = createFixtureDates(new Date());
+  const endDate = dates.date();
+  const mockWorkloadData = createMockWorkloadData(dates);
+  const activities = hasActivities ? createMockActivities(dates) : [];
   const workloadRatio = hasActivities
-    ? createMockWorkloadData()
+    ? mockWorkloadData
     : {
-        context: createMockWorkloadData().context,
+        context: mockWorkloadData.context,
         displayedStrain: 0,
         displayedDate: null,
         timeSeries: [],
@@ -118,9 +108,9 @@ function createSeededProviders(activities: unknown[] = []) {
       activities,
       weeklyVolume: hasActivities
         ? [
-            { week: localWeekStartString(), activity_type: "cycling", count: 1, hours: 1.5 },
+            { week: dates.weekStart(), activity_type: "cycling", count: 1, hours: 1.5 },
             {
-              week: localWeekStartString(-1),
+              week: dates.weekStart(-1),
               activity_type: "running",
               count: 1,
               hours: 0.75,
@@ -146,12 +136,12 @@ function createSeededProviders(activities: unknown[] = []) {
 
 function MockProviders({
   children,
-  activities = [],
+  withActivities = false,
 }: {
   children: React.ReactNode;
-  activities?: unknown[];
+  withActivities?: boolean;
 }) {
-  const { queryClient } = createSeededProviders(activities);
+  const { queryClient } = createSeededProviders(withActivities);
   const trpcClient = trpc.createClient({
     links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
   });
@@ -189,7 +179,7 @@ export const Default: Story = {};
 export const WithActivities: Story = {
   decorators: [
     (Story) => (
-      <MockProviders activities={mockActivities}>
+      <MockProviders withActivities>
         <View style={{ flex: 1, backgroundColor: "#000" }}>
           <Story />
         </View>
