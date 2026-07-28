@@ -65,6 +65,16 @@ export interface PolarizationTrendResult {
   maxHr: number | null;
   weeks: PolarizationWeek[];
   explanation: string;
+  method: {
+    formula: string;
+    zoneBasis: string;
+    calculationChoice: string;
+    interpretation: string;
+    source: {
+      title: string;
+      url: string;
+    };
+  };
 }
 
 const POLARIZATION_RESULT_METADATA = {
@@ -72,8 +82,25 @@ const POLARIZATION_RESULT_METADATA = {
   activityScope: "cycling" as const,
   threshold: 2 as const,
   explanation:
-    "The Treff three-zone polarization index describes cycling training only. An index above 2.00 is polarized.",
+    "The Treff three-zone polarization index is a descriptive summary of recorded cycling training.",
 };
+
+function createPolarizationMethod(): PolarizationTrendResult["method"] {
+  return {
+    formula:
+      "Polarization index = log10((easy-zone fraction / threshold-zone fraction) × high-zone fraction × 100).",
+    zoneBasis:
+      "Easy zone (Zone 1) is below 80%, threshold zone (Zone 2) is 80–<90%, and high zone (Zone 3) is at least 90% of maximum heart rate.",
+    calculationChoice:
+      "Dofek requires recorded time in all three zones and does not calculate the polarization index when high-zone time exceeds easy-zone time.",
+    interpretation:
+      "The >2.00 comparison is Treff's descriptive training-distribution heuristic, not a physiological or medical assessment.",
+    source: {
+      title: "Treff et al. (2019), The Polarization-Index",
+      url: "https://doi.org/10.3389/fphys.2019.00707",
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -539,8 +566,8 @@ export class EfficiencyRepository extends BaseRepository {
 
   /**
    * Polarization Index trend per week using Treff 3-zone model.
-   * PI = log10((f1 / (f2 * f3)) * 100) where f = fraction of total training time.
-   * PI > 2.0 indicates a well-polarized training distribution.
+   * PI = log10((f1 / f2) * f3 * 100) where f = fraction of total training time.
+   * PI > 2.0 matches Treff's descriptive polarized-distribution heuristic.
    * Reads from the pre-computed activity_polarization_zones read model.
    */
   async getPolarizationTrend(range: ChartRange): Promise<PolarizationTrendResult> {
@@ -587,6 +614,11 @@ export class EfficiencyRepository extends BaseRepository {
       });
     });
 
-    return { ...POLARIZATION_RESULT_METADATA, maxHr, weeks };
+    return {
+      ...POLARIZATION_RESULT_METADATA,
+      method: createPolarizationMethod(),
+      maxHr,
+      weeks,
+    };
   }
 }

@@ -61,13 +61,16 @@ Readings below the first boundary classify as zone 0.
 `computePolarizationIndex` implements:
 
 ```text
-PI = log10((f1 / (f2 × f3)) × 100)
+PI = log10((f1 / f2) × f3 × 100)
 ```
 
 where each `f` is the fraction of total time in one of the three intensity
-zones. The function returns `null` when any zone has no time; the formula and
-2.0 classification threshold come from
+zones. The function returns `null` when any zone has no time, which is Dofek's
+explicit calculation choice, or when Zone 3 exceeds Zone 1, which Treff defines
+as outside the index's valid range. The formula and descriptive 2.0 heuristic come from
 [Treff et al. (2019)](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00707/full).
+The index describes a recorded training-intensity distribution; it is not a
+physiological or medical assessment.
 
 ### Cycling power
 

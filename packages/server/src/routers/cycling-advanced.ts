@@ -46,6 +46,18 @@ export interface TrainingMonotonyWeek {
   monotony: number;
   strain: number;
   weeklyLoad: number;
+  dailyMeanLoad: number;
+  dailyLoadStandardDeviation: number;
+  method: {
+    formula: string;
+    calendar: string;
+    activityScope: string;
+    interpretation: string;
+    source: {
+      title: string;
+      url: string;
+    };
+  };
 }
 
 export interface ActivityVariabilityRow {

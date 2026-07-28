@@ -55,6 +55,16 @@ const polarizationTrendOutputSchema = z.object({
     }),
   ),
   explanation: z.string(),
+  method: z.object({
+    formula: z.string(),
+    zoneBasis: z.string(),
+    calculationChoice: z.string(),
+    interpretation: z.string(),
+    source: z.object({
+      title: z.string(),
+      url: z.url(),
+    }),
+  }),
 }) satisfies z.ZodType<PolarizationTrendResult>;
 
 export const efficiencyRouter = router({
@@ -93,7 +103,7 @@ export const efficiencyRouter = router({
   /**
    * Polarization Index trend per week using Treff 3-zone model (%HRmax).
    *   Z1 (easy) = < 80% HRmax; Z2 (threshold) = 80-90%; Z3 (high) = >= 90%.
-   * PI = log10((f1 / (f2 * f3)) * 100); PI > 2.0 indicates well-polarized training.
+   * PI = log10((f1 / f2) * f3 * 100); PI > 2.0 matches Treff's descriptive heuristic.
    */
   polarizationTrend: selectedChartRangeQuery(
     "efficiency.polarizationTrend",
