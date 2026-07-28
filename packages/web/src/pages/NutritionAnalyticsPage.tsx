@@ -66,7 +66,7 @@ export function NutritionAnalyticsPage() {
         {/* Micronutrient Adequacy */}
         <Section
           title="Micronutrient Adequacy"
-          subtitle={`Average over recorded days as % of the FDA Daily Value (${formatTimeRangeLabel(days)}); this generic label reference is not a personalized deficiency or safety assessment`}
+          subtitle={`Average over recorded days as % of the U.S. Food and Drug Administration (FDA) Daily Value (${formatTimeRangeLabel(days)}); this generic label reference is not a personalized deficiency or safety assessment`}
         >
           {micronutrients.isError && <QueryStatePanel error={micronutrients.error} height={72} />}
           <MicronutrientChart

@@ -187,9 +187,9 @@ export class MicronutrientSafetyReview {
       nutrient: this.#row.nutrient,
       unit: this.#row.unit,
       intake: {
-        totalDailyAverage: this.#row.totalDailyAverage,
-        foodDailyAverage: this.#row.foodDailyAverage,
-        supplementDailyAverage: this.#row.supplementDailyAverage,
+        totalDailyAverage: Math.round(this.#row.totalDailyAverage * 10) / 10,
+        foodDailyAverage: Math.round(this.#row.foodDailyAverage * 10) / 10,
+        supplementDailyAverage: Math.round(this.#row.supplementDailyAverage * 10) / 10,
         daysTracked: this.#row.daysTracked,
       },
       adequacy: this.#adequacy,
@@ -508,14 +508,11 @@ export class NutritionAnalyticsRepository extends BaseRepository {
     );
 
     return rows.flatMap((row) => {
-      const totalDailyAverage = Math.round(row.avg_total_intake * 10) / 10;
-      const foodDailyAverage = Math.round(row.avg_food_intake * 10) / 10;
-      const supplementDailyAverage = Math.round(row.avg_supplement_intake * 10) / 10;
       const upperLimit = evaluateNutrientUpperLimit({
         nutrientId: row.nutrient_id,
         unit: row.unit,
-        totalDailyAmount: totalDailyAverage,
-        supplementalDailyAmount: supplementDailyAverage,
+        totalDailyAmount: row.avg_total_intake,
+        supplementalDailyAmount: row.avg_supplement_intake,
       });
       if (
         getNutrientDailyValue(row.nutrient_id) == null &&
@@ -529,9 +526,9 @@ export class NutritionAnalyticsRepository extends BaseRepository {
           nutrientId: row.nutrient_id,
           nutrient: row.nutrient,
           unit: row.unit,
-          totalDailyAverage,
-          foodDailyAverage,
-          supplementDailyAverage,
+          totalDailyAverage: row.avg_total_intake,
+          foodDailyAverage: row.avg_food_intake,
+          supplementDailyAverage: row.avg_supplement_intake,
           daysTracked: row.days_tracked,
         }),
       ];

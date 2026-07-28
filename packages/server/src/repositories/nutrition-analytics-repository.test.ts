@@ -398,6 +398,34 @@ describe("NutritionAnalyticsRepository", () => {
       });
     });
 
+    it("compares the unrounded intake with an upper-limit boundary", async () => {
+      const { repo } = makeRepository([
+        {
+          nutrient_id: "zinc",
+          nutrient: "Zinc",
+          unit: "mg",
+          avg_total_intake: 39.96,
+          avg_food_intake: 19.96,
+          avg_supplement_intake: 20,
+          days_tracked: 7,
+        },
+      ]);
+
+      const result = await repo.getMicronutrientSafetyReview(30);
+
+      expect(result[0]?.toDetail()).toMatchObject({
+        intake: {
+          totalDailyAverage: 40,
+        },
+        upperLimit: {
+          status: "within_limit",
+          intakeAmount: 39.96,
+          amount: 40,
+        },
+        safetyStatus: "within_upper_limit",
+      });
+    });
+
     it("reads food and taken-supplement contributions separately", async () => {
       const { repo, execute } = makeRepository([]);
 

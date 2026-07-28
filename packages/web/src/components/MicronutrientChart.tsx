@@ -33,7 +33,7 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
         const unit = escapeTooltipHtml(row.unit);
         return `<b>${nutrient}</b><br/>
           ${row.intake.totalDailyAverage} ${unit} / ${adequacy.reference.amount} ${unit}<br/>
-          <b>${adequacy.percentDailyValue}% of FDA Daily Value (adequacy reference, not a safety rating)</b><br/>
+          <b>${adequacy.percentDailyValue}% of U.S. Food and Drug Administration (FDA) Daily Value (adequacy reference, not a safety rating)</b><br/>
           <span style="color:${chartThemeColors.axisLabel}">(average over ${row.intake.daysTracked} recorded days)</span>`;
       },
     }),
@@ -77,7 +77,7 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
           label: {
             show: true,
             position: "end" as const,
-            formatter: "100% FDA Daily Value",
+            formatter: "100% U.S. Food and Drug Administration (FDA) Daily Value",
             color: chartThemeColors.axisLabel,
           },
           tooltip: { show: false },

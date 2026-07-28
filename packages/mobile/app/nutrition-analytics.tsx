@@ -200,8 +200,8 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
         textStyle={styles.sectionTitle}
       />
       <Text style={styles.sectionSubtext}>
-        Average over recorded days vs. FDA Daily Value; not a personalized deficiency or safety
-        assessment
+        Average over recorded days vs. U.S. Food and Drug Administration (FDA) Daily Value; not a
+        personalized deficiency or safety assessment
       </Text>
 
       {sorted.map((nutrient) => {

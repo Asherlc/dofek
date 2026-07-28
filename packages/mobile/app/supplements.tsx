@@ -80,7 +80,12 @@ export default function SupplementsScreen() {
   const stack = trpc.supplements.list.useQuery();
   const safetyReview = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery({ days: 30 });
   const saveMutation = trpc.supplements.save.useMutation({
-    onSuccess: () => utils.supplements.list.invalidate(),
+    onSuccess: async () => {
+      await Promise.all([
+        utils.supplements.list.invalidate(),
+        utils.nutritionAnalytics.micronutrientAdequacyV2.invalidate({ days: 30 }),
+      ]);
+    },
     onError: (error) => {
       captureException(error, { operation: "supplements.save" });
       Alert.alert("Error", error.message);
@@ -224,7 +229,8 @@ export default function SupplementsScreen() {
       <View style={styles.safetySection}>
         <Text style={styles.sectionTitle}>Safety Context</Text>
         <Text style={styles.sectionSubtitle}>
-          FDA label references, bounded NIH adult upper limits, and medication-review guidance
+          U.S. Food and Drug Administration (FDA) label references, bounded National Institutes of
+          Health (NIH) adult upper limits, and medication-review guidance
         </Text>
         {safetyReview.isLoading && <Text style={styles.loadingText}>Loading...</Text>}
         {safetyReview.error && <Text style={styles.errorText}>{safetyReview.error.message}</Text>}

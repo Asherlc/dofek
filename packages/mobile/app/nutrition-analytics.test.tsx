@@ -85,7 +85,7 @@ describe("NutritionAnalyticsScreen", () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        "Average over recorded days vs. FDA Daily Value; not a personalized deficiency or safety assessment",
+        "Average over recorded days vs. U.S. Food and Drug Administration (FDA) Daily Value; not a personalized deficiency or safety assessment",
       ),
     ).toBeTruthy();
   });

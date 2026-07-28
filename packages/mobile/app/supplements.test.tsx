@@ -17,13 +17,17 @@ interface SaveOptions {
 
 const mocks = vi.hoisted<{
   captureException: ReturnType<typeof vi.fn>;
-  invalidate: ReturnType<typeof vi.fn>;
+  invalidateAll: ReturnType<typeof vi.fn>;
+  safetyInvalidate: ReturnType<typeof vi.fn>;
+  stackInvalidate: ReturnType<typeof vi.fn>;
   mutate: ReturnType<typeof vi.fn>;
   query: QueryState;
   saveOptions: SaveOptions | undefined;
 }>(() => ({
   captureException: vi.fn(),
-  invalidate: vi.fn(),
+  invalidateAll: vi.fn(),
+  safetyInvalidate: vi.fn(),
+  stackInvalidate: vi.fn(),
   mutate: vi.fn(),
   query: {
     data: [{ name: "Creatine", amount: 5, unit: "g" }],
@@ -44,8 +48,11 @@ vi.mock("../lib/useRefresh", () => ({
 vi.mock("../lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
-      invalidate: mocks.invalidate,
-      supplements: { list: { invalidate: mocks.invalidate } },
+      invalidate: mocks.invalidateAll,
+      nutritionAnalytics: {
+        micronutrientAdequacyV2: { invalidate: mocks.safetyInvalidate },
+      },
+      supplements: { list: { invalidate: mocks.stackInvalidate } },
     }),
     supplements: {
       list: { useQuery: () => mocks.query },
@@ -174,13 +181,14 @@ describe("SupplementsScreen", () => {
     });
   });
 
-  it("invalidates the supplement stack after replacement succeeds", async () => {
+  it("invalidates the stack and safety review after replacement succeeds", async () => {
     const { default: SupplementsScreen } = await import("./supplements");
     render(<SupplementsScreen />);
 
     await mocks.saveOptions?.onSuccess?.();
 
-    expect(mocks.invalidate).toHaveBeenCalledOnce();
+    expect(mocks.stackInvalidate).toHaveBeenCalledOnce();
+    expect(mocks.safetyInvalidate).toHaveBeenCalledWith({ days: 30 });
   });
 
   it("renders server-owned upper-limit and medication-review guidance", async () => {

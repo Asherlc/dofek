@@ -23,8 +23,9 @@ function NutritionSupplementsPage() {
       </PageSection>
       <PageSection
         title="Safety Context"
-        subtitle="FDA label references, bounded NIH adult upper limits, and medication-review guidance"
+        subtitle="U.S. Food and Drug Administration (FDA) label references, bounded National Institutes of Health (NIH) adult upper limits, and medication-review guidance"
       >
+        {safetyReview.isLoading && <QueryStatePanel variant="loading" height={72} />}
         {safetyReview.isError && <QueryStatePanel error={safetyReview.error} height={72} />}
         {safetyReview.data && <SupplementSafetyReviewPanel review={safetyReview.data} />}
       </PageSection>

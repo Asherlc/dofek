@@ -120,7 +120,12 @@ export function SupplementStackPanel() {
   const utils = trpc.useUtils();
   const stack = trpc.supplements.list.useQuery();
   const saveMutation = trpc.supplements.save.useMutation({
-    onSuccess: () => utils.supplements.list.invalidate(),
+    onSuccess: async () => {
+      await Promise.all([
+        utils.supplements.list.invalidate(),
+        utils.nutritionAnalytics.micronutrientAdequacyV2.invalidate({ days: 30 }),
+      ]);
+    },
     onError: (error) => {
       captureException(error, { operation: "supplements.save" });
     },
