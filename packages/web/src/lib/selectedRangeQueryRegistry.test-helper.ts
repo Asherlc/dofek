@@ -8,7 +8,7 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
     "bodyAnalytics.weightOverview",
     "insights.compute",
   ],
-  correlation: ["correlation.compute"],
+  correlation: ["correlation.computeV2"],
   cycling: [
     "power.powerCurve",
     "power.eftpTrend",
