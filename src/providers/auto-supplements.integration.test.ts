@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
 import {
   foodEntry,
@@ -89,6 +89,12 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
 
   afterAll(async () => {
     if (ctx) await ctx.cleanup();
+  });
+
+  beforeEach(async () => {
+    await ctx.db.delete(supplementDoseEvent);
+    await ctx.db.delete(supplement);
+    await ctx.db.delete(foodEntry);
   });
 
   it("materializes only the requested user's effective definitions inside the exact window", async () => {
@@ -317,8 +323,8 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
       .returning({ id: foodEntry.id, providerId: foodEntry.providerId });
     if (!fictional || !real) throw new Error("Failed to seed cleanup fixtures");
     await ctx.db.insert(foodEntryNutrient).values([
-      { foodEntryId: fictional.id, nutrientId: "vitamin_d_mcg", amount: 10 },
-      { foodEntryId: real.id, nutrientId: "vitamin_d_mcg", amount: 5 },
+      { foodEntryId: fictional.id, nutrientId: "vitamin_d", amount: 10 },
+      { foodEntryId: real.id, nutrientId: "vitamin_d", amount: 5 },
     ]);
 
     await ctx.db.execute(

@@ -19494,3 +19494,42 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `system.mutations`, verify zero active parts lack the projection, observe a
   complete production analytics-plus-cache cycle below the unchanged
   four-minute ceiling, and only then resolve DOFEK-SERVER-5A.
+
+## 2026-07-27 — Supplement integration fixtures failed canonical foreign keys
+
+- **Status:** Root cause fixed locally on PR #2225; fresh exact-head CI
+  validation pending.
+- **Symptoms:** Exact-head CI run
+  [30320301785](https://github.com/Asherlc/dofek/actions/runs/30320301785)
+  failed `Test / Integration Tests (2/4)` in job
+  [90154983186](https://github.com/Asherlc/dofek/actions/runs/30320301785/job/90154983186).
+- **User impact:** No production impact. The supplement-dose pull request was
+  blocked from merging.
+- **Evidence:** The failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=2/4`. The
+  first fatal query inserted `vitamin_d_mcg` into
+  `fitness.food_entry_nutrient`; PostgreSQL returned `23503` because the
+  canonical nutrient catalog contains `vitamin_d`, not that legacy wide-column
+  name. A second first-attempt assertion expected PostgreSQL code `23503` on
+  the outer Drizzle query error even though the job log showed the code and
+  `supplement_dose_event_supplement_user_fkey` constraint on its `cause`.
+  Vitest then retried the stateful tests twice, and retained deterministic
+  schedule/date and food-entry fixtures produced secondary `23505` duplicate
+  errors. Vitest documents that `retry` reruns failed tests:
+  <https://vitest.dev/config/retry>.
+- **Root cause:** Two real-database tests modeled their boundaries
+  incorrectly: one used a removed legacy nutrient identifier, and one asserted
+  the wrapped database error at the wrong level. The supplement repository
+  suite also shared schedule and food fixtures between test attempts, so
+  retries were not isolated.
+- **Fix / mitigation:** Use the canonical `vitamin_d` nutrient key, assert the
+  exact wrapped PostgreSQL code and ownership constraint, and clear the
+  isolated clone's supplement events, schedules, and food entries before every
+  test attempt. No production behavior, migration, retry count, timeout, or CI
+  resilience setting changed.
+- **Validation:** Docker-free formatting, lint, typechecking, and unit/mobile
+  tests must pass locally. The corrected real-PostgreSQL tests and full
+  integration shard must pass in fresh exact-head CI because Docker remains
+  unavailable in this worktree.
+- **Remaining risk / follow-up:** Merge only after all exact-head integration
+  shards, mutation shards, external checks, and review threads are green.

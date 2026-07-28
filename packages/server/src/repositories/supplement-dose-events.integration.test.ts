@@ -1,9 +1,9 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
-import { supplementDoseEvent } from "../../../../src/db/schema/nutrition.ts";
+import { foodEntry, supplement, supplementDoseEvent } from "../../../../src/db/schema/nutrition.ts";
 import { userProfile } from "../../../../src/db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
@@ -52,6 +52,12 @@ describe("SupplementsRepository dose events with Postgres", () => {
 
   afterAll(async () => {
     await context?.cleanup();
+  });
+
+  beforeEach(async () => {
+    await context.db.delete(supplementDoseEvent);
+    await context.db.delete(supplement);
+    await context.db.delete(foodEntry);
   });
 
   it("archives changed definitions and preserves one stable schedule identity", async () => {
@@ -224,7 +230,12 @@ describe("SupplementsRepository dose events with Postgres", () => {
         status: "planned",
         recordedAt: new Date(),
       }),
-    ).rejects.toMatchObject({ code: "23503" });
+    ).rejects.toMatchObject({
+      cause: {
+        code: "23503",
+        constraint: "supplement_dose_event_supplement_user_fkey",
+      },
+    });
   });
 
   it("adds a current taken leaf to resolved food without creating a source conflict", async () => {
