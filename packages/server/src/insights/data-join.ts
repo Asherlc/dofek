@@ -129,7 +129,7 @@ export function joinByDate(
   // Body comp: one measurement per date (latest if multiple)
   const bodyCompByDate = new Map<string, BodyCompRow>();
   for (const b of bodyComp) {
-    const dateStr = new Date(b.recorded_at).toISOString().slice(0, 10);
+    const dateStr = b.date ? toDateStr(b.date) : new Date(b.recorded_at).toISOString().slice(0, 10);
     bodyCompByDate.set(dateStr, b); // last wins (data sorted ASC)
   }
 

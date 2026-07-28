@@ -491,7 +491,7 @@ export class CorrelationRepository {
               AND date <= ${effectiveEndDate}::date
             ORDER BY date ASC`,
       ),
-      fetchBodyCompRows(sensorStore, this.#userId, effectiveEndDate, days),
+      fetchBodyCompRows(sensorStore, this.#userId, this.#timezone, effectiveEndDate, days),
     ]);
 
     const joined = joinByDate(metrics, sleep, activities, nutrition, bodyComp, {

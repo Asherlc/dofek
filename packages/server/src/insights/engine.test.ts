@@ -375,6 +375,24 @@ describe("joinByDate()", () => {
     expect(result[0]?.body_fat_pct).toBe(14);
   });
 
+  it("uses the source-provided local date for body composition", () => {
+    const metrics = [makeDailyRow("2025-01-01")];
+    const bodyComp = [
+      {
+        ...makeBodyCompRow("2025-01-02T07:30:00Z", { weight_kg: 81.5 }),
+        date: "2025-01-01",
+      },
+    ];
+
+    const result = joinByDate(metrics, [], [], [], bodyComp, DEFAULT_CONFIG);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      date: "2025-01-01",
+      weight_kg: 81.5,
+    });
+  });
+
   it("sorts output by date ascending", () => {
     const metrics = [
       makeDailyRow("2025-01-03"),
