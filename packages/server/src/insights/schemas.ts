@@ -23,8 +23,9 @@ export const sleepRowSchema = z.object({
   is_nap: z.boolean(),
 });
 
-/** Zod schema for rows from fitness.v_activity used by insights/correlation queries. */
+/** Zod schema for activity rows used by insights/correlation queries. */
 export const activityRowSchema = z.object({
+  date: dateStringSchema.optional(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
   activity_type: z.string(),

@@ -58,7 +58,7 @@ vi.mock("../lib/trpc", () => ({
           ],
         }),
       },
-      compute: {
+      computeV2: {
         useQuery: () => ({
           data: state.correlationData,
           isLoading: false,
@@ -83,14 +83,31 @@ vi.mock("../theme", () => ({
 describe("CorrelationScreen", () => {
   beforeEach(() => {
     state.correlationData = {
+      analysisVersion: 2,
       availability: "insufficient",
       dataPoints: [],
       sampleCount: 0,
       additionalSamplesRequired: 5,
+      coverage: {
+        selectedDayCount: 90,
+        eligiblePairDayCount: 90,
+        observedXDayCount: 40,
+        observedYDayCount: 35,
+        pairedDayCount: 0,
+        missingPairDayCount: 90,
+      },
+      uncertainty: {
+        availability: "unavailable",
+        method: "circular_moving_block_bootstrap",
+        level: 0.95,
+        blockLength: 5,
+        requestedReplicateCount: 2_000,
+        attemptedReplicateCount: 0,
+        validReplicateCount: 0,
+        reason: "insufficient_pairs",
+      },
       insight:
-        "Insufficient data to analyze the relationship between Protein and Heart Rate Variability.",
-      confidenceLevel: "insufficient",
-      correlationColor: "#71717a",
+        "Insufficient data to describe the relationship between Protein and Heart Rate Variability.",
     };
   });
 
@@ -99,7 +116,13 @@ describe("CorrelationScreen", () => {
     render(<CorrelationScreen />);
 
     expect(screen.getByText("n = 0")).toBeTruthy();
-    expect(screen.getByText("5 more overlapping samples needed")).toBeTruthy();
+    expect(screen.getByText("5 more paired calendar days needed")).toBeTruthy();
+    expect(screen.getByText("90 selected")).toBeTruthy();
+    expect(screen.getByText("90 missing pairs")).toBeTruthy();
+    expect(
+      screen.getByText("95% block-bootstrap interval unavailable (fewer than five paired days)."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/block-bootstrap interval: .* to /)).toBeNull();
     expect(screen.queryByText("Spearman")).toBeNull();
     expect(screen.queryByText("Pearson")).toBeNull();
     expect(screen.queryByText(/R²/)).toBeNull();
@@ -116,67 +139,94 @@ describe("CorrelationScreen", () => {
     const { default: CorrelationScreen } = await import("./correlation");
     render(<CorrelationScreen />);
 
-    expect(screen.getByText("1 more overlapping sample needed")).toBeTruthy();
-    expect(screen.queryByText("1 more overlapping samples needed")).toBeNull();
+    expect(screen.getByText("1 more paired calendar day needed")).toBeTruthy();
+    expect(screen.queryByText("1 more paired calendar days needed")).toBeNull();
   });
 
-  it("preserves inferential statistics when data is available", async () => {
+  it("shows coverage, dependence-aware uncertainty, and server-computed effect estimates", async () => {
     state.correlationData = {
+      analysisVersion: 2,
       availability: "available",
       spearmanRho: 0.75,
-      spearmanPValue: 0.01,
-      pearsonR: 0.7,
-      pearsonPValue: 0.02,
       regression: { slope: 1, intercept: 0, rSquared: 0.49 },
       dataPoints: [],
-      sampleCount: 5,
-      xStats: { mean: 100, median: 100, stddev: 5, min: 90, max: 110, n: 5 },
-      yStats: { mean: 50, median: 50, stddev: 3, min: 45, max: 55, n: 5 },
+      sampleCount: 60,
+      coverage: {
+        selectedDayCount: 90,
+        eligiblePairDayCount: 89,
+        observedXDayCount: 70,
+        observedYDayCount: 65,
+        pairedDayCount: 60,
+        missingPairDayCount: 29,
+      },
+      uncertainty: {
+        availability: "available",
+        method: "circular_moving_block_bootstrap",
+        level: 0.95,
+        blockLength: 5,
+        requestedReplicateCount: 2_000,
+        attemptedReplicateCount: 2_050,
+        validReplicateCount: 2_000,
+        lower: 0.42,
+        upper: 0.86,
+      },
+      xStats: { mean: 100, median: 100, stddev: 5, min: 90, max: 110, n: 60 },
+      yStats: { mean: 50, median: 50, stddev: 3, min: 45, max: 55, n: 60 },
       insight: "Protein and Heart Rate Variability move together.",
-      confidenceLevel: "early",
-      correlationColor: "#34d399",
     };
 
     const { default: CorrelationScreen } = await import("./correlation");
     render(<CorrelationScreen />);
 
-    expect(screen.getByText("Spearman")).toBeTruthy();
-    expect(screen.getByText("Pearson")).toBeTruthy();
+    expect(screen.getByText("Spearman rho = +0.75")).toBeTruthy();
+    expect(screen.getByText("95% block-bootstrap interval: +0.42 to +0.86")).toBeTruthy();
+    expect(screen.getByText("Slope = 1.000 ms per g")).toBeTruthy();
     expect(screen.getByText("R² = 0.490")).toBeTruthy();
-    expect(screen.getByText("p = 0.010")).toBeTruthy();
+    expect(screen.getByText("60 paired")).toBeTruthy();
+    expect(screen.getByText("29 missing pairs")).toBeTruthy();
+    expect(screen.queryByText("Pearson")).toBeNull();
+    expect(screen.queryByText(/^p =/)).toBeNull();
   });
 
-  it("uses neutral colors for relationship direction and confidence", async () => {
+  it("uses a neutral trend color without legacy confidence styling", async () => {
     state.correlationData = {
+      analysisVersion: 2,
       availability: "available",
       spearmanRho: -0.75,
-      spearmanPValue: 0.01,
-      pearsonR: -0.7,
-      pearsonPValue: 0.02,
       regression: { slope: -1, intercept: 3, rSquared: 0.49 },
       dataPoints: [
         { x: 1, y: 2, date: "2025-01-01" },
         { x: 2, y: 1, date: "2025-01-02" },
       ],
       sampleCount: 5,
+      coverage: {
+        selectedDayCount: 5,
+        eligiblePairDayCount: 5,
+        observedXDayCount: 5,
+        observedYDayCount: 5,
+        pairedDayCount: 5,
+        missingPairDayCount: 0,
+      },
+      uncertainty: {
+        availability: "available",
+        method: "circular_moving_block_bootstrap",
+        level: 0.95,
+        blockLength: 2,
+        requestedReplicateCount: 2_000,
+        attemptedReplicateCount: 2_000,
+        validReplicateCount: 2_000,
+        lower: -1,
+        upper: -0.2,
+      },
       xStats: { mean: 1.5, median: 1.5, stddev: 0.5, min: 1, max: 2, n: 5 },
       yStats: { mean: 1.5, median: 1.5, stddev: 0.5, min: 1, max: 2, n: 5 },
       insight: "The metrics move in opposite directions.",
-      confidenceLevel: "strong",
-      correlationColor: "#dc2626",
     };
 
     const { default: CorrelationScreen } = await import("./correlation");
     render(<CorrelationScreen />);
 
-    expect(screen.getByTestId("spearman-correlation-fill").style.backgroundColor).toBe(
-      "rgb(37, 99, 235)",
-    );
-    expect(screen.getByTestId("pearson-correlation-fill").style.backgroundColor).toBe(
-      "rgb(37, 99, 235)",
-    );
-    expect(screen.getByTestId("confidence-badge").style.backgroundColor).toBe("rgb(219, 234, 254)");
-    expect(screen.getByText("strong").style.color).toBe("rgb(30, 58, 138)");
+    expect(screen.queryByText("strong")).toBeNull();
     expect(screen.getByTestId("correlation-trend-line").dataset.stroke).toBe("#2563eb");
   });
 

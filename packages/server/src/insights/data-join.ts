@@ -104,7 +104,7 @@ export function joinByDate(
     { minutes: number; cardio: number; strength: number; flexibility: number }
   >();
   for (const a of activities) {
-    const dateStr = new Date(a.started_at).toISOString().slice(0, 10);
+    const dateStr = a.date ? toDateStr(a.date) : new Date(a.started_at).toISOString().slice(0, 10);
     const existing = activityByDate.get(dateStr) ?? {
       minutes: 0,
       cardio: 0,
@@ -133,19 +133,27 @@ export function joinByDate(
     bodyCompByDate.set(dateStr, b); // last wins (data sorted ASC)
   }
 
+  const dates = new Set([
+    ...metricsByDate.keys(),
+    ...sleepByWakeDate.keys(),
+    ...activityByDate.keys(),
+    ...nutritionByDate.keys(),
+    ...bodyCompByDate.keys(),
+  ]);
   const joined: JoinedDay[] = [];
-  for (const [date, m] of metricsByDate) {
+  for (const date of dates) {
+    const metricRow = metricsByDate.get(date);
     const sleepRow = sleepByWakeDate.get(date);
     const activityRow = activityByDate.get(date);
     const nutritionRow = nutritionByDate.get(date);
     const bc = bodyCompByDate.get(date);
     joined.push({
       date,
-      resting_hr: m.resting_hr,
-      hrv: m.hrv,
-      spo2_avg: m.spo2_avg,
-      steps: m.steps,
-      skin_temp_c: m.skin_temp_c,
+      resting_hr: metricRow?.resting_hr ?? null,
+      hrv: metricRow?.hrv ?? null,
+      spo2_avg: metricRow?.spo2_avg ?? null,
+      steps: metricRow?.steps ?? null,
+      skin_temp_c: metricRow?.skin_temp_c ?? null,
       sleep_duration_min: sleepRow?.duration_minutes ?? null,
       deep_min: sleepRow?.deep_minutes ?? null,
       rem_min: sleepRow?.rem_minutes ?? null,

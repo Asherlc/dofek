@@ -1,9 +1,11 @@
+import { circularMovingBlockBootstrapInterval } from "@dofek/stats/block-bootstrap";
 import {
   CORRELATION_METRICS,
   CorrelationResult,
   linearRegression,
   pearsonCorrelation,
 } from "@dofek/stats/correlation";
+import { formatCorrelationComparison } from "@dofek/stats/correlation-lag";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import type { JoinedDay } from "../insights/data-join.ts";
@@ -16,9 +18,10 @@ import {
 } from "../insights/schemas.ts";
 import { spearmanCorrelation } from "../insights/stats.ts";
 import {
+  clickHouseDateRangePredicate,
   dateWindowStartPredicate,
   type RangeDays,
-  timestampWindowStartPredicate,
+  rangeDaysParams,
 } from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -73,6 +76,7 @@ export interface CorrelationInput {
   metricY: string;
   days: RangeDays;
   lag: number;
+  endDate?: string;
 }
 
 const MAX_DATA_POINTS = 300;
@@ -96,32 +100,99 @@ export function downsample<T>(arr: T[], max: number): T[] {
   return result;
 }
 
-export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput) {
+interface CorrelationCalendarObservation {
+  date: string;
+  x: number | null;
+  y: number | null;
+}
+
+interface CorrelationCoverage {
+  selectedDayCount: number;
+  eligiblePairDayCount: number;
+  observedXDayCount: number;
+  observedYDayCount: number;
+  pairedDayCount: number;
+  missingPairDayCount: number;
+}
+
+interface CorrelationAnalysis {
+  observations: CorrelationCalendarObservation[];
+  pairs: Array<{ x: number; y: number; date: string }>;
+  coverage: CorrelationCoverage;
+}
+
+function buildCorrelationAnalysis(
+  joined: JoinedDay[],
+  input: CorrelationInput,
+): CorrelationAnalysis {
   const { metricX, metricY, lag } = input;
-
-  // Pair by exact calendar date so a gap cannot turn a one-day lag into
-  // the next available observation.
-  const pairs: Array<{ x: number; y: number; date: string }> = [];
   const daysByDate = new Map(joined.map((day) => [day.date, day]));
+  const selectedDates = buildSelectedDates(joined, input);
+  const firstEligibleIndex = lag < 0 ? Math.min(-lag, selectedDates.length) : 0;
+  const lastEligibleIndex =
+    lag > 0 ? Math.max(0, selectedDates.length - lag) : selectedDates.length;
+  const observations: CorrelationCalendarObservation[] = [];
 
-  for (const dayX of joined) {
-    const dayY = daysByDate.get(addCalendarDays(dayX.date, lag));
-    if (!dayY) continue;
-
-    const metricXValue = extractMetricValue(dayX, metricX);
-    const metricYValue = extractMetricValue(dayY, metricY);
-    if (metricXValue == null || metricYValue == null) continue;
-
-    pairs.push({ x: metricXValue, y: metricYValue, date: dayX.date });
+  for (let index = firstEligibleIndex; index < lastEligibleIndex; index++) {
+    const date = selectedDates[index];
+    if (!date) continue;
+    const dayX = daysByDate.get(date);
+    const dayY = daysByDate.get(addCalendarDays(date, lag));
+    observations.push({
+      date,
+      x: dayX ? extractMetricValue(dayX, metricX) : null,
+      y: dayY ? extractMetricValue(dayY, metricY) : null,
+    });
   }
 
-  const pairCount = pairs.length;
+  const pairs = observations.flatMap((observation) =>
+    observation.x === null || observation.y === null
+      ? []
+      : [{ x: observation.x, y: observation.y, date: observation.date }],
+  );
+  const pairedDayCount = pairs.length;
+  const eligiblePairDayCount = observations.length;
+
+  return {
+    observations,
+    pairs,
+    coverage: {
+      selectedDayCount: selectedDates.length,
+      eligiblePairDayCount,
+      observedXDayCount: observations.filter((observation) => observation.x !== null).length,
+      observedYDayCount: observations.filter((observation) => observation.y !== null).length,
+      pairedDayCount,
+      missingPairDayCount: eligiblePairDayCount - pairedDayCount,
+    },
+  };
+}
+
+function buildSelectedDates(joined: JoinedDay[], input: CorrelationInput): string[] {
+  const sortedDates = joined.map((day) => day.date).sort((a, b) => a.localeCompare(b));
+  const endDate = input.endDate ?? sortedDates.at(-1);
+  if (!endDate) return [];
+
+  const startDate =
+    input.days === null ? sortedDates[0] : addCalendarDays(endDate, -(input.days - 1));
+  if (!startDate || startDate > endDate) return [];
+
+  const dates: string[] = [];
+  for (let date = startDate; date <= endDate; date = addCalendarDays(date, 1)) {
+    dates.push(date);
+  }
+  return dates;
+}
+
+export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput) {
+  const { metricX, metricY, lag } = input;
+  const analysis = buildCorrelationAnalysis(joined, input);
+  const pairCount = analysis.pairs.length;
 
   if (pairCount < 5) {
     const additionalSamplesRequired = 5 - pairCount;
     return {
       availability: "insufficient" as const,
-      dataPoints: pairs,
+      dataPoints: analysis.pairs,
       sampleCount: pairCount,
       additionalSamplesRequired,
       insight: `Insufficient data to analyze the relationship between ${METRIC_LABEL_MAP.get(metricX) ?? metricX} and ${METRIC_LABEL_MAP.get(metricY) ?? metricY} (only ${pairCount} overlapping data ${pairCount === 1 ? "point" : "points"}; ${additionalSamplesRequired} more ${additionalSamplesRequired === 1 ? "sample is" : "samples are"} required).`,
@@ -130,8 +201,8 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
     };
   }
 
-  const xs = pairs.map((p) => p.x);
-  const ys = pairs.map((p) => p.y);
+  const xs = analysis.pairs.map((pair) => pair.x);
+  const ys = analysis.pairs.map((pair) => pair.y);
 
   // Spearman
   const spearman = spearmanCorrelation(xs, ys);
@@ -161,13 +232,110 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
     pearsonR: pearson.r,
     pearsonPValue: pearson.pValue,
     regression,
-    dataPoints: downsample(pairs, MAX_DATA_POINTS),
+    dataPoints: downsample(analysis.pairs, MAX_DATA_POINTS),
     sampleCount: pairCount,
     xStats,
     yStats,
     insight,
     confidenceLevel: spearmanResult.confidence,
     correlationColor: spearmanResult.color,
+  };
+}
+
+export function computeCorrelationV2(joined: JoinedDay[], input: CorrelationInput) {
+  const { metricX, metricY, lag } = input;
+  const analysis = buildCorrelationAnalysis(joined, input);
+  const pairCount = analysis.pairs.length;
+
+  if (pairCount < 5) {
+    const additionalSamplesRequired = 5 - pairCount;
+    return {
+      analysisVersion: 2 as const,
+      availability: "insufficient" as const,
+      dataPoints: analysis.pairs,
+      sampleCount: pairCount,
+      additionalSamplesRequired,
+      coverage: analysis.coverage,
+      uncertainty: unavailableUncertainty(analysis.observations.length, "insufficient_pairs"),
+      insight: `Insufficient data to describe the relationship between ${METRIC_LABEL_MAP.get(metricX) ?? metricX} and ${METRIC_LABEL_MAP.get(metricY) ?? metricY} (only ${pairCount} paired calendar ${pairCount === 1 ? "day" : "days"}; ${additionalSamplesRequired} more ${additionalSamplesRequired === 1 ? "is" : "are"} required).`,
+    };
+  }
+
+  const xs = analysis.pairs.map((pair) => pair.x);
+  const ys = analysis.pairs.map((pair) => pair.y);
+  const spearman = spearmanCorrelation(xs, ys);
+  const spearmanRho = Number.isFinite(spearman.rho)
+    ? Math.max(-1, Math.min(1, spearman.rho))
+    : null;
+  const regressionResult = linearRegression(xs, ys);
+  const xStats = computeStats(xs);
+  const yStats = computeStats(ys);
+  const regression =
+    xStats.stddev === 0
+      ? { slope: null, intercept: null, rSquared: null }
+      : {
+          slope: regressionResult.slope,
+          intercept: regressionResult.intercept,
+          rSquared: regressionResult.rSquared,
+        };
+  const xLabel = (METRIC_LABEL_MAP.get(metricX) ?? metricX).toLowerCase();
+  const yLabel = (METRIC_LABEL_MAP.get(metricY) ?? metricY).toLowerCase();
+  const insight =
+    spearmanRho === null
+      ? `The relationship between ${xLabel} and ${yLabel} could not be estimated because one metric did not vary across the paired calendar days (n = ${pairCount}).`
+      : `${formatCorrelationComparison({ xLabel, yLabel, lag })}: Spearman rho = ${spearmanRho.toFixed(2)} across ${pairCount} paired calendar days.`;
+  const uncertainty =
+    spearmanRho === null
+      ? unavailableUncertainty(analysis.observations.length, "degenerate_input")
+      : computeUncertainty(analysis.observations);
+
+  return {
+    analysisVersion: 2 as const,
+    availability: "available" as const,
+    spearmanRho,
+    regression,
+    dataPoints: downsample(analysis.pairs, MAX_DATA_POINTS),
+    sampleCount: pairCount,
+    coverage: analysis.coverage,
+    uncertainty,
+    xStats,
+    yStats,
+    insight,
+  };
+}
+
+function computeUncertainty(observations: CorrelationCalendarObservation[]) {
+  return circularMovingBlockBootstrapInterval(observations, (sample) => {
+    const pairs = sample.filter(
+      (
+        observation,
+      ): observation is CorrelationCalendarObservation & {
+        x: number;
+        y: number;
+      } => observation.x !== null && observation.y !== null,
+    );
+    if (pairs.length < 5) return null;
+    const result = spearmanCorrelation(
+      pairs.map((pair) => pair.x),
+      pairs.map((pair) => pair.y),
+    );
+    return Number.isFinite(result.rho) ? Math.max(-1, Math.min(1, result.rho)) : null;
+  });
+}
+
+function unavailableUncertainty(
+  observationCount: number,
+  reason: "degenerate_input" | "insufficient_pairs",
+) {
+  return {
+    availability: "unavailable" as const,
+    method: "circular_moving_block_bootstrap" as const,
+    level: 0.95 as const,
+    blockLength: observationCount === 0 ? 0 : Math.ceil(Math.cbrt(observationCount)),
+    requestedReplicateCount: 2_000 as const,
+    attemptedReplicateCount: 0,
+    validReplicateCount: 0,
+    reason,
   };
 }
 
@@ -224,6 +392,29 @@ export class CorrelationRepository {
 
   async compute(metricX: string, metricY: string, days: RangeDays, lag: number, endDate: string) {
     const effectiveEndDate = endDate || new Date().toISOString().slice(0, 10);
+    const joined = await this.#loadJoinedDays(days, effectiveEndDate);
+    return computeCorrelation(joined, {
+      metricX,
+      metricY,
+      days,
+      lag,
+      endDate: effectiveEndDate,
+    });
+  }
+
+  async computeV2(metricX: string, metricY: string, days: RangeDays, lag: number, endDate: string) {
+    const effectiveEndDate = endDate || new Date().toISOString().slice(0, 10);
+    const joined = await this.#loadJoinedDays(days, effectiveEndDate);
+    return computeCorrelationV2(joined, {
+      metricX,
+      metricY,
+      days,
+      lag,
+      endDate: effectiveEndDate,
+    });
+  }
+
+  async #loadJoinedDays(days: RangeDays, effectiveEndDate: string): Promise<JoinedDay[]> {
     const sensorStore = this.#requireSensorStore();
     const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
       sensorStore,
@@ -267,14 +458,27 @@ export class CorrelationRepository {
           }),
         ),
       ),
-      executeWithSchema(
-        this.#db,
+      sensorStore.query(
         activityRowSchema,
-        sql`SELECT started_at, ended_at, activity_type
-            FROM fitness.v_activity
-            WHERE user_id = ${this.#userId}
-              ${timestampWindowStartPredicate(sql`started_at`, effectiveEndDate, days)}
-            ORDER BY started_at ASC`,
+        `SELECT
+           toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
+           started_at,
+           ended_at,
+           activity_type
+         FROM analytics.activity_summary
+         WHERE user_id = {userId:UUID}
+           ${clickHouseDateRangePredicate({
+             expression: "toDate(toTimeZone(started_at, {timezone:String}))",
+             days,
+           })}
+           AND toDate(toTimeZone(started_at, {timezone:String})) <= toDate({endDate:String})
+         ORDER BY started_at ASC`,
+        {
+          userId: this.#userId,
+          timezone: this.#timezone,
+          endDate: effectiveEndDate,
+          ...rangeDaysParams(days),
+        },
       ),
       executeWithSchema(
         this.#db,
@@ -287,14 +491,14 @@ export class CorrelationRepository {
               AND date <= ${effectiveEndDate}::date
             ORDER BY date ASC`,
       ),
-      fetchBodyCompRows(this.#requireSensorStore(), this.#userId, effectiveEndDate, days),
+      fetchBodyCompRows(sensorStore, this.#userId, effectiveEndDate, days),
     ]);
 
     const joined = joinByDate(metrics, sleep, activities, nutrition, bodyComp, {
       minDailyCalories: 1200,
     });
 
-    return computeCorrelation(joined, { metricX, metricY, days, lag });
+    return joined;
   }
 
   #requireSensorStore(): Pick<ActivitySensorStore, "query"> {

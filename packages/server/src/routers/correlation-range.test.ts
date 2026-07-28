@@ -52,53 +52,60 @@ function makeCaller() {
   };
 }
 
-describe("correlation.compute selected ranges", () => {
+describe("correlation.computeV2 selected ranges", () => {
   it("uses lower date bounds for finite selected ranges", async () => {
     const { caller, execute, sensorStore } = makeCaller();
 
-    await caller.compute({ metricX: "protein", metricY: "hrv", days: 365, lag: 0 });
+    await caller.computeV2({ metricX: "protein", metricY: "hrv", days: 365, lag: 0 });
 
     const restingHeartRateParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
     const sleepQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    const bodyQueryText = vi.mocked(sensorStore.query).mock.calls[2]?.[1];
+    const activityQueryText = vi.mocked(sensorStore.query).mock.calls[2]?.[1];
+    const activityQueryParams = vi.mocked(sensorStore.query).mock.calls[2]?.[2];
+    const bodyQueryText = vi.mocked(sensorStore.query).mock.calls[3]?.[1];
     expect(restingHeartRateParams).toHaveProperty("rhrWindowStart");
     expect(sleepQueryText).toContain("subtractDays(toDate({endDate:String}), {days:UInt32})");
+    expect(activityQueryText).toContain("FROM analytics.activity_summary");
+    expect(activityQueryText).toContain("subtractDays(toDate({endDate:String}), {days:UInt32})");
+    expect(activityQueryParams).toMatchObject({ days: 365, timezone: "UTC" });
     expect(bodyQueryText).toContain("subtractDays(");
     expect(bodyQueryText).toContain("{days:UInt32}");
 
     const metricQueryText = collectSqlText(execute.mock.calls[0]?.[0]);
-    const activityQueryText = collectSqlText(execute.mock.calls[1]?.[0]);
-    const nutritionQueryText = collectSqlText(execute.mock.calls[2]?.[0]);
+    const nutritionQueryText = collectSqlText(execute.mock.calls[1]?.[0]);
     expect(metricQueryText).toContain("AND dm.date >");
-    expect(activityQueryText).toContain("AND started_at >");
+    expect(nutritionQueryText).toContain("FROM fitness.v_nutrition_daily");
+    expect(nutritionQueryText).toContain("resolution_status = 'available'");
     expect(nutritionQueryText).toContain("AND date >");
   });
 
   it("omits lower date bounds when days is null", async () => {
     const { caller, execute, sensorStore } = makeCaller();
 
-    await caller.compute({ metricX: "protein", metricY: "hrv", days: null, lag: 0 });
+    await caller.computeV2({ metricX: "protein", metricY: "hrv", days: null, lag: 0 });
 
     const restingHeartRateQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const restingHeartRateParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
     const sleepQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
     const sleepQueryParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
-    const bodyQueryText = vi.mocked(sensorStore.query).mock.calls[2]?.[1];
-    const bodyQueryParams = vi.mocked(sensorStore.query).mock.calls[2]?.[2];
+    const activityQueryText = vi.mocked(sensorStore.query).mock.calls[2]?.[1];
+    const activityQueryParams = vi.mocked(sensorStore.query).mock.calls[2]?.[2];
+    const bodyQueryText = vi.mocked(sensorStore.query).mock.calls[3]?.[1];
+    const bodyQueryParams = vi.mocked(sensorStore.query).mock.calls[3]?.[2];
     expect(restingHeartRateQueryText).not.toContain("rhrWindowStart");
     expect(restingHeartRateParams).not.toHaveProperty("rhrWindowStart");
     expect(sleepQueryText).not.toContain("subtractDays");
     expect(sleepQueryParams).not.toHaveProperty("days");
+    expect(activityQueryText).toContain("FROM analytics.activity_summary");
+    expect(activityQueryText).not.toContain("subtractDays");
+    expect(activityQueryParams).not.toHaveProperty("days");
     expect(bodyQueryText).not.toContain("subtractDays");
     expect(bodyQueryParams).not.toHaveProperty("days");
 
     const metricQueryText = collectSqlText(execute.mock.calls[0]?.[0]);
-    const activityQueryText = collectSqlText(execute.mock.calls[1]?.[0]);
-    const nutritionQueryText = collectSqlText(execute.mock.calls[2]?.[0]);
+    const nutritionQueryText = collectSqlText(execute.mock.calls[1]?.[0]);
     expect(metricQueryText).toContain("WHERE dm.user_id =");
     expect(metricQueryText).not.toContain("dm.date >");
-    expect(activityQueryText).toContain("WHERE user_id =");
-    expect(activityQueryText).not.toContain("started_at >");
     expect(nutritionQueryText).toContain("WHERE user_id =");
     expect(nutritionQueryText).not.toContain("date >");
   });

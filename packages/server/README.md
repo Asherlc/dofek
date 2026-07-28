@@ -23,6 +23,23 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 - **Monitoring**: Integrated with Sentry for error tracking and Prometheus for performance metrics (`src/lib/metrics.ts`).
 - **Slack Integration**: A built-in Slack bot (`src/slack/`) for status updates and basic data interactions.
 
+### Correlation evidence contract
+
+Current web and mobile clients use the versioned `correlation.computeV2` endpoint. The endpoint
+reports paired-calendar-day coverage, Spearman rho, linear slope/$R^2$, and a 95% circular
+moving-block interval; `correlation.compute` remains an exact legacy compatibility projection.
+Both endpoints share the source pipeline in
+[`correlation-repository.ts`](./src/repositories/correlation-repository.ts).
+
+Nutrition inputs come from the canonical `fitness.v_nutrition_daily` available-resolution
+rows. Activity-duration inputs come from the deduplicated ClickHouse
+`analytics.activity_summary` read model, and its activity date is projected in the user's
+timezone before joining. ClickHouse documents `toTimeZone` as changing the displayed
+timezone/timezone metadata without changing the underlying point in time
+([ClickHouse date-time functions](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions#totimezone)).
+The interval design and primary statistical references are documented in
+[`@dofek/stats`](../stats/README.md#dependence-aware-uncertainty).
+
 See `../../docs/nutrition-ai-input.md` for full client/server flow details.
 
 ## Development

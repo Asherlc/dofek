@@ -37,6 +37,8 @@ export interface SleepRow {
 
 export interface ActivityRow {
   [key: string]: string | number | Date | boolean | null | undefined;
+  /** Canonical local calendar date when supplied by the source query. */
+  date?: string | Date;
   started_at: string;
   ended_at: string | null;
   activity_type: string;

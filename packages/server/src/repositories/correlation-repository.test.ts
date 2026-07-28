@@ -353,17 +353,29 @@ describe("CorrelationRepository", () => {
   });
 
   describe("compute", () => {
-    it("executes 3 Postgres queries and reads sleep/body composition from ClickHouse", async () => {
+    it("queries canonical Postgres and ClickHouse correlation sources", async () => {
       const db = makeDb();
       const sensorStore = makeSensorStore();
       const repo = new CorrelationRepository(db, "user-1", "UTC", sensorStore);
       await repo.compute("resting_hr", "hrv", 90, 0, "2024-06-01");
-      expect(db.execute).toHaveBeenCalledTimes(3);
+      expect(db.execute).toHaveBeenCalledTimes(2);
       expect(sensorStore.query).toHaveBeenCalledWith(
         expect.anything(),
         expect.stringContaining("analytics.v_body_measurement"),
         expect.anything(),
       );
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("analytics.activity_summary"),
+        expect.anything(),
+      );
+      const activityQuery = sensorStore.query.mock.calls.find(([, query]) =>
+        query.includes("analytics.activity_summary"),
+      );
+      expect(activityQuery?.[1]).toMatch(
+        /toDate\(toTimeZone\(started_at, \{timezone:String\}\)\)\)\s+AS date/,
+      );
+      expect(activityQuery?.[2]).toEqual(expect.objectContaining({ timezone: "UTC" }));
     });
 
     it("returns insufficient result for empty data", async () => {

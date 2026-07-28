@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./block-bootstrap": "./src/block-bootstrap.ts",
     "./correlation": "./src/correlation.ts",
     "./correlation-lag": "./src/correlation-lag.ts"
   },
