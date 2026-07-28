@@ -172,6 +172,33 @@ describe("healthKitSyncRouter", () => {
         "1000000000000000",
       );
       expect(mockInvalidateByPrefix).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001:");
+      expect(healthKitPushTotal.add).toHaveBeenCalledWith(1, {
+        endpoint: "deleteQuantitySamples",
+        status: "success",
+      });
+      expect(healthKitRecordsTotal.add).toHaveBeenCalledWith(1, {
+        endpoint: "deleteQuantitySamples",
+        category: "deletedQuantitySample",
+      });
+    });
+
+    it("does not invalidate cached queries when there are no deleted UUIDs", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      const result = await caller.deleteQuantitySamples({
+        typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+        deletedUUIDs: [],
+      });
+
+      expect(result).toEqual({ deleted: 0 });
+      expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
     });
   });
 

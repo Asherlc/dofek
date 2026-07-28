@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import {
   appleHealthWorkoutExternalId,
@@ -13,7 +14,7 @@ vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) =
   const actual =
     await importOriginal<typeof import("../../../../src/db/provider-data-deletion.ts")>();
   const { resolveProviderDataGenerationsForTest } = await import("./test-helpers.ts");
-  return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
+  return { ...actual, getProviderDataGenerations: vi.fn(resolveProviderDataGenerationsForTest) };
 });
 
 type ProviderActivityListSyncScope = {
@@ -128,6 +129,42 @@ describe("processBodyMeasurements", () => {
 });
 
 describe("processDeletedQuantitySamples", () => {
+  it("does nothing when the anchored query has no deleted UUIDs", async () => {
+    vi.mocked(getProviderDataGenerations).mockClear();
+    const execute = vi.fn(async () => []);
+    const publisher: MetricStreamEventPublisher = {
+      publishRows: vi.fn(async () => []),
+    };
+
+    const deleted = await processDeletedQuantitySamples(
+      { execute },
+      "00000000-0000-0000-0000-000000000001",
+      "HKQuantityTypeIdentifierHeartRate",
+      [],
+      publisher,
+    );
+
+    expect(deleted).toBe(0);
+    expect(execute).not.toHaveBeenCalled();
+    expect(getProviderDataGenerations).not.toHaveBeenCalled();
+  });
+
+  it("fails when the metric stream publisher cannot emit deletion tombstones", async () => {
+    const publisher: MetricStreamEventPublisher = {
+      publishRows: vi.fn(async () => []),
+    };
+
+    await expect(
+      processDeletedQuantitySamples(
+        { execute: vi.fn(async () => []) },
+        "00000000-0000-0000-0000-000000000001",
+        "HKQuantityTypeIdentifierHeartRate",
+        ["heart-rate-1"],
+        publisher,
+      ),
+    ).rejects.toThrow("Metric stream publisher does not support HealthKit deletion tombstones");
+  });
+
   it("publishes UUID-scoped metric tombstones without deleting another provider's rows", async () => {
     const execute = vi.fn(async () => []);
     const replaceRows = vi.fn(
@@ -157,6 +194,12 @@ describe("processDeletedQuantitySamples", () => {
     );
 
     expect(deleted).toBe(2);
+    expect(getProviderDataGenerations).toHaveBeenLastCalledWith({ execute }, [
+      {
+        providerId: "apple_health",
+        userId: "00000000-0000-0000-0000-000000000001",
+      },
+    ]);
     expect(replaceRows).toHaveBeenNthCalledWith(
       1,
       {
@@ -197,6 +240,7 @@ describe("processDeletedQuantitySamples", () => {
     expect(deleted).toBe(1);
     expect(publisher.replaceRows).not.toHaveBeenCalled();
     expect(JSON.stringify(execute.mock.calls)).toContain("fitness.health_event");
+    expect(JSON.stringify(execute.mock.calls)).toContain("hk:vo2-max-1");
   });
 });
 

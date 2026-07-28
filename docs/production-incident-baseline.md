@@ -19596,3 +19596,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   unavailable in this worktree.
 - **Remaining risk / follow-up:** Merge only after all exact-head integration
   shards, mutation shards, external checks, and review threads are green.
+
+## 2026-07-27 — HealthKit deletion tests did not kill CI mutants
+
+- **Status:** Root cause fixed locally on PR #2233; fresh exact-head CI
+  validation pending.
+- **Symptoms:** Exact-head CI run
+  [30324401522](https://github.com/Asherlc/dofek/actions/runs/30324401522)
+  failed both Stryker shards and the aggregate mutation gate.
+- **User impact:** No production impact. The HealthKit observer fix was blocked
+  from merging.
+- **Evidence:** The failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  The first fatal line reported
+  `Final mutation score 55.56 under breaking threshold 75`. The reports showed
+  surviving or uncovered mutants for empty deletion input, missing tombstone
+  support, provider-generation scope, SQL UUID binding, zero-deletion cache
+  invalidation, and deletion telemetry attributes.
+- **Root cause:** The new deletion paths had happy-path functional coverage,
+  but their assertions did not prove the branch boundaries and side-effect
+  payloads that Stryker mutated.
+- **Fix / mitigation:** Add focused tests and exact side-effect assertions for
+  each reported mutant without changing production behavior or mutation
+  thresholds. Stryker describes survived mutants as changes that existing
+  tests did not detect:
+  <https://stryker-mutator.io/docs/mutation-testing-elements/mutant-states-and-metrics/>.
+- **Validation:** Both exact mutated ranges now report 100% locally (20 of 20
+  and 7 of 7 mutants killed). Lint, root/server/web TypeScript checks, and
+  14,210 unit/mobile tests also pass.
+- **Remaining risk / follow-up:** Confirm both Stryker shards and the aggregate
+  mutation gate pass on the fresh exact-head CI run before merging.
