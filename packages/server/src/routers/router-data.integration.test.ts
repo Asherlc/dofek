@@ -465,9 +465,9 @@ describe("Router data coverage", () => {
       userId: TEST_USER_ID,
       startedAt: polarizationActivity.startedAt,
       maxHr: 190,
-      z1Seconds: 600,
+      z1Seconds: 900,
       z2Seconds: 300,
-      z3Seconds: 900,
+      z3Seconds: 600,
     });
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
@@ -631,9 +631,9 @@ describe("Router data coverage", () => {
       expect(result.maxHr).toBe(190);
       expect(result.weeks).toHaveLength(1);
       expect(result.weeks[0]).toMatchObject({
-        z1Seconds: 600,
+        z1Seconds: 900,
         z2Seconds: 300,
-        z3Seconds: 900,
+        z3Seconds: 600,
       });
       expect(result.weeks[0]?.week).toBeTruthy();
       expect(result.weeks[0]?.polarizationIndex).not.toBeNull();

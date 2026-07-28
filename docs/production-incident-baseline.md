@@ -19413,3 +19413,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   tests, including the corresponding server-owned classification tests.
 - **Remaining risk / follow-up:** Confirm the refreshed integration shard and
   every other required exact-head check complete successfully before merge.
+
+## 2026-07-27 — Polarization Integration Fixture Violated the Calculation Invariant
+
+- **Status:** Root cause confirmed and the invalid fixture corrected on PR
+  #2231.
+- **Symptoms:** CI run
+  [30322677959](https://github.com/Asherlc/dofek/actions/runs/30322677959)
+  failed `Test / Integration Tests (3/4)` in job
+  [90161814107](https://github.com/Asherlc/dofek/actions/runs/30322677959/job/90161814107).
+- **User impact:** No production impact. The pull request could not merge while
+  its integration gate was red.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=3/4`. The first
+  fatal line was `AssertionError: expected null not to be null` at
+  `router-data.integration.test.ts:639`. The fixture seeded 600 seconds in the
+  easy zone and 900 seconds in the high zone, while the public router correctly
+  returned no polarization index.
+- **Root cause:** The dedicated non-null polarization fixture violated the
+  approved calculation invariant that high-zone time must not exceed easy-zone
+  time.
+- **Fix / mitigation:** Change the fixture to a valid nontrivial three-zone
+  distribution of 900 easy-zone seconds, 300 threshold-zone seconds, and 600
+  high-zone seconds, and update the matching response assertions. No production
+  behavior, timeout, retry, or CI configuration changed.
+- **Validation:** The refreshed exact-head integration shard must pass before
+  merge. Local database-backed validation remains unavailable because this
+  isolated worktree has no generated `.env.local`; the prior Docker-free
+  unit/mobile suite passed all 14,148 tests, and the first refreshed exact head
+  passed every mutation shard.
+- **Remaining risk / follow-up:** Confirm all four refreshed integration shards
+  and every other required exact-head check complete successfully before merge.
