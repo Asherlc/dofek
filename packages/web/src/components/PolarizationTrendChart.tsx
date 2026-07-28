@@ -10,6 +10,7 @@ import {
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 
 interface PolarizationTrendChartProps {
   weeks: PolarizationWeek[];
@@ -168,20 +169,16 @@ export function PolarizationTrendChart({
         emptyMessage="Not enough HR data to compute polarization index"
       />
       {method ? (
-        <div className="mt-2 space-y-1 text-xs text-dim">
-          <p>{method.formula}</p>
-          <p>{method.zoneBasis}</p>
-          <p>{method.calculationChoice}</p>
-          <p>{method.interpretation}</p>
-          <a
-            className="text-link hover:underline"
-            href={method.source.url}
-            rel="noreferrer"
-            target="_blank"
-          >
-            {method.source.title}
-          </a>
-        </div>
+        <MethodExplanation
+          className="mt-2"
+          lines={[
+            method.formula,
+            method.zoneBasis,
+            method.calculationChoice,
+            method.interpretation,
+          ]}
+          source={method.source}
+        />
       ) : null}
     </div>
   );

@@ -19522,9 +19522,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix / mitigation:** Update only the stale integration expectation to the
   current server-owned label. No production behavior, timeout, retry, or CI
   configuration changed.
-- **Validation:** The focused integration test and refreshed exact-head CI must
-  pass before merge. The Docker-free unit/mobile suite already passes all 14,148
-  tests, including the corresponding server-owned classification tests.
+- **Validation:** Database-backed validation of the correction remains pending
+  in a fresh exact-head `Test / Integration Tests (4/4)` run. Merge also remains
+  gated on the complete exact-head CI and review results.
 - **Remaining risk / follow-up:** Confirm the refreshed integration shard and
   every other required exact-head check complete successfully before merge.
 
@@ -19551,11 +19551,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   distribution of 900 easy-zone seconds, 300 threshold-zone seconds, and 600
   high-zone seconds, and update the matching response assertions. No production
   behavior, timeout, retry, or CI configuration changed.
-- **Validation:** The refreshed exact-head integration shard must pass before
-  merge. Local database-backed validation remains unavailable because this
-  isolated worktree has no generated `.env.local`; the prior Docker-free
-  unit/mobile suite passed all 14,148 tests, and the first refreshed exact head
-  passed every mutation shard.
+- **Validation:** Database-backed validation of the corrected fixture remains
+  pending in a fresh exact-head `Test / Integration Tests (3/4)` run. Merge also
+  remains gated on the complete exact-head CI and review results.
 - **Remaining risk / follow-up:** Confirm all four refreshed integration shards
   and every other required exact-head check complete successfully before merge.
 

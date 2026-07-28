@@ -10,6 +10,7 @@ import {
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 
 interface TrainingMonotonyChartProps {
   data: TrainingMonotonyWeek[];
@@ -80,20 +81,11 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
   return (
     <div>
       {method ? (
-        <div className="mb-2 space-y-1 text-xs text-dim">
-          <p>{method.formula}</p>
-          <p>{method.calendar}</p>
-          <p>{method.activityScope}</p>
-          <p>{method.interpretation}</p>
-          <a
-            className="text-link hover:underline"
-            href={method.source.url}
-            rel="noreferrer"
-            target="_blank"
-          >
-            {method.source.title}
-          </a>
-        </div>
+        <MethodExplanation
+          className="mb-2"
+          lines={[method.formula, method.calendar, method.activityScope, method.interpretation]}
+          source={method.source}
+        />
       ) : null}
       <DofekChart
         option={option}

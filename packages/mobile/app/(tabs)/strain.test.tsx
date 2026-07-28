@@ -291,7 +291,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("Mobile Foster formula.")).toBeTruthy();
   });
 
-  it("renders intensity and polarization query failures separately", async () => {
+  it("renders intensity, polarization, and monotony query failures separately", async () => {
     mockHrZonesState.isError = true;
     mockHrZonesState.error = new Error("Intensity distribution failed");
     mockPolarizationState.isError = true;

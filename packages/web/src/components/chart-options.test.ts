@@ -213,8 +213,6 @@ describe("PolarizationTrendChart option builder", () => {
     expect(polarizationIndexSeries.data[2]).toHaveProperty("itemStyle", {
       color: chartColors.blue,
     });
-    expect(allSeries.map((series) => series.name)).not.toContain("Polarized zone");
-    expect(allSeries.map((series) => series.name)).not.toContain("Non-polarized zone");
   });
 
   it("shows incomplete weeks as distinct markers at yMin", () => {

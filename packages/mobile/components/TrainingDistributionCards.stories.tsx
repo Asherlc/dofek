@@ -88,6 +88,12 @@ type Story = StoryObj<typeof meta>;
 
 export const Complete: Story = {};
 
+export const EmptyMonotonyData: Story = {
+  args: {
+    monotony: [],
+  },
+};
+
 export const InsufficientPolarizationData: Story = {
   args: {
     polarization: {
