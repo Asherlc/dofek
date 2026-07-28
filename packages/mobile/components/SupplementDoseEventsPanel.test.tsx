@@ -81,6 +81,7 @@ vi.mock("../lib/telemetry", () => ({ captureException: mocks.captureException })
 vi.mock("../lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
+      invalidate: mocks.invalidate,
       food: { byDateV2: { invalidate: mocks.invalidateFood } },
       nutritionAnalytics: { invalidate: mocks.invalidateNutrition },
       supplements: { occurrences: { invalidate: mocks.invalidateOccurrences } },

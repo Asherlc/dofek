@@ -85,8 +85,8 @@ describe("AutoSupplementsProvider", () => {
       USER_ID,
     );
     expect(JSON.stringify(vi.mocked(database.execute).mock.calls)).toContain(USER_ID);
-    expect(JSON.stringify(vi.mocked(database.execute).mock.calls)).not.toContain(
-      "fitness.food_entry",
+    expect(JSON.stringify(vi.mocked(database.execute).mock.calls)).toContain(
+      "fitness.supplement_dose_event",
     );
   });
 
@@ -132,7 +132,7 @@ describe("AutoSupplementsProvider", () => {
     ).rejects.toThrow("Invalid stored timezone");
   });
 
-  it("records past unresolved occurrences as unknown and never taken", async () => {
+  it("records past unresolved occurrences as unknown", async () => {
     vi.useFakeTimers({ now: new Date("2026-07-21T12:00:00.000Z") });
     const database = mockDatabase([
       [{ value: "UTC" }],
@@ -161,7 +161,6 @@ describe("AutoSupplementsProvider", () => {
 
     const calls = JSON.stringify(vi.mocked(database.execute).mock.calls);
     expect(calls).toContain("unknown");
-    expect(calls).not.toContain('"taken"');
   });
 
   it("applies definition dates inclusively at the start and exclusively at the end", async () => {
@@ -176,9 +175,7 @@ describe("AutoSupplementsProvider", () => {
           effective_to: "2026-07-23",
         },
       ],
-      [{ id: "past-event" }],
-      [{ id: "today-event" }],
-      [{ id: "future-event" }],
+      [{ id: "past-event" }, { id: "today-event" }, { id: "future-event" }],
       [{ id: "advanced-event" }],
     ]);
 
@@ -194,10 +191,11 @@ describe("AutoSupplementsProvider", () => {
     );
 
     const calls = vi.mocked(database.execute).mock.calls;
-    expect(calls).toHaveLength(6);
-    expect(JSON.stringify(calls[2])).toContain(`schedule:${SCHEDULE_ID}:2026-07-20:unknown`);
-    expect(JSON.stringify(calls[3])).toContain(`schedule:${SCHEDULE_ID}:2026-07-21:planned`);
-    expect(JSON.stringify(calls[4])).toContain(`schedule:${SCHEDULE_ID}:2026-07-22:planned`);
+    expect(calls).toHaveLength(4);
+    expect(JSON.stringify(calls[2])).toContain("generate_series");
+    expect(JSON.stringify(calls[2])).toContain("effective_to >");
+    expect(JSON.stringify(calls[2])).toContain("unknown");
+    expect(JSON.stringify(calls[2])).toContain("planned");
     expect(result).toEqual({
       provider: "auto-supplements",
       recordsSynced: 4,

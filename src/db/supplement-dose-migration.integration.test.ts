@@ -50,9 +50,26 @@ const legacySupplementRowsSchema = z.array(
     unit: z.string(),
   }),
 );
+const cleanupRowsSchema = z.array(
+  z.object({
+    external_id: z.string(),
+    nutrient_amount: z.coerce.number(),
+    provider_id: z.string(),
+  }),
+);
+const activeDefinitionRowsSchema = z.array(
+  z.object({
+    definition_id: z.string(),
+    effective_to: z.string().nullable(),
+    name: z.string(),
+    supplement_id: z.string(),
+  }),
+);
 
 const FIRST_ID = "10000000-0000-4000-8000-000000002064";
 const SECOND_ID = "20000000-0000-4000-8000-000000002064";
+const FICTIONAL_FOOD_ID = "30000000-0000-4000-8000-000000002064";
+const REAL_FOOD_ID = "40000000-0000-4000-8000-000000002064";
 
 async function restoreLegacySupplementSchema(connectionString: string): Promise<void> {
   const client = new Client({ connectionString });
@@ -119,6 +136,29 @@ async function restoreLegacySupplementSchema(connectionString: string): Promise<
          ($2, 'magnesium', 400),
          ($2, 'calories', 5)`,
       [FIRST_ID, SECOND_ID],
+    );
+    await client.query(`
+      INSERT INTO fitness.provider (id, name)
+      VALUES
+        ('auto-supplements', 'Auto-Supplements'),
+        ('fixture-food-source', 'Fixture Food Source')
+      ON CONFLICT (id) DO NOTHING
+    `);
+    await client.query(
+      `INSERT INTO fitness.food_entry (
+         id, user_id, provider_id, external_id, date, food_name
+       )
+       VALUES
+         ($1, '00000000-0000-0000-0000-000000000001', 'auto-supplements',
+          'fictional-food', '2022-01-01', 'Fictional supplement food'),
+         ($2, '00000000-0000-0000-0000-000000000001', 'fixture-food-source',
+          'real-food', '2022-01-01', 'Real food')`,
+      [FICTIONAL_FOOD_ID, REAL_FOOD_ID],
+    );
+    await client.query(
+      `INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+       VALUES ($1, 'vitamin_d', 10), ($2, 'vitamin_d', 5)`,
+      [FICTIONAL_FOOD_ID, REAL_FOOD_ID],
     );
     await client.query("COMMIT");
   } catch (error: unknown) {
@@ -278,6 +318,69 @@ describe("supplement dose schema migration", () => {
         "supplement_dose_event_definition_fkey",
         "supplement_dose_event_supplement_user_fkey",
       ]);
+
+      const cleanupRows = cleanupRowsSchema.parse(
+        (
+          await client.query(
+            `
+              SELECT
+                food.external_id,
+                food.provider_id,
+                nutrient.amount AS nutrient_amount
+              FROM fitness.food_entry AS food
+              INNER JOIN fitness.food_entry_nutrient AS nutrient
+                ON nutrient.food_entry_id = food.id
+              WHERE food.id IN ($1, $2)
+              ORDER BY food.external_id
+            `,
+            [FICTIONAL_FOOD_ID, REAL_FOOD_ID],
+          )
+        ).rows,
+      );
+      expect(cleanupRows).toEqual([
+        {
+          external_id: "real-food",
+          nutrient_amount: 5,
+          provider_id: "fixture-food-source",
+        },
+      ]);
+
+      const activeDefinitions = activeDefinitionRowsSchema.parse(
+        (
+          await client.query(`
+            SELECT definition_id, supplement_id, name, effective_to
+            FROM fitness.v_supplement_with_nutrition
+            ORDER BY name
+          `)
+        ).rows,
+      );
+      expect(activeDefinitions).toEqual([
+        {
+          definition_id: SECOND_ID,
+          effective_to: null,
+          name: "Magnesium",
+          supplement_id: SECOND_ID,
+        },
+        {
+          definition_id: FIRST_ID,
+          effective_to: null,
+          name: "Vitamin D",
+          supplement_id: FIRST_ID,
+        },
+      ]);
+
+      await expect(
+        client.query(
+          `INSERT INTO fitness.supplement_definition (
+             id, supplement_id, supersedes_definition_id, name, effective_from
+           )
+           VALUES ($1, $2, $1, 'Self reference', '2026-07-27')`,
+          ["50000000-0000-4000-8000-000000002064", FIRST_ID],
+        ),
+      ).rejects.toMatchObject({
+        code: "23514",
+        constraint: "supplement_definition_not_self_superseding",
+      });
     } finally {
       await client.end();
     }

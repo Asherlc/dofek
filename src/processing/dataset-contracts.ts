@@ -283,6 +283,7 @@ export const DATASET_CONTRACTS = [
           "food_entry_nutrient",
           "supplement_definition",
           "supplement_definition_nutrient",
+          "supplement_dose_event",
         ],
         cdcEvidence: [],
       },

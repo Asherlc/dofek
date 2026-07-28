@@ -10,12 +10,7 @@ const PROVIDER_ID = "auto-supplements";
 const PROVIDER_NAME = "Auto-Supplements";
 
 const timezoneRowSchema = z.object({ value: z.unknown() });
-const supplementDefinitionRowSchema = z.object({
-  id: z.string(),
-  schedule_id: z.string(),
-  effective_from: z.string(),
-  effective_to: z.string().nullable(),
-});
+const supplementDefinitionExistsRowSchema = z.object({ id: z.string() });
 const insertedIdRowSchema = z.object({ id: z.string() });
 
 function parseStoredTimezone(rows: unknown): string {
@@ -29,24 +24,6 @@ function parseStoredTimezone(rows: unknown): string {
     throw new Error(`Invalid stored timezone: ${timezone}`);
   }
   return timezone;
-}
-
-function datesInRange(startDate: string, endDate: string): string[] {
-  const dates: string[] = [];
-  const current = new Date(`${startDate}T00:00:00.000Z`);
-  const end = new Date(`${endDate}T00:00:00.000Z`);
-  while (current <= end) {
-    dates.push(current.toISOString().slice(0, 10));
-    current.setUTCDate(current.getUTCDate() + 1);
-  }
-  return dates;
-}
-
-function definitionApplies(
-  definition: z.infer<typeof supplementDefinitionRowSchema>,
-  date: string,
-): boolean {
-  return definition.effective_from <= date && (definition.effective_to ?? "9999-12-31") > date;
 }
 
 export class AutoSupplementsProvider implements SyncProvider {
@@ -81,19 +58,15 @@ export class AutoSupplementsProvider implements SyncProvider {
 
     const definitions = await executeWithSchema(
       run.db,
-      supplementDefinitionRowSchema,
-      sql`SELECT
-              definition.id,
-              definition.supplement_id AS schedule_id,
-              definition.effective_from,
-              definition.effective_to
+      supplementDefinitionExistsRowSchema,
+      sql`SELECT definition.id
             FROM fitness.supplement_definition AS definition
             INNER JOIN fitness.supplement AS supplement
               ON supplement.id = definition.supplement_id
             WHERE supplement.user_id = ${userId}
               AND definition.effective_from <= ${endDate}::date
               AND (definition.effective_to IS NULL OR definition.effective_to > ${startDate}::date)
-            ORDER BY definition.supplement_id, definition.effective_from, definition.created_at`,
+            LIMIT 1`,
     );
     if (definitions.length === 0) {
       return {
@@ -106,43 +79,57 @@ export class AutoSupplementsProvider implements SyncProvider {
 
     await ensureProvider(run.db, PROVIDER_ID, PROVIDER_NAME, undefined, userId);
 
-    let recordsSynced = 0;
     const recordedAt = new Date();
-    for (const definition of definitions) {
-      for (const date of datesInRange(startDate, endDate)) {
-        if (!definitionApplies(definition, date)) continue;
-        const status = date < today ? "unknown" : "planned";
-        const inserted = await executeWithSchema(
-          run.db,
-          insertedIdRowSchema,
-          sql`INSERT INTO fitness.supplement_dose_event (
-                user_id,
-                supplement_id,
-                definition_id,
-                provider_id,
-                external_id,
-                scheduled_date,
-                status,
-                recorded_at,
-                source_name
-              )
-              VALUES (
-                ${userId},
-                ${definition.schedule_id}::uuid,
-                ${definition.id}::uuid,
-                ${PROVIDER_ID},
-                ${`schedule:${definition.schedule_id}:${date}:${status}`},
-                ${date}::date,
-                ${status}::fitness.supplement_dose_status,
-                ${recordedAt},
-                ${PROVIDER_NAME}
-              )
-              ON CONFLICT DO NOTHING
-              RETURNING id`,
-        );
-        recordsSynced += inserted.length;
-      }
-    }
+    const inserted = await executeWithSchema(
+      run.db,
+      insertedIdRowSchema,
+      sql`INSERT INTO fitness.supplement_dose_event (
+            user_id,
+            supplement_id,
+            definition_id,
+            provider_id,
+            external_id,
+            scheduled_date,
+            status,
+            recorded_at,
+            source_name
+          )
+          SELECT
+            ${userId},
+            definition.supplement_id,
+            definition.id,
+            ${PROVIDER_ID},
+            'schedule:' || definition.supplement_id::text || ':'
+              || occurrence.scheduled_date::date::text || ':'
+              || CASE
+                WHEN occurrence.scheduled_date::date < ${today}::date THEN 'unknown'
+                ELSE 'planned'
+              END,
+            occurrence.scheduled_date::date,
+            CASE
+              WHEN occurrence.scheduled_date::date < ${today}::date
+                THEN 'unknown'::fitness.supplement_dose_status
+              ELSE 'planned'::fitness.supplement_dose_status
+            END,
+            ${recordedAt},
+            ${PROVIDER_NAME}
+          FROM fitness.supplement_definition AS definition
+          INNER JOIN fitness.supplement AS supplement
+            ON supplement.id = definition.supplement_id
+          CROSS JOIN LATERAL generate_series(
+            ${startDate}::date,
+            ${endDate}::date,
+            INTERVAL '1 day'
+          ) AS occurrence(scheduled_date)
+          WHERE supplement.user_id = ${userId}
+            AND definition.effective_from <= occurrence.scheduled_date::date
+            AND (
+              definition.effective_to IS NULL
+              OR definition.effective_to > occurrence.scheduled_date::date
+            )
+          ON CONFLICT DO NOTHING
+          RETURNING id`,
+    );
 
     const advanced = await executeWithSchema(
       run.db,
@@ -180,11 +167,9 @@ export class AutoSupplementsProvider implements SyncProvider {
             ON CONFLICT DO NOTHING
             RETURNING id`,
     );
-    recordsSynced += advanced.length;
-
     return {
       provider: PROVIDER_ID,
-      recordsSynced,
+      recordsSynced: inserted.length + advanced.length,
       errors: [],
       duration: Date.now() - start,
     };

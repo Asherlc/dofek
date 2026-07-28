@@ -84,6 +84,10 @@ export const supplementDefinition = fitness.table(
       "supplement_definition_effective_interval_valid",
       sql`${table.effectiveTo} IS NULL OR ${table.effectiveTo} >= ${table.effectiveFrom}`,
     ),
+    check(
+      "supplement_definition_not_self_superseding",
+      sql`${table.supersedesDefinitionId} IS NULL OR ${table.supersedesDefinitionId} <> ${table.id}`,
+    ),
   ],
 );
 

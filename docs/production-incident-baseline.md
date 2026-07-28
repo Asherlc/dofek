@@ -19421,7 +19421,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   index and scanning the live table while Drizzle's node-postgres migrator runs
   the migration in a transaction. PostgreSQL forbids the concurrent index DDL
   recommended by generic PG01 guidance inside that transaction, so the model
-  could not satisfy both transaction and online-lock requirements.
+  could not satisfy both transaction and online-lock requirements. PostgreSQL
+  documents that both
+  [`CREATE INDEX CONCURRENTLY`](https://www.postgresql.org/docs/current/sql-createindex.html)
+  and
+  [`DROP INDEX CONCURRENTLY`](https://www.postgresql.org/docs/current/sql-dropindex.html)
+  cannot run inside a transaction block.
 - **Fix / mitigation:** Replace the table structurally in one transaction:
   rename the old supplement and nutrient relations, create a stable schedule
   table plus canonical immutable definition/nutrient tables, copy every row and

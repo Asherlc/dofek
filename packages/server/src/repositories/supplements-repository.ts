@@ -37,6 +37,7 @@ export const supplementSchema = z
 export const supplementListSchema = z.array(supplementSchema);
 
 export type Supplement = z.infer<typeof supplementSchema>;
+const SUPPLEMENT_DEFINITION_FIELDS = Object.keys(supplementSchema.shape);
 
 interface SupplementVersion {
   id: string;
@@ -116,9 +117,11 @@ export function toApiSupplement(row: Record<string, unknown>): Supplement {
 }
 
 function definitionsEqual(left: Supplement, right: Supplement): boolean {
-  return (
-    JSON.stringify(supplementSchema.parse(left)) === JSON.stringify(supplementSchema.parse(right))
-  );
+  const parsedLeft = supplementSchema.parse(left);
+  const parsedRight = supplementSchema.parse(right);
+  const leftFields: Readonly<Record<string, unknown>> = parsedLeft;
+  const rightFields: Readonly<Record<string, unknown>> = parsedRight;
+  return SUPPLEMENT_DEFINITION_FIELDS.every((field) => leftFields[field] === rightFields[field]);
 }
 
 function toSupplementVersion(row: z.infer<typeof supplementViewRowSchema>): SupplementVersion {

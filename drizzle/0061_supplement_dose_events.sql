@@ -67,7 +67,9 @@ CREATE TABLE fitness.supplement_definition (
   FOREIGN KEY (supersedes_definition_id, supplement_id)
   REFERENCES fitness.supplement_definition (id, supplement_id),
   CONSTRAINT supplement_definition_effective_interval_valid
-  CHECK (effective_to IS NULL OR effective_to >= effective_from)
+  CHECK (effective_to IS NULL OR effective_to >= effective_from),
+  CONSTRAINT supplement_definition_not_self_superseding
+  CHECK (supersedes_definition_id IS NULL OR supersedes_definition_id <> id)
 );
 --> statement-breakpoint
 

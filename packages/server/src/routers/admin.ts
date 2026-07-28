@@ -199,6 +199,7 @@ export const adminRouter = router({
             ('food_entry_nutrient'),
             ('supplement_definition'),
             ('supplement_definition_nutrient'),
+            ('supplement_dose_event'),
             ('metric_stream')
         ),
         base_estimates AS (

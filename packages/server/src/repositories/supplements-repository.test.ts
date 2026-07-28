@@ -4,6 +4,7 @@ import {
   type Supplement,
   SupplementDoseConflictError,
   SupplementsRepository,
+  supplementSchema,
   toApiSupplement,
 } from "./supplements-repository.ts";
 
@@ -480,6 +481,26 @@ describe("SupplementsRepository", () => {
     expect(archiveCalls[0]).not.toContain("supplement-b");
   });
 
+  it("treats reordered fields as the same immutable definition", async () => {
+    const current = makeSupplementViewRow("supplement-a", "schedule-a", "Vitamin D", 0);
+    current.amount = 25;
+    current.unit = "mcg";
+    const { repo, insertCalls } = makeRepository([current]);
+
+    await repo.save([{ unit: "mcg", amount: 25, name: "Vitamin D" }]);
+
+    expect(insertCalls).toEqual([]);
+  });
+
+  it("treats omitted and explicit undefined optional fields as the same definition", async () => {
+    const current = makeSupplementViewRow("supplement-a", "schedule-a", "Vitamin D", 0);
+    const { repo, insertCalls } = makeRepository([current]);
+
+    await repo.save([{ name: "Vitamin D", unit: undefined }]);
+
+    expect(insertCalls).toEqual([]);
+  });
+
   it("computes an inclusive occurrence window and selects only the current leaf", async () => {
     vi.useFakeTimers({ now: new Date("2026-07-27T12:00:00.000Z") });
     const rows = [
@@ -624,95 +645,25 @@ describe("SupplementsRepository", () => {
     await expect(repo.recordDose("event-1", "taken")).rejects.toBe(failure);
   });
 
-  it("validates repository row boundaries after a fresh module load", async () => {
-    vi.resetModules();
-    const {
-      supplementSchema: freshSupplementSchema,
-      SupplementsRepository: FreshSupplementsRepository,
-    } = await import("./supplements-repository.ts");
-    expect(
-      freshSupplementSchema.parse({
-        name: "Vitamin D",
-        unit: "IU",
-        meal: "breakfast",
-      }),
-    ).toEqual({
-      name: "Vitamin D",
-      unit: "IU",
-      meal: "breakfast",
-    });
-    for (const invalid of [
-      { name: "" },
-      { name: "x".repeat(201) },
-      { name: "Vitamin D", amount: 0 },
-      { name: "Vitamin D", unit: "micrograms+" },
-      { name: "Vitamin D", meal: "midnight" },
-    ]) {
-      expect(freshSupplementSchema.safeParse(invalid).success).toBe(false);
-    }
+  it.each([
+    { name: "" },
+    { name: "x".repeat(201) },
+    { name: "Vitamin D", amount: 0 },
+    { name: "Vitamin D", unit: "micrograms+" },
+    { name: "Vitamin D", meal: "midnight" },
+  ])("rejects invalid supplement input at the schema boundary: %o", (invalid) => {
+    expect(supplementSchema.safeParse(invalid).success).toBe(false);
+  });
 
-    const validListDb: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
-      execute: vi
-        .fn()
-        .mockResolvedValue([makeSupplementViewRow("definition-1", "schedule-1", "Vitamin D", 0)]),
-      transaction: vi.fn(),
-    };
-    const validListRepository = new FreshSupplementsRepository(validListDb, "user-1", "UTC");
-    await expect(validListRepository.list()).resolves.toEqual([{ name: "Vitamin D" }]);
-
+  it("rejects an invalid supplement view row at the database boundary", async () => {
     const invalidViewRow = makeSupplementViewRow("definition-1", "schedule-1", "Vitamin D", 0);
     invalidViewRow.definition_id = undefined;
     const invalidListDb: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
       execute: vi.fn().mockResolvedValue([invalidViewRow]),
       transaction: vi.fn(),
     };
-    const invalidListRepository = new FreshSupplementsRepository(invalidListDb, "user-1", "UTC");
+    const invalidListRepository = new SupplementsRepository(invalidListDb, "user-1", "UTC");
     await expect(invalidListRepository.list()).rejects.toThrow();
-
-    const occurrenceExecute = vi
-      .fn()
-      .mockResolvedValue([
-        makeDoseEventRow({ id: "current-event", status: "planned", is_current: true }),
-      ]);
-    const occurrenceDb: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
-      execute: occurrenceExecute,
-      transaction: vi.fn(),
-    };
-    const occurrenceRepository = new FreshSupplementsRepository(occurrenceDb, "user-1", "UTC");
-
-    await expect(occurrenceRepository.occurrences(1)).resolves.toMatchObject({
-      counts: { planned: 1, taken: 0, skipped: 0, unknown: 0 },
-      occurrences: [{ currentEventId: "current-event", supplementName: "Vitamin D" }],
-    });
-
-    const recordExecute = vi
-      .fn()
-      .mockResolvedValueOnce([
-        {
-          id: "current-event",
-          user_id: "user-1",
-          schedule_id: "schedule-1",
-          supplement_id: "definition-1",
-          scheduled_date: "2026-07-27",
-        },
-      ])
-      .mockResolvedValueOnce([{ id: "new-event" }]);
-    const recordDb: Pick<import("dofek/db").Database, "execute" | "transaction"> = {
-      execute: vi.fn(),
-      transaction: vi
-        .fn()
-        .mockImplementation(async (callback: (tx: { execute: typeof recordExecute }) => unknown) =>
-          callback({
-            execute: recordExecute,
-          }),
-        ),
-    };
-    const recordRepository = new FreshSupplementsRepository(recordDb, "user-1", "UTC");
-    await expect(recordRepository.recordDose("current-event", "skipped")).resolves.toEqual({
-      id: "new-event",
-      scheduledDate: "2026-07-27",
-      status: "skipped",
-    });
   });
 });
 

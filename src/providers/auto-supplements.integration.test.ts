@@ -1,9 +1,10 @@
-import { and, eq, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { executeWithSchema } from "../db/execute-with-schema.ts";
 import { nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
 import {
   foodEntry,
-  foodEntryNutrient,
   supplement,
   supplementDefinition,
   supplementDefinitionNutrient,
@@ -18,6 +19,11 @@ import { SyncWindow } from "./sync-window.ts";
 
 const PRIMARY_USER_ID = "11111111-1111-4111-8111-111111111111";
 const SECOND_USER_ID = "22222222-2222-4222-8222-222222222222";
+const canonicalNutrientRowSchema = z.object({
+  amount: z.coerce.number(),
+  food_entry_id: z.string().nullable(),
+  supplement_dose_event_id: z.string().nullable(),
+});
 
 async function insertSupplementWithNutrition(
   db: TestContext["db"],
@@ -129,7 +135,8 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
     const rows = await ctx.db
       .select()
       .from(supplementDoseEvent)
-      .where(eq(supplementDoseEvent.userId, PRIMARY_USER_ID));
+      .where(eq(supplementDoseEvent.definitionId, primary.id))
+      .orderBy(asc(supplementDoseEvent.scheduledDate));
     expect(rows.map((row) => [row.definitionId, row.scheduledDate, row.status])).toEqual([
       [primary.id, "2099-01-02", "planned"],
       [primary.id, "2099-01-03", "planned"],
@@ -212,7 +219,8 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
     const history = await ctx.db
       .select()
       .from(supplementDoseEvent)
-      .where(eq(supplementDoseEvent.definitionId, definition.id));
+      .where(eq(supplementDoseEvent.definitionId, definition.id))
+      .orderBy(asc(supplementDoseEvent.recordedAt));
     expect(history).toHaveLength(2);
     expect(history.find((event) => event.id === planned.id)?.status).toBe("planned");
     expect(history.find((event) => event.supersedesEventId === planned.id)?.status).toBe("unknown");
@@ -255,15 +263,16 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
       .returning({ id: supplementDoseEvent.id });
     if (!taken) throw new Error("Failed to record taken supplement dose");
 
-    const takenRows = await ctx.db.execute<{
-      amount: number;
-      food_entry_id: string | null;
-      supplement_dose_event_id: string | null;
-    }>(sql`SELECT amount, food_entry_id, supplement_dose_event_id
-           FROM fitness.v_nutrition_canonical_nutrient
-           WHERE user_id = ${PRIMARY_USER_ID}
-             AND date = '2098-01-01'
-             AND nutrient_id = 'vitamin_d'`);
+    const takenRows = await executeWithSchema(
+      ctx.db,
+      canonicalNutrientRowSchema,
+      sql`SELECT amount, food_entry_id, supplement_dose_event_id
+          FROM fitness.v_nutrition_canonical_nutrient
+          WHERE user_id = ${PRIMARY_USER_ID}
+            AND date = '2098-01-01'
+            AND nutrient_id = 'vitamin_d'
+          ORDER BY supplement_dose_event_id`,
+    );
     expect(takenRows).toEqual([
       {
         amount: 25,
@@ -284,71 +293,15 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
       recordedAt: new Date("2098-01-01T13:00:00Z"),
     });
 
-    const skippedRows = await ctx.db.execute(
-      sql`SELECT amount
+    const skippedRows = await executeWithSchema(
+      ctx.db,
+      canonicalNutrientRowSchema,
+      sql`SELECT amount, food_entry_id, supplement_dose_event_id
           FROM fitness.v_nutrition_canonical_nutrient
           WHERE user_id = ${PRIMARY_USER_ID}
             AND date = '2098-01-01'
             AND nutrient_id = 'vitamin_d'`,
     );
     expect(skippedRows).toEqual([]);
-  });
-
-  it("migration cleanup removes only fictional auto-supplement foods and cascades nutrients", async () => {
-    await ensureProvider(
-      ctx.db,
-      "fixture-food-source",
-      "Fixture Food Source",
-      undefined,
-      PRIMARY_USER_ID,
-    );
-    const [fictional, real] = await ctx.db
-      .insert(foodEntry)
-      .values([
-        {
-          userId: PRIMARY_USER_ID,
-          providerId: "auto-supplements",
-          externalId: "fictional-food",
-          date: "2022-01-01",
-          foodName: "Fictional supplement food",
-        },
-        {
-          userId: PRIMARY_USER_ID,
-          providerId: "fixture-food-source",
-          externalId: "real-food",
-          date: "2022-01-01",
-          foodName: "Real food",
-        },
-      ])
-      .returning({ id: foodEntry.id, providerId: foodEntry.providerId });
-    if (!fictional || !real) throw new Error("Failed to seed cleanup fixtures");
-    await ctx.db.insert(foodEntryNutrient).values([
-      { foodEntryId: fictional.id, nutrientId: "vitamin_d", amount: 10 },
-      { foodEntryId: real.id, nutrientId: "vitamin_d", amount: 5 },
-    ]);
-
-    await ctx.db.execute(
-      sql`DELETE FROM fitness.food_entry WHERE provider_id = 'auto-supplements'`,
-    );
-
-    expect(await ctx.db.select().from(foodEntry).where(eq(foodEntry.id, fictional.id))).toEqual([]);
-    expect(
-      await ctx.db
-        .select()
-        .from(foodEntryNutrient)
-        .where(eq(foodEntryNutrient.foodEntryId, fictional.id)),
-    ).toEqual([]);
-    expect(
-      await ctx.db
-        .select()
-        .from(foodEntry)
-        .where(and(eq(foodEntry.id, real.id), eq(foodEntry.providerId, "fixture-food-source"))),
-    ).toHaveLength(1);
-    expect(
-      await ctx.db
-        .select()
-        .from(foodEntryNutrient)
-        .where(eq(foodEntryNutrient.foodEntryId, real.id)),
-    ).toHaveLength(1);
   });
 });
