@@ -1,5 +1,4 @@
 import { formatDateMedium, formatNumber } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
 import type { TrainingMonotonyWeek } from "dofek-server/types";
 import {
   chartColors,
@@ -11,6 +10,7 @@ import {
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { MethodExplanation } from "./MethodExplanation.tsx";
 
 interface TrainingMonotonyChartProps {
   data: TrainingMonotonyWeek[];
@@ -18,6 +18,7 @@ interface TrainingMonotonyChartProps {
 }
 
 export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartProps) {
+  const method = data[0]?.method;
   const option = {
     grid: dofekGrid("dualAxis", { top: 50, bottom: 50 }),
     tooltip: dofekTooltip({
@@ -36,11 +37,12 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         const dataPoint = data[idx];
         if (!dataPoint) return "";
         const dateLabel = formatDateMedium(dataPoint.week);
-        const monotonyColor = dataPoint.monotony > 2.0 ? statusColors.danger : chartColors.blue;
         return [
           `<strong>${escapeTooltipHtml(dateLabel)}</strong>`,
-          `Monotony: <span style="color:${monotonyColor}">${formatNumber(dataPoint.monotony, 2)}</span>${dataPoint.monotony > 2.0 ? " (high!)" : ""}`,
+          `Monotony: <span style="color:${chartColors.blue}">${formatNumber(dataPoint.monotony, 2)}</span>`,
           `Strain: ${formatNumber(dataPoint.strain)}`,
+          `Daily mean cycling load: ${formatNumber(dataPoint.dailyMeanLoad, 2)}`,
+          `Population standard deviation (SD): ${formatNumber(dataPoint.dailyLoadStandardDeviation, 2)}`,
         ].join("<br/>");
       },
     }),
@@ -57,7 +59,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
           data.map((d) => ({
             value: [d.week, d.monotony],
             itemStyle: {
-              color: d.monotony > 2.0 ? statusColors.danger : chartColors.blue,
+              color: chartColors.blue,
             },
           })),
           {},
@@ -78,9 +80,13 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
 
   return (
     <div>
-      <p className="text-xs text-dim mb-2">
-        Monotony &gt; 2.0 (red) with high strain indicates elevated overtraining risk.
-      </p>
+      {method ? (
+        <MethodExplanation
+          className="mb-2"
+          lines={[method.formula, method.calendar, method.activityScope, method.interpretation]}
+          source={method.source}
+        />
+      ) : null}
       <DofekChart
         option={option}
         loading={loading}
