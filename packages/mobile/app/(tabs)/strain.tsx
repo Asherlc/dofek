@@ -674,6 +674,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-around",
   },
   loadItem: {
+    flex: 1,
     alignItems: "center",
     gap: 4,
   },
@@ -686,6 +687,7 @@ const styles = StyleSheet.create({
   loadLabel: {
     fontSize: 11,
     color: colors.textTertiary,
+    textAlign: "center",
   },
   ratioHint: {
     fontSize: 12,
