@@ -18,6 +18,7 @@ function createFixture(
     codegraphInitialized?: boolean;
     dockerInfoFails?: boolean;
     nodeRequirement?: string;
+    sandbox?: boolean;
   } = {},
 ) {
   const fixtureDirectory = mkdtempSync(join(tmpdir(), "dev-environment-test-"));
@@ -121,6 +122,7 @@ function runDevEnvironment(
     codegraphInitialized?: boolean;
     dockerInfoFails?: boolean;
     nodeRequirement?: string;
+    sandbox?: boolean;
   } = {},
 ) {
   const fixture = createFixture(options);
@@ -135,6 +137,7 @@ function runDevEnvironment(
         COMMAND_LOG_PATH: fixture.commandLogPath,
         DOCKER_INFO_FAILS: options.dockerInfoFails ? "1" : "0",
         PATH: `${fixture.binaryDirectory}:${process.env.PATH ?? ""}`,
+        SANDBOX: options.sandbox ? "1" : "0",
         VCPKG_ROOT: fixture.vcpkgRoot,
       },
     },
@@ -180,6 +183,14 @@ describe("dev-environment", () => {
     expect(result.status).toBe(23);
     expect(result.stderr).toContain("Docker daemon unavailable");
     expect(commands).toEqual([["docker", "info"]]);
+  });
+
+  it("skips service startup when SANDBOX=1 marks a Docker-less environment", () => {
+    const { commands, result } = runDevEnvironment("start", { sandbox: true });
+
+    expect(result.status).toBe(0);
+    expect(commands).toEqual([]);
+    expect(result.stdout).toContain("SANDBOX=1");
   });
 
   it("enforces the Node.js requirement declared by package.json", () => {
