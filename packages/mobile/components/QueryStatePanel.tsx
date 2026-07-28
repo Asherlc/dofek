@@ -1,5 +1,7 @@
+import { operationalStatusColors } from "@dofek/scoring/colors";
+import { fontSize, fontWeight } from "@dofek/scoring/tokens";
 import type { StyleProp, ViewStyle } from "react-native";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
 export type QueryStateVariant = "loading" | "error" | "empty";
@@ -9,6 +11,9 @@ interface QueryStatePanelProps {
   message?: string;
   title?: string;
   minHeight?: number;
+  onRetry?: () => void;
+  retryLabel?: string;
+  retrying?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -30,6 +35,9 @@ export function QueryStatePanel({
   message,
   title,
   minHeight = 120,
+  onRetry,
+  retryLabel = "Retry",
+  retrying = false,
   style,
 }: QueryStatePanelProps) {
   if (variant === "loading") {
@@ -52,14 +60,40 @@ export function QueryStatePanel({
         variant === "error" ? styles.errorPanel : styles.emptyPanel,
         style,
       ]}
+      accessibilityLiveRegion={variant === "error" ? "assertive" : "polite"}
+      accessibilityRole={variant === "error" ? "alert" : "summary"}
     >
-      <Text style={styles.title}>{resolvedTitle}</Text>
+      {variant === "error" ? (
+        <Text
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={styles.errorIcon}
+          testID="query-state-error-icon"
+        >
+          !
+        </Text>
+      ) : null}
+      <Text style={[styles.title, variant === "error" ? styles.errorText : null]}>
+        {resolvedTitle}
+      </Text>
       {message ? (
         <Text
-          style={[styles.message, variant === "error" ? styles.errorMessage : styles.emptyMessage]}
+          style={[styles.message, variant === "error" ? styles.errorText : styles.emptyMessage]}
         >
           {message}
         </Text>
+      ) : null}
+      {onRetry ? (
+        <Pressable
+          accessibilityLabel={retrying ? "Retrying..." : retryLabel}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: retrying }}
+          disabled={retrying}
+          onPress={retrying ? undefined : onRetry}
+          style={styles.retryButton}
+        >
+          <Text style={styles.retryText}>{retrying ? "Retrying..." : retryLabel}</Text>
+        </Pressable>
       ) : null}
     </View>
   );
@@ -75,25 +109,53 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   errorPanel: {
-    backgroundColor: "#3b1212",
+    backgroundColor: operationalStatusColors.danger.surface,
+    borderColor: operationalStatusColors.danger.border,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   emptyPanel: {
     backgroundColor: colors.surfaceSecondary,
   },
   title: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.bold,
     color: colors.text,
     textAlign: "center",
   },
   message: {
-    fontSize: 13,
+    fontSize: fontSize.sm,
     textAlign: "center",
   },
-  errorMessage: {
-    color: "#fca5a5",
+  errorText: {
+    color: operationalStatusColors.danger.foreground,
+  },
+  errorIcon: {
+    borderColor: operationalStatusColors.danger.border,
+    borderRadius: radius.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    color: operationalStatusColors.danger.foreground,
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.extrabold,
+    height: spacing.lg,
+    lineHeight: spacing.lg,
+    textAlign: "center",
+    width: spacing.lg,
   },
   emptyMessage: {
     color: colors.textSecondary,
+  },
+  retryButton: {
+    backgroundColor: operationalStatusColors.danger.surface,
+    borderColor: operationalStatusColors.danger.border,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  retryText: {
+    color: operationalStatusColors.danger.foreground,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
   },
 });

@@ -22,6 +22,13 @@ export const Retryable: Story = {
   },
 };
 
+export const Contextual: Story = {
+  args: {
+    contextLabel: "Sleep",
+    error: new Error("Sleep performance is unavailable."),
+  },
+};
+
 export const Retrying: Story = {
   args: {
     onRetry: () => {},

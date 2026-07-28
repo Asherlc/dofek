@@ -508,8 +508,8 @@ function RingSkeleton() {
 
 function RingQueryError({ label, error }: { label: string; error: unknown }) {
   return (
-    <div role="alert" aria-label={`${label} error`} className="max-w-[180px] text-center text-xs">
-      <QueryStatePanel error={error} height={72} />
+    <div className="max-w-[180px] text-center text-xs">
+      <QueryStatePanel contextLabel={label} error={error} height={72} />
     </div>
   );
 }

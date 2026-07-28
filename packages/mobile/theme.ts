@@ -4,7 +4,13 @@
  * Re-exported from @dofek/scoring — this module composes the shared semantic
  * color tokens into the flat `colors` object that iOS components expect.
  */
-import { chartColors, statusColors, surfaceColors, textColors } from "@dofek/scoring/colors";
+import {
+  chartColors,
+  operationalStatusColors,
+  statusColors,
+  surfaceColors,
+  textColors,
+} from "@dofek/scoring/colors";
 import {
   duration,
   easing,
@@ -15,7 +21,7 @@ import {
   spacing,
 } from "@dofek/scoring/tokens";
 
-export { chartColors, statusColors, surfaceColors, textColors };
+export { chartColors, operationalStatusColors, statusColors, surfaceColors, textColors };
 export { duration, easing, fontSize, fontWeight, radius, spacing };
 
 /** Font families — maps shared token names to platform-specific names */

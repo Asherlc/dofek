@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -101,6 +102,13 @@ describe("SyncProviderCard", () => {
 
     expect(onSync).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Sync all available Strava data" })).toBeNull();
+    const connectStatus = screen
+      .getAllByText("Connect")
+      .find((element) => element.tagName === "SPAN");
+    expect(connectStatus).toBeDefined();
+    expect(connectStatus).toHaveStyle({
+      color: operationalStatusColors.info.foreground,
+    });
   });
 
   it("shows Reconnect as the primary action when reauth is needed", () => {
@@ -111,12 +119,45 @@ describe("SyncProviderCard", () => {
 
     expect(onSync).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Sync all available Strava data" })).toBeNull();
+    const reconnectStatus = screen
+      .getAllByText("Reconnect")
+      .find((element) => element.tagName === "SPAN");
+    expect(reconnectStatus).toBeDefined();
+    expect(reconnectStatus).toHaveStyle({
+      color: operationalStatusColors.warning.foreground,
+    });
   });
 
   it("renders an empty sync history state", () => {
     renderProvider();
 
     expect(screen.getByText("No sync history")).not.toBeNull();
+  });
+
+  it("identifies recent sync outcomes without relying on color", () => {
+    renderProvider({
+      recentLogs: [
+        {
+          syncedAt: "2026-05-12T10:00:00.000Z",
+          status: "success",
+          recordCount: 12,
+          durationMs: 100,
+          errorMessage: null,
+          authFailureReason: null,
+        },
+        {
+          syncedAt: "2026-05-12T11:00:00.000Z",
+          status: "failed",
+          recordCount: 0,
+          durationMs: 50,
+          errorMessage: "Provider unavailable",
+          authFailureReason: null,
+        },
+      ],
+    });
+
+    expect(screen.getByRole("status", { name: "Sync succeeded" }).textContent).toBe("✓");
+    expect(screen.getByRole("status", { name: "Sync failed" }).textContent).toBe("!");
   });
 
   it("uses neutral push-only copy and server-provided description", () => {
@@ -140,7 +181,11 @@ describe("SyncProviderCard", () => {
       />,
     );
 
-    expect(screen.getByText("Mobile sync")).not.toBeNull();
+    const mobileSyncLabel = screen.getByText("Mobile sync");
+    expect(mobileSyncLabel).not.toBeNull();
+    expect(mobileSyncLabel.parentElement?.querySelector("img + span")).toHaveStyle({
+      backgroundColor: operationalStatusColors.success.indicator,
+    });
     expect(screen.getByText("Synced via iOS app")).not.toBeNull();
     expect(
       screen.getByText("Synced from the iOS app when your WHOOP strap is nearby."),

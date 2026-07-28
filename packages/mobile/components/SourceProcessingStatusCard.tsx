@@ -1,4 +1,5 @@
 import type { ProcessingDisplayStatus } from "@dofek/providers/processing-status";
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
@@ -66,16 +67,16 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     overflow: "hidden",
   },
-  progressFill: { backgroundColor: colors.accent, height: 6 },
+  progressFill: { backgroundColor: operationalStatusColors.info.indicator, height: 6 },
 });
 
 const borderStyleByStatus = StyleSheet.create({
-  ready: { borderLeftColor: colors.positive },
-  waiting: { borderLeftColor: colors.accent },
-  active: { borderLeftColor: colors.accent },
-  partial: { borderLeftColor: colors.accent },
-  delayed: { borderLeftColor: colors.warning },
-  blocked: { borderLeftColor: colors.negative },
-  failed: { borderLeftColor: colors.negative },
-  cancelled: { borderLeftColor: colors.textTertiary },
+  ready: { borderLeftColor: operationalStatusColors.success.indicator },
+  waiting: { borderLeftColor: operationalStatusColors.info.indicator },
+  active: { borderLeftColor: operationalStatusColors.info.indicator },
+  partial: { borderLeftColor: operationalStatusColors.info.indicator },
+  delayed: { borderLeftColor: operationalStatusColors.warning.indicator },
+  blocked: { borderLeftColor: operationalStatusColors.danger.indicator },
+  failed: { borderLeftColor: operationalStatusColors.danger.indicator },
+  cancelled: { borderLeftColor: operationalStatusColors.neutral.indicator },
 });
