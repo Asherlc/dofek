@@ -415,13 +415,13 @@ export function NutritionPage() {
                     label="Carbs"
                     grams={formatGrams(selectedDateFood.summary.macros.carbs.grams)}
                     percentage={selectedDateFood.summary.macros.carbs.percentage}
-                    color="amber"
+                    color="purple"
                   />
                   <MacroBar
                     label="Fat"
                     grams={formatGrams(selectedDateFood.summary.macros.fat.grams)}
                     percentage={selectedDateFood.summary.macros.fat.percentage}
-                    color="red"
+                    color="teal"
                   />
                 </div>
               </div>

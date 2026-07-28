@@ -321,6 +321,40 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     ).toBeTruthy();
   });
 
+  it("uses neutral text for weight-rate direction", async () => {
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [
+        {
+          date: "2026-04-06",
+          rawWeight: 80,
+          smoothedWeight: 79.8,
+          weeklyChange: null,
+          interpolated: false,
+        },
+      ],
+      weightPrediction: {
+        ratePerWeek: -0.3,
+        rateConfidence: 0.92,
+        impliedDailyCalories: -330,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        goal: null,
+        projectionLine: [],
+      },
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("-0.3 kg/wk").style.color).toBe("rgb(153, 153, 153)");
+  });
+
   it("expands recovery breakdown when recovery card is tapped", async () => {
     mockRecoveryData = {
       hrvVariability: [],

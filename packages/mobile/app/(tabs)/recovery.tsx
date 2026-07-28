@@ -534,19 +534,7 @@ export default function RecoveryScreen() {
                     Moves 10% toward each day's scale weight; gaps are interpolated.
                   </Text>
                   {weightPrediction?.ratePerWeek != null && (
-                    <Text
-                      style={[
-                        styles.weightRate,
-                        {
-                          color:
-                            Math.abs(weightPrediction.ratePerWeek) < 0.05
-                              ? colors.textSecondary
-                              : weightPrediction.ratePerWeek > 0
-                                ? colors.positive
-                                : colors.danger,
-                        },
-                      ]}
-                    >
+                    <Text style={[styles.weightRate, { color: colors.textSecondary }]}>
                       {weightPrediction.ratePerWeek > 0 ? "+" : ""}
                       {formatMeasurementText(units.formatWeight(weightPrediction.ratePerWeek))}
                       /wk

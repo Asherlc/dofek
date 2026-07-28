@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { chartColors, operationalStatusColors } from "@dofek/scoring/colors";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -28,7 +29,9 @@ vi.mock("../components/CorrelationStrengthBar.tsx", () => ({
 
 vi.mock("../components/DofekChart.tsx", () => ({
   ChartRangeProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DofekChart: () => <div data-testid="scatter-plot" />,
+  DofekChart: ({ option }: { option: Record<string, unknown> }) => (
+    <div data-testid="scatter-plot" data-option={JSON.stringify(option)} />
+  ),
 }));
 
 vi.mock("../components/PageLayout.tsx", () => ({
@@ -142,6 +145,36 @@ describe("CorrelationExplorerPage", () => {
     expect(screen.getByText("Pearson (linear)")).toBeTruthy();
     expect(screen.getByText("R² = 0.490")).toBeTruthy();
     expect(screen.getByText("p = 0.010")).toBeTruthy();
+  });
+
+  it("uses neutral relationship and informational confidence colors", async () => {
+    state.correlationData = {
+      availability: "available",
+      spearmanRho: -0.75,
+      spearmanPValue: 0.01,
+      pearsonR: -0.7,
+      pearsonPValue: 0.02,
+      regression: { slope: -1, intercept: 3, rSquared: 0.49 },
+      dataPoints: [
+        { x: 1, y: 2, date: "2025-01-01" },
+        { x: 2, y: 1, date: "2025-01-02" },
+      ],
+      sampleCount: 5,
+      xStats: { mean: 1.5, median: 1.5, stddev: 0.5, min: 1, max: 2, n: 5 },
+      yStats: { mean: 1.5, median: 1.5, stddev: 0.5, min: 1, max: 2, n: 5 },
+      insight: "The metrics move in opposite directions.",
+      confidenceLevel: "strong",
+      correlationColor: "#dc2626",
+    };
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.getByText("Strong").style.color).toBe(
+      `rgb(${Number.parseInt(operationalStatusColors.info.foreground.slice(1, 3), 16)}, ${Number.parseInt(operationalStatusColors.info.foreground.slice(3, 5), 16)}, ${Number.parseInt(operationalStatusColors.info.foreground.slice(5, 7), 16)})`,
+    );
+    const option = JSON.parse(screen.getByTestId("scatter-plot").dataset.option ?? "{}");
+    expect(option.series[1].lineStyle.color).toBe(chartColors.blue);
   });
 
   it("states the selected lag in calendar days and which metric leads", async () => {
