@@ -42,7 +42,7 @@ run = [
 description = "Run the checks that need no Docker-backed services"
 run = [
   "pnpm --recursive --include-workspace-root --if-present typecheck",
-  "pnpm exec biome check . --max-diagnostics=500",
+  "pnpm lint:sandbox",
   "pnpm test",
 ]
 

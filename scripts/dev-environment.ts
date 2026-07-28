@@ -160,11 +160,7 @@ function doctor(): void {
 
 function start(): void {
   if (process.env.SANDBOX === "1") {
-    process.stdout.write(
-      "SANDBOX=1: skipping local service startup. Docker is unavailable in sandboxed agent " +
-        "environments, so Postgres, ClickHouse, Kafka, and Redis cannot run here. Use " +
-        "`mise run test:sandbox` for the checks that do not need those services.\n",
-    );
+    process.stdout.write("SANDBOX=1: skipping Docker-backed services.\n");
     return;
   }
 
