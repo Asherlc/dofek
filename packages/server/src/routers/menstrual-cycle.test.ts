@@ -51,6 +51,7 @@ describe("menstrualCycleRouter", () => {
 
       expect(result.phase).toBeNull();
       expect(result.dayOfCycle).toBeNull();
+      expect(result.estimate).toBeNull();
     });
 
     it("computes current phase from most recent period", async () => {
@@ -59,6 +60,9 @@ describe("menstrualCycleRouter", () => {
         {
           start_date: new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10),
           avg_cycle_length: 28,
+          completed_cycle_count: 3,
+          min_cycle_length: 27,
+          max_cycle_length: 29,
         },
       ];
 
@@ -71,6 +75,14 @@ describe("menstrualCycleRouter", () => {
       expect(result.phase).not.toBeNull();
       expect(result.dayOfCycle).toBe(11); // day 1 is start day, day 11 is 10 days later
       expect(result.cycleLength).toBe(28);
+      expect(result.estimate).toMatchObject({
+        basis: "personal-cycle-average",
+        completedCycleCount: 3,
+        observedCycleLengthRange: {
+          minimumDays: 27,
+          maximumDays: 29,
+        },
+      });
     });
   });
 

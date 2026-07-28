@@ -55,3 +55,45 @@ describe("MenstrualCycleRepository period durations", () => {
     });
   });
 });
+
+describe("MenstrualCycleRepository phase estimate history", () => {
+  let testContext: TestContext;
+
+  beforeAll(async () => {
+    testContext = await setupTestDatabase();
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.menstrual_period (user_id, start_date)
+          VALUES
+            (${TEST_USER_ID}, '2026-04-05'),
+            (${TEST_USER_ID}, '2026-05-02'),
+            (${TEST_USER_ID}, '2026-06-02'),
+            (${TEST_USER_ID}, '2026-07-01')`,
+    );
+  }, 60_000);
+
+  afterAll(async () => {
+    await testContext?.cleanup();
+  });
+
+  it("uses the same completed cycle intervals for average, count, and observed range", async () => {
+    const repository = new MenstrualCycleRepository(testContext.db, TEST_USER_ID);
+
+    const result = await repository.getCurrentPhase(new Date("2026-07-13T12:00:00Z"));
+
+    expect(result).toMatchObject({
+      phase: "follicular",
+      dayOfCycle: 13,
+      cycleLength: 29,
+      estimate: {
+        basis: "personal-cycle-average",
+        completedCycleCount: 3,
+        observedCycleLengthRange: {
+          minimumDays: 27,
+          maximumDays: 31,
+        },
+        methodLabel: "Phase and cycle length use the average of 3 completed cycles.",
+        uncertaintyLabel: "Recorded cycle lengths ranged from 27 to 31 days.",
+      },
+    });
+  });
+});
