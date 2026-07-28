@@ -7,6 +7,7 @@ const mockRouterPush = vi.fn();
 const mockTrainingInvalidate = vi.fn();
 const mockHrZonesInvalidate = vi.fn();
 const mockPolarizationInvalidate = vi.fn();
+const mockMonotonyInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 
@@ -36,6 +37,14 @@ const mockHrZonesState: MockTrainingState = {
 };
 
 const mockPolarizationState: MockTrainingState = {
+  data: undefined,
+  isLoading: false,
+  isFetching: false,
+  isError: false,
+  error: null,
+};
+
+const mockMonotonyState: MockTrainingState = {
   data: undefined,
   isLoading: false,
   isFetching: false,
@@ -83,7 +92,7 @@ function resetMockTrainingState() {
   mockTrainingState.isFetching = false;
   mockTrainingState.isError = false;
   mockTrainingState.error = null;
-  for (const state of [mockHrZonesState, mockPolarizationState]) {
+  for (const state of [mockHrZonesState, mockPolarizationState, mockMonotonyState]) {
     state.data = undefined;
     state.isLoading = false;
     state.isFetching = false;
@@ -119,6 +128,11 @@ vi.mock("../../lib/trpc", () => ({
         useQuery: () => ({ ...mockPolarizationState }),
       },
     },
+    cyclingAdvanced: {
+      trainingMonotony: {
+        useQuery: () => ({ ...mockMonotonyState }),
+      },
+    },
     processing: {
       status: {
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
@@ -133,6 +147,9 @@ vi.mock("../../lib/trpc", () => ({
       },
       efficiency: {
         polarizationTrend: { invalidate: mockPolarizationInvalidate },
+      },
+      cyclingAdvanced: {
+        trainingMonotony: { invalidate: mockMonotonyInvalidate },
       },
       processing: {
         status: { invalidate: mockProcessingStatusInvalidate },
@@ -175,15 +192,17 @@ describe("StrainScreen recent activity navigation", () => {
     mockProcessingStatusInvalidate.mockReset();
     mockHrZonesInvalidate.mockReset();
     mockPolarizationInvalidate.mockReset();
+    mockMonotonyInvalidate.mockReset();
     mockTrainingInvalidate.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
     mockHrZonesInvalidate.mockResolvedValue(undefined);
     mockPolarizationInvalidate.mockResolvedValue(undefined);
+    mockMonotonyInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
     resetMockTrainingState();
   });
 
-  it("refreshes training, intensity, polarization, and processing status together", async () => {
+  it("refreshes training, intensity, polarization, monotony, and processing status together", async () => {
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
@@ -193,6 +212,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockTrainingInvalidate).toHaveBeenCalledOnce();
     expect(mockHrZonesInvalidate).toHaveBeenCalledOnce();
     expect(mockPolarizationInvalidate).toHaveBeenCalledOnce();
+    expect(mockMonotonyInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
@@ -214,6 +234,16 @@ describe("StrainScreen recent activity navigation", () => {
       threshold: 2,
       maxHr: 190,
       explanation: "Mobile cycling polarization explanation.",
+      method: {
+        formula: "Mobile Treff formula.",
+        zoneBasis: "Mobile Treff zones.",
+        calculationChoice: "Mobile calculation choice.",
+        interpretation: "Mobile descriptive PI interpretation.",
+        source: {
+          title: "Treff source",
+          url: "https://doi.org/10.3389/fphys.2019.00707",
+        },
+      },
       weeks: [
         {
           week: "2026-07-20",
@@ -229,6 +259,26 @@ describe("StrainScreen recent activity navigation", () => {
         },
       ],
     };
+    mockMonotonyState.data = [
+      {
+        week: "2026-07-20",
+        monotony: 1.5,
+        strain: 300,
+        weeklyLoad: 200,
+        dailyMeanLoad: 28.57,
+        dailyLoadStandardDeviation: 19.05,
+        method: {
+          formula: "Mobile Foster formula.",
+          calendar: "Mobile calendar choice.",
+          activityScope: "Mobile activity scope.",
+          interpretation: "Mobile descriptive monotony interpretation.",
+          source: {
+            title: "Foster source",
+            url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
+          },
+        },
+      },
+    ];
 
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
@@ -237,21 +287,27 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("Mobile descriptive intensity explanation.")).toBeTruthy();
     expect(screen.getByText("Not polarized")).toBeTruthy();
     expect(screen.getByText("Server says exactly 2.00 is not polarized.")).toBeTruthy();
+    expect(screen.getByText("Training Monotony & Strain")).toBeTruthy();
+    expect(screen.getByText("Mobile Foster formula.")).toBeTruthy();
   });
 
-  it("renders intensity and polarization query failures separately", async () => {
+  it("renders intensity, polarization, and monotony query failures separately", async () => {
     mockHrZonesState.isError = true;
     mockHrZonesState.error = new Error("Intensity distribution failed");
     mockPolarizationState.isError = true;
     mockPolarizationState.error = new Error("Cycling polarization failed");
+    mockMonotonyState.isError = true;
+    mockMonotonyState.error = new Error("Training monotony failed");
 
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("Intensity distribution failed")).toBeTruthy();
     expect(screen.getByText("Cycling polarization failed")).toBeTruthy();
+    expect(screen.getByText("Training monotony failed")).toBeTruthy();
     expect(captureException).toHaveBeenCalledWith(mockHrZonesState.error);
     expect(captureException).toHaveBeenCalledWith(mockPolarizationState.error);
+    expect(captureException).toHaveBeenCalledWith(mockMonotonyState.error);
   });
 
   it("keeps cached server models visible with background query failures", async () => {
@@ -274,6 +330,16 @@ describe("StrainScreen recent activity navigation", () => {
       threshold: 2,
       maxHr: 190,
       explanation: "Cached mobile polarization.",
+      method: {
+        formula: "Cached Treff formula.",
+        zoneBasis: "Cached Treff zones.",
+        calculationChoice: "Cached calculation choice.",
+        interpretation: "Cached descriptive interpretation.",
+        source: {
+          title: "Treff source",
+          url: "https://doi.org/10.3389/fphys.2019.00707",
+        },
+      },
       weeks: [],
     };
     mockPolarizationState.isError = true;
