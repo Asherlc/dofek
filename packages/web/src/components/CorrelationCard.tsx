@@ -1,4 +1,5 @@
 import { formatNumber } from "@dofek/format/format";
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import {
   chartColors,
   chartThemeColors,
@@ -35,19 +36,19 @@ export interface Insight {
 const confidenceBadge = {
   strong: {
     label: "Strong",
-    className: "bg-emerald-900/50 text-emerald-400 border-emerald-800",
+    colors: operationalStatusColors.info,
   },
   emerging: {
     label: "Emerging",
-    className: "bg-amber-900/50 text-amber-400 border-amber-800",
+    colors: operationalStatusColors.neutral,
   },
   early: {
     label: "Early signal",
-    className: "bg-accent/10 text-muted border-border-strong",
+    colors: operationalStatusColors.neutral,
   },
   insufficient: {
     label: "Insufficient",
-    className: "bg-accent/10 text-dim border-border-strong",
+    colors: operationalStatusColors.neutral,
   },
 };
 
@@ -63,7 +64,14 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm text-foreground font-medium leading-tight">{insight.message}</p>
-        <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border ${badge.className}`}>
+        <span
+          className="shrink-0 text-[10px] px-2 py-0.5 rounded-full border"
+          style={{
+            backgroundColor: badge.colors.surface,
+            borderColor: badge.colors.border,
+            color: badge.colors.foreground,
+          }}
+        >
           {badge.label}
         </span>
       </div>
@@ -142,12 +150,12 @@ function ConditionalChart({ insight }: { insight: Insight }) {
             },
             {
               value: Math.abs(whenTrue.mean),
-              itemStyle: { color: chartColors.emerald },
+              itemStyle: { color: chartColors.blue },
               label: {
                 show: true,
                 position: "right",
                 formatter: `${formatValue(whenTrue.mean)} (n=${whenTrue.n})`,
-                color: "#6ee7b7",
+                color: chartThemeColors.legendText,
                 fontSize: 10,
               },
             },
@@ -162,7 +170,7 @@ function ConditionalChart({ insight }: { insight: Insight }) {
     <div>
       <DofekChart option={option} height={64} opts={{ renderer: "svg" }} />
       <p className="text-center text-xs text-subtle mt-1">
-        <span className={diff > 0 ? "text-emerald-400" : "text-rose-400"}>
+        <span className="text-muted">
           {sign}
           {pctDiff != null ? `${formatNumber(pctDiff, 0)}%` : formatValue(diff)}
         </span>{" "}
@@ -207,8 +215,6 @@ function ScatterPlot({ insight }: { insight: Insight }) {
   const slope = den !== 0 ? num / den : 0;
   const intercept = yMean - slope * xMean;
 
-  const trendColor = rho >= 0 ? chartColors.emerald : "#fb7185";
-
   const option = {
     grid: dofekGrid("single", { left: 8, right: 16, top: 16, bottom: 24, containLabel: true }),
     xAxis: {
@@ -242,7 +248,7 @@ function ScatterPlot({ insight }: { insight: Insight }) {
             [xMin, slope * xMin + intercept],
             [xMax, slope * xMax + intercept],
           ],
-          { color: trendColor, smooth: false, lineStyle: { type: "dashed" } },
+          { color: chartColors.blue, smooth: false, lineStyle: { type: "dashed" } },
         ),
         silent: true,
       },

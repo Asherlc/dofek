@@ -1,4 +1,5 @@
 import { formatNumber } from "@dofek/format/format";
+import { chartColors, operationalStatusColors } from "@dofek/scoring/colors";
 import {
   formatCorrelationComparison,
   formatCorrelationLagOption,
@@ -29,19 +30,19 @@ const LAG_OPTIONS = [0, 1, 2, 3].map((value) => ({
 const confidenceBadge = {
   strong: {
     label: "Strong",
-    className: "bg-emerald-900/50 text-emerald-400 border-emerald-800",
+    colors: operationalStatusColors.info,
   },
   emerging: {
     label: "Emerging",
-    className: "bg-amber-900/50 text-amber-400 border-amber-800",
+    colors: operationalStatusColors.neutral,
   },
   early: {
     label: "Early signal",
-    className: "bg-accent/10 text-muted border-border-strong",
+    colors: operationalStatusColors.neutral,
   },
   insufficient: {
     label: "Insufficient data",
-    className: "bg-accent/10 text-dim border-border-strong",
+    colors: operationalStatusColors.neutral,
   },
 };
 
@@ -222,7 +223,12 @@ export function CorrelationExplorerPage() {
                     Correlation Strength
                   </h3>
                   <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full border ${confidenceBadge[data.confidenceLevel].className}`}
+                    className="text-[10px] px-2 py-0.5 rounded-full border"
+                    style={{
+                      backgroundColor: confidenceBadge[data.confidenceLevel].colors.surface,
+                      borderColor: confidenceBadge[data.confidenceLevel].colors.border,
+                      color: confidenceBadge[data.confidenceLevel].colors.foreground,
+                    }}
                   >
                     {confidenceBadge[data.confidenceLevel].label}
                   </span>
@@ -302,7 +308,6 @@ export function CorrelationExplorerPage() {
                 <ScatterPlot
                   dataPoints={dataPoints}
                   regression={data.regression}
-                  rho={data.spearmanRho}
                   xLabel={`${xMetric?.label ?? metricX} (${xMetric?.unit ?? ""})`}
                   yLabel={`${yMetric?.label ?? metricY} (${yMetric?.unit ?? ""})`}
                 />
@@ -318,21 +323,17 @@ export function CorrelationExplorerPage() {
 function ScatterPlot({
   dataPoints,
   regression,
-  rho,
   xLabel,
   yLabel,
 }: {
   dataPoints: Array<{ x: number; y: number; date: string }>;
   regression: { slope: number; intercept: number; rSquared: number };
-  rho: number;
   xLabel: string;
   yLabel: string;
 }) {
   const xs = dataPoints.map((p) => p.x);
   const xMin = Math.min(...xs);
   const xMax = Math.max(...xs);
-  const trendColor = rho >= 0 ? "#34d399" : "#fb7185";
-
   const option = {
     grid: dofekGrid("single", { left: 8, right: 16, top: 16, bottom: 32, containLabel: true }),
     xAxis: dofekAxis.value({
@@ -362,7 +363,7 @@ function ScatterPlot({
           [xMin, regression.slope * xMin + regression.intercept],
           [xMax, regression.slope * xMax + regression.intercept],
         ],
-        lineStyle: { color: trendColor, width: 2, type: "dashed" },
+        lineStyle: { color: chartColors.blue, width: 2, type: "dashed" },
         symbol: "none",
         silent: true,
       },

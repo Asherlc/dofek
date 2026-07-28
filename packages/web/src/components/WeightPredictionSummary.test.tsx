@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+
+import { textColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { WeightPredictionSummary } from "./WeightPredictionSummary.tsx";
@@ -22,6 +24,9 @@ describe("WeightPredictionSummary", () => {
     expect(screen.getByText("-330 kcal/day")).toBeInTheDocument();
     expect(screen.getByText("7-Day Change")).toBeInTheDocument();
     expect(screen.getByText("-1.2 kg")).toBeInTheDocument();
+    expect(screen.getByText("-0.3 kg/wk").style.color).toBe(
+      `rgb(${Number.parseInt(textColors.secondary.slice(1, 3), 16)}, ${Number.parseInt(textColors.secondary.slice(3, 5), 16)}, ${Number.parseInt(textColors.secondary.slice(5, 7), 16)})`,
+    );
   });
 
   it("shows period deltas when rate is unavailable", () => {
