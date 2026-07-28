@@ -81,8 +81,16 @@ Provider record inventory uses the ClickHouse `analytics.provider_stats` read
 model for all provider-owned record counts displayed by sync/provider detail:
 activity, daily metric, sleep, body measurement, food entry, health event,
 metric stream, distinct nutrition day, lab panel, lab result, and journal entry
-counts. The provider detail UI still treats these as raw provider-owned record
-counts, not deduped analytical sample counts.
+counts. Exact metric-stream counts prefer the
+`ingest.metric_stream.by_provider_current_state` aggregate projection, which
+stores mergeable latest-`is_deleted` state per `(user_id, provider_id, id)`.
+This retains `argMax(version, ingested_at)` correctness for tombstones and
+later live replacements without rebuilding the full per-ID state from raw
+rows during every provider refresh. ClickHouse documents aggregate projections
+as precomputed query data maintained on insert:
+<https://clickhouse.com/docs/data-modeling/projections>. The provider detail UI
+still treats these as raw provider-owned record counts, not deduped analytical
+sample counts.
 
 ## Scalar And Location Projections
 
@@ -133,7 +141,10 @@ ClickHouse migrations create and update the databases and read models:
   rows may still have been backfilled from Postgres, but new forward rows come
   from Redpanda events. Its `version` and `is_deleted` columns encode replacement
   order and logical deletion so current-state queries can select the latest live
-  row ([ReplacingMergeTree](https://clickhouse.com/docs/en/guides/replacing-merge-tree)).
+  row. Its `by_provider_current_state` aggregate projection computes the same
+  latest-row state in advance at provider-record grain for exact inventory counts
+  ([ReplacingMergeTree](https://clickhouse.com/docs/en/guides/replacing-merge-tree),
+  [projections](https://clickhouse.com/docs/data-modeling/projections)).
 - `ingest.metric_stream_delete_acknowledgement`: one receipt per version 2
   deletion event, written only after the sink's tombstone insert completes.
 - `ingest.metric_stream_processing_acknowledgement`: one receipt per stable
@@ -178,6 +189,50 @@ ClickHouse migrations create and update the databases and read models:
 - `analytics.activity_trend_daily`: a normal view with one activity-linked
   sensor trend row per user and UTC day. It is derived from
   `analytics.deduped_sensor`.
+
+### Provider inventory projection rollout
+
+Migration `0061_provider_current_state_projection` adds the
+`by_provider_current_state` definition. New metric-stream parts populate it
+automatically, but existing parts do not receive a newly added projection until
+an operator materializes it. ClickHouse documents `MATERIALIZE PROJECTION` as
+the required existing-data step:
+<https://clickhouse.com/docs/data-modeling/projections#filtering-on-columns-which-arent-in-the-primary-key>.
+
+Materialization rewrites historical parts, so it is an explicit maintenance
+operation rather than a deploy migration:
+
+```sql
+ALTER TABLE ingest.metric_stream
+MATERIALIZE PROJECTION by_provider_current_state;
+```
+
+Monitor the mutation until `is_done = 1` and `latest_fail_reason` is empty:
+
+```sql
+SELECT
+  mutation_id,
+  command,
+  is_done,
+  latest_fail_reason
+FROM system.mutations
+WHERE database = 'ingest'
+  AND table = 'metric_stream'
+ORDER BY create_time DESC;
+```
+
+Then verify every active base-table part contains the projection:
+
+```sql
+SELECT countIf(NOT has(
+  projections,
+  'by_provider_current_state'
+)) AS missing_projection_parts
+FROM system.parts
+WHERE active
+  AND database = 'ingest'
+  AND table = 'metric_stream';
+```
 
 ### Deletion protocol
 
