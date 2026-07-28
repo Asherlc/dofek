@@ -24,12 +24,38 @@ describe("MicronutrientChart", () => {
     const element = MicronutrientChart({
       data: [
         {
+          nutrientId: "vitamin_c",
           nutrient: '<img src=x onerror="alert(1)">',
           unit: '<svg onload="alert(1)">',
-          rda: 10,
-          avgIntake: 5,
-          percentRda: 50,
-          daysTracked: 7,
+          intake: {
+            totalDailyAverage: 5,
+            foodDailyAverage: 5,
+            supplementDailyAverage: 0,
+            daysTracked: 7,
+          },
+          adequacy: {
+            status: "below_daily_value",
+            percentDailyValue: 50,
+            message: "Below the FDA Daily Value.",
+            reference: {
+              type: "daily_value",
+              amount: 10,
+              unit: '<svg onload="alert(1)">',
+              population: "Adults and children age 4+",
+              source: {
+                agency: "FDA",
+                title: "Daily Value",
+                url: "https://www.fda.gov/",
+                reviewedOn: "2026-07-27",
+              },
+            },
+          },
+          upperLimit: {
+            status: "not_in_ruleset",
+            limitation: "No upper-limit rule is included in this bounded ruleset.",
+            message: "No upper-limit rule is included in this bounded ruleset.",
+          },
+          safetyStatus: "no_upper_limit_in_ruleset",
         },
       ],
     });
@@ -47,16 +73,42 @@ describe("MicronutrientChart", () => {
     expect(html).not.toContain("<svg ");
   });
 
-  it("expands Recommended Dietary Allowance in the tooltip and target marker", () => {
+  it("identifies the Daily Value as an adequacy reference rather than a safety rating", () => {
     const element = MicronutrientChart({
       data: [
         {
+          nutrientId: "iron",
           nutrient: "Iron",
           unit: "mg",
-          rda: 18,
-          avgIntake: 12,
-          percentRda: 67,
-          daysTracked: 7,
+          intake: {
+            totalDailyAverage: 12,
+            foodDailyAverage: 12,
+            supplementDailyAverage: 0,
+            daysTracked: 7,
+          },
+          adequacy: {
+            status: "below_daily_value",
+            percentDailyValue: 67,
+            message: "Below the FDA Daily Value.",
+            reference: {
+              type: "daily_value",
+              amount: 18,
+              unit: "mg",
+              population: "Adults and children age 4+",
+              source: {
+                agency: "FDA",
+                title: "Daily Value",
+                url: "https://www.fda.gov/",
+                reviewedOn: "2026-07-27",
+              },
+            },
+          },
+          upperLimit: {
+            status: "not_in_ruleset",
+            limitation: "No upper-limit rule is included in this bounded ruleset.",
+            message: "No upper-limit rule is included in this bounded ruleset.",
+          },
+          safetyStatus: "no_upper_limit_in_ruleset",
         },
       ],
     });
@@ -68,9 +120,12 @@ describe("MicronutrientChart", () => {
 
     const html = String(formatter([{ name: "Iron", value: 67, dataIndex: 0 }]));
 
-    expect(html).toContain("67% of Recommended Dietary Allowance (RDA)");
+    expect(html).toContain(
+      "67% of U.S. Food and Drug Administration (FDA) Daily Value (adequacy reference, not a safety rating)",
+    );
+    expect(html).toContain("average over 7 recorded days");
     expect(element.props.option.series?.[0]?.markLine?.label?.formatter).toBe(
-      "100% Recommended Dietary Allowance (RDA)",
+      "100% U.S. Food and Drug Administration (FDA) Daily Value",
     );
   });
 });

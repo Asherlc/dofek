@@ -16,7 +16,7 @@ describe("invalidateSyncedHealthData", () => {
       [["processing", "status"], { type: "query" }],
       [["nutritionAnalytics", "adaptiveTdee"], { type: "query" }],
       [["nutritionAnalytics", "macroRatios"], { type: "query" }],
-      [["nutritionAnalytics", "micronutrientAdequacy"], { type: "query" }],
+      [["nutritionAnalytics", "micronutrientAdequacyV2"], { type: "query" }],
     ];
     const unrelatedKey = [["settings", "get"], { type: "query" }];
 

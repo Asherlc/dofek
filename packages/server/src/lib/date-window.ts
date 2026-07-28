@@ -105,6 +105,11 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
     routerFile: "nutrition-analytics.ts",
     input: "days",
   },
+  "nutritionAnalytics.micronutrientAdequacyV2": {
+    defaultDays: 30,
+    routerFile: "nutrition-analytics.ts",
+    input: "days",
+  },
   "pmc.chart": { defaultDays: 180, routerFile: "pmc.ts", input: "days" },
   "power.eftpTrend": { defaultDays: 365, routerFile: "power.ts", input: "days" },
   "power.powerCurve": { defaultDays: 90, routerFile: "power.ts", input: "days" },
