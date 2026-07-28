@@ -81,7 +81,7 @@ describe("TrainingMonotonyChart", () => {
       },
     ]);
     expect(tooltip).toContain("Daily mean cycling load: 161.14");
-    expect(tooltip).toContain("Population SD: 73.92");
+    expect(tooltip).toContain("Population standard deviation (SD): 73.92");
     expect(tooltip).not.toContain("(high!)");
   });
 });

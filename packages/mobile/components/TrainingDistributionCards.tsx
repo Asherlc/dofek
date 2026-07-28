@@ -59,7 +59,7 @@ export function TrainingDistributionCards({
                 </Text>
               </View>
               <Text style={styles.index}>
-                Index{" "}
+                Polarization index{" "}
                 {latestPolarizationWeek.polarizationIndex === null
                   ? "—"
                   : formatNumber(latestPolarizationWeek.polarizationIndex, 3)}
@@ -101,8 +101,8 @@ export function TrainingDistributionCards({
                 <Text style={styles.index}>Strain {formatNumber(latestMonotonyWeek.strain)}</Text>
               </View>
               <Text style={styles.zoneSummary}>
-                Daily mean {formatNumber(latestMonotonyWeek.dailyMeanLoad, 2)} · population SD{" "}
-                {formatNumber(latestMonotonyWeek.dailyLoadStandardDeviation, 2)}
+                Daily mean {formatNumber(latestMonotonyWeek.dailyMeanLoad, 2)} · population standard
+                deviation (SD) {formatNumber(latestMonotonyWeek.dailyLoadStandardDeviation, 2)}
               </Text>
               <Text style={styles.explanation}>{latestMonotonyWeek.method.formula}</Text>
               <Text style={styles.explanation}>{latestMonotonyWeek.method.calendar}</Text>

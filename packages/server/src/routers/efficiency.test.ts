@@ -374,7 +374,7 @@ describe("efficiencyRouter", () => {
       const expected = Math.round(Math.log10((f1 / f2) * f3 * 100) * 1000) / 1000;
       expect(result.weeks[0]?.polarizationIndex).toBe(expected);
       expect(result.method.formula).toBe(
-        "PI = log10((Z1 / Z2) × Z3 × 100), using each zone's fraction of recorded cycling time.",
+        "Polarization index = log10((easy-zone fraction / threshold-zone fraction) × high-zone fraction × 100).",
       );
       expect(result.method.interpretation).not.toContain("diagnosis");
       expect(result.method.source.url).toBe("https://doi.org/10.3389/fphys.2019.00707");

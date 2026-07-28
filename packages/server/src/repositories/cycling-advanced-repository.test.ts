@@ -80,6 +80,24 @@ describe("TrainingMonotonyWeekModel", () => {
       },
     });
   });
+
+  it("returns fresh method metadata for each detail", () => {
+    const model = new TrainingMonotonyWeekModel({
+      week: "2024-03-04",
+      monotony: 1.8,
+      strain: 450.5,
+      weeklyLoad: 250.3,
+      dailyMeanLoad: 35.76,
+      dailyLoadStandardDeviation: 19.87,
+    });
+
+    const firstDetail = model.toDetail();
+    firstDetail.method.source.title = "Mutated source";
+
+    expect(model.toDetail().method.source.title).toBe(
+      "Foster (1998), Monitoring training in athletes",
+    );
+  });
 });
 
 describe("ActivityVariabilityModel", () => {

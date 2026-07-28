@@ -160,7 +160,9 @@ describe("TrainingDistributionCards", () => {
     expect(screen.getByText("Training Monotony & Strain")).toBeTruthy();
     expect(screen.getByText("Monotony 2.18")).toBeTruthy();
     expect(screen.getByText("Strain 2460.0")).toBeTruthy();
-    expect(screen.getByText("Daily mean 161.14 · population SD 73.92")).toBeTruthy();
+    expect(
+      screen.getByText("Daily mean 161.14 · population standard deviation (SD) 73.92"),
+    ).toBeTruthy();
     expect(screen.getByText(method.formula)).toBeTruthy();
     expect(screen.getByText(method.calendar)).toBeTruthy();
     expect(screen.getByText(method.interpretation)).toBeTruthy();

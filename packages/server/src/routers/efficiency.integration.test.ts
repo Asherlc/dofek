@@ -130,7 +130,7 @@ describe("efficiency.polarizationTrend integration", () => {
       expect(z1OnlyWeek.polarizationIndex).toBeNull();
       expect(z1OnlyWeek).toMatchObject({
         status: "insufficient_data",
-        statusLabel: "Insufficient data",
+        statusLabel: "Not calculated",
       });
     }
   });

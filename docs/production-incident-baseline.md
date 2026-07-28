@@ -19385,3 +19385,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `system.mutations`, verify zero active parts lack the projection, observe a
   complete production analytics-plus-cache cycle below the unchanged
   four-minute ceiling, and only then resolve DOFEK-SERVER-5A.
+
+## 2026-07-27 — Polarization Integration Assertion Used the Former Label
+
+- **Status:** Root cause confirmed and the stale assertion corrected on PR
+  #2231.
+- **Symptoms:** CI run
+  [30321871930](https://github.com/Asherlc/dofek/actions/runs/30321871930)
+  failed `Test / Integration Tests (4/4)` in job
+  [90159569441](https://github.com/Asherlc/dofek/actions/runs/30321871930/job/90159569441).
+- **User impact:** No production impact. The pull request could not merge while
+  its integration gate was red.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=4/4`. The first
+  fatal line was
+  `AssertionError: expected { week: '2026-04-06', …(9) } to match object { status: 'insufficient_data', …(1) }`;
+  the diff showed expected `statusLabel: "Insufficient data"` but received the
+  approved neutral `statusLabel: "Not calculated"`.
+- **Root cause:** The integration fixture retained the previous presentation
+  label after the server-owned insufficient-data classification intentionally
+  changed its label to `Not calculated`.
+- **Fix / mitigation:** Update only the stale integration expectation to the
+  current server-owned label. No production behavior, timeout, retry, or CI
+  configuration changed.
+- **Validation:** The focused integration test and refreshed exact-head CI must
+  pass before merge. The Docker-free unit/mobile suite already passes all 14,148
+  tests, including the corresponding server-owned classification tests.
+- **Remaining risk / follow-up:** Confirm the refreshed integration shard and
+  every other required exact-head check complete successfully before merge.

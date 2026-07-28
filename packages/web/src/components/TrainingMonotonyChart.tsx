@@ -41,7 +41,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
           `Monotony: <span style="color:${chartColors.blue}">${formatNumber(dataPoint.monotony, 2)}</span>`,
           `Strain: ${formatNumber(dataPoint.strain)}`,
           `Daily mean cycling load: ${formatNumber(dataPoint.dailyMeanLoad, 2)}`,
-          `Population SD: ${formatNumber(dataPoint.dailyLoadStandardDeviation, 2)}`,
+          `Population standard deviation (SD): ${formatNumber(dataPoint.dailyLoadStandardDeviation, 2)}`,
         ].join("<br/>");
       },
     }),
