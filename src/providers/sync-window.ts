@@ -114,7 +114,15 @@ export class SyncWindow {
   }
 
   static #validate(since: Date, until: Date): void {
-    if (since.getTime() > until.getTime()) {
+    const sinceTime = since.getTime();
+    const untilTime = until.getTime();
+    if (!Number.isFinite(sinceTime)) {
+      throw new Error("Invalid sync window since");
+    }
+    if (!Number.isFinite(untilTime)) {
+      throw new Error("Invalid sync window until");
+    }
+    if (sinceTime > untilTime) {
       throw new Error("Sync window start must be before end");
     }
   }

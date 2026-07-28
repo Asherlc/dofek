@@ -14,6 +14,7 @@ interface QueryState {
 interface SaveOptions {
   meta?: unknown;
   onError?: (error: Error) => void;
+  onSuccess?: () => void;
 }
 
 const mocks = vi.hoisted<{
@@ -124,5 +125,13 @@ describe("SupplementStackPanel", () => {
     expect(mocks.captureException).toHaveBeenCalledWith(saveError, {
       operation: "supplements.save",
     });
+  });
+
+  it("invalidates the supplement stack after replacement succeeds", async () => {
+    render(<SupplementStackPanel />);
+
+    await mocks.saveOptions?.onSuccess?.();
+
+    expect(mocks.invalidate).toHaveBeenCalledOnce();
   });
 });

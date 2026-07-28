@@ -591,14 +591,13 @@ export class FoodRepository {
       selectedDateNutritionTotalsRowSchema,
       sql`WITH meal_totals AS (
             SELECT
-              COALESCE(entry.meal, 'other') AS meal,
+              COALESCE(nutrient.meal, 'other') AS meal,
               COALESCE(SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'calories'), 0)
                 AS calories
             FROM fitness.v_nutrition_canonical_nutrient nutrient
-            JOIN fitness.food_entry entry ON entry.id = nutrient.food_entry_id
             WHERE nutrient.user_id = ${this.#userId}
               AND nutrient.date = ${date}::date
-            GROUP BY COALESCE(meal, 'other')
+            GROUP BY COALESCE(nutrient.meal, 'other')
           ),
           meals AS (
             SELECT

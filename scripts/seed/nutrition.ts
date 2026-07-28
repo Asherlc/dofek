@@ -153,33 +153,43 @@ async function seedSupplements(sql: Sql): Promise<void> {
     zincMg,
     omega3Mg,
   ] of supplements) {
-    const insertedRows = returnedIdRowSchema.array().parse(
+    await sql`
+      DELETE FROM fitness.supplement
+      WHERE user_id = ${USER_ID}
+        AND id IN (
+          SELECT definition.supplement_id
+          FROM fitness.supplement_definition AS definition
+          WHERE definition.name = ${name}
+            AND definition.effective_to IS NULL
+        )
+    `;
+    const scheduleRows = returnedIdRowSchema.array().parse(
       await sql`
-      INSERT INTO fitness.supplement (
-        user_id, name, amount, unit, form, description, meal, sort_order
-      ) VALUES (
-        ${USER_ID}, ${name}, ${amount}, ${unit}, ${form}, 'Review seed supplement',
-        ${meal}, ${sortOrder}
-      )
-      ON CONFLICT (user_id, name) DO UPDATE
-        SET amount = EXCLUDED.amount,
-            unit = EXCLUDED.unit,
-            form = EXCLUDED.form,
-            description = EXCLUDED.description,
-            meal = EXCLUDED.meal,
-            sort_order = EXCLUDED.sort_order,
-            updated_at = NOW()
-      RETURNING id
+        INSERT INTO fitness.supplement (user_id, sort_order)
+        VALUES (${USER_ID}, ${sortOrder})
+        RETURNING id
+      `,
+    );
+    const schedule = scheduleRows[0];
+    if (!schedule) throw new Error("Supplement schedule seed insert returned no row");
+    const definitionRows = returnedIdRowSchema.array().parse(
+      await sql`
+        INSERT INTO fitness.supplement_definition (
+          supplement_id, name, amount, unit, form, description, meal
+        )
+        VALUES (
+          ${schedule.id}, ${name}, ${amount}, ${unit}, ${form},
+          'Review seed supplement', ${meal}
+        )
+        RETURNING id
     `,
     );
-    const insertedRow = insertedRows[0];
-    if (!insertedRow) throw new Error("Supplement seed insert returned no row");
-    const supplementId = insertedRow.id;
+    const definition = definitionRows[0];
+    if (!definition) throw new Error("Supplement definition seed insert returned no row");
 
-    await sql`DELETE FROM fitness.supplement_nutrient WHERE supplement_id = ${supplementId}`;
     await sql`
-      INSERT INTO fitness.supplement_nutrient (supplement_id, nutrient_id, amount)
-      SELECT ${supplementId}, nutrient_id, amount
+      INSERT INTO fitness.supplement_definition_nutrient (definition_id, nutrient_id, amount)
+      SELECT ${definition.id}, nutrient_id, amount
       FROM (VALUES
         ('vitamin_d', ${vitaminDMcg}::real),
         ('calcium', ${calciumMg}::real),
