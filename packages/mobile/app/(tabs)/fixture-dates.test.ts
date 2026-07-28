@@ -8,10 +8,10 @@ describe("createFixtureDates", () => {
 
   it("keeps every derived date anchored when the system clock crosses midnight", () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-27T23:59:59-07:00"));
+    vi.setSystemTime(new Date(2026, 6, 27, 23, 59, 59));
     const dates = createFixtureDates(new Date());
 
-    vi.setSystemTime(new Date("2026-07-28T00:00:01-07:00"));
+    vi.setSystemTime(new Date(2026, 6, 28, 0, 0, 1));
 
     expect(dates.date()).toBe("2026-07-27");
     expect(dates.date(-1)).toBe("2026-07-26");
