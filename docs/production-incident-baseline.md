@@ -19336,8 +19336,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-07-27 — Provider Inventory Current-State Aggregation Timed Out (DOFEK-SERVER-5A)
 
-- **Status:** Direct source fix reproduced and validated locally; deployment,
-  historical projection materialization, and production validation pending.
+- **Status:** Resolved in production on release
+  `5ec8074c24eea8db1d3357f11aad39a0bb3ef17e`; historical projection
+  materialization and a complete analytics-plus-cache cycle succeeded, and
+  DOFEK-SERVER-5A is resolved in Sentry.
 - **Symptoms:** The production analytics worker on release `f423b5b` continued
   reporting
   [DOFEK-SERVER-5A](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-5A)
@@ -19379,9 +19381,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   replacement correctness across separate parts, automatic planner selection
   without making the projection a correctness prerequisite, 50,000 exact IDs
   within a 32 MiB query budget, and explicit materialization of parts created
-  before the projection.
-- **Remaining risk / follow-up:** Merge and deploy through the normal release
-  path, materialize `by_provider_current_state` while monitoring
-  `system.mutations`, verify zero active parts lack the projection, observe a
-  complete production analytics-plus-cache cycle below the unchanged
-  four-minute ceiling, and only then resolve DOFEK-SERVER-5A.
+  before the projection. PR
+  [#2228](https://github.com/Asherlc/dofek/pull/2228) merged with all 94 PR
+  checks and the subsequent complete main-branch CI green; the automatic
+  production deploy then applied migration `0061`. Production mutation
+  `mutation_346832.txt` completed with `parts_to_do = 0`, an empty failure
+  reason, and zero active `metric_stream` parts lacking the projection.
+  `system.query_log` confirms the next `provider_stats` insert selected
+  `ingest.metric_stream.by_provider_current_state` and completed in 2,128 ms
+  after reading 368,344 rows / 55.87 MiB with 46.36 MiB memory. The unchanged
+  analytics run then completed all 38 dbt models with zero errors, warmed the
+  query cache, and reported readiness `ok`, `lastFailure = null`, and
+  `lastSuccessAt = 2026-07-28T02:03:28.467Z`.
+- **Remaining risk / follow-up:** The one-time historical materialization
+  briefly reached ClickHouse's 11.70 GiB global memory ceiling while many
+  projection parts ran concurrently. ClickHouse retried the affected parts,
+  continued reducing `parts_to_do`, cleared the failure reason, and completed
+  without a limit, timeout, retry, or service-topology change. Future
+  large-table projection materializations should retain the same explicit
+  `system.mutations`, `system.merges`, disk, and service-health monitoring; no
+  runtime resilience knob remains.
