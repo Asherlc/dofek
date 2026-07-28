@@ -263,3 +263,24 @@ Visit `http://localhost:5173/auth/dev-login` (enabled when `NODE_ENV !== 'produc
 
 ### Out of scope on this Linux VM
 The mobile app (`packages/mobile`, Expo/iOS — needs macOS/Xcode) and the Zepp watch app (`packages/zepp*`) cannot run here. Web dashboard + API + sync runner + analytics are the supported dev surface.
+
+## OpenAI Codex Cloud specific instructions
+
+Codex cloud tasks run in the `codex-universal` container image (Ubuntu 24.04), configured by environment setup scripts; see [OpenAI's cloud environments documentation](https://developers.openai.com/codex/cloud/environments). The constraints below are specific to that environment and do not apply to local development or CI.
+
+### There is no Docker — do not try to install it
+The Codex container's kernel blocks user namespace creation, so the Docker daemon cannot run. Installing the `docker` binary does not help and must not be attempted; there is no workaround, and time spent on one is wasted. Consequently Postgres/TimescaleDB, ClickHouse, Kafka/Redpanda, Redis, and [testcontainers](https://testcontainers.com/) are all unavailable.
+
+Do not run these here — every one of them requires Docker and will fail: `pnpm test:integration`, `pnpm test:all`, `pnpm test:changed:all`, `pnpm test:coverage:all`, `pnpm compose:up`, `pnpm e2e:web`, and `mise run doctor`.
+
+### Boot the environment with SANDBOX=1
+`mise run cloud:init` runs `cloud:prebuild` then `cloud:start`. Set `SANDBOX=1` so `cloud:start` skips service startup instead of failing on `docker info`; `cloud:prebuild` (dependencies, CodeGraph, RTK) still runs normally. Without `SANDBOX=1` the task fails with `Unable to run docker: spawnSync docker ENOENT`. The variable only gates the Docker-backed startup path, so local development is unchanged.
+
+### Verify work with `mise run test:sandbox`
+`mise run test:sandbox` is the verification gate for this environment. It runs the typecheck script of every package that declares one (the same set CI's `typecheck-discover` job matrixes over), `biome check`, and the Docker-free unit and mobile test tiers. It is the closest available equivalent to the **Pre-push checks** rule above; the remaining `pnpm lint` policies are not included because `lint:analytics-sql` needs `uv` and a running ClickHouse.
+
+### Still write integration tests — flag them as locally unverified
+The **TDD** and **Test database behavior with executable database tests** rules stay in force. Database-dependent behavior still needs `*.integration.test.ts` coverage even though it cannot be executed here. Write the test, and state plainly in the PR description and your summary that it was not run locally because the sandbox has no Docker. CI's `test-integration` job runs the `integration` project sharded across real Postgres, ClickHouse, Redpanda, and Redis services, so the suite is still gated before merge — but never claim an integration test passes when you have not run it.
+
+### Secrets are gone by the time you run
+Codex secrets are decrypted only for setup scripts and are removed before the agent phase begins, so anything the agent needs at runtime must be written to disk during setup ([cloud environments documentation](https://developers.openai.com/codex/cloud/environments)). Environment variables, unlike secrets, persist for the whole task. Do not expect Infisical-backed credentials to be readable at agent runtime; `scripts/with-env.ts` will fail fast rather than run degraded, which is the intended behavior.
