@@ -206,8 +206,8 @@ function validTrainingFixture() {
         },
       ],
       weeklyVolume: [
-        { week: "2026-07-26", activity_type: "cycling", count: 1, hours: 1.5 },
-        { week: "2026-07-26", activity_type: "running", count: 1, hours: 0.75 },
+        { week: "2026-07-27", activity_type: "cycling", count: 1, hours: 1.5 },
+        { week: "2026-07-20", activity_type: "running", count: 1, hours: 0.75 },
       ],
       verticalAscent: [],
       climbing: {
@@ -248,6 +248,27 @@ describe("mobileRecoveryFixtureSchema", () => {
 
     expect(mobileRecoveryFixtureSchema.safeParse(fixture).success).toBe(false);
   });
+
+  it("rejects calendar-invalid dates even when they sort inside the selected window", () => {
+    const fixture = validRecoveryFixture();
+    const firstHrv = fixture.data.hrvVariability[0];
+    if (!firstHrv) throw new Error("Missing HRV fixture");
+    firstHrv.date = "2026-06-31";
+
+    expect(mobileRecoveryFixtureSchema.safeParse(fixture).success).toBe(false);
+  });
+
+  it("accepts a Monday-based week that overlaps the start of the selected window", () => {
+    const fixture = validRecoveryFixture();
+    fixture.data.stress.weekly.push({
+      weekStart: "2026-06-22",
+      cumulativeStress: 7,
+      avgDailyStress: 1,
+      highStressDays: 0,
+    });
+
+    expect(mobileRecoveryFixtureSchema.safeParse(fixture).success).toBe(true);
+  });
 });
 
 describe("mobileTrainingFixtureSchema", () => {
@@ -283,6 +304,15 @@ describe("mobileTrainingFixtureSchema", () => {
     const firstWorkload = fixture.data.workloadRatio.timeSeries[0];
     if (!firstWorkload) throw new Error("Missing workload fixture");
     firstWorkload.date = "2026-03-31";
+
+    expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(false);
+  });
+
+  it("rejects weekly volume rows that do not start on Monday", () => {
+    const fixture = validTrainingFixture();
+    const cyclingVolume = fixture.data.weeklyVolume[0];
+    if (!cyclingVolume) throw new Error("Missing cycling volume fixture");
+    cyclingVolume.week = "2026-07-26";
 
     expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(false);
   });

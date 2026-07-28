@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a YYYY-MM-DD date");
+const dateSchema = z.iso.date();
 const score100Schema = z.number().min(0).max(100);
 const strainScoreSchema = z.number().min(0).max(21);
 const stressScoreSchema = z.number().min(0).max(3);
@@ -325,6 +325,34 @@ function validateDatesInWindow(
   }
 }
 
+function validateWeeksOverlappingWindow(
+  input: FixtureWindow,
+  weekStarts: readonly string[],
+  context: z.core.$RefinementCtx,
+): void {
+  const windowStart = fixtureWindowStart(input);
+  for (const weekStart of weekStarts) {
+    const weekStartDate = new Date(`${weekStart}T12:00:00Z`);
+    if (weekStartDate.getUTCDay() !== 1) {
+      context.addIssue({
+        code: "custom",
+        message: `Fixture week ${weekStart} must start on Monday`,
+      });
+      continue;
+    }
+
+    const weekEndDate = new Date(weekStartDate);
+    weekEndDate.setUTCDate(weekEndDate.getUTCDate() + 6);
+    const weekEnd = weekEndDate.toISOString().slice(0, 10);
+    if (weekStart > input.endDate || weekEnd < windowStart) {
+      context.addIssue({
+        code: "custom",
+        message: `Fixture week ${weekStart} does not overlap ${windowStart}..${input.endDate}`,
+      });
+    }
+  }
+}
+
 function nearlyEqual(left: number | null | undefined, right: number | null | undefined): boolean {
   if (left == null || right == null) return left === right;
   return Math.abs(left - right) < 0.01;
@@ -384,9 +412,15 @@ export const mobileRecoveryFixtureSchema = z
         ...data.hrvBaseline.map((row) => row.date),
         ...data.readinessScore.map((row) => row.date),
         ...data.stress.daily.map((row) => row.date),
-        ...data.stress.weekly.map((row) => row.weekStart),
         ...data.dailyMetrics.map((row) => row.date),
         ...data.weight.map((row) => row.date),
+      ],
+      context,
+    );
+    validateWeeksOverlappingWindow(
+      input,
+      [
+        ...data.stress.weekly.map((row) => row.weekStart),
         ...data.healthspan.history.map((row) => row.weekStart),
       ],
       context,
@@ -424,11 +458,15 @@ export const mobileTrainingFixtureSchema = z
       [
         ...data.workloadRatio.timeSeries.map((row) => row.date),
         ...data.activities.map((row) => row.started_at.slice(0, 10)),
-        ...data.weeklyVolume.map((row) => row.week),
         ...data.verticalAscent.map((row) => row.date),
         ...data.climbing.gradeProgression.map((row) => row.date),
         ...data.climbing.sessionSummary.map((row) => row.date),
       ],
+      context,
+    );
+    validateWeeksOverlappingWindow(
+      input,
+      data.weeklyVolume.map((row) => row.week),
       context,
     );
 

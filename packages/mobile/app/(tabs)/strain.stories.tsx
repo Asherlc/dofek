@@ -13,6 +13,14 @@ function localDateString(dayOffset = 0): string {
   return formatDateYmd(date);
 }
 
+function localWeekStartString(dayOffset = 0): string {
+  const date = new Date();
+  date.setDate(date.getDate() + dayOffset);
+  const daysSinceMonday = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - daysSinceMonday);
+  return formatDateYmd(date);
+}
+
 function createMockWorkloadData() {
   const timeSeries = Array.from({ length: 7 }, (_, index) => {
     const isLatest = index === 6;
@@ -110,8 +118,13 @@ function createSeededProviders(activities: unknown[] = []) {
       activities,
       weeklyVolume: hasActivities
         ? [
-            { week: localDateString(-1), activity_type: "cycling", count: 1, hours: 1.5 },
-            { week: localDateString(-1), activity_type: "running", count: 1, hours: 0.75 },
+            { week: localWeekStartString(), activity_type: "cycling", count: 1, hours: 1.5 },
+            {
+              week: localWeekStartString(-1),
+              activity_type: "running",
+              count: 1,
+              hours: 0.75,
+            },
           ]
         : [],
       verticalAscent: [],
