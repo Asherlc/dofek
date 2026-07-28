@@ -30,7 +30,7 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
   ],
   journal: ["journal.entries"],
   nutritionAnalytics: [
-    "nutritionAnalytics.micronutrientAdequacy",
+    "nutritionAnalytics.micronutrientAdequacyV2",
     "nutritionAnalytics.adaptiveTdee",
     "nutritionAnalytics.macroRatios",
   ],

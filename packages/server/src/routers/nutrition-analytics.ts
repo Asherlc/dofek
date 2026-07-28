@@ -1,5 +1,9 @@
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
-import { NutritionAnalyticsRepository } from "../repositories/nutrition-analytics-repository.ts";
+import {
+  type MicronutrientSafetyReview,
+  NutritionAnalyticsRepository,
+  type SupplementMedicationReview,
+} from "../repositories/nutrition-analytics-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
 
 // ── Types (kept here for backward compatibility with web/mobile imports) ─
@@ -11,6 +15,13 @@ export interface MicronutrientAdequacyRow {
   avgIntake: number;
   percentRda: number;
   daysTracked: number;
+}
+
+export type MicronutrientSafetyReviewRow = ReturnType<MicronutrientSafetyReview["toDetail"]>;
+
+export interface MicronutrientSafetyReviewResult {
+  nutrients: MicronutrientSafetyReviewRow[];
+  professionalReview: SupplementMedicationReview;
 }
 
 export interface AdaptiveTdeeResult {
@@ -52,6 +63,28 @@ export const nutritionAnalyticsRouter = router({
       );
       const models = await repo.getMicronutrientAdequacy(range.days);
       return models.map((model) => model.toDetail());
+    },
+  ),
+
+  micronutrientAdequacyV2: selectedChartRangeQuery(
+    "nutritionAnalytics.micronutrientAdequacyV2",
+    CacheTTL.LONG,
+    async ({ ctx, range }): Promise<MicronutrientSafetyReviewResult> => {
+      const repo = new NutritionAnalyticsRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
+      const [nutrients, professionalReview] = await Promise.all([
+        repo.getMicronutrientSafetyReview(range.days),
+        repo.getSupplementMedicationReview(),
+      ]);
+      return {
+        nutrients: nutrients.map((nutrient) => nutrient.toDetail()),
+        professionalReview,
+      };
     },
   ),
 
