@@ -39,22 +39,36 @@ export default function CycleScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Current Phase</Text>
           {currentPhase.data !== undefined ? (
-            currentPhase.data.phase ? (
-              <View style={styles.phaseRow}>
-                <View
-                  style={[
-                    styles.phaseCircle,
-                    { backgroundColor: PHASE_DISPLAY[currentPhase.data.phase].color },
-                  ]}
-                >
-                  <Text style={styles.phaseDay}>{currentPhase.data.dayOfCycle}</Text>
+            currentPhase.data.phase && currentPhase.data.estimate ? (
+              <View>
+                <View style={styles.phaseRow}>
+                  <View
+                    style={[
+                      styles.phaseCircle,
+                      { backgroundColor: PHASE_DISPLAY[currentPhase.data.phase].color },
+                    ]}
+                  >
+                    <Text style={styles.phaseDay}>{currentPhase.data.dayOfCycle}</Text>
+                  </View>
+                  <View style={styles.phaseText}>
+                    <Text style={styles.phaseLabel}>{currentPhase.data.estimate.phaseLabel}</Text>
+                    <Text style={styles.phaseDetail}>
+                      {currentPhase.data.estimate.cycleDayLabel}
+                    </Text>
+                  </View>
                 </View>
-                <View>
-                  <Text style={styles.phaseLabel}>
-                    {PHASE_DISPLAY[currentPhase.data.phase].label}
+                <View style={styles.estimateDetails}>
+                  <Text style={styles.estimateDetail}>
+                    {currentPhase.data.estimate.dayBasisLabel}
                   </Text>
-                  <Text style={styles.phaseDetail}>
-                    Day {currentPhase.data.dayOfCycle} of {currentPhase.data.cycleLength}-day cycle
+                  <Text style={styles.estimateDetail}>
+                    {currentPhase.data.estimate.methodLabel}
+                  </Text>
+                  <Text style={styles.estimateDetail}>
+                    {currentPhase.data.estimate.uncertaintyLabel}
+                  </Text>
+                  <Text style={styles.estimateDetail}>
+                    {currentPhase.data.estimate.limitationLabel}
                   </Text>
                 </View>
               </View>
@@ -203,6 +217,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 16,
   },
+  phaseText: {
+    flex: 1,
+  },
   phaseCircle: {
     width: 64,
     height: 64,
@@ -224,6 +241,14 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: 12,
     marginTop: 2,
+  },
+  estimateDetails: {
+    gap: spacing.xs,
+    marginTop: spacing.md,
+  },
+  estimateDetail: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
   },
   safetyNotice: {
     backgroundColor: colors.surfaceSecondary,

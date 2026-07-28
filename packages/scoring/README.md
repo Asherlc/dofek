@@ -59,7 +59,10 @@ console.log({
   components equally.
 - Healthspan display deltas map scores from 0–100 onto +3 to -2 years.
 - Cycle phases estimate ovulation as `cycleLength - 14`; this is a display
-  estimate, not a clinical assessment. The shared safety notice follows
+  estimate, not a clinical assessment. A primary evaluation found that
+  cycle-length-only calendar methods cannot accurately predict ovulation day
+  ([Johnson et al., 2018](https://pubmed.ncbi.nlm.nih.gov/29749274/)). The
+  shared safety notice follows
   [Apple's Cycle Tracking limitation](https://support.apple.com/en-au/120356)
   that these estimates must not be used for birth control or diagnosis.
 - The design-token modules contain values only; they do not install fonts or
