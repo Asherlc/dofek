@@ -56,13 +56,47 @@ describe("TrainingMonotonyWeekModel", () => {
       monotony: 1.8,
       strain: 450.5,
       weeklyLoad: 250.3,
+      dailyMeanLoad: 35.76,
+      dailyLoadStandardDeviation: 19.87,
     });
     expect(model.toDetail()).toEqual({
       week: "2024-03-04",
       monotony: 1.8,
       strain: 450.5,
       weeklyLoad: 250.3,
+      dailyMeanLoad: 35.76,
+      dailyLoadStandardDeviation: 19.87,
+      method: {
+        formula:
+          "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
+        calendar: "Monday–Sunday calendar weeks include zero-load days.",
+        activityScope: "Cycling activities with computed endurance training load.",
+        interpretation:
+          "These are descriptive workload-variability summaries, not an overtraining diagnosis.",
+        source: {
+          title: "Foster (1998), Monitoring training in athletes",
+          url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
+        },
+      },
     });
+  });
+
+  it("returns fresh method metadata for each detail", () => {
+    const model = new TrainingMonotonyWeekModel({
+      week: "2024-03-04",
+      monotony: 1.8,
+      strain: 450.5,
+      weeklyLoad: 250.3,
+      dailyMeanLoad: 35.76,
+      dailyLoadStandardDeviation: 19.87,
+    });
+
+    const firstDetail = model.toDetail();
+    firstDetail.method.source.title = "Mutated source";
+
+    expect(model.toDetail().method.source.title).toBe(
+      "Foster (1998), Monitoring training in athletes",
+    );
   });
 });
 
@@ -356,12 +390,21 @@ describe("CyclingAdvancedRepository", () => {
 
     it("returns TrainingMonotonyWeekModel instances", async () => {
       const { repo } = makeRepository([
-        { week: "2024-03-04", monotony: 1.8, strain: 450.5, weekly_load: 250.3 },
+        {
+          week: "2024-03-04",
+          monotony: 1.8,
+          strain: 450.5,
+          weekly_load: 250.3,
+          daily_mean_load: 35.76,
+          daily_load_standard_deviation: 19.87,
+        },
       ]);
       const result = await repo.getTrainingMonotony(90);
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(TrainingMonotonyWeekModel);
       expect(result[0]?.toDetail().monotony).toBe(1.8);
+      expect(result[0]?.toDetail().dailyMeanLoad).toBe(35.76);
+      expect(result[0]?.toDetail().dailyLoadStandardDeviation).toBe(19.87);
     });
 
     it("queries training monotony from weekly read model with user parameters", async () => {
@@ -374,6 +417,8 @@ describe("CyclingAdvancedRepository", () => {
       expect(query).not.toContain("resting_heart_rate");
       expect(query).toContain("analytics.activity_summary");
       expect(query).toContain("has({activityTypes:Array(String)}, activity.activity_type)");
+      expect(query).toContain("round(mean_load, 2) AS daily_mean_load");
+      expect(query).toContain("round(stdev_load, 2) AS daily_load_standard_deviation");
       expect(params).toMatchObject({
         userId: "user-1",
         timezone: "UTC",

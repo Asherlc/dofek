@@ -50,6 +50,23 @@ export interface TrainingMonotonyWeekRow {
   monotony: number;
   strain: number;
   weeklyLoad: number;
+  dailyMeanLoad: number;
+  dailyLoadStandardDeviation: number;
+}
+
+function createTrainingMonotonyMethod() {
+  return {
+    formula:
+      "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
+    calendar: "Monday–Sunday calendar weeks include zero-load days.",
+    activityScope: "Cycling activities with computed endurance training load.",
+    interpretation:
+      "These are descriptive workload-variability summaries, not an overtraining diagnosis.",
+    source: {
+      title: "Foster (1998), Monitoring training in athletes",
+      url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
+    },
+  };
 }
 
 /** Weekly training monotony and strain. */
@@ -66,6 +83,9 @@ export class TrainingMonotonyWeekModel {
       monotony: this.#row.monotony,
       strain: this.#row.strain,
       weeklyLoad: this.#row.weeklyLoad,
+      dailyMeanLoad: this.#row.dailyMeanLoad,
+      dailyLoadStandardDeviation: this.#row.dailyLoadStandardDeviation,
+      method: createTrainingMonotonyMethod(),
     };
   }
 }

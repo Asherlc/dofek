@@ -45,6 +45,8 @@ const monotonyRowSchema = z.object({
   monotony: z.coerce.number(),
   strain: z.coerce.number(),
   weekly_load: z.coerce.number(),
+  daily_mean_load: z.coerce.number(),
+  daily_load_standard_deviation: z.coerce.number(),
 });
 
 const ftpSchema = z.object({ ftp: z.coerce.number() });
@@ -301,6 +303,8 @@ export class CyclingAdvancedRepository {
           round(mean_load / stdev_load, 2) AS monotony,
           round(weekly_load * (mean_load / stdev_load), 1) AS strain,
           round(weekly_load, 1) AS weekly_load,
+          round(mean_load, 2) AS daily_mean_load,
+          round(stdev_load, 2) AS daily_load_standard_deviation,
           0 AS is_deleted
         FROM weekly_stats
       )
@@ -308,7 +312,9 @@ export class CyclingAdvancedRepository {
         toString(monotony.week) AS week,
         monotony.monotony AS monotony,
         monotony.strain AS strain,
-        monotony.weekly_load AS weekly_load
+        monotony.weekly_load AS weekly_load,
+        monotony.daily_mean_load AS daily_mean_load,
+        monotony.daily_load_standard_deviation AS daily_load_standard_deviation
       FROM monotony
       WHERE monotony.user_id = {userId:UUID}
         AND monotony.is_deleted = 0
@@ -329,6 +335,8 @@ export class CyclingAdvancedRepository {
           monotony: row.monotony,
           strain: row.strain,
           weeklyLoad: row.weekly_load,
+          dailyMeanLoad: row.daily_mean_load,
+          dailyLoadStandardDeviation: row.daily_load_standard_deviation,
         }),
     );
   }

@@ -19557,7 +19557,62 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   metric-stream physical-row growth stays stable before resolving
   DOFEK-MOBILE-1C. PR #2232 separately records the completed production
   remediation and resolution of DOFEK-SERVER-5A.
+## 2026-07-27 — Polarization Integration Assertion Used the Former Label
 
+- **Status:** Root cause confirmed and the stale assertion corrected on PR
+  #2231.
+- **Symptoms:** CI run
+  [30321871930](https://github.com/Asherlc/dofek/actions/runs/30321871930)
+  failed `Test / Integration Tests (4/4)` in job
+  [90159569441](https://github.com/Asherlc/dofek/actions/runs/30321871930/job/90159569441).
+- **User impact:** No production impact. The pull request could not merge while
+  its integration gate was red.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=4/4`. The first
+  fatal line was
+  `AssertionError: expected { week: '2026-04-06', …(9) } to match object { status: 'insufficient_data', …(1) }`;
+  the diff showed expected `statusLabel: "Insufficient data"` but received the
+  approved neutral `statusLabel: "Not calculated"`.
+- **Root cause:** The integration fixture retained the previous presentation
+  label after the server-owned insufficient-data classification intentionally
+  changed its label to `Not calculated`.
+- **Fix / mitigation:** Update only the stale integration expectation to the
+  current server-owned label. No production behavior, timeout, retry, or CI
+  configuration changed.
+- **Validation:** Database-backed validation of the correction remains pending
+  in a fresh exact-head `Test / Integration Tests (4/4)` run. Merge also remains
+  gated on the complete exact-head CI and review results.
+- **Remaining risk / follow-up:** Confirm the refreshed integration shard and
+  every other required exact-head check complete successfully before merge.
+
+## 2026-07-27 — Polarization Integration Fixture Violated the Calculation Invariant
+
+- **Status:** Root cause confirmed and the invalid fixture corrected on PR
+  #2231.
+- **Symptoms:** CI run
+  [30322677959](https://github.com/Asherlc/dofek/actions/runs/30322677959)
+  failed `Test / Integration Tests (3/4)` in job
+  [90161814107](https://github.com/Asherlc/dofek/actions/runs/30322677959/job/90161814107).
+- **User impact:** No production impact. The pull request could not merge while
+  its integration gate was red.
+- **Evidence:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=3/4`. The first
+  fatal line was `AssertionError: expected null not to be null` at
+  `router-data.integration.test.ts:639`. The fixture seeded 600 seconds in the
+  easy zone and 900 seconds in the high zone, while the public router correctly
+  returned no polarization index.
+- **Root cause:** The dedicated non-null polarization fixture violated the
+  approved calculation invariant that high-zone time must not exceed easy-zone
+  time.
+- **Fix / mitigation:** Change the fixture to a valid nontrivial three-zone
+  distribution of 900 easy-zone seconds, 300 threshold-zone seconds, and 600
+  high-zone seconds, and update the matching response assertions. No production
+  behavior, timeout, retry, or CI configuration changed.
+- **Validation:** Database-backed validation of the corrected fixture remains
+  pending in a fresh exact-head `Test / Integration Tests (3/4)` run. Merge also
+  remains gated on the complete exact-head CI and review results.
+- **Remaining risk / follow-up:** Confirm all four refreshed integration shards
+  and every other required exact-head check complete successfully before merge.
 ## 2026-07-27 — Correlation repository mutants survived CI
 
 - **Status:** Root cause fixed and focused mutation validation complete; fresh
