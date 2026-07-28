@@ -19637,3 +19637,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   unavailable in this worktree.
 - **Remaining risk / follow-up:** Merge only after all exact-head integration
   shards, mutation shards, external checks, and review threads are green.
+
+## 2026-07-27 — Lint CI could not resolve the uv tool version
+
+- **Status:** Root cause fixed locally on PR #2234; fresh exact-head CI
+  validation pending.
+- **Symptoms:** Exact-head CI run
+  [30326495873](https://github.com/Asherlc/dofek/actions/runs/30326495873)
+  failed `Test / Lint` in job
+  [90173062542](https://github.com/Asherlc/dofek/actions/runs/30326495873/job/90173062542).
+- **User impact:** No production impact. PR #2234 could not merge while its
+  required lint job was red.
+- **Evidence:** The failing step was `Setup uv`, before `pnpm lint` ran. The
+  action reported that neither `uv.toml` nor a root `pyproject.toml` provided a
+  version, fell back to fetching Astral's remote latest-version manifest, and
+  then emitted the first fatal line `##[error]fetch failed`.
+- **Root cause:** The repository did not provide
+  `astral-sh/setup-uv` with its supported root-level `required-version`
+  configuration, so every uv-backed CI job depended on an additional manifest
+  lookup before it could install the tool. The action documents this lookup
+  order in its
+  [version-selection guidance](https://github.com/astral-sh/setup-uv#install-a-required-version-or-latest-default).
+- **Fix / mitigation:** Add a root `uv.toml` that pins
+  `required-version = "==0.11.32"`, matching the repository's existing
+  `mise.toml` tool pin and the current stable
+  [uv 0.11.32 release](https://github.com/astral-sh/uv/releases/tag/0.11.32).
+  uv supports exact PEP 440 constraints for this
+  [setting](https://docs.astral.sh/uv/reference/settings/#required-version).
+  No retry, timeout, skip, fallback, or warn-and-continue behavior was added.
+- **Validation:** TOML parsing and exact-version enforcement pass with uv
+  0.11.32; action and workflow policy linting pass locally. The corrected
+  `Setup uv` and `Test / Lint` steps remain gated on fresh exact-head CI.
+- **Remaining risk / follow-up:** Confirm every uv-backed exact-head job uses
+  the pinned version and that the complete CI run passes before merge.
