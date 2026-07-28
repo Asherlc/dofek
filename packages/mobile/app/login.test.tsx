@@ -79,6 +79,7 @@ describe("LoginScreen", () => {
 
     const scrollView = container.querySelector("scrollview");
     expect(scrollView).not.toBeNull();
+    expect(scrollView?.getAttribute("data-automatically-adjust-keyboard-insets")).toBe("true");
     expect(scrollView?.getAttribute("contentinsetadjustmentbehavior")).toBe("automatic");
     expect(scrollView?.getAttribute("keyboarddismissmode")).toBe("interactive");
     expect(scrollView?.getAttribute("keyboardshouldpersisttaps")).toBe("handled");
