@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ADDITIVE_QUANTITY_TYPES,
   NON_ADDITIVE_QUANTITY_TYPES,
+  syncHealthKitObserverChanges,
   syncHealthKitToServer,
 } from "./health-kit-sync";
 import { captureException } from "./telemetry";
@@ -14,6 +15,9 @@ describe("syncHealthKitToServer", () => {
       healthKitSync: {
         pushQuantitySamples: {
           mutate: vi.fn().mockResolvedValue({ inserted: 5, errors: [] }),
+        },
+        deleteQuantitySamples: {
+          mutate: vi.fn().mockResolvedValue({ deleted: 1 }),
         },
         pushWorkouts: {
           mutate: vi.fn().mockResolvedValue({ inserted: 2 }),
@@ -43,6 +47,12 @@ describe("syncHealthKitToServer", () => {
           uuid: "sample-1",
         },
       ]),
+      queryAnchoredSamples: vi.fn().mockResolvedValue({
+        queryId: "query-1",
+        samples: [],
+        deletedUUIDs: [],
+      }),
+      completeAnchoredQuery: vi.fn().mockResolvedValue(true),
       queryWorkouts: vi.fn().mockResolvedValue([
         {
           uuid: "workout-1",
@@ -502,6 +512,164 @@ describe("syncHealthKitToServer", () => {
         metadata: { exerciseName: "Squat" },
       },
     ]);
+  });
+});
+
+describe("syncHealthKitObserverChanges", () => {
+  function createMockClient() {
+    return {
+      healthKitSync: {
+        pushQuantitySamples: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 1, errors: [] }),
+        },
+        deleteQuantitySamples: {
+          mutate: vi.fn().mockResolvedValue({ deleted: 1 }),
+        },
+        pushWorkouts: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+        pushWorkoutRoutes: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+        pushSleepSamples: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+      },
+    };
+  }
+
+  function createMockHealthKit() {
+    return {
+      queryDailyStatistics: vi.fn().mockResolvedValue([]),
+      queryQuantitySamples: vi.fn().mockResolvedValue([]),
+      queryAnchoredSamples: vi.fn().mockResolvedValue({
+        queryId: "query-1",
+        samples: [
+          {
+            type: "HKQuantityTypeIdentifierHeartRate",
+            value: 72,
+            unit: "count/min",
+            startDate: "2026-07-27T10:00:00Z",
+            endDate: "2026-07-27T10:00:05Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "heart-rate-new",
+          },
+        ],
+        deletedUUIDs: ["heart-rate-deleted"],
+      }),
+      completeAnchoredQuery: vi.fn().mockResolvedValue(true),
+      queryWorkouts: vi.fn().mockResolvedValue([]),
+      querySleepSamples: vi.fn().mockResolvedValue([]),
+      queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
+    };
+  }
+
+  it("uploads only anchored changes for the observed raw quantity type", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+
+    await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKQuantityTypeIdentifierHeartRate"],
+    });
+
+    expect(healthKit.queryAnchoredSamples).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      expect.any(String),
+    );
+    expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+      samples: [expect.objectContaining({ uuid: "heart-rate-new" })],
+    });
+    expect(client.healthKitSync.deleteQuantitySamples.mutate).toHaveBeenCalledWith({
+      deletedUUIDs: ["heart-rate-deleted"],
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+    });
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      "query-1",
+      true,
+    );
+    expect(healthKit.queryDailyStatistics).not.toHaveBeenCalled();
+    expect(healthKit.queryQuantitySamples).not.toHaveBeenCalled();
+    expect(healthKit.queryWorkouts).not.toHaveBeenCalled();
+    expect(healthKit.querySleepSamples).not.toHaveBeenCalled();
+  });
+
+  it("batches anchored deletions to the server endpoint limit before committing", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryAnchoredSamples.mockResolvedValue({
+      queryId: "query-many-deletions",
+      samples: [],
+      deletedUUIDs: Array.from({ length: 501 }, (_, index) => `deleted-${index}`),
+    });
+    client.healthKitSync.deleteQuantitySamples.mutate.mockImplementation(
+      async ({ deletedUUIDs }) => ({ deleted: deletedUUIDs.length }),
+    );
+
+    await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKQuantityTypeIdentifierHeartRate"],
+    });
+
+    expect(client.healthKitSync.deleteQuantitySamples.mutate).toHaveBeenCalledTimes(2);
+    expect(
+      client.healthKitSync.deleteQuantitySamples.mutate.mock.calls.map(
+        ([input]) => input.deletedUUIDs.length,
+      ),
+    ).toEqual([500, 1]);
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      "query-many-deletions",
+      true,
+    );
+  });
+
+  it("queries only the observed additive type's bounded daily statistics", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryDailyStatistics.mockResolvedValue([{ date: "2026-07-27", value: 1234 }]);
+
+    await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKQuantityTypeIdentifierStepCount"],
+    });
+
+    expect(healthKit.queryDailyStatistics).toHaveBeenCalledTimes(1);
+    expect(healthKit.queryDailyStatistics).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierStepCount",
+      expect.any(String),
+      expect.any(String),
+    );
+    expect(healthKit.queryAnchoredSamples).not.toHaveBeenCalled();
+    expect(healthKit.queryQuantitySamples).not.toHaveBeenCalled();
+    expect(healthKit.queryWorkouts).not.toHaveBeenCalled();
+    expect(healthKit.querySleepSamples).not.toHaveBeenCalled();
+  });
+
+  it("does not commit an anchor when the server upload fails", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const uploadError = new Error("network failed");
+    client.healthKitSync.pushQuantitySamples.mutate.mockRejectedValue(uploadError);
+
+    await expect(
+      syncHealthKitObserverChanges({
+        trpcClient: client,
+        healthKit,
+        typeIdentifiers: ["HKQuantityTypeIdentifierHeartRate"],
+      }),
+    ).rejects.toThrow(uploadError);
+
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      "query-1",
+      false,
+    );
   });
 });
 

@@ -49,10 +49,16 @@ const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
 const mockRequestPermissions = vi.fn().mockResolvedValue(true);
 
 vi.mock("../modules/health-kit", () => ({
+  completeAnchoredQuery: vi.fn().mockResolvedValue(true),
   isAvailable: (...args: unknown[]) => mockIsAvailable(...args),
   hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
   getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
   requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
+  queryAnchoredSamples: vi.fn().mockResolvedValue({
+    queryId: null,
+    samples: [],
+    deletedUUIDs: [],
+  }),
   queryDailyStatistics: vi.fn(),
   queryQuantitySamples: vi.fn(),
   queryWorkouts: vi.fn(),

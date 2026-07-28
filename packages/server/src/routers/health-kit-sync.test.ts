@@ -132,6 +132,49 @@ describe("healthKitSyncRouter", () => {
     });
   });
 
+  describe("deleteQuantitySamples", () => {
+    it("publishes provider-scoped tombstones and invalidates the user's cache", async () => {
+      const execute = makeExecute();
+      const replaceRows = vi.fn(async (scope, rows, operationRevision) => ({
+        deleted: {
+          version: 3 as const,
+          eventType: "metric_stream_deleted" as const,
+          eventId: "00000000-0000-4000-8000-000000000001",
+          operationRevision,
+          scope,
+          partitionKey: "test",
+        },
+        rows,
+      }));
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher: {
+          publishRows: mockMetricStreamPublishRows,
+          replaceRows,
+        },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      const result = await caller.deleteQuantitySamples({
+        typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+        deletedUUIDs: ["deleted-heart-rate"],
+      });
+
+      expect(result).toEqual({ deleted: 1 });
+      expect(replaceRows).toHaveBeenCalledWith(
+        {
+          externalId: "hk:deleted-heart-rate",
+          providerId: "apple_health",
+          userId: "00000000-0000-0000-0000-000000000001",
+        },
+        [],
+        "1000000000000000",
+      );
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001:");
+    });
+  });
+
   describe("pushQuantitySamples", () => {
     it("uses the average HRV reading of the day", () => {
       const samples = [

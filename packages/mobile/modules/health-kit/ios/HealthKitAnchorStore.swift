@@ -18,6 +18,20 @@ enum HealthKitAnchorStoreError: LocalizedError {
     }
 }
 
+enum HealthKitAnchoredQueryCoordinatorError: LocalizedError {
+    case unknownQuery(typeIdentifier: String, queryId: String)
+    case mismatchedType(expected: String, actual: String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .unknownQuery(typeIdentifier, queryId):
+            return "No pending HealthKit anchor query \(queryId) exists for \(typeIdentifier)"
+        case let .mismatchedType(expected, actual):
+            return "HealthKit anchor query belongs to \(expected), not \(actual)"
+        }
+    }
+}
+
 final class HealthKitAnchorStore {
     private let userDefaults: UserDefaults
 
@@ -75,8 +89,20 @@ final class HealthKitAnchorStore {
     }
 }
 
+struct HealthKitPendingAnchoredQuery<Result> {
+    let result: Result
+    let queryId: String?
+}
+
 final class HealthKitAnchoredQueryCoordinator {
+    private struct PendingAnchor {
+        let anchor: HKQueryAnchor
+        let typeIdentifier: String
+    }
+
     private let anchorStore: HealthKitAnchorStore
+    private let pendingLock = NSLock()
+    private var pendingAnchors: [String: PendingAnchor] = [:]
 
     init(anchorStore: HealthKitAnchorStore) {
         self.anchorStore = anchorStore
@@ -85,12 +111,49 @@ final class HealthKitAnchoredQueryCoordinator {
     func run<Result>(
         typeIdentifier: String,
         query: (HKQueryAnchor?) async throws -> (result: Result, newAnchor: HKQueryAnchor?)
-    ) async throws -> Result {
+    ) async throws -> HealthKitPendingAnchoredQuery<Result> {
         let anchor = try anchorStore.load(typeIdentifier: typeIdentifier)
         let queryResult = try await query(anchor)
-        if let newAnchor = queryResult.newAnchor {
-            try anchorStore.save(newAnchor, typeIdentifier: typeIdentifier)
+        guard let newAnchor = queryResult.newAnchor else {
+            return HealthKitPendingAnchoredQuery(result: queryResult.result, queryId: nil)
         }
-        return queryResult.result
+
+        let queryId = UUID().uuidString
+        pendingLock.withLock {
+            pendingAnchors[queryId] = PendingAnchor(
+                anchor: newAnchor,
+                typeIdentifier: typeIdentifier
+            )
+        }
+        return HealthKitPendingAnchoredQuery(result: queryResult.result, queryId: queryId)
+    }
+
+    func complete(typeIdentifier: String, queryId: String, succeeded: Bool) throws {
+        let pendingAnchor = try pendingLock.withLock {
+            guard let pendingAnchor = pendingAnchors[queryId] else {
+                throw HealthKitAnchoredQueryCoordinatorError.unknownQuery(
+                    typeIdentifier: typeIdentifier,
+                    queryId: queryId
+                )
+            }
+            guard pendingAnchor.typeIdentifier == typeIdentifier else {
+                throw HealthKitAnchoredQueryCoordinatorError.mismatchedType(
+                    expected: pendingAnchor.typeIdentifier,
+                    actual: typeIdentifier
+                )
+            }
+            if !succeeded {
+                pendingAnchors.removeValue(forKey: queryId)
+            }
+            return pendingAnchor
+        }
+
+        guard succeeded else {
+            return
+        }
+        try anchorStore.save(pendingAnchor.anchor, typeIdentifier: typeIdentifier)
+        _ = pendingLock.withLock {
+            pendingAnchors.removeValue(forKey: queryId)
+        }
     }
 }

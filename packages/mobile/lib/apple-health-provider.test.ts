@@ -3,9 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { SyncResult } from "./health-kit-sync";
 
 vi.mock("../modules/health-kit", () => ({
+  completeAnchoredQuery: vi.fn(async () => true),
   getRequestStatus: vi.fn(async () => "shouldRequest"),
   hasEverAuthorized: vi.fn(() => false),
   isAvailable: vi.fn(() => true),
+  queryAnchoredSamples: vi.fn(async () => ({
+    queryId: null,
+    samples: [],
+    deletedUUIDs: [],
+  })),
   queryDailyStatistics: vi.fn(async () => []),
   queryQuantitySamples: vi.fn(async () => []),
   querySleepSamples: vi.fn(async () => []),
@@ -44,6 +50,9 @@ function createNative(overrides: Partial<AppleHealthAuthorizationNative> = {}) {
 function createTrpcClient(): AppleHealthTrpcClient {
   return {
     healthKitSync: {
+      deleteQuantitySamples: {
+        mutate: vi.fn(async () => ({ deleted: 0 })),
+      },
       pushQuantitySamples: {
         mutate: vi.fn(async () => ({ inserted: 0, errors: [] })),
       },

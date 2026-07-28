@@ -174,6 +174,12 @@ vi.mock("../modules/health-kit", () => ({
   isAvailable: (...args: unknown[]) => mockIsHealthKitAvailable(...args),
   hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
   requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
+  completeAnchoredQuery: vi.fn().mockResolvedValue(true),
+  queryAnchoredSamples: vi.fn().mockResolvedValue({
+    queryId: null,
+    samples: [],
+    deletedUUIDs: [],
+  }),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
   queryWorkouts: vi.fn().mockResolvedValue([]),
@@ -187,6 +193,7 @@ vi.mock("./login", () => ({
 
 mockCreateClient.mockImplementation(() => ({
   healthKitSync: {
+    deleteQuantitySamples: { mutate: vi.fn() },
     pushQuantitySamples: { mutate: vi.fn() },
     pushWorkouts: { mutate: vi.fn() },
     pushWorkoutRoutes: { mutate: vi.fn() },

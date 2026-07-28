@@ -19385,3 +19385,61 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `system.mutations`, verify zero active parts lack the projection, observe a
   complete production analytics-plus-cache cycle below the unchanged
   four-minute ceiling, and only then resolve DOFEK-SERVER-5A.
+
+## 2026-07-27 — HealthKit Observer Replayed Every Sample Type
+
+- **Status:** Direct source fix reproduced and validated locally; merge,
+  native release, and physical-device production validation pending.
+- **Symptoms:** Mobile
+  [DOFEK-MOBILE-1C](https://east-bay-software.sentry.io/issues/7633118736/)
+  continued reporting native observer expirations. Before its independent
+  server-side resolution in
+  [PR #2232](https://github.com/Asherlc/dofek/pull/2232), downstream
+  [DOFEK-SERVER-5A](https://east-bay-software.sentry.io/issues/7632766197/)
+  also recorded the physical-row amplification that made analytics timeouts
+  more expensive.
+- **User impact:** A change to one HealthKit type could replay the complete
+  previous-day HealthKit window. The native callback could expire before the
+  upload finished, and each replay created another physical metric-stream
+  version that made downstream latest-version analytics progressively more
+  expensive.
+- **Evidence:** The exact mobile failure was
+  `com.dofek.healthkit-observer: Code: 1` after 25,016 ms for
+  `HKQuantityTypeIdentifierDistanceWalkingRunning`. The exact downstream
+  failure was ClickHouse code 159 after 240,002 ms while `deduped_sensor`
+  scanned 88,877,102 physical rows, approximately twice its 44,438,551-row
+  source. Code inspection showed that the observer event's
+  `typeIdentifier` was discarded and every delivery invoked all 18 quantity
+  queries plus workout routes and sleep over the previous-day window.
+  `queryAnchoredSamples` already existed but was unused, and its returned
+  anchor was persisted before the server upload succeeded.
+- **Root cause:** The background observer path treated a type-specific change
+  signal as a request for a full-window, all-type replay and advanced unused
+  anchors before durable server processing, multiplying physical event
+  versions and keeping observer callbacks open past their deadline.
+- **Fix / mitigation:** Preserve and coalesce delivered type identifiers,
+  register background delivery only for types the pipeline consumes, and run
+  type-scoped syncs. UUID-addressable quantity types now use two-phase
+  `HKAnchoredObjectQuery` processing: upload additions and UUID-scoped
+  tombstones first, then persist the opaque anchor only on success. Initial
+  anchor bootstrap and aggregate-only types remain bounded to the prior local
+  day. Explicit foreground/manual sync retains the full-range path. No timeout,
+  retry, analytics query, or size limit changed. Apple documents observer
+  queries as change signals and anchored queries as the API for retrieving
+  additions and deletions:
+  <https://developer.apple.com/documentation/healthkit/executing-observer-queries>
+  and
+  <https://developer.apple.com/documentation/HealthKit/HKAnchoredObjectQuery>.
+- **Validation:** Test-first regressions cover delivered-type scoping,
+  addition/deletion upload, anchor commit only after server success, failed
+  upload retry behavior, and the restricted native background type set. The
+  focused mobile and server Vitest suites pass, the Swift package's 75 tests
+  pass, mobile/server/repository TypeScript checks pass, and an ad-hoc signed
+  Release simulator build succeeds with the generated Expo application
+  workspace.
+- **Remaining risk / follow-up:** Ship through the normal native release path,
+  perform the documented physical-iPhone observer acceptance check, confirm
+  callbacks finish before the unchanged 25-second boundary, and verify that
+  metric-stream physical-row growth stays stable before resolving
+  DOFEK-MOBILE-1C. PR #2232 separately records the completed production
+  remediation and resolution of DOFEK-SERVER-5A.

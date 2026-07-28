@@ -37,7 +37,27 @@ export const NON_ADDITIVE_QUANTITY_TYPES = [
   "HKQuantityTypeIdentifierAppleWalkingSteadiness",
 ];
 
+export const SLEEP_TYPE_IDENTIFIER = "HKCategoryTypeIdentifierSleepAnalysis";
+export const WORKOUT_TYPE_IDENTIFIER = "HKWorkoutTypeIdentifier";
+export const WORKOUT_ROUTE_TYPE_IDENTIFIER = "HKWorkoutRouteTypeIdentifier";
+
+const ANCHORED_QUANTITY_TYPES = new Set([
+  "HKQuantityTypeIdentifierBodyMass",
+  "HKQuantityTypeIdentifierBodyFatPercentage",
+  "HKQuantityTypeIdentifierHeartRate",
+  "HKQuantityTypeIdentifierRestingHeartRate",
+  "HKQuantityTypeIdentifierVO2Max",
+  "HKQuantityTypeIdentifierRespiratoryRate",
+]);
+
 const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY_TYPES];
+
+export const BACKGROUND_HEALTH_KIT_TYPES = [
+  ...ALL_QUANTITY_TYPES,
+  SLEEP_TYPE_IDENTIFIER,
+  WORKOUT_TYPE_IDENTIFIER,
+  WORKOUT_ROUTE_TYPE_IDENTIFIER,
+];
 
 const BATCH_SIZE = 500;
 
@@ -68,6 +88,15 @@ function isAuthorizationNotDetermined(error: unknown): boolean {
 
 /** Abstraction over HealthKit native module for testability */
 export interface HealthKitAdapter {
+  completeAnchoredQuery(typeId: string, queryId: string, succeeded: boolean): Promise<boolean>;
+  queryAnchoredSamples(
+    typeId: string,
+    initialStartDate: string,
+  ): Promise<{
+    queryId: string | null;
+    samples: HealthKitSample[];
+    deletedUUIDs: string[];
+  }>;
   queryDailyStatistics(
     typeId: string,
     startDate: string,
@@ -97,6 +126,12 @@ export interface SyncTrpcClient {
       mutate(input: {
         samples: HealthKitSample[];
       }): Promise<{ inserted: number; errors: string[] }>;
+    };
+    deleteQuantitySamples: {
+      mutate(input: {
+        deletedUUIDs: string[];
+        typeIdentifier: string;
+      }): Promise<{ deleted: number }>;
     };
     pushWorkouts: {
       mutate(input: {
@@ -130,6 +165,9 @@ export interface SyncResult {
 
 export interface HealthKitSyncStage {
   operation:
+    | "completeAnchoredQuery"
+    | "deleteQuantitySamples"
+    | "queryAnchoredSamples"
     | "queryDailyStatistics"
     | "queryQuantitySamples"
     | "pushQuantitySamples"
@@ -143,6 +181,29 @@ export interface HealthKitSyncStage {
   batchIndex?: number;
   batchCount?: number;
   itemCount?: number;
+}
+
+async function pushQuantitySampleBatches(
+  trpcClient: SyncTrpcClient,
+  samples: HealthKitSample[],
+  onStage?: (stage: HealthKitSyncStage) => void,
+): Promise<SyncResult> {
+  let inserted = 0;
+  const errors: string[] = [];
+  const batchCount = Math.ceil(samples.length / BATCH_SIZE);
+  for (let batchOffset = 0; batchOffset < samples.length; batchOffset += BATCH_SIZE) {
+    const batch = samples.slice(batchOffset, batchOffset + BATCH_SIZE);
+    onStage?.({
+      operation: "pushQuantitySamples",
+      batchIndex: batchOffset / BATCH_SIZE + 1,
+      batchCount,
+      itemCount: batch.length,
+    });
+    const result = await trpcClient.healthKitSync.pushQuantitySamples.mutate({ samples: batch });
+    inserted += result.inserted;
+    errors.push(...result.errors);
+  }
+  return { inserted, errors };
 }
 
 /**
@@ -212,19 +273,9 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   // Push quantity samples in batches
   if (allSamples.length > 0) {
     onProgress?.(`Pushing ${allSamples.length} samples...`);
-    const batchCount = Math.ceil(allSamples.length / BATCH_SIZE);
-    for (let batchOffset = 0; batchOffset < allSamples.length; batchOffset += BATCH_SIZE) {
-      const batch = allSamples.slice(batchOffset, batchOffset + BATCH_SIZE);
-      onStage?.({
-        operation: "pushQuantitySamples",
-        batchIndex: batchOffset / BATCH_SIZE + 1,
-        batchCount,
-        itemCount: batch.length,
-      });
-      const result = await trpcClient.healthKitSync.pushQuantitySamples.mutate({ samples: batch });
-      totalInserted += result.inserted;
-      errors.push(...result.errors);
-    }
+    const result = await pushQuantitySampleBatches(trpcClient, allSamples, onStage);
+    totalInserted += result.inserted;
+    errors.push(...result.errors);
   }
 
   // Sync workouts
@@ -324,4 +375,218 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   }
 
   return { inserted: totalInserted, errors };
+}
+
+export interface ObserverSyncOptions {
+  trpcClient: SyncTrpcClient;
+  healthKit: HealthKitAdapter;
+  typeIdentifiers: readonly string[];
+  onStage?: (stage: HealthKitSyncStage) => void;
+}
+
+function dailyStatisticsSamples(
+  typeIdentifier: string,
+  statistics: DailyStatistic[],
+): HealthKitSample[] {
+  return statistics.map((statistic) => ({
+    type: typeIdentifier,
+    value: statistic.value,
+    unit: "statistics",
+    startDate: `${statistic.date}T12:00:00Z`,
+    endDate: `${statistic.date}T12:00:00Z`,
+    sourceName: "HealthKit",
+    sourceBundle: "com.apple.Health",
+    uuid: `stat:${typeIdentifier}:${statistic.date}`,
+  }));
+}
+
+async function syncAnchoredQuantityType(
+  options: ObserverSyncOptions,
+  typeIdentifier: string,
+  initialStartDate: string,
+): Promise<SyncResult> {
+  const { healthKit, onStage, trpcClient } = options;
+  onStage?.({ operation: "queryAnchoredSamples", typeIdentifier });
+  const changes = await healthKit.queryAnchoredSamples(typeIdentifier, initialStartDate);
+
+  try {
+    const uploadResult = await pushQuantitySampleBatches(trpcClient, changes.samples, onStage);
+    if (uploadResult.errors.length > 0) {
+      throw new Error(uploadResult.errors.join("; "));
+    }
+
+    let deleted = 0;
+    if (changes.deletedUUIDs.length > 0) {
+      const batchCount = Math.ceil(changes.deletedUUIDs.length / BATCH_SIZE);
+      for (
+        let batchOffset = 0;
+        batchOffset < changes.deletedUUIDs.length;
+        batchOffset += BATCH_SIZE
+      ) {
+        const deletedUUIDs = changes.deletedUUIDs.slice(batchOffset, batchOffset + BATCH_SIZE);
+        onStage?.({
+          operation: "deleteQuantitySamples",
+          typeIdentifier,
+          batchIndex: batchOffset / BATCH_SIZE + 1,
+          batchCount,
+          itemCount: deletedUUIDs.length,
+        });
+        const deleteResult = await trpcClient.healthKitSync.deleteQuantitySamples.mutate({
+          deletedUUIDs,
+          typeIdentifier,
+        });
+        deleted += deleteResult.deleted;
+      }
+    }
+
+    if (changes.queryId) {
+      onStage?.({ operation: "completeAnchoredQuery", typeIdentifier });
+      await healthKit.completeAnchoredQuery(typeIdentifier, changes.queryId, true);
+    }
+    return {
+      inserted: uploadResult.inserted + deleted,
+      errors: [],
+    };
+  } catch (error) {
+    if (changes.queryId) {
+      try {
+        onStage?.({ operation: "completeAnchoredQuery", typeIdentifier });
+        await healthKit.completeAnchoredQuery(typeIdentifier, changes.queryId, false);
+      } catch (completionError) {
+        captureException(completionError, {
+          source: "health-kit-anchor-completion",
+          typeIdentifier,
+        });
+      }
+    }
+    throw error;
+  }
+}
+
+async function syncObserverWorkouts(
+  options: ObserverSyncOptions,
+  startDate: string,
+  endDate: string,
+): Promise<SyncResult> {
+  const { healthKit, onStage, trpcClient } = options;
+  const errors: string[] = [];
+  onStage?.({ operation: "queryWorkouts" });
+  const workouts = (await healthKit.queryWorkouts(startDate, endDate)).map(normalizeWorkout);
+  onStage?.({ operation: "pushWorkouts", itemCount: workouts.length });
+  const workoutResult = await trpcClient.healthKitSync.pushWorkouts.mutate({
+    workouts,
+    windowStart: startDate,
+    windowEnd: endDate,
+  });
+  let inserted = workoutResult.inserted;
+
+  onStage?.({ operation: "queryWorkoutRoutes", itemCount: workouts.length });
+  for (const workout of workouts) {
+    try {
+      const locations = await healthKit.queryWorkoutRoutes(workout.uuid);
+      if (locations.length === 0) {
+        continue;
+      }
+      onStage?.({ operation: "pushWorkoutRoutes", itemCount: locations.length });
+      const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({
+        routes: [
+          {
+            workoutUuid: workout.uuid,
+            sourceName: workout.sourceName,
+            locations,
+          },
+        ],
+      });
+      inserted += routeResult.inserted;
+    } catch (error) {
+      if (isHealthKitDatabaseInaccessible(error)) {
+        throw error;
+      }
+      captureException(error, {
+        source: "health-kit-workout-route-observer-sync",
+        workoutUuid: workout.uuid,
+      });
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`Route sync for workout ${workout.uuid}: ${message}`);
+    }
+  }
+  return { inserted, errors };
+}
+
+/**
+ * Processes only the sample types named by HealthKit observer deliveries.
+ * Raw UUID-addressable types use two-phase anchors; derived daily values use
+ * a bounded type-specific refresh so their aggregation semantics stay intact.
+ */
+export async function syncHealthKitObserverChanges(
+  options: ObserverSyncOptions,
+): Promise<SyncResult> {
+  const { healthKit, onStage, trpcClient } = options;
+  const typeIdentifiers = new Set(options.typeIdentifiers);
+  const startDate = syncWindowStart(1);
+  const endDate = new Date().toISOString();
+  let inserted = 0;
+  const errors: string[] = [];
+
+  for (const typeIdentifier of ADDITIVE_QUANTITY_TYPES) {
+    if (!typeIdentifiers.has(typeIdentifier)) {
+      continue;
+    }
+    onStage?.({ operation: "queryDailyStatistics", typeIdentifier });
+    let statistics: DailyStatistic[];
+    try {
+      statistics = await healthKit.queryDailyStatistics(typeIdentifier, startDate, endDate);
+    } catch (error) {
+      if (!isAuthorizationNotDetermined(error)) {
+        throw error;
+      }
+      statistics = [];
+    }
+    const result = await pushQuantitySampleBatches(
+      trpcClient,
+      dailyStatisticsSamples(typeIdentifier, statistics),
+      onStage,
+    );
+    inserted += result.inserted;
+    errors.push(...result.errors);
+  }
+
+  for (const typeIdentifier of NON_ADDITIVE_QUANTITY_TYPES) {
+    if (!typeIdentifiers.has(typeIdentifier)) {
+      continue;
+    }
+    if (ANCHORED_QUANTITY_TYPES.has(typeIdentifier)) {
+      const result = await syncAnchoredQuantityType(options, typeIdentifier, startDate);
+      inserted += result.inserted;
+      errors.push(...result.errors);
+      continue;
+    }
+
+    onStage?.({ operation: "queryQuantitySamples", typeIdentifier });
+    const samples = await healthKit.queryQuantitySamples(typeIdentifier, startDate, endDate);
+    const result = await pushQuantitySampleBatches(trpcClient, samples, onStage);
+    inserted += result.inserted;
+    errors.push(...result.errors);
+  }
+
+  if (
+    typeIdentifiers.has(WORKOUT_TYPE_IDENTIFIER) ||
+    typeIdentifiers.has(WORKOUT_ROUTE_TYPE_IDENTIFIER)
+  ) {
+    const result = await syncObserverWorkouts(options, startDate, endDate);
+    inserted += result.inserted;
+    errors.push(...result.errors);
+  }
+
+  if (typeIdentifiers.has(SLEEP_TYPE_IDENTIFIER)) {
+    onStage?.({ operation: "querySleepSamples" });
+    const samples = await healthKit.querySleepSamples(startDate, endDate);
+    if (samples.length > 0) {
+      onStage?.({ operation: "pushSleepSamples", itemCount: samples.length });
+      const result = await trpcClient.healthKitSync.pushSleepSamples.mutate({ samples });
+      inserted += result.inserted;
+    }
+  }
+
+  return { inserted, errors };
 }

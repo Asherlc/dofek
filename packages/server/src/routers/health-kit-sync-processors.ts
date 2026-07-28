@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "../../../../src/db/index.ts";
 import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
+import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
@@ -336,6 +337,52 @@ export async function processMetricStream(
     await writeMetricStreamRows({ database: db, publisher: resolvedPublisher, rows });
   }
   return inserted;
+}
+
+/** Apply HealthKit anchored-query deletions to UUID-addressable canonical stores. */
+export async function processDeletedQuantitySamples(
+  db: Database,
+  userId: string,
+  typeIdentifier: string,
+  deletedUUIDs: string[],
+  publisher?: MetricStreamEventPublisher,
+): Promise<number> {
+  const uniqueUUIDs = [...new Set(deletedUUIDs)];
+  if (uniqueUUIDs.length === 0) {
+    return 0;
+  }
+
+  if (bodyMeasurementTypes[typeIdentifier] || metricStreamTypes[typeIdentifier]) {
+    const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
+    if (!resolvedPublisher.replaceRows) {
+      throw new Error("Metric stream publisher does not support HealthKit deletion tombstones");
+    }
+    const context = await getProviderDataGenerations(db, [{ providerId: PROVIDER_ID, userId }]);
+    for (const uuid of uniqueUUIDs) {
+      await resolvedPublisher.replaceRows(
+        {
+          userId,
+          providerId: PROVIDER_ID,
+          externalId: `hk:${uuid}`,
+        },
+        [],
+        context.operationRevision,
+      );
+    }
+    return uniqueUUIDs.length;
+  }
+
+  const externalIds = uniqueUUIDs.map((uuid) => `hk:${uuid}`);
+  await db.execute(
+    sql`DELETE FROM fitness.health_event
+        WHERE user_id = ${userId}
+          AND provider_id = ${PROVIDER_ID}
+          AND external_id IN (${sql.join(
+            externalIds.map((externalId) => sql`${externalId}`),
+            sql`, `,
+          )})`,
+  );
+  return uniqueUUIDs.length;
 }
 
 /** Process health event samples (catch-all) */

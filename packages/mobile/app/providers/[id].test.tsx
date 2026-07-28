@@ -316,9 +316,15 @@ vi.mock("../../lib/telemetry", () => ({
 }));
 
 vi.mock("../../modules/health-kit", () => ({
+  completeAnchoredQuery: vi.fn().mockResolvedValue(true),
   getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
   hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
   isAvailable: () => true,
+  queryAnchoredSamples: vi.fn().mockResolvedValue({
+    queryId: null,
+    samples: [],
+    deletedUUIDs: [],
+  }),
   queryDailyStatistics: vi.fn(),
   queryQuantitySamples: vi.fn(),
   querySleepSamples: vi.fn(),

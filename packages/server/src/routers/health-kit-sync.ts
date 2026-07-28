@@ -11,6 +11,7 @@ import {
   aggregateSpO2ToDailyMetrics,
   processBodyMeasurements,
   processDailyMetrics,
+  processDeletedQuantitySamples,
   processHealthEvents,
   processMetricStream,
   processWorkoutRoutes,
@@ -58,6 +59,36 @@ function categorize(
 // ── Router ──
 
 export const healthKitSyncRouter = router({
+  deleteQuantitySamples: protectedProcedure
+    .input(
+      z.object({
+        deletedUUIDs: z.array(z.string().min(1)).max(500),
+        typeIdentifier: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvider(ctx.db, ctx.userId);
+      const deleted = await processDeletedQuantitySamples(
+        ctx.db,
+        ctx.userId,
+        input.typeIdentifier,
+        input.deletedUUIDs,
+        ctx.metricStreamPublisher,
+      );
+      if (deleted > 0) {
+        await invalidateAllUserQueries(ctx.userId);
+      }
+      healthKitPushTotal.add(1, {
+        endpoint: "deleteQuantitySamples",
+        status: "success",
+      });
+      healthKitRecordsTotal.add(deleted, {
+        endpoint: "deleteQuantitySamples",
+        category: "deletedQuantitySample",
+      });
+      return { deleted };
+    }),
+
   pushQuantitySamples: protectedProcedure
     .input(z.object({ samples: z.array(healthKitSampleSchema) }))
     .mutation(async ({ ctx, input }) => {

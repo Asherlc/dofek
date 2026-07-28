@@ -476,10 +476,18 @@ vi.mock("expo-haptics", () => ({
 
 // ── HealthKit native module mock ─────────────────────────────────────
 vi.mock("./modules/health-kit", () => ({
+  completeAnchoredQuery: vi.fn(() => Promise.resolve(true)),
   getRequestStatus: vi.fn(() => Promise.resolve("shouldRequest")),
   hasEverAuthorized: vi.fn(() => false),
   isAvailable: vi.fn(() => true),
   isBackgroundDeliveryEnabled: vi.fn(() => false),
+  queryAnchoredSamples: vi.fn(() =>
+    Promise.resolve({
+      queryId: null,
+      samples: [],
+      deletedUUIDs: [],
+    }),
+  ),
   requestPermissions: vi.fn(() => Promise.resolve(true)),
   requestAuthorization: vi.fn(() => Promise.resolve(true)),
   queryDailyStatistics: vi.fn(() => Promise.resolve([])),

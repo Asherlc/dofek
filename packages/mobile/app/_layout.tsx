@@ -236,6 +236,9 @@ function AuthGate() {
     if (!user || !trpcClient || !backgroundSyncReady) return;
     const syncClient: SyncTrpcClient = {
       healthKitSync: {
+        deleteQuantitySamples: {
+          mutate: (input) => trpcClient.healthKitSync.deleteQuantitySamples.mutate(input),
+        },
         pushQuantitySamples: {
           mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
         },
