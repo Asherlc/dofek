@@ -46,7 +46,21 @@ describe("TECHNIQUES", () => {
     }
   });
 
-  it("warns about the material risks of Wim Hof breathing", () => {
+  it("accurately labels and describes the fixed power breathing pattern", () => {
+    const technique = getTechniqueById("wim-hof");
+
+    expect(technique?.name).toBe("Power Breathing");
+    expect(technique?.description).toBe(
+      "30 rounds of 2-second inhales followed by 2-second exhales.",
+    );
+    expect(technique?.inhaleSeconds).toBe(2);
+    expect(technique?.exhaleSeconds).toBe(2);
+    expect(technique?.defaultRounds).toBe(30);
+    expect(technique?.holdInSeconds).toBeUndefined();
+    expect(technique?.holdOutSeconds).toBeUndefined();
+  });
+
+  it("warns about the material risks of power breathing", () => {
     const technique = getTechniqueById("wim-hof");
 
     expect(technique?.safety.position).toBe(

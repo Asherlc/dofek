@@ -46,10 +46,10 @@ const STANDARD_SAFETY: BreathworkSafetyGuidance = {
 };
 
 /**
- * Wim Hof Method safety guidance:
+ * Safety guidance for intense breathing rounds:
  * https://www.wimhofmethod.com/breathing-exercises
  */
-const WIM_HOF_SAFETY: BreathworkSafetyGuidance = {
+const POWER_BREATHING_SAFETY: BreathworkSafetyGuidance = {
   position: "Practice only while seated or lying down in a safe place.",
   warnings: [
     "Intense rounds can, in rare cases, cause loss of consciousness.",
@@ -64,7 +64,7 @@ export const TECHNIQUES: BreathworkTechnique[] = [
     id: "box-breathing",
     name: "Box Breathing",
     description: "Equal-length inhale, hold, exhale, and hold phases.",
-    // Balban et al. (2023): https://doi.org/10.1016/j.xcrm.2022.100895
+    // RCT evidence: https://doi.org/10.1016/j.xcrm.2022.100895
     possibleBenefit: "Regular practice may support a more positive mood.",
     safety: STANDARD_SAFETY,
     inhaleSeconds: 4,
@@ -96,7 +96,7 @@ export const TECHNIQUES: BreathworkTechnique[] = [
     id: "physiological-sigh",
     name: "Physiological Sigh",
     description: "Double inhale through the nose followed by a longer exhale.",
-    // Balban et al. (2023): https://doi.org/10.1016/j.xcrm.2022.100895
+    // RCT evidence: https://doi.org/10.1016/j.xcrm.2022.100895
     possibleBenefit:
       "Regular practice may support a more positive mood and slower resting breathing.",
     safety: STANDARD_SAFETY,
@@ -107,9 +107,9 @@ export const TECHNIQUES: BreathworkTechnique[] = [
   },
   {
     id: "wim-hof",
-    name: "Wim Hof Method",
-    description: "Deep inhales, passive exhales, then a breath hold.",
-    safety: WIM_HOF_SAFETY,
+    name: "Power Breathing",
+    description: "30 rounds of 2-second inhales followed by 2-second exhales.",
+    safety: POWER_BREATHING_SAFETY,
     inhaleSeconds: 2,
     exhaleSeconds: 2,
     defaultRounds: 30,

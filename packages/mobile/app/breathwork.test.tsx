@@ -72,8 +72,8 @@ describe("BreathworkScreen", () => {
         },
         {
           id: "wim-hof",
-          name: "Wim Hof Method",
-          description: "Deep inhales, passive exhales, then a breath hold.",
+          name: "Power Breathing",
+          description: "30 rounds of 2-second inhales followed by 2-second exhales.",
           safety: {
             position: "Practice only while seated or lying down in a safe place.",
             warnings: [
@@ -109,11 +109,11 @@ describe("BreathworkScreen", () => {
     expect(screen.getByRole("button", { name: "Start Session" })).toBeTruthy();
   });
 
-  it("shows material Wim Hof warnings before Start", async () => {
+  it("shows material power breathing warnings before Start", async () => {
     const { default: BreathworkScreen } = await import("./breathwork");
     render(<BreathworkScreen />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Wim Hof Method" }));
+    fireEvent.click(screen.getByRole("button", { name: "Power Breathing" }));
 
     expect(
       screen.getByText("Intense rounds can, in rare cases, cause loss of consciousness."),

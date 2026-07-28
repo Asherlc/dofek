@@ -238,12 +238,12 @@ describe("BreathworkPage", () => {
     expect(screen.getByText("History refresh failed.")).toBeTruthy();
   });
 
-  it("shows material safety guidance before starting Wim Hof breathing", () => {
+  it("shows material safety guidance before starting power breathing", () => {
     state.techniques.data = [
       {
         id: "wim-hof",
-        name: "Wim Hof Method",
-        description: "Deep inhales, passive exhales, then a breath hold.",
+        name: "Power Breathing",
+        description: "30 rounds of 2-second inhales followed by 2-second exhales.",
         safety: {
           position: "Practice only while seated or lying down in a safe place.",
           warnings: [
@@ -263,7 +263,7 @@ describe("BreathworkPage", () => {
     renderBreathworkPage();
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Wim Hof Method Deep inhales, passive exhales, then a breath hold. 30 rounds",
+        name: "Power Breathing 30 rounds of 2-second inhales followed by 2-second exhales. 30 rounds",
       }),
     );
 
