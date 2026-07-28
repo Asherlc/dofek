@@ -19651,7 +19651,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Evidence:** The failing step was `Setup uv`, before `pnpm lint` ran. The
   action reported that neither `uv.toml` nor a root `pyproject.toml` provided a
   version, fell back to fetching Astral's remote latest-version manifest, and
-  then emitted the first fatal line `##[error]fetch failed`.
+  then emitted the first fatal line `##[error]fetch failed`. Astral documents
+  that exact fallback order in the official
+  [setup-uv version-selection guidance](https://github.com/astral-sh/setup-uv#install-a-required-version-or-latest-default).
 - **Root cause:** The repository did not provide
   `astral-sh/setup-uv` with its supported root-level `required-version`
   configuration, so every uv-backed CI job depended on an additional manifest
@@ -19668,5 +19670,6 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** TOML parsing and exact-version enforcement pass with uv
   0.11.32; action and workflow policy linting pass locally. The corrected
   `Setup uv` and `Test / Lint` steps remain gated on fresh exact-head CI.
-- **Remaining risk / follow-up:** Confirm every uv-backed exact-head job uses
-  the pinned version and that the complete CI run passes before merge.
+- **Remaining risk / follow-up:** Keep the exact `uv.toml` and `mise.toml` uv
+  pins synchronized during future upgrades. Confirm every uv-backed exact-head
+  job uses the pinned version and that the complete CI run passes before merge.
