@@ -1,4 +1,5 @@
 import { chartColors, textColors } from "@dofek/scoring/colors";
+import { formatCalendarDayCount } from "./correlation-lag.ts";
 
 // ── Metric definitions ──────────────────────────────────────────────────
 
@@ -246,7 +247,10 @@ export class CorrelationResult {
     else strengthWord = "weakly";
 
     const direction = this.rho > 0 ? "higher" : "lower";
-    const lagText = lag === 0 ? "" : lag === 1 ? " the next day" : ` ${lag} days later`;
+    const lagText =
+      lag === 0
+        ? ""
+        : ` ${formatCalendarDayCount(lag)} ${Math.sign(lag) === 1 ? "later" : "earlier"}`;
 
     const pText = this.pValue < 0.001 ? "p < 0.001" : `p = ${this.pValue.toFixed(3)}`;
 

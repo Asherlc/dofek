@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -178,5 +178,23 @@ describe("CorrelationScreen", () => {
     expect(screen.getByTestId("confidence-badge").style.backgroundColor).toBe("rgb(219, 234, 254)");
     expect(screen.getByText("strong").style.color).toBe("rgb(30, 58, 138)");
     expect(screen.getByTestId("correlation-trend-line").dataset.stroke).toBe("#2563eb");
+  });
+
+  it("states the selected lag in calendar days and which metric leads", async () => {
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("Same day")).toBeTruthy();
+    expect(screen.getByText("+1 calendar day")).toBeTruthy();
+    expect(screen.getByText("+2 calendar days")).toBeTruthy();
+    expect(
+      screen.getByText("Protein vs Heart Rate Variability on the same calendar day"),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByText("+1 calendar day"));
+
+    expect(
+      screen.getByText("Protein today vs Heart Rate Variability 1 calendar day later"),
+    ).toBeTruthy();
   });
 });

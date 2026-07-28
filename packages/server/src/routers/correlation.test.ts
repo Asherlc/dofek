@@ -124,7 +124,7 @@ describe("computeCorrelation", () => {
     });
 
     expect(result.sampleCount).toBe(29); // one less due to lag
-    expect(result.insight).toMatch(/next.day|1.day later/i);
+    expect(result.insight).toContain("1 calendar day later");
   });
 
   it("downsamples data points when too many", () => {

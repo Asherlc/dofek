@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./correlation": "./src/correlation.ts"
+    "./correlation": "./src/correlation.ts",
+    "./correlation-lag": "./src/correlation-lag.ts"
   },
   "dependencies": {
     "@dofek/scoring": "workspace:*"
