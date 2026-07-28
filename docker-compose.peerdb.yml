@@ -150,7 +150,7 @@ services:
         condition: service_started
 
   peerdb-flow-worker:
-    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.0
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.1
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
