@@ -157,6 +157,23 @@ describe("supplementsRouter", () => {
         caller.save({ supplements: [{ name: "Test", unit: "x".repeat(11) }] }),
       ).rejects.toThrow();
     });
+
+    it("requires the supplements input property", async () => {
+      const { caller } = await makeCaller([]);
+
+      await expect(Reflect.apply(caller.save, undefined, [{}])).rejects.toThrow();
+    });
+
+    it("rejects malformed repository output", async () => {
+      const save = vi.spyOn(SupplementsRepository.prototype, "save").mockResolvedValue({
+        success: true,
+        count: -1,
+      });
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.save({ supplements: [] })).rejects.toThrow();
+      save.mockRestore();
+    });
   });
 
   describe("occurrences", () => {
@@ -205,6 +222,45 @@ describe("supplementsRouter", () => {
     it("rejects unbounded history windows", async () => {
       const { caller } = await makeCaller([]);
       await expect(caller.occurrences({ days: 31 })).rejects.toThrow();
+    });
+
+    it("applies the default history window when days is omitted", async () => {
+      const occurrences = vi
+        .spyOn(SupplementsRepository.prototype, "occurrences")
+        .mockResolvedValue({
+          counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+          occurrences: [],
+        });
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.occurrences({})).resolves.toEqual({
+        counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+        occurrences: [],
+      });
+      expect(occurrences).toHaveBeenCalledWith(7);
+      occurrences.mockRestore();
+    });
+
+    it("accepts both bounded history-window endpoints", async () => {
+      const occurrences = vi
+        .spyOn(SupplementsRepository.prototype, "occurrences")
+        .mockResolvedValue({
+          counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+          occurrences: [],
+        });
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.occurrences({ days: 1 })).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 30 })).resolves.toBeDefined();
+      expect(occurrences).toHaveBeenNthCalledWith(1, 1);
+      expect(occurrences).toHaveBeenNthCalledWith(2, 30);
+      occurrences.mockRestore();
+    });
+
+    it("rejects history windows below the lower bound", async () => {
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.occurrences({ days: 0 })).rejects.toThrow();
     });
   });
 
@@ -270,6 +326,130 @@ describe("supplementsRouter", () => {
       expect(captureException).toHaveBeenCalledWith(failure, {
         tags: { operation: "supplements.recordDose" },
       });
+      recordDose.mockRestore();
+    });
+
+    it("requires the event id and a supported status", async () => {
+      const { caller } = await makeCaller([]);
+      const validId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
+
+      await expect(Reflect.apply(caller.recordDose, undefined, [{}])).rejects.toThrow();
+      await expect(
+        Reflect.apply(caller.recordDose, undefined, [
+          { expectedCurrentEventId: "not-a-uuid", status: "taken" },
+        ]),
+      ).rejects.toThrow();
+      await expect(
+        Reflect.apply(caller.recordDose, undefined, [
+          { expectedCurrentEventId: validId, status: "unknown" },
+        ]),
+      ).rejects.toThrow();
+    });
+
+    it("accepts both supported statuses", async () => {
+      const recordDose = vi
+        .spyOn(SupplementsRepository.prototype, "recordDose")
+        .mockImplementation(async (_eventId, status) => ({
+          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
+          scheduledDate: "2026-07-27",
+          status,
+        }));
+      const { caller } = await makeCaller([]);
+      const expectedCurrentEventId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
+
+      await expect(
+        caller.recordDose({ expectedCurrentEventId, status: "taken" }),
+      ).resolves.toMatchObject({ status: "taken" });
+      await expect(
+        caller.recordDose({ expectedCurrentEventId, status: "skipped" }),
+      ).resolves.toMatchObject({ status: "skipped" });
+      recordDose.mockRestore();
+    });
+
+    it("rejects malformed repository output", async () => {
+      const recordDose = vi.spyOn(SupplementsRepository.prototype, "recordDose").mockResolvedValue({
+        id: "not-a-uuid",
+        scheduledDate: "2026-07-27",
+        status: "taken",
+      });
+      const { caller } = await makeCaller([]);
+
+      await expect(
+        caller.recordDose({
+          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
+          status: "taken",
+        }),
+      ).rejects.toThrow();
+      recordDose.mockRestore();
+    });
+  });
+
+  describe("schema initialization", () => {
+    it("enforces the save input and exact output after a fresh module load", async () => {
+      vi.resetModules();
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.save({ supplements: [] })).resolves.toEqual({
+        success: true,
+        count: 0,
+      });
+    });
+
+    it("enforces the occurrence default and inclusive day bounds after a fresh module load", async () => {
+      vi.resetModules();
+      const { SupplementsRepository: FreshSupplementsRepository } = await import(
+        "../repositories/supplements-repository.ts"
+      );
+      const occurrences = vi
+        .spyOn(FreshSupplementsRepository.prototype, "occurrences")
+        .mockResolvedValue({
+          counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+          occurrences: [],
+        });
+      const { caller } = await makeCaller([]);
+
+      await expect(caller.occurrences({})).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 1 })).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 30 })).resolves.toBeDefined();
+      await expect(caller.occurrences({ days: 0 })).rejects.toThrow();
+      await expect(caller.occurrences({ days: 31 })).rejects.toThrow();
+      expect(occurrences.mock.calls).toEqual([[7], [1], [30]]);
+      occurrences.mockRestore();
+    });
+
+    it("enforces record-dose input and exact output after a fresh module load", async () => {
+      vi.resetModules();
+      const { SupplementsRepository: FreshSupplementsRepository } = await import(
+        "../repositories/supplements-repository.ts"
+      );
+      const recordDose = vi
+        .spyOn(FreshSupplementsRepository.prototype, "recordDose")
+        .mockResolvedValue({
+          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
+          scheduledDate: "2026-07-27",
+          status: "taken",
+        });
+      const { caller } = await makeCaller([]);
+      const expectedCurrentEventId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
+
+      await expect(caller.recordDose({ expectedCurrentEventId, status: "taken" })).resolves.toEqual(
+        {
+          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
+          scheduledDate: "2026-07-27",
+          status: "taken",
+        },
+      );
+      await expect(
+        Reflect.apply(caller.recordDose, undefined, [
+          { expectedCurrentEventId: "not-a-uuid", status: "taken" },
+        ]),
+      ).rejects.toThrow();
+      await expect(
+        Reflect.apply(caller.recordDose, undefined, [
+          { expectedCurrentEventId, status: "unknown" },
+        ]),
+      ).rejects.toThrow();
+      expect(recordDose).toHaveBeenCalledTimes(1);
       recordDose.mockRestore();
     });
   });

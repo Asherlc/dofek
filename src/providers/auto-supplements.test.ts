@@ -26,6 +26,10 @@ describe("AutoSupplementsProvider", () => {
     vi.useRealTimers();
   });
 
+  it("is always valid because it has no external configuration", () => {
+    expect(new AutoSupplementsProvider().validate()).toBeNull();
+  });
+
   it("requires the per-user sync identity before querying", async () => {
     const database = mockDatabase([]);
     const provider = new AutoSupplementsProvider();
@@ -101,7 +105,14 @@ describe("AutoSupplementsProvider", () => {
       }),
     );
 
-    expect(result.recordsSynced).toBe(0);
+    expect(result).toEqual({
+      provider: "auto-supplements",
+      recordsSynced: 0,
+      errors: [],
+      duration: 0,
+    });
+    expect(database.execute).toHaveBeenCalledTimes(2);
+    expect(ensureProvider).not.toHaveBeenCalled();
   });
 
   it("fails loudly for an invalid stored timezone", async () => {
@@ -151,5 +162,84 @@ describe("AutoSupplementsProvider", () => {
     const calls = JSON.stringify(vi.mocked(database.execute).mock.calls);
     expect(calls).toContain("unknown");
     expect(calls).not.toContain('"taken"');
+  });
+
+  it("applies definition dates inclusively at the start and exclusively at the end", async () => {
+    vi.useFakeTimers({ now: new Date("2026-07-21T12:00:00.000Z") });
+    const database = mockDatabase([
+      [{ value: "UTC" }],
+      [
+        {
+          id: DEFINITION_ID,
+          schedule_id: SCHEDULE_ID,
+          effective_from: "2026-07-20",
+          effective_to: "2026-07-23",
+        },
+      ],
+      [{ id: "past-event" }],
+      [{ id: "today-event" }],
+      [{ id: "future-event" }],
+      [{ id: "advanced-event" }],
+    ]);
+
+    const result = await new AutoSupplementsProvider().sync(
+      new SyncRun({
+        db: database,
+        userId: USER_ID,
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-07-19",
+          untilDate: "2026-07-24",
+        }),
+      }),
+    );
+
+    const calls = vi.mocked(database.execute).mock.calls;
+    expect(calls).toHaveLength(6);
+    expect(JSON.stringify(calls[2])).toContain(`schedule:${SCHEDULE_ID}:2026-07-20:unknown`);
+    expect(JSON.stringify(calls[3])).toContain(`schedule:${SCHEDULE_ID}:2026-07-21:planned`);
+    expect(JSON.stringify(calls[4])).toContain(`schedule:${SCHEDULE_ID}:2026-07-22:planned`);
+    expect(result).toEqual({
+      provider: "auto-supplements",
+      recordsSynced: 4,
+      errors: [],
+      duration: 0,
+    });
+  });
+
+  it("keeps a definition without an end date effective after its start", async () => {
+    vi.useFakeTimers({ now: new Date("2026-07-21T12:00:00.000Z") });
+    const database = mockDatabase([
+      [{ value: "UTC" }],
+      [
+        {
+          id: DEFINITION_ID,
+          schedule_id: SCHEDULE_ID,
+          effective_from: "2026-07-20",
+          effective_to: null,
+        },
+      ],
+      [{ id: "planned-event" }],
+      [],
+    ]);
+
+    const result = await new AutoSupplementsProvider().sync(
+      new SyncRun({
+        db: database,
+        userId: USER_ID,
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-07-21",
+          untilDate: "2026-07-21",
+        }),
+      }),
+    );
+
+    expect(database.execute).toHaveBeenCalledTimes(4);
+    expect(JSON.stringify(vi.mocked(database.execute).mock.calls[2])).toContain("planned");
+    expect(result).toEqual({
+      provider: "auto-supplements",
+      recordsSynced: 1,
+      errors: [],
+      duration: 0,
+    });
   });
 });
