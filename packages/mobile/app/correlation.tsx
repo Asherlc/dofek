@@ -1,5 +1,9 @@
 import { formatNumber, formatSigned } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
+import { chartColors, operationalStatusColors } from "@dofek/scoring/colors";
+import {
+  formatCorrelationComparison,
+  formatCorrelationLagOption,
+} from "@dofek/stats/correlation-lag";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -25,20 +29,18 @@ const DAY_OPTIONS = [
   { label: "1y", value: 365 },
 ];
 
-const LAG_OPTIONS = [
-  { label: "Same day", value: 0 },
-  { label: "+1 day", value: 1 },
-  { label: "+2 days", value: 2 },
-  { label: "+3 days", value: 3 },
-];
+const LAG_OPTIONS = [0, 1, 2, 3].map((value) => ({
+  label: formatCorrelationLagOption(value),
+  value,
+}));
 
 const DOMAIN_ORDER = ["Recovery", "Sleep", "Nutrition", "Activity", "Body"];
 
-const CONFIDENCE_COLORS: Record<string, string> = {
-  strong: statusColors.positive,
-  emerging: statusColors.warning,
-  early: "#636366",
-  insufficient: "#636366",
+const CONFIDENCE_COLORS = {
+  strong: operationalStatusColors.info,
+  emerging: operationalStatusColors.neutral,
+  early: operationalStatusColors.neutral,
+  insufficient: operationalStatusColors.neutral,
 };
 
 // ── Selector Components ──
@@ -157,25 +159,24 @@ function CorrelationBar({ rho, label }: { rho: number; label: string }) {
   const clamped = Math.max(-1, Math.min(1, rho));
   const fillPct = Math.abs(clamped) * 50;
   const isPositive = clamped >= 0;
-  const barColor = isPositive ? statusColors.positive : statusColors.danger;
-
   return (
     <View style={styles.corrBarContainer}>
       <Text style={styles.corrBarLabel}>{label}</Text>
       <View style={styles.corrBarTrack}>
         <View style={styles.corrBarCenter} />
         <View
+          testID={`${label.toLowerCase()}-correlation-fill`}
           style={[
             styles.corrBarFill,
             {
-              backgroundColor: barColor,
+              backgroundColor: chartColors.blue,
               width: `${fillPct}%`,
               ...(isPositive ? { left: "50%" } : { right: "50%" }),
             },
           ]}
         />
       </View>
-      <Text style={[styles.corrBarValue, { color: barColor }]}>{formatSigned(clamped, 2)}</Text>
+      <Text style={styles.corrBarValue}>{formatSigned(clamped, 2)}</Text>
     </View>
   );
 }
@@ -185,14 +186,12 @@ function CorrelationBar({ rho, label }: { rho: number; label: string }) {
 function ScatterPlot({
   dataPoints,
   regression,
-  rho,
   xLabel,
   yLabel: _yLabel,
   width: chartWidth,
 }: {
   dataPoints: Array<{ x: number; y: number; date: string }>;
   regression: { slope: number; intercept: number; rSquared: number };
-  rho: number;
   xLabel: string;
   yLabel: string;
   width: number;
@@ -213,7 +212,6 @@ function ScatterPlot({
   const scaleX = (v: number) => padding.left + ((v - xMin) / xRange) * plotWidth;
   const scaleY = (v: number) => padding.top + plotHeight - ((v - yMin) / yRange) * plotHeight;
 
-  const trendColor = rho >= 0 ? statusColors.positive : statusColors.danger;
   const lineY1 = regression.slope * xMin + regression.intercept;
   const lineY2 = regression.slope * xMax + regression.intercept;
 
@@ -240,11 +238,12 @@ function ScatterPlot({
 
         {/* Regression line */}
         <Line
+          testID="correlation-trend-line"
           x1={scaleX(xMin)}
           y1={scaleY(lineY1)}
           x2={scaleX(xMax)}
           y2={scaleY(lineY2)}
-          stroke={trendColor}
+          stroke={chartColors.blue}
           strokeWidth={2}
           strokeDasharray="6,4"
           opacity={0.7}
@@ -321,9 +320,11 @@ export default function CorrelationScreen() {
       <Text style={styles.sectionLabel}>Lag</Text>
       <LagSelector lag={lag} onChange={setLag} />
       <Text style={styles.lagHint}>
-        {lag > 0
-          ? `How ${xMetric?.label ?? "X"} today relates to ${yMetric?.label ?? "Y"} ${lag === 1 ? "tomorrow" : `${lag} days later`}`
-          : "Same-day comparison"}
+        {formatCorrelationComparison({
+          xLabel: xMetric?.label ?? "X",
+          yLabel: yMetric?.label ?? "Y",
+          lag,
+        })}
       </Text>
 
       <TouchableOpacity
@@ -372,15 +373,16 @@ export default function CorrelationScreen() {
                 textStyle={styles.cardTitle}
               />
               <View
+                testID="confidence-badge"
                 style={[
                   styles.confidenceBadge,
-                  { backgroundColor: `${CONFIDENCE_COLORS[data.confidenceLevel] ?? "#636366"}22` },
+                  { backgroundColor: CONFIDENCE_COLORS[data.confidenceLevel].surface },
                 ]}
               >
                 <Text
                   style={[
                     styles.confidenceBadgeText,
-                    { color: CONFIDENCE_COLORS[data.confidenceLevel] ?? "#636366" },
+                    { color: CONFIDENCE_COLORS[data.confidenceLevel].foreground },
                   ]}
                 >
                   {data.confidenceLevel}
@@ -451,7 +453,6 @@ export default function CorrelationScreen() {
               <ScatterPlot
                 dataPoints={data.dataPoints}
                 regression={data.regression}
-                rho={data.spearmanRho}
                 xLabel={`${xMetric?.label ?? metricX} (${xMetric?.unit ?? ""})`}
                 yLabel={`${yMetric?.label ?? metricY} (${yMetric?.unit ?? ""})`}
                 width={isWide ? 660 : width - 48}

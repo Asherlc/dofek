@@ -1,3 +1,4 @@
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { RecomputeStatusIndicator } from "./RecomputeStatusIndicator";
@@ -9,5 +10,8 @@ describe("RecomputeStatusIndicator", () => {
     const progress = screen.getByRole("progressbar", { name: "Recomputing sleep" });
     expect(progress.getAttribute("accessibilityValue")).not.toBeNull();
     expect(screen.getByText("Recomputing sleep")).toBeTruthy();
+    expect(progress.querySelector("circle")?.getAttribute("stroke")).toBe(
+      operationalStatusColors.info.indicator,
+    );
   });
 });

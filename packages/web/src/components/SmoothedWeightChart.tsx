@@ -1,5 +1,6 @@
 import { formatDateLong } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { textColors } from "@dofek/scoring/colors";
 import type {
   SmoothedWeightRow,
   WeightPrediction,
@@ -211,9 +212,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
           )}
         </div>
         {ratePerWeekKg != null && (
-          <span
-            className={`text-lg font-semibold ${ratePerWeekKg > 0 ? "text-green-400" : ratePerWeekKg < 0 ? "text-red-400" : "text-muted"}`}
-          >
+          <span className="text-lg font-semibold" style={{ color: textColors.secondary }}>
             {ratePerWeekKg > 0 ? "+" : ""}
             {formatMeasurementText(units.formatWeight(ratePerWeekKg))}
             /week

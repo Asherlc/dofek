@@ -210,9 +210,9 @@ body {
 }
 
 .query-error-panel {
-  border: 1px solid rgb(127 29 29 / 0.6);
-  background: rgb(69 10 10 / 0.2);
-  color: rgb(254 202 202);
+  flex-direction: column;
+  gap: 0.25rem;
+  border: 1px solid;
 }
 
 /* ── Progress bar grow animation ── */

@@ -379,6 +379,9 @@ importers:
       '@dofek/scoring':
         specifier: workspace:*
         version: link:../scoring
+      '@dofek/stats':
+        specifier: workspace:*
+        version: link:../stats
       '@dofek/training':
         specifier: workspace:*
         version: link:../training
@@ -843,6 +846,9 @@ importers:
       '@dofek/scoring':
         specifier: workspace:*
         version: link:../scoring
+      '@dofek/stats':
+        specifier: workspace:*
+        version: link:../stats
       '@dofek/training':
         specifier: workspace:*
         version: link:../training

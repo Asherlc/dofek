@@ -1,5 +1,6 @@
 import { formatCalories, formatGrams } from "@dofek/format/format";
 import type { SelectedDateNutritionSummary } from "@dofek/nutrition/selected-date-summary";
+import { chartColors } from "@dofek/scoring/colors";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
@@ -38,9 +39,9 @@ export function MacroSummary({ calories, calorieGoal, macros }: MacroSummaryProp
       </View>
 
       <View style={styles.macroSection}>
-        <MacroBar label="Protein" grams={macros.protein.grams} color={colors.positive} />
-        <MacroBar label="Carbs" grams={macros.carbs.grams} color={colors.warning} />
-        <MacroBar label="Fat" grams={macros.fat.grams} color={colors.danger} />
+        <MacroBar label="Protein" grams={macros.protein.grams} color={chartColors.blue} />
+        <MacroBar label="Carbs" grams={macros.carbs.grams} color={chartColors.purple} />
+        <MacroBar label="Fat" grams={macros.fat.grams} color={chartColors.teal} />
       </View>
     </View>
   );

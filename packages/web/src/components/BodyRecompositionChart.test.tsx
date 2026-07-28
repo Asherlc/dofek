@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+
+import { chartColors } from "@dofek/scoring/colors";
 import { render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -143,6 +145,12 @@ describe("BodyRecompositionChart", () => {
   it("renders chart with data", () => {
     renderWithUnits(<BodyRecompositionChart data={sampleData} />);
     expect(screen.getByTestId("echarts-mock")).toBeDefined();
+    expect(screen.getByText(/Fat:/).style.color).toBe(
+      `rgb(${Number.parseInt(chartColors.orange.slice(1, 3), 16)}, ${Number.parseInt(chartColors.orange.slice(3, 5), 16)}, ${Number.parseInt(chartColors.orange.slice(5, 7), 16)})`,
+    );
+    expect(screen.getByText(/Lean:/).style.color).toBe(
+      `rgb(${Number.parseInt(chartColors.blue.slice(1, 3), 16)}, ${Number.parseInt(chartColors.blue.slice(3, 5), 16)}, ${Number.parseInt(chartColors.blue.slice(5, 7), 16)})`,
+    );
   });
 
   it("formats tooltip weights with the shared unit formatter", () => {

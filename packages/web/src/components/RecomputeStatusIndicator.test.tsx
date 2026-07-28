@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { RecomputeStatusIndicator } from "./RecomputeStatusIndicator.tsx";
@@ -11,6 +12,7 @@ describe("RecomputeStatusIndicator", () => {
     expect(progress.getAttribute("aria-valuenow")).toBe("60");
     expect(screen.getByText("Recomputing sleep", { selector: "span" })).toBeTruthy();
     expect(screen.queryByRole("heading")).toBeNull();
+    expect(progress).toHaveStyle({ color: operationalStatusColors.info.indicator });
   });
 
   it("keeps an indeterminate off-the-shelf spinner beside its wrapping label", () => {
@@ -30,5 +32,6 @@ describe("RecomputeStatusIndicator", () => {
     expect(progress.nextElementSibling?.textContent).toBe(
       "Recomputing activities, sleep, recovery, training, and body",
     );
+    expect(progress).toHaveStyle({ color: operationalStatusColors.warning.indicator });
   });
 });

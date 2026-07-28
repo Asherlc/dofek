@@ -111,11 +111,11 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
-        <span className={`font-medium ${fatChange <= 0 ? "text-green-400" : "text-red-400"}`}>
+        <span className="font-medium" style={{ color: chartColors.orange }}>
           Fat: {fatChange > 0 ? "+" : ""}
           {formatMeasurementText(units.formatWeight(fatChange))}
         </span>
-        <span className={`font-medium ${leanChange >= 0 ? "text-green-400" : "text-red-400"}`}>
+        <span className="font-medium" style={{ color: chartColors.blue }}>
           Lean: {leanChange > 0 ? "+" : ""}
           {formatMeasurementText(units.formatWeight(leanChange))}
         </span>

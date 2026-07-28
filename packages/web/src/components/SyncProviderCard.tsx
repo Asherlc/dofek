@@ -1,5 +1,6 @@
 import { formatRelativeTime, formatTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
 import type { ProviderState, SyncLogEntry, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
 import { OperationProgressBar } from "./OperationProgressBar.tsx";
@@ -48,25 +49,37 @@ export function SyncProviderCard({
         <ProviderLogo provider={provider.id} size={18} />
         {pushOnly ? (
           <span
-            className={`inline-block w-2 h-2 rounded-full ${
-              provider.authorized ? "bg-emerald-400" : "bg-subtle"
-            }`}
+            className="inline-block h-2 w-2 rounded-full"
+            style={{
+              backgroundColor: provider.authorized
+                ? operationalStatusColors.success.indicator
+                : operationalStatusColors.neutral.indicator,
+            }}
           />
         ) : needsReauth ? (
-          <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ backgroundColor: operationalStatusColors.warning.indicator }}
+          />
         ) : needsAuth ? (
-          <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ backgroundColor: operationalStatusColors.info.indicator }}
+          />
         ) : (
           <StatusDot status={state.status} />
         )}
         <span className="text-sm font-medium text-foreground">{provider.name}</span>
         {pushOnly && <span className="text-xs text-subtle">Mobile sync</span>}
-        {!pushOnly && needsReauth && <span className="text-xs text-amber-400">Reconnect</span>}
-        {!pushOnly && needsAuth && !needsReauth && (
-          <span className="text-xs text-blue-400">Connect</span>
+        {!pushOnly && needsReauth && (
+          <span className="text-xs" style={{ color: operationalStatusColors.warning.foreground }}>
+            Reconnect
+          </span>
         )}
-        {!pushOnly && state.status === "syncing" && (
-          <span className="text-xs text-subtle">...</span>
+        {!pushOnly && needsAuth && !needsReauth && (
+          <span className="text-xs" style={{ color: operationalStatusColors.info.foreground }}>
+            Connect
+          </span>
         )}
       </div>
 
@@ -103,13 +116,28 @@ export function SyncProviderCard({
           ) : (
             <>
               {recentLogs.map((l) => (
-                <span
+                <output
                   key={`${l.syncedAt}-${l.status}-${l.recordCount}-${l.durationMs}`}
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    l.status === "success" ? "bg-emerald-400" : "bg-red-400"
-                  }`}
+                  aria-label={l.status === "success" ? "Sync succeeded" : "Sync failed"}
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px] font-bold leading-none"
+                  style={{
+                    backgroundColor:
+                      l.status === "success"
+                        ? operationalStatusColors.success.surface
+                        : operationalStatusColors.danger.surface,
+                    borderColor:
+                      l.status === "success"
+                        ? operationalStatusColors.success.border
+                        : operationalStatusColors.danger.border,
+                    color:
+                      l.status === "success"
+                        ? operationalStatusColors.success.foreground
+                        : operationalStatusColors.danger.foreground,
+                  }}
                   title={`${l.status} — ${formatTime(l.syncedAt)}`}
-                />
+                >
+                  <span aria-hidden="true">{l.status === "success" ? "✓" : "!"}</span>
+                </output>
               ))}
               {recentLogs.length === 0 && <span className="text-xs text-dim">No sync history</span>}
             </>

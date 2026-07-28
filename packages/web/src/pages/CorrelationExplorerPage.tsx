@@ -1,4 +1,9 @@
 import { formatNumber } from "@dofek/format/format";
+import { chartColors, operationalStatusColors } from "@dofek/scoring/colors";
+import {
+  formatCorrelationComparison,
+  formatCorrelationLagOption,
+} from "@dofek/stats/correlation-lag";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
@@ -17,29 +22,27 @@ import {
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 
-const LAG_OPTIONS = [
-  { label: "Same day", value: 0 },
-  { label: "+1 day", value: 1 },
-  { label: "+2 days", value: 2 },
-  { label: "+3 days", value: 3 },
-];
+const LAG_OPTIONS = [0, 1, 2, 3].map((value) => ({
+  label: formatCorrelationLagOption(value),
+  value,
+}));
 
 const confidenceBadge = {
   strong: {
     label: "Strong",
-    className: "bg-emerald-900/50 text-emerald-400 border-emerald-800",
+    colors: operationalStatusColors.info,
   },
   emerging: {
     label: "Emerging",
-    className: "bg-amber-900/50 text-amber-400 border-amber-800",
+    colors: operationalStatusColors.neutral,
   },
   early: {
     label: "Early signal",
-    className: "bg-accent/10 text-muted border-border-strong",
+    colors: operationalStatusColors.neutral,
   },
   insufficient: {
     label: "Insufficient data",
-    className: "bg-accent/10 text-dim border-border-strong",
+    colors: operationalStatusColors.neutral,
   },
 };
 
@@ -163,9 +166,11 @@ export function CorrelationExplorerPage() {
                 ))}
               </div>
               <span className="text-[10px] text-dim ml-1">
-                {lag > 0
-                  ? `How ${xMetric?.label ?? "X"} today relates to ${yMetric?.label ?? "Y"} ${lag === 1 ? "tomorrow" : `${lag} days later`}`
-                  : "Same-day comparison"}
+                {formatCorrelationComparison({
+                  xLabel: xMetric?.label ?? "X",
+                  yLabel: yMetric?.label ?? "Y",
+                  lag,
+                })}
               </span>
             </div>
 
@@ -218,7 +223,12 @@ export function CorrelationExplorerPage() {
                     Correlation Strength
                   </h3>
                   <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full border ${confidenceBadge[data.confidenceLevel].className}`}
+                    className="text-[10px] px-2 py-0.5 rounded-full border"
+                    style={{
+                      backgroundColor: confidenceBadge[data.confidenceLevel].colors.surface,
+                      borderColor: confidenceBadge[data.confidenceLevel].colors.border,
+                      color: confidenceBadge[data.confidenceLevel].colors.foreground,
+                    }}
                   >
                     {confidenceBadge[data.confidenceLevel].label}
                   </span>
@@ -298,7 +308,6 @@ export function CorrelationExplorerPage() {
                 <ScatterPlot
                   dataPoints={dataPoints}
                   regression={data.regression}
-                  rho={data.spearmanRho}
                   xLabel={`${xMetric?.label ?? metricX} (${xMetric?.unit ?? ""})`}
                   yLabel={`${yMetric?.label ?? metricY} (${yMetric?.unit ?? ""})`}
                 />
@@ -314,21 +323,17 @@ export function CorrelationExplorerPage() {
 function ScatterPlot({
   dataPoints,
   regression,
-  rho,
   xLabel,
   yLabel,
 }: {
   dataPoints: Array<{ x: number; y: number; date: string }>;
   regression: { slope: number; intercept: number; rSquared: number };
-  rho: number;
   xLabel: string;
   yLabel: string;
 }) {
   const xs = dataPoints.map((p) => p.x);
   const xMin = Math.min(...xs);
   const xMax = Math.max(...xs);
-  const trendColor = rho >= 0 ? "#34d399" : "#fb7185";
-
   const option = {
     grid: dofekGrid("single", { left: 8, right: 16, top: 16, bottom: 32, containLabel: true }),
     xAxis: dofekAxis.value({
@@ -358,7 +363,7 @@ function ScatterPlot({
           [xMin, regression.slope * xMin + regression.intercept],
           [xMax, regression.slope * xMax + regression.intercept],
         ],
-        lineStyle: { color: trendColor, width: 2, type: "dashed" },
+        lineStyle: { color: chartColors.blue, width: 2, type: "dashed" },
         symbol: "none",
         silent: true,
       },

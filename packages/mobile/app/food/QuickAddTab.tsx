@@ -1,4 +1,5 @@
 import { MEAL_OPTIONS, type MealType } from "@dofek/nutrition/meal";
+import { chartColors } from "@dofek/scoring/colors";
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { colors } from "../../theme";
 import { styles } from "./add-styles.ts";
@@ -93,7 +94,7 @@ export function QuickAddTab({
       <View style={styles.macroRow}>
         <View style={styles.macroField}>
           <View style={styles.macroLabelRow}>
-            <View style={[styles.macroDot, { backgroundColor: colors.positive }]} />
+            <View style={[styles.macroDot, { backgroundColor: chartColors.blue }]} />
             <Text style={styles.macroLabel}>Protein</Text>
           </View>
           <TextInput
@@ -107,7 +108,7 @@ export function QuickAddTab({
         </View>
         <View style={styles.macroField}>
           <View style={styles.macroLabelRow}>
-            <View style={[styles.macroDot, { backgroundColor: colors.warning }]} />
+            <View style={[styles.macroDot, { backgroundColor: chartColors.purple }]} />
             <Text style={styles.macroLabel}>Carbs</Text>
           </View>
           <TextInput
@@ -121,7 +122,7 @@ export function QuickAddTab({
         </View>
         <View style={styles.macroField}>
           <View style={styles.macroLabelRow}>
-            <View style={[styles.macroDot, { backgroundColor: colors.danger }]} />
+            <View style={[styles.macroDot, { backgroundColor: chartColors.teal }]} />
             <Text style={styles.macroLabel}>Fat</Text>
           </View>
           <TextInput

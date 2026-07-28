@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted<{ correlationData: Record<string, unknown> }>(() => ({
@@ -14,15 +15,36 @@ vi.mock("@dofek/format/format", () => ({
 }));
 
 vi.mock("@dofek/scoring/colors", () => ({
-  statusColors: {
-    danger: "danger",
-    positive: "positive",
-    warning: "warning",
+  chartColors: {
+    blue: "#2563eb",
+  },
+  operationalStatusColors: {
+    info: {
+      foreground: "#1e3a8a",
+      surface: "#dbeafe",
+    },
+    neutral: {
+      foreground: "#334155",
+      surface: "#f1f5f9",
+    },
   },
 }));
 
 vi.mock("../components/ChartTitleWithTooltip", () => ({
   ChartTitleWithTooltip: ({ title }: { title: string }) => <span>{title}</span>,
+}));
+
+vi.mock("react-native-svg", () => ({
+  default: ({ children }: { children: ReactNode }) => (
+    <svg>
+      <title>Test chart</title>
+      {children}
+    </svg>
+  ),
+  Circle: () => null,
+  Line: ({ stroke, testID }: { stroke: string; testID?: string }) => (
+    <g data-testid={testID} data-stroke={stroke} />
+  ),
 }));
 
 vi.mock("../lib/trpc", () => ({
@@ -122,5 +144,57 @@ describe("CorrelationScreen", () => {
     expect(screen.getByText("Pearson")).toBeTruthy();
     expect(screen.getByText("R² = 0.490")).toBeTruthy();
     expect(screen.getByText("p = 0.010")).toBeTruthy();
+  });
+
+  it("uses neutral colors for relationship direction and confidence", async () => {
+    state.correlationData = {
+      availability: "available",
+      spearmanRho: -0.75,
+      spearmanPValue: 0.01,
+      pearsonR: -0.7,
+      pearsonPValue: 0.02,
+      regression: { slope: -1, intercept: 3, rSquared: 0.49 },
+      dataPoints: [
+        { x: 1, y: 2, date: "2025-01-01" },
+        { x: 2, y: 1, date: "2025-01-02" },
+      ],
+      sampleCount: 5,
+      xStats: { mean: 1.5, median: 1.5, stddev: 0.5, min: 1, max: 2, n: 5 },
+      yStats: { mean: 1.5, median: 1.5, stddev: 0.5, min: 1, max: 2, n: 5 },
+      insight: "The metrics move in opposite directions.",
+      confidenceLevel: "strong",
+      correlationColor: "#dc2626",
+    };
+
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByTestId("spearman-correlation-fill").style.backgroundColor).toBe(
+      "rgb(37, 99, 235)",
+    );
+    expect(screen.getByTestId("pearson-correlation-fill").style.backgroundColor).toBe(
+      "rgb(37, 99, 235)",
+    );
+    expect(screen.getByTestId("confidence-badge").style.backgroundColor).toBe("rgb(219, 234, 254)");
+    expect(screen.getByText("strong").style.color).toBe("rgb(30, 58, 138)");
+    expect(screen.getByTestId("correlation-trend-line").dataset.stroke).toBe("#2563eb");
+  });
+
+  it("states the selected lag in calendar days and which metric leads", async () => {
+    const { default: CorrelationScreen } = await import("./correlation");
+    render(<CorrelationScreen />);
+
+    expect(screen.getByText("Same day")).toBeTruthy();
+    expect(screen.getByText("+1 calendar day")).toBeTruthy();
+    expect(screen.getByText("+2 calendar days")).toBeTruthy();
+    expect(
+      screen.getByText("Protein vs Heart Rate Variability on the same calendar day"),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByText("+1 calendar day"));
+
+    expect(
+      screen.getByText("Protein today vs Heart Rate Variability 1 calendar day later"),
+    ).toBeTruthy();
   });
 });
