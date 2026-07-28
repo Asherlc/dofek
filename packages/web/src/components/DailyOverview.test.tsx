@@ -105,11 +105,15 @@ describe("DailyOverview", () => {
   });
 
   it.each([
-    ["readiness", { readinessError: new Error("Readiness unavailable") }],
-    ["workload", { workloadError: new Error("Workload unavailable") }],
-    ["strain target", { strainTargetError: new Error("Strain target unavailable") }],
-    ["sleep", { sleepError: new Error("Sleep performance unavailable") }],
-  ])("shows the exact %s query failure instead of hiding the summary", (_name, errorProps) => {
+    ["readiness", "Recovery", { readinessError: new Error("Readiness unavailable") }],
+    ["workload", "Strain", { workloadError: new Error("Workload unavailable") }],
+    [
+      "strain target",
+      "Strain target",
+      { strainTargetError: new Error("Strain target unavailable") },
+    ],
+    ["sleep", "Sleep", { sleepError: new Error("Sleep performance unavailable") }],
+  ])("shows the exact %s query failure instead of hiding the summary", (_name, label, errorProps) => {
     render(
       <DailyOverview
         readiness={undefined}
@@ -124,9 +128,10 @@ describe("DailyOverview", () => {
     );
 
     expect(screen.getByRole("region", { name: "Daily health summary" })).toBeTruthy();
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      Object.values(errorProps)[0]?.message ?? "",
-    );
+    const contextHeading = `${label}: Could not load this section`;
+    const alert = screen.getByRole("heading", { name: contextHeading }).closest('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert).toHaveTextContent(Object.values(errorProps)[0]?.message ?? "");
     expect(screen.getByTestId("query-state-error")).toBeTruthy();
   });
 
@@ -147,6 +152,19 @@ describe("DailyOverview", () => {
     expect(screen.getByText("Workload unavailable")).toBeTruthy();
     expect(screen.getByText("Strain target unavailable")).toBeTruthy();
     expect(screen.getByText("Sleep performance unavailable")).toBeTruthy();
+    expect(screen.getAllByRole("alert")).toHaveLength(4);
+    expect(
+      screen.getByRole("heading", { name: "Recovery: Could not load this section" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Strain: Could not load this section" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Strain target: Could not load this section" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Sleep: Could not load this section" }),
+    ).toBeTruthy();
   });
 
   it("keeps cached ring data visible during background failures", () => {
