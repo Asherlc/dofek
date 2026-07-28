@@ -38,6 +38,7 @@ export const bodyMeasurementClickHouseSchema = z.object({
 });
 
 export const bodyCompClickHouseSchema = z.object({
+  date: dateStringSchema,
   recorded_at: timestampStringSchema,
   weight_kg: z.coerce.number().nullable(),
   body_fat_pct: z.coerce.number().nullable(),
@@ -68,10 +69,6 @@ type BodyWeightOptions = {
 
 function endDateExpression(endDate: string): string {
   return endDate === "now" ? "today()" : "toDate({endDate:String})";
-}
-
-function endTimestampExpression(endDate: string): string {
-  return endDate === "now" ? "now()" : "parseDateTimeBestEffort({endDate:String})";
 }
 
 function accessWindowDateClause(accessWindow: AccessWindow | undefined): string {
@@ -156,18 +153,21 @@ export async function fetchBodyWeightRows(
 export async function fetchBodyCompRows(
   store: BodyClickHouseStore,
   userId: string,
+  timezone: string,
   endDate: string,
   days: RangeDays,
 ): Promise<z.infer<typeof bodyCompClickHouseSchema>[]> {
-  const recordedAtRangePredicate = clickHouseDateRangePredicate({
-    expression: "recorded_at",
+  const localDateExpression = "toDate(toTimeZone(recorded_at, {timezone:String}))";
+  const localDateRangePredicate = clickHouseDateRangePredicate({
+    expression: localDateExpression,
     days,
-    endDateExpression: endTimestampExpression(endDate),
+    endDateExpression: endDateExpression(endDate),
   });
   return store.query(
     bodyCompClickHouseSchema,
     `
       SELECT
+        toString(toDate(toTimeZone(body_measurements.recorded_at, {timezone:String}))) AS date,
         toString(body_measurements.recorded_at) AS recorded_at,
         weight_kg,
         body_fat_pct
@@ -179,11 +179,12 @@ export async function fetchBodyCompRows(
         FROM analytics.v_body_measurement
         WHERE user_id = {userId:UUID}
           AND (weight_kg IS NULL OR weight_kg > 0)
-          ${recordedAtRangePredicate}
+          AND ${localDateExpression} <= ${endDateExpression(endDate)}
+          ${localDateRangePredicate}
       ) AS body_measurements
       ORDER BY body_measurements.recorded_at ASC
     `,
-    { userId, endDate, ...rangeDaysParams(days) },
+    { userId, timezone, endDate, ...rangeDaysParams(days) },
   );
 }
 

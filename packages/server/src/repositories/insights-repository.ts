@@ -107,7 +107,7 @@ export class InsightsRepository {
               ${dateWindowStartPredicate(sql`date`, endDate, days)}
             ORDER BY date ASC`,
         ),
-        fetchBodyCompRows(this.#sensorStore, this.#userId, endDate, days),
+        fetchBodyCompRows(this.#sensorStore, this.#userId, this.#timezone, endDate, days),
       ]);
 
     const restingHeartRateByDate = new Map(

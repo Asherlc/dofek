@@ -19558,6 +19558,47 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   DOFEK-MOBILE-1C. PR #2232 separately records the completed production
   remediation and resolution of DOFEK-SERVER-5A.
 
+## 2026-07-27 — Correlation repository mutants survived CI
+
+- **Status:** Root cause fixed and focused mutation validation complete; fresh
+  exact-head CI validation pending on PR #2230.
+- **Symptoms:** CI run
+  [30321796443](https://github.com/Asherlc/dofek/actions/runs/30321796443)
+  failed `Test / Stryker (0)` in job
+  [90159372842](https://github.com/Asherlc/dofek/actions/runs/30321796443/job/90159372842).
+- **User impact:** No production impact. PR #2230 could not merge because the
+  strict mutation gate detected incomplete behavioral coverage for the changed
+  correlation repository.
+- **Evidence:** The exact failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  The first fatal line was
+  `Final mutation score 65.75 under breaking threshold 75`. The report recorded
+  95 killed mutants, one timeout, 49 survivors, and one no-coverage mutant in
+  `correlation-repository.ts`.
+- **Root cause:** The new evidence contract had broad happy-path tests but did
+  not distinguish exact negative, zero, and positive lag eligibility;
+  all-time calendar boundaries; singular sample requirements; asymmetric
+  missing-marker filtering; negative bootstrap bounds; or repository argument
+  propagation. Several redundant runtime branches also expanded the mutable
+  surface without changing behavior. Stryker defines a surviving mutant as a
+  code change the tests did not detect:
+  <https://stryker-mutator.io/docs/mutation-testing-elements/survived/>.
+- **Fix / mitigation:** Add black-box assertions for every named boundary,
+  preserve asymmetric missing calendar markers through the bootstrap, and
+  verify exact repository date/range propagation. Replace conditional lag
+  indexes with bounded arithmetic, remove an unreachable loop branch, compute
+  degenerate uncertainty through the canonical bootstrap path, and remove the
+  repository's dead fallback for its required end-date argument. No mutation
+  threshold, exclusion, timeout, retry, or CI configuration changed.
+- **Validation:** The exact changed-line Stryker command now reports 119 killed
+  mutants, zero timeouts, zero no-coverage mutants, and one behaviorally
+  equivalent survivor retained for TypeScript narrowing, for a 99.17% score.
+  The focused suite passes 71 tests; Biome, root TypeScript, CSpell, and the
+  complete Docker-free changed tier pass, with 14,169 tests passed and 21
+  skipped.
+- **Remaining risk / follow-up:** Push the corrective head, require every
+  fresh exact-head CI check to pass, re-audit all review threads, and merge only
+  when the PR remains current with `main`.
 ## 2026-07-27 — Supplement integration fixtures failed canonical foreign keys
 
 - **Status:** Root cause fixed locally on PR #2225; fresh exact-head CI
