@@ -35,7 +35,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@opentelemetry/api": "1.9.1",
     "@sentry/node": "10.45.0",
-    "@slack/bolt": "4.7.3",
+    "@slack/bolt": "5.0.0",
     "@slack/socket-mode": "2.0.7",
     "@stdlib/stats-pcorrtest": "0.2.3",
     "@stdlib/stats-ranks": "0.2.3",
