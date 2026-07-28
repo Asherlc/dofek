@@ -109,7 +109,7 @@ function buildCyclePhaseEstimate({
   const completedCycleNoun = completedCycleCount === 1 ? "cycle" : "cycles";
   const methodLabel = hasPersonalHistory
     ? `Phase and cycle length use the average of ${completedCycleCount} completed ${completedCycleNoun}.`
-    : "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.";
+    : `Phase and cycle length use a generic ${cycleLength}-day default based on ${completedCycleCount} completed cycles; this is not a personal prediction.`;
   const uncertaintyLabel =
     minimumCycleLength === maximumCycleLength && minimumCycleLength !== null
       ? completedCycleCount === 1
