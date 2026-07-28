@@ -320,7 +320,12 @@ vi.mock("react-native", () => {
     AppState,
     LayoutAnimation,
     UIManager,
-    useWindowDimensions: () => ({ width: 390, height: 844 }),
+    useWindowDimensions: vi.fn(() => ({
+      width: 390,
+      height: 844,
+      scale: 3,
+      fontScale: 1,
+    })),
   };
 });
 

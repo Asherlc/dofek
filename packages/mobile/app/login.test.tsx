@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useWindowDimensions } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockCaptureException } = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ const mockLoginWithPassword = vi.fn();
 const mockRegisterWithPassword = vi.fn();
 const mockRequestPasswordReset = vi.fn();
 const mockRouterReplace = vi.fn();
+const mockUseWindowDimensions = vi.mocked(useWindowDimensions);
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
@@ -62,6 +64,59 @@ describe("LoginScreen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockIsNativeAppleSignInAvailable.mockResolvedValue(false);
+    mockUseWindowDimensions.mockReturnValue({
+      width: 390,
+      height: 844,
+      scale: 3,
+      fontScale: 1,
+    });
+  });
+
+  it("keeps the auth actions reachable in an inset-aware keyboard-safe scroll view", () => {
+    mockFetchConfiguredProviders.mockReturnValue(new Promise(() => {}));
+
+    const { container } = render(<LoginScreen />);
+
+    const scrollView = container.querySelector("scrollview");
+    expect(scrollView).not.toBeNull();
+    expect(scrollView?.getAttribute("contentinsetadjustmentbehavior")).toBe("automatic");
+    expect(scrollView?.getAttribute("keyboarddismissmode")).toBe("interactive");
+    expect(scrollView?.getAttribute("keyboardshouldpersisttaps")).toBe("handled");
+  });
+
+  it("stacks the auth mode actions when the system font size is enlarged", async () => {
+    mockUseWindowDimensions.mockReturnValue({
+      width: 390,
+      height: 844,
+      scale: 3,
+      fontScale: 2,
+    });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    const signInModeButton = await screen.findByRole("button", { name: "Sign in" });
+    const createAccountModeButton = screen.getByRole("button", { name: "Create account" });
+    expect(signInModeButton.parentElement?.style.flexDirection).toBe("column");
+    expect(signInModeButton.style.width).toBe("100%");
+    expect(createAccountModeButton.style.width).toBe("100%");
+  });
+
+  it("keeps the auth mode actions side by side at the standard font size", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    const signInModeButton = await screen.findByRole("button", { name: "Sign in" });
+    expect(signInModeButton.parentElement?.style.flexDirection).toBe("row");
   });
 
   it("shows title and subtitle", () => {
