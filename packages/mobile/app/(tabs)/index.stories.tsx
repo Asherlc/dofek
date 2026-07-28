@@ -8,6 +8,7 @@ import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 import TodayScreen from "./index";
+import { seedReadyProcessingStatus } from "./processing-status-story-fixture";
 
 function localDateString(dayOffset = 0): string {
   const date = new Date();
@@ -21,6 +22,8 @@ function createSeededProviders() {
   });
 
   const todayDate = localDateString();
+
+  seedReadyProcessingStatus(queryClient, ["activity", "sleep", "recovery", "training", "body"]);
 
   queryClient.setQueryData(
     [["mobileDashboard", "dashboard"], { input: { endDate: todayDate }, type: "query" }],

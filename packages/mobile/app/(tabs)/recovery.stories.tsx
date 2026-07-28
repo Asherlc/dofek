@@ -5,6 +5,7 @@ import { httpBatchLink } from "@trpc/client";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
+import { seedReadyProcessingStatus } from "./processing-status-story-fixture";
 import RecoveryScreen from "./recovery";
 
 function localDateString(dayOffset = 0): string {
@@ -30,6 +31,8 @@ function createSeededProviders() {
     respiratoryRateScore: 74,
   };
   const readinessWeights = { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 };
+
+  seedReadyProcessingStatus(queryClient, ["activity", "sleep", "recovery"]);
 
   queryClient.setQueryData(
     [["mobileDashboard", "recovery"], { input: { days: 30, endDate }, type: "query" }],
@@ -82,6 +85,7 @@ function createSeededProviders() {
         goal: { targetWeightKg: 72.5, targetDate: localDateString(60) },
         projectionLine: [],
       },
+      healthStatus: [],
       healthspan: {
         healthspanScore: 84,
         yearsDelta: 1.8,
