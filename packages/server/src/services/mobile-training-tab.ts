@@ -4,6 +4,7 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import { mobileTrainingTabOutputSchema } from "../contracts/mobile-dashboard-contracts.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
@@ -27,11 +28,9 @@ import {
   type StrainTargetResult,
   strainTargetReadinessRowSchema,
 } from "./strain-target-result.ts";
-import {
-  buildWorkloadRatioResult,
-  type WorkloadRatioResult,
-  workloadRatioResultSchema,
-} from "./workload-ratio.ts";
+import { buildWorkloadRatioResult, type WorkloadRatioResult } from "./workload-ratio.ts";
+
+export { mobileTrainingTabOutputSchema };
 
 export interface MobileTrainingTabResult {
   workloadRatio: WorkloadRatioResult;
@@ -197,93 +196,3 @@ export async function loadMobileTrainingTab(
     },
   };
 }
-
-export const mobileTrainingTabOutputSchema = z.object({
-  workloadRatio: workloadRatioResultSchema,
-  strainTarget: z
-    .object({
-      targetStrain: z.number(),
-      currentStrain: z.number(),
-      currentStrainSource: z.enum(["activity", "none"]).optional(),
-      currentPhysiologyLoad: z.number().nullable().optional(),
-      progressPercent: z.number(),
-      zone: z.enum(["Push", "Maintain", "Recovery"]),
-      explanation: z.string(),
-      dailyLoad: z.number().optional(),
-      acuteLoad: z.number().optional(),
-      chronicLoad: z.number().optional(),
-      workloadRatio: z.number().nullable().optional(),
-      readinessScore: z.number().optional(),
-    })
-    .optional(),
-  activities: z.array(
-    z.object({
-      id: z.string(),
-      activity_type: z.string(),
-      name: z.string().nullable(),
-      started_at: z.string(),
-      ended_at: z.string().nullable(),
-      avg_hr: z.number().nullable(),
-      max_hr: z.number().nullable(),
-      avg_power: z.number().nullable(),
-      max_power: z.number().nullable(),
-      avg_cadence: z.number().nullable(),
-      hr_samples: z.number().nullable(),
-      power_samples: z.number().nullable(),
-      distance_meters: z.number().nullable(),
-    }),
-  ),
-  weeklyVolume: z.array(
-    z.object({
-      week: z.string(),
-      activity_type: z.string(),
-      count: z.number(),
-      hours: z.number(),
-    }),
-  ),
-  verticalAscent: z.array(
-    z.object({
-      date: z.string(),
-      activityName: z.string(),
-      activityType: z.string(),
-      verticalAscentRate: z.number(),
-      elevationGainMeters: z.number(),
-      elapsedMinutes: z.number(),
-    }),
-  ),
-  climbing: z.object({
-    gradeProgression: z.array(
-      z.object({
-        date: z.string(),
-        climbType: z.enum(["boulder", "route"]),
-        gradeSystem: z.enum(["v_scale", "yds"]),
-        grade: z.string(),
-        gradeSortValue: z.number(),
-      }),
-    ),
-    volumeByGrade: z.array(
-      z.object({
-        climbType: z.enum(["boulder", "route"]),
-        gradeSystem: z.enum(["v_scale", "yds"]),
-        grade: z.string(),
-        gradeSortValue: z.number(),
-        attempts: z.number(),
-        sends: z.number(),
-      }),
-    ),
-    sessionSummary: z.array(
-      z.object({
-        activityId: z.string(),
-        date: z.string(),
-        name: z.string(),
-        locationName: z.string().nullable(),
-        attempts: z.number(),
-        sends: z.number(),
-        hardestBoulderGrade: z.string().nullable(),
-        hardestBoulderGradeSortValue: z.number().nullable(),
-        hardestRouteGrade: z.string().nullable(),
-        hardestRouteGradeSortValue: z.number().nullable(),
-      }),
-    ),
-  }),
-}) satisfies z.ZodType<MobileTrainingTabResult>;

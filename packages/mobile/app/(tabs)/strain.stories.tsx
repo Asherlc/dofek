@@ -1,39 +1,52 @@
+import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
+import { mobileTrainingFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
 import StrainScreen from "./strain";
 
-const mockWorkloadData = {
-  context: {
-    label: "Recent-to-baseline workload ratio",
-    description:
-      "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
-    recentDays: 7,
-    baselineDays: 28,
-  },
-  displayedStrain: 12.5,
-  displayedDate: "2026-03-31",
-  timeSeries: [
-    {
-      date: "2026-03-31",
-      dailyLoad: 450,
-      strain: 12.5,
-      acuteLoad: 380,
+function localDateString(dayOffset = 0): string {
+  const date = new Date();
+  date.setDate(date.getDate() + dayOffset);
+  return formatDateYmd(date);
+}
+
+function createMockWorkloadData() {
+  const timeSeries = Array.from({ length: 7 }, (_, index) => {
+    const isLatest = index === 6;
+    return {
+      date: localDateString(index - 6),
+      dailyLoad: isLatest ? 450 : 330 + index * 18,
+      strain: isLatest ? 12.5 : 10.2 + index * 0.3,
+      acuteLoad: isLatest ? 380 : 350 + index * 5,
       chronicLoad: 400,
-      workloadRatio: 0.95,
+      workloadRatio: isLatest ? 0.95 : 0.88 + index * 0.01,
+    };
+  });
+
+  return {
+    context: {
+      label: "Recent-to-baseline workload ratio",
+      description:
+        "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+      recentDays: 7,
+      baselineDays: 28,
     },
-  ],
-};
+    displayedStrain: 12.5,
+    displayedDate: localDateString(),
+    timeSeries,
+  };
+}
 
 const mockActivities = [
   {
     id: "a1",
     name: "Morning Ride",
     activity_type: "cycling",
-    started_at: "2026-03-31T07:00:00.000Z",
-    ended_at: "2026-03-31T08:30:00.000Z",
+    started_at: `${localDateString()}T07:00:00.000Z`,
+    ended_at: `${localDateString()}T08:30:00.000Z`,
     avg_hr: 148,
     max_hr: 176,
     avg_power: 235,
@@ -47,8 +60,8 @@ const mockActivities = [
     id: "a2",
     name: "Evening Run",
     activity_type: "running",
-    started_at: "2026-03-30T18:00:00.000Z",
-    ended_at: "2026-03-30T18:45:00.000Z",
+    started_at: `${localDateString(-1)}T18:00:00.000Z`,
+    ended_at: `${localDateString(-1)}T18:45:00.000Z`,
     avg_hr: 155,
     max_hr: 172,
     avg_power: null,
@@ -64,48 +77,55 @@ function createSeededProviders(activities: unknown[] = []) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
-  const endDate = new Date().toISOString().slice(0, 10);
+  const endDate = localDateString();
+  const hasActivities = activities.length > 0;
+  const workloadRatio = hasActivities
+    ? createMockWorkloadData()
+    : {
+        context: createMockWorkloadData().context,
+        displayedStrain: 0,
+        displayedDate: null,
+        timeSeries: [],
+      };
+  const fixture = mobileTrainingFixtureSchema.parse({
+    input: { days: 30, endDate },
+    data: {
+      workloadRatio,
+      strainTarget: hasActivities
+        ? {
+            targetStrain: 13.5,
+            currentStrain: 12.5,
+            currentStrainSource: "activity",
+            currentPhysiologyLoad: 450,
+            progressPercent: 93,
+            zone: "Push",
+            explanation: "Your recovery and training load support a productive training day.",
+            dailyLoad: 450,
+            acuteLoad: 380,
+            chronicLoad: 400,
+            workloadRatio: 0.95,
+            readinessScore: 78,
+          }
+        : undefined,
+      activities,
+      weeklyVolume: hasActivities
+        ? [
+            { week: localDateString(-1), activity_type: "cycling", count: 1, hours: 1.5 },
+            { week: localDateString(-1), activity_type: "running", count: 1, hours: 0.75 },
+          ]
+        : [],
+      verticalAscent: [],
+      climbing: {
+        gradeProgression: [],
+        volumeByGrade: [],
+        sessionSummary: [],
+      },
+    },
+  });
 
   queryClient.setQueryData(
     [["mobileDashboard", "training"], { input: { days: 30, endDate }, type: "query" }],
-    {
-      workloadRatio: mockWorkloadData,
-      strainTarget: {
-        targetStrain: 13.5,
-        currentStrain: 12.5,
-        currentStrainSource: "activity",
-        currentPhysiologyLoad: 450,
-        progressPercent: 93,
-        zone: "Push",
-        explanation: "Your recovery and training load support a productive training day.",
-        dailyLoad: 450,
-        acuteLoad: 380,
-        chronicLoad: 400,
-        workloadRatio: 0.95,
-        readinessScore: 78,
-      },
-      activities,
-      weeklyVolume: [
-        { week: endDate, activity_type: "cycling", count: 3, hours: 5.2 },
-        { week: endDate, activity_type: "running", count: 2, hours: 1.7 },
-      ],
-      verticalAscent: [],
-    },
-  );
-
-  queryClient.setQueryData(
-    [["recovery", "workloadRatio"], { input: { days: 30 }, type: "query" }],
-    mockWorkloadData,
-  );
-
-  queryClient.setQueryData(
-    [["training", "activityStats"], { input: { days: 30 }, type: "query" }],
-    activities,
-  );
-
-  queryClient.setQueryData(
-    [["training", "weeklyVolume"], { input: { days: 30 }, type: "query" }],
-    [],
+    fixture.data,
   );
 
   return { queryClient };
