@@ -85,7 +85,7 @@ describe("CorrelationCard", () => {
 
     const option = JSON.parse(screen.getByTestId("correlation-chart").dataset.option ?? "{}");
     expect(option.series[0].data[1].itemStyle.color).toBe(chartColors.blue);
-    expect(screen.getByText("+20%").className).toContain("text-muted");
+    expect(screen.getByText("+20%")).toHaveClass("text-muted");
     expect(screen.getByText("Emerging").style.color).toBe(
       `rgb(${Number.parseInt(operationalStatusColors.neutral.foreground.slice(1, 3), 16)}, ${Number.parseInt(operationalStatusColors.neutral.foreground.slice(3, 5), 16)}, ${Number.parseInt(operationalStatusColors.neutral.foreground.slice(5, 7), 16)})`,
     );
