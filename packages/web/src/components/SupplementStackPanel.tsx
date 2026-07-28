@@ -176,7 +176,7 @@ export function SupplementStackPanel() {
       {supplements.length === 0 && !showAdd && (
         <QueryStatePanel
           variant="empty"
-          message="No supplements configured. Add your daily stack and it will be synced as nutrition data."
+          message="No supplements configured. Add your daily plan, then record each dose as taken or skipped."
           height={72}
         />
       )}

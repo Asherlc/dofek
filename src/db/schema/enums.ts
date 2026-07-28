@@ -11,6 +11,13 @@ export const nutritionEntryGrainEnum = fitness.enum("nutrition_entry_grain", [
   "daily_aggregate",
 ]);
 
+export const supplementDoseStatusEnum = fitness.enum("supplement_dose_status", [
+  "planned",
+  "taken",
+  "skipped",
+  "unknown",
+]);
+
 export const foodCategoryEnum = fitness.enum("food_category", [
   // FatSecret standard categories
   "beans_and_legumes",

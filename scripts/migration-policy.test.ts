@@ -8,10 +8,42 @@ describe("migration policy", () => {
       "drizzle/0027_add_activity_note.sql",
       `
 ALTER TABLE fitness.activity ADD COLUMN IF NOT EXISTS note text;
-CREATE INDEX CONCURRENTLY IF NOT EXISTS activity_note_idx ON fitness.activity (note);
+CREATE INDEX IF NOT EXISTS activity_note_idx ON fitness.activity (note);
 DROP VIEW IF EXISTS analytics.old_activity_view;
 CREATE VIEW analytics.activity_note_summary AS SELECT id, note FROM fitness.activity;
 `,
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  it("blocks concurrent index DDL in transaction-bound Drizzle migrations", () => {
+    const violations = lintMigrationPolicyFile(
+      "drizzle/0061_concurrent_indexes.sql",
+      `
+CREATE INDEX CONCURRENTLY activity_note_idx ON fitness.activity (note);
+DROP INDEX CONCURRENTLY fitness.activity_note_idx;
+`,
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: "drizzle/0061_concurrent_indexes.sql",
+        lineNumber: 2,
+        ruleName: "drizzle-concurrent-index",
+      }),
+      expect.objectContaining({
+        filePath: "drizzle/0061_concurrent_indexes.sql",
+        lineNumber: 3,
+        ruleName: "drizzle-concurrent-index",
+      }),
+    ]);
+  });
+
+  it("does not apply the Drizzle transaction rule outside Postgres migrations", () => {
+    const violations = lintMigrationPolicyFile(
+      "maintenance/rebuild-index.sql",
+      "CREATE INDEX CONCURRENTLY activity_note_idx ON fitness.activity (note);",
     );
 
     expect(violations).toEqual([]);
@@ -61,6 +93,130 @@ FROM fitness.body_measurement;
       expect.objectContaining({
         filePath: "drizzle/0027_bad_backfill.sql",
         lineNumber: 2,
+        ruleName: "insert-select",
+      }),
+    ]);
+  });
+
+  it("allows an atomic normalization copy that removes the source storage", () => {
+    const violations = lintMigrationPolicyFile(
+      "drizzle/0061_normalize_supplements.sql",
+      `
+CREATE TABLE fitness.supplement_definition (
+  id uuid PRIMARY KEY,
+  supplement_id uuid NOT NULL,
+  amount real
+);
+ALTER TABLE fitness.supplement RENAME TO supplement_legacy;
+INSERT INTO fitness.supplement_definition (id, supplement_id, amount)
+SELECT id, id, amount
+FROM fitness.supplement_legacy;
+DROP TABLE fitness.supplement_legacy;
+
+CREATE TABLE fitness.supplement_definition_nutrient (
+  definition_id uuid NOT NULL,
+  nutrient_id text NOT NULL
+);
+ALTER TABLE fitness.supplement_nutrient RENAME TO supplement_nutrient_legacy;
+INSERT INTO fitness.supplement_definition_nutrient (definition_id, nutrient_id)
+SELECT supplement_id, nutrient_id
+FROM fitness.supplement_nutrient_legacy;
+DROP TABLE fitness.supplement_nutrient_legacy;
+`,
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  it("blocks partial-column copies that retain the source relation", () => {
+    const violations = lintMigrationPolicyFile(
+      "drizzle/0061_partial_normalization.sql",
+      `
+CREATE TABLE fitness.supplement_definition (
+  id uuid PRIMARY KEY,
+  amount real
+);
+INSERT INTO fitness.supplement_definition (id, amount)
+SELECT id, amount
+FROM fitness.supplement;
+ALTER TABLE fitness.supplement DROP COLUMN amount;
+`,
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: "drizzle/0061_partial_normalization.sql",
+        ruleName: "insert-select",
+      }),
+    ]);
+  });
+
+  it("blocks normalization copies that retain the source storage", () => {
+    const violations = lintMigrationPolicyFile(
+      "drizzle/0061_dual_write.sql",
+      `
+CREATE TABLE fitness.supplement_definition (
+  id uuid PRIMARY KEY,
+  amount real
+);
+INSERT INTO fitness.supplement_definition (id, amount)
+SELECT id, amount
+FROM fitness.supplement;
+`,
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: "drizzle/0061_dual_write.sql",
+        lineNumber: 6,
+        ruleName: "insert-select",
+      }),
+    ]);
+  });
+
+  it("blocks normalization copies joined to any retained relation", () => {
+    const violations = lintMigrationPolicyFile(
+      "drizzle/0061_joined_copy.sql",
+      `
+CREATE TABLE fitness.supplement_definition (
+  id uuid PRIMARY KEY,
+  nutrient_id text
+);
+INSERT INTO fitness.supplement_definition (id, nutrient_id)
+SELECT legacy.id, nutrient.id
+FROM fitness.supplement_legacy AS legacy
+INNER JOIN fitness.nutrient AS nutrient ON nutrient.id = 'magnesium';
+DROP TABLE fitness.supplement_legacy;
+`,
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: "drizzle/0061_joined_copy.sql",
+        ruleName: "insert-select",
+      }),
+    ]);
+  });
+
+  it("blocks comma-join normalization copies", () => {
+    const violations = lintMigrationPolicyFile(
+      "drizzle/0061_comma_join.sql",
+      `
+CREATE TABLE fitness.supplement_definition (
+  id uuid PRIMARY KEY,
+  nutrient_id text
+);
+INSERT INTO fitness.supplement_definition (id, nutrient_id)
+SELECT legacy.id, nutrient.id
+FROM fitness.supplement_legacy AS legacy, fitness.nutrient AS nutrient;
+DROP TABLE fitness.supplement_legacy;
+DROP TABLE fitness.nutrient;
+`,
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: "drizzle/0061_comma_join.sql",
         ruleName: "insert-select",
       }),
     ]);
