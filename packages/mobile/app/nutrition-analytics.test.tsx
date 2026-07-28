@@ -27,18 +27,35 @@ vi.mock("../lib/trpc", () => ({
           isLoading: false,
         }),
       },
-      micronutrientAdequacy: {
+      micronutrientAdequacyV2: {
         useQuery: () => ({
-          data: [
-            {
-              nutrient: "Iron",
-              unit: "mg",
-              rda: 18,
-              avgIntake: 12,
-              percentRda: 67,
-              daysTracked: 7,
-            },
-          ],
+          data: {
+            nutrients: [
+              {
+                nutrientId: "iron",
+                nutrient: "Iron",
+                unit: "mg",
+                intake: {
+                  totalDailyAverage: 12,
+                  foodDailyAverage: 12,
+                  supplementDailyAverage: 0,
+                  daysTracked: 7,
+                },
+                adequacy: {
+                  status: "below_daily_value",
+                  percentDailyValue: 67,
+                  message:
+                    "Average intake over recorded days is below the FDA Daily Value. This generic label reference is not a personalized deficiency assessment.",
+                  reference: { amount: 18 },
+                },
+                upperLimit: {
+                  status: "not_in_ruleset",
+                  message: "No upper-limit rule is included in this bounded ruleset.",
+                },
+                safetyStatus: "no_upper_limit_in_ruleset",
+              },
+            ],
+          },
           isLoading: false,
         }),
       },
@@ -67,7 +84,9 @@ describe("NutritionAnalyticsScreen", () => {
       screen.getByText("Not enough data to estimate Total Daily Energy Expenditure (TDEE)"),
     ).toBeTruthy();
     expect(
-      screen.getByText("Average daily intake vs. Recommended Dietary Allowance (RDA)"),
+      screen.getByText(
+        "Average over recorded days vs. FDA Daily Value; not a personalized deficiency or safety assessment",
+      ),
     ).toBeTruthy();
   });
 });

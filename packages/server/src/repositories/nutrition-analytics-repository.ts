@@ -1,3 +1,11 @@
+import {
+  type DailyValueReference,
+  evaluateNutrientUpperLimit,
+  getNutrientDailyValue,
+  NUTRIENT_SAFETY_RULESET_REVIEWED_ON,
+  type NutrientSafetySource,
+  type UpperLimitEvaluation,
+} from "@dofek/nutrition/nutrient-safety";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -66,6 +74,136 @@ export class MicronutrientAdequacy {
       daysTracked: this.#row.daysTracked,
     };
   }
+}
+
+export type MicronutrientSafetyStatus =
+  | "at_or_above_upper_limit"
+  | "upper_limit_not_evaluable"
+  | "within_upper_limit"
+  | "no_upper_limit_in_ruleset";
+
+export type DailyValueEvaluation =
+  | {
+      readonly status: "below_daily_value" | "at_or_above_daily_value";
+      readonly percentDailyValue: number;
+      readonly reference: DailyValueReference;
+      readonly message: string;
+    }
+  | {
+      readonly status: "not_evaluable";
+      readonly reference: DailyValueReference;
+      readonly limitation: string;
+      readonly message: string;
+    };
+
+export interface MicronutrientSafetyReviewData {
+  readonly nutrientId: string;
+  readonly nutrient: string;
+  readonly unit: string;
+  readonly totalDailyAverage: number;
+  readonly foodDailyAverage: number;
+  readonly supplementDailyAverage: number;
+  readonly daysTracked: number;
+}
+
+function upperLimitMessage(evaluation: UpperLimitEvaluation): string {
+  switch (evaluation.status) {
+    case "at_or_above_limit":
+      return "Average intake over recorded days is at or above the included NIH adult upper limit. Review this intake with a doctor or pharmacist.";
+    case "within_limit":
+      return "Average intake over recorded days is below the included NIH adult upper limit. This does not rule out medication interactions or individual risks.";
+    case "not_evaluable":
+      return evaluation.limitation;
+    case "not_in_ruleset":
+      return evaluation.limitation;
+  }
+}
+
+function safetyStatus(evaluation: UpperLimitEvaluation): MicronutrientSafetyStatus {
+  switch (evaluation.status) {
+    case "at_or_above_limit":
+      return "at_or_above_upper_limit";
+    case "within_limit":
+      return "within_upper_limit";
+    case "not_evaluable":
+      return "upper_limit_not_evaluable";
+    case "not_in_ruleset":
+      return "no_upper_limit_in_ruleset";
+  }
+}
+
+/** Server-owned safety context for a single tracked nutrient. */
+export class MicronutrientSafetyReview {
+  readonly #row: MicronutrientSafetyReviewData;
+  readonly #adequacy: DailyValueEvaluation | null;
+  readonly #upperLimit: UpperLimitEvaluation & { readonly message: string };
+  readonly #safetyStatus: MicronutrientSafetyStatus;
+
+  constructor(row: MicronutrientSafetyReviewData) {
+    this.#row = row;
+    const dailyValue = getNutrientDailyValue(row.nutrientId);
+    if (dailyValue == null) {
+      this.#adequacy = null;
+    } else if (dailyValue.unit !== row.unit) {
+      const limitation = `Tracked unit ${row.unit} does not match the FDA Daily Value unit ${dailyValue.unit}.`;
+      this.#adequacy = {
+        status: "not_evaluable",
+        reference: dailyValue,
+        limitation,
+        message: limitation,
+      };
+    } else {
+      const percentDailyValue =
+        dailyValue.amount > 0
+          ? Math.round((row.totalDailyAverage / dailyValue.amount) * 1_000) / 10
+          : 0;
+      this.#adequacy = {
+        status:
+          row.totalDailyAverage >= dailyValue.amount
+            ? "at_or_above_daily_value"
+            : "below_daily_value",
+        percentDailyValue,
+        reference: dailyValue,
+        message:
+          row.totalDailyAverage >= dailyValue.amount
+            ? "Average intake over recorded days meets or exceeds the FDA Daily Value. This generic label reference is not a personalized safety assessment."
+            : "Average intake over recorded days is below the FDA Daily Value. This generic label reference is not a personalized deficiency assessment.",
+      };
+    }
+
+    const upperLimit = evaluateNutrientUpperLimit({
+      nutrientId: row.nutrientId,
+      unit: row.unit,
+      totalDailyAmount: row.totalDailyAverage,
+      supplementalDailyAmount: row.supplementDailyAverage,
+    });
+    this.#upperLimit = { ...upperLimit, message: upperLimitMessage(upperLimit) };
+    this.#safetyStatus = safetyStatus(upperLimit);
+  }
+
+  toDetail() {
+    return {
+      nutrientId: this.#row.nutrientId,
+      nutrient: this.#row.nutrient,
+      unit: this.#row.unit,
+      intake: {
+        totalDailyAverage: this.#row.totalDailyAverage,
+        foodDailyAverage: this.#row.foodDailyAverage,
+        supplementDailyAverage: this.#row.supplementDailyAverage,
+        daysTracked: this.#row.daysTracked,
+      },
+      adequacy: this.#adequacy,
+      upperLimit: this.#upperLimit,
+      safetyStatus: this.#safetyStatus,
+    };
+  }
+}
+
+export interface SupplementMedicationReview {
+  readonly status: "professional_review_recommended" | "no_medication_records" | "no_supplements";
+  readonly message: string;
+  readonly limitation: string;
+  readonly source: NutrientSafetySource;
 }
 
 export interface AdaptiveTdeeDataPoint {
@@ -319,6 +457,155 @@ export class NutritionAnalyticsRepository extends BaseRepository {
         daysTracked,
       });
     });
+  }
+
+  /** Source-aware intake review against FDA Daily Values and the bounded NIH UL ruleset. */
+  async getMicronutrientSafetyReview(days: RangeDays): Promise<MicronutrientSafetyReview[]> {
+    const rows = await executeWithSchema(
+      this.db,
+      z.object({
+        nutrient_id: z.string(),
+        nutrient: z.string(),
+        unit: z.string(),
+        avg_total_intake: z.coerce.number(),
+        avg_food_intake: z.coerce.number(),
+        avg_supplement_intake: z.coerce.number(),
+        days_tracked: z.coerce.number(),
+      }),
+      sql`WITH daily_totals AS (
+            SELECT
+              fen.date,
+              n.id,
+              n.display_name,
+              n.unit,
+              SUM(fen.amount) AS total_amount,
+              COALESCE(
+                SUM(fen.amount) FILTER (WHERE fen.food_entry_id IS NOT NULL),
+                0
+              ) AS food_amount,
+              COALESCE(
+                SUM(fen.amount) FILTER (WHERE fen.supplement_dose_event_id IS NOT NULL),
+                0
+              ) AS supplement_amount
+            FROM fitness.v_nutrition_canonical_nutrient fen
+            JOIN fitness.nutrient n ON n.id = fen.nutrient_id
+            WHERE fen.user_id = ${this.userId}
+              ${currentDateRangePredicate(sql`fen.date`, days)}
+              ${this.dateAccessPredicate(sql`fen.date`)}
+            GROUP BY fen.date, n.id, n.display_name, n.unit
+          )
+          SELECT
+            id AS nutrient_id,
+            display_name AS nutrient,
+            unit,
+            AVG(total_amount) AS avg_total_intake,
+            AVG(food_amount) AS avg_food_intake,
+            AVG(supplement_amount) AS avg_supplement_intake,
+            COUNT(total_amount) AS days_tracked
+          FROM daily_totals
+          GROUP BY id, display_name, unit
+          ORDER BY display_name`,
+    );
+
+    return rows.flatMap((row) => {
+      const totalDailyAverage = Math.round(row.avg_total_intake * 10) / 10;
+      const foodDailyAverage = Math.round(row.avg_food_intake * 10) / 10;
+      const supplementDailyAverage = Math.round(row.avg_supplement_intake * 10) / 10;
+      const upperLimit = evaluateNutrientUpperLimit({
+        nutrientId: row.nutrient_id,
+        unit: row.unit,
+        totalDailyAmount: totalDailyAverage,
+        supplementalDailyAmount: supplementDailyAverage,
+      });
+      if (
+        getNutrientDailyValue(row.nutrient_id) == null &&
+        upperLimit.status === "not_in_ruleset"
+      ) {
+        return [];
+      }
+
+      return [
+        new MicronutrientSafetyReview({
+          nutrientId: row.nutrient_id,
+          nutrient: row.nutrient,
+          unit: row.unit,
+          totalDailyAverage,
+          foodDailyAverage,
+          supplementDailyAverage,
+          daysTracked: row.days_tracked,
+        }),
+      ];
+    });
+  }
+
+  /** General review state; no medication-specific interaction is inferred. */
+  async getSupplementMedicationReview(): Promise<SupplementMedicationReview> {
+    const rows = await executeWithSchema(
+      this.db,
+      z.object({
+        has_medication_records: z.boolean(),
+        has_supplements: z.boolean(),
+      }),
+      sql`SELECT
+            (
+              EXISTS (
+                SELECT 1
+                FROM fitness.medication
+                WHERE user_id = ${this.userId}
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM fitness.medication_dose_event
+                WHERE user_id = ${this.userId}
+              )
+            ) AS has_medication_records,
+            EXISTS (
+              SELECT 1
+              FROM fitness.supplement s
+              JOIN fitness.supplement_definition definition
+                ON definition.supplement_id = s.id
+                AND definition.effective_to IS NULL
+              WHERE s.user_id = ${this.userId}
+            ) AS has_supplements`,
+    );
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Supplement and medication review query returned no status row.");
+    }
+
+    const source: NutrientSafetySource = {
+      agency: "FDA",
+      title: "Mixing Medications and Dietary Supplements Can Endanger Your Health",
+      url: "https://www.fda.gov/consumers/consumer-updates/mixing-medications-and-dietary-supplements-can-endanger-your-health",
+      reviewedOn: NUTRIENT_SAFETY_RULESET_REVIEWED_ON,
+    };
+    const limitation =
+      "Dofek does not determine whether a specific medication and supplement interact.";
+
+    if (!row.has_supplements) {
+      return {
+        status: "no_supplements",
+        message: "Add supplements to review them alongside your medication records.",
+        limitation,
+        source,
+      };
+    }
+    if (!row.has_medication_records) {
+      return {
+        status: "no_medication_records",
+        message:
+          "No medication records are available for a combined review. Keep your doctor or pharmacist informed about all supplements you take.",
+        limitation,
+        source,
+      };
+    }
+    return {
+      status: "professional_review_recommended",
+      message:
+        "Review your complete medication and supplement list with a doctor or pharmacist because supplements can interact with medications.",
+      limitation,
+      source,
+    };
   }
 
   /** Raw daily calorie + weight data for adaptive TDEE estimation. */

@@ -1,5 +1,5 @@
 import { formatCalories, formatNumber, formatNutritionNumber } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
+import { operationalStatusColors, statusColors } from "@dofek/scoring/colors";
 import { useState } from "react";
 import {
   RefreshControl,
@@ -26,11 +26,20 @@ const DAY_OPTIONS = [
 
 // ── Helpers ──
 
-function nutrientBarColor(percentRda: number): string {
-  if (percentRda >= 100) return statusColors.positive;
-  if (percentRda >= 75) return statusColors.warning;
-  if (percentRda >= 50) return statusColors.elevated;
-  return statusColors.danger;
+function nutrientBarColor(
+  safetyStatus:
+    | "at_or_above_upper_limit"
+    | "upper_limit_not_evaluable"
+    | "within_upper_limit"
+    | "no_upper_limit_in_ruleset",
+): string {
+  if (safetyStatus === "at_or_above_upper_limit") {
+    return operationalStatusColors.danger.indicator;
+  }
+  if (safetyStatus === "upper_limit_not_evaluable") {
+    return operationalStatusColors.warning.indicator;
+  }
+  return operationalStatusColors.info.indicator;
 }
 
 function proteinPerKgColor(value: number): string {
@@ -168,15 +177,20 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
   const { width: screenWidth } = useWindowDimensions();
   const barMaxWidth = screenWidth - 160;
 
-  const adequacy = trpc.nutritionAnalytics.micronutrientAdequacy.useQuery({ days });
+  const adequacy = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery({ days });
 
   if (adequacy.isLoading) return <LoadingText />;
 
-  const data = adequacy.data ?? [];
+  const data = (adequacy.data?.nutrients ?? []).filter(
+    (nutrient) => nutrient.adequacy != null && nutrient.adequacy.status !== "not_evaluable",
+  );
   if (data.length === 0) return null;
 
-  // Sort by percentRda ascending (worst first)
-  const sorted = [...data].sort((a, b) => a.percentRda - b.percentRda);
+  const sorted = [...data].sort((a, b) => {
+    const first = a.adequacy?.status !== "not_evaluable" ? a.adequacy?.percentDailyValue : 0;
+    const second = b.adequacy?.status !== "not_evaluable" ? b.adequacy?.percentDailyValue : 0;
+    return (first ?? 0) - (second ?? 0);
+  });
 
   return (
     <View>
@@ -186,13 +200,18 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
         textStyle={styles.sectionTitle}
       />
       <Text style={styles.sectionSubtext}>
-        Average daily intake vs. Recommended Dietary Allowance (RDA)
+        Average over recorded days vs. FDA Daily Value; not a personalized deficiency or safety
+        assessment
       </Text>
 
       {sorted.map((nutrient) => {
-        const percentage = Math.min(nutrient.percentRda, 150);
+        const percentDailyValue =
+          nutrient.adequacy?.status !== "not_evaluable"
+            ? (nutrient.adequacy?.percentDailyValue ?? 0)
+            : 0;
+        const percentage = Math.min(percentDailyValue, 150);
         const barFraction = percentage / 150;
-        const barColor = nutrientBarColor(nutrient.percentRda);
+        const barColor = nutrientBarColor(nutrient.safetyStatus);
 
         return (
           <View key={nutrient.nutrient} style={styles.nutrientRow}>
@@ -216,7 +235,7 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
                 <View style={[styles.nutrientRdaMarker, { left: `${(100 / 150) * 100}%` }]} />
               </View>
               <Text style={[styles.nutrientPct, { color: barColor }]}>
-                {formatNutritionNumber(nutrient.percentRda)}%
+                {formatNutritionNumber(percentDailyValue)}%
               </Text>
             </View>
           </View>

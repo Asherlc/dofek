@@ -112,6 +112,14 @@ describe("supplementsRouter", () => {
   });
 
   describe("save", () => {
+    it("invalidates nutrition analytics after replacing the stack", async () => {
+      const { caller } = await makeCaller([]);
+
+      await caller.save({ supplements: [] });
+
+      expect(invalidateNutritionCaches).toHaveBeenCalledWith("user-1");
+    });
+
     it("preserves the exact installed-client V1 success shape", async () => {
       const { caller } = await makeCaller([]);
       expect(await caller.save({ supplements: [] })).toEqual({

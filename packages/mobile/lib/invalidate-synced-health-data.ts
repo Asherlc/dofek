@@ -11,7 +11,7 @@ const SYNCED_HEALTH_DATA_QUERY_PATHS = new Set([
   "processing.status",
   "nutritionAnalytics.adaptiveTdee",
   "nutritionAnalytics.macroRatios",
-  "nutritionAnalytics.micronutrientAdequacy",
+  "nutritionAnalytics.micronutrientAdequacyV2",
 ]);
 
 function queryPath(queryKey: readonly unknown[]): string | null {

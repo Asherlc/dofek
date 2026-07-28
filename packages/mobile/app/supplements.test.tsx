@@ -79,6 +79,50 @@ vi.mock("../lib/trpc", () => ({
         },
       },
     },
+    nutritionAnalytics: {
+      micronutrientAdequacyV2: {
+        useQuery: () => ({
+          data: {
+            nutrients: [
+              {
+                nutrientId: "vitamin_d",
+                nutrient: "Vitamin D",
+                unit: "mcg",
+                intake: {
+                  totalDailyAverage: 120,
+                  foodDailyAverage: 20,
+                  supplementDailyAverage: 100,
+                  daysTracked: 10,
+                },
+                upperLimit: {
+                  status: "at_or_above_limit",
+                  message:
+                    "Average intake over recorded days is at or above the included NIH adult upper limit. Review this intake with a doctor or pharmacist.",
+                  source: {
+                    agency: "NIH ODS",
+                    url: "https://ods.od.nih.gov/factsheets/VitaminD-HealthProfessional/",
+                  },
+                },
+                safetyStatus: "at_or_above_upper_limit",
+              },
+            ],
+            professionalReview: {
+              status: "professional_review_recommended",
+              message:
+                "Review your complete medication and supplement list with a doctor or pharmacist because supplements can interact with medications.",
+              limitation:
+                "Dofek does not determine whether a specific medication and supplement interact.",
+              source: {
+                agency: "FDA",
+                url: "https://www.fda.gov/consumers/consumer-updates/mixing-medications-and-dietary-supplements-can-endanger-your-health",
+              },
+            },
+          },
+          error: null,
+          isLoading: false,
+        }),
+      },
+    },
   },
 }));
 
@@ -137,5 +181,17 @@ describe("SupplementsScreen", () => {
     await mocks.saveOptions?.onSuccess?.();
 
     expect(mocks.invalidate).toHaveBeenCalledOnce();
+  });
+
+  it("renders server-owned upper-limit and medication-review guidance", async () => {
+    const { default: SupplementsScreen } = await import("./supplements");
+
+    render(<SupplementsScreen />);
+
+    expect(screen.getByText("Safety Context")).toBeTruthy();
+    expect(screen.getByText(/at or above the included NIH adult upper limit/)).toBeTruthy();
+    expect(screen.getByText(/complete medication and supplement list/)).toBeTruthy();
+    expect(screen.getByText(/does not determine whether a specific medication/)).toBeTruthy();
+    expect(screen.getByText(/over 10 recorded days/)).toBeTruthy();
   });
 });
