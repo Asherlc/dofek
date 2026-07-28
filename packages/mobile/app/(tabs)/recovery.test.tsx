@@ -9,6 +9,7 @@ let mockRecoveryFetching = false;
 let sparkLinePropsCalls: Record<string, unknown>[];
 const mockRecoveryInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
+const mockRouterPush = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 
 vi.mock("../../lib/trpc", () => ({
@@ -46,7 +47,7 @@ vi.mock("../../components/charts/SparkLine", () => ({
 }));
 
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: mockRouterPush }),
 }));
 
 vi.mock("../../lib/units", async () => {
@@ -96,6 +97,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     sparkLinePropsCalls = [];
     mockRecoveryInvalidate.mockReset();
     mockProcessingStatusInvalidate.mockReset();
+    mockRouterPush.mockReset();
     mockRecoveryInvalidate.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
@@ -110,6 +112,15 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
 
     expect(mockRecoveryInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
+  });
+
+  it("opens breathwork from recovery tools", async () => {
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Breathwork" }));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/breathwork");
   });
 
   it("keeps day selector visible while recovery data is loading", async () => {

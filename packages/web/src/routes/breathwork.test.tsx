@@ -8,6 +8,13 @@ interface Technique {
   id: string;
   name: string;
   description: string;
+  possibleBenefit?: string;
+  safety: {
+    position: string;
+    warnings: string[];
+    stopCriteria: string;
+    emergency: string;
+  };
   inhaleSeconds: number;
   exhaleSeconds: number;
   defaultRounds: number;
@@ -57,6 +64,14 @@ const state = vi.hoisted<TestState>(() => ({
   captureException: vi.fn(),
   invalidateHistory: vi.fn(),
 }));
+
+const standardSafety = {
+  position: "Practice seated or lying down in a comfortable, safe place.",
+  warnings: ["Do not force or strain your breath."],
+  stopCriteria: "Stop and return to normal breathing if you feel dizzy or lightheaded.",
+  emergency:
+    "Call emergency services if someone faints and is not breathing, cannot be woken within 1 minute, or has not fully recovered.",
+};
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: { component: ComponentType }) => {
@@ -175,6 +190,7 @@ describe("BreathworkPage", () => {
           id: "box-breathing",
           name: "Box Breathing",
           description: "Calming pattern",
+          safety: standardSafety,
           inhaleSeconds: 1,
           exhaleSeconds: 1,
           defaultRounds: 1,
@@ -196,6 +212,7 @@ describe("BreathworkPage", () => {
         id: "box-breathing",
         name: "Box Breathing",
         description: "Calming pattern",
+        safety: standardSafety,
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
@@ -221,12 +238,90 @@ describe("BreathworkPage", () => {
     expect(screen.getByText("History refresh failed.")).toBeTruthy();
   });
 
+  it("shows material safety guidance before starting Wim Hof breathing", () => {
+    state.techniques.data = [
+      {
+        id: "wim-hof",
+        name: "Wim Hof Method",
+        description: "Deep inhales, passive exhales, then a breath hold.",
+        safety: {
+          position: "Practice only while seated or lying down in a safe place.",
+          warnings: [
+            "Intense rounds can, in rare cases, cause loss of consciousness.",
+            "Never practice in or near water, while driving, or anywhere fainting could cause injury.",
+          ],
+          stopCriteria: "Stop and return to normal breathing if you feel dizzy or lightheaded.",
+          emergency:
+            "Call emergency services if someone faints and is not breathing, cannot be woken within 1 minute, or has not fully recovered.",
+        },
+        inhaleSeconds: 2,
+        exhaleSeconds: 2,
+        defaultRounds: 30,
+      },
+    ];
+
+    renderBreathworkPage();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Wim Hof Method Deep inhales, passive exhales, then a breath hold. 30 rounds",
+      }),
+    );
+
+    expect(screen.getByRole("heading", { name: "Safety before you start" })).toBeTruthy();
+    expect(
+      screen.getByText("Intense rounds can, in rare cases, cause loss of consciousness."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Never practice in or near water, while driving, or anywhere fainting could cause injury.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Practice only while seated or lying down in a safe place."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Stop and return to normal breathing if you feel dizzy or lightheaded."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Call emergency services if someone faints and is not breathing, cannot be woken within 1 minute, or has not fully recovered.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start Session" })).toBeTruthy();
+  });
+
+  it("labels supported benefits as possible", () => {
+    state.techniques.data = [
+      {
+        id: "box-breathing",
+        name: "Box Breathing",
+        description: "Equal-length inhale, hold, exhale, and hold phases.",
+        possibleBenefit: "Regular practice may support a more positive mood.",
+        safety: {
+          position: "Practice seated or lying down in a comfortable, safe place.",
+          warnings: ["Do not force or strain your breath."],
+          stopCriteria: "Stop and return to normal breathing if you feel dizzy or lightheaded.",
+          emergency:
+            "Call emergency services if someone faints and is not breathing, cannot be woken within 1 minute, or has not fully recovered.",
+        },
+        inhaleSeconds: 4,
+        exhaleSeconds: 4,
+        defaultRounds: 4,
+      },
+    ];
+
+    renderBreathworkPage();
+
+    expect(screen.getByText("Regular practice may support a more positive mood.")).toBeTruthy();
+  });
+
   it("paginates recent sessions", () => {
     state.techniques.data = [
       {
         id: "box-breathing",
         name: "Box Breathing",
         description: "Calming pattern",
+        safety: standardSafety,
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
@@ -260,6 +355,7 @@ describe("BreathworkPage", () => {
         id: "box-breathing",
         name: "Box Breathing",
         description: "Calming pattern",
+        safety: standardSafety,
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
@@ -296,6 +392,7 @@ describe("BreathworkPage", () => {
         id: "box-breathing",
         name: "Box Breathing",
         description: "Calming pattern",
+        safety: standardSafety,
         inhaleSeconds: 1,
         exhaleSeconds: 1,
         defaultRounds: 1,
@@ -323,6 +420,7 @@ describe("BreathworkPage", () => {
         id: "box-breathing",
         name: "Box Breathing",
         description: "Calming pattern",
+        safety: standardSafety,
         inhaleSeconds: 4,
         exhaleSeconds: 4,
         defaultRounds: 1,
