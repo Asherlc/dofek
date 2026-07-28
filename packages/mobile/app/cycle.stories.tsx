@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { OperationResultObservable, TRPCLink } from "@trpc/client";
+import type { inferRouterClient, OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -8,12 +8,16 @@ import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import CycleScreen from "./cycle";
 
+type CurrentPhaseOutput = Awaited<
+  ReturnType<inferRouterClient<AppRouter>["menstrualCycle"]["currentPhase"]["query"]>
+>;
+
 const currentPhase = {
-  phase: "menstrual" as const,
+  phase: "menstrual",
   dayOfCycle: 3,
   cycleLength: 28,
   estimate: {
-    basis: "personal-cycle-average" as const,
+    basis: "personal-cycle-average",
     completedCycleCount: 3,
     observedCycleLengthRange: {
       minimumDays: 27,
@@ -26,7 +30,7 @@ const currentPhase = {
     uncertaintyLabel: "Recorded cycle lengths ranged from 27 to 29 days.",
     limitationLabel: "No calibrated confidence score or next-period forecast is available.",
   },
-};
+} satisfies CurrentPhaseOutput;
 
 const periodHistory = [
   {

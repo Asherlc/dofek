@@ -168,6 +168,21 @@ describe("MenstrualCycleRepository", () => {
       expect(result.estimate?.uncertaintyLabel).toBe("The recorded cycle length was 28 days.");
     });
 
+    it("describes multiple equal completed cycles in the plural", async () => {
+      const today = new Date("2025-01-15T12:00:00Z");
+      const { repo } = makeRepository([
+        phaseRow({
+          completedCycleCount: 3,
+          minimumCycleLength: 28,
+          maximumCycleLength: 28,
+        }),
+      ]);
+
+      const result = await repo.getCurrentPhase(today);
+
+      expect(result.estimate?.uncertaintyLabel).toBe("All 3 recorded cycles were 28 days long.");
+    });
+
     it("returns null phase when past cycle length + 7 days", async () => {
       // Day 40 of a 28-day cycle (40 > 28+7=35)
       const today = new Date("2025-02-23T12:00:00Z");

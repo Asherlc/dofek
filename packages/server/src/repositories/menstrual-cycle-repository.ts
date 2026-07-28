@@ -112,7 +112,9 @@ function buildCyclePhaseEstimate({
     : "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.";
   const uncertaintyLabel =
     minimumCycleLength === maximumCycleLength && minimumCycleLength !== null
-      ? `The recorded cycle length was ${minimumCycleLength} days.`
+      ? completedCycleCount === 1
+        ? `The recorded cycle length was ${minimumCycleLength} days.`
+        : `All ${completedCycleCount} recorded cycles were ${minimumCycleLength} days long.`
       : hasPersonalHistory
         ? `Recorded cycle lengths ranged from ${minimumCycleLength} to ${maximumCycleLength} days.`
         : "No personal cycle-length range is available yet.";
