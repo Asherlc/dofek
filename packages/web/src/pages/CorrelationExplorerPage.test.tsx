@@ -5,8 +5,20 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted<{ correlationData: Record<string, unknown> }>(() => ({
+const state = vi.hoisted<{
+  correlationData: Record<string, unknown>;
+  metricsData:
+    | Array<{
+        id: string;
+        label: string;
+        unit: string;
+        domain: string;
+        description: string;
+      }>
+    | undefined;
+}>(() => ({
   correlationData: {},
+  metricsData: undefined,
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -47,22 +59,7 @@ vi.mock("../lib/trpc.ts", () => ({
     correlation: {
       metrics: {
         useQuery: () => ({
-          data: [
-            {
-              id: "protein",
-              label: "Protein",
-              unit: "g",
-              domain: "nutrition",
-              description: "Protein intake",
-            },
-            {
-              id: "hrv",
-              label: "Heart Rate Variability",
-              unit: "ms",
-              domain: "recovery",
-              description: "Heart rate variability",
-            },
-          ],
+          data: state.metricsData,
           isError: false,
         }),
       },
@@ -79,6 +76,22 @@ vi.mock("../lib/trpc.ts", () => ({
 
 describe("CorrelationExplorerPage", () => {
   beforeEach(() => {
+    state.metricsData = [
+      {
+        id: "protein",
+        label: "Protein",
+        unit: "g",
+        domain: "nutrition",
+        description: "Protein intake",
+      },
+      {
+        id: "hrv",
+        label: "Heart Rate Variability",
+        unit: "ms",
+        domain: "recovery",
+        description: "Heart rate variability",
+      },
+    ];
     state.correlationData = {
       analysisVersion: 2,
       availability: "insufficient",
@@ -227,6 +240,74 @@ describe("CorrelationExplorerPage", () => {
     expect(screen.queryByText("Strong")).toBeNull();
     const option = JSON.parse(screen.getByTestId("scatter-plot").dataset.option ?? "{}");
     expect(option.series[1].lineStyle.color).toBe(chartColors.blue);
+  });
+
+  it("waits for metric metadata before rendering unit-dependent evidence", async () => {
+    state.metricsData = undefined;
+    state.correlationData = {
+      analysisVersion: 2,
+      availability: "available",
+      spearmanRho: 0.75,
+      regression: { slope: 1, intercept: 0, rSquared: 0.49 },
+      dataPoints: [
+        { x: 1, y: 2, date: "2025-01-01" },
+        { x: 2, y: 3, date: "2025-01-02" },
+      ],
+      sampleCount: 5,
+      coverage: {
+        selectedDayCount: 5,
+        eligiblePairDayCount: 5,
+        observedXDayCount: 5,
+        observedYDayCount: 5,
+        pairedDayCount: 5,
+        missingPairDayCount: 0,
+      },
+      uncertainty: {
+        availability: "available",
+        method: "circular_moving_block_bootstrap",
+        level: 0.95,
+        blockLength: 2,
+        requestedReplicateCount: 2_000,
+        attemptedReplicateCount: 2_000,
+        validReplicateCount: 2_000,
+        lower: 0.2,
+        upper: 0.9,
+      },
+      xStats: { mean: 1.5, median: 1.5, stddev: 0.5, min: 1, max: 2, n: 5 },
+      yStats: { mean: 2.5, median: 2.5, stddev: 0.5, min: 2, max: 3, n: 5 },
+      insight: "The metrics move together.",
+    };
+
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    const view = render(<CorrelationExplorerPage />);
+
+    expect(screen.getByText("Spearman rho = 0.75")).toBeTruthy();
+    expect(screen.queryByText(/Slope =/)).toBeNull();
+    expect(screen.queryByText(/±/)).toBeNull();
+    expect(screen.queryByTestId("scatter-plot")).toBeNull();
+    expect(view.container.textContent).not.toContain("undefined");
+    expect(view.container.textContent).not.toContain("()");
+
+    state.metricsData = [
+      {
+        id: "protein",
+        label: "Protein",
+        unit: "g",
+        domain: "nutrition",
+        description: "Protein intake",
+      },
+      {
+        id: "hrv",
+        label: "Heart Rate Variability",
+        unit: "ms",
+        domain: "recovery",
+        description: "Heart rate variability",
+      },
+    ];
+    view.rerender(<CorrelationExplorerPage />);
+
+    expect(screen.getByText("Slope = 1.000 ms per g")).toBeTruthy();
+    expect(screen.getByTestId("scatter-plot")).toBeTruthy();
   });
 
   it("states the selected lag in calendar days and which metric leads", async () => {

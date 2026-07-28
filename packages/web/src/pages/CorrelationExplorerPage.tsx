@@ -99,6 +99,7 @@ export function CorrelationExplorerPage() {
 
   const xMetric = metricsQuery.data?.find((m) => m.id === metricX);
   const yMetric = metricsQuery.data?.find((m) => m.id === metricY);
+  const hasMetricMetadata = xMetric !== undefined && yMetric !== undefined;
 
   return (
     <ChartRangeProvider days={days}>
@@ -211,10 +212,10 @@ export function CorrelationExplorerPage() {
                     </p>
                     <UncertaintySummary uncertainty={data.uncertainty} />
                     <div className="flex flex-wrap gap-4 text-[11px] text-dim pt-1">
-                      {data.regression.slope !== null && (
+                      {hasMetricMetadata && data.regression.slope !== null && (
                         <span>
-                          Slope = {formatNumber(data.regression.slope, 3)} {yMetric?.unit} per{" "}
-                          {xMetric?.unit}
+                          Slope = {formatNumber(data.regression.slope, 3)} {yMetric.unit} per{" "}
+                          {xMetric.unit}
                         </span>
                       )}
                       {data.regression.rSquared !== null && (
@@ -241,20 +242,20 @@ export function CorrelationExplorerPage() {
                 <h3 className="text-xs text-subtle uppercase tracking-wider">Finding</h3>
                 <p className="text-sm text-foreground leading-relaxed">{data.insight}</p>
 
-                {data.availability === "available" && (
+                {data.availability === "available" && hasMetricMetadata && (
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     <div>
-                      <p className="text-[10px] text-dim">{xMetric?.label ?? metricX}</p>
+                      <p className="text-[10px] text-dim">{xMetric.label}</p>
                       <p className="text-sm text-foreground">
                         {formatValue(data.xStats.mean)} ± {formatValue(data.xStats.stddev)}{" "}
-                        <span className="text-dim">{xMetric?.unit}</span>
+                        <span className="text-dim">{xMetric.unit}</span>
                       </p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-dim">{yMetric?.label ?? metricY}</p>
+                      <p className="text-[10px] text-dim">{yMetric.label}</p>
                       <p className="text-sm text-foreground">
                         {formatValue(data.yStats.mean)} ± {formatValue(data.yStats.stddev)}{" "}
-                        <span className="text-dim">{yMetric?.unit}</span>
+                        <span className="text-dim">{yMetric.unit}</span>
                       </p>
                     </div>
                   </div>
@@ -263,7 +264,7 @@ export function CorrelationExplorerPage() {
             </div>
 
             {/* Scatter plot */}
-            {data.availability === "available" && dataPoints.length > 0 && (
+            {data.availability === "available" && dataPoints.length > 0 && hasMetricMetadata && (
               <div
                 className="card p-4"
                 title="This chart plots each data point and overlays a trend line so you can see whether two metrics move together."
@@ -275,8 +276,8 @@ export function CorrelationExplorerPage() {
                 <ScatterPlot
                   dataPoints={dataPoints}
                   regression={data.regression}
-                  xLabel={`${xMetric?.label ?? metricX} (${xMetric?.unit ?? ""})`}
-                  yLabel={`${yMetric?.label ?? metricY} (${yMetric?.unit ?? ""})`}
+                  xLabel={`${xMetric.label} (${xMetric.unit})`}
+                  yLabel={`${yMetric.label} (${yMetric.unit})`}
                 />
               </div>
             )}

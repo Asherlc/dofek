@@ -326,6 +326,7 @@ export default function CorrelationScreen() {
   const metrics = metricsQuery.data ?? [];
   const xMetric = metrics.find((m) => m.id === metricX);
   const yMetric = metrics.find((m) => m.id === metricY);
+  const hasMetricMetadata = xMetric !== undefined && yMetric !== undefined;
   const router = useRouter();
 
   const { refreshing, onRefresh } = useRefresh();
@@ -420,10 +421,10 @@ export default function CorrelationScreen() {
                 <UncertaintySummary uncertainty={data.uncertainty} />
 
                 <View style={styles.statsRow}>
-                  {data.regression.slope !== null && (
+                  {hasMetricMetadata && data.regression.slope !== null && (
                     <Text style={styles.statText}>
-                      Slope = {formatNumber(data.regression.slope, 3)} {yMetric?.unit} per{" "}
-                      {xMetric?.unit}
+                      Slope = {formatNumber(data.regression.slope, 3)} {yMetric.unit} per{" "}
+                      {xMetric.unit}
                     </Text>
                   )}
                   {data.regression.rSquared !== null && (
@@ -451,20 +452,20 @@ export default function CorrelationScreen() {
             <Text style={styles.cardTitle}>Finding</Text>
             <Text style={styles.insightText}>{data.insight}</Text>
 
-            {data.availability === "available" && (
+            {data.availability === "available" && hasMetricMetadata && (
               <View style={styles.statsGrid}>
                 <View style={styles.statsGridItem}>
-                  <Text style={styles.statsGridLabel}>{xMetric?.label ?? metricX}</Text>
+                  <Text style={styles.statsGridLabel}>{xMetric.label}</Text>
                   <Text style={styles.statsGridValue}>
                     {formatNumber(data.xStats.mean)} ± {formatNumber(data.xStats.stddev)}{" "}
-                    {xMetric?.unit}
+                    {xMetric.unit}
                   </Text>
                 </View>
                 <View style={styles.statsGridItem}>
-                  <Text style={styles.statsGridLabel}>{yMetric?.label ?? metricY}</Text>
+                  <Text style={styles.statsGridLabel}>{yMetric.label}</Text>
                   <Text style={styles.statsGridValue}>
                     {formatNumber(data.yStats.mean)} ± {formatNumber(data.yStats.stddev)}{" "}
-                    {yMetric?.unit}
+                    {yMetric.unit}
                   </Text>
                 </View>
               </View>
@@ -472,7 +473,7 @@ export default function CorrelationScreen() {
           </View>
 
           {/* Scatter plot */}
-          {data.availability === "available" && data.dataPoints.length > 0 && (
+          {data.availability === "available" && data.dataPoints.length > 0 && hasMetricMetadata && (
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Scatter Plot"
@@ -482,8 +483,8 @@ export default function CorrelationScreen() {
               <ScatterPlot
                 dataPoints={data.dataPoints}
                 regression={data.regression}
-                xLabel={`${xMetric?.label ?? metricX} (${xMetric?.unit ?? ""})`}
-                yLabel={`${yMetric?.label ?? metricY} (${yMetric?.unit ?? ""})`}
+                xLabel={`${xMetric.label} (${xMetric.unit})`}
+                yLabel={`${yMetric.label} (${yMetric.unit})`}
                 width={isWide ? 660 : width - 48}
               />
             </View>
