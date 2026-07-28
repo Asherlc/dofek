@@ -1,4 +1,4 @@
-import { type CyclePhase, computePhase } from "@dofek/scoring/menstrual-cycle";
+import { type CyclePhase, computePhase, PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -17,6 +17,9 @@ const DEFAULT_CYCLE_LENGTH = 28;
 const currentPhaseRowSchema = z.object({
   start_date: dateStringSchema,
   avg_cycle_length: z.coerce.number().nullable(),
+  completed_cycle_count: z.coerce.number().int().nonnegative(),
+  min_cycle_length: z.coerce.number().int().nullable(),
+  max_cycle_length: z.coerce.number().int().nullable(),
 });
 
 const periodHistoryRowSchema = z.object({
@@ -39,10 +42,28 @@ const periodMutationRowSchema = z.object({
 // Domain types
 // ---------------------------------------------------------------------------
 
+export type CycleEstimateBasis = "personal-cycle-average" | "generic-28-day-default";
+
+export interface CyclePhaseEstimate {
+  basis: CycleEstimateBasis;
+  completedCycleCount: number;
+  observedCycleLengthRange: {
+    minimumDays: number;
+    maximumDays: number;
+  } | null;
+  phaseLabel: string;
+  cycleDayLabel: string;
+  dayBasisLabel: string;
+  methodLabel: string;
+  uncertaintyLabel: string;
+  limitationLabel: string;
+}
+
 export interface CurrentPhaseResult {
   phase: CyclePhase | null;
   dayOfCycle: number | null;
   cycleLength: number | null;
+  estimate: CyclePhaseEstimate | null;
 }
 
 export interface MenstrualPeriod {
@@ -59,6 +80,56 @@ function formatPeriodDuration(durationDays: number | null): string | null {
   return `${durationDays} ${durationDays === 1 ? "day" : "days"}`;
 }
 
+function buildCyclePhaseEstimate({
+  phase,
+  dayOfCycle,
+  cycleLength,
+  completedCycleCount,
+  minimumCycleLength,
+  maximumCycleLength,
+}: {
+  phase: CyclePhase;
+  dayOfCycle: number;
+  cycleLength: number;
+  completedCycleCount: number;
+  minimumCycleLength: number | null;
+  maximumCycleLength: number | null;
+}): CyclePhaseEstimate {
+  const hasPersonalHistory =
+    completedCycleCount > 0 && minimumCycleLength !== null && maximumCycleLength !== null;
+  const basis: CycleEstimateBasis = hasPersonalHistory
+    ? "personal-cycle-average"
+    : "generic-28-day-default";
+  const observedCycleLengthRange = hasPersonalHistory
+    ? {
+        minimumDays: minimumCycleLength,
+        maximumDays: maximumCycleLength,
+      }
+    : null;
+  const completedCycleNoun = completedCycleCount === 1 ? "cycle" : "cycles";
+  const methodLabel = hasPersonalHistory
+    ? `Phase and cycle length use the average of ${completedCycleCount} completed ${completedCycleNoun}.`
+    : "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.";
+  const uncertaintyLabel =
+    minimumCycleLength === maximumCycleLength && minimumCycleLength !== null
+      ? `The recorded cycle length was ${minimumCycleLength} days.`
+      : hasPersonalHistory
+        ? `Recorded cycle lengths ranged from ${minimumCycleLength} to ${maximumCycleLength} days.`
+        : "No personal cycle-length range is available yet.";
+
+  return {
+    basis,
+    completedCycleCount,
+    observedCycleLengthRange,
+    phaseLabel: `Estimated ${PHASE_DISPLAY[phase].label} phase`,
+    cycleDayLabel: `Day ${dayOfCycle} of an estimated ${cycleLength}-day cycle`,
+    dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
+    methodLabel,
+    uncertaintyLabel,
+    limitationLabel: "No calibrated confidence score or next-period forecast is available.",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -73,7 +144,7 @@ export class MenstrualCycleRepository {
     this.#userId = userId;
   }
 
-  /** Compute the current cycle phase based on the most recent period start. */
+  /** Estimate the current phase and expose the recorded history behind that estimate. */
   async getCurrentPhase(today?: Date): Promise<CurrentPhaseResult> {
     const rows = await executeWithSchema(
       this.#db,
@@ -84,17 +155,29 @@ export class MenstrualCycleRepository {
             FROM fitness.menstrual_period
             WHERE user_id = ${this.#userId}
               AND start_date <= CURRENT_DATE
+          ),
+          cycle_stats AS (
+            SELECT AVG(cycle_days)::numeric AS avg_cycle_length,
+                   COUNT(cycle_days)::int AS completed_cycle_count,
+                   MIN(cycle_days)::int AS min_cycle_length,
+                   MAX(cycle_days)::int AS max_cycle_length
+            FROM cycles
+            WHERE cycle_days IS NOT NULL
           )
           SELECT start_date,
-                 (SELECT AVG(cycle_days) FROM cycles WHERE cycle_days IS NOT NULL)::numeric AS avg_cycle_length
+                 cycle_stats.avg_cycle_length,
+                 cycle_stats.completed_cycle_count,
+                 cycle_stats.min_cycle_length,
+                 cycle_stats.max_cycle_length
           FROM cycles
+          CROSS JOIN cycle_stats
           ORDER BY start_date DESC
           LIMIT 1`,
     );
 
     const latest = rows[0];
     if (!latest) {
-      return { phase: null, dayOfCycle: null, cycleLength: null };
+      return { phase: null, dayOfCycle: null, cycleLength: null, estimate: null };
     }
 
     const cycleLength = latest.avg_cycle_length
@@ -108,12 +191,24 @@ export class MenstrualCycleRepository {
 
     // If we're past the expected cycle length + 7 days, we can't determine the phase
     if (dayOfCycle > cycleLength + 7) {
-      return { phase: null, dayOfCycle: null, cycleLength };
+      return { phase: null, dayOfCycle: null, cycleLength, estimate: null };
     }
 
     const phase = computePhase(dayOfCycle, cycleLength);
 
-    return { phase, dayOfCycle, cycleLength };
+    return {
+      phase,
+      dayOfCycle,
+      cycleLength,
+      estimate: buildCyclePhaseEstimate({
+        phase,
+        dayOfCycle,
+        cycleLength,
+        completedCycleCount: latest.completed_cycle_count,
+        minimumCycleLength: latest.min_cycle_length,
+        maximumCycleLength: latest.max_cycle_length,
+      }),
+    };
   }
 
   /** Log a new period start/end (upserts on user+start_date). */

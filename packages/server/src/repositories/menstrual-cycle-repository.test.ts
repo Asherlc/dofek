@@ -2,6 +2,28 @@ import { describe, expect, it, vi } from "vitest";
 import { MenstrualCycleRepository } from "./menstrual-cycle-repository.ts";
 
 describe("MenstrualCycleRepository", () => {
+  function phaseRow({
+    startDate = "2025-01-15",
+    averageCycleLength = "28",
+    completedCycleCount = 3,
+    minimumCycleLength = 27,
+    maximumCycleLength = 29,
+  }: {
+    startDate?: string | Date;
+    averageCycleLength?: string | null;
+    completedCycleCount?: number;
+    minimumCycleLength?: number | null;
+    maximumCycleLength?: number | null;
+  } = {}) {
+    return {
+      start_date: startDate,
+      avg_cycle_length: averageCycleLength,
+      completed_cycle_count: completedCycleCount,
+      min_cycle_length: minimumCycleLength,
+      max_cycle_length: maximumCycleLength,
+    };
+  }
+
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
     const repo = new MenstrualCycleRepository({ execute }, "user-1");
@@ -14,12 +36,17 @@ describe("MenstrualCycleRepository", () => {
 
       const result = await repo.getCurrentPhase();
 
-      expect(result).toEqual({ phase: null, dayOfCycle: null, cycleLength: null });
+      expect(result).toEqual({
+        phase: null,
+        dayOfCycle: null,
+        cycleLength: null,
+        estimate: null,
+      });
     });
 
     it("computes menstrual phase for day 1 of cycle", async () => {
       const today = new Date("2025-01-15T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
+      const { repo } = makeRepository([phaseRow()]);
 
       const result = await repo.getCurrentPhase(today);
 
@@ -30,7 +57,7 @@ describe("MenstrualCycleRepository", () => {
 
     it("computes follicular phase for day 8 of 28-day cycle", async () => {
       const today = new Date("2025-01-22T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
+      const { repo } = makeRepository([phaseRow()]);
 
       const result = await repo.getCurrentPhase(today);
 
@@ -41,7 +68,7 @@ describe("MenstrualCycleRepository", () => {
     it("computes ovulatory phase around ovulation day", async () => {
       // Ovulation for 28-day cycle: day 14 (28-14=14), window is 13-15
       const today = new Date("2025-01-28T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
+      const { repo } = makeRepository([phaseRow()]);
 
       const result = await repo.getCurrentPhase(today);
 
@@ -52,7 +79,7 @@ describe("MenstrualCycleRepository", () => {
     it("computes luteal phase after ovulatory window", async () => {
       // Day 20 of 28-day cycle is luteal
       const today = new Date("2025-02-03T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
+      const { repo } = makeRepository([phaseRow()]);
 
       const result = await repo.getCurrentPhase(today);
 
@@ -62,29 +89,101 @@ describe("MenstrualCycleRepository", () => {
 
     it("uses default 28-day cycle when no average available", async () => {
       const today = new Date("2025-01-15T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: null }]);
+      const { repo } = makeRepository([
+        phaseRow({
+          averageCycleLength: null,
+          completedCycleCount: 0,
+          minimumCycleLength: null,
+          maximumCycleLength: null,
+        }),
+      ]);
 
       const result = await repo.getCurrentPhase(today);
 
       expect(result.cycleLength).toBe(28);
       expect(result.phase).toBe("menstrual");
+      expect(result.estimate).toEqual({
+        basis: "generic-28-day-default",
+        completedCycleCount: 0,
+        observedCycleLengthRange: null,
+        phaseLabel: "Estimated Menstrual phase",
+        cycleDayLabel: "Day 1 of an estimated 28-day cycle",
+        dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
+        methodLabel:
+          "Phase and cycle length use a generic 28-day default based on 0 completed cycles; this is not a personal prediction.",
+        uncertaintyLabel: "No personal cycle-length range is available yet.",
+        limitationLabel: "No calibrated confidence score or next-period forecast is available.",
+      });
+    });
+
+    it("explains the personal history and observed range behind an estimate", async () => {
+      const today = new Date("2025-01-27T12:00:00Z");
+      const { repo } = makeRepository([
+        phaseRow({
+          averageCycleLength: "29",
+          completedCycleCount: 4,
+          minimumCycleLength: 27,
+          maximumCycleLength: 31,
+        }),
+      ]);
+
+      const result = await repo.getCurrentPhase(today);
+
+      expect(result).toEqual({
+        phase: "follicular",
+        dayOfCycle: 13,
+        cycleLength: 29,
+        estimate: {
+          basis: "personal-cycle-average",
+          completedCycleCount: 4,
+          observedCycleLengthRange: {
+            minimumDays: 27,
+            maximumDays: 31,
+          },
+          phaseLabel: "Estimated Follicular phase",
+          cycleDayLabel: "Day 13 of an estimated 29-day cycle",
+          dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
+          methodLabel: "Phase and cycle length use the average of 4 completed cycles.",
+          uncertaintyLabel: "Recorded cycle lengths ranged from 27 to 31 days.",
+          limitationLabel: "No calibrated confidence score or next-period forecast is available.",
+        },
+      });
+    });
+
+    it("describes a single completed cycle without presenting a range", async () => {
+      const today = new Date("2025-01-15T12:00:00Z");
+      const { repo } = makeRepository([
+        phaseRow({
+          completedCycleCount: 1,
+          minimumCycleLength: 28,
+          maximumCycleLength: 28,
+        }),
+      ]);
+
+      const result = await repo.getCurrentPhase(today);
+
+      expect(result.estimate?.methodLabel).toBe(
+        "Phase and cycle length use the average of 1 completed cycle.",
+      );
+      expect(result.estimate?.uncertaintyLabel).toBe("The recorded cycle length was 28 days.");
     });
 
     it("returns null phase when past cycle length + 7 days", async () => {
       // Day 40 of a 28-day cycle (40 > 28+7=35)
       const today = new Date("2025-02-23T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "28" }]);
+      const { repo } = makeRepository([phaseRow()]);
 
       const result = await repo.getCurrentPhase(today);
 
       expect(result.phase).toBeNull();
       expect(result.dayOfCycle).toBeNull();
       expect(result.cycleLength).toBe(28);
+      expect(result.estimate).toBeNull();
     });
 
     it("rounds average cycle length to nearest integer", async () => {
       const today = new Date("2025-01-15T12:00:00Z");
-      const { repo } = makeRepository([{ start_date: "2025-01-15", avg_cycle_length: "29.7" }]);
+      const { repo } = makeRepository([phaseRow({ averageCycleLength: "29.7" })]);
 
       const result = await repo.getCurrentPhase(today);
 
@@ -93,9 +192,7 @@ describe("MenstrualCycleRepository", () => {
 
     it("handles Date objects from postgres driver", async () => {
       const today = new Date("2025-01-15T12:00:00Z");
-      const { repo } = makeRepository([
-        { start_date: new Date("2025-01-15"), avg_cycle_length: "28" },
-      ]);
+      const { repo } = makeRepository([phaseRow({ startDate: new Date("2025-01-15") })]);
 
       const result = await repo.getCurrentPhase(today);
 

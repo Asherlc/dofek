@@ -12,6 +12,20 @@ const currentPhase = {
   phase: "menstrual" as const,
   dayOfCycle: 3,
   cycleLength: 28,
+  estimate: {
+    basis: "personal-cycle-average" as const,
+    completedCycleCount: 3,
+    observedCycleLengthRange: {
+      minimumDays: 27,
+      maximumDays: 29,
+    },
+    phaseLabel: "Estimated Menstrual phase",
+    cycleDayLabel: "Day 3 of an estimated 28-day cycle",
+    dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
+    methodLabel: "Phase and cycle length use the average of 3 completed cycles.",
+    uncertaintyLabel: "Recorded cycle lengths ranged from 27 to 29 days.",
+    limitationLabel: "No calibrated confidence score or next-period forecast is available.",
+  },
 };
 
 const periodHistory = [
