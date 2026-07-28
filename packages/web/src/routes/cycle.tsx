@@ -41,21 +41,29 @@ function CyclePage() {
             Current Phase
           </h3>
           {currentPhase.data !== undefined ? (
-            currentPhase.data.phase ? (
-              <div className="flex items-center gap-4">
-                <div
-                  className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-lg"
-                  style={{ backgroundColor: PHASE_DISPLAY[currentPhase.data.phase].color }}
-                >
-                  {currentPhase.data.dayOfCycle}
+            currentPhase.data.phase && currentPhase.data.estimate ? (
+              <div>
+                <div className="flex items-center gap-4">
+                  <div
+                    className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-lg"
+                    style={{ backgroundColor: PHASE_DISPLAY[currentPhase.data.phase].color }}
+                  >
+                    {currentPhase.data.dayOfCycle}
+                  </div>
+                  <div>
+                    <div className="text-lg font-semibold">
+                      {currentPhase.data.estimate.phaseLabel}
+                    </div>
+                    <div className="text-xs text-dim">
+                      {currentPhase.data.estimate.cycleDayLabel}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-lg font-semibold">
-                    {PHASE_DISPLAY[currentPhase.data.phase].label}
-                  </div>
-                  <div className="text-xs text-dim">
-                    Day {currentPhase.data.dayOfCycle} of {currentPhase.data.cycleLength}-day cycle
-                  </div>
+                <div className="mt-4 space-y-1 text-sm text-muted">
+                  <p>{currentPhase.data.estimate.dayBasisLabel}</p>
+                  <p>{currentPhase.data.estimate.methodLabel}</p>
+                  <p>{currentPhase.data.estimate.uncertaintyLabel}</p>
+                  <p>{currentPhase.data.estimate.limitationLabel}</p>
                 </div>
               </div>
             ) : (
