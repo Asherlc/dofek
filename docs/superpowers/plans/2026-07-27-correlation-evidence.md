@@ -5,7 +5,7 @@
 > significance claims.
 
 **Goal:** Make correlation results decision-useful by exposing honest calendar-day coverage,
-effect estimates, and a predeclared dependence-aware uncertainty interval.
+effect estimates, and a dependence-aware uncertainty interval declared in advance.
 
 **Behavior:** The server reports selected, observed, paired, and missing calendar-day counts,
 Spearman rho with a 95% circular moving-block bootstrap interval, and a linear slope. Web and
@@ -23,7 +23,7 @@ mobile surface, or a new analytics read model.
 ([Künsch 1989](https://doi.org/10.1214/aos/1176347265)); circular blocks avoid treating the
 series endpoints differently
 ([Politis and Romano 1992](https://mathweb.ucsd.edu/~politis/DPpublication.html)); the
-predeclared block-length rate is proportional to the cube root of the sample size
+block-length rate declared in advance is proportional to the cube root of the sample size
 ([Politis and White 2004](https://doi.org/10.1081/ETC-120028836)).
 
 ---

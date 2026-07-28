@@ -51,7 +51,7 @@ describe("circularMovingBlockBootstrapInterval", () => {
     });
   });
 
-  it("returns the predeclared interval metadata for a perfectly positive relationship", () => {
+  it("returns the fixed interval metadata for a perfectly positive relationship", () => {
     const input = observations(
       Array.from({ length: 16 }, (_, index) => ({ x: index + 1, y: (index + 1) * 3 })),
     );

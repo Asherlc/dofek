@@ -785,7 +785,7 @@ describe("correlationRouter", () => {
       compute.mockRestore();
     });
 
-    it("rejects lags outside the predeclared range", async () => {
+    it("rejects lags outside the supported range", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
