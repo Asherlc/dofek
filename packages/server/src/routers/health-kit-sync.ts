@@ -1,17 +1,21 @@
 import * as Sentry from "@sentry/node";
+import { TRPCError } from "@trpc/server";
 import { ensureProvider as ensureProviderConnection } from "dofek/db/tokens";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { z } from "zod";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import {
+  HealthKitDeletionTombstonesUnsupportedError,
+  HealthKitSyncRepository,
+} from "../repositories/health-kit-sync-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import {
   aggregateSkinTempToDailyMetrics,
   aggregateSpO2ToDailyMetrics,
   processBodyMeasurements,
   processDailyMetrics,
-  processDeletedQuantitySamples,
   processHealthEvents,
   processMetricStream,
   processWorkoutRoutes,
@@ -66,15 +70,31 @@ export const healthKitSyncRouter = router({
         typeIdentifier: z.string().min(1),
       }),
     )
+    .output(z.object({ deleted: z.number().int().nonnegative() }))
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db, ctx.userId);
-      const deleted = await processDeletedQuantitySamples(
-        ctx.db,
-        ctx.userId,
-        input.typeIdentifier,
-        input.deletedUUIDs,
-        ctx.metricStreamPublisher,
-      );
+      const repository = new HealthKitSyncRepository(ctx.db, ctx.userId, ctx.metricStreamPublisher);
+      let deleted: number;
+      try {
+        deleted = await repository.processDeletedQuantitySamples(
+          input.typeIdentifier,
+          input.deletedUUIDs,
+        );
+      } catch (error) {
+        if (!(error instanceof HealthKitDeletionTombstonesUnsupportedError)) {
+          throw error;
+        }
+        Sentry.captureException(error, {
+          tags: { endpoint: "deleteQuantitySamples" },
+          extra: { userId: ctx.userId },
+        });
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "HealthKit deletion sync is unavailable because metric deletion publishing is not configured. Please try again later.",
+          cause: error,
+        });
+      }
       if (deleted > 0) {
         await invalidateAllUserQueries(ctx.userId);
       }

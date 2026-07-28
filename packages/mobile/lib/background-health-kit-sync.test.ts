@@ -365,9 +365,13 @@ describe("initBackgroundHealthKitSync", () => {
   it("reports partial sync errors without labeling completed stages as succeeded", async () => {
     vi.useFakeTimers();
     const client = createMockClient();
-    await initBackgroundHealthKitSync(client);
+    const onSyncComplete = vi.fn();
+    await initBackgroundHealthKitSync(client, onSyncComplete);
     await vi.runAllTimersAsync();
     mockLoggerInfo.mockClear();
+    mockCaptureException.mockClear();
+    mockCompleteObserverUpdates.mockClear();
+    onSyncComplete.mockClear();
     vi.mocked(queryWorkouts).mockResolvedValueOnce([
       {
         uuid: "workout-1",
@@ -395,15 +399,12 @@ describe("initBackgroundHealthKitSync", () => {
       "Sync stage completed",
       expect.objectContaining({
         operation: "queryWorkoutRoutes",
-        outcome: "completed",
+        outcome: "failed",
       }),
     );
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
       "bg-healthkit-sync",
-      expect.stringContaining("1 errors"),
-      expect.objectContaining({
-        errorCount: 1,
-      }),
+      expect.stringContaining("HealthKit observer sync completed with 1 error"),
     );
     expect(mockLoggerInfo).not.toHaveBeenCalledWith(
       "bg-healthkit-sync",
@@ -411,6 +412,17 @@ describe("initBackgroundHealthKitSync", () => {
       expect.objectContaining({
         outcome: "succeeded",
       }),
+    );
+    expect(onSyncComplete).not.toHaveBeenCalled();
+    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("HealthKit observer sync completed with 1 error"),
+      }),
+      {
+        errorCount: 1,
+        source: "bg-healthkit-sync",
+      },
     );
     vi.useRealTimers();
   });
@@ -466,6 +478,9 @@ describe("initBackgroundHealthKitSync", () => {
     ]);
     const firstOnSyncComplete = vi.fn();
     await initBackgroundHealthKitSync(firstClient, firstOnSyncComplete);
+    await vi.waitFor(() => {
+      expect(firstClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+    });
 
     const secondClient = createMockClient();
     const secondOnSyncComplete = vi.fn();
@@ -480,12 +495,12 @@ describe("initBackgroundHealthKitSync", () => {
     firstSync.resolve({ inserted: 1 });
     await vi.waitFor(() => {
       expect(secondClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+      expect(secondOnSyncComplete).toHaveBeenCalledTimes(2);
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["second-context-update"], true);
     });
 
     expect(firstClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
     expect(firstOnSyncComplete).not.toHaveBeenCalled();
-    expect(secondOnSyncComplete).toHaveBeenCalledTimes(2);
-    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["second-context-update"], true);
   });
 
   it("tears down and reports an observer registration failure", async () => {

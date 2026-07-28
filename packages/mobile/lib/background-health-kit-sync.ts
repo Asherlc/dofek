@@ -94,6 +94,19 @@ async function performHealthKitSync(
     return false;
   }
 
+  if (result.errors.length > 0) {
+    stageTelemetry.complete("failed");
+    const error = new Error(
+      `HealthKit observer sync completed with ${result.errors.length} error(s): ${result.errors.join("; ")}`,
+    );
+    logger.warn(TAG, error.message);
+    captureException(error, {
+      errorCount: result.errors.length,
+      source: TAG,
+    });
+    return false;
+  }
+
   stageTelemetry.complete("completed");
   logger.info(TAG, `Sync complete: ${result.inserted} inserted, ${result.errors.length} errors`, {
     durationMs: performance.now() - startedAt,

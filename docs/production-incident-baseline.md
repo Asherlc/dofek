@@ -19658,12 +19658,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   but their assertions did not prove the branch boundaries and side-effect
   payloads that Stryker mutated.
 - **Fix / mitigation:** Add focused tests and exact side-effect assertions for
-  each reported mutant without changing production behavior or mutation
-  thresholds. Stryker describes survived mutants as changes that existing
-  tests did not detect:
+  each reported mutant without changing mutation thresholds. Move deletion
+  persistence into the HealthKit repository with typed SQL results, publish
+  independent tombstones concurrently, expose a validated router output,
+  translate missing tombstone support into an actionable precondition error,
+  and fail native observer acknowledgement when a resolved sync contains
+  errors. Stryker describes survived mutants as changes that existing tests did
+  not detect:
   <https://stryker-mutator.io/docs/mutation-testing-elements/mutant-states-and-metrics/>.
-- **Validation:** Both exact mutated ranges now report 100% locally (20 of 20
-  and 7 of 7 mutants killed). Lint, root/server/web TypeScript checks, and
-  14,210 unit/mobile tests also pass.
+- **Validation:** All three exact changed ranges report 100% locally (54 of 54
+  mutants killed). Lint, root/server/web TypeScript checks, 314 focused
+  HealthKit tests, and 14,244 unit/mobile tests also pass.
 - **Remaining risk / follow-up:** Confirm both Stryker shards and the aggregate
   mutation gate pass on the fresh exact-head CI run before merging.
