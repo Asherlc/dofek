@@ -141,7 +141,7 @@ vi.mock("../lib/trpc.ts", () => {
         }),
       },
       correlation: {
-        compute: recordQuery("correlation.compute", null),
+        computeV2: recordQuery("correlation.computeV2", null),
         metrics: recordQuery("correlation.metrics", correlationMetrics),
       },
       dailyMetrics: {
@@ -318,7 +318,7 @@ describe("TimeRangeSelector consumers", () => {
 
     expectCallsContaining([
       {
-        name: "correlation.compute",
+        name: "correlation.computeV2",
         input: { metricX: "protein", metricY: "hrv", days: 7, lag: 0 },
       },
     ]);
@@ -329,7 +329,7 @@ describe("TimeRangeSelector consumers", () => {
 
     expectCallsContaining([
       {
-        name: "correlation.compute",
+        name: "correlation.computeV2",
         input: { metricX: "protein", metricY: "hrv", days: null, lag: 0 },
       },
     ]);
