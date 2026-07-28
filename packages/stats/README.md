@@ -17,4 +17,10 @@ The package provides tools to identify relationships between different health do
 - **Metric Definitions**: `CORRELATION_METRICS` defines the valid mapping between display labels and the underlying database keys (e.g., "Deep Sleep" → `deep_min`).
 
 ### Insight Generation
-`CorrelationResult.generateInsight` provides human-readable explanations of statistical findings, accounting for time lags (e.g., "Higher Caffeine today is associated with lower Sleep Efficiency the next day").
+`CorrelationResult.generateInsight` provides human-readable explanations of statistical findings, accounting for time lags (e.g., "Higher Caffeine today is associated with lower Sleep Efficiency 1 calendar day later").
+
+Lag values represent exact calendar-day offsets. A `+1` lag compares the input
+metric on one date with the outcome metric on the following calendar date; a
+missing date is not replaced by the next available observation. Web and mobile
+use the shared lag-formatting helpers from `correlation.ts` so the selected
+direction and calendar offset are described consistently.

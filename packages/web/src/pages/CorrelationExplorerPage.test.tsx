@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -142,5 +142,23 @@ describe("CorrelationExplorerPage", () => {
     expect(screen.getByText("Pearson (linear)")).toBeTruthy();
     expect(screen.getByText("R² = 0.490")).toBeTruthy();
     expect(screen.getByText("p = 0.010")).toBeTruthy();
+  });
+
+  it("states the selected lag in calendar days and which metric leads", async () => {
+    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
+    render(<CorrelationExplorerPage />);
+
+    expect(screen.getByText("Same day")).toBeTruthy();
+    expect(screen.getByText("+1 calendar day")).toBeTruthy();
+    expect(screen.getByText("+2 calendar days")).toBeTruthy();
+    expect(
+      screen.getByText("Protein vs Heart Rate Variability on the same calendar day"),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByText("+1 calendar day"));
+
+    expect(
+      screen.getByText("Protein today vs Heart Rate Variability 1 calendar day later"),
+    ).toBeTruthy();
   });
 });
