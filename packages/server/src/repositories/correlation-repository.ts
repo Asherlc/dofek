@@ -128,14 +128,11 @@ function buildCorrelationAnalysis(
   const { metricX, metricY, lag } = input;
   const daysByDate = new Map(joined.map((day) => [day.date, day]));
   const selectedDates = buildSelectedDates(joined, input);
-  const firstEligibleIndex = lag < 0 ? Math.min(-lag, selectedDates.length) : 0;
-  const lastEligibleIndex =
-    lag > 0 ? Math.max(0, selectedDates.length - lag) : selectedDates.length;
+  const firstEligibleIndex = Math.min(Math.max(-lag, 0), selectedDates.length);
+  const lastEligibleIndex = Math.max(0, Math.min(selectedDates.length, selectedDates.length - lag));
   const observations: CorrelationCalendarObservation[] = [];
 
-  for (let index = firstEligibleIndex; index < lastEligibleIndex; index++) {
-    const date = selectedDates[index];
-    if (!date) continue;
+  for (const date of selectedDates.slice(firstEligibleIndex, lastEligibleIndex)) {
     const dayX = daysByDate.get(date);
     const dayY = daysByDate.get(addCalendarDays(date, lag));
     observations.push({
@@ -174,7 +171,7 @@ function buildSelectedDates(joined: JoinedDay[], input: CorrelationInput): strin
 
   const startDate =
     input.days === null ? sortedDates[0] : addCalendarDays(endDate, -(input.days - 1));
-  if (!startDate || startDate > endDate) return [];
+  if (!startDate) return [];
 
   const dates: string[] = [];
   for (let date = startDate; date <= endDate; date = addCalendarDays(date, 1)) {
@@ -284,10 +281,7 @@ export function computeCorrelationV2(joined: JoinedDay[], input: CorrelationInpu
     spearmanRho === null
       ? `The relationship between ${xLabel} and ${yLabel} could not be estimated because one metric did not vary across the paired calendar days (n = ${pairCount}).`
       : `${formatCorrelationComparison({ xLabel, yLabel, lag })}: Spearman rho = ${spearmanRho.toFixed(2)} across ${pairCount} paired calendar days.`;
-  const uncertainty =
-    spearmanRho === null
-      ? unavailableUncertainty(analysis.observations.length, "degenerate_input")
-      : computeUncertainty(analysis.observations);
+  const uncertainty = computeUncertainty(analysis.observations);
 
   return {
     analysisVersion: 2 as const,
@@ -331,7 +325,7 @@ function unavailableUncertainty(
     availability: "unavailable" as const,
     method: "circular_moving_block_bootstrap" as const,
     level: 0.95 as const,
-    blockLength: observationCount === 0 ? 0 : Math.ceil(Math.cbrt(observationCount)),
+    blockLength: Math.ceil(Math.cbrt(observationCount)),
     requestedReplicateCount: 2_000 as const,
     attemptedReplicateCount: 0,
     validReplicateCount: 0,
@@ -391,26 +385,24 @@ export class CorrelationRepository {
   }
 
   async compute(metricX: string, metricY: string, days: RangeDays, lag: number, endDate: string) {
-    const effectiveEndDate = endDate || new Date().toISOString().slice(0, 10);
-    const joined = await this.#loadJoinedDays(days, effectiveEndDate);
+    const joined = await this.#loadJoinedDays(days, endDate);
     return computeCorrelation(joined, {
       metricX,
       metricY,
       days,
       lag,
-      endDate: effectiveEndDate,
+      endDate,
     });
   }
 
   async computeV2(metricX: string, metricY: string, days: RangeDays, lag: number, endDate: string) {
-    const effectiveEndDate = endDate || new Date().toISOString().slice(0, 10);
-    const joined = await this.#loadJoinedDays(days, effectiveEndDate);
+    const joined = await this.#loadJoinedDays(days, endDate);
     return computeCorrelationV2(joined, {
       metricX,
       metricY,
       days,
       lag,
-      endDate: effectiveEndDate,
+      endDate,
     });
   }
 

@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JoinedDay } from "../insights/data-join.ts";
+import { joinByDate } from "../insights/data-join.ts";
 import {
   CorrelationRepository,
   computeCorrelation,
+  computeCorrelationV2,
   computeStats,
   downsample,
   emptyStats,
@@ -316,6 +318,239 @@ describe("computeCorrelation", () => {
   });
 });
 
+describe("computeCorrelationV2 mutation boundaries", () => {
+  it("applies negative, zero, and positive lags to the exact eligible calendar days", () => {
+    const joined = Array.from({ length: 7 }, (_, index) =>
+      makeJoinedDay({
+        date: `2025-01-0${index + 1}`,
+        resting_hr: 60 + index,
+        hrv: 30 + index,
+      }),
+    );
+
+    const negative = computeCorrelationV2(joined, {
+      metricX: "resting_hr",
+      metricY: "hrv",
+      days: 7,
+      lag: -1,
+      endDate: "2025-01-07",
+    });
+    const zero = computeCorrelationV2(joined, {
+      metricX: "resting_hr",
+      metricY: "hrv",
+      days: 7,
+      lag: 0,
+      endDate: "2025-01-07",
+    });
+    const positive = computeCorrelationV2(joined, {
+      metricX: "resting_hr",
+      metricY: "hrv",
+      days: 7,
+      lag: 1,
+      endDate: "2025-01-07",
+    });
+
+    expect(negative.dataPoints).toEqual([
+      { date: "2025-01-02", x: 61, y: 30 },
+      { date: "2025-01-03", x: 62, y: 31 },
+      { date: "2025-01-04", x: 63, y: 32 },
+      { date: "2025-01-05", x: 64, y: 33 },
+      { date: "2025-01-06", x: 65, y: 34 },
+      { date: "2025-01-07", x: 66, y: 35 },
+    ]);
+    expect(negative.coverage).toEqual({
+      selectedDayCount: 7,
+      eligiblePairDayCount: 6,
+      observedXDayCount: 6,
+      observedYDayCount: 6,
+      pairedDayCount: 6,
+      missingPairDayCount: 0,
+    });
+    expect(zero.dataPoints).toHaveLength(7);
+    expect(zero.coverage).toEqual({
+      selectedDayCount: 7,
+      eligiblePairDayCount: 7,
+      observedXDayCount: 7,
+      observedYDayCount: 7,
+      pairedDayCount: 7,
+      missingPairDayCount: 0,
+    });
+    expect(positive.dataPoints).toEqual([
+      { date: "2025-01-01", x: 60, y: 31 },
+      { date: "2025-01-02", x: 61, y: 32 },
+      { date: "2025-01-03", x: 62, y: 33 },
+      { date: "2025-01-04", x: 63, y: 34 },
+      { date: "2025-01-05", x: 64, y: 35 },
+      { date: "2025-01-06", x: 65, y: 36 },
+    ]);
+  });
+
+  it("sorts an all-time spine and returns no eligible dates when its end precedes the data", () => {
+    const joined = [
+      makeJoinedDay({ date: "2025-01-05", resting_hr: 65, hrv: 35 }),
+      makeJoinedDay({ date: "2025-01-03", resting_hr: 63, hrv: 33 }),
+      makeJoinedDay({ date: "2025-01-04", resting_hr: 64, hrv: 34 }),
+    ];
+
+    const sorted = computeCorrelationV2(joined, {
+      metricX: "resting_hr",
+      metricY: "hrv",
+      days: null,
+      lag: 0,
+      endDate: "2025-01-06",
+    });
+    const beforeData = computeCorrelationV2(joined, {
+      metricX: "resting_hr",
+      metricY: "hrv",
+      days: null,
+      lag: 0,
+      endDate: "2025-01-02",
+    });
+    const emptyAllTime = computeCorrelationV2([], {
+      metricX: "resting_hr",
+      metricY: "hrv",
+      days: null,
+      lag: 0,
+    });
+
+    expect(sorted.coverage).toEqual({
+      selectedDayCount: 4,
+      eligiblePairDayCount: 4,
+      observedXDayCount: 3,
+      observedYDayCount: 3,
+      pairedDayCount: 3,
+      missingPairDayCount: 1,
+    });
+    expect(beforeData.coverage).toEqual({
+      selectedDayCount: 0,
+      eligiblePairDayCount: 0,
+      observedXDayCount: 0,
+      observedYDayCount: 0,
+      pairedDayCount: 0,
+      missingPairDayCount: 0,
+    });
+    expect(beforeData.uncertainty).toMatchObject({
+      availability: "unavailable",
+      blockLength: 0,
+      reason: "insufficient_pairs",
+    });
+    expect(emptyAllTime.coverage.selectedDayCount).toBe(0);
+  });
+
+  it("reports exact labels and singular counts below the five-pair boundary", () => {
+    const onePair = computeCorrelationV2(
+      [makeJoinedDay({ date: "2025-01-05", resting_hr: 60, hrv: 30 })],
+      {
+        metricX: "resting_hr",
+        metricY: "hrv",
+        days: 5,
+        lag: 0,
+        endDate: "2025-01-05",
+      },
+    );
+    const fourPairs = computeCorrelationV2(
+      Array.from({ length: 4 }, (_, index) =>
+        makeJoinedDay({
+          date: `2025-01-0${index + 1}`,
+          resting_hr: 60 + index,
+          hrv: 30 + index,
+        }),
+      ),
+      {
+        metricX: "resting_hr",
+        metricY: "hrv",
+        days: 4,
+        lag: 0,
+        endDate: "2025-01-04",
+      },
+    );
+
+    expect(onePair.insight).toBe(
+      "Insufficient data to describe the relationship between Resting Heart Rate and Heart Rate Variability (only 1 paired calendar day; 4 more are required).",
+    );
+    expect(onePair.uncertainty).toMatchObject({
+      blockLength: 2,
+      reason: "insufficient_pairs",
+    });
+    expect(fourPairs.insight).toBe(
+      "Insufficient data to describe the relationship between Resting Heart Rate and Heart Rate Variability (only 4 paired calendar days; 1 more is required).",
+    );
+  });
+
+  it("returns the exact bounded effect, regression, and insight at the available boundary", () => {
+    const result = computeCorrelationV2(
+      Array.from({ length: 5 }, (_, index) =>
+        makeJoinedDay({
+          date: `2025-01-0${index + 1}`,
+          resting_hr: 60 + index,
+          hrv: 30 - index,
+        }),
+      ),
+      {
+        metricX: "resting_hr",
+        metricY: "hrv",
+        days: 5,
+        lag: 0,
+        endDate: "2025-01-05",
+      },
+    );
+
+    expect(result).toMatchObject({
+      availability: "available",
+      regression: {
+        slope: -1,
+        intercept: 90,
+        rSquared: 1,
+      },
+      sampleCount: 5,
+      insight:
+        "resting heart rate vs heart rate variability on the same calendar day: Spearman rho = -1.00 across 5 paired calendar days.",
+    });
+    expect(result.spearmanRho).toBeCloseTo(-1, 12);
+  });
+
+  it("preserves missing calendar markers while bootstrapping paired observations", () => {
+    const result = computeCorrelationV2(
+      Array.from({ length: 10 }, (_, index) =>
+        makeJoinedDay({
+          date: `2025-01-${String(index + 1).padStart(2, "0")}`,
+          resting_hr: index % 2 === 0 || index % 4 === 1 ? 60 + index : null,
+          hrv: index % 2 === 0 ? 40 - index : index % 4 === 3 ? 100 + index : null,
+        }),
+      ),
+      {
+        metricX: "resting_hr",
+        metricY: "hrv",
+        days: 10,
+        lag: 0,
+        endDate: "2025-01-10",
+      },
+    );
+
+    expect(result.coverage).toEqual({
+      selectedDayCount: 10,
+      eligiblePairDayCount: 10,
+      observedXDayCount: 8,
+      observedYDayCount: 7,
+      pairedDayCount: 5,
+      missingPairDayCount: 5,
+    });
+    expect(result.uncertainty).toMatchObject({
+      availability: "available",
+      method: "circular_moving_block_bootstrap",
+      blockLength: 3,
+      requestedReplicateCount: 2_000,
+      validReplicateCount: 2_000,
+    });
+    if (result.uncertainty.availability !== "available") {
+      throw new Error("Expected an available uncertainty interval");
+    }
+    expect(result.uncertainty.attemptedReplicateCount).toBeGreaterThan(2_000);
+    expect(result.uncertainty.lower).toBeCloseTo(-1, 12);
+    expect(result.uncertainty.upper).toBeCloseTo(-1, 12);
+  });
+});
+
 // ── CorrelationRepository ───────────────────────────────────────────────
 
 function makeDb() {
@@ -354,10 +589,27 @@ describe("CorrelationRepository", () => {
 
   describe("compute", () => {
     it("queries canonical Postgres and ClickHouse correlation sources", async () => {
+      vi.mocked(joinByDate).mockReturnValueOnce(
+        Array.from({ length: 5 }, (_, index) =>
+          makeJoinedDay({
+            date: `2024-06-0${index + 1}`,
+            resting_hr: 60 + index,
+            hrv: 30 - index,
+          }),
+        ),
+      );
       const db = makeDb();
       const sensorStore = makeSensorStore();
       const repo = new CorrelationRepository(db, "user-1", "UTC", sensorStore);
-      await repo.compute("resting_hr", "hrv", 90, 0, "2024-06-01");
+      const result = await repo.compute("resting_hr", "hrv", 90, 0, "2024-06-05");
+      expect(result).toMatchObject({
+        availability: "available",
+        sampleCount: 5,
+      });
+      if (result.availability !== "available") {
+        throw new Error("Expected an available legacy correlation");
+      }
+      expect(result.spearmanRho).toBeCloseTo(-1, 12);
       expect(db.execute).toHaveBeenCalledTimes(2);
       expect(sensorStore.query).toHaveBeenCalledWith(
         expect.anything(),
@@ -384,6 +636,41 @@ describe("CorrelationRepository", () => {
       const result = await repo.compute("resting_hr", "hrv", 90, 0, "2024-06-01");
       expect(result.sampleCount).toBe(0);
       expect(result.confidenceLevel).toBe("insufficient");
+    });
+  });
+
+  describe("computeV2", () => {
+    it("propagates the required end date and computation arguments", async () => {
+      vi.mocked(joinByDate).mockReturnValueOnce(
+        Array.from({ length: 5 }, (_, index) =>
+          makeJoinedDay({
+            date: `2024-06-0${index + 1}`,
+            resting_hr: 60 + index,
+            hrv: 30 - index,
+          }),
+        ),
+      );
+      const db = makeDb();
+      const sensorStore = makeSensorStore();
+      const repo = new CorrelationRepository(db, "user-1", "America/Los_Angeles", sensorStore);
+
+      const result = await repo.computeV2("resting_hr", "hrv", 5, 0, "2024-06-05");
+
+      expect(result).toMatchObject({
+        availability: "available",
+        sampleCount: 5,
+      });
+      expect(result.spearmanRho).toBeCloseTo(-1, 12);
+      const activityQuery = sensorStore.query.mock.calls.find(([, query]) =>
+        query.includes("analytics.activity_summary"),
+      );
+      expect(activityQuery?.[2]).toEqual(
+        expect.objectContaining({
+          timezone: "America/Los_Angeles",
+          endDate: "2024-06-05",
+          days: 5,
+        }),
+      );
     });
   });
 });
