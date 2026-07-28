@@ -355,7 +355,8 @@ sql`SELECT table_name, greatest(row_count, 0)::text AS row_count
           'user_profile', 'activity', 'sleep_session', 'food_entry', 'daily_metrics',
           'sync_log', 'session', 'auth_account', 'oauth_token', 'provider', 'lab_panel',
           'journal_entry', 'breathwork_session', 'supplement', 'life_events', 'nutrient',
-          'food_entry_nutrient', 'supplement_nutrient', 'metric_stream'
+          'food_entry_nutrient', 'supplement_definition',
+          'supplement_definition_nutrient', 'metric_stream'
         )
     ) counts
     ORDER BY row_count DESC`

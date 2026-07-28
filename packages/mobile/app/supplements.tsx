@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { z } from "zod";
+import { SupplementDoseEventsPanel } from "../components/SupplementDoseEventsPanel";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
@@ -161,7 +162,7 @@ export default function SupplementsScreen() {
 
       {supplements.length === 0 && !stack.isLoading && !stack.error && (
         <Text style={styles.emptyText}>
-          No supplements configured. Add your daily stack and it will be synced as nutrition data.
+          No supplements configured. Add your daily plan, then record each dose as taken or skipped.
         </Text>
       )}
 
@@ -217,6 +218,14 @@ export default function SupplementsScreen() {
       {saveMutation.isError && (
         <Text style={styles.errorText}>Failed to save: {saveMutation.error.message}</Text>
       )}
+
+      <View style={styles.doseSection}>
+        <Text style={styles.sectionTitle}>Recent Doses</Text>
+        <Text style={styles.sectionSubtitle}>
+          Nutrients count only when you record a dose as taken.
+        </Text>
+        <SupplementDoseEventsPanel />
+      </View>
     </ScrollView>
   );
 }
@@ -333,6 +342,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: { fontSize: 20, fontWeight: "700", color: colors.text },
+  sectionSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  doseSection: { marginTop: 28 },
   card: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 8 },
   cardRow: { flexDirection: "row", alignItems: "center" },
   cardContent: { flex: 1, marginRight: 8 },

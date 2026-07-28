@@ -11,6 +11,7 @@
     "./db/clickhouse": "./src/db/clickhouse.ts",
     "./db/clickhouse-read-model-refresh": "./src/db/clickhouse-read-model-refresh.ts",
     "./db/drizzle-schema": "./src/db/drizzle-schema.ts",
+    "./db/execute-with-schema": "./src/db/execute-with-schema.ts",
     "./db/schema/account": "./src/db/schema/account.ts",
     "./db/schema/activity": "./src/db/schema/activity.ts",
     "./db/schema/clinical": "./src/db/schema/clinical.ts",
