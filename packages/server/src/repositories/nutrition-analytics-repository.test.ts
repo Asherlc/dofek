@@ -344,6 +344,8 @@ describe("NutritionAnalyticsRepository", () => {
           amount: 100,
           intakeAmount: 120,
           intakeScope: "total",
+          message:
+            "Average intake over recorded days is at or above the included NIH adult upper limit. Review this intake with a doctor or pharmacist.",
         },
         safetyStatus: "at_or_above_upper_limit",
       });
@@ -372,6 +374,29 @@ describe("NutritionAnalyticsRepository", () => {
       expect(result[0]?.toDetail().intake.daysTracked).toBe(5);
     });
 
+    it("classifies an intake exactly at the Daily Value as meeting the label reference", async () => {
+      const { repo } = makeRepository([
+        {
+          nutrient_id: "vitamin_c",
+          nutrient: "Vitamin C",
+          unit: "mg",
+          avg_total_intake: 90,
+          avg_food_intake: 90,
+          avg_supplement_intake: 0,
+          days_tracked: 1,
+        },
+      ]);
+
+      const result = await repo.getMicronutrientSafetyReview(30);
+
+      expect(result[0]?.toDetail().adequacy).toMatchObject({
+        status: "at_or_above_daily_value",
+        percentDailyValue: 100,
+        message:
+          "Average intake over recorded days meets or exceeds the FDA Daily Value. This generic label reference is not a personalized safety assessment.",
+      });
+    });
+
     it("uses supplemental intake for a supplemental-only upper limit", async () => {
       const { repo } = makeRepository([
         {
@@ -393,6 +418,8 @@ describe("NutritionAnalyticsRepository", () => {
           intakeAmount: 300,
           amount: 350,
           intakeScope: "supplemental_only",
+          message:
+            "Average intake over recorded days is below the included NIH adult upper limit. This does not rule out medication interactions or individual risks.",
         },
         safetyStatus: "within_upper_limit",
       });
@@ -424,6 +451,108 @@ describe("NutritionAnalyticsRepository", () => {
         },
         safetyStatus: "within_upper_limit",
       });
+    });
+
+    it("reports form-limited upper limits as not evaluable", async () => {
+      const { repo } = makeRepository([
+        {
+          nutrient_id: "vitamin_a",
+          nutrient: "Vitamin A",
+          unit: "mcg",
+          avg_total_intake: 1_000,
+          avg_food_intake: 800,
+          avg_supplement_intake: 200,
+          days_tracked: 3,
+        },
+      ]);
+
+      const result = await repo.getMicronutrientSafetyReview(30);
+
+      expect(result[0]?.toDetail()).toMatchObject({
+        adequacy: null,
+        upperLimit: {
+          status: "not_evaluable",
+          limitation:
+            "The NIH upper limit applies only to preformed vitamin A; tracked intake does not identify nutrient form.",
+          message:
+            "The NIH upper limit applies only to preformed vitamin A; tracked intake does not identify nutrient form.",
+        },
+        safetyStatus: "upper_limit_not_evaluable",
+      });
+    });
+
+    it("reports incompatible tracked units instead of comparing mismatched values", async () => {
+      const { repo } = makeRepository([
+        {
+          nutrient_id: "vitamin_c",
+          nutrient: "Vitamin C",
+          unit: "g",
+          avg_total_intake: 1,
+          avg_food_intake: 1,
+          avg_supplement_intake: 0,
+          days_tracked: 2,
+        },
+      ]);
+
+      const result = await repo.getMicronutrientSafetyReview(30);
+
+      expect(result[0]?.toDetail()).toMatchObject({
+        adequacy: {
+          status: "not_evaluable",
+          limitation: "Tracked unit g does not match the FDA Daily Value unit mg.",
+          message: "Tracked unit g does not match the FDA Daily Value unit mg.",
+        },
+        upperLimit: {
+          status: "not_evaluable",
+          limitation: "Tracked unit g does not match the sourced upper-limit unit mg.",
+          message: "Tracked unit g does not match the sourced upper-limit unit mg.",
+        },
+        safetyStatus: "upper_limit_not_evaluable",
+      });
+    });
+
+    it("keeps Daily Value nutrients without a bounded upper-limit rule", async () => {
+      const { repo } = makeRepository([
+        {
+          nutrient_id: "iron",
+          nutrient: "Iron",
+          unit: "mg",
+          avg_total_intake: 10,
+          avg_food_intake: 10,
+          avg_supplement_intake: 0,
+          days_tracked: 4,
+        },
+      ]);
+
+      const result = await repo.getMicronutrientSafetyReview(30);
+
+      expect(result[0]?.toDetail()).toMatchObject({
+        adequacy: {
+          status: "below_daily_value",
+        },
+        upperLimit: {
+          status: "not_in_ruleset",
+          limitation: "No upper-limit rule is included in this bounded ruleset.",
+          message: "No upper-limit rule is included in this bounded ruleset.",
+        },
+        safetyStatus: "no_upper_limit_in_ruleset",
+      });
+    });
+
+    it("omits nutrients with neither a Daily Value nor a bounded upper-limit rule", async () => {
+      const { repo } = makeRepository([
+        {
+          nutrient_id: "unlisted_nutrient",
+          nutrient: "Unlisted Nutrient",
+          unit: "mg",
+          avg_total_intake: 10,
+          avg_food_intake: 10,
+          avg_supplement_intake: 0,
+          days_tracked: 4,
+        },
+      ]);
+
+      await expect(repo.getMicronutrientSafetyReview(30)).resolves.toEqual([]);
     });
 
     it("reads food and taken-supplement contributions separately", async () => {
@@ -471,6 +600,28 @@ describe("NutritionAnalyticsRepository", () => {
       await expect(repo.getSupplementMedicationReview()).resolves.toMatchObject({
         status: "no_medication_records",
       });
+    });
+
+    it("reports when no supplements are available", async () => {
+      const { repo } = makeRepository([
+        {
+          has_medication_records: true,
+          has_supplements: false,
+        },
+      ]);
+
+      await expect(repo.getSupplementMedicationReview()).resolves.toMatchObject({
+        status: "no_supplements",
+        message: "Add supplements to review them alongside your medication records.",
+      });
+    });
+
+    it("fails loudly when the status query returns no row", async () => {
+      const { repo } = makeRepository([]);
+
+      await expect(repo.getSupplementMedicationReview()).rejects.toThrow(
+        "Supplement and medication review query returned no status row.",
+      );
     });
   });
 
