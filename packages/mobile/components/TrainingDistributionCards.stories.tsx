@@ -26,23 +26,58 @@ const meta = {
       threshold: 2,
       maxHr: 190,
       explanation:
-        "The Treff three-zone polarization index describes cycling training only. An index above 2.00 is polarized.",
+        "The Treff three-zone polarization index is a descriptive summary of recorded cycling training.",
+      method: {
+        formula:
+          "PI = log10((Z1 / Z2) × Z3 × 100), using each zone's fraction of recorded cycling time.",
+        zoneBasis: "Z1 <80%, Z2 80–<90%, and Z3 ≥90% of maximum heart rate.",
+        calculationChoice:
+          "Dofek requires recorded time in all three zones and does not calculate PI when Z3 exceeds Z1.",
+        interpretation:
+          "The >2.00 comparison is Treff's descriptive training-distribution heuristic, not a physiological or medical assessment.",
+        source: {
+          title: "Treff et al. (2019), The Polarization-Index",
+          url: "https://doi.org/10.3389/fphys.2019.00707",
+        },
+      },
       weeks: [
         {
           week: "2026-07-20",
           z1Seconds: 4800,
           z2Seconds: 600,
           z3Seconds: 600,
-          polarizationIndex: 2.123,
+          polarizationIndex: 1.903,
           totalSeconds: 6000,
           zonePercentages: { z1: 80, z2: 10, z3: 10 },
-          status: "polarized",
-          statusLabel: "Polarized",
+          status: "not_polarized",
+          statusLabel: "Does not match polarized-pattern heuristic",
           explanation:
-            "This cycling week is polarized: it has a Treff polarization index above 2.00.",
+            "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
         },
       ],
     },
+    monotony: [
+      {
+        week: "2026-07-20",
+        monotony: 1.5,
+        strain: 300,
+        weeklyLoad: 200,
+        dailyMeanLoad: 28.57,
+        dailyLoadStandardDeviation: 19.05,
+        method: {
+          formula:
+            "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
+          calendar: "Monday–Sunday calendar weeks include zero-load days.",
+          activityScope: "Cycling activities with computed endurance training load.",
+          interpretation:
+            "These are descriptive workload-variability summaries, not an overtraining diagnosis.",
+          source: {
+            title: "Foster (1998), Monitoring training in athletes",
+            url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
+          },
+        },
+      },
+    ],
   },
 } satisfies Meta<typeof TrainingDistributionCards>;
 
@@ -66,9 +101,9 @@ export const InsufficientPolarizationData: Story = {
           totalSeconds: 4200,
           zonePercentages: { z1: 85.7, z2: 0, z3: 14.3 },
           status: "insufficient_data",
-          statusLabel: "Insufficient data",
+          statusLabel: "Not calculated",
           explanation:
-            "Polarization needs recorded cycling time in all three Treff heart-rate zones.",
+            "The index is not calculated because Dofek requires recorded cycling time in all three Treff heart-rate zones.",
         },
       ],
     },

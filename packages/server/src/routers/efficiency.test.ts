@@ -366,13 +366,18 @@ describe("efficiencyRouter", () => {
       expect(result.maxHr).toBe(190);
       expect(result.weeks).toHaveLength(1);
 
-      // Treff PI = log10((f1 / (f2 * f3)) * 100) where f = fraction of total time
+      // Treff PI = log10((f1 / f2) * f3 * 100) where f = fraction of total time
       const total = 5000 + 500 + 100;
       const f1 = 5000 / total;
       const f2 = 500 / total;
       const f3 = 100 / total;
-      const expected = Math.round(Math.log10((f1 / (f2 * f3)) * 100) * 1000) / 1000;
+      const expected = Math.round(Math.log10((f1 / f2) * f3 * 100) * 1000) / 1000;
       expect(result.weeks[0]?.polarizationIndex).toBe(expected);
+      expect(result.method.formula).toBe(
+        "PI = log10((Z1 / Z2) × Z3 × 100), using each zone's fraction of recorded cycling time.",
+      );
+      expect(result.method.interpretation).not.toContain("diagnosis");
+      expect(result.method.source.url).toBe("https://doi.org/10.3389/fphys.2019.00707");
     });
 
     it("returns null polarization index when z2 is 0", async () => {
@@ -482,12 +487,12 @@ describe("efficiencyRouter", () => {
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
-      // Treff PI = log10((f1 / (f2 * f3)) * 100) where f = fraction of total time
+      // Treff PI = log10((f1 / f2) * f3 * 100) where f = fraction of total time
       const total = 3600 + 1800 + 600;
       const f1 = 3600 / total;
       const f2 = 1800 / total;
       const f3 = 600 / total;
-      const expected = Math.round(Math.log10((f1 / (f2 * f3)) * 100) * 1000) / 1000;
+      const expected = Math.round(Math.log10((f1 / f2) * f3 * 100) * 1000) / 1000;
       expect(result.weeks[0]?.polarizationIndex).toBe(expected);
     });
   });

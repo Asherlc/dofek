@@ -1,5 +1,6 @@
 import { statusColors } from "@dofek/scoring/colors";
 import { describe, expect, it } from "vitest";
+import { chartColors } from "../lib/chartTheme.ts";
 import { buildPolarizationTrendOption } from "./PolarizationTrendChart.tsx";
 import { buildRampRateOption } from "./RampRateChart.tsx";
 import { buildSleepAnalyticsOption } from "./SleepAnalyticsChart.tsx";
@@ -166,14 +167,14 @@ describe("PolarizationTrendChart option builder", () => {
   it("renders threshold as a regular line series at y=2.0", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
     const allSeries = getSeriesArray(option);
-    const thresholdSeries = allSeries.find((s) => s.name === "Threshold");
+    const thresholdSeries = allSeries.find((s) => s.name === "Treff heuristic");
     expect(thresholdSeries).toBeDefined();
     if (!thresholdSeries) throw new Error("Expected threshold series");
     expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2.0]);
     expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2.0]);
   });
 
-  it("colors data points from server status and keeps the exact 2.0 boundary non-polarized", () => {
+  it("uses a neutral categorical color on both sides of the descriptive heuristic", () => {
     const weeksWithBoundary = [
       makePolarizationWeek({
         week: "2024-01-01",
@@ -202,18 +203,18 @@ describe("PolarizationTrendChart option builder", () => {
     const allSeries = getSeriesArray(option);
     const polarizationIndexSeries = allSeries.find((s) => s.name === "Polarization Index");
     if (!polarizationIndexSeries) throw new Error("Expected polarization index series");
-    // 2.5 (above threshold) → green
+    // The heuristic is descriptive, so neither side is encoded as good or bad.
     expect(polarizationIndexSeries.data[0]).toHaveProperty("itemStyle", {
-      color: statusColors.positive,
+      color: chartColors.blue,
     });
-    // 1.8 (below threshold) → red
     expect(polarizationIndexSeries.data[1]).toHaveProperty("itemStyle", {
-      color: statusColors.danger,
+      color: chartColors.blue,
     });
-    // 2.0 (exactly at threshold) is not polarized → red
     expect(polarizationIndexSeries.data[2]).toHaveProperty("itemStyle", {
-      color: statusColors.danger,
+      color: chartColors.blue,
     });
+    expect(allSeries.map((series) => series.name)).not.toContain("Polarized zone");
+    expect(allSeries.map((series) => series.name)).not.toContain("Non-polarized zone");
   });
 
   it("shows incomplete weeks as distinct markers at yMin", () => {

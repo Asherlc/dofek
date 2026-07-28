@@ -148,7 +148,7 @@ describe("efficiency.polarizationTrend integration", () => {
       const f1 = threeZoneWeek.z1Seconds / total;
       const f2 = threeZoneWeek.z2Seconds / total;
       const f3 = threeZoneWeek.z3Seconds / total;
-      const expectedPi = Math.round(Math.log10((f1 / (f2 * f3)) * 100) * 1000) / 1000;
+      const expectedPi = Math.round(Math.log10((f1 / f2) * f3 * 100) * 1000) / 1000;
       expect(threeZoneWeek.polarizationIndex).toBe(expectedPi);
       expect(threeZoneWeek.status).toBe(expectedPi > 2 ? "polarized" : "not_polarized");
       expect(threeZoneWeek.totalSeconds).toBe(total);

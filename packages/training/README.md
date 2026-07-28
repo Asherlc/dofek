@@ -63,6 +63,17 @@ Every public module is imported as `@dofek/training/<subpath>`.
 
 ## Model details
 
+### Training distributions
+
+The Treff polarization summary uses recorded cycling time in three
+maximum-heart-rate zones and the published formula
+`log10((Z1 / Z2) × Z3 × 100)`. Dofek requires recorded time in every zone
+instead of applying the paper's zero-Zone-2 substitution and follows the
+paper's rule that the index is invalid when Zone 3 exceeds Zone 1. The `> 2.00`
+comparison is presented as a descriptive training-distribution heuristic, not
+a physiological or medical assessment. See
+[Treff et al. (2019)](https://doi.org/10.3389/fphys.2019.00707).
+
 ### Workout recommendations
 
 `recommendNextWorkout` combines recent activity, readiness, muscle-group

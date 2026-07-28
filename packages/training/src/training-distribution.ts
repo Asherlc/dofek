@@ -94,13 +94,17 @@ export function buildTreffPolarizationWeek(
   };
 
   if (input.polarizationIndex === null) {
+    const explanation =
+      input.z3Seconds > input.z1Seconds
+        ? "The index is not calculated because recorded Zone 3 time exceeds Zone 1, which is outside Treff's valid definition."
+        : "The index is not calculated because Dofek requires recorded cycling time in all three Treff heart-rate zones.";
     return {
       ...input,
       totalSeconds,
       zonePercentages,
       status: "insufficient_data",
-      statusLabel: "Insufficient data",
-      explanation: "Polarization needs recorded cycling time in all three Treff heart-rate zones.",
+      statusLabel: "Not calculated",
+      explanation,
     };
   }
 
@@ -110,8 +114,9 @@ export function buildTreffPolarizationWeek(
       totalSeconds,
       zonePercentages,
       status: "polarized",
-      statusLabel: "Polarized",
-      explanation: "This cycling week is polarized: it has a Treff polarization index above 2.00.",
+      statusLabel: "Matches polarized-pattern heuristic",
+      explanation:
+        "This week's recorded cycling distribution is above Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
     };
   }
 
@@ -120,8 +125,8 @@ export function buildTreffPolarizationWeek(
     totalSeconds,
     zonePercentages,
     status: "not_polarized",
-    statusLabel: "Not polarized",
+    statusLabel: "Does not match polarized-pattern heuristic",
     explanation:
-      "This cycling week is not polarized because its Treff polarization index is 2.00 or lower.",
+      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
   };
 }

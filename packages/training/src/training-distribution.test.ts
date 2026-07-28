@@ -62,7 +62,7 @@ describe("buildTreffPolarizationWeek", () => {
       }),
     ).toMatchObject({
       status: "not_polarized",
-      statusLabel: "Not polarized",
+      statusLabel: "Does not match polarized-pattern heuristic",
     });
 
     expect(
@@ -75,7 +75,7 @@ describe("buildTreffPolarizationWeek", () => {
       }),
     ).toMatchObject({
       status: "polarized",
-      statusLabel: "Polarized",
+      statusLabel: "Matches polarized-pattern heuristic",
     });
   });
 
@@ -92,8 +92,26 @@ describe("buildTreffPolarizationWeek", () => {
       totalSeconds: 4200,
       zonePercentages: { z1: 85.7, z2: 0, z3: 14.3 },
       status: "insufficient_data",
-      statusLabel: "Insufficient data",
-      explanation: "Polarization needs recorded cycling time in all three Treff heart-rate zones.",
+      statusLabel: "Not calculated",
+      explanation:
+        "The index is not calculated because Dofek requires recorded cycling time in all three Treff heart-rate zones.",
+    });
+  });
+
+  it("explains the Treff validity condition when Zone 3 exceeds Zone 1", () => {
+    const result = buildTreffPolarizationWeek({
+      week: "2026-07-20",
+      z1Seconds: 1200,
+      z2Seconds: 600,
+      z3Seconds: 1800,
+      polarizationIndex: null,
+    });
+
+    expect(result).toMatchObject({
+      status: "insufficient_data",
+      statusLabel: "Not calculated",
+      explanation:
+        "The index is not calculated because recorded Zone 3 time exceeds Zone 1, which is outside Treff's valid definition.",
     });
   });
 
@@ -109,7 +127,8 @@ describe("buildTreffPolarizationWeek", () => {
     expect(result).toMatchObject({
       totalSeconds: 6000,
       zonePercentages: { z1: 80, z2: 10, z3: 10 },
-      explanation: "This cycling week is polarized: it has a Treff polarization index above 2.00.",
+      explanation:
+        "This week's recorded cycling distribution is above Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
     });
   });
 });

@@ -192,6 +192,10 @@ export default function StrainScreen() {
     { days },
     { placeholderData: (previousData) => previousData },
   );
+  const monotonyQuery = trpc.cyclingAdvanced.trainingMonotony.useQuery(
+    { days },
+    { placeholderData: (previousData) => previousData },
+  );
   const processingStatus = useProcessingStatus({ datasets: ["activity", "recovery", "training"] });
 
   useEffect(() => {
@@ -217,6 +221,14 @@ export default function StrainScreen() {
       captureException(polarizationQuery.error);
     }
   }, [polarizationQuery.isError, polarizationQuery.error]);
+
+  useEffect(() => {
+    if (monotonyQuery.isError && monotonyQuery.error) {
+      if (reportedTrainingErrors.has(monotonyQuery.error)) return;
+      reportedTrainingErrors.add(monotonyQuery.error);
+      captureException(monotonyQuery.error);
+    }
+  }, [monotonyQuery.isError, monotonyQuery.error]);
 
   const trainingData = trainingQuery.data;
 
@@ -294,6 +306,7 @@ export default function StrainScreen() {
         utils.mobileDashboard.training.invalidate(),
         utils.training.hrZones.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
+        utils.cyclingAdvanced.trainingMonotony.invalidate(),
         utils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
@@ -514,9 +527,20 @@ export default function StrainScreen() {
             <QueryStatePanel variant="loading" minHeight={120} />
           ) : null}
 
+          {monotonyQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              title="Could not load training monotony"
+              message={monotonyQuery.error.message}
+            />
+          ) : monotonyQuery.isLoading && monotonyQuery.data == null ? (
+            <QueryStatePanel variant="loading" minHeight={120} />
+          ) : null}
+
           <TrainingDistributionCards
             intensityDistribution={hrZonesQuery.data?.intensityDistribution ?? null}
             polarization={polarizationQuery.data ?? null}
+            monotony={monotonyQuery.data ?? null}
           />
 
           {/* Recent activities */}

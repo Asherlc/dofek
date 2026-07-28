@@ -1,6 +1,5 @@
 import { formatDateMedium, formatDateYmd, formatNumber } from "@dofek/format/format";
-import { statusColors } from "@dofek/scoring/colors";
-import type { PolarizationWeek } from "dofek-server/types";
+import type { PolarizationTrendResult, PolarizationWeek } from "dofek-server/types";
 import {
   chartColors,
   chartThemeColors,
@@ -15,6 +14,7 @@ import { DofekChart } from "./DofekChart.tsx";
 interface PolarizationTrendChartProps {
   weeks: PolarizationWeek[];
   maxHr: number | null;
+  method: PolarizationTrendResult["method"] | null;
   loading?: boolean;
 }
 
@@ -38,12 +38,6 @@ function findWeekForAxisValue(
     if (formatDateYmd(weekDate) === axisDateOnly) return week;
   }
   return null;
-}
-
-function polarizationStatusColor(status: PolarizationWeek["status"]): string {
-  if (status === "polarized") return statusColors.positive;
-  if (status === "not_polarized") return statusColors.danger;
-  return statusColors.warning;
 }
 
 export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
@@ -87,7 +81,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
         const pi = weekData.polarizationIndex;
         const piStr = pi !== null ? formatNumber(pi, 3) : "N/A";
         const dateLabel = formatDateMedium(weekData.week);
-        const status = `<span style="color:${polarizationStatusColor(weekData.status)}">${escapeTooltipHtml(weekData.statusLabel)}</span>`;
+        const status = `<span style="color:${chartColors.blue}">${escapeTooltipHtml(weekData.statusLabel)}</span>`;
         return [
           `<strong>Week of ${escapeTooltipHtml(dateLabel)}</strong>`,
           `Polarization Index: ${piStr} ${status}`,
@@ -103,39 +97,8 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
     xAxis: dofekAxis.time(),
     yAxis: dofekAxis.value({ name: "Polarization Index", min: yMin, max: yMax }),
     series: [
-      // Shaded green area above Threshold = 2.0
       {
-        name: "Polarized zone",
-        type: "line",
-        data: [
-          [firstDate, yMax],
-          [lastDate, yMax],
-        ],
-        symbol: "none",
-        lineStyle: { width: 0 },
-        areaStyle: { color: statusColors.positive, opacity: 0.05, origin: 2.0 },
-        silent: true,
-        tooltip: { show: false },
-        z: 0,
-      },
-      // Shaded red area below Threshold = 2.0
-      {
-        name: "Non-polarized zone",
-        type: "line",
-        data: [
-          [firstDate, yMin],
-          [lastDate, yMin],
-        ],
-        symbol: "none",
-        lineStyle: { width: 0 },
-        areaStyle: { color: statusColors.danger, opacity: 0.05, origin: 2.0 },
-        silent: true,
-        tooltip: { show: false },
-        z: 0,
-      },
-      // Dashed threshold reference line at PI = 2.0
-      {
-        name: "Threshold",
+        name: "Treff heuristic",
         type: "line",
         data: [
           [firstDate, 2.0],
@@ -147,14 +110,12 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
         tooltip: { show: false },
         z: 1,
       },
-      // Actual PI data line with per-point coloring
       {
         name: "Polarization Index",
         type: "line",
         data: weeks.map((w) => ({
           value: [w.week, w.polarizationIndex],
-          itemStyle:
-            w.polarizationIndex !== null ? { color: polarizationStatusColor(w.status) } : undefined,
+          itemStyle: w.polarizationIndex !== null ? { color: chartColors.blue } : undefined,
         })),
         connectNulls: false,
         smooth: true,
@@ -185,7 +146,12 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[]) {
   };
 }
 
-export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTrendChartProps) {
+export function PolarizationTrendChart({
+  weeks,
+  maxHr,
+  method,
+  loading,
+}: PolarizationTrendChartProps) {
   const option = weeks.length > 0 ? buildPolarizationTrendOption(weeks) : {};
 
   return (
@@ -201,10 +167,22 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
         height={280}
         emptyMessage="Not enough HR data to compute polarization index"
       />
-      <p className="text-xs text-dim mt-1">
-        Index above 2.00 = polarized training. Zone 1 = easy (&lt;80% max HR), Zone 2 = threshold
-        (80-90% max HR), Zone 3 = high intensity (&ge;90% max HR).
-      </p>
+      {method ? (
+        <div className="mt-2 space-y-1 text-xs text-dim">
+          <p>{method.formula}</p>
+          <p>{method.zoneBasis}</p>
+          <p>{method.calculationChoice}</p>
+          <p>{method.interpretation}</p>
+          <a
+            className="text-link hover:underline"
+            href={method.source.url}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {method.source.title}
+          </a>
+        </div>
+      ) : null}
     </div>
   );
 }

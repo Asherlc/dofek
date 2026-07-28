@@ -37,6 +37,7 @@ function EnduranceTab() {
           <PolarizationTrendChart
             weeks={polarization.data?.weeks ?? []}
             maxHr={polarization.data?.maxHr ?? null}
+            method={polarization.data?.method ?? null}
             loading={polarization.isLoading}
           />
         )}

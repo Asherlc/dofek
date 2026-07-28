@@ -613,6 +613,10 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
       maxHr: null,
       weeks: [],
       explanation: expect.stringContaining("cycling"),
+      method: expect.objectContaining({
+        formula: expect.stringContaining("log10"),
+        interpretation: expect.stringContaining("not a physiological or medical assessment"),
+      }),
     });
   });
 
@@ -695,6 +699,19 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
       zonePercentages: { z1: 76.9, z2: 15.4, z3: 7.7 },
       statusLabel: expect.any(String),
       explanation: expect.any(String),
+    });
+    expect(result.method).toEqual({
+      formula:
+        "PI = log10((Z1 / Z2) × Z3 × 100), using each zone's fraction of recorded cycling time.",
+      zoneBasis: "Z1 <80%, Z2 80–<90%, and Z3 ≥90% of maximum heart rate.",
+      calculationChoice:
+        "Dofek requires recorded time in all three zones and does not calculate PI when Z3 exceeds Z1.",
+      interpretation:
+        "The >2.00 comparison is Treff's descriptive training-distribution heuristic, not a physiological or medical assessment.",
+      source: {
+        title: "Treff et al. (2019), The Polarization-Index",
+        url: "https://doi.org/10.3389/fphys.2019.00707",
+      },
     });
   });
 
@@ -998,6 +1015,7 @@ describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
       "activityScope",
       "explanation",
       "maxHr",
+      "method",
       "model",
       "threshold",
       "weeks",
