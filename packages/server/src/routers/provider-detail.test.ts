@@ -338,8 +338,8 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 17 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(17);
+    it("contains 18 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(18);
     });
 
     it("includes all required child tables", () => {
@@ -353,6 +353,7 @@ describe("providerDetailRouter", () => {
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_result");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_panel");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.medication_dose_event");
+      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.supplement_dose_event");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.health_event");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.journal_entry");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.dexa_scan");

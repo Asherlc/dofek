@@ -340,6 +340,7 @@ export const PROVIDER_DATA_TABLES = [
   "fitness.medication",
   "fitness.condition",
   "fitness.allergy_intolerance",
+  "fitness.supplement_dose_event",
   "fitness.medication_dose_event",
   "fitness.health_event",
   "fitness.journal_entry",

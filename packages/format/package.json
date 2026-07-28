@@ -7,6 +7,7 @@
     "./format": "./src/format.ts",
     "./medication-dose-events": "./src/medication-dose-events.ts",
     "./medication-reminders": "./src/medication-reminders.ts",
+    "./supplement-dose-events": "./src/supplement-dose-events.ts",
     "./units": "./src/units.ts"
   },
   "dependencies": {

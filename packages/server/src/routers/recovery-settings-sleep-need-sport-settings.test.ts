@@ -642,7 +642,7 @@ describe("settingsRouter", () => {
       const result = await caller.deleteAllUserData();
       expect(result).toEqual({ success: true });
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 4);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 5);
       expectCallsUseNonEmptySql(txExecute);
       expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
     });

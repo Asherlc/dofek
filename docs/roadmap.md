@@ -174,7 +174,9 @@ Implementation-level backlog. Checked items are complete; unchecked are open.
 - [x] Apple Health workout routes (GPS data from WorkoutRoute elements → metric_stream)
 - [x] Clinical/lab data ingestion (Apple Health FHIR clinical records — 1,173 lab results)
 - [x] Nutrition data ingestion (FatSecret provider — per-food-item granularity with full micro/macronutrients)
-- [x] Supplement tracking (auto-supplements provider reads config, inserts daily; `category` enum distinguishes supplements from food)
+- [x] Supplement tracking (immutable schedules materialize bounded per-user
+  planned/unknown occurrences; append-only taken/skipped corrections preserve
+  provenance, and only current taken leaves contribute canonical nutrients)
 - [x] Peloton direct provider (automated Auth0 login, workouts + performance metrics)
 - [x] Wahoo provider (OAuth + FIT file parsing → GPS/power/HR/cadence/running dynamics)
 - [x] WHOOP provider (sleep, recovery, workouts, 6s HR streams, journal entries via internal API)

@@ -154,6 +154,15 @@ describe("dataset contracts", () => {
     ]);
   });
 
+  it("tracks dose events as a nutrition input", () => {
+    const nutrition = DATASET_CONTRACTS.find((contract) => contract.key === "nutrition");
+    if (!nutrition) throw new Error("Missing nutrition dataset contract");
+
+    expect(
+      nutrition.outputPaths.find((outputPath) => outputPath.path === "relational")?.sources,
+    ).toContain("supplement_dose_event");
+  });
+
   it("requires evidence only for output paths the operation actually emitted", () => {
     const activity = DATASET_CONTRACTS.find((contract) => contract.key === "activity");
     if (!activity) throw new Error("Missing activity dataset contract");
