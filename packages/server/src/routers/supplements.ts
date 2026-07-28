@@ -1,4 +1,5 @@
 import { supplementDoseOccurrencesSchema } from "@dofek/format/supplement-dose-events";
+import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { invalidateNutritionCaches } from "../lib/nutrition-cache.ts";
@@ -65,7 +66,14 @@ export const supplementsRouter = router({
             cause: error,
           });
         }
-        throw error;
+        captureException(error, {
+          tags: { operation: "supplements.recordDose" },
+        });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Could not record the supplement dose. Reload and try again.",
+          cause: error,
+        });
       }
     }),
 });

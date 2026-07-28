@@ -153,8 +153,9 @@ tables through ClickHouse replication.
 | `fitness.sleep_session` | Sleep sessions with stage breakdown |
 | `fitness.food_entry` | Raw food items and nutrition samples, including their ingestion grain |
 | `fitness.food_entry_nutrient` | Row-based food-entry nutrient amounts |
-| `fitness.supplement` | Immutable per-user supplement definition versions under stable schedule identities |
-| `fitness.supplement_nutrient` | Row-based supplement nutrient amounts |
+| `fitness.supplement` | Stable per-user supplement schedule identity, ownership, and display order |
+| `fitness.supplement_definition` | Immutable effective-dated supplement definition versions |
+| `fitness.supplement_definition_nutrient` | Canonical row-based nutrient amounts for a definition version |
 | `fitness.supplement_dose_event` | Append-only planned/taken/skipped/unknown occurrence history with provider provenance |
 | `fitness.v_supplement_dose_current` | Current leaf for each supplement occurrence event chain |
 | `fitness.v_nutrition_provider_daily` | Raw per-provider daily nutrient totals for provenance and provider inspection |
@@ -166,6 +167,10 @@ tables through ClickHouse replication.
 | `fitness.health_event` | Generic health events catch-all |
 | `fitness.journal_entry` | Daily behavioral self-reports (WHOOP journal, etc.) |
 | `fitness.life_events` | Life event markers (travel, illness, etc.) |
+
+Supplement schedule, definition, nutrient, and dose-event ownership is defined
+by the [canonical Drizzle schema](../src/db/schema/nutrition.ts) and introduced
+by [migration 0061](../drizzle/0061_supplement_dose_events.sql).
 
 ### Daily Nutrition vs Food Entries
 

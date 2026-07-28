@@ -6,17 +6,16 @@ import {
   toApiSupplement,
 } from "./supplements-repository.ts";
 
-const supplementInsertValuesSchema = z.object({
-  userId: z.string(),
+const supplementDefinitionInsertValuesSchema = z.object({
+  supplementId: z.string(),
+  supersedesDefinitionId: z.string().optional(),
   name: z.string(),
   amount: z.number().nullable(),
   unit: z.string().nullable(),
   form: z.string().nullable(),
   description: z.string().nullable(),
   meal: z.string().nullable(),
-  sortOrder: z.number(),
-  scheduleId: z.string().optional(),
-  supersedesSupplementId: z.string().optional(),
+  effectiveFrom: z.string(),
 });
 
 /** All nutrient columns set to null, matching the DB view's snake_case shape. */
@@ -185,10 +184,11 @@ describe("SupplementsRepository", () => {
   it("list returns parsed supplements", async () => {
     const { repo } = makeRepository([
       {
-        id: "sup-1",
+        definition_id: "sup-1",
+        supplement_id: "schedule-1",
         user_id: "user-1",
         schedule_id: "schedule-1",
-        supersedes_supplement_id: null,
+        supersedes_definition_id: null,
         name: "Vitamin D",
         amount: 5000,
         unit: "IU",
@@ -251,7 +251,7 @@ describe("SupplementsRepository", () => {
       },
     ]);
     const parsedInserts = insertCalls
-      .map((call) => supplementInsertValuesSchema.safeParse(call.values))
+      .map((call) => supplementDefinitionInsertValuesSchema.safeParse(call.values))
       .filter((result) => result.success)
       .map((result) => result.data);
     const supplementInsert = parsedInserts.find((values) => values.name === "Vitamin D");
@@ -261,13 +261,13 @@ describe("SupplementsRepository", () => {
     expect(supplementInsert?.form).toBe("softgel");
     expect(supplementInsert?.description).toBe("Daily vitamin D3");
     expect(supplementInsert?.meal).toBe("breakfast");
-    expect(supplementInsert?.sortOrder).toBe(0);
+    expect(supplementInsert?.supplementId).toBe("nd-1");
   });
 
   it("save throws when supplement insert returns no id, before any nutrient insert", async () => {
     const { repo, insertCalls } = makeRepository(undefined, { returningRows: [] });
     await expect(repo.save([{ name: "Fish Oil", omega3Mg: 500 }])).rejects.toThrow(
-      /Supplement insert did not return an id.*Fish Oil/,
+      /Supplement schedule insert did not return an id.*Fish Oil/,
     );
     expect(insertCalls).toHaveLength(1);
   });
@@ -275,7 +275,7 @@ describe("SupplementsRepository", () => {
   it("save does not insert nutrients when supplement has no nutrient fields", async () => {
     const { repo, insertCalls } = makeRepository();
     await repo.save([{ name: "Vitamin D", amount: 5000, unit: "IU" }]);
-    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls).toHaveLength(2);
   });
 
   it("treats a new leading V1 definition as new after matching existing names globally", async () => {
@@ -288,19 +288,19 @@ describe("SupplementsRepository", () => {
     await repo.save([{ name: "Vitamin C" }, { name: "Vitamin A" }, { name: "Vitamin B" }]);
 
     const parsed = insertCalls
-      .map((call) => supplementInsertValuesSchema.safeParse(call.values))
+      .map((call) => supplementDefinitionInsertValuesSchema.safeParse(call.values))
       .filter((result) => result.success)
       .map((result) => result.data);
     expect(parsed).toEqual([
       {
-        userId: "user-1",
+        supplementId: "nd-1",
         name: "Vitamin C",
         amount: null,
         unit: null,
         form: null,
         description: null,
         meal: null,
-        sortOrder: 0,
+        effectiveFrom: expect.any(String),
       },
     ]);
   });
@@ -315,21 +315,20 @@ describe("SupplementsRepository", () => {
     await repo.save([{ name: "Vitamin C" }, { name: "Vitamin B" }]);
 
     const parsed = insertCalls
-      .map((call) => supplementInsertValuesSchema.safeParse(call.values))
+      .map((call) => supplementDefinitionInsertValuesSchema.safeParse(call.values))
       .filter((result) => result.success)
       .map((result) => result.data);
     expect(parsed).toEqual([
       {
-        userId: "user-1",
-        scheduleId: "schedule-a",
-        supersedesSupplementId: "supplement-a",
+        supplementId: "schedule-a",
+        supersedesDefinitionId: "supplement-a",
         name: "Vitamin C",
         amount: null,
         unit: null,
         form: null,
         description: null,
         meal: null,
-        sortOrder: 0,
+        effectiveFrom: expect.any(String),
       },
     ]);
   });
@@ -342,10 +341,11 @@ function makeSupplementViewRow(
   sortOrder: number,
 ): Record<string, unknown> {
   return {
-    id,
+    definition_id: id,
+    supplement_id: scheduleId,
     user_id: "user-1",
     schedule_id: scheduleId,
-    supersedes_supplement_id: null,
+    supersedes_definition_id: null,
     name,
     amount: null,
     unit: null,

@@ -1,6 +1,7 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../db/execute-with-schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { SyncProvider, SyncResult } from "./types.ts";
@@ -64,7 +65,9 @@ export class AutoSupplementsProvider implements SyncProvider {
     }
 
     const timezone = parseStoredTimezone(
-      await run.db.execute(
+      await executeWithSchema(
+        run.db,
+        timezoneRowSchema,
         sql`SELECT value
             FROM fitness.user_settings
             WHERE user_id = ${userId}
@@ -76,15 +79,21 @@ export class AutoSupplementsProvider implements SyncProvider {
     const endDate = formatDateYmdInTimeZone(run.window.until, timezone);
     const today = formatDateYmdInTimeZone(new Date(), timezone);
 
-    const definitions = z.array(supplementDefinitionRowSchema).parse(
-      await run.db.execute(
-        sql`SELECT id, schedule_id, effective_from, effective_to
-            FROM fitness.supplement
-            WHERE user_id = ${userId}
-              AND effective_from <= ${endDate}::date
-              AND (effective_to IS NULL OR effective_to > ${startDate}::date)
-            ORDER BY schedule_id, effective_from, created_at`,
-      ),
+    const definitions = await executeWithSchema(
+      run.db,
+      supplementDefinitionRowSchema,
+      sql`SELECT
+              definition.id,
+              definition.supplement_id AS schedule_id,
+              definition.effective_from,
+              definition.effective_to
+            FROM fitness.supplement_definition AS definition
+            INNER JOIN fitness.supplement AS supplement
+              ON supplement.id = definition.supplement_id
+            WHERE supplement.user_id = ${userId}
+              AND definition.effective_from <= ${endDate}::date
+              AND (definition.effective_to IS NULL OR definition.effective_to > ${startDate}::date)
+            ORDER BY definition.supplement_id, definition.effective_from, definition.created_at`,
     );
     if (definitions.length === 0) {
       return {
@@ -103,12 +112,13 @@ export class AutoSupplementsProvider implements SyncProvider {
       for (const date of datesInRange(startDate, endDate)) {
         if (!definitionApplies(definition, date)) continue;
         const status = date < today ? "unknown" : "planned";
-        const inserted = z.array(insertedIdRowSchema).parse(
-          await run.db.execute(
-            sql`INSERT INTO fitness.supplement_dose_event (
+        const inserted = await executeWithSchema(
+          run.db,
+          insertedIdRowSchema,
+          sql`INSERT INTO fitness.supplement_dose_event (
                 user_id,
-                schedule_id,
                 supplement_id,
+                definition_id,
                 provider_id,
                 external_id,
                 scheduled_date,
@@ -129,18 +139,18 @@ export class AutoSupplementsProvider implements SyncProvider {
               )
               ON CONFLICT DO NOTHING
               RETURNING id`,
-          ),
         );
         recordsSynced += inserted.length;
       }
     }
 
-    const advanced = z.array(insertedIdRowSchema).parse(
-      await run.db.execute(
-        sql`INSERT INTO fitness.supplement_dose_event (
+    const advanced = await executeWithSchema(
+      run.db,
+      insertedIdRowSchema,
+      sql`INSERT INTO fitness.supplement_dose_event (
               user_id,
-              schedule_id,
               supplement_id,
+              definition_id,
               provider_id,
               external_id,
               scheduled_date,
@@ -151,10 +161,10 @@ export class AutoSupplementsProvider implements SyncProvider {
             )
             SELECT
               current.user_id,
-              current.schedule_id,
               current.supplement_id,
+              current.definition_id,
               ${PROVIDER_ID},
-              'schedule:' || current.schedule_id::text || ':' || current.scheduled_date::text
+              'schedule:' || current.supplement_id::text || ':' || current.scheduled_date::text
                 || ':unknown:' || current.id::text,
               current.scheduled_date,
               'unknown'::fitness.supplement_dose_status,
@@ -169,7 +179,6 @@ export class AutoSupplementsProvider implements SyncProvider {
               AND current.scheduled_date < ${today}::date
             ON CONFLICT DO NOTHING
             RETURNING id`,
-      ),
     );
     recordsSynced += advanced.length;
 

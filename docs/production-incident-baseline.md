@@ -19394,3 +19394,52 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** A second external download failure should be
   treated as an unresolved upstream transport incident rather than papered over
   with repository retry or timeout changes.
+
+## 2026-07-27 — Supplement migration violated SQL and lock-safety gates
+
+- **Status:** Root cause fixed locally on PR #2225; fresh exact-head CI pending.
+- **Symptoms:** CI run
+  [30314260324](https://github.com/Asherlc/dofek/actions/runs/30314260324)
+  failed `Test / SQLFluff` job
+  [90136530517](https://github.com/Asherlc/dofek/actions/runs/30314260324/job/90136530517)
+  and `Test / Migration Lint` job
+  [90136530596](https://github.com/Asherlc/dofek/actions/runs/30314260324/job/90136530596).
+- **User impact:** No production impact. The supplement-dose pull request was
+  blocked from merging.
+- **Evidence:** SQLFluff ran
+  `echo "$NEW_MIGRATIONS" | xargs uv tool run sqlfluff lint`; its first fatal
+  line was
+  `drizzle/0061_supplement_dose_events.sql L:42 P:1 PG01 DROP statement should use CONCURRENTLY`.
+  Migration Lint ran `echo "$NEW_MIGRATIONS" | xargs squawk`; its first fatal
+  finding was
+  `Setting a column NOT NULL blocks reads while the table is scanned` at line
+  14. Squawk also identified a normal index drop, existing-table unique
+  constraints, a foreign key, and a check constraint that would take unsafe
+  locks.
+- **Root cause:** The migration attempted to turn the existing supplement table
+  into a version ledger in place. That required replacing an existing unique
+  index and scanning the live table while Drizzle's node-postgres migrator runs
+  the migration in a transaction. PostgreSQL forbids the concurrent index DDL
+  recommended by generic PG01 guidance inside that transaction, so the model
+  could not satisfy both transaction and online-lock requirements.
+- **Fix / mitigation:** Replace the table structurally in one transaction:
+  rename the old supplement and nutrient relations, create a stable schedule
+  table plus canonical immutable definition/nutrient tables, copy every row and
+  key, drop both legacy sources, and rename the new schedule table to the
+  canonical relation. SQLFluff now excludes PG01 only under transaction-bound
+  `drizzle/` paths; migration policy rejects concurrent DDL there and permits an
+  `INSERT ... SELECT` normalization only when its target is created and every
+  source relation is fully dropped in the same migration. No per-file waiver,
+  lock warning suppression, retry, timeout, or migration-runner change was
+  added. SQLFluff documents nested path configuration:
+  <https://docs.sqlfluff.com/en/latest/configuration/setting_configuration.html>.
+- **Validation:** Direct SQLFluff, Squawk, and migration-policy checks pass with
+  zero findings. Docker-free unit, web, mobile, TypeScript, and formatting
+  checks pass. New real-PostgreSQL integration coverage proves exact
+  schedule/definition/nutrient preservation, legacy-storage removal,
+  declarative cross-user ownership rejection, immutable historical names, and
+  transaction rollback; it remains intentionally unexecuted locally because
+  Docker is unavailable and must pass in fresh exact-head CI.
+- **Remaining risk / follow-up:** Merge only after the fresh integration shards,
+  all other required checks, and every review thread pass on the exact published
+  head.

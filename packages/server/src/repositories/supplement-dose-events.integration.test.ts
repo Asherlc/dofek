@@ -15,7 +15,8 @@ const OTHER_USER_ID = "00000000-0000-4000-8000-000000002064";
 const definitionVersionSchema = z.object({
   id: z.string(),
   schedule_id: z.string(),
-  supersedes_supplement_id: z.string().nullable(),
+  supersedes_definition_id: z.string().nullable(),
+  name: z.string(),
   amount: z.coerce.number().nullable(),
   effective_from: z.string(),
   effective_to: z.string().nullable(),
@@ -58,34 +59,72 @@ describe("SupplementsRepository dose events with Postgres", () => {
     await repository.save([
       { name: "Versioned Magnesium", amount: 200, unit: "mg", magnesiumMg: 200 },
     ]);
+    const [initial] = await executeWithSchema(
+      context.db,
+      currentDefinitionSchema,
+      sql`SELECT
+            definition.id,
+            definition.supplement_id AS schedule_id
+          FROM fitness.supplement_definition AS definition
+          INNER JOIN fitness.supplement AS supplement
+            ON supplement.id = definition.supplement_id
+          WHERE supplement.user_id = ${TEST_USER_ID}
+            AND definition.effective_to IS NULL`,
+    );
+    if (!initial) throw new Error("Initial magnesium definition was not saved");
+    await ensureProvider(
+      context.db,
+      "auto-supplements",
+      "Auto-Supplements",
+      undefined,
+      TEST_USER_ID,
+    );
+    const scheduledDate = formatDateYmdInTimeZone(new Date(), "UTC");
+    await context.db.insert(supplementDoseEvent).values({
+      userId: TEST_USER_ID,
+      supplementId: initial.schedule_id,
+      definitionId: initial.id,
+      providerId: "auto-supplements",
+      externalId: `versioned-magnesium:${scheduledDate}`,
+      scheduledDate,
+      status: "planned",
+      recordedAt: new Date(),
+    });
     await repository.save([
-      { name: "Versioned Magnesium", amount: 300, unit: "mg", magnesiumMg: 300 },
+      { name: "Renamed Magnesium", amount: 300, unit: "mg", magnesiumMg: 300 },
     ]);
 
     const versions = await executeWithSchema(
       context.db,
       definitionVersionSchema,
       sql`SELECT
-            id,
-            schedule_id,
-            supersedes_supplement_id,
-            amount,
-            effective_from,
-            effective_to
-          FROM fitness.supplement
-          WHERE user_id = ${TEST_USER_ID}
-            AND name = 'Versioned Magnesium'
-          ORDER BY created_at, id`,
+            definition.id,
+            definition.supplement_id AS schedule_id,
+            definition.supersedes_definition_id,
+            definition.name,
+            definition.amount,
+            definition.effective_from,
+            definition.effective_to
+          FROM fitness.supplement_definition AS definition
+          INNER JOIN fitness.supplement AS supplement
+            ON supplement.id = definition.supplement_id
+          WHERE supplement.user_id = ${TEST_USER_ID}
+          ORDER BY definition.created_at, definition.id`,
     );
 
     expect(versions).toHaveLength(2);
     expect(versions[0]?.schedule_id).toBe(versions[1]?.schedule_id);
     expect(versions[0]?.effective_to).toBe(versions[1]?.effective_from);
-    expect(versions[1]?.supersedes_supplement_id).toBe(versions[0]?.id);
+    expect(versions[1]?.supersedes_definition_id).toBe(versions[0]?.id);
     expect(versions.map((version) => version.amount)).toEqual([200, 300]);
     expect(await repository.list()).toEqual([
-      { name: "Versioned Magnesium", amount: 300, unit: "mg", magnesiumMg: 300 },
+      { name: "Renamed Magnesium", amount: 300, unit: "mg", magnesiumMg: 300 },
     ]);
+    expect(
+      (await repository.occurrences(7)).occurrences.find(
+        (occurrence) => occurrence.scheduleId === initial.schedule_id,
+      )?.supplementName,
+    ).toBe("Versioned Magnesium");
   });
 
   it("appends one successor and rejects stale or cross-user expected leaves", async () => {
@@ -94,11 +133,15 @@ describe("SupplementsRepository dose events with Postgres", () => {
     const [definition] = await executeWithSchema(
       context.db,
       currentDefinitionSchema,
-      sql`SELECT id, schedule_id
-          FROM fitness.supplement
-          WHERE user_id = ${TEST_USER_ID}
-            AND name = 'Conflict Zinc'
-            AND effective_to IS NULL`,
+      sql`SELECT
+            definition.id,
+            definition.supplement_id AS schedule_id
+          FROM fitness.supplement_definition AS definition
+          INNER JOIN fitness.supplement AS supplement
+            ON supplement.id = definition.supplement_id
+          WHERE supplement.user_id = ${TEST_USER_ID}
+            AND definition.name = 'Conflict Zinc'
+            AND definition.effective_to IS NULL`,
     );
     if (!definition) throw new Error("Conflict Zinc definition was not saved");
 
@@ -114,8 +157,8 @@ describe("SupplementsRepository dose events with Postgres", () => {
       .insert(supplementDoseEvent)
       .values({
         userId: TEST_USER_ID,
-        scheduleId: definition.schedule_id,
-        supplementId: definition.id,
+        supplementId: definition.schedule_id,
+        definitionId: definition.id,
         providerId: "auto-supplements",
         externalId: `conflict-zinc:${today}`,
         scheduledDate: today,
@@ -145,6 +188,45 @@ describe("SupplementsRepository dose events with Postgres", () => {
     expect(result.counts.taken).toBeGreaterThanOrEqual(1);
   });
 
+  it("rejects a dose event whose user does not own its supplement schedule", async () => {
+    const repository = new SupplementsRepository(context.db, TEST_USER_ID, "UTC");
+    await repository.save([{ name: "Owned Vitamin C", vitaminCMg: 100 }]);
+    const [definition] = await executeWithSchema(
+      context.db,
+      currentDefinitionSchema,
+      sql`SELECT
+            definition.id,
+            definition.supplement_id AS schedule_id
+          FROM fitness.supplement_definition AS definition
+          INNER JOIN fitness.supplement AS supplement
+            ON supplement.id = definition.supplement_id
+          WHERE supplement.user_id = ${TEST_USER_ID}
+            AND definition.name = 'Owned Vitamin C'
+            AND definition.effective_to IS NULL`,
+    );
+    if (!definition) throw new Error("Owned Vitamin C definition was not saved");
+    await ensureProvider(
+      context.db,
+      "auto-supplements",
+      "Auto-Supplements",
+      undefined,
+      OTHER_USER_ID,
+    );
+
+    await expect(
+      context.db.insert(supplementDoseEvent).values({
+        userId: OTHER_USER_ID,
+        supplementId: definition.schedule_id,
+        definitionId: definition.id,
+        providerId: "auto-supplements",
+        externalId: "cross-user-dose-event",
+        scheduledDate: formatDateYmdInTimeZone(new Date(), "UTC"),
+        status: "planned",
+        recordedAt: new Date(),
+      }),
+    ).rejects.toMatchObject({ code: "23503" });
+  });
+
   it("adds a current taken leaf to resolved food without creating a source conflict", async () => {
     const repository = new SupplementsRepository(context.db, TEST_USER_ID, "UTC");
     await repository.save([
@@ -157,11 +239,15 @@ describe("SupplementsRepository dose events with Postgres", () => {
     const [definition] = await executeWithSchema(
       context.db,
       currentDefinitionSchema,
-      sql`SELECT id, schedule_id
-          FROM fitness.supplement
-          WHERE user_id = ${TEST_USER_ID}
-            AND name = 'Overlay Vitamin D'
-            AND effective_to IS NULL`,
+      sql`SELECT
+            definition.id,
+            definition.supplement_id AS schedule_id
+          FROM fitness.supplement_definition AS definition
+          INNER JOIN fitness.supplement AS supplement
+            ON supplement.id = definition.supplement_id
+          WHERE supplement.user_id = ${TEST_USER_ID}
+            AND definition.name = 'Overlay Vitamin D'
+            AND definition.effective_to IS NULL`,
     );
     if (!definition) throw new Error("Overlay Vitamin D definition was not saved");
 
@@ -204,8 +290,8 @@ describe("SupplementsRepository dose events with Postgres", () => {
       .insert(supplementDoseEvent)
       .values({
         userId: TEST_USER_ID,
-        scheduleId: definition.schedule_id,
-        supplementId: definition.id,
+        supplementId: definition.schedule_id,
+        definitionId: definition.id,
         providerId: "auto-supplements",
         externalId: `overlay-vitamin-d:${date}`,
         scheduledDate: date,

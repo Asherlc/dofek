@@ -175,10 +175,11 @@ clients render server-computed metric values rather than recomputing them.
 - Raw records retain provider and source attribution. Deduplication happens in
   queries and read models, never by discarding records during ingestion.
 - Nutrients use row-based canonical storage in `fitness.food_entry_nutrient`
-  and `fitness.supplement_nutrient`. `fitness.v_nutrition_provider_daily`
+  and `fitness.supplement_definition_nutrient`. `fitness.v_nutrition_provider_daily`
   retains raw per-provider totals; serving totals derive from
   `fitness.v_nutrition_daily`, which resolves one contribution set at query
-  time and reports ambiguous overlaps explicitly.
+  time and reports ambiguous overlaps explicitly. See the
+  [canonical nutrition schema](src/db/schema/nutrition.ts).
 - Supplement definitions are immutable versions under a stable schedule
   identity. Daily occurrences use an append-only `planned` / `taken` /
   `skipped` / `unknown` event chain, and only an explicitly `taken` current
@@ -188,6 +189,8 @@ clients render server-computed metric values rather than recomputing them.
   [partial indexes](https://www.postgresql.org/docs/current/indexes-partial.html)
   and
   [foreign-key constraints](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK).
+  The storage transition is defined by
+  [migration 0061](drizzle/0061_supplement_dose_events.sql).
 
 ## Authentication and Secrets
 

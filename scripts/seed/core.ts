@@ -37,9 +37,6 @@ async function clearSeedUserData(sql: Sql, userId: string): Promise<void> {
     SELECT id FROM fitness.food_entry WHERE user_id = ${userId}
   )`;
   await sql`DELETE FROM fitness.supplement_dose_event WHERE user_id = ${userId}`;
-  await sql`DELETE FROM fitness.supplement_nutrient WHERE supplement_id IN (
-    SELECT id FROM fitness.supplement WHERE user_id = ${userId}
-  )`;
   await sql`DELETE FROM fitness.dexa_scan_region WHERE scan_id IN (
     SELECT id FROM fitness.dexa_scan WHERE user_id = ${userId}
   )`;

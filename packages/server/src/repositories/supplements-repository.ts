@@ -10,7 +10,11 @@ import {
   nutrientFieldsSchema,
   nutrientRowSchema,
 } from "dofek/db/nutrient-columns";
-import { supplement, supplementNutrient } from "dofek/db/schema/nutrition";
+import {
+  supplement,
+  supplementDefinition,
+  supplementDefinitionNutrient,
+} from "dofek/db/schema/nutrition";
 import { ensureProvider } from "dofek/db/tokens";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -44,17 +48,18 @@ const NON_NUTRIENT_OPTIONAL_FIELDS = ["amount", "unit", "form", "description", "
 
 const supplementViewRowSchema = z
   .object({
-    id: z.string(),
+    definition_id: z.string(),
+    supplement_id: z.string(),
     user_id: z.string(),
     schedule_id: z.string(),
-    supersedes_supplement_id: z.string().nullable(),
+    supersedes_definition_id: z.string().nullable(),
     name: z.string(),
     amount: z.coerce.number().nullable(),
     unit: z.string().nullable(),
     form: z.string().nullable(),
     description: z.string().nullable(),
     meal: z.string().nullable(),
-    sort_order: z.number(),
+    sort_order: z.coerce.number(),
     effective_from: z.string(),
     effective_to: z.string().nullable(),
     nutrition_data_id: z.string().nullable(),
@@ -118,7 +123,7 @@ function definitionsEqual(left: Supplement, right: Supplement): boolean {
 
 function toSupplementVersion(row: z.infer<typeof supplementViewRowSchema>): SupplementVersion {
   return {
-    id: row.id,
+    id: row.definition_id,
     scheduleId: row.schedule_id,
     definition: toApiSupplement(row),
   };
@@ -165,7 +170,6 @@ export class SupplementsRepository {
         sql`SELECT id
             FROM fitness.supplement
             WHERE user_id = ${this.#userId}
-              AND effective_to IS NULL
             FOR UPDATE`,
       );
       const currentRows = await executeWithSchema(
@@ -207,11 +211,9 @@ export class SupplementsRepository {
         ...removed,
       ]) {
         await transaction.execute(
-          sql`UPDATE fitness.supplement
-              SET effective_to = ${effectiveDate}::date,
-                  updated_at = NOW()
+          sql`UPDATE fitness.supplement_definition
+              SET effective_to = ${effectiveDate}::date
               WHERE id = ${entry.id}::uuid
-                AND user_id = ${this.#userId}
                 AND effective_to IS NULL`,
         );
       }
@@ -222,40 +224,62 @@ export class SupplementsRepository {
             sql`UPDATE fitness.supplement
                 SET sort_order = ${operation.index},
                     updated_at = NOW()
-                WHERE id = ${operation.existing.id}::uuid
-                  AND user_id = ${this.#userId}
-                  AND effective_to IS NULL`,
+                WHERE id = ${operation.existing.scheduleId}::uuid
+                  AND user_id = ${this.#userId}`,
           );
           continue;
         }
 
-        const [inserted] = await transaction
-          .insert(supplement)
+        let scheduleId = operation.existing?.scheduleId;
+        if (scheduleId) {
+          await transaction.execute(
+            sql`UPDATE fitness.supplement
+                SET sort_order = ${operation.index},
+                    updated_at = NOW()
+                WHERE id = ${scheduleId}::uuid
+                  AND user_id = ${this.#userId}`,
+          );
+        } else {
+          const [insertedSchedule] = await transaction
+            .insert(supplement)
+            .values({
+              userId: this.#userId,
+              sortOrder: operation.index,
+            })
+            .returning({ id: supplement.id });
+          scheduleId = insertedSchedule?.id;
+        }
+        if (!scheduleId) {
+          throw new Error(
+            `Supplement schedule insert did not return an id (name="${operation.entry.name}", index=${operation.index})`,
+          );
+        }
+
+        const [insertedDefinition] = await transaction
+          .insert(supplementDefinition)
           .values({
-            userId: this.#userId,
-            scheduleId: operation.existing?.scheduleId,
-            supersedesSupplementId: operation.existing?.id,
+            supplementId: scheduleId,
+            supersedesDefinitionId: operation.existing?.id,
             name: operation.entry.name,
             amount: operation.entry.amount ?? null,
             unit: operation.entry.unit ?? null,
             form: operation.entry.form ?? null,
             description: operation.entry.description ?? null,
             meal: operation.entry.meal ?? null,
-            sortOrder: operation.index,
             effectiveFrom: effectiveDate,
           })
-          .returning({ id: supplement.id });
-        if (!inserted?.id) {
+          .returning({ id: supplementDefinition.id });
+        if (!insertedDefinition?.id) {
           throw new Error(
-            `Supplement insert did not return an id (name="${operation.entry.name}", index=${operation.index})`,
+            `Supplement definition insert did not return an id (name="${operation.entry.name}", index=${operation.index})`,
           );
         }
 
         const nutrients = nutrientAmountEntriesFromLegacyFields(operation.entry);
         if (nutrients.length > 0) {
-          await transaction.insert(supplementNutrient).values(
+          await transaction.insert(supplementDefinitionNutrient).values(
             nutrients.map((nutrient) => ({
-              supplementId: inserted.id,
+              definitionId: insertedDefinition.id,
               nutrientId: nutrient.nutrientId,
               amount: nutrient.amount,
             })),
@@ -275,9 +299,9 @@ export class SupplementsRepository {
       doseEventRowSchema,
       sql`SELECT
             event.id,
-            event.schedule_id,
-            event.supplement_id,
-            supplement.name AS supplement_name,
+            event.supplement_id AS schedule_id,
+            event.definition_id AS supplement_id,
+            definition.name AS supplement_name,
             event.scheduled_date,
             event.status,
             event.supersedes_event_id,
@@ -291,8 +315,8 @@ export class SupplementsRepository {
               WHERE successor.supersedes_event_id = event.id
             ) AS is_current
           FROM fitness.supplement_dose_event AS event
-          INNER JOIN fitness.supplement AS supplement
-            ON supplement.id = event.supplement_id
+          INNER JOIN fitness.supplement_definition AS definition
+            ON definition.id = event.definition_id
           WHERE event.user_id = ${this.#userId}
             AND event.scheduled_date >= ${startDate}::date
             AND event.scheduled_date <= ${endDate}::date
@@ -345,8 +369,8 @@ export class SupplementsRepository {
           sql`SELECT
                 event.id,
                 event.user_id,
-                event.schedule_id,
-                event.supplement_id,
+                event.supplement_id AS schedule_id,
+                event.definition_id AS supplement_id,
                 event.scheduled_date
               FROM fitness.supplement_dose_event AS event
               WHERE event.id = ${expectedCurrentEventId}::uuid
@@ -373,8 +397,8 @@ export class SupplementsRepository {
           insertedIdRowSchema,
           sql`INSERT INTO fitness.supplement_dose_event (
                 user_id,
-                schedule_id,
                 supplement_id,
+                definition_id,
                 provider_id,
                 external_id,
                 scheduled_date,

@@ -813,9 +813,12 @@ describe("Router data coverage", () => {
 
       const nutritionRows = await testCtx.db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::text AS count
-            FROM fitness.supplement_nutrient sn
-            JOIN fitness.supplement s ON s.id = sn.supplement_id
-            WHERE s.user_id = ${TEST_USER_ID}`,
+            FROM fitness.supplement_definition_nutrient AS nutrient
+            JOIN fitness.supplement_definition AS definition
+              ON definition.id = nutrient.definition_id
+            JOIN fitness.supplement AS supplement
+              ON supplement.id = definition.supplement_id
+            WHERE supplement.user_id = ${TEST_USER_ID}`,
       );
       expect(nutritionRows[0]?.count).toBe("2");
     });

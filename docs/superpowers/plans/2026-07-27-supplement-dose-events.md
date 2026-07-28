@@ -1,9 +1,5 @@
 # Supplement Dose Events TDD Plan
 
-> **For agentic workers:** Use the repository's issue, test, integration-test,
-> shipping, and review-comment skills while executing this plan. Complete each
-> behavior test before its implementation.
-
 **Goal:** Scheduled supplements remain plans until an append-only dose event
 explicitly records what happened, and only current `taken` events contribute
 nutrients.
@@ -88,7 +84,7 @@ states, and duplicate nutrient snapshots.
   `provider_id='auto-supplements'` food rows and cascading nutrients are
   removed.
 - [ ] Run
-  `rtk pnpm test:integration -- src/providers/auto-supplements.integration.test.ts packages/server/src/repositories/supplement-dose-events.integration.test.ts`
+  `pnpm test:integration -- src/providers/auto-supplements.integration.test.ts packages/server/src/repositories/supplement-dose-events.integration.test.ts`
   and confirm failures reflect missing schema/behavior.
 
 ### Task 2: Implement schema and migration
@@ -168,7 +164,7 @@ states, and duplicate nutrient snapshots.
 
 ### Task 6: Final verification and publication
 
-- [ ] Run `rtk pnpm lint`, all workspace/package typechecks, `rtk pnpm test`,
+- [ ] Run `pnpm lint`, all workspace/package typechecks, `pnpm test`,
   focused integration tests, migration policy checks, and relevant mutation
   tests.
 - [ ] Update `docs/schema.md`, provider docs, and any generated schema artifacts

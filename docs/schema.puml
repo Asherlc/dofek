@@ -346,27 +346,39 @@ entity "supplement" {
   * id : uuid <<PK>>
   --
   user_id : uuid <<FK>>
-  schedule_id : uuid
-  supersedes_supplement_id : uuid
+  sort_order : bigint
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "supplement_definition" {
+  * id : uuid <<PK>>
+  --
+  supplement_id : uuid <<FK>>
+  supersedes_definition_id : uuid
   name : text
   amount : real
   unit : text
   form : text
   description : text
   meal : meal
-  sort_order : integer
   effective_from : date
   effective_to : date
   created_at : timestamp
-  updated_at : timestamp
+}
+
+entity "supplement_definition_nutrient" {
+  definition_id : uuid <<FK>>
+  nutrient_id : text <<FK>>
+  amount : real
 }
 
 entity "supplement_dose_event" {
   * id : uuid <<PK>>
   --
   user_id : uuid <<FK>>
-  schedule_id : uuid
   supplement_id : uuid
+  definition_id : uuid
   provider_id : text <<FK>>
   external_id : text
   scheduled_date : date
@@ -376,12 +388,6 @@ entity "supplement_dose_event" {
   source_name : text
   raw : jsonb
   created_at : timestamp
-}
-
-entity "supplement_nutrient" {
-  supplement_id : uuid <<FK>>
-  nutrient_id : text <<FK>>
-  amount : real
 }
 
 entity "allergy_intolerance" {
@@ -982,10 +988,11 @@ user_profile ||--o{ food_entry
 food_entry ||--o{ food_entry_nutrient
 nutrient ||--o{ food_entry_nutrient
 user_profile ||--o{ supplement
+supplement ||--o{ supplement_definition
+supplement_definition ||--o{ supplement_definition_nutrient
+nutrient ||--o{ supplement_definition_nutrient
 user_profile ||--o{ supplement_dose_event
 provider ||--o{ supplement_dose_event
-supplement ||--o{ supplement_nutrient
-nutrient ||--o{ supplement_nutrient
 provider ||--o{ allergy_intolerance
 user_profile ||--o{ allergy_intolerance
 provider ||--o{ condition

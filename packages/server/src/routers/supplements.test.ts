@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const invalidateNutritionCaches = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const captureException = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/nutrition-cache.ts", () => ({ invalidateNutritionCaches }));
+vi.mock("@sentry/node", () => ({ captureException }));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -78,10 +80,11 @@ describe("supplementsRouter", () => {
     it("preserves the exact installed-client V1 definition shape", async () => {
       const { caller } = await makeCaller([
         {
-          id: "supplement-version-1",
+          definition_id: "supplement-version-1",
+          supplement_id: "schedule-1",
           user_id: "user-1",
           schedule_id: "schedule-1",
-          supersedes_supplement_id: null,
+          supersedes_definition_id: null,
           name: "Vitamin D",
           amount: 50,
           unit: "mcg",
@@ -243,6 +246,29 @@ describe("supplementsRouter", () => {
       ).rejects.toMatchObject({
         code: "CONFLICT",
         message: "Supplement status changed. Reload and try again.",
+      });
+      recordDose.mockRestore();
+    });
+
+    it("maps unexpected persistence failures to a semantic server error", async () => {
+      const failure = new Error("database connection closed");
+      const recordDose = vi
+        .spyOn(SupplementsRepository.prototype, "recordDose")
+        .mockRejectedValue(failure);
+      const { caller } = await makeCaller([]);
+
+      await expect(
+        caller.recordDose({
+          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
+          status: "taken",
+        }),
+      ).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Could not record the supplement dose. Reload and try again.",
+        cause: failure,
+      });
+      expect(captureException).toHaveBeenCalledWith(failure, {
+        tags: { operation: "supplements.recordDose" },
       });
       recordDose.mockRestore();
     });

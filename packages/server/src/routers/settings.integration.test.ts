@@ -258,9 +258,14 @@ describe("Settings router", () => {
               ON CONFLICT DO NOTHING`,
         ),
         testCtx.db.execute(
-          sql`INSERT INTO fitness.supplement (user_id, name)
-              VALUES (${SETTINGS_TEST_USER_ID}, 'Delete supplement')
-              ON CONFLICT DO NOTHING`,
+          sql`WITH schedule AS (
+                INSERT INTO fitness.supplement (user_id)
+                VALUES (${SETTINGS_TEST_USER_ID})
+                RETURNING id
+              )
+              INSERT INTO fitness.supplement_definition (supplement_id, name)
+              SELECT id, 'Delete supplement'
+              FROM schedule`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.user_settings (user_id, key, value)

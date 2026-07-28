@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   date,
@@ -35,38 +36,52 @@ export const supplement = fitness.table(
     userId: uuid("user_id")
       .notNull()
       .references(() => userProfile.id),
-    scheduleId: uuid("schedule_id").notNull().defaultRandom(),
-    supersedesSupplementId: uuid("supersedes_supplement_id"),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("supplement_id_user_key").on(table.id, table.userId),
+    index("supplement_user_idx").on(table.userId),
+  ],
+);
+
+export const supplementDefinition = fitness.table(
+  "supplement_definition",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    supplementId: uuid("supplement_id")
+      .notNull()
+      .references(() => supplement.id, { onDelete: "cascade" }),
+    supersedesDefinitionId: uuid("supersedes_definition_id"),
     name: text("name").notNull(),
     amount: real("amount"),
     unit: text("unit"),
     form: text("form"),
     description: text("description"),
     meal: mealEnum("meal"),
-    sortOrder: integer("sort_order").notNull().default(0),
     effectiveFrom: date("effective_from").notNull().default(sql`CURRENT_DATE`),
     effectiveTo: date("effective_to"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     foreignKey({
-      name: "supplement_supersedes_fkey",
-      columns: [table.supersedesSupplementId, table.userId, table.scheduleId],
-      foreignColumns: [table.id, table.userId, table.scheduleId],
+      name: "supplement_definition_supersedes_fkey",
+      columns: [table.supersedesDefinitionId, table.supplementId],
+      foreignColumns: [table.id, table.supplementId],
     }),
-    unique("supplement_id_user_schedule_key").on(table.id, table.userId, table.scheduleId),
-    unique("supplement_supersedes_key").on(table.supersedesSupplementId),
-    uniqueIndex("supplement_user_name_active_idx")
-      .on(table.userId, table.name)
+    unique("supplement_definition_identity_key").on(table.id, table.supplementId),
+    unique("supplement_definition_supersedes_key").on(table.supersedesDefinitionId),
+    uniqueIndex("supplement_definition_active_idx")
+      .on(table.supplementId)
       .where(sql`${table.effectiveTo} IS NULL`),
-    uniqueIndex("supplement_user_schedule_active_idx")
-      .on(table.userId, table.scheduleId)
-      .where(sql`${table.effectiveTo} IS NULL`),
-    index("supplement_user_idx").on(table.userId),
-    index("supplement_user_effective_idx").on(table.userId, table.effectiveFrom, table.effectiveTo),
+    index("supplement_definition_effective_idx").on(
+      table.supplementId,
+      table.effectiveFrom,
+      table.effectiveTo,
+    ),
     check(
-      "supplement_effective_interval_valid",
+      "supplement_definition_effective_interval_valid",
       sql`${table.effectiveTo} IS NULL OR ${table.effectiveTo} >= ${table.effectiveFrom}`,
     ),
   ],
@@ -104,20 +119,20 @@ export const foodEntryNutrient = fitness.table(
   ],
 );
 
-export const supplementNutrient = fitness.table(
-  "supplement_nutrient",
+export const supplementDefinitionNutrient = fitness.table(
+  "supplement_definition_nutrient",
   {
-    supplementId: uuid("supplement_id")
+    definitionId: uuid("definition_id")
       .notNull()
-      .references(() => supplement.id, { onDelete: "cascade" }),
+      .references(() => supplementDefinition.id, { onDelete: "cascade" }),
     nutrientId: text("nutrient_id")
       .notNull()
       .references(() => nutrient.id),
     amount: real("amount").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.supplementId, table.nutrientId] }),
-    index("supplement_nutrient_supplement_idx").on(table.supplementId),
+    primaryKey({ columns: [table.definitionId, table.nutrientId] }),
+    index("supplement_definition_nutrient_definition_idx").on(table.definitionId),
   ],
 );
 
@@ -133,8 +148,8 @@ export const supplementDoseEvent = fitness.table(
       .notNull()
       .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
-    scheduleId: uuid("schedule_id").notNull(),
     supplementId: uuid("supplement_id").notNull(),
+    definitionId: uuid("definition_id").notNull(),
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
@@ -149,37 +164,42 @@ export const supplementDoseEvent = fitness.table(
   },
   (table) => [
     foreignKey({
+      name: "supplement_dose_event_supplement_user_fkey",
+      columns: [table.supplementId, table.userId],
+      foreignColumns: [supplement.id, supplement.userId],
+    }),
+    foreignKey({
       name: "supplement_dose_event_definition_fkey",
-      columns: [table.supplementId, table.userId, table.scheduleId],
-      foreignColumns: [supplement.id, supplement.userId, supplement.scheduleId],
+      columns: [table.definitionId, table.supplementId],
+      foreignColumns: [supplementDefinition.id, supplementDefinition.supplementId],
     }),
     foreignKey({
       name: "supplement_dose_event_supersedes_fkey",
       columns: [
         table.supersedesEventId,
         table.userId,
-        table.scheduleId,
         table.supplementId,
+        table.definitionId,
         table.scheduledDate,
       ],
       foreignColumns: [
         table.id,
         table.userId,
-        table.scheduleId,
         table.supplementId,
+        table.definitionId,
         table.scheduledDate,
       ],
     }),
     unique("supplement_dose_event_slot_identity_key").on(
       table.id,
       table.userId,
-      table.scheduleId,
       table.supplementId,
+      table.definitionId,
       table.scheduledDate,
     ),
     unique("supplement_dose_event_successor_key").on(table.supersedesEventId),
     uniqueIndex("supplement_dose_event_root_key")
-      .on(table.userId, table.scheduleId, table.scheduledDate)
+      .on(table.userId, table.supplementId, table.scheduledDate)
       .where(sql`${table.supersedesEventId} IS NULL`),
     uniqueIndex("supplement_dose_event_provider_external_idx")
       .on(table.userId, table.providerId, table.externalId)

@@ -145,18 +145,18 @@ describe("SupplementDoseEventsPanel", () => {
   });
 
   it.each([
-    ["planned", "Planned"],
-    ["taken", "Taken"],
-    ["skipped", "Skipped"],
-    ["unknown", "Unknown"],
-  ] as const)("renders the %s status", (status, label) => {
+    ["planned", /^Planned · 1 event$/],
+    ["taken", /^Taken · 1 event$/],
+    ["skipped", /^Skipped · 1 event$/],
+    ["unknown", /^Unknown · 1 event$/],
+  ] as const)("renders the %s status", (status, labelPattern) => {
     const current = mocks.query.data.occurrences[0];
     if (!current) throw new Error("Missing supplement occurrence fixture");
     current.status = status;
 
     render(<SupplementDoseEventsPanel />);
 
-    expect(screen.getByText(new RegExp(`^${label} · 1 event$`))).toBeTruthy();
+    expect(screen.getByText(labelPattern)).toBeTruthy();
   });
 
   it("invalidates only supplement and nutrition query families after recording", async () => {

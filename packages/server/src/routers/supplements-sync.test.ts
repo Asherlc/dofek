@@ -17,12 +17,15 @@ vi.mock("../trpc.ts", async () => {
 
 vi.mock("dofek/db/schema/nutrition", () => ({
   supplement: {
+    id: "id",
     userId: "user_id",
     sortOrder: "sort_order",
-    id: "id",
   },
-  supplementNutrient: {
-    supplementId: "supplement_id",
+  supplementDefinition: {
+    id: "definition_id",
+  },
+  supplementDefinitionNutrient: {
+    definitionId: "definition_id",
   },
 }));
 
@@ -104,10 +107,11 @@ const NUTRIENT_SNAKE_VALUES: Record<string, number> = {
 /** Build a full view row (as returned by v_supplement_with_nutrition). */
 function fullViewRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    id: "uuid-1",
+    definition_id: "uuid-1",
+    supplement_id: "schedule-uuid-1",
     user_id: "user-1",
     schedule_id: "schedule-uuid-1",
-    supersedes_supplement_id: null,
+    supersedes_definition_id: null,
     name: "Multivitamin",
     sort_order: 0,
     amount: 5000,
@@ -305,15 +309,15 @@ describe("supplementsRouter", () => {
 
       await caller.save({ supplements: [{ name: "New Supp" }] });
 
-      expect(mocks.mockExecute).toHaveBeenCalledTimes(2);
+      expect(mocks.mockExecute).toHaveBeenCalledTimes(3);
       expect(mocks.mockInsertValues.mock.calls[0]?.[0]).toMatchObject({
-        scheduleId: "schedule-uuid-1",
-        supersedesSupplementId: "uuid-1",
+        supplementId: "schedule-uuid-1",
+        supersedesDefinitionId: "uuid-1",
         name: "New Supp",
       });
     });
 
-    it("inserts supplement then supplement nutrition for each supplement", async () => {
+    it("inserts a schedule, definition, and definition nutrients for each supplement", async () => {
       const { db, mocks } = createMockDb();
       const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
@@ -324,7 +328,7 @@ describe("supplementsRouter", () => {
         ],
       });
 
-      expect(mocks.mockInsert).toHaveBeenCalledTimes(4);
+      expect(mocks.mockInsert).toHaveBeenCalledTimes(6);
       expect(mocks.mockExecute).toHaveBeenCalledTimes(1);
     });
 
@@ -339,7 +343,7 @@ describe("supplementsRouter", () => {
       expect(mocks.mockInsert).not.toHaveBeenCalled();
     });
 
-    it("passes nutrient values through to supplement nutrition insert", async () => {
+    it("passes nutrient values through to the definition nutrient insert", async () => {
       const { db, mocks } = createMockDb();
       const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
@@ -347,10 +351,10 @@ describe("supplementsRouter", () => {
         supplements: [{ name: "Test", vitaminDMcg: 125, calories: 0 }],
       });
 
-      const insertedValues = mocks.mockInsertValues.mock.calls[1]?.[0];
+      const insertedValues = mocks.mockInsertValues.mock.calls[2]?.[0];
       expect(insertedValues).toEqual([
-        { supplementId: "supp-new-uuid", nutrientId: "calories", amount: 0 },
-        { supplementId: "supp-new-uuid", nutrientId: "vitamin_d", amount: 125 },
+        { definitionId: "supp-new-uuid", nutrientId: "calories", amount: 0 },
+        { definitionId: "supp-new-uuid", nutrientId: "vitamin_d", amount: 125 },
       ]);
     });
 
@@ -401,7 +405,7 @@ describe("supplementsRouter", () => {
 
       await caller.save({ supplements: [allNutrients] });
 
-      const insertedValues = mocks.mockInsertValues.mock.calls[1]?.[0];
+      const insertedValues = mocks.mockInsertValues.mock.calls[2]?.[0];
       expect(Array.isArray(insertedValues)).toBe(true);
       // Verify every truthy nutrient value is passed through (not coerced to null)
       for (const [key, value] of Object.entries(allNutrients)) {
@@ -414,7 +418,7 @@ describe("supplementsRouter", () => {
       }
     });
 
-    it("passes optional non-nutrient fields through to supplement table insert", async () => {
+    it("passes optional non-nutrient fields through to the definition insert", async () => {
       const { db, mocks } = createMockDb();
       const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
@@ -431,7 +435,7 @@ describe("supplementsRouter", () => {
         ],
       });
 
-      const insertedValues = mocks.mockInsertValues.mock.calls[0]?.[0];
+      const insertedValues = mocks.mockInsertValues.mock.calls[1]?.[0];
       expect(insertedValues.name).toBe("Fish Oil");
       expect(insertedValues.amount).toBe(2);
       expect(insertedValues.unit).toBe("caps");

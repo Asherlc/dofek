@@ -5,8 +5,9 @@ import {
   foodEntry,
   foodEntryNutrient,
   supplement,
+  supplementDefinition,
+  supplementDefinitionNutrient,
   supplementDoseEvent,
-  supplementNutrient,
 } from "../db/schema/nutrition.ts";
 import { userProfile } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
@@ -29,29 +30,39 @@ async function insertSupplementWithNutrition(
   },
   nutrients: Record<string, number | null>,
 ) {
-  const [definition] = await db
+  const [schedule] = await db
     .insert(supplement)
     .values({
-      ...values,
+      userId: values.userId,
       sortOrder: 0,
     })
     .returning({
       id: supplement.id,
-      scheduleId: supplement.scheduleId,
     });
+  if (!schedule) throw new Error(`Failed to insert supplement schedule: ${values.name}`);
+  const [definition] = await db
+    .insert(supplementDefinition)
+    .values({
+      supplementId: schedule.id,
+      name: values.name,
+      effectiveFrom: values.effectiveFrom,
+      effectiveTo: values.effectiveTo,
+      meal: values.meal,
+    })
+    .returning({ id: supplementDefinition.id });
   if (!definition) throw new Error(`Failed to insert supplement definition: ${values.name}`);
 
   const nutrientEntries = nutrientAmountEntriesFromLegacyFields(nutrients);
   if (nutrientEntries.length > 0) {
-    await db.insert(supplementNutrient).values(
+    await db.insert(supplementDefinitionNutrient).values(
       nutrientEntries.map((nutrient) => ({
-        supplementId: definition.id,
+        definitionId: definition.id,
         nutrientId: nutrient.nutrientId,
         amount: nutrient.amount,
       })),
     );
   }
-  return definition;
+  return { id: definition.id, scheduleId: schedule.id };
 }
 
 function syncRun(ctx: TestContext, userId: string, sinceDate: string, untilDate: string): SyncRun {
@@ -113,7 +124,7 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
       .select()
       .from(supplementDoseEvent)
       .where(eq(supplementDoseEvent.userId, PRIMARY_USER_ID));
-    expect(rows.map((row) => [row.supplementId, row.scheduledDate, row.status])).toEqual([
+    expect(rows.map((row) => [row.definitionId, row.scheduledDate, row.status])).toEqual([
       [primary.id, "2099-01-02", "planned"],
       [primary.id, "2099-01-03", "planned"],
     ]);
@@ -149,7 +160,7 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
     const rows = await ctx.db
       .select()
       .from(supplementDoseEvent)
-      .where(eq(supplementDoseEvent.supplementId, definition.id));
+      .where(eq(supplementDoseEvent.definitionId, definition.id));
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("unknown");
   });
@@ -176,8 +187,8 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
       .insert(supplementDoseEvent)
       .values({
         userId: PRIMARY_USER_ID,
-        scheduleId: definition.scheduleId,
-        supplementId: definition.id,
+        supplementId: definition.scheduleId,
+        definitionId: definition.id,
         providerId: "auto-supplements",
         externalId: "stale-planned",
         scheduledDate: "2021-01-01",
@@ -195,7 +206,7 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
     const history = await ctx.db
       .select()
       .from(supplementDoseEvent)
-      .where(eq(supplementDoseEvent.supplementId, definition.id));
+      .where(eq(supplementDoseEvent.definitionId, definition.id));
     expect(history).toHaveLength(2);
     expect(history.find((event) => event.id === planned.id)?.status).toBe("planned");
     expect(history.find((event) => event.supersedesEventId === planned.id)?.status).toBe("unknown");
@@ -219,15 +230,15 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
     const [planned] = await ctx.db
       .select()
       .from(supplementDoseEvent)
-      .where(eq(supplementDoseEvent.supplementId, definition.id));
+      .where(eq(supplementDoseEvent.definitionId, definition.id));
     if (!planned) throw new Error("Failed to materialize planned supplement dose");
 
     const [taken] = await ctx.db
       .insert(supplementDoseEvent)
       .values({
         userId: PRIMARY_USER_ID,
-        scheduleId: definition.scheduleId,
-        supplementId: definition.id,
+        supplementId: definition.scheduleId,
+        definitionId: definition.id,
         providerId: "auto-supplements",
         externalId: "taken-overlay",
         scheduledDate: planned.scheduledDate,
@@ -257,8 +268,8 @@ describe("AutoSupplementsProvider — dose events with Postgres", () => {
 
     await ctx.db.insert(supplementDoseEvent).values({
       userId: PRIMARY_USER_ID,
-      scheduleId: definition.scheduleId,
-      supplementId: definition.id,
+      supplementId: definition.scheduleId,
+      definitionId: definition.id,
       providerId: "auto-supplements",
       externalId: "skipped-overlay",
       scheduledDate: planned.scheduledDate,
