@@ -158,7 +158,7 @@ services:
         condition: service_started
 
   peerdb:
-    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.1
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.2
     stop_signal: SIGINT
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
