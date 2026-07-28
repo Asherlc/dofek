@@ -12,6 +12,7 @@ interface QueryState {
 interface SaveOptions {
   meta?: unknown;
   onError?: (error: Error) => void;
+  onSuccess?: () => void;
 }
 
 const mocks = vi.hoisted<{
@@ -43,10 +44,29 @@ vi.mock("../lib/useRefresh", () => ({
 vi.mock("../lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
+      invalidate: mocks.invalidate,
       supplements: { list: { invalidate: mocks.invalidate } },
     }),
     supplements: {
       list: { useQuery: () => mocks.query },
+      occurrences: {
+        useQuery: () => ({
+          data: {
+            occurrences: [],
+            counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+          },
+          error: null,
+          isLoading: false,
+        }),
+      },
+      recordDose: {
+        useMutation: () => ({
+          error: null,
+          isError: false,
+          isPending: false,
+          mutate: vi.fn(),
+        }),
+      },
       save: {
         useMutation: (options: typeof mocks.saveOptions) => {
           mocks.saveOptions = options;
@@ -108,5 +128,14 @@ describe("SupplementsScreen", () => {
     expect(mocks.captureException).toHaveBeenCalledWith(saveError, {
       operation: "supplements.save",
     });
+  });
+
+  it("invalidates the supplement stack after replacement succeeds", async () => {
+    const { default: SupplementsScreen } = await import("./supplements");
+    render(<SupplementsScreen />);
+
+    await mocks.saveOptions?.onSuccess?.();
+
+    expect(mocks.invalidate).toHaveBeenCalledOnce();
   });
 });

@@ -432,7 +432,7 @@ describe("foodRouter", () => {
       expect(result).toEqual({ success: true });
       expect(Sentry.captureException).toHaveBeenCalledWith(cacheError);
       expect(warnSpy).toHaveBeenCalledWith(
-        "[food] Failed to invalidate food cache for userId=user-1: Error: Redis unavailable",
+        "[nutrition] Failed to invalidate nutrition cache for userId=user-1: Error: Redis unavailable",
       );
     });
   });

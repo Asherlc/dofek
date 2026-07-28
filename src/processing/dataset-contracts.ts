@@ -278,7 +278,13 @@ export const DATASET_CONTRACTS = [
     outputPaths: [
       {
         path: "relational",
-        sources: ["food_entry", "food_entry_nutrient", "supplement_nutrient"],
+        sources: [
+          "food_entry",
+          "food_entry_nutrient",
+          "supplement_definition",
+          "supplement_definition_nutrient",
+          "supplement_dose_event",
+        ],
         cdcEvidence: [],
       },
     ],
