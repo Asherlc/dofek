@@ -35,6 +35,7 @@
     "@dofek/onboarding": "workspace:*",
     "@dofek/providers": "workspace:*",
     "@dofek/scoring": "workspace:*",
+    "@dofek/stats": "workspace:*",
     "@dofek/training": "workspace:*",
     "@dofek/zones": "workspace:*",
     "@expo/metro-runtime": "57.0.7",
