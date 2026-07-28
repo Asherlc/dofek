@@ -29,7 +29,8 @@ export default function BreathworkScreen() {
   const [currentRound, setCurrentRound] = useState(0);
   const [currentPhase, setCurrentPhase] = useState<SessionPhase>("inhale");
   const [pendingSession, setPendingSession] = useState<CompletedSessionInput | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isRunningRef = useRef(false);
   const startTimeRef = useRef<string | null>(null);
 
   const techniques = techniquesQuery.data;
@@ -48,77 +49,82 @@ export default function BreathworkScreen() {
 
   const stopSession = useCallback(() => {
     if (timerRef.current) {
-      clearInterval(timerRef.current);
+      clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    isRunningRef.current = false;
     setIsRunning(false);
     setCurrentRound(0);
     setCurrentPhase("inhale");
   }, []);
 
   const startSession = useCallback(() => {
-    if (!selectedTechnique) return;
+    if (!selectedTechnique || isRunningRef.current) return;
+    const technique = selectedTechnique;
 
+    isRunningRef.current = true;
     setIsRunning(true);
     setCurrentRound(1);
     setCurrentPhase("inhale");
     startTimeRef.current = new Date().toISOString();
 
     const phases: { phase: SessionPhase; duration: number }[] = [
-      { phase: "inhale", duration: selectedTechnique.inhaleSeconds },
+      { phase: "inhale", duration: technique.inhaleSeconds },
     ];
-    if (selectedTechnique.holdInSeconds) {
-      phases.push({ phase: "hold-in", duration: selectedTechnique.holdInSeconds });
+    if (technique.holdInSeconds) {
+      phases.push({ phase: "hold-in", duration: technique.holdInSeconds });
     }
-    phases.push({ phase: "exhale", duration: selectedTechnique.exhaleSeconds });
-    if (selectedTechnique.holdOutSeconds) {
-      phases.push({ phase: "hold-out", duration: selectedTechnique.holdOutSeconds });
+    phases.push({ phase: "exhale", duration: technique.exhaleSeconds });
+    if (technique.holdOutSeconds) {
+      phases.push({ phase: "hold-out", duration: technique.holdOutSeconds });
     }
 
     let round = 1;
     let phaseIndex = 0;
-    let phaseElapsedMs = 0;
 
-    timerRef.current = setInterval(() => {
+    function scheduleCurrentPhase(): void {
       const phase = phases[phaseIndex];
       if (!phase) return;
 
-      phaseElapsedMs += 50;
-      setCurrentPhase(phase.phase);
-
-      if (phaseElapsedMs < phase.duration * 1_000) return;
-
-      phaseIndex++;
-      phaseElapsedMs = 0;
-      if (phaseIndex < phases.length) return;
-
-      phaseIndex = 0;
-      round++;
-      if (round <= selectedTechnique.defaultRounds) {
-        setCurrentRound(round);
-        return;
-      }
-
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
+      timerRef.current = setTimeout(() => {
         timerRef.current = null;
-      }
-      setIsRunning(false);
+        if (!isRunningRef.current) return;
 
-      const completedSession = {
-        techniqueId: selectedTechnique.id,
-        rounds: selectedTechnique.defaultRounds,
-        durationSeconds: totalSessionSeconds(selectedTechnique, selectedTechnique.defaultRounds),
-        startedAt: startTimeRef.current ?? new Date().toISOString(),
-      };
-      setPendingSession(completedSession);
-      logMutation.mutate(completedSession);
-    }, 50);
+        phaseIndex++;
+        if (phaseIndex >= phases.length) {
+          phaseIndex = 0;
+          round++;
+          if (round > technique.defaultRounds) {
+            isRunningRef.current = false;
+            setIsRunning(false);
+
+            const completedSession = {
+              techniqueId: technique.id,
+              rounds: technique.defaultRounds,
+              durationSeconds: totalSessionSeconds(technique, technique.defaultRounds),
+              startedAt: startTimeRef.current ?? new Date().toISOString(),
+            };
+            setPendingSession(completedSession);
+            logMutation.mutate(completedSession);
+            return;
+          }
+          setCurrentRound(round);
+        }
+
+        const nextPhase = phases[phaseIndex];
+        if (!nextPhase) return;
+        setCurrentPhase(nextPhase.phase);
+        scheduleCurrentPhase();
+      }, phase.duration * 1_000);
+    }
+
+    scheduleCurrentPhase();
   }, [logMutation, selectedTechnique]);
 
   useEffect(
     () => () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      isRunningRef.current = false;
+      if (timerRef.current) clearTimeout(timerRef.current);
     },
     [],
   );

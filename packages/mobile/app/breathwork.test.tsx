@@ -97,6 +97,7 @@ describe("BreathworkScreen", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("shows calibrated benefits and safety before Start", async () => {
@@ -137,8 +138,9 @@ describe("BreathworkScreen", () => {
     expect(screen.getByRole("button", { name: "Start Session" })).toBeTruthy();
   });
 
-  it("guides and logs a completed session", async () => {
+  it("guides and logs a completed session at phase boundaries without polling", async () => {
     vi.useFakeTimers();
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
     const technique = mocks.techniques.data?.[0];
     if (!technique) throw new Error("Expected a breathwork technique fixture");
     mocks.techniques.data = [
@@ -156,11 +158,27 @@ describe("BreathworkScreen", () => {
 
     expect(screen.getByText("Round 1 of 1")).toBeTruthy();
     expect(screen.getByText("Breathe In")).toBeTruthy();
+    expect(setIntervalSpy).not.toHaveBeenCalled();
 
     act(() => {
-      vi.advanceTimersByTime(2_100);
+      vi.advanceTimersByTime(999);
     });
+    expect(screen.getByText("Breathe In")).toBeTruthy();
+    expect(mocks.mutate).not.toHaveBeenCalled();
 
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.getByText("Breathe Out")).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(999);
+    });
+    expect(mocks.mutate).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
     expect(mocks.mutate).toHaveBeenCalledWith(
       expect.objectContaining({
         techniqueId: "box-breathing",
@@ -168,6 +186,33 @@ describe("BreathworkScreen", () => {
         durationSeconds: 2,
       }),
     );
+  });
+
+  it("starts only one timer for rapid duplicate Start presses", async () => {
+    vi.useFakeTimers();
+    const technique = mocks.techniques.data?.[0];
+    if (!technique) throw new Error("Expected a breathwork technique fixture");
+    mocks.techniques.data = [
+      {
+        ...technique,
+        inhaleSeconds: 1,
+        exhaleSeconds: 1,
+        defaultRounds: 1,
+      },
+    ];
+    const { default: BreathworkScreen } = await import("./breathwork");
+    render(<BreathworkScreen />);
+    const startButton = screen.getByRole("button", { name: "Start Session" });
+
+    act(() => {
+      startButton.click();
+      startButton.click();
+    });
+    act(() => {
+      vi.advanceTimersByTime(4_000);
+    });
+
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
   });
 
   it("shows the server error instead of an empty selector", async () => {

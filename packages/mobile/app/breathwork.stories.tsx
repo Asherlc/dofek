@@ -15,14 +15,32 @@ function createMockLink(): TRPCLink<AppRouter> {
       const result: OperationResultObservable<AppRouter, unknown> = {
         subscribe(observer) {
           observer.next?.({
-            result: { data: op.path === "breathwork.techniques" ? TECHNIQUES : null },
+            result: { data: resolveOperation(op.path) },
           });
           observer.complete?.();
           return { unsubscribe() {} };
         },
+        pipe() {
+          return result;
+        },
       };
       return result;
     };
+}
+
+function resolveOperation(path: string): unknown {
+  if (path === "breathwork.techniques") return TECHNIQUES;
+  if (path === "breathwork.logSession") {
+    return {
+      id: "story-breathwork-session",
+      techniqueId: "box-breathing",
+      rounds: 4,
+      durationSeconds: 64,
+      startedAt: "2026-07-27T12:00:00.000Z",
+      notes: null,
+    };
+  }
+  throw new Error(`Unhandled breathwork story tRPC operation: ${path}`);
 }
 
 function BreathworkStoryFrame() {
