@@ -441,7 +441,7 @@ export class PredictionsRepository {
   }
 
   async #fetchBodyComp(days: number): Promise<BodyCompRow[]> {
-    return fetchBodyCompRows(this.#sensorStore, this.#userId, "now", days);
+    return fetchBodyCompRows(this.#sensorStore, this.#userId, this.#timezone, "now", days);
   }
 
   async #fetchExerciseMinutes(days: number): Promise<ExerciseMinutesRow[]> {

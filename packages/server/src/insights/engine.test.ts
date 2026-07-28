@@ -121,6 +121,43 @@ describe("joinByDate()", () => {
     expect(result[0]?.skin_temp_c).toBe(36.8);
   });
 
+  it("keeps complete nutrition-only and activity-only dates in the shared calendar spine", () => {
+    const nutrition = [makeNutritionRow("2025-01-02")];
+    const activities = [
+      {
+        ...makeActivityRow("2025-01-03T01:00:00Z", "2025-01-03T02:00:00Z", "running"),
+        date: "2025-01-03",
+      },
+    ];
+
+    const result = joinByDate([], [], activities, nutrition, [], DEFAULT_CONFIG);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      date: "2025-01-02",
+      protein_g: 150,
+      exercise_minutes: null,
+    });
+    expect(result[1]).toMatchObject({
+      date: "2025-01-03",
+      protein_g: null,
+      exercise_minutes: 60,
+    });
+  });
+
+  it("uses the source-provided local activity date instead of regrouping by UTC", () => {
+    const metrics = [makeDailyRow("2025-01-01"), makeDailyRow("2025-01-02")];
+    const activity = {
+      ...makeActivityRow("2025-01-02T01:00:00Z", "2025-01-02T02:00:00Z", "running"),
+      date: "2025-01-01",
+    };
+
+    const result = joinByDate(metrics, [], [activity], [], [], DEFAULT_CONFIG);
+
+    expect(result.find((day) => day.date === "2025-01-01")?.exercise_minutes).toBe(60);
+    expect(result.find((day) => day.date === "2025-01-02")?.exercise_minutes).toBeNull();
+  });
+
   it("assigns null for missing sleep, activity, nutrition, body comp", () => {
     const metrics = [makeDailyRow("2025-01-01")];
     const result = joinByDate(metrics, [], [], [], [], DEFAULT_CONFIG);
@@ -336,6 +373,24 @@ describe("joinByDate()", () => {
     const result = joinByDate(metrics, [], [], [], bodyComp, DEFAULT_CONFIG);
     expect(result[0]?.weight_kg).toBe(81.5);
     expect(result[0]?.body_fat_pct).toBe(14);
+  });
+
+  it("uses the source-provided local date for body composition", () => {
+    const metrics = [makeDailyRow("2025-01-01")];
+    const bodyComp = [
+      {
+        ...makeBodyCompRow("2025-01-02T07:30:00Z", { weight_kg: 81.5 }),
+        date: "2025-01-01",
+      },
+    ];
+
+    const result = joinByDate(metrics, [], [], [], bodyComp, DEFAULT_CONFIG);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      date: "2025-01-01",
+      weight_kg: 81.5,
+    });
   });
 
   it("sorts output by date ascending", () => {
