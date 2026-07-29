@@ -31,6 +31,8 @@ const dailyOverlaySchema = z.object({
   calories: z.coerce.number(),
   resolution_status: z.string(),
   source_providers: z.array(z.string()),
+  contribution_grain: z.string().nullable(),
+  contribution_source_label: z.string().nullable(),
 });
 
 const nutrientOverlaySchema = z.object({
@@ -316,7 +318,12 @@ describe("SupplementsRepository dose events with Postgres", () => {
     const [daily] = await executeWithSchema(
       context.db,
       dailyOverlaySchema,
-      sql`SELECT calories, resolution_status, source_providers
+      sql`SELECT
+            calories,
+            resolution_status,
+            source_providers,
+            contribution_grain,
+            contribution_source_label
           FROM fitness.v_nutrition_daily
           WHERE user_id = ${TEST_USER_ID}
             AND date = ${date}::date`,
@@ -325,6 +332,8 @@ describe("SupplementsRepository dose events with Postgres", () => {
       calories: 400,
       resolution_status: "available",
       source_providers: ["dofek", "supplement-food-fixture"],
+      contribution_grain: "itemized",
+      contribution_source_label: "Food Fixture",
     });
 
     const nutrients = await executeWithSchema(

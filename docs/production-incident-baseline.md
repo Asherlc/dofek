@@ -20357,3 +20357,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   current issue or crew. If other stale networks block validation, stop and
   request user direction. Add this boundary and the subnet-exhaustion
   diagnostic steps to the testing runbook.
+
+## 2026-07-29 — Nutrition migration dropped supplement provenance
+
+- **Status:** Root cause fixed on PR #2315; replacement exact-head CI is
+  pending.
+- **Symptoms:** Integration shard 2 failed after the nutrition resolution view
+  migration was added.
+- **User impact:** No production impact because the migration was not merged.
+  If shipped, days containing food and taken supplements would omit the
+  supplement provider from daily provenance.
+- **Evidence:** The exact failing step was `Test / Integration Tests (2/4)` in
+  [CI run 30495540127](https://github.com/Asherlc/dofek/actions/runs/30495540127/job/90723765977).
+  The first fatal assertion was
+  `expected { calories: 400, … } to deeply equal ...` in
+  `supplement-dose-events.integration.test.ts`; expected
+  `source_providers` contained both `dofek` and `supplement-food-fixture`, but
+  the result contained only `supplement-food-fixture`.
+- **Root cause:** Migration `0065_nutrition_resolution_labels.sql` recreated
+  `fitness.v_nutrition_daily` from the older food-only definition, overwriting
+  the supplement-aware steady-state definition introduced by migration 0061.
+  PostgreSQL replaces a view's defining query when
+  [`CREATE OR REPLACE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html)
+  is used, so every existing supplement overlay had to be retained explicitly.
+- **Fix / mitigation:** Base migration 0065 on the current supplement-aware view
+  definition, append the new food contribution fields, and preserve the food
+  contribution source label separately from combined food-and-supplement
+  provenance. No retry, timeout, fallback, or disabled assertion was added.
+- **Validation:** Migration policy, SQL lint, server typecheck, and focused
+  repository/router tests pass locally. The existing real-Postgres supplement
+  overlay test now also asserts the food contribution grain and label.
+  Replacement exact-head database validation remains required before merge.
+- **Remaining risk / follow-up:** Forward migrations that replace a shared view
+  must start from its latest steady-state definition and retain executable
+  integration coverage for every data source the view combines.

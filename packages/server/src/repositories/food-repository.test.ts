@@ -85,6 +85,7 @@ const availableResolutionRow = {
   contributing_source_labels: ["dofek"],
   excluded_source_labels: [],
   contribution_grain: "itemized",
+  contribution_source_label: "dofek",
 };
 
 function makeDailyTotalsRow(overrides: Record<string, unknown> = {}) {
@@ -510,6 +511,7 @@ describe("FoodRepository", () => {
           source_labels: ["Cronometer (via Apple Health)"],
           contributing_source_labels: ["Cronometer (via Apple Health)"],
           contribution_grain: "daily_aggregate",
+          contribution_source_label: "Cronometer (via Apple Health)",
         },
       ]);
 
@@ -553,6 +555,7 @@ describe("FoodRepository", () => {
           source_labels: ["Cronometer (via Apple Health)"],
           contributing_source_labels: ["Cronometer (via Apple Health)"],
           contribution_grain: contributionGrain,
+          contribution_source_label: "Cronometer (via Apple Health)",
         },
       ]);
 
@@ -601,6 +604,7 @@ describe("FoodRepository", () => {
         contributing_source_labels: [],
         excluded_source_labels: ["Apple Health", "Cronometer"],
         contribution_grain: null,
+        contribution_source_label: null,
       };
       const { repo } = makeRepository([
         {

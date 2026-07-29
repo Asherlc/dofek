@@ -112,6 +112,7 @@ function makeConflictCaller() {
         contributing_source_labels: [],
         excluded_source_labels: ["cronometer", "fatsecret"],
         contribution_grain: null,
+        contribution_source_label: null,
       },
     ]);
   return createCaller({
@@ -178,6 +179,7 @@ describe("foodRouter", () => {
             contributing_source_labels: ["cronometer"],
             excluded_source_labels: ["apple-health"],
             contribution_grain: "itemized",
+            contribution_source_label: "cronometer",
           },
         ]);
       const caller = createCaller({
@@ -264,6 +266,7 @@ describe("foodRouter", () => {
             contributing_source_labels: [],
             excluded_source_labels: [],
             contribution_grain: null,
+            contribution_source_label: null,
           },
         ]);
       const caller = createCaller({
@@ -311,6 +314,7 @@ describe("foodRouter", () => {
             contributing_source_labels: ["Apple Health"],
             excluded_source_labels: [],
             contribution_grain: "daily_aggregate",
+            contribution_source_label: "Apple Health",
           },
         ]);
       const caller = createCaller({

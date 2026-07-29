@@ -113,6 +113,7 @@ const selectedDateNutritionTotalsRowSchema = z.object({
   contributing_source_labels: z.array(z.string()),
   excluded_source_labels: z.array(z.string()),
   contribution_grain: z.enum(["itemized", "daily_aggregate", "ambiguous"]).nullable(),
+  contribution_source_label: z.string().nullable(),
 });
 
 const foodSearchRowSchema = z.object({
@@ -327,12 +328,12 @@ function nutritionSourceResolution(
     | "contributing_source_labels"
     | "excluded_source_labels"
     | "contribution_grain"
+    | "contribution_source_label"
   >,
 ): NutritionSourceResolution {
-  const sourceLabel = row.contributing_source_labels[0];
   const contributionLabel =
-    sourceLabel && row.contribution_grain
-      ? `${sourceLabel} ${
+    row.contribution_source_label && row.contribution_grain
+      ? `${row.contribution_source_label} ${
           row.contribution_grain === "daily_aggregate"
             ? "daily total"
             : row.contribution_grain === "itemized"
@@ -637,7 +638,8 @@ export class FoodRepository {
             daily.source_labels,
             daily.contributing_source_labels,
             daily.excluded_source_labels,
-            daily.contribution_grain
+            daily.contribution_grain,
+            daily.contribution_source_label
           FROM fitness.v_nutrition_daily daily
           CROSS JOIN meals
           WHERE daily.user_id = ${this.#userId}
@@ -664,6 +666,7 @@ export class FoodRepository {
         contributing_source_labels: [],
         excluded_source_labels: [],
         contribution_grain: null,
+        contribution_source_label: null,
       };
       return {
         summary: selectedDateNutritionSummary(emptyRow, calorieGoal),
