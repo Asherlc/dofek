@@ -19920,26 +19920,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [1](https://github.com/Asherlc/dofek/actions/runs/30418854427/job/90471488988)
   and
   [5](https://github.com/Asherlc/dofek/actions/runs/30418854427/job/90471488996).
+  The first replacement run
+  [30419365948](https://github.com/Asherlc/dofek/actions/runs/30419365948)
+  then exposed independent gaps in shards
+  [0](https://github.com/Asherlc/dofek/actions/runs/30419365948/job/90473171092)
+  and
+  [1](https://github.com/Asherlc/dofek/actions/runs/30419365948/job/90473171114).
 - **User impact:** No production impact. PR #2271 was blocked from merging.
 - **Evidence:** The exact failing command was
   `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
   The first fatal lines reported mutation scores `58.82` and `71.43`, both
   below the configured breaking threshold of `75`. The mutation artifacts
   identified surviving branches in `revokeCompanionToken` and the legacy
-  pairing-body classifier.
+  pairing-body classifier. The replacement reports scored `54.35` and `70.59`
+  after identifying untested Workout Extension settings behavior and bearer
+  token revocation results.
 - **Root cause:** Unit tests covered successful typed revocation and a missing
   connection type, but did not assert the no-active-token result or distinguish
-  malformed arrays and invalid typed objects. Those gaps allowed false-result
-  and request-shape mutants to survive.
+  malformed arrays and invalid typed objects. The Workout Extension settings
+  page also lacked a component test, and bearer-token revocation did not
+  exercise its true and false return values. Those gaps allowed result,
+  request-shape, and settings-state mutants to survive.
 - **Fix / mitigation:** Add true and false revocation-result tests, add malformed
   pairing-body cases, and express the request classifier through
   `Array.isArray` and `Object.hasOwn` so it models the actual JSON body
-  contract without redundant unreachable type guards. No mutation threshold,
-  exclusion, or CI behavior changed. Stryker documents surviving mutants and
-  thresholds in its
+  contract without redundant unreachable type guards. Add a Workout Extension
+  settings component suite covering stored status parsing, paired and empty
+  states, field updates, commands, and the corrected Motion Extensions
+  instructions. No mutation threshold, exclusion, or CI behavior changed.
+  Stryker documents surviving mutants and thresholds in its
   [mutation testing guide](https://stryker-mutator.io/docs/mutation-testing-elements/mutant-states-and-metrics/).
-- **Validation:** Both exact changed-line Stryker runs now score `100.00`, and
-  the focused 29 unit tests pass. Fresh exact-head CI remains the merge gate.
+- **Validation:** All four formerly failing changed-line mutation targets now
+  score `100.00`; the focused route, repository, and Workout Extension settings
+  tests pass. Fresh exact-head CI remains the merge gate.
 - **Remaining risk / follow-up:** Confirm the replacement mutation shards and
   the full required-check aggregate before merging.
 

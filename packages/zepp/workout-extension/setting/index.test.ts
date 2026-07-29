@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_DOFEK_SERVER_URL, STORAGE_KEYS } from "../../src/storage-keys.ts";
 
 interface SettingsStorage {
@@ -6,208 +6,239 @@ interface SettingsStorage {
   setItem(key: string, value: string): void;
 }
 
-interface SettingState {
-  serverUrl: string;
-  email: string;
-  password: string;
-  connectionStatus: Record<string, unknown>;
-  pairingShortCode: string | null;
-  pairingVerificationUrl: string | null;
-  pairingQrImageUrl: string | null;
-  pairingExpiresAt: string | null;
-}
-
 interface SettingConfiguration {
-  state: SettingState;
+  state: Record<string, unknown>;
   build(this: SettingConfiguration, props: { settingsStorage: SettingsStorage }): unknown;
-}
-
-interface InputConfiguration {
-  title: string;
-  value?: string;
-  placeholder?: string;
-  onChange(value: string): void;
 }
 
 interface ButtonConfiguration {
   label: string;
+  style?: Record<string, string>;
   onClick(): void;
 }
 
+interface TextInputConfiguration {
+  title: string;
+  value?: string;
+  onChange(value: string): void;
+}
+
+const createdImages: FakeImage[] = [];
+
+class FakeImage {
+  readonly height: number;
+  readonly width: number;
+  src = "";
+  alt = "";
+  style: Record<string, string> = {};
+
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+    createdImages.push(this);
+  }
+}
+
 let configuration: SettingConfiguration | undefined;
-const inputConfigurations: InputConfiguration[] = [];
 const buttonConfigurations: ButtonConfiguration[] = [];
-const viewConfigurations: Array<{ style: Record<string, unknown>; children: unknown[] }> = [];
+const inputConfigurations: TextInputConfiguration[] = [];
+const renderedValues: unknown[] = [];
+
+function isSettingConfiguration(value: unknown): value is SettingConfiguration {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof Reflect.get(value, "state") === "object" &&
+    typeof Reflect.get(value, "build") === "function"
+  );
+}
 
 beforeAll(async () => {
-  vi.stubGlobal("AppSettingsPage", (value: SettingConfiguration) => {
+  vi.stubGlobal("Image", FakeImage);
+  vi.stubGlobal("AppSettingsPage", (value: unknown) => {
+    if (!isSettingConfiguration(value)) {
+      throw new Error("Invalid setting configuration");
+    }
     configuration = value;
   });
-  vi.stubGlobal("View", (style: Record<string, unknown>, children: unknown[]) => {
+  vi.stubGlobal("View", (style: unknown, children: unknown[]) => {
     const value = { style, children };
-    viewConfigurations.push(value);
-    return value;
-  });
-  vi.stubGlobal("TextInput", (value: InputConfiguration) => {
-    inputConfigurations.push(value);
+    renderedValues.push(value);
     return value;
   });
   vi.stubGlobal("Button", (value: ButtonConfiguration) => {
     buttonConfigurations.push(value);
     return value;
   });
+  vi.stubGlobal("TextInput", (value: TextInputConfiguration) => {
+    inputConfigurations.push(value);
+    return value;
+  });
   await import("./index.ts");
 });
 
 beforeEach(() => {
-  inputConfigurations.length = 0;
   buttonConfigurations.length = 0;
-  viewConfigurations.length = 0;
+  createdImages.length = 0;
+  inputConfigurations.length = 0;
+  renderedValues.length = 0;
 });
 
 function buildWith(values: Readonly<Record<string, string | null>>) {
   if (!configuration) throw new Error("setting configuration was not registered");
-  configuration.state = {
-    serverUrl: DEFAULT_DOFEK_SERVER_URL,
-    email: "",
-    password: "",
-    connectionStatus: {},
-    pairingShortCode: null,
-    pairingVerificationUrl: null,
-    pairingQrImageUrl: null,
-    pairingExpiresAt: null,
-  };
   const settingsStorage = {
     getItem: vi.fn((key: string) => values[key] ?? null),
     setItem: vi.fn(),
   };
-  const rendered = configuration.build.call(configuration, { settingsStorage });
-  return { rendered, settingsStorage };
+  configuration.build.call(configuration, { settingsStorage });
+  return settingsStorage;
 }
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+function button(label: string): ButtonConfiguration {
+  const value = buttonConfigurations.find((candidate) => candidate.label === label);
+  if (!value) throw new Error(`Button "${label}" was not rendered`);
+  return value;
+}
 
-describe("workout extension settings", () => {
-  it("loads saved settings and renders every control", () => {
-    const { rendered } = buildWith({
+function input(title: string): TextInputConfiguration {
+  const value = inputConfigurations.find((candidate) => candidate.title === title);
+  if (!value) throw new Error(`Text input "${title}" was not rendered`);
+  return value;
+}
+
+describe("Zepp Workout Extension settings", () => {
+  it("renders stored pairing details, verified status, and the QR image", () => {
+    buildWith({
       [STORAGE_KEYS.DOFEK_SERVER_URL]: "https://dofek.example.test",
-      [STORAGE_KEYS.DOFEK_EMAIL]: "athlete@example.test",
-      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "connected" }),
+      [STORAGE_KEYS.DOFEK_EMAIL]: "user@example.test",
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({
+        state: "connected",
+        reason: "Verified by Dofek",
+      }),
+      [STORAGE_KEYS.PAIRING_SHORT_CODE]: "ABC-123",
+      [STORAGE_KEYS.PAIRING_VERIFICATION_URL]: "https://dofek.example.test/settings?zeppPair=ABC-123",
+      [STORAGE_KEYS.PAIRING_QR_IMAGE_URL]: "https://dofek.example.test/pairing.svg",
+      [STORAGE_KEYS.PAIRING_EXPIRES_AT]: "2026-07-28T20:00:00.000Z",
     });
 
-    expect(configuration?.state).toEqual({
-      serverUrl: "https://dofek.example.test",
-      email: "athlete@example.test",
-      password: "",
-      connectionStatus: { state: "connected" },
-      pairingShortCode: null,
-      pairingVerificationUrl: null,
-      pairingQrImageUrl: null,
-      pairingExpiresAt: null,
+    const rendered = JSON.stringify(renderedValues);
+    expect(rendered).toContain("Short code: ABC-123");
+    expect(rendered).toContain("Open: https://dofek.example.test/settings?zeppPair=ABC-123");
+    expect(rendered).toContain("Expires:");
+    expect(rendered).toContain("Connection: connected");
+    expect(rendered).toContain("Reason: Verified by Dofek");
+    expect(input("Dofek Server URL").value).toBe("https://dofek.example.test");
+    expect(input("Dofek Email").value).toBe("user@example.test");
+    expect(
+      renderedValues.find((value) => JSON.stringify(value).includes("Short code: ABC-123")),
+    ).toMatchObject({
+      style: { style: { marginTop: "1em", lineHeight: "1.5rem" } },
     });
-    expect(inputConfigurations).toHaveLength(3);
-    expect(inputConfigurations[0]).toMatchObject({
-      title: "Dofek Server URL",
-      value: "https://dofek.example.test",
+    expect(
+      renderedValues.find((value) => JSON.stringify(value).includes("Connection: connected")),
+    ).toMatchObject({
+      style: { style: { marginTop: "1em" } },
     });
-    expect(inputConfigurations[1]).toMatchObject({
-      title: "Dofek Email",
-      value: "athlete@example.test",
-    });
-    expect(inputConfigurations[2]).toMatchObject({
-      title: "Dofek Password",
-      placeholder: "Enter your Dofek password",
-    });
-    expect(buttonConfigurations).toHaveLength(4);
-    expect(buttonConfigurations[0]).toMatchObject({
-      label: "Create QR / short code",
-      color: "primary",
-      style: { marginTop: "1em" },
-    });
-    expect(buttonConfigurations.map(({ label }) => label)).toEqual([
-      "Create QR / short code",
-      "Log in and connect",
-      "Check connection",
-      "Disconnect Dofek",
-    ]);
-    expect(JSON.stringify(viewConfigurations)).toContain("Connection: connected");
-    expect(JSON.stringify(viewConfigurations)).toContain("Motion Extensions");
-    expect(rendered).toMatchObject({ style: { style: { padding: "1em" } } });
+    expect(createdImages).toContainEqual(
+      expect.objectContaining({
+        src: "https://dofek.example.test/pairing.svg",
+        alt: "Dofek Workout pairing QR code",
+        width: 220,
+        height: 220,
+      }),
+    );
   });
 
-  it("uses defaults and safely reports malformed saved status", () => {
-    buildWith({ [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: "{" });
+  it.each([JSON.stringify([]), JSON.stringify("connected"), "null"])(
+    "treats non-object stored status %s as disconnected",
+    (rawStatus) => {
+      buildWith({
+        [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: rawStatus,
+      });
 
-    expect(configuration?.state.serverUrl).toBe(DEFAULT_DOFEK_SERVER_URL);
-    expect(configuration?.state.email).toBe("");
-    expect(configuration?.state.connectionStatus).toMatchObject({
-      state: "error",
-      reason: expect.stringContaining("Stored connection status is invalid"),
+      expect(JSON.stringify(renderedValues)).toContain("Connection: not connected");
+      expect(configuration?.state.connectionStatus).toEqual({});
+    },
+  );
+
+  it("surfaces malformed stored connection status", () => {
+    buildWith({
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: "{invalid",
     });
 
-    buildWith({ [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ other: true }) });
-    expect(configuration?.state.connectionStatus).toEqual({ other: true });
-
-    expect(() =>
-      buildWith({ [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify("connected") }),
-    ).not.toThrow();
-    expect(() =>
-      buildWith({ [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify(null) }),
-    ).not.toThrow();
-    expect(configuration?.state.connectionStatus).toEqual({});
+    const rendered = JSON.stringify(renderedValues);
+    expect(rendered).toContain("Connection: error");
+    expect(rendered).toContain("Stored connection status is invalid");
   });
 
-  it("persists edits and sends a nonce-bearing login command", () => {
-    vi.spyOn(Date, "now").mockReturnValue(1_720_000_000_000);
-    const { settingsStorage } = buildWith({});
+  it("renders the empty pairing state with default settings", () => {
+    buildWith({});
 
-    inputConfigurations[0]?.onChange("https://new.example.test");
-    inputConfigurations[1]?.onChange("new@example.test");
-    inputConfigurations[2]?.onChange("secret");
-    buttonConfigurations[1]?.onClick();
+    const rendered = JSON.stringify(renderedValues);
+    expect(rendered).toContain("Create a code, then scan the QR or enter the code in Dofek.");
+    expect(rendered).toContain("Connection: not connected");
+    expect(input("Dofek Server URL").value).toBe(DEFAULT_DOFEK_SERVER_URL);
+    expect(input("Dofek Email").value).toBe("");
+    expect(
+      renderedValues.find((value) =>
+        JSON.stringify(value).includes("Create a code, then scan the QR"),
+      ),
+    ).toMatchObject({
+      style: { style: { marginTop: "1em", color: "#888" } },
+    });
+    expect(renderedValues).toContainEqual({ style: {}, children: [] });
+    expect(createdImages).toEqual([]);
+  });
 
-    expect(settingsStorage.setItem).toHaveBeenNthCalledWith(
-      1,
+  it.each([
+    [{ [STORAGE_KEYS.PAIRING_SHORT_CODE]: "ABC-123" }],
+    [{ [STORAGE_KEYS.PAIRING_VERIFICATION_URL]: "https://dofek.example.test/settings" }],
+  ])("waits for both pairing fields before showing pairing details", (values) => {
+    buildWith(values);
+
+    const rendered = JSON.stringify(renderedValues);
+    expect(rendered).toContain("Create a code, then scan the QR or enter the code in Dofek.");
+    expect(rendered).not.toContain("Short code:");
+    expect(rendered).not.toContain("Open:");
+  });
+
+  it("updates fields and sends pairing, login, verification, and disconnect commands", () => {
+    const settingsStorage = buildWith({
+      [STORAGE_KEYS.CMD_START_PAIRING]: "1",
+    });
+
+    input("Dofek Server URL").onChange("https://new.example.test");
+    input("Dofek Email").onChange("new@example.test");
+    input("Dofek Password").onChange("secret-password");
+    button("Create QR / short code").onClick();
+    button("Log in and connect").onClick();
+    button("Check connection").onClick();
+    button("Disconnect Dofek").onClick();
+
+    expect(button("Create QR / short code").style).toEqual({ marginTop: "1em" });
+    expect(button("Check connection").style).toEqual({ marginTop: "1em" });
+    expect(button("Disconnect Dofek").style).toEqual({ marginTop: "1em" });
+    expect(settingsStorage.setItem).toHaveBeenCalledWith(
       STORAGE_KEYS.DOFEK_SERVER_URL,
       "https://new.example.test",
     );
-    expect(settingsStorage.setItem).toHaveBeenNthCalledWith(
-      2,
+    expect(settingsStorage.setItem).toHaveBeenCalledWith(
       STORAGE_KEYS.DOFEK_EMAIL,
       "new@example.test",
     );
-    expect(settingsStorage.setItem).toHaveBeenNthCalledWith(
-      3,
-      STORAGE_KEYS.CMD_LOGIN_PASSWORD,
-      JSON.stringify({
-        email: "new@example.test",
-        password: "secret",
-        nonce: 1_720_000_000_000,
-      }),
+    expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_START_PAIRING, "0");
+    expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_CHECK_CONNECTION, "1");
+    expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_DISCONNECT, "1");
+
+    const loginCall = settingsStorage.setItem.mock.calls.find(
+      ([key]) => key === STORAGE_KEYS.CMD_LOGIN_PASSWORD,
     );
+    expect(loginCall).toBeDefined();
+    expect(JSON.parse(loginCall?.[1] ?? "{}")).toEqual({
+      email: "new@example.test",
+      password: "secret-password",
+      nonce: expect.any(Number),
+    });
     expect(configuration?.state.password).toBe("");
-  });
-
-  it("starts pairing and exposes connection management commands", () => {
-    const { settingsStorage } = buildWith({});
-
-    buttonConfigurations[0]?.onClick();
-    buttonConfigurations[2]?.onClick();
-    buttonConfigurations[3]?.onClick();
-
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(
-      STORAGE_KEYS.CMD_START_PAIRING,
-      "1",
-    );
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(
-      STORAGE_KEYS.CMD_CHECK_CONNECTION,
-      "1",
-    );
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(
-      STORAGE_KEYS.CMD_DISCONNECT,
-      "1",
-    );
   });
 });

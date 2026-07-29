@@ -5,6 +5,7 @@ import {
   hashCompanionToken,
   regenerateCompanionToken,
   revokeCompanionToken,
+  revokeCompanionTokenByToken,
   validateCompanionToken,
 } from "./token-repository.ts";
 
@@ -200,6 +201,30 @@ describe("token-repository", () => {
       db.execute.mockResolvedValueOnce([]);
 
       await expect(revokeCompanionToken(db, "user-123", "zepp-main")).resolves.toBe(false);
+    });
+  });
+
+  describe("revokeCompanionTokenByToken", () => {
+    it("returns true when the bearer token identifies an active connection", async () => {
+      const db = createMockDb();
+      db.execute.mockResolvedValueOnce([
+        {
+          id: "token-id",
+          user_id: "user-123",
+          connection_type: "zepp-workout",
+          created_at: "2026-01-01T00:00:00.000Z",
+          revoked_at: "2026-01-02T00:00:00.000Z",
+        },
+      ]);
+
+      await expect(revokeCompanionTokenByToken(db, "dofek_companion_token")).resolves.toBe(true);
+    });
+
+    it("returns false when the bearer token has no active connection", async () => {
+      const db = createMockDb();
+      db.execute.mockResolvedValueOnce([]);
+
+      await expect(revokeCompanionTokenByToken(db, "dofek_companion_token")).resolves.toBe(false);
     });
   });
 });
