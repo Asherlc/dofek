@@ -19500,6 +19500,63 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   complete production analytics-plus-cache cycle below the unchanged
   four-minute ceiling, and only then resolve DOFEK-SERVER-5A.
 
+## 2026-07-27 — HealthKit Observer Replayed Every Sample Type
+
+- **Status:** Direct source fix reproduced and validated locally; merge,
+  native release, and physical-device production validation pending.
+- **Symptoms:** Mobile
+  [DOFEK-MOBILE-1C](https://east-bay-software.sentry.io/issues/7633118736/)
+  continued reporting native observer expirations. Before its independent
+  server-side resolution in
+  [PR #2232](https://github.com/Asherlc/dofek/pull/2232), downstream
+  [DOFEK-SERVER-5A](https://east-bay-software.sentry.io/issues/7632766197/)
+  also recorded the physical-row amplification that made analytics timeouts
+  more expensive.
+- **User impact:** A change to one HealthKit type could replay the complete
+  previous-day HealthKit window. The native callback could expire before the
+  upload finished, and each replay created another physical metric-stream
+  version that made downstream latest-version analytics progressively more
+  expensive.
+- **Evidence:** The exact mobile failure was
+  `com.dofek.healthkit-observer: Code: 1` after 25,016 ms for
+  `HKQuantityTypeIdentifierDistanceWalkingRunning`. The exact downstream
+  failure was ClickHouse code 159 after 240,002 ms while `deduped_sensor`
+  scanned 88,877,102 physical rows, approximately twice its 44,438,551-row
+  source. Code inspection showed that the observer event's
+  `typeIdentifier` was discarded and every delivery invoked all 18 quantity
+  queries plus workout routes and sleep over the previous-day window.
+  `queryAnchoredSamples` already existed but was unused, and its returned
+  anchor was persisted before the server upload succeeded.
+- **Root cause:** The background observer path treated a type-specific change
+  signal as a request for a full-window, all-type replay and advanced unused
+  anchors before durable server processing, multiplying physical event
+  versions and keeping observer callbacks open past their deadline.
+- **Fix / mitigation:** Preserve and coalesce delivered type identifiers,
+  register background delivery only for types the pipeline consumes, and run
+  type-scoped syncs. UUID-addressable quantity types now use two-phase
+  `HKAnchoredObjectQuery` processing: upload additions and UUID-scoped
+  tombstones first, then persist the opaque anchor only on success. Initial
+  anchor bootstrap and aggregate-only types remain bounded to the prior local
+  day. Explicit foreground/manual sync retains the full-range path. No timeout,
+  retry, analytics query, or size limit changed. Apple documents observer
+  queries as change signals and anchored queries as the API for retrieving
+  additions and deletions:
+  <https://developer.apple.com/documentation/healthkit/executing-observer-queries>
+  and
+  <https://developer.apple.com/documentation/HealthKit/HKAnchoredObjectQuery>.
+- **Validation:** Test-first regressions cover delivered-type scoping,
+  addition/deletion upload, anchor commit only after server success, failed
+  upload retry behavior, and the restricted native background type set. The
+  focused mobile and server Vitest suites pass, the Swift package's 75 tests
+  pass, mobile/server/repository TypeScript checks pass, and an ad-hoc signed
+  Release simulator build succeeds with the generated Expo application
+  workspace.
+- **Remaining risk / follow-up:** Ship through the normal native release path,
+  perform the documented physical-iPhone observer acceptance check, confirm
+  callbacks finish before the unchanged 25-second boundary, and verify that
+  metric-stream physical-row growth stays stable before resolving
+  DOFEK-MOBILE-1C. PR #2232 separately records the completed production
+  remediation and resolution of DOFEK-SERVER-5A.
 ## 2026-07-27 — Polarization Integration Assertion Used the Former Label
 
 - **Status:** Root cause confirmed and the stale assertion corrected on PR
@@ -19556,7 +19613,6 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   remains gated on the complete exact-head CI and review results.
 - **Remaining risk / follow-up:** Confirm all four refreshed integration shards
   and every other required exact-head check complete successfully before merge.
-
 ## 2026-07-27 — Correlation repository mutants survived CI
 
 - **Status:** Root cause fixed and focused mutation validation complete; fresh
@@ -19598,7 +19654,6 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Push the corrective head, require every
   fresh exact-head CI check to pass, re-audit all review threads, and merge only
   when the PR remains current with `main`.
-
 ## 2026-07-27 — Supplement integration fixtures failed canonical foreign keys
 
 - **Status:** Root cause fixed locally on PR #2225; fresh exact-head CI
@@ -19678,6 +19733,47 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Validate both package credentials
   concurrently on a physical Zepp OS watch and confirm each survives pairing
   and revocation of the other after the production migration is deployed.
+
+## 2026-07-27 — HealthKit deletion tests did not kill CI mutants
+
+- **Status:** Root cause fixed locally on PR #2233; fresh exact-head CI
+  validation pending.
+- **Symptoms:** Exact-head CI run
+  [30324401522](https://github.com/Asherlc/dofek/actions/runs/30324401522)
+  failed both Stryker shards and the aggregate mutation gate.
+- **User impact:** No production impact. The HealthKit observer fix was blocked
+  from merging.
+- **Evidence:** The failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  The first fatal line reported
+  `Final mutation score 55.56 under breaking threshold 75`. The reports showed
+  surviving or uncovered mutants for empty deletion input, missing tombstone
+  support, provider-generation scope, SQL UUID binding, zero-deletion cache
+  invalidation, and deletion telemetry attributes.
+- **Root cause:** The new deletion paths had happy-path functional coverage,
+  but their assertions did not prove the branch boundaries and side-effect
+  payloads that Stryker mutated.
+- **Fix / mitigation:** Add focused tests and exact side-effect assertions for
+  each reported mutant without changing mutation thresholds. Move deletion
+  persistence into the HealthKit repository with typed SQL results, publish
+  independent tombstones concurrently, expose a validated router output,
+  translate missing tombstone support into an actionable precondition error,
+  and fail native observer acknowledgement when a resolved sync contains
+  errors. Follow-up review hardened the same path by preserving the publisher
+  method binding, reporting actual SQL deletion counts, validating HealthKit
+  UUIDs, reporting unexpected repository errors to Sentry, treating rejected
+  native anchor commits as failures, separating deletion and insertion
+  telemetry, atomically clearing completed native anchors, and batching
+  observer workout routes. Stryker describes survived mutants as changes that
+  existing tests did not detect:
+  <https://stryker-mutator.io/docs/mutation-testing-elements/mutant-states-and-metrics/>.
+- **Validation:** All three exact changed ranges report 100% locally (54 of 54
+  mutants killed). Lint, root/server/web TypeScript checks, 314 focused
+  HealthKit tests, and 14,316 unit/mobile tests also pass. The follow-up review
+  fixes pass 153 focused mobile tests, 283 focused server tests, all 77
+  HealthKit Swift tests, and the mobile typecheck.
+- **Remaining risk / follow-up:** Confirm both Stryker shards and the aggregate
+  mutation gate pass on the fresh exact-head CI run before merging.
 
 ## 2026-07-27 — Lint CI could not resolve the uv tool version
 
@@ -19772,3 +19868,68 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `Test / SQLFluff` job remains the merge gate.
 - **Remaining risk / follow-up:** Confirm the replacement SQLFluff job and the
   complete exact-head CI matrix pass before merge.
+
+## 2026-07-28 — Knip setup downloaded an unused Cypress binary
+
+- **Status:** Root cause fixed locally on PR #2233; fresh exact-head CI
+  validation pending.
+- **Symptoms:** CI run
+  [30414033375](https://github.com/Asherlc/dofek/actions/runs/30414033375)
+  failed `Test / Knip` in job
+  [90456634078](https://github.com/Asherlc/dofek/actions/runs/30414033375/job/90456634078).
+- **User impact:** No production impact. PR #2233 was blocked from merging even
+  though the Knip command never ran.
+- **Evidence:** The exact failing command was
+  `pnpm install --frozen-lockfile` in the shared `Setup Node + pnpm` action.
+  The first fatal line was
+  `.../cypress@15.18.1/node_modules/cypress postinstall: Failed`; the subsequent
+  lifecycle failure skipped `pnpm knip`.
+- **Root cause:** The shared dependency setup coupled every CI job to Cypress's
+  optional binary download even when the job did not execute Cypress. The Knip
+  job therefore failed on an unrelated external binary transfer before its
+  actual static analysis could start.
+- **Fix / mitigation:** Set `CYPRESS_INSTALL_BINARY=0` for the shared
+  `pnpm install` step. The E2E job remains the sole owner of the separately
+  cached explicit `pnpm exec cypress install` step. Cypress documents this
+  install/download split in its
+  [command-line guidance](https://docs.cypress.io/app/references/command-line#cypress-install).
+  No retry, timeout, fallback, or warn-and-continue behavior was added.
+- **Validation:** `CYPRESS_INSTALL_BINARY=0 pnpm rebuild cypress` confirmed the
+  binary installation was skipped successfully. The CI-equivalent Knip command,
+  actionlint, the workflow download policy, composite-action YAML parsing, and
+  `git diff --check` all passed locally. Fresh exact-head CI must pass before
+  merging.
+- **Remaining risk / follow-up:** Keep Cypress binary installation explicit and
+  cached only in workflows that execute Cypress.
+
+## 2026-07-28 — Image scan build timed out fetching an npm package
+
+- **Status:** Root cause identified on PR #2233; clean exact-head rerun
+  pending.
+- **Symptoms:** CI run
+  [30415322875](https://github.com/Asherlc/dofek/actions/runs/30415322875)
+  failed `Test / Image Vulnerability Scan` in job
+  [90460774781](https://github.com/Asherlc/dofek/actions/runs/30415322875/job/90460774781)
+  before the Grype scan started.
+- **User impact:** No production impact. The otherwise-green PR remained
+  blocked from merging.
+- **Evidence:** The failing step was `Build server image with cache`, whose
+  client-build command ran `cd packages/web && pnpm run build`. npm registry
+  transfers slowed and retried until the first fatal line
+  `[23] The operation was aborted due to timeout` while fetching
+  `expo-modules-core-57.0.7.tgz`; the Docker build then exited 1 and skipped
+  Grype.
+- **Root cause:** The external npm package transfer stalled through pnpm's
+  built-in attempts. The PR did not change package manifests, the lockfile, or
+  the Dockerfile, and the same exact-head web build and dependency installation
+  had already passed outside this image job.
+- **Fix / mitigation:** Do not change application code or add retry, timeout,
+  skip, or fallback behavior for this external transfer failure. Re-run the
+  unchanged exact-head image build after the registry recovers, then require
+  Grype to execute and pass.
+- **Validation:** The replacement exact-head image build and Grype scan must
+  both pass before merge.
+- **Remaining risk / follow-up:** The build also emitted a non-fatal warning
+  because `ghcr.io/${{ github.repository }}` preserved uppercase owner
+  characters in a registry cache reference. Normalize that cache reference in
+  a dedicated CI change so image builds can use both configured cache sources.
