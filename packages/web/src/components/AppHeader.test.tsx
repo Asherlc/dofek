@@ -97,6 +97,13 @@ describe("AppHeader", () => {
     expect(screen.getByLabelText("Toggle navigation menu")).toBeTruthy();
   });
 
+  it("renders the product name as branding rather than a document heading", () => {
+    render(<AppHeader />);
+
+    expect(screen.getAllByText("Dofek")).toHaveLength(2);
+    expect(screen.queryByRole("heading", { name: "Dofek" })).toBeNull();
+  });
+
   it("uses an AA-contrast navigation token for sign-out actions", () => {
     render(<AppHeader />);
 
